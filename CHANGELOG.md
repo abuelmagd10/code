@@ -4,6 +4,90 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.1] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 2: FX Gain/Loss Automation للـ Supplier Bills
+
+استكمالاً لـ v3.27.0، تم إضافة الـ FX adjustment automation للـ supplier-side payments (mirror لما هو موجود فى customer-side من v3.23.x). هذا يكمل **IAS 21 compliance** للجانبين معاً.
+
+### 🔍 السيناريو المُغطى
+
+عند سداد فاتورة شراء (bill) بعملة أجنبية بسعر صرف مختلف عن سعر الصرف وقت إصدار الفاتورة:
+
+**مثال** — Bill بقيمة 1,000 USD:
+- وقت إصدار الـ bill: rate = 30 → AP زاد بـ 30,000 EGP
+- وقت سداد الـ bill: rate = 31 → دفعنا 31,000 EGP
+- الفرق: **1,000 EGP خسارة فروق عملة** (لأن دفعنا أكثر من القيمة المسجلة)
+
+**القيد التلقائى المُنشأ بـ v3.27.1**:
+```
+Dr 5310 (خسائر فروق العملة)      1,000
+   Cr 2110 (الذمم الدائنة)              1,000
+```
+
+وفى الحالة العكسية (rate نقص):
+```
+Dr 2110 (الذمم الدائنة)          1,000
+   Cr 4320 (أرباح فروق العملة)         1,000
+```
+
+### ✅ الإصلاح
+
+**`lib/services/supplier-payment-command.service.ts`**:
+
+1. أُضيف **FX hook** فى نهاية `finalizeApprovedPayment()` يفحص كل bill allocation:
+   - إذا كانت `payment.exchange_rate` معطاة وأكبر من صفر، يستدعى `postFXBillPaymentAdjustment()` لكل allocation
+   - Non-blocking — failures تُسجل فقط دون التأثير على نجاح الـ payment
+
+2. أُضيفت method جديدة **`postFXBillPaymentAdjustment()`**:
+   - تقرأ الـ bill currency + exchange_rate الأصلى
+   - تتجاهل إذا الـ bill بعملة base
+   - تحسب FX diff:
+     - `fcAmountAllocated = allocated_amount / payment_rate`
+     - `apBase = fcAmountAllocated × original_rate`
+     - `fxDiff = allocated_amount - apBase`
+   - تستدعى `getFXAccounts()` للحصول على 4320/5310
+   - تنشئ journal entry بـ `reference_type='fx_bill_payment_adjustment'` و `status='draft'`
+   - تتسامح مع rounding noise (يتجاهل diff < 0.01)
+
+### 🎯 النموذج الموحد الآن
+
+| نوع الدفع | FX Automation |
+|---|---|
+| Customer Invoice Payment (sales) | ✅ موجود منذ v3.23.x |
+| **Supplier Bill Payment (purchases)** | ✅ **مضاف الآن v3.27.1** |
+| Customer Refund | ❌ مفقود — v3.27.2 |
+| Bank Transfer (between accounts) | ❌ مفقود — v3.27.2 |
+| Expense | ❌ مفقود — v3.27.2 |
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `lib/services/supplier-payment-command.service.ts` | +175 سطر: FX hook + `postFXBillPaymentAdjustment()` method |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تسجيل تلقائى لفروق العملة عند سداد فواتير المشتريات بعملة أجنبية
+- **Non-blocking**: لو فشل الـ FX entry لأى سبب (missing accounts, etc.)، الـ payment الأساسى يظل ناجحاً والـ error يُسجل فى console
+- **Backward compatible**: 100% — الفواتير بعملة base لا تتأثر
+- **No DB changes** — يستخدم schema موجود (4320/5310 موجودة بالفعل فى كل شركة)
+- **Audit trail**: كل قيد له `reference_type='fx_bill_payment_adjustment'` يسهل تتبعه
+
+### ✅ Verification
+
+```ts
+// Logic test:
+// Bill: 1000 USD @ rate=30 → bill.exchange_rate=30, total_amount=30000
+// Payment: amount=31000 EGP, exchange_rate=31, allocation=31000
+// fcAmount = 31000/31 = 1000
+// apBase = 1000 × 30 = 30000
+// fxDiff = 31000 - 30000 = +1000 → FX LOSS (Dr 5310, Cr AP)  ✓
+```
+
+---
+
 ## [3.27.0] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 1: إصلاح localStorage conflict فى getBaseCurrency
