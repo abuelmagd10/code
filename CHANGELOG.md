@@ -4,6 +4,153 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.5] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 6: Period-end FX Revaluation (IAS 21 Part B)
+
+استكمالاً للمراحل السابقة، تم إضافة **آلية إعادة تقييم العملات الأجنبية فى نهاية الفترة** وفقاً لمعيار **IAS 21**.
+
+### 🎯 المفهوم المحاسبى (IAS 21 §23)
+
+فى نهاية كل فترة محاسبية (شهر/ربع/سنة)، جميع الـ **monetary assets/liabilities** بعملة أجنبية يجب إعادة تقييمها بسعر الصرف فى نهاية الفترة. الفرق بين:
+- **Book value** (بالـ rate التاريخى وقت التسجيل)
+- **Current value** (بالـ rate الحالى نهاية الفترة)
+
+= **Unrealized FX Gain/Loss** يُسجَّل فى P&L للفترة.
+
+### 🔄 الـ Reversal Pattern (IAS 21)
+
+الـ adjustment يُعكس فى اليوم التالى تلقائياً ليرجع الـ book value للـ rate التاريخى. هذا يضمن:
+- الـ gain/loss يُسجَّل **مرة واحدة فقط** لكل فترة
+- الـ next period يبدأ من book value الأصلى
+- الـ statements الفترية صحيحة بدون double-counting
+
+### 📊 مثال
+
+**نهاية شهر فبراير 2026:**
+```
+Cash USD account: 1,000 USD
+- Book value (rate 30 وقت الإيداع):    30,000 EGP
+- Current rate (نهاية فبراير):         31.5
+- Revalued value:                       31,500 EGP
+- Unrealized FX Gain:                   +500 EGP
+```
+
+**القيد التلقائى المُنشأ:**
+```
+2026-02-29:
+  Dr Cash USD (1011)              500
+     Cr Unrealized FX Gain (4320)        500
+
+2026-03-01 (Reversal):
+  Dr Unrealized FX Gain (4320)    500
+     Cr Cash USD (1011)                  500
+```
+
+النتيجة: الـ gain يظهر فى الـ income statement لشهر فبراير، والـ Cash يرجع لـ book value الأصلى من 1 مارس.
+
+### ✅ الإصلاح
+
+#### ملف جديد: `lib/fx-revaluation.ts` (320 سطر)
+
+دالتان رئيسيتان:
+
+```ts
+// Compute preview without posting
+export async function computeFXRevaluation(
+  supabase, companyId, asOfDate
+): Promise<FXRevaluationResult>
+
+// Post the adjustment + auto-reversal
+export async function postFXRevaluation(
+  supabase, companyId, asOfDate, userId,
+  options: { autoReverse?: boolean; branchId?: string | null }
+): Promise<FXRevaluationResult>
+```
+
+**الـ Scope الحالى**: جميع حسابات النقد/البنك (codes 10xx, 11xx) ذات `original_currency` مختلفة عن base. الـ AR/AP الـ multi-currency revaluation للـ release لاحق.
+
+#### Logic للحساب:
+1. Load كل FC cash/bank accounts
+2. لكل حساب: احسب native balance من journal lines (`original_debit - original_credit`)
+3. Get current rate من `getExchangeRate()` (يحترم rate_mode من v3.27.3)
+4. Revalued = native × current_rate
+5. Diff = revalued - book_value
+6. لو diff > 0 → Unrealized Gain (Cr 4320)
+7. لو diff < 0 → Unrealized Loss (Dr 5310)
+
+#### UI Card فى `app/settings/exchange-rates/page.tsx`
+
+تم إضافة قسم جديد بـ:
+- **Date picker** لاختيار `asOfDate`
+- **Preview button** يستدعى `computeFXRevaluation` ويعرض جدول تفصيلى
+- **Modal preview** يعرض لكل حساب: native, book value, revalued, diff
+- **Post button** يستدعى `postFXRevaluation` (مع auto-reversal)
+
+### 🎨 الـ UI
+
+```
+┌─────────────────────────────────────────────┐
+│ 🔄 إعادة تقييم العملات نهاية الفترة         │
+├─────────────────────────────────────────────┤
+│ إعادة تقييم حسابات النقد/البنك بالعملات...  │
+│                                             │
+│ بتاريخ: [2026-02-29 📅]  [🔄 معاينة]      │
+└─────────────────────────────────────────────┘
+
+عند الضغط على معاينة → Modal:
+
+┌─────────────────────────────────────────────┐
+│ 🔄 معاينة إعادة التقييم 2026-02-29      ✕  │
+├─────────────────────────────────────────────┤
+│ الحساب     │ الأصلى │ الدفترى │ بعد │ الفرق │
+│ 1011 USD   │ 1,000  │ 30,000  │31,500│ +500 │
+│ 1012 EUR   │   500  │ 17,000  │16,800│ -200 │
+│                              صافى: +300 EGP │
+│                                             │
+│      [إلغاء]  [✓ تسجيل إعادة التقييم]      │
+└─────────────────────────────────────────────┘
+```
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `lib/fx-revaluation.ts` | **NEW** — 320 سطر، logic إعادة التقييم + auto-reversal |
+| `app/settings/exchange-rates/page.tsx` | UI Card + Preview Modal + Post action |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: feature جديد، لا يؤثر على flows موجودة
+- **Backward compatible**: 100%
+- **No DB changes** — يستخدم أعمدة موجودة (`journal_entries`, `journal_entry_lines`)
+- **Audit trail**: كل قيد له `reference_type='fx_revaluation'` أو `'fx_revaluation_reversal'`
+- **Reversal linking**: الـ reverse entry يحتفظ بـ `reversal_of_entry_id` للربط
+
+### 🎯 الحالة الموحدة بعد v3.27.5
+
+| المعاملة / Feature | الحالة |
+|---|:---:|
+| Customer Invoice Payment | ✅ Full FX |
+| Supplier Bill Payment | ✅ Full FX (v3.27.1) |
+| Customer Refund | 🟡 FX native (v3.27.2)، automation للـ v3.27.7+ |
+| Bank Transfer | ✅ Cross-currency (v3.27.2) |
+| Expense | ✅ FX native (v3.27.2) |
+| Sales/Purchase Return | ✅ No FX needed (v3.27.4 analysis) |
+| Rate Mode Preference | ✅ Live/Manual (v3.27.3) |
+| **Period-end FX Revaluation** | ✅ **مضاف الآن (v3.27.5)** |
+| AR/AP FX revaluation | ❌ للـ v3.27.6+ |
+| Decimal.js precision guards | ❌ للـ v3.27.6+ |
+
+### 📚 References
+
+- IAS 21 §23: Foreign currency monetary items
+- IAS 21 §28: Recognition of exchange differences
+- IAS 21 §32: Period-end translation
+
+---
+
 ## [3.27.4] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 5: Sales/Purchase Returns FX Analysis
