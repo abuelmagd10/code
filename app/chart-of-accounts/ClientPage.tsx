@@ -493,24 +493,23 @@ function ChartOfAccountsPage() {
       const parentId = parentNode?.id ?? ""
       const level = parentNode ? ((parentNode.level ?? 1) + 1) : 1
 
-      // التأكد من تحميل الفروع ومراكز التكلفة قبل فتح النموذج
+      // التأكد من تحميل الفروع ومراكز التكلفة + العملات قبل فتح النموذج
+      // v3.24.1: consolidated single try block so companyId is in scope for both calls
       try {
         const companyId = companyIdState || await getActiveCompanyId(supabase)
-        if (companyId && (branches.length === 0 || costCenters.length === 0)) {
-          await loadBranchesAndCostCenters(companyId)
+        if (companyId) {
+          if (branches.length === 0 || costCenters.length === 0) {
+            await loadBranchesAndCostCenters(companyId)
+          }
+          if (availableCurrencies.length === 0) {
+            await loadCurrencies(companyId)
+          }
         }
       } catch (error) {
-        // في حالة انقطاع الاتصال، نفتح النموذج بدون تحميل الفروع ومراكز التكلفة
-        console.warn("Could not load branches and cost centers, continuing anyway:", error)
+        console.warn("Could not load branches/cost centers/currencies, continuing anyway:", error)
       }
 
       setEditingId(null)
-      // v3.24.0: load currencies for the quick-add form too
-      try {
-        if (companyId && availableCurrencies.length === 0) {
-          await loadCurrencies(companyId)
-        }
-      } catch {}
       setFormData({
         account_code: type === "bank" ? "1010" : "1000",
         account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
