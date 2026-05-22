@@ -47,9 +47,11 @@ export async function getJournalLines(
   fromDate: string,
   toDate: string,
 ): Promise<any[]> {
+  // v3.25.1: include original_debit/original_credit so FC accounts can be
+  // displayed in their native currency (per Enterprise FX Pattern §3).
   const { data: linesData, error: linesError } = await supabase
     .from("journal_entry_lines")
-    .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, is_deleted, deleted_at)")
+    .select("account_id, debit_amount, credit_amount, original_debit, original_credit, original_currency, journal_entries!inner(entry_date, company_id, is_deleted, deleted_at)")
     .eq("journal_entries.company_id", companyId)
     .neq("journal_entries.is_deleted", true) // ✅ استثناء المحذوفة
     .is("journal_entries.deleted_at", null) // ✅ استثناء المحذوفة
@@ -124,37 +126,76 @@ export function aggregateDebitsCreditsByAccount(
 
 /**
  * Compute leaf account balances as of a date: opening_balance + (debit - credit) movements.
+ *
+ * v3.25.1: for accounts with `original_currency` set (FC bank/cash accounts),
+ * ALSO compute `native_balance` by summing `original_debit - original_credit`
+ * from journal lines. UIs that want to display the account in its native
+ * currency can read `native_balance` + `native_currency`.
  */
 export async function computeLeafAccountBalancesAsOf(
   supabase: any,
   companyId: string,
   asOfDate: string,
-): Promise<Array<{ account_id: string; account_code?: string; account_name: string; account_type: string; balance: number }>> {
+): Promise<Array<{
+  account_id: string
+  account_code?: string
+  account_name: string
+  account_type: string
+  balance: number
+  native_balance?: number | null
+  native_currency?: string | null
+  sub_type?: string | null
+}>> {
+  // v3.25.1: include sub_type + original_currency so caller can identify FC bank/cash
   const { data: accountsData, error: accountsError } = await supabase
     .from("chart_of_accounts")
-    .select("id, account_code, account_name, account_type, opening_balance, parent_id")
+    .select("id, account_code, account_name, account_type, opening_balance, parent_id, sub_type, original_currency")
     .eq("company_id", companyId)
     .order("account_code")
   if (accountsError) throw accountsError
   const leafAccounts = getLeafAccountIds(accountsData || [])
   const lines = await getJournalLines(supabase, companyId, "0001-01-01", asOfDate)
   const agg = aggregateDebitsCreditsByAccount(lines, leafAccounts)
+
+  // v3.25.1: aggregate original_debit/credit per account for FC native balance
+  const nativeAgg = new Map<string, { debit: number; credit: number }>()
+  for (const line of lines) {
+    const accId = String((line as any).account_id)
+    if (!leafAccounts.has(accId)) continue
+    const od = Number((line as any).original_debit || 0)
+    const oc = Number((line as any).original_credit || 0)
+    if (od === 0 && oc === 0) continue
+    const prev = nativeAgg.get(accId) || { debit: 0, credit: 0 }
+    nativeAgg.set(accId, { debit: prev.debit + od, credit: prev.credit + oc })
+  }
+
   return (accountsData || [])
     .filter((acc: any) => leafAccounts.has(acc.id))
     .map((acc: any) => {
       const ac = agg.get(String(acc.id)) || { debit: 0, credit: 0 }
-      // ✅ حساب الرصيد حسب الطبيعة المحاسبية:
-      // - الأصول والمصروفات: رصيدها الطبيعي مدين (debit - credit)
-      // - الالتزامات وحقوق الملكية والإيرادات: رصيدها الطبيعي دائن (credit - debit)
       const isDebitNature = acc.account_type === 'asset' || acc.account_type === 'expense'
       const movement = isDebitNature ? (ac.debit - ac.credit) : (ac.credit - ac.debit)
       const balance = Number(acc.opening_balance || 0) + movement
+
+      // v3.25.1: native-currency balance for FC accounts
+      const nativeCcy = String(acc.original_currency || '').toUpperCase() || null
+      let nativeBalance: number | null = null
+      if (nativeCcy) {
+        const nag = nativeAgg.get(String(acc.id)) || { debit: 0, credit: 0 }
+        const nMov = isDebitNature ? (nag.debit - nag.credit) : (nag.credit - nag.debit)
+        // Opening balance is assumed to be in account's currency when account is FC
+        nativeBalance = Number(acc.opening_balance || 0) + nMov
+      }
+
       return {
         account_id: String(acc.id),
         account_code: acc.account_code,
         account_name: acc.account_name,
         account_type: acc.account_type,
+        sub_type: acc.sub_type ?? null,
         balance,
+        native_balance: nativeBalance,
+        native_currency: nativeCcy,
       }
     })
 }
