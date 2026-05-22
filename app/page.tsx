@@ -55,7 +55,7 @@ const ERPWebsite = () => {
     { q: isAr ? 'هل النظام مناسب للشركات الصغيرة والمتوسطة؟' : 'Is the system suitable for SMBs?', a: isAr ? 'نعم، مصمم لجميع أحجام الشركات.' : 'Yes, designed for all company sizes.' },
     { q: isAr ? 'هل يدعم النظام اللغة العربية بالكامل؟' : 'Does it fully support Arabic?', a: isAr ? 'نعم، دعم كامل للعربية مع RTL.' : 'Full Arabic RTL support.' },
     { q: isAr ? 'كيف يتم التعامل مع المعاملات بعملات مختلفة؟' : 'How are multi-currency transactions handled?', a: isAr ? 'النظام يطبق معيار IAS 21 الكامل.' : 'Full IAS 21 compliance.' },
-    { q: isAr ? 'هل البيانات آمنة؟' : 'Is data secure?', a: isAr ? 'نعم، RLS + multi-tenant + audit trail.' : 'Yes — RLS + multi-tenant + audit trail.' },
+    { q: isAr ? 'هل البيانات آمنة؟' : 'Is data secure?', a: isAr ? 'نعم، RLS + multi-tenant + audit trail.' : 'Yes - RLS + multi-tenant + audit trail.' },
     { q: isAr ? 'هل يمكن إدارة عدة شركات؟' : 'Can I manage multiple companies?', a: isAr ? 'نعم، دعم كامل لتعدد الشركات.' : 'Yes, full multi-company support.' },
   ]
 
@@ -78,7 +78,7 @@ const ERPWebsite = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md">7E</div>
+              <img src="/icons/icon-64x64.png" alt="7ESAB ERP" width={36} height={36} className="w-9 h-9 rounded-lg shadow-md object-contain" />
               <span className="text-lg font-bold text-gray-900 dark:text-white">7ESAB <span className="text-xs text-blue-600">ERP</span></span>
             </Link>
             <div className="hidden md:flex items-center gap-6">
@@ -161,8 +161,8 @@ const ERPWebsite = () => {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {[
-              { badge: isAr ? 'مجانى للأبد' : 'Free forever', title: isAr ? 'النسخة المجانية' : 'Free Plan', price: '$0', period: isAr ? '/شهر' : '/month', features: [ isAr ? 'مستخدم واحد مجانى' : '1 user free', isAr ? 'جميع ميزات المحاسبة' : 'All accounting features', isAr ? 'إدارة المخزون الكاملة' : 'Full inventory', isAr ? 'تقارير شاملة' : 'Reports', isAr ? 'دعم فنى مجانى' : 'Free support', isAr ? 'بدون حدود زمنية' : 'No time limits' ], cta: isAr ? 'ابدأ مجاناً' : 'Start Free', highlight: false },
-              { badge: isAr ? 'ادفع عند الحاجة' : 'Pay as you grow', title: isAr ? 'مستخدمين إضافيين' : 'Additional Users', price: '$10', period: isAr ? '/مستخدم/شهر' : '/user/month', features: [ isAr ? 'كل مزايا النسخة المجانية' : 'All free features', isAr ? 'صلاحيات متقدمة' : 'Advanced permissions', isAr ? 'إدارة الفرق' : 'Team management', isAr ? 'دعم أولوية' : 'Priority support', isAr ? 'تكامل API' : 'API integrations', isAr ? 'تقارير مخصصة' : 'Custom reports' ], cta: isAr ? 'أضف مستخدمين' : 'Add Users', highlight: true },
+              { badge: isAr ? 'مجانى للأبد' : 'Free forever', title: isAr ? 'النسخة المجانية' : 'Free Plan', price: '$0', period: isAr ? '/شهر' : '/month', features: [isAr ? 'مستخدم واحد مجانى' : '1 user free', isAr ? 'جميع ميزات المحاسبة' : 'All accounting features', isAr ? 'إدارة المخزون الكاملة' : 'Full inventory', isAr ? 'تقارير شاملة' : 'Reports', isAr ? 'دعم فنى مجانى' : 'Free support', isAr ? 'بدون حدود زمنية' : 'No time limits'], cta: isAr ? 'ابدأ مجاناً' : 'Start Free', highlight: false },
+              { badge: isAr ? 'ادفع عند الحاجة' : 'Pay as you grow', title: isAr ? 'مستخدمين إضافيين' : 'Additional Users', price: '$10', period: isAr ? '/مستخدم/شهر' : '/user/month', features: [isAr ? 'كل مزايا النسخة المجانية' : 'All free features', isAr ? 'صلاحيات متقدمة' : 'Advanced permissions', isAr ? 'إدارة الفرق' : 'Team management', isAr ? 'دعم أولوية' : 'Priority support', isAr ? 'تكامل API' : 'API integrations', isAr ? 'تقارير مخصصة' : 'Custom reports'], cta: isAr ? 'أضف مستخدمين' : 'Add Users', highlight: true },
             ].map((plan, i) => (
               <div key={i} className={`relative p-8 rounded-3xl border-2 ${plan.highlight ? 'border-blue-500 bg-gradient-to-br from-blue-50/50 to-purple-50/50 dark:from-blue-950/30 dark:to-purple-950/30 shadow-xl' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'}`}>
                 <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2">{plan.badge}</div>
@@ -185,10 +185,10 @@ const ERPWebsite = () => {
           </div>
           <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-gray-900 shadow-xl border border-gray-200 dark:border-gray-800">
             <div className="flex gap-1 mb-4">{[...Array(5)].map((_, i) => (<Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />))}</div>
-            <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 leading-relaxed mb-6">"{testimonials[activeTestimonial].text}"</p>
+            <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 leading-relaxed mb-6">{`"${testimonials[activeTestimonial].text}"`}</p>
             <div>
               <div className="font-bold text-gray-900 dark:text-white">{testimonials[activeTestimonial].name}</div>
-              <div className="text-sm text-gray-500">{testimonials[activeTestimonial].role} — {testimonials[activeTestimonial].company}</div>
+              <div className="text-sm text-gray-500">{testimonials[activeTestimonial].role} - {testimonials[activeTestimonial].company}</div>
             </div>
           </div>
           <div className="flex justify-center gap-2 mt-6">
@@ -208,7 +208,7 @@ const ERPWebsite = () => {
         <div className="max-w-4xl mx-auto">
           <div className="relative p-10 sm:p-16 rounded-3xl bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 text-white text-center overflow-hidden shadow-2xl">
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4">{isAr ? 'جاهز لتطوير أعمالك؟' : 'Ready to Grow Your Business?'}</h2>
-            <p className="text-lg sm:text-xl mb-8 opacity-90">{isAr ? 'ابدأ مجاناً اليوم — بدون بطاقة ائتمان' : 'Start free today — no credit card required'}</p>
+            <p className="text-lg sm:text-xl mb-8 opacity-90">{isAr ? 'ابدأ مجاناً اليوم - بدون بطاقة ائتمان' : 'Start free today - no credit card required'}</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
               <Link href="/auth/sign-up" className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-white text-blue-600 font-bold shadow-lg">{isAr ? 'تجربة مجانية' : 'Start Free Trial'}<ArrowRight className="w-5 h-5 rtl:rotate-180" /></Link>
               <a href="mailto:info@7esab.com" className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl border-2 border-white/30 text-white font-bold hover:bg-white/10 transition-colors">{isAr ? 'تحدث مع خبير' : 'Talk to Expert'}</a>
@@ -225,7 +225,10 @@ const ERPWebsite = () => {
         <div className="max-w-7xl mx-auto">
           <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-8 mb-8">
             <div>
-              <div className="flex items-center gap-2 mb-3"><div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-sm">7E</div><span className="font-bold text-gray-900 dark:text-white">7ESAB ERP</span></div>
+              <div className="flex items-center gap-2 mb-3">
+                <img src="/icons/icon-64x64.png" alt="7ESAB ERP" width={36} height={36} className="w-9 h-9 rounded-lg object-contain" />
+                <span className="font-bold text-gray-900 dark:text-white">7ESAB ERP</span>
+              </div>
               <p className="text-sm text-gray-600 dark:text-gray-400">{isAr ? 'منصة ERP احترافية متكاملة.' : 'Professional integrated ERP platform.'}</p>
               <a href="mailto:info@7esab.com" className="inline-block mt-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">info@7esab.com</a>
             </div>
@@ -258,7 +261,7 @@ const ERPWebsite = () => {
             </div>
           </div>
           <div className="pt-8 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-sm text-gray-500">© {new Date().getFullYear()} 7ESAB ERP. {isAr ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}</div>
+            <div className="text-sm text-gray-500">{`© ${new Date().getFullYear()} 7ESAB ERP. ${isAr ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}`}</div>
             <div className="flex items-center gap-3 text-xs text-gray-500">
               <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">IAS 21</span>
               <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">IFRS</span>
