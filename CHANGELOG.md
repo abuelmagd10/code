@@ -4,6 +4,58 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.26.2] - 2026-05-22
+
+### 🐛 إصلاح عمود الرصيد — يشمل invoice/bill overpayments
+
+أبلغ المستخدم بنتيجة خاطئة بعد revert v3.23.6:
+> "النتيجة انها تظهر بيانات خطا"
+
+### 🔍 المشكلة
+
+بعد revert v3.23.6 (الذى أعاد منع عرض السالب فى الـ "الذمم"/"المطلوبات"):
+- العمود الصحيح للسالب (الـ overpayment) هو "الرصيد" (للعملاء) و "مستحقات لنا" (للموردين)
+- **لكن هذه الأعمدة لم تكن تتضمن overpayments من الفواتير**
+
+مثال ahmed:
+- INV-00003: total=10, paid=10.68 → overpayment 0.68 EGP
+- "الذمم": — (صح، لا يعرض السالب)
+- "الرصيد": 0.00 (خطأ! يجب 0.68)
+
+### ✅ الإصلاح
+
+#### `app/customers/page.tsx`
+أُضيف استعلام منفصل لكل فواتير العميل المدفوعة/المدفوعة جزئياً، يحسب الفائض لكل فاتورة:
+```ts
+surplus = paid_amount - (total_amount - returned_amount)
+if (surplus > 0.005) overpaymentMap[customer_id] += surplus
+```
+ثم يُضاف إلى `available` و `credits` فى الـ balances state.
+
+#### `app/suppliers/page.tsx`
+نفس النمط للموردين — لو `remaining < -0.005` (يعنى دفعنا أكثر من قيمة الفاتورة)، الفائض يُحسب فى `debitCredits` (مستحقات لنا).
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `app/customers/page.tsx` | إضافة `overpaymentMap` للفواتير، يُدمج فى balances.available + .credits |
+| `app/suppliers/page.tsx` | تتبع `billOverpayments` ودمجه فى `debitCredits` |
+
+### 📊 توقع بعد النشر
+
+| العميل | الذمم | الرصيد (قبل) | الرصيد (بعد) |
+|---|---|---|---|
+| ahmed abuelmagd | — | 0.00 ❌ | **0.68 £** ✅ |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: عرض كامل وصحيح للرصيد الدائن للعملاء/الموردين
+- **Backward compatible**: 100% — الحسابات بدون overpayments لا تتأثر
+- **No DB changes**
+
+---
+
 ## [3.26.1] - 2026-05-22
 
 ### 🐛 إصلاح زر "تسجيل الدفع" يفضل ظاهراً بعد الاعتماد
