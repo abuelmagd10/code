@@ -4,6 +4,93 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.0] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 1: إصلاح localStorage conflict فى getBaseCurrency
+
+طلب المستخدم مراجعة شاملة لنظام العملات وأسعار الصرف داخل النظام بالكامل وفق معايير Enterprise ERP. تم إجراء audit شامل (راجع تقرير المراجعة)، وأظهر أن الـ infrastructure قوى لكن فيه gaps. هذه الـ release هى **المرحلة 1 من خطة الإصلاح متعددة المراحل**.
+
+### 🔍 المشكلة (Priority #1)
+
+`lib/exchange-rates.ts:49` كان يحتوى:
+
+```ts
+export function getBaseCurrency(): string {
+  if (typeof window === 'undefined') return 'EGP'
+  try { return localStorage.getItem('app_currency') || 'EGP' }
+  catch { return 'EGP' }
+}
+```
+
+**المخاطر**:
+- localStorage قد يكون stale عند تبديل الشركات (المستخدم يفتح شركة A ثم B دون refresh)
+- SSR لا يستطيع الوصول للـ localStorage → دائماً يعطى 'EGP' خطأ
+- يتعارض مع النسخة الأخرى DB-aware فى `lib/currency-service.ts:65` التى تقرأ من `companies.base_currency`
+
+**الأثر**: عند multi-company setup يمكن أن يأخذ سعر صرف خاطئ → قيود محاسبية بعملة خاطئة.
+
+### ✅ الإصلاح
+
+1. **`lib/exchange-rates.ts`**: تم وضع علامة `@deprecated` على النسخة localStorage مع warning فى dev mode لتسهيل اكتشاف الاستخدامات
+2. **`app/settings/exchange-rates/page.tsx`**: استبدلت الـ import ليأتى `getBaseCurrency` من `currency-service.ts` (DB-aware) واستخدامه async مع `supabase + companyId`
+
+```ts
+// قبل (v3.26.4):
+import { getBaseCurrency } from "@/lib/exchange-rates"
+const base = getBaseCurrency()  // localStorage
+
+// بعد (v3.27.0):
+import { getBaseCurrency } from "@/lib/currency-service"
+const base = await getBaseCurrency(supabase, cid)  // DB
+```
+
+### 📊 خطة الإصلاح متعددة المراحل (للمرجعية)
+
+| المرحلة | المحتوى | الحالة |
+|---|---|---|
+| **v3.27.0** | localStorage fix فى getBaseCurrency | ✅ هذا الـ release |
+| **v3.27.1** | FX gain/loss automation للـ supplier-payments و bills | 🟡 قيد التنفيذ |
+| **v3.27.2** | FX automation للـ customer-refund + bank-transfer + expense | 🟢 مخطط |
+| **v3.27.3** | rate_mode preference (live/manual) كـ system setting | 🟢 مخطط |
+| **v3.27.4** | FX revaluation للحسابات FC فى نهاية الفترة | 🟢 مخطط |
+| **v3.27.5** | Decimal.js precision guards فى service layer | 🟢 مخطط |
+
+### 🔍 نتائج الـ Audit الشاملة (للمرجعية)
+
+| المكون | الحالة |
+|---|---|
+| Exchange Rates page (Live/Manual) | ✅ يعمل |
+| Central utilities (`getExchangeRate`, `convertAmount`) | ✅ يعمل |
+| DB schema (IAS 21: original_*, exchange_rate_used) | ✅ يعمل |
+| `create_journal_entry_atomic()` RPC مع FX | ✅ يعمل |
+| FC bank accounts (native + base) | ✅ يعمل |
+| Account 4320 (أرباح فروق العملة) | ✅ موجود فى كل الشركات |
+| Account 5310 (خسائر فروق العملة) | ✅ موجود فى كل الشركات |
+| `getFXAccounts()` resolver | ✅ يعمل |
+| FX automation فى **customer invoice payment** | ✅ موجود (postFXPaymentAdjustment) |
+| FX automation فى **supplier bill payment** | ❌ مفقود — للـ v3.27.1 |
+| FX automation فى **customer refund** | ❌ مفقود — للـ v3.27.2 |
+| FX automation فى **bank transfer** | ❌ مفقود — للـ v3.27.2 |
+| FX automation فى **expense** | ❌ مفقود — للـ v3.27.2 |
+| Rate_mode preference (live/manual) موحد | ❌ مفقود — للـ v3.27.3 |
+| Period-end FX revaluation | ❌ مفقود — للـ v3.27.4 |
+
+### 📋 Files Changed (3)
+
+| الملف | التغيير |
+|---|---|
+| `lib/exchange-rates.ts` | `getBaseCurrency()` deprecated مع dev warning |
+| `app/settings/exchange-rates/page.tsx` | استخدام DB-aware getBaseCurrency من currency-service |
+| `CHANGELOG.md` | توثيق الـ audit + خطة الإصلاح |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: إصلاح multi-company correctness — لا يتأثر السلوك للشركة الواحدة
+- **Backward compatible**: 100% — النسخة القديمة تبقى موجودة كـ deprecated fallback
+- **No DB changes**
+
+---
+
 ## [3.26.4] - 2026-05-22
 
 ### 🐛 إصلاح syntax bug pre-existing فى app/suppliers/page.tsx
