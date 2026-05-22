@@ -98,7 +98,17 @@ type Bill = {
 type Supplier = { id: string; name: string }
 type BillItem = { id: string; product_id: string; description: string | null; quantity: number; returned_quantity?: number; unit_price: number; tax_rate: number; discount_percent: number; line_total: number }
 type Product = { id: string; name: string; sku: string }
-type Payment = { id: string; bill_id: string | null; amount: number; status: string }
+// v3.22.1: extended with currency_code + exchange_rate so the bill-level paidTotal
+// aggregation can convert payment amounts (in payment currency) to bill currency.
+type Payment = {
+  id: string
+  bill_id: string | null
+  amount: number
+  status: string
+  currency_code?: string | null
+  exchange_rate?: number | null
+  base_currency_amount?: number | null
+}
 type PaymentDetail = {
   id: string;
   bill_id: string | null;
@@ -427,7 +437,9 @@ export default function BillViewPage() {
           ; (prodData || []).forEach((p: any) => map[p.id] = p)
         setProducts(map)
       }
-      const { data: payData } = await supabase.from("payments").select("id, bill_id, amount, status")
+      // v3.22.1: include FX columns so paidTotal converts payment currency → bill currency
+      const { data: payData } = await supabase.from("payments")
+        .select("id, bill_id, amount, status, currency_code, exchange_rate, base_currency_amount")
         .eq("bill_id", id).eq("status", "approved")  // ✅ فقط المعتمدة — المرفوضة والمعلقة لا تدخل في الحساب
       setPayments((payData || []) as any)
 
@@ -588,7 +600,21 @@ export default function BillViewPage() {
     }
   }
 
-  const paidTotal = useMemo(() => payments.reduce((sum, p) => sum + (p.amount || 0), 0), [payments])
+  // v3.22.1: cross-currency safe — converts each payment from payment currency
+  // to bill currency before summing. If bill is in EGP and a payment is in USD,
+  // the payment contributes (amount × payment_rate / bill_rate) EGP.
+  const paidTotal = useMemo(() => {
+    const billCcy = String((bill as any)?.currency_code || "").toUpperCase()
+    const billRate = Number((bill as any)?.exchange_rate || 1) || 1
+    return payments.reduce((sum, p) => {
+      const pAmount = Number(p.amount || 0)
+      if (!pAmount) return sum
+      const pCcy = String((p as any).currency_code || "").toUpperCase()
+      if (!pCcy || !billCcy || pCcy === billCcy) return sum + pAmount
+      const pRate = Number((p as any).exchange_rate || 1) || 1
+      return sum + pAmount * (pRate / billRate)
+    }, 0)
+  }, [payments, bill])
 
   // Open return dialog
   const openReturnDialog = (type: 'partial' | 'full') => {

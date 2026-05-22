@@ -424,7 +424,9 @@ export default function CustomersPage() {
 
       const { data: pays } = await supabase
         .from("payments")
-        .select("customer_id, amount, invoice_id")
+        // v3.22.1: include base_currency_amount so customer advance totals
+        // are summed in base currency (handles cross-currency payments).
+        .select("customer_id, amount, invoice_id, base_currency_amount, currency_code")
         .eq("company_id", activeCompanyId)
         .not("customer_id", "is", null)
       const { data: apps } = await supabase
@@ -441,7 +443,11 @@ export default function CustomersPage() {
         ; (pays || []).forEach((p: any) => {
           const cid = String(p.customer_id || "")
           if (!cid) return
-          const amt = Number(p.amount || 0)
+          // v3.22.1: prefer base_currency_amount for cross-currency safety.
+          // payment.amount is in payment currency (could be USD); base_currency_amount
+          // is always in company base currency (EGP) — so summing across multiple
+          // payments is meaningful only with base_currency_amount.
+          const amt = Number(p.base_currency_amount ?? p.amount ?? 0)
           if (!p.invoice_id) {
             advMap[cid] = (advMap[cid] || 0) + amt
           }
