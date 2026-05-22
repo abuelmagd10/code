@@ -262,6 +262,26 @@ export class CustomerRefundCommandService {
         await this.linkTrace(traceId, "customer_credit", credit.id, "customer_refund_credit_usage", "customer_credit_refund")
       }
 
+      // v3.27.8 IAS 21 FX Adjustment Hook for Customer Refund
+      // If the refund is linked to an FC invoice and refund rate differs from
+      // invoice rate, post FX gain/loss. Side-effect only; failures are logged.
+      if (command.invoiceId && command.exchangeRate > 0) {
+        await this.postFXRefundAdjustment({
+          companyId: command.companyId,
+          invoiceId: command.invoiceId,
+          refundPaymentId: paymentId,
+          refundDate: command.refundDate,
+          refundExchangeRate: command.exchangeRate,
+          refundNativeAmount: command.amount,
+          baseCurrency: baseCurrency,
+          userId: actor.actorId,
+          branchId: branchId,
+          costCenterId: costCenterId,
+        }).catch((err) => {
+          console.error("[FX_ADJUSTMENT_REFUND] Failed:", { invoiceId: command.invoiceId, paymentId, error: err?.message || err })
+        })
+      }
+
       return {
         success: true,
         cached: false,
@@ -289,6 +309,105 @@ export class CustomerRefundCommandService {
       }
       throw error
     }
+  }
+
+  /**
+   * v3.27.8: Post FX gain/loss adjustment for a customer refund linked to an FC invoice.
+   * Compares invoice's original rate vs refund rate, posts diff to 4320/5310.
+   */
+  private async postFXRefundAdjustment(params: {
+    companyId: string
+    invoiceId: string
+    refundPaymentId: string | null
+    refundDate: string
+    refundExchangeRate: number
+    refundNativeAmount: number
+    baseCurrency: string
+    userId: string
+    branchId: string | null
+    costCenterId: string | null
+  }): Promise<void> {
+    const { data: inv } = await this.adminSupabase
+      .from("invoices")
+      .select("currency_code, exchange_rate, branch_id, cost_center_id")
+      .eq("id", params.invoiceId)
+      .maybeSingle()
+    if (!inv) return
+
+    const invoiceCurrency = String(inv.currency_code || params.baseCurrency).toUpperCase()
+    const baseCur = String(params.baseCurrency || "EGP").toUpperCase()
+    if (invoiceCurrency === baseCur) return
+
+    const originalRate = Number(inv.exchange_rate || 0)
+    if (originalRate <= 0 || params.refundExchangeRate <= 0) return
+
+    const creditBookBase = params.refundNativeAmount * originalRate
+    const cashOutBase = params.refundNativeAmount * params.refundExchangeRate
+    const fxDiff = cashOutBase - creditBookBase
+    if (Math.abs(fxDiff) < 0.01) return
+
+    const { getFXAccounts } = await import("@/lib/currency-service")
+    const { gainId, lossId } = await getFXAccounts(this.adminSupabase as any, params.companyId)
+
+    const { data: accounts } = await this.adminSupabase
+      .from("chart_of_accounts")
+      .select("id, account_name, sub_type, account_code")
+      .eq("company_id", params.companyId)
+      .eq("is_active", true)
+    const ccRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "customer_credits")
+      || (accounts as any[] | null)?.find((x: any) => /credit|سلف|دائن.*عميل/i.test(String(x.account_name || "")))
+    const ccAccountId = ccRecord?.id as string | undefined
+    if (!ccAccountId) return
+
+    let branchId = params.branchId || inv.branch_id || null
+    if (!branchId) {
+      const { data: firstBranch } = await (this.adminSupabase as any)
+        .from("branches")
+        .select("id")
+        .eq("company_id", params.companyId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      branchId = firstBranch?.id || null
+    }
+    if (!branchId) return
+
+    const refUuid = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
+      ? (crypto as any).randomUUID()
+      : Date.now().toString() + Math.random().toString(36).slice(2)
+    const entryNumber = "FX-REFUND-" + (params.refundPaymentId || params.invoiceId) + "-" + Date.now()
+
+    const { data: entry } = await (this.adminSupabase as any)
+      .from("journal_entries")
+      .insert({
+        company_id: params.companyId,
+        branch_id: branchId,
+        cost_center_id: params.costCenterId || inv.cost_center_id || null,
+        entry_date: params.refundDate,
+        entry_number: entryNumber,
+        description: "فرق سعر العملة - استرداد عميل (" + invoiceCurrency + " -> " + baseCur + ")",
+        reference_type: "fx_refund_adjustment",
+        reference_id: refUuid,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+        posted_by: params.userId,
+      })
+      .select()
+      .single()
+    if (!entry) return
+
+    const lines: any[] = []
+    if (fxDiff > 0) {
+      // FX LOSS: Dr 5310 / Cr Customer Credit
+      lines.push({ journal_entry_id: entry.id, account_id: lossId, debit_amount: fxDiff, credit_amount: 0, description: "خسارة فروق العملة - استرداد عميل" })
+      lines.push({ journal_entry_id: entry.id, account_id: ccAccountId, debit_amount: 0, credit_amount: fxDiff, description: "تسوية فرق العملة - رصيد العميل" })
+    } else {
+      const abs = Math.abs(fxDiff)
+      // FX GAIN: Dr Customer Credit / Cr 4320
+      lines.push({ journal_entry_id: entry.id, account_id: ccAccountId, debit_amount: abs, credit_amount: 0, description: "تسوية فرق العملة - رصيد العميل" })
+      lines.push({ journal_entry_id: entry.id, account_id: gainId, debit_amount: 0, credit_amount: abs, description: "ربح فروق العملة - استرداد عميل" })
+    }
+    await (this.adminSupabase as any).from("journal_entry_lines").insert(lines)
   }
 
   private async insertRefundPayment(params: {
