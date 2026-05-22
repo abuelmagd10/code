@@ -453,7 +453,10 @@ export default function SuppliersPage() {
 
         if (billsError) {
           console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
-        } else if (bills && bills.length > 0) {
+        // v3.26.2: track bill overpayments separately so they surface in
+        // "مستحقات لنا (سلفة مورد)" column instead of being silently dropped.
+        let billOverpayments = 0
+        if (bills && bills.length > 0) {
           for (const bill of bills) {
             // ✅ حساب المتبقي من الفاتورة = إجمالي الفاتورة الأساسي - المدفوع - قيمة المرتجعات
             // ملاحظة: total_amount يمثل القيمة الأصلية للفاتورة. المرتجعات تسجل في returned_amount.
@@ -462,14 +465,15 @@ export default function SuppliersPage() {
             const returnedAmount = Number(bill.returned_amount || 0)
             const remaining = totalAmount - paidAmount - returnedAmount
 
-            // المطلوبات = ما علينا للمورد (موجب فقط). السالب (overpayment) محله
-            // عمود "مستحقات لنا".
-            // (v3.23.6: reverted v3.23.5 which incorrectly summed the negative.)
+            // المطلوبات = ما علينا للمورد (موجب فقط).
+            // السالب (دفعنا أكثر) → فائض يُحسب فى "مستحقات لنا".
             if (remaining > 0) {
               payables += remaining
+            } else if (remaining < -0.005) {
+              billOverpayments += Math.abs(remaining)
             }
           }
-          console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، ذمم: ${payables.toFixed(2)}`)
+          console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، مطلوبات: ${payables.toFixed(2)}, مستحقات لنا (overpayments): ${billOverpayments.toFixed(2)}`)
         }
 
         // حساب الرصيد المدين من إشعارات الدائن (vendor_credits)
@@ -497,12 +501,13 @@ export default function SuppliersPage() {
         newBalances[supplier.id] = {
           advances: 0, // يمكن إضافة حساب السلف لاحقاً
           payables,
-          debitCredits: debitCreditsTotal
+          // v3.26.2: مستحقات لنا = vendor credits + فائض الدفع على الفواتير
+          debitCredits: debitCreditsTotal + billOverpayments,
         }
 
         // تسجيل بيانات المورد للتشخيص
-        if (payables > 0 || debitCreditsTotal > 0) {
-          console.log(`📊 ${supplier.name}:`, { payables, debitCredits: debitCreditsTotal })
+        if (payables > 0 || debitCreditsTotal > 0 || billOverpayments > 0) {
+          console.log(`📊 ${supplier.name}:`, { payables, debitCredits: debitCreditsTotal, billOverpayments })
         }
       }
 

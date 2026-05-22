@@ -475,6 +475,36 @@ export default function CustomersPage() {
           if (usedAmt > 0) disbursedMap[cid] = (disbursedMap[cid] || 0) + usedAmt
         })
 
+      // v3.26.2: invoice overpayments are ALSO customer credit.
+      // For every invoice where paid_amount > (total_amount - returned_amount),
+      // the surplus becomes a credit balance for that customer.
+      // Without this, the "الرصيد" column missed credit from overpaid invoices
+      // (e.g., 0.20 USD payment on 10 EGP invoice → 0.68 EGP surplus that
+      // was previously hidden everywhere).
+      const overpaymentMap: Record<string, number> = {}
+      try {
+        const { data: paidInvoices } = await supabase
+          .from("invoices")
+          .select("customer_id, total_amount, paid_amount, returned_amount, status")
+          .eq("company_id", activeCompanyId)
+          .in("status", ["paid", "partially_paid"])
+
+        for (const inv of paidInvoices || []) {
+          const cid = String((inv as any).customer_id || "")
+          if (!cid) continue
+          const total = Number((inv as any).total_amount || 0)
+          const paid = Number((inv as any).paid_amount || 0)
+          const returned = Number((inv as any).returned_amount || 0)
+          const net = Math.max(0, total - returned)
+          const surplus = paid - net
+          if (surplus > 0.005) {
+            overpaymentMap[cid] = (overpaymentMap[cid] || 0) + surplus
+          }
+        }
+      } catch (overpayErr) {
+        console.warn("Failed to compute invoice overpayments:", overpayErr)
+      }
+
       const allIds = Array.from(new Set([...(allCustomers || []).map((c: any) => String(c.id || ""))]))
       const out: Record<string, { advance: number; applied: number; available: number; credits: number; disbursed: number }> = {}
       allIds.forEach((id) => {
@@ -482,8 +512,16 @@ export default function CustomersPage() {
         const ap = Number(appMap[id] || 0)
         const credits = Number(creditMap[id] || 0)
         const disbursed = Number(disbursedMap[id] || 0)
-        // الرصيد المتاح = السلف المتبقية + أرصدة المرتجعات
-        out[id] = { advance: adv, applied: ap, available: Math.max(adv - ap, 0) + credits, credits, disbursed }
+        // v3.26.2: invoice surplus is part of available credit
+        const invoiceOverpayment = Number(overpaymentMap[id] || 0)
+        // الرصيد المتاح = السلف المتبقية + أرصدة المرتجعات + فائض المدفوع على الفواتير
+        out[id] = {
+          advance: adv,
+          applied: ap,
+          available: Math.max(adv - ap, 0) + credits + invoiceOverpayment,
+          credits: credits + invoiceOverpayment, // include in credits so disbursed/UI labels reflect it
+          disbursed,
+        }
       })
       setBalances(out)
 
