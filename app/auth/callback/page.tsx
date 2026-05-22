@@ -91,64 +91,111 @@ function CallbackInner() {
 
     if (companyError) throw new Error('فشل في إنشاء الشركة: ' + companyError.message)
 
-    const { data: mainBranch, error: branchError } = await supabase
-      .from('branches')
-      .insert({
-        company_id: company.id,
-        name: language === 'en' ? 'Main Branch' : 'الفرع الرئيسي',
-        branch_name: language === 'en' ? 'Main Branch' : 'الفرع الرئيسي',
-        code: 'MAIN',
-        branch_code: 'MAIN',
-        is_active: true,
-        is_main: true,
-        is_head_office: true
-      })
-      .select('id')
-      .single()
+    // ✅ DB triggers auto-create:
+    //   - branches (trg_create_default_branch) → MAIN branch
+    //   - warehouses (trigger_create_main_warehouse) → MAIN warehouse
+    //   - cost_centers (via create_default_cost_center_for_branch trigger on branches)
+    // We READ them instead of inserting duplicates.
 
-    if (branchError) throw new Error('فشل في إنشاء الفرع الرئيسي: ' + branchError.message)
+    // Wait briefly for triggers to complete (they run in same transaction but we need to query)
+    let mainBranch: { id: string; default_cost_center_id: string | null; default_warehouse_id: string | null } | null = null
+    let retries = 0
+    while (retries < 5) {
+      const { data: br } = await supabase
+        .from('branches')
+        .select('id, default_cost_center_id, default_warehouse_id')
+        .eq('company_id', company.id)
+        .eq('is_main', true)
+        .limit(1)
+        .maybeSingle()
+      if (br?.id) { mainBranch = br; break }
+      await new Promise((r) => setTimeout(r, 300))
+      retries++
+    }
+    if (!mainBranch?.id) throw new Error('فشل في قراءة الفرع الرئيسي بعد إنشاء الشركة')
 
-    const { data: defaultCostCenter, error: ccError } = await supabase
-      .from('cost_centers')
-      .insert({
-        company_id: company.id,
-        branch_id: mainBranch.id,
-        cost_center_name: language === 'en' ? 'Default Cost Center' : 'مركز التكلفة الافتراضي',
-        cost_center_code: 'CC-MAIN',
-        description: null,
-        is_active: true
-      })
-      .select('id')
-      .single()
+    // Ensure cost center exists (trigger may not auto-create if branch trigger fired first)
+    let defaultCostCenterId = mainBranch.default_cost_center_id
+    if (!defaultCostCenterId) {
+      const { data: existingCC } = await supabase
+        .from('cost_centers')
+        .select('id')
+        .eq('company_id', company.id)
+        .eq('branch_id', mainBranch.id)
+        .limit(1)
+        .maybeSingle()
+      if (existingCC?.id) {
+        defaultCostCenterId = existingCC.id
+      } else {
+        const { data: newCC, error: ccError } = await supabase
+          .from('cost_centers')
+          .insert({
+            company_id: company.id,
+            branch_id: mainBranch.id,
+            cost_center_name: language === 'en' ? 'Default Cost Center' : 'مركز التكلفة الافتراضي',
+            cost_center_code: 'CC-MAIN',
+            description: null,
+            is_active: true
+          })
+          .select('id')
+          .single()
+        if (ccError) throw new Error('فشل في إنشاء مركز التكلفة الافتراضي: ' + ccError.message)
+        defaultCostCenterId = newCC.id
+      }
+    }
 
-    if (ccError) throw new Error('فشل في إنشاء مركز التكلفة الافتراضي: ' + ccError.message)
+    // Ensure warehouse exists (trigger should create it, but verify)
+    let defaultWarehouseId = mainBranch.default_warehouse_id
+    if (!defaultWarehouseId) {
+      const { data: existingWH } = await supabase
+        .from('warehouses')
+        .select('id, cost_center_id')
+        .eq('company_id', company.id)
+        .eq('branch_id', mainBranch.id)
+        .eq('is_main', true)
+        .limit(1)
+        .maybeSingle()
+      if (existingWH?.id) {
+        defaultWarehouseId = existingWH.id
+        // Ensure warehouse has cost_center_id set
+        if (!existingWH.cost_center_id && defaultCostCenterId) {
+          await supabase
+            .from('warehouses')
+            .update({ cost_center_id: defaultCostCenterId })
+            .eq('id', existingWH.id)
+        }
+      } else {
+        const { data: newWH, error: whError } = await supabase
+          .from('warehouses')
+          .insert({
+            company_id: company.id,
+            branch_id: mainBranch.id,
+            cost_center_id: defaultCostCenterId,
+            name: language === 'en' ? 'Default Warehouse' : 'المخزن الافتراضي',
+            code: 'WH-MAIN',
+            is_main: true,
+            is_active: true
+          })
+          .select('id')
+          .single()
+        if (whError) throw new Error('فشل في إنشاء المخزن الافتراضي: ' + whError.message)
+        defaultWarehouseId = newWH.id
+      }
+    }
 
-    const { data: defaultWarehouse, error: whError } = await supabase
-      .from('warehouses')
-      .insert({
-        company_id: company.id,
-        branch_id: mainBranch.id,
-        cost_center_id: defaultCostCenter.id,
-        name: language === 'en' ? 'Default Warehouse' : 'المخزن الافتراضي',
-        code: 'WH-MAIN',
-        is_main: true,
-        is_active: true
-      })
-      .select('id')
-      .single()
+    // Update branch defaults if not set
+    if (!mainBranch.default_cost_center_id || !mainBranch.default_warehouse_id) {
+      const { error: updateBranchError } = await supabase
+        .from('branches')
+        .update({
+          default_cost_center_id: defaultCostCenterId,
+          default_warehouse_id: defaultWarehouseId
+        })
+        .eq('id', mainBranch.id)
+      if (updateBranchError) console.warn('Warning: failed to set branch defaults:', updateBranchError.message)
+    }
 
-    if (whError) throw new Error('فشل في إنشاء المخزن الافتراضي: ' + whError.message)
-
-    const { error: updateBranchError } = await supabase
-      .from('branches')
-      .update({
-        default_cost_center_id: defaultCostCenter.id,
-        default_warehouse_id: defaultWarehouse.id
-      })
-      .eq('id', mainBranch.id)
-
-    if (updateBranchError) throw new Error('فشل في ضبط افتراضيات الفرع: ' + updateBranchError.message)
-
+    // ✅ Insert company_members WITH email (trigger create_employee_on_company_member needs it)
     const { error: memberError } = await supabase
       .from('company_members')
       .insert({
@@ -156,6 +203,9 @@ function CallbackInner() {
         user_id: userId,
         role: 'owner',
         branch_id: mainBranch.id,
+        cost_center_id: defaultCostCenterId,
+        warehouse_id: defaultWarehouseId,
+        email: userEmail || null,
         invited_by: null
       })
 

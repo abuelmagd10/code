@@ -4,6 +4,195 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.5] - 2026-05-23
+
+### 🐛 Critical Fix — Signup callback عالق على "loading" + company_members لا يُنشأ
+
+أبلغ المستخدم بأن التسجيل ينجح ظاهرياً (تأكيد البريد + إنشاء الشركة) لكن صفحة الـ dashboard تظل عالقة على التحميل بشكل لا نهائى، ومن الـ console:
+
+```
+✅ Found pending company in database
+✅ Creating company with: Object {...}
+❌ No member found in company_members
+❌ User role loaded: {role: ''}
+❌ allowedPages: 0, allowedBranches: 0
+```
+
+### 🔍 السبب الجذرى (مشكلتان متراكبتان)
+
+**المشكلة الأولى — Duplicate INSERT بسبب triggers**:
+
+عند `INSERT companies`، تعمل triggers تلقائياً تنشئ:
+
+| Trigger | يُنشئ |
+|---|---|
+| `trg_create_default_branch` | `branches` (code=MAIN) |
+| `trigger_create_main_warehouse` | `warehouses` (code=MAIN) |
+| `create_default_cost_center_for_branch` | `cost_centers` (CC-MAIN) |
+
+ثم callback يحاول `INSERT branches` بنفس `branch_code='MAIN'` → **يفشل** بـ `UNIQUE constraint violation (branches_company_id_branch_code_key)`.
+
+**المشكلة الثانية — trigger employees يفشل بسبب email NULL**:
+
+عند `INSERT company_members`، الـ trigger `create_employee_on_company_member` يفعل:
+
+```sql
+emp_name := split_part(NEW.email, '@', 1);  -- ⚠️ NEW.email = NULL
+INSERT INTO employees (..., full_name, ...) VALUES (..., NULL, ...);
+-- ❌ violates not-null constraint on full_name
+```
+
+callback لم يمرر `email` فى INSERT، فالـ trigger فشل صامتاً.
+
+### ✅ الإصلاح (2 جزء)
+
+**1. DB Migration `fix_create_employee_trigger_email_fallback`**:
+
+جعل الـ trigger يستخدم `auth.users.email` كـ fallback عند NULL، مع safety guards متعددة:
+
+```sql
+emp_email := NEW.email;
+IF emp_email IS NULL OR Trim(emp_email) = '' THEN
+    SELECT email INTO emp_email FROM auth.users WHERE id = NEW.user_id;
+END IF;
+-- ... cascade fallbacks ...
+IF emp_name IS NULL OR Trim(emp_name) = '' THEN
+    emp_name := 'Employee';  -- last resort
+END IF;
+```
+
+**2. تعديل `app/auth/callback/page.tsx`**:
+
+بدلاً من INSERT branches/warehouses (الذى يفشل بسبب triggers)، **يقرأ** المُنشأ تلقائياً:
+
+```typescript
+// قراءة branch بدلاً من إنشاء duplicate
+let mainBranch = null
+let retries = 0
+while (retries < 5) {
+  const { data: br } = await supabase
+    .from('branches')
+    .select('id, default_cost_center_id, default_warehouse_id')
+    .eq('company_id', company.id)
+    .eq('is_main', true)
+    .limit(1)
+    .maybeSingle()
+  if (br?.id) { mainBranch = br; break }
+  await new Promise((r) => setTimeout(r, 300))
+  retries++
+}
+```
+
+ثم idempotent INSERT لـ cost_center/warehouse إن لم تنشئها triggers، ثم `company_members` **مع email**:
+
+```typescript
+await supabase.from('company_members').insert({
+  company_id: company.id,
+  user_id: userId,
+  role: 'owner',
+  branch_id: mainBranch.id,
+  cost_center_id: defaultCostCenterId,
+  warehouse_id: defaultWarehouseId,
+  email: userEmail || null,  // ✅ critical fix
+  invited_by: null
+})
+```
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| DB Migration | `fix_create_employee_trigger_email_fallback` |
+| `app/auth/callback/page.tsx` | إعادة هيكلة create flow لتقرأ من triggers بدل INSERT duplicate |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: يفك حظر كل المستخدمين الجدد
+- **Backward compatible**: callback أصبح idempotent — يعمل سواء فعّلت triggers أم لا
+- **DB trigger أكثر صلابة** — يحتمل أى حالة فيها metadata مفقود
+
+### ✅ Verification
+
+تم إصلاح المستخدم العالق `waled19761010@gmail.com` يدوياً بنجاح:
+
+```
+member_id: 3579f028... role: owner email: waled19761010@gmail.com
+employee_id: 5f5767f1... full_name: waled19761010
+branch_id: 6889bc5a... default_cost_center_id: 837f30af... default_warehouse_id: 6be86949...
+chart_of_accounts: 43 accounts ✅
+```
+
+---
+
+## [3.28.4] - 2026-05-22
+
+### 🐛 Critical DB Trigger Fix — Signup flow warehouse creation
+
+أبلغ المستخدم بفشل التسجيل بعد إصلاح tax_id فى v3.28.3:
+
+```
+Error: warehouse.cost_center_id cannot be NULL and branch has no default
+cost center. branch_id=c667326f-2b5b-4796-87dd-1cf825420a28
+```
+
+### 🔍 السبب الجذرى
+
+عند إنشاء company، الـ DB triggers تعمل بترتيب يخلق race condition:
+
+```
+INSERT company
+  ├─ AFTER: create_default_branch_for_company → INSERT branch
+  │  └─ AFTER: create_default_cost_center_for_branch → INSERT cost_center
+  │     ⚠️ لا يُحدِّث branch.default_cost_center_id
+  └─ AFTER: create_main_warehouse → INSERT warehouse
+     └─ BEFORE: trg_warehouses_branch_scope reads branches.default_cost_center_id
+        → NULL → RAISE EXCEPTION
+```
+
+الـ cost_center تم إنشاؤه، لكن الـ branch لم تُربط به (default_cost_center_id لا يزال NULL).
+
+### ✅ الإصلاح
+
+DB migration `fix_default_cost_center_updates_branch_default`:
+
+تحديث `create_default_cost_center_for_branch()` ليُحدِّث `branch.default_cost_center_id` بعد إنشاء cost_center:
+
+```sql
+RETURNING id INTO v_new_cc_id;
+
+IF v_new_cc_id IS NOT NULL THEN
+  UPDATE branches
+  SET default_cost_center_id = v_new_cc_id
+  WHERE id = NEW.id AND default_cost_center_id IS NULL;
+END IF;
+```
+
+### 📋 Files Changed (1 migration, 0 code)
+
+| المكون | التغيير |
+|---|---|
+| DB Migration | `fix_default_cost_center_updates_branch_default` — تحديث الـ trigger function |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: يصلح signup flow بالكامل
+- **Backward compatible**: 100% — الـ branches القديمة بقيمة `default_cost_center_id` غير NULL لا تتأثر (شرط `WHERE default_cost_center_id IS NULL`)
+- **No code deploy needed** — DB only
+
+### ✅ Verification
+
+```sql
+SELECT proname, 
+  CASE WHEN prosrc ILIKE '%UPDATE branches%default_cost_center_id%' 
+       THEN 'Fix applied' ELSE 'Old version' END AS status
+FROM pg_proc WHERE proname = 'create_default_cost_center_for_branch';
+-- Result: Fix applied ✅
+```
+
+---
+
 ## [3.28.3] - 2026-05-22
 
 ### 🐛 Critical Fix — Signup Flow Error: tax_number → tax_id
