@@ -164,6 +164,43 @@ export class CustomerRefundCommandService {
       if (journalError || !journalEntry?.id) throw new Error(journalError?.message || "Failed to create customer refund journal entry")
       journalEntryId = String(journalEntry.id)
 
+      // v3.27.2 Multi-Currency Customer Refund Support
+      // -----------------------------------------------
+      // Customer credits are typically held in base currency. The refund cash/bank
+      // account may have its OWN native currency (e.g., refunding a USD account).
+      // Each line records its own native amount + rate for IAS 21.
+      //
+      // - Customer credit line (Dr): native = command.amount (in refund currency)
+      // - Cash/bank line (Cr): native depends on the refund account's currency:
+      //     • same as refund currency → command.amount
+      //     • base currency           → command.baseAmount
+      //     • cross-currency          → command.baseAmount (best-effort)
+      const { data: companyRow } = await this.adminSupabase
+        .from("companies")
+        .select("base_currency")
+        .eq("id", command.companyId)
+        .maybeSingle()
+      const baseCurrency = String(companyRow?.base_currency || "EGP").toUpperCase()
+      const refundCurrency = String(command.currencyCode || baseCurrency).toUpperCase()
+
+      // Read refund account's native currency
+      let refundAccountCurrency: string | null = null
+      try {
+        const { data: refundAcc } = await this.adminSupabase
+          .from("chart_of_accounts")
+          .select("original_currency")
+          .eq("id", refundAccount.id)
+          .maybeSingle()
+        refundAccountCurrency = refundAcc?.original_currency ? String(refundAcc.original_currency).toUpperCase() : null
+      } catch { /* ignore — fall back to refund currency */ }
+
+      const refundCashNative = (refundAccountCurrency === refundCurrency)
+        ? command.amount
+        : command.baseAmount
+      const refundCashRate = (refundAccountCurrency === refundCurrency)
+        ? command.exchangeRate
+        : 1
+
       const { error: linesError } = await this.adminSupabase.from("journal_entry_lines").insert([
         {
           journal_entry_id: journalEntryId,
@@ -171,7 +208,7 @@ export class CustomerRefundCommandService {
           debit_amount: command.baseAmount,
           credit_amount: 0,
           description: "Customer credit refund",
-          original_currency: command.currencyCode,
+          original_currency: refundCurrency,
           original_debit: command.amount,
           original_credit: 0,
           exchange_rate_used: command.exchangeRate,
@@ -184,11 +221,11 @@ export class CustomerRefundCommandService {
           account_id: refundAccount.id,
           debit_amount: 0,
           credit_amount: command.baseAmount,
-          description: "Cash/Bank payment to customer",
-          original_currency: command.currencyCode,
+          description: `Cash/Bank payment to customer${refundAccountCurrency && refundAccountCurrency !== baseCurrency ? ` (${refundAccountCurrency})` : ""}`,
+          original_currency: refundAccountCurrency || refundCurrency,
           original_debit: 0,
-          original_credit: command.amount,
-          exchange_rate_used: command.exchangeRate,
+          original_credit: refundCashNative,
+          exchange_rate_used: refundCashRate,
           exchange_rate_id: command.exchangeRateId || null,
           branch_id: branchId,
           cost_center_id: costCenterId,

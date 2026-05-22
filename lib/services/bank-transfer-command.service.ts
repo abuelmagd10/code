@@ -144,17 +144,62 @@ export class BankTransferCommandService {
       if (entryError || !entry?.id) throw new Error(entryError?.message || "Failed to create bank transfer journal entry")
       journalEntryId = String(entry.id)
 
+      // v3.27.2 Multi-Currency Bank Transfer Support
+      // ----------------------------------------------
+      // When source and destination accounts have different native currencies,
+      // each line must record its OWN native amount + rate. The base-currency
+      // amounts must still balance (Dr base == Cr base).
+      //
+      // Resolution rules:
+      //   - command.currencyCode is the "transfer currency" the user typed in
+      //   - command.amount is the native value in that currency
+      //   - command.baseAmount is its base-currency equivalent (already converted)
+      //   - For each account, we resolve native amount = baseAmount / account_rate
+      //     using exchange-rates DB for cross-currency
+      const baseCurrency = await this.getCompanyBaseCurrency(command.companyId)
+      const fromCurrency = String(fromAccount.original_currency || baseCurrency).toUpperCase()
+      const toCurrency = String(toAccount.original_currency || baseCurrency).toUpperCase()
+      const transferCurrency = String(command.currencyCode || baseCurrency).toUpperCase()
+
+      // Compute native amount for each account:
+      //   - If account currency matches the transfer currency, native = command.amount
+      //   - If account currency is base, native = baseAmount
+      //   - Otherwise, lookup rate from DB or fall back to command.exchangeRate
+      const resolveNativeAmount = async (accountCurrency: string): Promise<{ native: number; rate: number }> => {
+        if (accountCurrency === transferCurrency) {
+          return { native: command.amount, rate: command.exchangeRate }
+        }
+        if (accountCurrency === baseCurrency) {
+          return { native: finalBaseAmount, rate: 1 }
+        }
+        // Cross-currency: native = baseAmount / rate(accountCurrency → base)
+        try {
+          const { getExchangeRate } = await import("@/lib/currency-service")
+          const rate = await getExchangeRate(this.adminSupabase, command.companyId, accountCurrency, baseCurrency)
+          if (rate && rate > 0) {
+            return { native: Number((finalBaseAmount / rate).toFixed(8)), rate }
+          }
+        } catch (err) {
+          console.warn("[BANK_TRANSFER] Could not resolve cross-currency rate:", accountCurrency, err)
+        }
+        // Fallback: assume 1:1 with transfer currency
+        return { native: command.amount, rate: command.exchangeRate }
+      }
+
+      const fromResolved = await resolveNativeAmount(fromCurrency)
+      const toResolved = await resolveNativeAmount(toCurrency)
+
       const linePayload = [
         {
           journal_entry_id: journalEntryId,
           account_id: command.toAccountId,
           debit_amount: finalBaseAmount,
           credit_amount: 0,
-          description: "Incoming transfer",
-          original_debit: command.amount,
+          description: `Incoming transfer (${toCurrency})`,
+          original_debit: toResolved.native,
           original_credit: 0,
-          original_currency: command.currencyCode,
-          exchange_rate_used: command.exchangeRate,
+          original_currency: toCurrency,
+          exchange_rate_used: toResolved.rate,
           exchange_rate_id: command.exchangeRateId || null,
           branch_id: transferBranchId,
           cost_center_id: transferCostCenterId,
@@ -164,11 +209,11 @@ export class BankTransferCommandService {
           account_id: command.fromAccountId,
           debit_amount: 0,
           credit_amount: finalBaseAmount,
-          description: "Outgoing transfer",
+          description: `Outgoing transfer (${fromCurrency})`,
           original_debit: 0,
-          original_credit: command.amount,
-          original_currency: command.currencyCode,
-          exchange_rate_used: command.exchangeRate,
+          original_credit: fromResolved.native,
+          original_currency: fromCurrency,
+          exchange_rate_used: fromResolved.rate,
           exchange_rate_id: command.exchangeRateId || null,
           branch_id: transferBranchId,
           cost_center_id: transferCostCenterId,
@@ -206,10 +251,28 @@ export class BankTransferCommandService {
     }
   }
 
+  /**
+   * v3.27.2: Resolve company's base currency from companies.base_currency.
+   * Falls back to 'EGP' if not configured.
+   */
+  private async getCompanyBaseCurrency(companyId: string): Promise<string> {
+    try {
+      const { data } = await this.adminSupabase
+        .from("companies")
+        .select("base_currency")
+        .eq("id", companyId)
+        .maybeSingle()
+      return String(data?.base_currency || "EGP").toUpperCase()
+    } catch {
+      return "EGP"
+    }
+  }
+
   private async loadCashBankAccount(companyId: string, accountId: string) {
+    // v3.27.2: also fetch original_currency to support cross-currency transfers
     const { data, error } = await this.adminSupabase
       .from("chart_of_accounts")
-      .select("id, company_id, account_type, sub_type, account_name, branch_id, cost_center_id, is_active")
+      .select("id, company_id, account_type, sub_type, account_name, branch_id, cost_center_id, is_active, original_currency")
       .eq("id", accountId)
       .eq("company_id", companyId)
       .eq("is_active", true)
