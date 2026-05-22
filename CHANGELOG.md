@@ -4,6 +4,141 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.8] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 9: Customer Refund FX Automation
+
+استكمالاً لـ v3.27.7، تم إضافة الـ **FX gain/loss automation** للـ customer refunds — يكمل آخر gap كان متبقى من الـ analysis فى v3.27.4.
+
+### 🎯 المشكلة المُعالجة
+
+السيناريو من v3.27.4:
+- Invoice INV-001: USD 100 @ rate 30 → customer credit = 3,000 EGP (book)
+- بعد فترة، rate أصبح 31
+- Refund USD 100 → cash out = 3,100 EGP
+- **فرق 100 EGP** يجب أن يُسجَّل كـ FX Loss
+
+**قبل v3.27.8**: الـ refund كان يحفظ FX columns على الـ journal lines (من v3.27.2) لكن **لم يكن ينشئ adjustment entry** للـ gain/loss.
+
+**الآن**: يُنشئ تلقائياً adjustment entry يربط الـ refund بفاتورته الأصلية.
+
+### ✅ الإصلاح
+
+#### `lib/services/customer-refund-command.service.ts` (+115 سطر)
+
+**1. FX Hook فى `recordRefund()`:**
+```ts
+if (command.invoiceId && command.exchangeRate > 0) {
+  await this.postFXRefundAdjustment({...}).catch((err) => { ... })
+}
+```
+- يُستدعى **بعد** نجاح الـ refund الأساسى
+- Non-blocking — الـ refund ينجح حتى لو فشل الـ FX adjustment
+- فقط للـ refunds المرتبطة بفاتورة (`command.invoiceId` موجود)
+
+**2. Helper method جديد `postFXRefundAdjustment()`:**
+```ts
+private async postFXRefundAdjustment(params: {
+  companyId, invoiceId, refundPaymentId,
+  refundDate, refundExchangeRate, refundNativeAmount,
+  baseCurrency, userId, branchId, costCenterId
+}): Promise<void>
+```
+
+**Logic:**
+1. يجلب `currency_code, exchange_rate` من invoice الأصلية
+2. يتجاهل لو الـ invoice بـ base currency
+3. يحسب:
+   - `creditBookBase = refundNative × originalRate` (الـ credit المسجل)
+   - `cashOutBase = refundNative × refundRate` (cash out الفعلى)
+   - `fxDiff = cashOut − creditBook`
+4. لو `fxDiff > 0` → **FX Loss** (Dr 5310 / Cr Customer Credit)
+5. لو `fxDiff < 0` → **FX Gain** (Dr Customer Credit / Cr 4320)
+6. يستخدم `reference_type='fx_refund_adjustment'` للـ audit trail
+
+### 📊 مثال كامل
+
+**السيناريو**: عميل دفع زيادة على فاتورته بعملة أجنبية، ثم طلب استرداد بعد ارتفاع سعر الصرف.
+
+```
+Invoice INV-001 (تاريخ 2026-01-15):
+  Customer paid USD 100 @ rate 30 → كان يجب 80 USD، أصبح زائد 20 USD
+  Customer credit account: 600 EGP (20 USD × 30)
+
+Refund (تاريخ 2026-03-10):
+  refund USD 20 @ rate 32 (rate ارتفع)
+  cash out: 640 EGP
+```
+
+**القيد الأساسى للـ refund (v3.27.2):**
+```
+Dr Customer Credit  600 EGP (book value, rate 30)
+   Cr Cash Account     640 EGP (cash out at rate 32)
+```
+الـ AR side: -40 EGP imbalance!
+
+**القيد التلقائى الجديد (v3.27.8):**
+```
+Dr 5310 FX Loss          40
+   Cr Customer Credit         40    ← يغلق الـ residual
+```
+
+**Net effect**: 
+- Customer credit بقى صحيح (0)
+- Cash account نقص 640 EGP (الفعلى)
+- FX Loss سُجلت 40 EGP (الفرق بين rate الأصلى ورسعر الـ refund)
+
+### 🎯 الـ Cycle الكامل للـ FX Automation الآن
+
+| Surface | Transaction | FX Automation | Release |
+|---|---|:---:|---|
+| Customer Invoice | Payment | ✅ Full (gain/loss) | pre-v3.27 |
+| Supplier Bill | Payment | ✅ Full (gain/loss) | v3.27.1 |
+| Customer Credit | Refund | ✅ **Full (gain/loss)** | **v3.27.8** |
+| Bank Transfer | Internal | ✅ Cross-currency | v3.27.2 |
+| Expense | Approval | ✅ FX columns | v3.27.2 |
+| Period-end | Revaluation | ✅ Cash + AR + AP | v3.27.5/6/7 |
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `lib/services/customer-refund-command.service.ts` | +119 سطر: FX hook + `postFXRefundAdjustment()` method |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: الـ refunds الـ FC الآن تُسجَّل بشكل صحيح محاسبياً وفقاً لـ IAS 21
+- **Backward compatible**: 100% — refunds non-FC لا تتأثر
+- **Non-blocking**: لو فشل الـ FX entry، الـ refund الأساسى ينجح + console error للـ audit
+- **No DB changes**
+
+### ✅ Verification
+
+```
+$ babel parse                     →  OK
+$ npm run typecheck:release       →  exit 0
+```
+
+### 🎯 الحالة الإجمالية للـ Multi-Currency ERP الآن
+
+✅ **كل الـ transaction-time FX**: payments, refunds (linked to invoices), transfers, expenses, bills  
+✅ **Period-end revaluation**: Cash + AR + AP  
+✅ **Rate management**: live/manual mode + audit trail  
+✅ **FX gain/loss accounts**: 4320 / 5310 fully utilized  
+✅ **IAS 21 compliance**: على مستوى الـ transactions والـ period-end معاً  
+
+🟡 **Optional enhancements متبقية (low priority):**
+- Decimal.js precision guards (للـ edge cases فى floating-point)
+- Multi-currency reporting (consolidated FS بعملات مختلفة)
+
+### 📚 References
+
+- IAS 21 §28: Recognition of exchange differences
+- IAS 21 §32: Period-end translation
+
+---
+
 ## [3.27.7] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 8: Full FX Revaluation Posting (Cash + AR + AP)
