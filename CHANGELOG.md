@@ -4,6 +4,94 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.4] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 5: Sales/Purchase Returns FX Analysis
+
+تحليل دقيق للـ multi-currency requirements للـ sales/purchase returns. **النتيجة**: لا يوجد FX automation مطلوب منفصلاً للـ returns نفسها — تم تأكيد ذلك معمارياً بحسب IAS 21.
+
+### 🔍 السيناريو المُحلّل
+
+**فاتورة بعملة أجنبية:**
+- Invoice INV-001: USD 100 @ rate 30 (تاريخ 2026-01-01)
+- Journal: Dr AR 3,000 EGP / Cr Revenue 3,000 EGP
+
+**Return بعد شهر بسعر صرف جديد:**
+- Return: USD 100 (الكمية كاملة)، rate الحالى = 31
+- السؤال: هل الـ return يُسجَّل بـ rate 30 (الأصلى) أم rate 31 (الحالى)؟
+
+### 💡 الإجابة الصحيحة محاسبياً (IAS 21)
+
+**الـ Revenue Reversal يجب أن يكون بسعر الفاتورة الأصلى (rate 30):**
+```
+Dr Revenue       3,000 EGP   (عكس exact للقيد الأصلى)
+   Cr AR              3,000 EGP   (تخفيض الـ receivable بنفس القيمة)
+```
+
+**السبب**: الـ revenue تم تسجيله وقت الـ recognition، فلو عكسناه بـ rate مختلف، نخلق فارق وهمى. الـ FX gain/loss **يحدث فقط عند الـ cash settlement** (الـ refund)، ليس عند الـ return نفسه.
+
+### ✅ الـ Coverage الحالى
+
+الـ flow الكامل:
+
+```
+1. Invoice (USD 100 @ rate 30)
+   └→ sales-invoice-payment-command.service.ts
+      → Journal: Dr AR 3,000 / Cr Revenue 3,000 (مع FX metadata)
+
+2. Return (USD 100)
+   └→ process_sales_return_atomic_v2 RPC
+      → Journal: Dr Revenue 3,000 / Cr AR 3,000 (بنفس القيم الأصلية)
+      → Customer credit: 3,000 EGP
+
+3. Refund cash للعميل (rate الحالى = 31)
+   └→ customer-refund-command.service.ts (v3.27.2)
+      → Journal: Dr Customer Credit 3,000 / Cr Cash 3,100 (FC native)
+      → الفرق 100 EGP = FX Loss → posted to 5310 (إذا أُضيف FX adjustment lines)
+```
+
+### 🎯 الـ Gap الفعلى المُكتشف
+
+الـ **customer-refund** هو نقطة حدوث الـ FX. v3.27.2 أضاف الـ native FX columns على الـ journal lines، لكنه **لا يُنشئ FX gain/loss adjustment entry تلقائياً** عند الـ rate mismatch (مثل ما يفعل sales-invoice-payment).
+
+#### المعالجة المستقبلية (v3.27.7+)
+
+سيتم إضافة `postFXRefundAdjustment` إلى `customer-refund-command.service.ts` لينشئ FX gain/loss entry تلقائياً عند الـ refund بسعر صرف مختلف عن الـ customer credit الأصلى. لكن هذا يتطلب:
+1. تتبع الـ rate الأصلى للـ customer_credit (الـ schema الحالى لا يحفظه)
+2. أو ربط الـ refund بفاتورة معينة لاستخدام rate الفاتورة الأصلى
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `CHANGELOG.md` | توثيق التحليل + خطة المستقبل |
+
+### 🎯 Status بعد v3.27.4
+
+| المعاملة | FX Coverage | الـ Rationale |
+|---|:---:|---|
+| Customer Invoice Payment | ✅ Full automation | FX يحدث عند الـ payment |
+| Supplier Bill Payment | ✅ Full automation (v3.27.1) | FX يحدث عند الـ payment |
+| Customer Refund | 🟡 FX native columns (v3.27.2) | FX adjustment للـ v3.27.7+ |
+| Bank Transfer | ✅ Cross-currency aware (v3.27.2) | لا FX gain/loss (تحويل داخلى) |
+| Expense | ✅ FX native columns (v3.27.2) | لا cash settlement مختلف |
+| **Sales Return** | ✅ **No FX needed** | يعكس بـ rate الفاتورة الأصلى |
+| **Purchase Return** | ✅ **No FX needed** | يعكس بـ rate الفاتورة الأصلى |
+| Period-end FC revaluation | ❌ Missing | للـ v3.27.5 |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: لا تغييرات على code، فقط documentation
+- **Backward compatible**: 100%
+- **No DB changes**
+
+### 📚 References
+
+- IAS 21 §28: Foreign currency monetary items
+- IAS 21 §32: Recognition of exchange differences
+
+---
+
 ## [3.27.3] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 4: Rate Mode Preference (Live vs Manual)
