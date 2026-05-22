@@ -3,7 +3,6 @@ import { Store, Factory, Truck, Stethoscope, GraduationCap, Hotel, Briefcase, Wr
 
 export function IndustriesSection({ appLang = 'ar' }: { appLang?: 'ar' | 'en' }) {
   const isAr = appLang === 'ar'
-
   const industries = [
     { icon: <Store />, name: isAr ? 'تجارة التجزئة' : 'Retail', color: 'from-blue-500 to-cyan-500' },
     { icon: <Factory />, name: isAr ? 'التصنيع' : 'Manufacturing', color: 'from-orange-500 to-red-500' },
@@ -14,7 +13,6 @@ export function IndustriesSection({ appLang = 'ar' }: { appLang?: 'ar' | 'en' })
     { icon: <Briefcase />, name: isAr ? 'الخدمات المهنية' : 'Professional Services', color: 'from-slate-500 to-gray-600' },
     { icon: <Wrench />, name: isAr ? 'الصيانة والخدمات' : 'Maintenance & Services', color: 'from-teal-500 to-cyan-600' },
   ]
-
   return (
     <section id="industries" className="py-20 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
@@ -26,7 +24,6 @@ export function IndustriesSection({ appLang = 'ar' }: { appLang?: 'ar' | 'en' })
             {isAr ? 'مرونة تامة للتكيف مع طبيعة عملك' : 'Total flexibility to fit your business nature'}
           </p>
         </div>
-
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {industries.map((ind, i) => (
             <div key={i} className="group flex flex-col items-center p-6 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 hover:border-transparent hover:shadow-xl transition-all">
