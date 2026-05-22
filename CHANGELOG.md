@@ -4,6 +4,119 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.23.6] - 2026-05-21
+
+### ⏮️ Revert v3.23.3 + v3.23.5 — الذمم لا تعرض السالب (تصحيح مفهومى)
+
+أبلغ المستخدم بإصلاح هام:
+> "انت لية فى الذمم وضعت المبلغ للعميل بالسالب طالم يوجد عمود للرصيد. معنى الذمم للعميل هو ما على العميل وعمود الرصيد هو الذى لى العميل ولذلك كان يرفض السالب"
+
+### 🔍 التصحيح الدلالى
+
+| العمود | المعنى الصحيح |
+|---|---|
+| **الذمم (للعميل)** | ما **على** العميل = AR موجب |
+| **الرصيد (للعميل)** | ما **لـ** العميل = customer credit / overpayment |
+| **المطلوبات (للمورد)** | ما **علينا** للمورد = AP موجب |
+| **مستحقات لنا (مورد)** | ما **لنا** عند المورد = supplier overpayment / advance |
+
+السالب لا يجب أن يظهر فى الذمم/المطلوبات — مكانه عمود الرصيد المخصص له. السلوك الأصلى كان صحيحاً.
+
+### ⏮️ ما تم عكسه
+
+#### v3.23.3 (customers) — REVERTED
+الكود يعود لـ:
+```tsx
+{rec > 0 ? `${rec} ${currencySymbol}` : '—'}
+```
+
+#### v3.23.5 (suppliers) — REVERTED  
+الـ display + الحساب يعودان للسلوك الأصلى:
+```tsx
+{payables > 0 ? `${payables} ${currencySymbol}` : '—'}
+```
+```ts
+if (remaining > 0) payables += remaining  // ← يتجاهل السالب صح
+```
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `app/customers/page.tsx` | عكس v3.23.3 — الذمم تعرض الموجب فقط |
+| `app/suppliers/page.tsx` | عكس v3.23.5 — الـ calculation + display للموجب فقط |
+
+### 💡 ملاحظة للمستقبل
+
+الـ overpayments (سواء عملاء أو موردين) ينبغى أن تظهر فى عمودها المخصص:
+- **عملاء**: عمود "الرصيد" يستخدم `balances[row.id].available` من advance ledger — لو احتاج المستخدم عرض الـ invoice overpayments هناك، نحتاج إضافة logic لجمع `max(0, paid - total)` لكل فاتورة كـ customer credit ضمنى.
+- **موردين**: عمود "مستحقات لنا (سلفة مورد)" — نفس الفكرة لـ supplier overpayments.
+
+هذا feature enhancement مستقل، ليس bug fix. تركتها للمستقبل بناءً على طلب المستخدم.
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: عودة للسلوك الصحيح المتفق عليه
+- **No data changes**
+
+---
+
+## [3.23.5] - 2026-05-21
+
+### 🔧 Mirror Fix على الموردين — نفس bug عرض السالب (REVERTED in v3.23.6)
+
+سأل المستخدم:
+> "هل هذة المشكلة متواجدة فى الموردين"
+
+### 🔍 الفحص
+
+`app/suppliers/page.tsx` كان فيه **bug-ين** متطابقَين لما تم إصلاحه على `customers/page` فى v3.23.3:
+
+#### Bug #1 — الحساب يتجاهل السالب
+```ts
+// قبل (line 465):
+if (remaining > 0) {
+  payables += remaining  // ← يتجاهل لما المورد مدفوع زائد!
+}
+```
+
+#### Bug #2 — العرض يخفى السالب كـ "—"
+```tsx
+// قبل (line 715):
+{payables > 0 ? `${payables} ${currencySymbol}` : '—'}
+```
+
+### ✅ الإصلاح
+
+```ts
+// الحساب — يجمع كل remaining شامل السالب
+payables += remaining
+```
+
+```tsx
+// العرض — السالب باللون الأخضر (مورد مدفوع زائد، مستحق رد)
+if (Math.abs(payables) < 0.005) return '—'
+const isOverpaid = payables < 0
+return <span className={isOverpaid ? 'text-green' : 'text-red'}
+              title="دفعنا أكثر للمورد (مستحق رد)">
+  {payables} {currencySymbol}
+</span>
+```
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/suppliers/page.tsx` | الحساب + العرض يدعمان السالب (overpayment) |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: لا تأثير على البيانات الحالية (كل الـ bills الموردين مدفوعة بالكامل، لا overpayments)
+- **Defensive fix**: يحمى من أول حالة supplier overpayment فى المستقبل
+- **Backward compatible**: السلوك للحالات العادية (payable > 0) نفسه بالضبط
+
+---
+
 ## [3.23.4] - 2026-05-21
 
 ### 🔍 فحص الـ UI الفعلى على Production — اكتشاف bugs اتنين إضافية

@@ -462,6 +462,9 @@ export default function SuppliersPage() {
             const returnedAmount = Number(bill.returned_amount || 0)
             const remaining = totalAmount - paidAmount - returnedAmount
 
+            // المطلوبات = ما علينا للمورد (موجب فقط). السالب (overpayment) محله
+            // عمود "مستحقات لنا".
+            // (v3.23.6: reverted v3.23.5 which incorrectly summed the negative.)
             if (remaining > 0) {
               payables += remaining
             }
@@ -708,6 +711,9 @@ export default function SuppliersPage() {
       type: 'currency',
       align: 'right',
       format: (_, row) => {
+        // المطلوبات = ما علينا للمورد (موجب فقط). السالب (overpayment) محله
+        // عمود "مستحقات لنا (سلفة مورد)".
+        // (v3.23.6: reverted v3.23.5 which incorrectly showed negative here.)
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         const payables = balance.payables || 0
         return (
