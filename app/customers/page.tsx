@@ -573,6 +573,19 @@ export default function CustomersPage() {
             allPayments = data || []
           }
 
+          // v3.23.1: also fetch advance_applications because modern payment
+          // journals reference advance_applications.id (not payment.id).
+          // Without this, INV-00003-style payments don't attribute to a
+          // customer and the receivable shows wrong.
+          let allApplications: any[] = []
+          if (paymentIds.length > 0) {
+            const { data = [] } = await supabase
+              .from("advance_applications")
+              .select("id, invoice_id, customer_id")
+              .in("id", paymentIds)
+            allApplications = data || []
+          }
+
           // جلب جميع sales_returns دفعة واحدة مع customer_id
           const returnIds = Array.from(returnRefIds)
           let allReturns: any[] = []
@@ -588,6 +601,14 @@ export default function CustomersPage() {
           const paymentToInvoiceMap: Record<string, string> = {}
           allPayments.forEach((p: any) => {
             paymentToInvoiceMap[p.id] = p.invoice_id
+          })
+
+          // v3.23.1: map advance_application.id → (invoice_id, customer_id)
+          const applicationToInvoiceMap: Record<string, string> = {}
+          const applicationToCustomerMap: Record<string, string> = {}
+          allApplications.forEach((a: any) => {
+            if (a.invoice_id) applicationToInvoiceMap[a.id] = a.invoice_id
+            if (a.customer_id) applicationToCustomerMap[a.id] = a.customer_id
           })
 
           const returnToInvoiceMap: Record<string, string> = {}
@@ -619,12 +640,22 @@ export default function CustomersPage() {
             if (line.journal_entries?.reference_type === "invoice") {
               customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
             } else if (line.journal_entries?.reference_type === "invoice_payment") {
-              // أولاً: جرب من خلال جدول payments
-              const invoiceId = paymentToInvoiceMap[line.journal_entries.reference_id]
+              const refId = line.journal_entries.reference_id
+              // أولاً: جرب من خلال جدول payments (legacy direct link)
+              const invoiceId = paymentToInvoiceMap[refId]
               customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
+              // v3.23.1: إصلاح حرج — جرب عبر advance_applications (modern allocation flow)
+              // ⚠️ ضرورى — بدونه المدفوعات الحديثة لا تُحسب فى رصيد العميل
+              if (!customerId) {
+                customerId = applicationToCustomerMap[refId] || null
+              }
+              if (!customerId) {
+                const appInvoiceId = applicationToInvoiceMap[refId]
+                if (appInvoiceId) customerId = invoiceToCustomerMap[appInvoiceId] || null
+              }
               // 🔧 إصلاح: إذا reference_id هو invoice.id مباشرة (ليس payment.id)
               if (!customerId) {
-                customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
+                customerId = invoiceToCustomerMap[refId] || null
               }
             } else if (line.journal_entries?.reference_type === "sales_return") {
               // محاولة الحصول على customer_id مباشرة من sales_return

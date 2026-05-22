@@ -4,6 +4,60 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.23.1] - 2026-05-21
+
+### 🐛 Hotfix — customers/page receivable attribution عبر advance_applications
+
+أبلغ المستخدم بعد حذف فاتورة IAS21-TEST:
+> "النتيجة: قائمة الفواتير صحيحة (INV-00003 مدفوع 10.68، رصيد دائن 0.68) ولكن قائمة العملاء تعرض ahmed abuelmagd الذمم 10 EGP"
+
+### 🔍 جذر المشكلة
+
+`app/customers/page.tsx` فى منطق attribution للقيود يتعرّف على دفعتين فقط:
+- `paymentToInvoiceMap[reference_id]` (legacy direct link)
+- `invoiceToCustomerMap[reference_id]` (fallback)
+
+**لا يفحص `advance_applications`** — لكن المدفوعات الحديثة (allocation flow) تُسجل reference_id كـ `advance_applications.id`، فلا تُربط بأى عميل وتُهمَل.
+
+سيناريو ahmed:
+- INV-00002 invoice debit: +10 EGP ✓
+- INV-00002 payment credit (legacy): -10 EGP ✓
+- INV-00003 invoice debit: +10 EGP ✓
+- INV-00003 payment credit (via advance_app): **0 EGP ❌** (لم تُحسب)
+- النتيجة المعروضة: 10 EGP بدلاً من -0.68 EGP
+
+### ✅ الإصلاح
+
+`app/customers/page.tsx` الآن:
+1. يجلب `advance_applications` بمعرفات الـ reference_ids للدفعات
+2. ينشئ `applicationToInvoiceMap` و `applicationToCustomerMap`
+3. فى الـ attribution، يفحص الـ application path قبل الـ fallback النهائى:
+   ```ts
+   payment → customer (3 paths in order):
+     1. payments[reference_id].invoice_id → invoiceToCustomerMap
+     2. advance_applications[reference_id].customer_id (NEW v3.23.1)
+     3. advance_applications[reference_id].invoice_id → invoiceToCustomerMap (NEW)
+     4. invoiceToCustomerMap[reference_id] (legacy fallback)
+   ```
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/customers/page.tsx` | إضافة advance_applications query + attribution paths |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تصحيح عرض رصيد العملاء — لا تأثير على البيانات أو المحاسبة
+- **Backward compatible**: الـ legacy paths تظل تعمل (الـ fallback ترتيب لا يتغير)
+- **No DB changes**
+
+### 📊 توقع بعد النشر
+
+ahmed abuelmagd: الذمم 10 EGP ❌ → **-0.68 EGP (أو 0 إذا floor at zero)** ✅
+
+---
+
 ## [3.23.0] - 2026-05-21
 
 ### 🚨 CRITICAL Fix — قيود FC تُسجَّل فى GL بـ base currency (IAS 21)
