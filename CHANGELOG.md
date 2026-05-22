@@ -4,6 +4,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.25.3] - 2026-05-22
+
+### 🆕 توسعة عرض FC على Bank Accounts Report + Payments account picker
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `app/reports/bank-accounts-by-branch/page.tsx` | كل حساب: native primary + base reference |
+| `app/payments/page.tsx` | account picker: كود العملة فى الخيار + تحذير mismatch |
+
+### 🔧 تفاصيل
+
+**`reports/bank-accounts-by-branch`:**
+- `BankAccount` + `JournalLine` types: إضافة `original_currency` + `original_debit/credit`
+- SELECTs تجلب الأعمدة الجديدة
+- `accountBalances` يحسب `nativeBalance` بجانب `balance`
+- البطاقات: FC accounts → primary native + `≈` base reference
+
+**`payments/page.tsx`:**
+- `Account` interface: إضافة `sub_type` + `original_currency`
+- SELECT chart_of_accounts: يطلب `original_currency`
+- Customer + Supplier dropdowns:
+  - الخيار: `اسم الحساب (الكود) — USD` لو FC
+  - تحذير amber تحت الـ select لو عملة الحساب ≠ عملة الدفع:
+    > ℹ️ عملة الحساب: USD — مختلفة عن عملة الدفع (EGP). سيتم التحويل تلقائياً من صفحة أسعار الصرف.
+
+### 🟡 لم تُحدَّث (low priority)
+
+- `reports/bank-reconciliation` — تعقيد عالى، يحتاج مراجعة مستقلة
+- `chart-of-accounts` tree — لا تستدعى `computeLeafAccountBalancesAsOf` مباشرة
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: حسابات base currency غير متأثرة
+- **No DB changes**
+
+---
+
 ## [3.25.2] - 2026-05-22
 
 ### 🆕 تطبيق native currency على banking/[id] + dashboard widget
