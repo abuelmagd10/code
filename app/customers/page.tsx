@@ -972,20 +972,12 @@ export default function CustomersPage() {
       type: 'currency',
       align: 'right',
       format: (_, row) => {
-        // v3.23.3: show negative receivables (customer overpayments) as credit
-        // instead of hiding them as "—". Zero = "—", positive = red (debt),
-        // negative = green (customer credit / advance).
+        // الذمم = ما على العميل (موجب فقط). السالب (overpayment) محله عمود الرصيد.
+        // (v3.23.6: reverted v3.23.3 which incorrectly showed negative here.)
         const rec = receivables[row.id] || 0
-        if (Math.abs(rec) < 0.005) {
-          return <span className="text-gray-400 dark:text-gray-500">—</span>
-        }
-        const isCredit = rec < 0
-        const cls = isCredit
-          ? "text-green-600 dark:text-green-400 font-semibold"
-          : "text-red-600 dark:text-red-400 font-semibold"
         return (
-          <span className={cls} title={isCredit ? (appLang === 'en' ? 'Customer credit (overpaid)' : 'رصيد دائن (دفع زائد)') : undefined}>
-            {rec.toLocaleString('en-US', { minimumFractionDigits: 2 })} {currencySymbol}
+          <span className={rec > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
+            {rec > 0 ? `${rec.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currencySymbol}` : '—'}
           </span>
         )
       }
