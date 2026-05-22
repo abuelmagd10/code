@@ -4,6 +4,87 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.3] - 2026-05-22
+
+### 🐛 Critical Fix — Signup Flow Error: tax_number → tax_id
+
+أبلغ المستخدم عن فشل إنشاء الشركة بعد التسجيل، مع رسالة خطأ من Supabase:
+
+```
+Error creating company: Could not find the 'tax_number' column of 'companies'
+in the schema cache
+```
+
+### 🔍 السبب الجذرى
+
+`app/auth/callback/page.tsx` كان يحاول إدراج عمود `tax_number` فى جدول `companies`، لكن العمود الفعلى فى DB اسمه `tax_id`.
+
+### ✅ الإصلاح
+
+**`app/auth/callback/page.tsx` (السطر 86):**
+```diff
+- tax_number: '',
++ tax_id: '',
+```
+
+### 📋 تأكيد DB schema
+
+```sql
+SELECT column_name FROM information_schema.columns 
+WHERE table_schema='public' AND table_name='companies' AND column_name LIKE '%tax%';
+-- Result: tax_id  (single column)
+```
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: يصلح flow التسجيل الجديد بالكامل
+- **Backward compatible**: 100% — الشركات الموجودة لا تتأثر
+- **No DB changes** — DB sleeping schema لا يحتاج تعديل
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/auth/callback/page.tsx` | `tax_number` → `tax_id` |
+| `CHANGELOG.md` | توثيق |
+
+### ✅ Verification
+
+```
+$ npm run typecheck:release  →  exit 0
+$ babel parse                →  OK
+```
+
+---
+
+## [3.28.2] - 2026-05-22
+
+### 🎨 Landing Page Logo — استخدام لوجو المشروع الصحيح
+
+أبلغ المستخدم بأن الـ logo المعروض على الصفحة التعريفية كان placeholder (`7E` فى gradient box) بدلاً من لوجو المشروع الفعلى.
+
+### ✅ الإصلاح
+
+استبدال الـ "7E" placeholder بـ `<img src="/icons/icon-64x64.png" />` فى:
+- **Navigation** (header)
+- **Footer logo column**
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/page.tsx` | 2× استبدال placeholder بـ `<img />` |
+
+### 📚 Logo Strategy
+
+| السياق | الـ Logo | المصدر |
+|---|---|---|
+| **Landing page** (`/`) | لوجو المشروع 7ESAB | `/icons/icon-64x64.png` (ثابت) |
+| **Sidebar الداخلى** | لوجو شركة المستخدم | `companies.logo_url` من DB |
+| **Fallback** عند عدم رفع شعار شركة | لوجو المشروع | `/icons/icon-64x64.png` |
+
+---
+
 ## [3.28.1] - 2026-05-22
 
 ### 🐛 Landing Page Hotfix — إخفاء Sidebar + إضافة info@7esab.com
