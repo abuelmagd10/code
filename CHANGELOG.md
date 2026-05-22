@@ -4,6 +4,141 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.0] - 2026-05-22
+
+### 🌐 Landing Page Redesign — Enterprise ERP World-Class Edition
+
+إعادة تصميم كاملة للصفحة التعريفية على 7esab.com لتعكس المستوى الحقيقى للنظام كـ **Enterprise ERP Platform**.
+
+### 🎯 الأهداف المُحققة
+
+| الهدف | الحالة |
+|---|:---:|
+| تصميم Enterprise-grade modern | ✅ |
+| Responsive كامل (Mobile/Tablet/Desktop/Ultra-wide) | ✅ |
+| Modular components للصيانة | ✅ |
+| RTL/LTR كامل (عربى + إنجليزى) | ✅ |
+| إبراز Multi-Currency (IAS 21) | ✅ |
+| Security & Governance section مفصل | ✅ |
+| ERP Modules grid (12 modules) | ✅ |
+| Industries served | ✅ |
+
+### 🏗️ الـ Architecture الجديدة
+
+تم تقسيم الصفحة إلى **components منفصلة** تحت `components/landing/`:
+
+```
+components/landing/
+  ├── HeroSection.tsx           (145 سطر) — Hero + animated dashboard mockup
+  ├── ERPModulesSection.tsx     (150 سطر) — 12 module grid
+  ├── MultiCurrencySection.tsx  (152 سطر) — IAS 21 spotlight with code example
+  ├── SecuritySection.tsx       (94 سطر)  — 6 security pillars + compliance badges
+  └── IndustriesSection.tsx     (44 سطر)  — 8 industries grid
+```
+
+`app/page.tsx` أصبح ~456 سطر بدلاً من 658، يستخدم الـ components ويضيف Navigation + Stats + How-It-Works + Pricing + Testimonials + FAQ + CTA + Footer.
+
+### 🎨 التحسينات البصرية
+
+#### Hero Section
+- **Animated background blobs** بـ gradient
+- **Glassmorphism feature badges** (Sparkles, Shield, Globe2)
+- **Mock browser dashboard** بـ KPIs + chart SVG + currency strip
+- **Floating badges**: "IAS 21 ✓" + "متعدد العملات"
+- **2 CTA buttons** (Start Free + Watch Demo)
+
+#### ERP Modules (12 modules)
+- ✅ المحاسبة والمالية
+- ✅ تعدد العملات (IAS 21) ⭐
+- ✅ المخزون والمستودعات
+- ✅ المبيعات والفواتير
+- ✅ المشتريات والموردين
+- ✅ إدارة العملاء (CRM)
+- ✅ الموارد البشرية والرواتب
+- ✅ تعدد الشركات والفروع ⭐
+- ✅ البنوك والخزائن
+- ✅ الخدمات والحجوزات
+- ✅ التقارير والتحليلات
+- ✅ مساعد الذكاء الاصطناعى
+
+كل module بـ:
+- Gradient icon فريد
+- Hover effects (translate + shadow)
+- "NEW" badges للـ highlighted modules
+
+#### Multi-Currency Spotlight (NEW!)
+قسم مخصص يبرز ميزة تفردنا فى المنطقة:
+- 6 features (IAS 21 compliance + Auto FX + Period-end revaluation + Multi-currency banks + Live/Manual rates)
+- **Code example بـ dark theme** يعرض قيد تلقائى:
+  ```
+  Dr Cash       31,500
+     Cr AR         30,000
+     Cr FX Gain     1,500
+  ```
+- Reference badge: "IAS 21 §28"
+
+#### Enterprise Security & Governance (NEW!)
+6 طبقات أمان مع icons + badges امتثال:
+- Multi-Tenant Data Isolation (RLS)
+- Granular RBAC Permissions
+- Approval Workflows
+- Complete Audit Trail
+- Period Locks
+- Overdraft Prevention
+
+**Compliance badges**: IAS 21, IAS 8, IAS 7, SOC 2, GDPR
+
+#### Industries Served (NEW!)
+8 قطاعات بـ unique gradients:
+- Retail · Manufacturing · Distribution · Healthcare · Education · Hospitality · Professional Services · Maintenance
+
+### 🌍 i18n Support
+
+- Language toggle فى الـ navigation (عربى ↔ EN)
+- LocalStorage persistence
+- كل النصوص bilingual داخل كل component
+- RTL/LTR awareness فى الـ arrows والـ icons
+
+### 📋 Files Changed (6)
+
+| الملف | التغيير |
+|---|---|
+| `app/page.tsx` | إعادة كتابة كاملة (658 → 456 سطر) — أنظف وأكثر modular |
+| `components/landing/HeroSection.tsx` | **NEW** |
+| `components/landing/ERPModulesSection.tsx` | **NEW** |
+| `components/landing/MultiCurrencySection.tsx` | **NEW** |
+| `components/landing/SecuritySection.tsx` | **NEW** |
+| `components/landing/IndustriesSection.tsx` | **NEW** |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: صفحة تعريفية محدّثة، لا تأثير على وظائف النظام
+- **Backward compatible**: 100% — كل الـ links (auth/login, auth/sign-up) مُحفوظة
+- **No DB changes**
+- **Performance**: components صغيرة قابلة للـ lazy-load مستقبلاً
+- **SEO**: الـ metadata موجود فى `app/layout.tsx` (يحتاج تحديث لاحقاً للـ structured data)
+
+### ✅ Verification
+
+```
+$ babel parse                              →  ALL 6 files OK
+$ npm run typecheck:release                →  exit 0
+```
+
+### 🟡 المرحلة التالية (Optional)
+
+| Enhancement | Priority |
+|---|:---:|
+| SEO structured data (JSON-LD) | 🟡 Medium |
+| Real product screenshots | 🟡 Medium |
+| Customer logos carousel | 🟢 Low |
+| Video demo embed | 🟢 Low |
+| Performance optimization (next/dynamic) | 🟢 Low |
+| Dark mode toggle | 🟢 Low |
+
+---
+
 ## [3.27.8] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 9: Customer Refund FX Automation
