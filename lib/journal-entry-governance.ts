@@ -433,11 +433,51 @@ export async function createExpenseJournalEntry(
     base_currency_amount?: number | null
     branch_id?: string | null
     cost_center_id?: string | null
+    // v3.27.2: FX metadata for multi-currency expenses (IAS 21)
+    currency_code?: string | null
+    exchange_rate?: number | null
+    exchange_rate_id?: string | null
   },
   expenseAccountId: string,
   cashAccountId: string
 ): Promise<{ success: boolean; entryId?: string; error?: string }> {
   const amountGl = expense.base_currency_amount != null ? Number(expense.base_currency_amount) : expense.amount
+
+  // v3.27.2 Multi-Currency Expense Support
+  // ---------------------------------------
+  // Journal lines must record BOTH base-currency (for balance/reporting) AND
+  // the native currency + rate for IAS 21 compliance. The expense line's
+  // native is the original entered amount. The cash line's native is the
+  // amount as it would appear on the cash account (which may have its own
+  // native currency).
+  const expenseCurrency = expense.currency_code ? String(expense.currency_code).toUpperCase() : null
+  const expenseRate = Number(expense.exchange_rate || 1) || 1
+  const expenseNative = expense.amount  // expense.amount is in expense.currency_code
+
+  // Resolve the cash account's native currency for accurate cash-side native amount
+  let cashCurrency: string | null = null
+  try {
+    const { data: cashAcc } = await (supabase as any)
+      .from("chart_of_accounts")
+      .select("original_currency")
+      .eq("id", cashAccountId)
+      .maybeSingle()
+    cashCurrency = cashAcc?.original_currency ? String(cashAcc.original_currency).toUpperCase() : null
+  } catch { /* ignore — fall back below */ }
+
+  // Native amount on the cash line:
+  //   - cash currency == expense currency → expense.amount (1:1)
+  //   - otherwise → amountGl (base-currency equivalent)
+  // For cross-currency cash accounts (rare: paying USD expense from EUR account),
+  // a separate transfer should ideally precede the expense. We record amountGl
+  // as a best-effort native value.
+  const cashNative = (cashCurrency && expenseCurrency && cashCurrency === expenseCurrency)
+    ? expense.amount
+    : amountGl
+  const cashRate = (cashCurrency && expenseCurrency && cashCurrency === expenseCurrency)
+    ? expenseRate
+    : 1
+
   return createCompleteJournalEntry(
     supabase,
     {
@@ -454,14 +494,26 @@ export async function createExpenseJournalEntry(
         account_id: expenseAccountId,
         debit_amount: amountGl,
         credit_amount: 0,
-        description: `مصروف ${expense.expense_number}`
-      },
+        description: `مصروف ${expense.expense_number}${expenseCurrency && expenseCurrency !== "EGP" ? ` (${expenseCurrency})` : ""}`,
+        // v3.27.2 FX columns
+        original_debit: expenseNative,
+        original_credit: 0,
+        original_currency: expenseCurrency || undefined,
+        exchange_rate_used: expenseRate,
+        exchange_rate_id: expense.exchange_rate_id || undefined,
+      } as any,
       {
         account_id: cashAccountId,
         debit_amount: 0,
         credit_amount: amountGl,
-        description: `سداد مصروف ${expense.expense_number}`
-      }
+        description: `سداد مصروف ${expense.expense_number}`,
+        // v3.27.2 FX columns
+        original_debit: 0,
+        original_credit: cashNative,
+        original_currency: cashCurrency || expenseCurrency || undefined,
+        exchange_rate_used: cashRate,
+        exchange_rate_id: expense.exchange_rate_id || undefined,
+      } as any
     ]
   )
 }

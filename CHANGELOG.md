@@ -4,6 +4,94 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.2] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 3: FX Coverage للـ Bank Transfers + Customer Refunds + Expenses
+
+استكمالاً لـ v3.27.0 (localStorage fix) و v3.27.1 (supplier-payment FX automation)، هذه الـ release توسّع تغطية الـ multi-currency لـ **3 services إضافية**.
+
+### 🔍 الـ Gaps المُعالجة
+
+#### 1️⃣ Bank Transfer — Cross-Currency Support
+
+**قبل**: الـ transfer كان يستخدم نفس `original_currency` و `exchange_rate_used` على كلا اللينتين (Dr To و Cr From) — حتى لو الحسابين بعملتين مختلفتين.
+
+**بعد**: كل line تسجّل بـ native amount + rate الخاص بحسابها:
+
+```ts
+// Resolve native amount for each account based on its currency
+const resolveNativeAmount = async (accountCurrency: string) => {
+  if (accountCurrency === transferCurrency) return { native: amount, rate: exchangeRate }
+  if (accountCurrency === baseCurrency) return { native: baseAmount, rate: 1 }
+  // Cross-currency: lookup from DB
+  const rate = await getExchangeRate(supabase, companyId, accountCurrency, baseCurrency)
+  return { native: baseAmount / rate, rate }
+}
+```
+
+**مثال**: تحويل 100 USD من حساب USD إلى حساب EUR:
+- قبل: كلا اللينتين تسجّل `original_credit/debit = 100, original_currency = USD` ❌
+- بعد: 
+  - Cr USD account: 100 USD (rate 30)
+  - Dr EUR account: 93.75 EUR (rate 32) ✅
+
+#### 2️⃣ Customer Refund — Account Currency Aware
+
+نفس الـ pattern: الـ refund account قد تكون عملته مختلفة عن `command.currencyCode`. الآن الـ cash/bank line تسجّل native الصحيح بناءً على عملة الحساب.
+
+#### 3️⃣ Expense — FX Metadata Propagation
+
+`createExpenseJournalEntry()` كان يحفظ فقط `amount` و `base_currency_amount` بدون `original_currency`/`exchange_rate_used`/`original_debit`.
+
+**الإصلاح**:
+- إضافة fields جديدة: `currency_code`, `exchange_rate`, `exchange_rate_id` (optional)
+- قراءة عملة الـ cash account من DB لحساب native صحيح
+- تمرير الـ FX columns إلى journal_entry_lines
+- `app/expenses/[id]/page.tsx` يمرر القيم من expense record
+
+### 📋 Files Changed (4)
+
+| الملف | التغيير |
+|---|---|
+| `lib/services/bank-transfer-command.service.ts` | +60 سطر: cross-currency native resolution + `getCompanyBaseCurrency` helper |
+| `lib/services/customer-refund-command.service.ts` | +40 سطر: refund account currency awareness |
+| `lib/journal-entry-governance.ts` | تحديث `createExpenseJournalEntry`: قبول FX metadata + قراءة cash account currency |
+| `app/expenses/[id]/page.tsx` | تمرير `currency_code`, `exchange_rate`, `exchange_rate_id` للـ journal helper |
+
+### 🎯 Status الـ Multi-Currency Coverage بعد v3.27.2
+
+| Service / Surface | FX Native على كل line | FX Gain/Loss Automation |
+|---|:---:|:---:|
+| Customer Invoice Payment | ✅ | ✅ v3.23.x |
+| Supplier Bill Payment | ✅ | ✅ v3.27.1 |
+| **Customer Refund** | ✅ **v3.27.2** | ❌ (out of scope) |
+| **Bank Transfer** | ✅ **v3.27.2** | ✅ (balanced by design) |
+| **Expense** | ✅ **v3.27.2** | ❌ (cash basis - no AR/AP) |
+| Sales Return | 🟡 | 🟡 |
+| Purchase Return | 🟡 | 🟡 |
+| Commission Settlement | 🟡 | 🟡 |
+| Salary Payment | 🟡 | 🟡 |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين صحة الـ journal entries للـ multi-currency transactions
+- **Backward compatible**: 100% — الحسابات بعملة base لا تتأثر
+- **No DB changes** — يستخدم أعمدة موجودة (`original_*`, `exchange_rate_used`)
+- **Best-effort cross-currency**: للحالات النادرة (cash account بعملة A، expense بعملة B)، نسجّل القيم بحسب أفضل المعلومات المتاحة
+
+### ✅ Verification
+
+```bash
+$ node parse-check
+lib/services/customer-refund-command.service.ts OK
+lib/services/bank-transfer-command.service.ts OK
+lib/journal-entry-governance.ts OK
+app/expenses/[id]/page.tsx OK
+✅ ALL OK
+```
+
+---
+
 ## [3.27.1] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 2: FX Gain/Loss Automation للـ Supplier Bills

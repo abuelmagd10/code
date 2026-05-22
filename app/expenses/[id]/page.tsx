@@ -320,9 +320,13 @@ export default function ExpenseDetailPage() {
                 expense_number: expense.expense_number,
                 expense_date: expense.expense_date,
                 amount: expense.amount,
-                base_currency_amount: expense.base_currency_amount ?? undefined,
+                base_currency_amount: (expense as any).base_currency_amount ?? undefined,
                 branch_id: expense.branch_id,
-                cost_center_id: expense.cost_center_id
+                cost_center_id: expense.cost_center_id,
+                // v3.27.2: pass FX metadata for multi-currency expenses (IAS 21)
+                currency_code: (expense as any).currency_code ?? null,
+                exchange_rate: (expense as any).exchange_rate ?? null,
+                exchange_rate_id: (expense as any).exchange_rate_id ?? null,
               },
               expenseAccountId,
               paymentAccountId
