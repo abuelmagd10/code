@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle, Loader2, Coins } from "lucide-react"
 import Link from "next/link"
 import { CURRENCIES, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
-import { setManualExchangeRate, getActiveCurrencies, getBaseCurrency, type Currency } from "@/lib/currency-service"
+import { setManualExchangeRate, getActiveCurrencies, getBaseCurrency, getRateMode, setRateMode, type Currency } from "@/lib/currency-service"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ExchangeRateRow {
@@ -44,6 +44,9 @@ export default function ExchangeRatesPage() {
   const [newRate, setNewRate] = useState<string>("")
   const [fetchingApi, setFetchingApi] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  // v3.27.3: Rate mode preference (live vs manual)
+  const [rateMode, setRateModeState] = useState<'live' | 'manual'>('manual')
+  const [savingRateMode, setSavingRateMode] = useState(false)
 
   // Manual override state
   const [showOverrideModal, setShowOverrideModal] = useState(false)
@@ -84,6 +87,10 @@ export default function ExchangeRatesPage() {
               setOverrideToCurrency(baseCurr.code)
             }
           }
+
+          // v3.27.3: load company's rate_mode preference
+          const mode = await getRateMode(supabase, cid)
+          setRateModeState(mode)
 
           const { data } = await supabase
             .from('exchange_rates')
@@ -325,6 +332,55 @@ export default function ExchangeRatesPage() {
               </Button>
             </div>
           </div>
+
+          {/* v3.27.3: Rate Mode Toggle (Live vs Manual) */}
+          <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Globe className="h-4 w-4 text-blue-600" />
+                {appLang === 'en' ? 'Rate Fetch Mode' : 'وضع جلب سعر الصرف'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                {appLang === 'en' ? 'Choose how the system fetches rates for all financial operations.' : 'اختر كيفية جلب الأسعار للعمليات المالية فى النظام.'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button type="button" disabled={savingRateMode}
+                  onClick={async () => {
+                    if (!companyId || rateMode === 'live') return
+                    setSavingRateMode(true)
+                    const ok = await setRateMode(supabase, companyId, 'live')
+                    if (ok) setRateModeState('live')
+                    setSavingRateMode(false)
+                  }}
+                  className={`flex-1 p-3 rounded-lg border-2 text-start transition ${rateMode === 'live' ? 'border-blue-500 bg-white dark:bg-blue-900/40 shadow-sm' : 'border-gray-200 dark:border-slate-700 hover:border-blue-300'}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Globe className="h-4 w-4 text-blue-600" />
+                    <span className="font-semibold text-sm">{appLang === 'en' ? 'Live (Internet)' : 'مباشر (إنترنت)'}</span>
+                    {rateMode === 'live' && (<span className="ml-auto text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 px-2 py-0.5 rounded">{appLang === 'en' ? 'Active' : 'مفعّل'}</span>)}
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Fetch latest rates from external API. Falls back to DB if API fails.' : 'جلب أحدث الأسعار من API. يستخدم قاعدة البيانات لو فشل API.'}</p>
+                </button>
+                <button type="button" disabled={savingRateMode}
+                  onClick={async () => {
+                    if (!companyId || rateMode === 'manual') return
+                    setSavingRateMode(true)
+                    const ok = await setRateMode(supabase, companyId, 'manual')
+                    if (ok) setRateModeState('manual')
+                    setSavingRateMode(false)
+                  }}
+                  className={`flex-1 p-3 rounded-lg border-2 text-start transition ${rateMode === 'manual' ? 'border-amber-500 bg-white dark:bg-amber-900/40 shadow-sm' : 'border-gray-200 dark:border-slate-700 hover:border-amber-300'}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Edit2 className="h-4 w-4 text-amber-600" />
+                    <span className="font-semibold text-sm">{appLang === 'en' ? 'Manual (DB Only)' : 'يدوى (قاعدة البيانات)'}</span>
+                    {rateMode === 'manual' && (<span className="ml-auto text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 px-2 py-0.5 rounded">{appLang === 'en' ? 'Active' : 'مفعّل'}</span>)}
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Use only manually configured rates. Best for accounting & audit trail.' : 'استخدام الأسعار المعدّة يدوياً فقط. الأنسب للمحاسبة والمراجعة.'}</p>
+                </button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Manual Override Modal */}
           {showOverrideModal && (

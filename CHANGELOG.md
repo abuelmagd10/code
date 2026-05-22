@@ -4,6 +4,90 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.27.3] - 2026-05-22
+
+### 🌍 Multi-Currency Audit — Phase 4: Rate Mode Preference (Live vs Manual)
+
+استكمالاً للمراحل السابقة، تم إضافة **system-wide preference** لاختيار كيفية جلب أسعار الصرف.
+
+### 🎯 الـ Feature
+
+كل شركة الآن يمكنها اختيار:
+
+| Mode | الوصف | الاستخدام المُوصى به |
+|---|---|---|
+| **`live`** (مباشر) | يجلب من API الإنترنت أولاً، يستخدم DB كـ fallback | للعملات ذات التذبذب الكبير، الشركات بمعاملات يومية |
+| **`manual`** (يدوى) | يستخدم DB فقط — لا يتصل بالإنترنت | للمحاسبة الدقيقة و audit trail (الإفتراضى) |
+
+### 📋 Files Changed (3 + 1 migration)
+
+#### DB Migration
+- **`add_rate_mode_preference_to_companies`**:
+  ```sql
+  ALTER TABLE companies
+  ADD COLUMN rate_mode TEXT DEFAULT 'manual' 
+    CHECK (rate_mode IN ('live', 'manual'));
+  ```
+  Default: `'manual'` (الأكثر أماناً للمحاسبة).
+
+#### Code Changes
+
+**`lib/currency-service.ts`** — أُضيف:
+```ts
+export async function getRateMode(supabase, companyId): Promise<'live' | 'manual'>
+export async function setRateMode(supabase, companyId, mode): Promise<boolean>
+```
+
+تم تحديث `getExchangeRate()` ليحترم الـ preference:
+- إذا `mode === 'live'`: API → DB fallback
+- إذا `mode === 'manual'`: DB only (لا API)
+
+سيُرجَع الـ `source` المُحدث:
+- `'api_live'` — جُلب من API فى live mode
+- `'database_fallback'` — DB fallback لما live API فشل
+- `'database_manual'` — DB فى manual mode
+
+**`app/settings/exchange-rates/page.tsx`** — أُضيف:
+- State: `rateMode` + `savingRateMode`
+- تحميل `getRateMode()` عند تحميل الصفحة
+- UI Card جديد بـ button toggle بين Live و Manual
+- يحفظ مباشرة بـ `setRateMode()` على click
+
+### 🎨 الـ UI
+
+```
+┌─────────────────────────────────────────┐
+│ 🌐 وضع جلب سعر الصرف                  │
+├─────────────────────────────────────────┤
+│ اختر كيفية جلب الأسعار للعمليات...     │
+│                                         │
+│ ┌──────────────┐  ┌──────────────┐    │
+│ │ 🌐 مباشر     │  │ ✏️  يدوى    │    │
+│ │   (إنترنت)   │  │   ✅ مفعّل   │    │
+│ │ جلب أحدث من  │  │ DB فقط — لـ │    │
+│ │ API...       │  │ المحاسبة... │    │
+│ └──────────────┘  └──────────────┘    │
+└─────────────────────────────────────────┘
+```
+
+### 🎯 Status بعد v3.27.3
+
+| Feature | حالة |
+|---|---|
+| Live/Manual mode selection UI | ✅ **مضاف** |
+| System-wide DB preference | ✅ **مضاف** |
+| `getExchangeRate` يحترم الـ preference | ✅ **مضاف** |
+| Default = manual (آمن للمحاسبة) | ✅ |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحكم احترافى فى مصدر أسعار الصرف
+- **Backward compatible**: 100% — الشركات الموجودة default = `'manual'` (السلوك الحالى)
+- **Migration safe**: استخدم `ADD COLUMN IF NOT EXISTS` + `CHECK constraint`
+- **No breaking changes** فى الـ API
+
+---
+
 ## [3.27.2] - 2026-05-22
 
 ### 🌍 Multi-Currency Audit — Phase 3: FX Coverage للـ Bank Transfers + Customer Refunds + Expenses

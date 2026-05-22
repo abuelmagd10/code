@@ -83,6 +83,46 @@ export async function getBaseCurrency(supabase: SupabaseClient, companyId?: stri
 }
 
 /**
+ * v3.27.3: Get the rate fetch mode for a company.
+ * Returns 'live' (API first) or 'manual' (DB only, default).
+ * Configured per-company via companies.rate_mode column.
+ */
+export async function getRateMode(supabase: SupabaseClient, companyId?: string): Promise<'live' | 'manual'> {
+  if (!companyId) return 'manual'
+  try {
+    const { data } = await supabase
+      .from('companies')
+      .select('rate_mode')
+      .eq('id', companyId)
+      .maybeSingle()
+    const mode = String(data?.rate_mode || 'manual').toLowerCase()
+    return mode === 'live' ? 'live' : 'manual'
+  } catch {
+    return 'manual'
+  }
+}
+
+/**
+ * v3.27.3: Update the company's rate fetch mode preference. Returns true on success.
+ */
+export async function setRateMode(
+  supabase: SupabaseClient,
+  companyId: string,
+  mode: 'live' | 'manual'
+): Promise<boolean> {
+  if (!companyId || (mode !== 'live' && mode !== 'manual')) return false
+  try {
+    const { error } = await supabase
+      .from('companies')
+      .update({ rate_mode: mode })
+      .eq('id', companyId)
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/**
  * Get all currencies from global_currencies table + mark company's base currency
  * Uses global shared currencies table - NO per-company currency tables
  */
@@ -160,23 +200,33 @@ export async function getExchangeRate(
     return { rate: cached.rate, rateId: cached.rateId, source: 'cache' }
   }
 
-  // Try to get from database first
+  // v3.27.3: Respect company's rate_mode preference (live vs manual)
+  const rateMode = await getRateMode(supabase, companyId)
+
+  if (rateMode === 'live') {
+    // Live mode: API first, DB fallback
+    const apiRate = await fetchRateFromAPI(fromCurrency, toCurrency)
+    if (apiRate) {
+      const savedRate = await saveExchangeRate(supabase, fromCurrency, toCurrency, apiRate, 'api', companyId)
+      rateCache.set(cacheKey, { rate: apiRate, timestamp: Date.now(), rateId: savedRate?.id })
+      return { rate: apiRate, rateId: savedRate?.id, source: 'api_live' }
+    }
+    const dbRateLive = await getRateFromDatabase(supabase, fromCurrency, toCurrency, date, companyId)
+    if (dbRateLive) {
+      rateCache.set(cacheKey, { rate: dbRateLive.rate, timestamp: Date.now(), rateId: dbRateLive.id })
+      return { rate: dbRateLive.rate, rateId: dbRateLive.id, source: 'database_fallback' }
+    }
+    throw new Error(`Exchange rate not found for ${fromCurrency} to ${toCurrency} (live: API+DB failed)`)
+  }
+
+  // Manual mode (default): DB only, no API
   const dbRate = await getRateFromDatabase(supabase, fromCurrency, toCurrency, date, companyId)
   if (dbRate) {
     rateCache.set(cacheKey, { rate: dbRate.rate, timestamp: Date.now(), rateId: dbRate.id })
-    return { rate: dbRate.rate, rateId: dbRate.id, source: 'database' }
+    return { rate: dbRate.rate, rateId: dbRate.id, source: 'database_manual' }
   }
 
-  // Fallback to API
-  const apiRate = await fetchRateFromAPI(fromCurrency, toCurrency)
-  if (apiRate) {
-    // Save to database for history
-    const savedRate = await saveExchangeRate(supabase, fromCurrency, toCurrency, apiRate, 'api', companyId)
-    rateCache.set(cacheKey, { rate: apiRate, timestamp: Date.now(), rateId: savedRate?.id })
-    return { rate: apiRate, rateId: savedRate?.id, source: 'api' }
-  }
-
-  throw new Error(`Exchange rate not found for ${fromCurrency} to ${toCurrency}`)
+  throw new Error(`Exchange rate not found for ${fromCurrency} to ${toCurrency} (manual mode — no DB rate)`)
 }
 
 /**
