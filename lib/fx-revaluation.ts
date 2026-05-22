@@ -708,19 +708,3 @@ export async function postFullFXRevaluation(
 
   return { ...preview, journalEntryId: entry.id, reverseJournalEntryId: reverseEntryId }
 }
-{
-      reverseEntryId = reverseEntry.id
-      const reversedLines = journalLines.map((l) => ({
-        journal_entry_id: reverseEntry.id,
-        account_id: l.account_id,
-        debit_amount: l.credit_amount,
-        credit_amount: l.debit_amount,
-        description: `[Reversal] ${l.description}`,
-        original_currency: l.original_currency,
-      }))
-      await (supabase as any).from("journal_entry_lines").insert(reversedLines)
-    }
-  }
-
-  return { ...preview, journalEntryId: entry.id, reverseJournalEntryId: reverseEntryId }
-}
