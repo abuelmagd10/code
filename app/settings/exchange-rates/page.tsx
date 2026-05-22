@@ -11,10 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
-import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle, Loader2, Coins } from "lucide-react"
+import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle, Loader2, Coins, CheckCircle2, XCircle } from "lucide-react"
 import Link from "next/link"
 import { CURRENCIES, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
 import { setManualExchangeRate, getActiveCurrencies, getBaseCurrency, getRateMode, setRateMode, type Currency } from "@/lib/currency-service"
+import { computeFXRevaluation, postFXRevaluation, type FXRevaluationResult } from "@/lib/fx-revaluation"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ExchangeRateRow {
@@ -47,6 +48,12 @@ export default function ExchangeRatesPage() {
   // v3.27.3: Rate mode preference (live vs manual)
   const [rateMode, setRateModeState] = useState<'live' | 'manual'>('manual')
   const [savingRateMode, setSavingRateMode] = useState(false)
+  // v3.27.5: FX Revaluation state
+  const [showRevalModal, setShowRevalModal] = useState(false)
+  const [revalAsOfDate, setRevalAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [revalPreview, setRevalPreview] = useState<FXRevaluationResult | null>(null)
+  const [revalLoading, setRevalLoading] = useState(false)
+  const [revalPosting, setRevalPosting] = useState(false)
 
   // Manual override state
   const [showOverrideModal, setShowOverrideModal] = useState(false)
@@ -381,6 +388,144 @@ export default function ExchangeRatesPage() {
               </div>
             </CardContent>
           </Card>
+
+
+          {/* v3.27.5: Period-end FX Revaluation (IAS 21) */}
+          <Card className="border-purple-200 bg-purple-50/50 dark:bg-purple-950/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-purple-600" />
+                {appLang === 'en' ? 'Period-end FX Revaluation (IAS 21)' : 'إعادة تقييم العملات نهاية الفترة (IAS 21)'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                {appLang === 'en'
+                  ? 'Revalue all FC cash/bank accounts to current rate. Creates unrealized FX gain/loss + auto-reversal next day.'
+                  : 'إعادة تقييم حسابات النقد/البنك بالعملات الأجنبية. ينشئ قيد فروق عملة غير محققة + قيد عكسى تلقائى لليوم التالى.'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 items-end">
+                <div className="flex-1">
+                  <Label className="text-xs">{appLang === 'en' ? 'As of date' : 'بتاريخ'}</Label>
+                  <Input type="date" value={revalAsOfDate} onChange={(e) => setRevalAsOfDate(e.target.value)} />
+                </div>
+                <Button
+                  onClick={async () => {
+                    if (!companyId) return
+                    setRevalLoading(true)
+                    setShowRevalModal(true)
+                    try {
+                      const r = await computeFXRevaluation(supabase, companyId, revalAsOfDate)
+                      setRevalPreview(r)
+                    } finally { setRevalLoading(false) }
+                  }}
+                  disabled={revalLoading}
+                  variant="outline"
+                  className="border-purple-500 text-purple-600 hover:bg-purple-50"
+                >
+                  {revalLoading
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{appLang === 'en' ? 'Computing' : 'جارى الحساب'}</>
+                    : <><RefreshCw className="h-4 w-4 mr-2" />{appLang === 'en' ? 'Preview Revaluation' : 'معاينة إعادة التقييم'}</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {showRevalModal && (
+            <Card className="border-purple-300 bg-purple-50 dark:bg-purple-950/30">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between text-base">
+                  <span className="flex items-center gap-2">
+                    <RefreshCw className="h-5 w-5 text-purple-600" />
+                    {appLang === 'en' ? 'FX Revaluation Preview' : 'معاينة إعادة التقييم'} {revalAsOfDate}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => { setShowRevalModal(false); setRevalPreview(null) }}>
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {revalLoading && (
+                  <div className="flex items-center gap-2 text-sm text-purple-700">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {appLang === 'en' ? 'Computing' : 'جارى الحساب'}
+                  </div>
+                )}
+                {!revalLoading && revalPreview && revalPreview.lines.length === 0 && (
+                  <p className="text-sm text-gray-600">
+                    {appLang === 'en' ? 'No revaluation needed.' : 'لا حاجة لإعادة التقييم.'}
+                  </p>
+                )}
+                {!revalLoading && revalPreview && revalPreview.lines.length > 0 && (
+                  <>
+                    <div className="overflow-x-auto mb-3">
+                      <table className="w-full text-xs">
+                        <thead className="bg-purple-100 dark:bg-purple-900/50">
+                          <tr>
+                            <th className="p-2 text-start">{appLang === 'en' ? 'Account' : 'الحساب'}</th>
+                            <th className="p-2 text-end">{appLang === 'en' ? 'Native' : 'الرصيد الأصلى'}</th>
+                            <th className="p-2 text-end">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</th>
+                            <th className="p-2 text-end">{appLang === 'en' ? 'Revalued' : 'بعد التقييم'}</th>
+                            <th className="p-2 text-end">{appLang === 'en' ? 'Diff' : 'الفرق'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {revalPreview.lines.map((line) => (
+                            <tr key={line.accountId} className="border-b border-purple-200">
+                              <td className="p-2">{line.accountCode} {line.accountName}</td>
+                              <td className="p-2 text-end">{line.nativeBalance.toLocaleString()} {line.nativeCurrency}</td>
+                              <td className="p-2 text-end">{line.bookValueBase.toLocaleString()} {revalPreview.baseCurrency}</td>
+                              <td className="p-2 text-end">{line.revaluedValueBase.toLocaleString()} {revalPreview.baseCurrency}</td>
+                              <td className={`p-2 text-end font-semibold ${line.diff >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                {line.diff >= 0 ? '+' : ''}{line.diff.toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="outline" onClick={() => { setShowRevalModal(false); setRevalPreview(null) }}>
+                        {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                      </Button>
+                      <Button
+                        disabled={revalPosting}
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                        onClick={async () => {
+                          if (!companyId) return
+                          setRevalPosting(true)
+                          try {
+                            const { data: userData } = await supabase.auth.getUser()
+                            const uid = userData?.user?.id || ''
+                            if (!uid) {
+                              toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: 'No user', variant: 'destructive' })
+                              return
+                            }
+                            const r = await postFXRevaluation(supabase, companyId, revalAsOfDate, uid)
+                            if (r.success && r.journalEntryId) {
+                              toast({ title: appLang === 'en' ? 'Posted' : 'تم القيد', description: appLang === 'en' ? 'FX revaluation posted with auto-reversal' : 'تم قيد إعادة التقييم مع قيد عكسى تلقائى' })
+                              setShowRevalModal(false)
+                              setRevalPreview(null)
+                            } else {
+                              toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: r.error || 'failed', variant: 'destructive' })
+                            }
+                          } catch (e: any) {
+                            toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: e.message, variant: 'destructive' })
+                          } finally {
+                            setRevalPosting(false)
+                          }
+                        }}
+                      >
+                        {revalPosting
+                          ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{appLang === 'en' ? 'Posting' : 'جارى التسجيل'}</>
+                          : <><CheckCircle2 className="h-4 w-4 mr-2" />{appLang === 'en' ? 'Post Revaluation' : 'تسجيل إعادة التقييم'}</>}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Manual Override Modal */}
           {showOverrideModal && (
