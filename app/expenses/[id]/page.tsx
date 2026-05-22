@@ -329,12 +329,22 @@ export default function ExpenseDetailPage() {
             )
 
             if (journalResult.success && journalResult.entryId) {
+              // v3.26.1: When approval posts the cash-outflow journal (Dr Expense / Cr Cash),
+              // the cash is already withdrawn from the GL — so the expense is effectively
+              // PAID from an accounting standpoint. Auto-set status='paid' and paid_at to
+              // hide the now-misleading "Mark as Paid" button.
               await supabase
                 .from("expenses")
-                .update({ journal_entry_id: journalResult.entryId })
+                .update({
+                  journal_entry_id: journalResult.entryId,
+                  status: "paid",
+                  paid_by: userId,
+                  paid_at: now,
+                  last_status_changed_at: now,
+                })
                 .eq("id", expense.id)
                 .eq("company_id", companyId)
-              console.log(`✅ تم إنشاء قيد محاسبي للمصروف ${expense.expense_number}`)
+              console.log(`✅ تم إنشاء قيد محاسبي للمصروف ${expense.expense_number} + تم تسجيله كمدفوع`)
             } else if (!journalResult.success) {
               console.warn(`⚠️ فشل إنشاء قيد محاسبي: ${journalResult.error}`)
             }

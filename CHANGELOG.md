@@ -4,6 +4,62 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.26.1] - 2026-05-22
+
+### 🐛 إصلاح زر "تسجيل الدفع" يفضل ظاهراً بعد الاعتماد
+
+أبلغ المستخدم:
+> "تلاحظ لى فى صفحة عرض تفاصيل المصروف تم اعتمادة بالفعل والدفع استمرار وجود زر تسجيل الدفع"
+
+### 🔍 الفحص
+
+`handleApprove` فى `app/expenses/[id]/page.tsx`:
+1. يضع `status="approved"`
+2. **يُنشئ قيد محاسبى يخصم النقد فعلياً** (Dr Expense / Cr Cash)
+3. لا يضع `paid_at`
+
+`handleMarkAsPaid`:
+1. فقط يُحدِّث الـ flag إلى `status="paid"` و `paid_at`
+2. **لا يُنشئ أى قيد محاسبى إضافى**
+
+النتيجة: الـ cash تخرج من الـ GL وقت الاعتماد، لكن الـ status يظل "approved" والـ button يظل ظاهر — مما يضلل المستخدم ويوحى بأن المصروف لم يُدفع بعد.
+
+### ✅ الإصلاح
+
+عند الاعتماد، بعد نجاح إنشاء الـ journal entry (الذى يخصم الـ cash)، يتم وضع:
+- `status = 'paid'`
+- `paid_by = userId`
+- `paid_at = now()`
+
+تلقائياً فى نفس UPDATE.
+
+النتيجة:
+- `canMarkAsPaid = status === "approved" && !paid_at` يصبح false
+- الزر يختفى بعد الاعتماد مباشرة
+- المستخدم يفهم بوضوح أن المصروف مدفوع
+
+### 📋 Files Changed (1)
+
+| الملف | التغيير |
+|---|---|
+| `app/expenses/[id]/page.tsx` | handleApprove: تحديث status=paid + paid_at بعد نجاح الـ journal |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين UX + accounting consistency
+- **Backward compatible**: المصروفات القديمة لا تتأثر
+- **Data integrity**: status="paid" يعكس الواقع المحاسبى (الـ cash مخصومة فعلاً)
+
+### 💡 ملاحظة معمارية
+
+النمط الحالى لا يفصل بين accrual و cash payment للمصروفات:
+- ✅ Cash basis (الحالى): debit expense + credit cash فى خطوة واحدة عند الاعتماد
+- ⏸️ Accrual basis (مستقبلى): debit expense + credit accrued liability عند الاعتماد، ثم debit accrued + credit cash عند الدفع
+
+لو احتاج المشروع دعم accrual، الـ "Mark as Paid" يجب تفعيله كخطوة منفصلة تنشئ قيد cash payment. حالياً، الـ flow الموحد على cash basis كافٍ للمتطلبات.
+
+---
+
 ## [3.26.0] - 2026-05-22
 
 ### 🚨 Enterprise Rule — منع Overdraft على حسابات النقد/البنك
