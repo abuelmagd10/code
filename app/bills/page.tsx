@@ -54,7 +54,17 @@ import type {
 } from "@/types/database"
 
 // نوع الدفعة (خاص بهذه الصفحة)
-type Payment = { id: string; bill_id: string | null; amount: number; status: string }
+// v3.22.1: extended with currency_code + exchange_rate so we can convert
+// payment amounts (in payment currency) → bill currency before aggregating.
+type Payment = {
+  id: string
+  bill_id: string | null
+  amount: number
+  status: string
+  currency_code?: string | null
+  exchange_rate?: number | null
+  base_currency_amount?: number | null
+}
 
 // نوع للمنتجات (خاص بهذه الصفحة)
 type Product = { id: string; name: string }
@@ -154,16 +164,37 @@ export default function BillsPage() {
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
   // تجميع المدفوعات الفعلية من جدول payments حسب الفاتورة
+  // v3.22.1: cross-currency safe — converts each payment from payment currency
+  // to bill currency before summing, so a 0.20 USD payment on a 10 EGP bill
+  // contributes ~10 EGP (not 0.20 EGP) to paidByBill.
+  //
+  // Formula: applied_in_bill_ccy = payment.amount × (payment.exchange_rate / bill.exchange_rate)
   const paidByBill: Record<string, number> = useMemo(() => {
+    const billInfo: Record<string, { code: string; rate: number }> = {}
+    bills.forEach((b) => {
+      billInfo[b.id] = {
+        code: String((b as any).currency_code || "").toUpperCase(),
+        rate: Number((b as any).exchange_rate || 1) || 1,
+      }
+    })
     const agg: Record<string, number> = {}
     payments.forEach((p) => {
       const key = p.bill_id || ""
-      if (key) {
-        agg[key] = (agg[key] || 0) + (p.amount || 0)
+      if (!key) return
+      const pAmount = Number(p.amount || 0)
+      if (!pAmount) return
+      const bill = billInfo[key]
+      const pCurrency = String(p.currency_code || "").toUpperCase()
+      if (!bill || !pCurrency || pCurrency === bill.code) {
+        agg[key] = (agg[key] || 0) + pAmount
+        return
       }
+      const pRate = Number(p.exchange_rate || 1) || 1
+      const factor = pRate / bill.rate
+      agg[key] = (agg[key] || 0) + pAmount * factor
     })
     return agg
-  }, [payments])
+  }, [payments, bills])
 
   // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
@@ -347,7 +378,8 @@ export default function BillsPage() {
         const cachedBillIds = cached.bills.map(b => b.id)
         if (cachedBillIds.length) {
           const [payData, itemsData] = await Promise.all([
-            supabase.from("payments").select("id, bill_id, amount, status").eq("company_id", companyId).eq("status", "approved").in("bill_id", cachedBillIds),
+            // v3.22.1: include currency_code, exchange_rate, base_currency_amount for cross-currency aware paidByBill
+            supabase.from("payments").select("id, bill_id, amount, status, currency_code, exchange_rate, base_currency_amount").eq("company_id", companyId).eq("status", "approved").in("bill_id", cachedBillIds),
             supabase.from("bill_items").select("bill_id, quantity, product_id, returned_quantity, products(name)").in("bill_id", cachedBillIds),
           ])
           setPayments(payData.data || [])
@@ -482,7 +514,8 @@ export default function BillsPage() {
       if (billIds.length) {
         const { data: payData } = await supabase
           .from("payments")
-          .select("id, bill_id, amount, status")
+          // v3.22.1: include FX columns for cross-currency aware paidByBill aggregation
+          .select("id, bill_id, amount, status, currency_code, exchange_rate, base_currency_amount")
           .eq("company_id", companyId)
           .eq("status", "approved")   // ✅ فقط الدفعات المعتمدة — المرفوضة والمعلقة لا تُعرض
           .in("bill_id", billIds)

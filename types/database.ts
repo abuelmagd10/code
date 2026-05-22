@@ -204,6 +204,9 @@ export interface Bill {
   display_currency?: string
   display_total?: number
   display_paid?: number
+  // v3.22.1: exchange_rate at bill time — used to convert payment amounts
+  // (stored in payment currency) into bill currency when aggregating paid_amount.
+  exchange_rate?: number
   company_id?: string
   branch_id?: string
   cost_center_id?: string

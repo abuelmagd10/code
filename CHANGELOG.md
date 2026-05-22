@@ -4,6 +4,66 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.22.1] - 2026-05-21
+
+### 🔧 توسعة إصلاح FX ليشمل جميع التجميعات (Bills + Customers + Bill Detail)
+
+طلب المستخدم:
+> "يجب ان يتم فى جميع المواضع التى يتم فيها الصرف بغير العملة المختارة فى الاعدادات كعملة اساسية للتطبيق ان تظهر فى جميع الجداول وجميع المواضع فى المشروع بالصورة الصحيحة"
+
+### 🔍 جرد + تنفيذ شامل
+
+بعد فحص كل aggregations الـ `payment.amount` فى المشروع، وجدنا 3 مواضع إضافية بنفس الـ bug pattern + 1 موضع أرصدة عملاء:
+
+| الملف | الـ Pattern | الحالة |
+|---|---|---|
+| `app/bills/page.tsx` | `paidByBill` aggregation (مماثل لـ paidByInvoice) | ✅ FIXED |
+| `app/bills/[id]/page.tsx` | `paidTotal` reduce داخل الفاتورة | ✅ FIXED |
+| `app/customers/page.tsx` | advance balances aggregation | ✅ FIXED |
+| `types/database.ts` | إضافة `exchange_rate` لـ Bill type | ✅ UPDATED |
+
+### 🟢 صفحات تم فحصها ووُجدت صحيحة (GL-based)
+
+| الصفحة | السبب |
+|---|---|
+| `app/reports/aging-ar/page.tsx` | تستخدم `journal_entry_lines` — base currency native |
+| `app/reports/aging-ap/page.tsx` | نفس النمط |
+| `app/reports/balance-sheet/page.tsx` | account_balances من GL — base currency native |
+| `app/reports/income-statement/*` | GL-driven |
+| `app/customer-credits/page.tsx` | `customer_credit_ledger` بدون عمود currency — implicit base |
+
+### 📋 التغييرات
+
+#### `app/bills/page.tsx`
+- Payment type: أُضيف `currency_code, exchange_rate, base_currency_amount`
+- SELECT (2 مواضع): إضافة الأعمدة الجديدة
+- `paidByBill`: تحويل كل دفعة من عملة الدفع لعملة الفاتورة قبل الجمع
+
+#### `app/bills/[id]/page.tsx`
+- Payment type: نفس التحديث
+- `paidTotal`: cross-currency aware reduce
+
+#### `app/customers/page.tsx`
+- SELECT للـ payments: يطلب `base_currency_amount, currency_code`
+- advance balance aggregation: يستخدم `p.base_currency_amount ?? p.amount` (سلامة dimensional)
+
+#### `types/database.ts`
+- إضافة `exchange_rate?: number` لـ `Bill` interface
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين عرض — لا تغيير فى المنطق المحاسبى
+- **Backward compatible**: 100% — للدفعات بنفس العملة، النتيجة مطابقة
+- **No DB changes / No migrations**
+
+### 📊 تحقق نهائى من Production
+
+| الفاتورة | السيناريو | paid_amount | الحالة |
+|---|---|---|---|
+| INV-00003 | 0.20 USD على 10 EGP | 10.68 EGP | ✅ صحيح |
+
+---
+
 ## [3.22.0] - 2026-05-21
 
 ### 🐛 Critical FX Bug — paid_amount يُسجَّل بدون تحويل العملة
