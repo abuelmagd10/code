@@ -24,14 +24,11 @@ export function ERPModulesSection({ appLang = 'ar' }: { appLang?: 'ar' | 'en' })
           <div className="inline-flex items-center gap-2 px-4 py-2 mb-4 rounded-full bg-blue-50 dark:bg-blue-950/40 border border-blue-200">
             <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">{appLang === 'ar' ? '12 وحدة متكاملة' : '12 Integrated Modules'}</span>
           </div>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 text-gray-900 dark:text-white">
-            {appLang === 'ar' ? 'نظام شامل لإدارة كل جوانب عملك' : 'Complete Suite for Every Aspect of Your Business'}
-          </h2>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 text-gray-900 dark:text-white">{appLang === 'ar' ? 'نظام شامل لإدارة كل جوانب عملك' : 'Complete Suite'}</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {modules.map((m, i) => (
-            <div key={i} className={`group relative p-6 rounded-2xl bg-white dark:bg-gray-900 border ${m.highlight ? 'border-blue-500/50' : 'border-gray-200 dark:border-gray-800'} hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-1 transition-all duration-300 overflow-hidden`}>
-              <div className={`absolute inset-0 bg-gradient-to-br ${m.gradient} opacity-0 group-hover:opacity-5 transition-opacity`} />
+            <div key={i} className={`relative p-6 rounded-2xl bg-white dark:bg-gray-900 border ${m.highlight ? 'border-blue-500/50' : 'border-gray-200 dark:border-gray-800'} hover:shadow-2xl hover:-translate-y-1 transition-all duration-300`}>
               {m.highlight && (<div className="absolute top-3 end-3 px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 text-white text-[10px] font-bold">{appLang === 'ar' ? 'مميز' : 'NEW'}</div>)}
               <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${m.gradient} text-white mb-4 shadow-lg`}>{m.icon}</div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{m.title}</h3>
