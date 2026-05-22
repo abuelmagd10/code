@@ -15,7 +15,7 @@ import { RefreshCw, Plus, Trash2, ArrowLeft, Globe, Edit2, History, AlertCircle,
 import Link from "next/link"
 import { CURRENCIES, fetchExchangeRateFromAPI, getCurrencySymbol } from "@/lib/exchange-rates"
 import { setManualExchangeRate, getActiveCurrencies, getBaseCurrency, getRateMode, setRateMode, type Currency } from "@/lib/currency-service"
-import { computeFXRevaluation, computeFullFXRevaluation, postFXRevaluation, type FXRevaluationResult } from "@/lib/fx-revaluation"
+import { computeFXRevaluation, computeFullFXRevaluation, postFXRevaluation, postFullFXRevaluation, type FXRevaluationResult } from "@/lib/fx-revaluation"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ExchangeRateRow {
@@ -501,7 +501,7 @@ export default function ExchangeRatesPage() {
                               toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: 'No user', variant: 'destructive' })
                               return
                             }
-                            const r = await postFXRevaluation(supabase, companyId, revalAsOfDate, uid)
+                            const r = await postFullFXRevaluation(supabase, companyId, revalAsOfDate, uid)
                             if (r.success && r.journalEntryId) {
                               toast({ title: appLang === 'en' ? 'Posted' : 'تم القيد', description: appLang === 'en' ? 'FX revaluation posted with auto-reversal' : 'تم قيد إعادة التقييم مع قيد عكسى تلقائى' })
                               setShowRevalModal(false)
