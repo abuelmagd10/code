@@ -4,6 +4,84 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.25.0] - 2026-05-22
+
+### 🌍 توحيد منطق العملات - Enterprise FX Pattern مكتمل
+
+طلب المستخدم مراجعة شاملة:
+> "يرجى مراجعة نظام العملات والمدفوعات داخل المشروع بالكامل، والتأكد من أن جميع عمليات الدفع/التحصيل/المصروفات/المرتجعات/التسويات تعمل وفق نمط موحد ومتوافق مع المحاسبة المؤسسية الاحترافية"
+
+### ✅ Phase 1 — Audit مكتمل (نتيجة: نظيف)
+
+تم تدقيق 14 صفحة مالية + 2 allocation components:
+
+| النطاق | الحالة |
+|---|---|
+| Customer payments (3 forms) | ✅ ExchangeRateSelector |
+| Supplier payments (3 forms) | ✅ ExchangeRateSelector |
+| Expenses, Drawings, Treasury | ✅ ExchangeRateSelector |
+| Journal entries, Refunds, Returns | ✅ ExchangeRateSelector |
+| Sales/Purchase Orders, Credit notes | ✅ ExchangeRateSelector |
+
+**صفر** manual rate input متبقى. كل الصفحات تستخدم `ExchangeRateSelector` المشترك الذى يجلب السعر من `/settings/exchange-rates` (api/manual فقط).
+
+### 📘 Phase 2 — Account-currency-aware cash leg
+
+`lib/accrual-accounting-engine.ts` فى `preparePaymentJournalFromData`:
+
+- يقرأ `chart_of_accounts.original_currency` للحساب النقدى المختار
+- لو الحساب بعملة غير base، يجلب سعر العملة → base من `exchange_rates` table
+- يحسب `amount_in_account_currency = amount_in_base / account_to_base_rate`
+- يحفظ على cash journal line:
+  - `debit_amount`/`credit_amount` فى base currency (GL standard)
+  - `original_debit`/`original_credit` فى عملة الحساب
+  - `original_currency` = عملة الحساب
+  - `exchange_rate_used` = سعر العملة → base
+
+هذا يعنى مثلاً: لو الحساب USD ودفعنا 5311 EGP، الـ cash leg يسجل:
+```
+Dr Cash:    5311.00 EGP (in GL/base)
+            100.00 USD (original_debit, account-native)
+```
+
+كنتيجة: تقارير رصيد الحساب تقدر تعرض الرصيد بالـ USD الأصلى عبر `SUM(original_debit) - SUM(original_credit)` لذلك الحساب.
+
+### 📋 Phase 3 — Enterprise FX Pattern Documentation
+
+ملف `docs/ENTERPRISE_FX_PATTERN.md` (جديد) يوثق:
+
+1. **Three Currency Levels** — Base / Document / Payment / Account
+2. **Rule #1** — لا يوجد manual rate input أبداً (ExchangeRateSelector فقط)
+3. **Rule #2** — Payment ≠ Base → التحويل تلقائى عبر السعر المختار
+4. **Rule #3** — Account currency comparison (Phase 2 logic)
+5. **Rule #4** — Excess → Customer Credit ، Shortfall → Remaining Receivable (كله بـ base currency)
+6. **Rule #5** — جدول كل الصفحات المالية + موقعها فى الـ pattern
+7. **Database columns reference** — كل عمود FX-related فى الـ schema
+8. **Compliance self-check** — 6 نقاط يفحصها المطور قبل أى merge
+9. **Future Enhancements** — Phase 4+ (per-account multi-currency statements، invoice-overpayment credit ledger)
+
+### 📋 Files Changed (2)
+
+| الملف | التغيير |
+|---|---|
+| `lib/accrual-accounting-engine.ts` | cash leg يدعم account currency |
+| `docs/ENTERPRISE_FX_PATTERN.md` | توثيق شامل (جديد) |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: تحسين فقط — لا توجد حسابات FC على Production حالياً
+- **Backward compatible**: 100% — الحسابات بعملة base لا يتأثرون
+- **Audit-ready**: IAS 21 disclosure مكتمل (original_*, exchange_rate_used)
+
+### 🔮 Phase 4+ (Planned)
+
+- UI: عرض رصيد الحساب بعملته الأصلية فى Banking page
+- Period-end FX revaluation للحسابات الـ FC
+- Customer credit ledger trigger من invoice overpayments
+- Multi-currency trial balance report
+
+---
+
 ## [3.24.1] - 2026-05-21
 
 ### 🐛 Hotfix — v3.24.0 build error على Vercel
