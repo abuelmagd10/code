@@ -437,18 +437,19 @@ function CallbackInner() {
           // ✅ الانتظار ثم التوجيه
           await waitForBootstrap()
 
-          // ✅ v3.28.11: Pre-warm Vercel functions for dashboard
-          //   - Dashboard widgets call /api/my-company, /api/user-profile
-          //   - Pre-fetch them now (in parallel, fire-and-forget with timeout)
-          //   - When user navigates to /dashboard, those functions are warm
+          // ✅ v3.28.12: Pre-warm /dashboard ITSELF (not just APIs)
+          //   - fetch /dashboard makes Vercel cold-start the function
+          //   - By the time user navigates (after timeout), function is warm
+          //   - Result: dashboard loads quickly on first visit
           setStatus("جاري تجهيز لوحة التحكم...")
           try {
             await Promise.race([
               Promise.all([
+                fetch('/dashboard', { credentials: 'include' }).catch(() => null),
                 fetch('/api/my-company').catch(() => null),
                 fetch('/api/user-profile').catch(() => null),
               ]),
-              new Promise((r) => setTimeout(r, 4000)) // 4s max wait
+              new Promise((r) => setTimeout(r, 8000)) // 8s max wait
             ])
           } catch { }
 

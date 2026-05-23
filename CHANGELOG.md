@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.12] - 2026-05-23
+
+### ⚡ Pre-warm /dashboard itself (not just APIs)
+
+بعد v3.28.11، الـ APIs pre-warming لم يكفِ. dashboard SSR نفسه لا يزال cold start بطئ.
+
+### ✅ الإصلاح: Pre-fetch /dashboard مباشرة قبل redirect
+
+```typescript
+setStatus("جاري تجهيز لوحة التحكم...")
+await Promise.race([
+  Promise.all([
+    fetch('/dashboard', { credentials: 'include' }).catch(() => null),
+    fetch('/api/my-company').catch(() => null),
+    fetch('/api/user-profile').catch(() => null),
+  ]),
+  new Promise((r) => setTimeout(r, 8000)) // 8s max wait
+])
+router.replace("/dashboard")
+```
+
+عند `fetch('/dashboard')`، Vercel function تبدأ cold start. callback ينتظر حتى 8 ثوان. ثم router.replace ينتقل فعلياً - بهذا الوقت function تكون warm وترد فوراً.
+
+النتيجة: المستخدم ينتظر 8 ثوان على callback (مع رسالة "جاري تجهيز لوحة التحكم...") بدلاً من ينتظر forever على dashboard.
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `app/auth/callback/page.tsx` | إضافة fetch('/dashboard') للـ pre-warm |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.11] - 2026-05-23
 
 ### ⚡ Dashboard Cold-Start Final Fix — Pre-warming + Cookie-only companyId
