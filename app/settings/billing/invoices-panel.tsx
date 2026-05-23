@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   AlertTriangle,
   CalendarDays,
@@ -21,6 +22,7 @@ import {
   Loader2,
   Minus,
   Shield,
+  Users,
   X,
   XCircle,
 } from 'lucide-react'
@@ -246,16 +248,27 @@ function SubscriptionBanner() {
             </div>
           </div>
 
-          {/* Cancel button — only for active subscriptions */}
-          {isPaidActive && (
-            <button
-              onClick={() => setShowCancelModal(true)}
-              className="px-3 py-2 bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg border border-red-100 dark:border-red-900 transition-colors flex items-center gap-2"
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Seats Management button - always visible */}
+            <Link
+              href="/settings/seats"
+              className="px-3 py-2 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-900/20 text-violet-600 dark:text-violet-400 text-sm font-medium rounded-lg border border-violet-100 dark:border-violet-900 transition-colors flex items-center gap-2"
             >
-              <XCircle className="w-4 h-4" />
-              إلغاء الاشتراك
-            </button>
-          )}
+              <Users className="w-4 h-4" />
+              إدارة المقاعد
+            </Link>
+
+            {/* Cancel button — only for active subscriptions */}
+            {isPaidActive && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="px-3 py-2 bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg border border-red-100 dark:border-red-900 transition-colors flex items-center gap-2"
+              >
+                <XCircle className="w-4 h-4" />
+                إلغاء الاشتراك
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Expiring soon warning (3 days or less) */}

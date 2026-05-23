@@ -4,6 +4,60 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.35.0] - 2026-05-23
+
+### 🪑 Phase H: Seat Management UI
+
+شاشة إدارة المقاعد الكاملة للمالك — يرى كل مقعد + الموظف المربوط به + حالته + تاريخ التجديد.
+
+### ✅ التغييرات
+
+#### 1. `app/api/billing/seats/assignments/route.ts` (جديد)
+- `GET` يرجع:
+  - بيانات الشركة (status, period_end, billing_period, last_paid_at)
+  - عدد المقاعد المدفوعة / المستخدمة / الفارغة / المحظورة
+  - قائمة كاملة بكل مقعد ابتداءً من 0 (المالك) حتى أعلى رقم
+  - لكل مقعد: المعلومات الكاملة للعضو (id, email, name, role) + الحالة (free_owner/paid/over_quota/empty)
+
+#### 2. `app/settings/seats/page.tsx` (جديد)
+- **بطاقة ملخص الاشتراك**: status + تاريخ التجديد + آخر دفعة + نوع الفوترة
+- **4 بطاقات إحصائية**: المقعد المجانى، المقاعد المدفوعة، المحظورون، إجمالى الأعضاء
+- **تنبيهات ذكية**:
+  - banner أصفر إذا الاشتراك ينتهى خلال ≤3 أيام
+  - banner أحمر إذا وُجد موظفون فوق الحد المدفوع
+- **جدول كامل**: رقم المقعد، الموظف، البريد، الدور، الحالة، تاريخ الإضافة
+- **روابط سريعة**: "إضافة مقاعد" و "إدارة الموظفين"
+
+#### 3. `app/settings/billing/invoices-panel.tsx`
+- زر **"إدارة المقاعد"** بجانب "إلغاء الاشتراك" فى الـ SubscriptionBanner
+- يفتح `/settings/seats` بنقرة واحدة
+
+### 🎨 الواجهة
+
+```
+/settings/seats
+   │
+   ├─ ملخص الاشتراك (status + dates + billing_period)
+   │
+   ├─ 4 بطاقات: مالك مجانى | N مدفوع | X محظور | Y إجمالى
+   │
+   ├─ تنبيهات (expiring soon / over-quota)
+   │
+   └─ جدول كامل:
+      #0  المالك          owner@company.com     مالك      🟣 مجانى    2024-01-01
+      #1  أحمد             ahmed@company.com    محاسب     🟢 نشط      2024-02-05
+      #2  فاطمة           fatima@company.com    موظف      🟢 نشط      2024-03-10
+      #3  (مقعد فارغ)                                       ⚪ متاح
+      #4  محمد            mohamed@company.com   موظف      🔴 محظور    2024-05-15
+```
+
+### 🚦 Phase Roadmap (مُحدَّث)
+
+- ✅ Phase 1 → F+G (v3.29.0 - v3.34.0)
+- ✅ **Phase H: Seat Management UI (v3.35.0)** ← هذا الإصدار
+
+---
+
 ## [3.34.0] - 2026-05-23
 
 ### 🪑 Enterprise Billing v2.0 — Phase F + G: Effective Suspension & Per-Seat Assignment
