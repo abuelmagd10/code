@@ -33,20 +33,28 @@ function verifyHmac(transaction: Record<string, any>, hmacKey: string, received:
 // Extract extras from Paymob order
 // Paymob stores extras in order.extra_description (JSON string) or flat
 // ─────────────────────────────────────────
-function extractExtras(transaction: any): {
+interface PaymobExtras {
   company_id?: string
   user_id?: string
   additional_users?: number
-} {
+  billing_period?: 'monthly' | 'annual'
+  coupon_code?: string | null
+  pricing_snapshot?: Record<string, any>
+}
+
+function extractExtras(transaction: any): PaymobExtras {
   try {
     // NextGen API stores extras in order object
     const raw = transaction?.order?.extra_description
-    if (raw) return typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (raw) {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+      return parsed as PaymobExtras
+    }
   } catch { }
 
   // Fallback: sometimes extras are at transaction.extra or order.extras
   const extras = transaction?.extras || transaction?.order?.extras || {}
-  return extras
+  return extras as PaymobExtras
 }
 
 // ─────────────────────────────────────────
@@ -68,9 +76,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_hmac' }, { status: 401 })
     }
 
-    // 2. Extract extras (company_id, additional_users)
+    // 2. Extract extras (company_id, additional_users, pricing_snapshot)
     const extras = extractExtras(transaction)
-    const { company_id, user_id, additional_users } = extras
+    const { company_id, additional_users, billing_period, pricing_snapshot } = extras
 
     if (!company_id) {
       console.warn('[paymob-webhook] Missing company_id in extras — ignoring')
@@ -87,6 +95,8 @@ export async function POST(req: NextRequest) {
       success:        Boolean(transaction.success),
       pending:        Boolean(transaction.pending),
       error_occured:  Boolean(transaction.error_occured),
+      billing_period: billing_period === 'annual' ? 'annual' : 'monthly',
+      pricing_snapshot: pricing_snapshot as any,
     }
 
     // 4. Sync with subscription service (idempotent)

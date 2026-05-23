@@ -4,6 +4,101 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.30.0] - 2026-05-23
+
+### 📄 Enterprise Billing v2.0 — Phase B: PDF Invoices VAT-Compliant
+
+نظام توليد وتخزين فواتير PDF تلقائياً بعد كل عملية دفع ناجحة، متوافق مع متطلبات الـ VAT.
+
+### ✅ التغييرات
+
+#### 1. `lib/billing/invoice-pdf.ts` (جديد)
+- مكوّن توليد PDF احترافى باستخدام `pdfkit`
+- تصميم enterprise-grade بـ A4 + branding 7esab
+- يتضمن:
+  - Header مع status badge (PAID/PENDING/FAILED)
+  - From / Bill-To مع VAT/Tax IDs
+  - Line items table مع zebra striping
+  - Totals box مع breakdown كامل (Volume + Annual + Coupon + VAT)
+  - EGP charge note (للعملاء غير المصريين) مع سعر الصرف المُستخدم
+  - Payment details (Paymob transaction ID + paid_at)
+  - Footer مع disclaimer
+
+#### 2. `lib/billing/invoice-generator.ts` (جديد)
+- `createInvoiceForPayment()` — orchestrator كامل:
+  1. Idempotency check على `paymob_transaction_id`
+  2. INSERT صف فى `billing_invoices` (invoice_number تلقائى من DB trigger)
+  3. Render PDF buffer
+  4. Upload إلى Supabase Storage bucket `billing-invoices`
+  5. UPDATE `pdf_url` فى الـ row
+- `getInvoiceSignedUrl()` — يولّد signed URL محدود المدة (5 دقائق)
+- `regenerateInvoicePdf()` — لإعادة التوليد عند الحاجة (template updates)
+
+#### 3. Supabase Storage Bucket
+- Bucket: `billing-invoices` (private, 10MB max, PDF only)
+- المسار: `{company_id}/{invoice_number}.pdf`
+- الوصول حصرياً عبر signed URLs من API endpoint
+
+#### 4. `app/api/webhooks/paymob/route.ts`
+- يستخرج `pricing_snapshot` + `billing_period` من Paymob `extras`
+- يمرّرها لـ `syncSubscriptionFromWebhook` لتوليد الفاتورة
+
+#### 5. `lib/billing/subscription-service.ts`
+- `handlePaymentSuccess()` الآن يستدعى `createInvoiceForPayment()` بعد نجاح الدفع
+- Audit log يحتوى الآن `invoice_number` و `invoice_error` للتتبع
+- فشل توليد الفاتورة لا يُلغى تفعيل المقاعد (non-blocking)
+
+#### 6. `app/api/billing/seats/route.ts`
+- pricing_snapshot الآن يحتوى breakdown كامل:
+  - `volume_discount_usd` + `volume_discount_percent`
+  - `annual_discount_usd` + `annual_discount_percent`
+  - `coupon_discount_usd` + `coupon_code`
+  - `exchange_rate` + `subtotal_display` + `total_display`
+
+#### 7. `app/api/billing/invoices/[id]/pdf/route.ts` (جديد)
+- `GET` — يعيد signed URL لتحميل PDF (5 دقائق)
+- يتحقق أن الفاتورة تخص شركة المستخدم (security)
+- إذا فُقد PDF، يُعاد توليده تلقائياً
+
+#### 8. `app/api/billing/invoices/route.ts` (جديد)
+- `GET` — قائمة فواتير الشركة (للـ Customer Portal فى Phase C)
+- يدعم pagination + filter بـ status
+
+### 🧠 المعمارية
+
+```
+Paymob Webhook (POST /api/webhooks/paymob)
+   │  verify HMAC + extract pricing_snapshot
+   ▼
+syncSubscriptionFromWebhook
+   │
+   ├──► increaseSeats() — يُفعّل المقاعد فوراً
+   │
+   └──► createInvoiceForPayment()
+        │  1. INSERT billing_invoices (invoice_number = INV-YYYY-NNNNNN)
+        │  2. renderInvoicePdf() — pdfkit
+        │  3. Upload إلى billing-invoices/{company_id}/INV-XXXX.pdf
+        │  4. UPDATE billing_invoices.pdf_url
+        ▼
+   Customer Portal (Phase C):
+       GET /api/billing/invoices               ← قائمة الفواتير
+       GET /api/billing/invoices/[id]/pdf      ← signed URL (5 min)
+```
+
+### 📦 Dependencies الجديدة
+
+- `pdfkit@^0.15.0` — توليد PDF
+- `@types/pdfkit@^0.13.4`
+
+### 🚦 Phase Roadmap (محدّث)
+
+- ✅ Phase 1: Foundation (v3.29.0)
+- ✅ Phase A: EGP Charging via Paymob (v3.29.2)
+- ✅ Phase B: PDF Invoices VAT-compliant (v3.30.0)
+- ⏳ Phase C: Customer Portal للفواتير
+
+---
+
 ## [3.29.2] - 2026-05-23
 
 ### 💳 Enterprise Billing v2.0 — Phase A: EGP Charging (Paymob)

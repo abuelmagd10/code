@@ -11,6 +11,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { increaseSeats } from './seat-service'
+import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generator'
 
 const GRACE_PERIOD_DAYS = 3
 
@@ -51,6 +52,10 @@ export interface PaymobWebhookPayload {
   success: boolean
   pending: boolean
   error_occured: boolean
+  /** Subscription billing period — used to drive invoice line item & period_end */
+  billing_period?: 'monthly' | 'annual'
+  /** Full pricing breakdown captured at checkout time (from pricing-engine) */
+  pricing_snapshot?: PricingSnapshot
 }
 
 // ─────────────────────────────────────────
@@ -97,6 +102,8 @@ export async function getSubscription(companyId: string): Promise<CompanySubscri
 export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promise<{
   success: boolean
   idempotent?: boolean
+  invoiceNumber?: string
+  invoiceError?: string
   error?: string
 }> {
   try {
@@ -112,6 +119,38 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
       return { success: false, error: result.error }
     }
 
+    // ── Generate invoice + PDF (idempotent on paymob_transaction_id) ──
+    // Non-blocking semantics: an invoice failure should NOT undo seat activation
+    let invoiceNumber: string | undefined
+    let invoiceError: string | undefined
+    if (payload.pricing_snapshot) {
+      try {
+        const invoiceResult = await createInvoiceForPayment({
+          companyId: payload.company_id,
+          pricingSnapshot: payload.pricing_snapshot,
+          billingPeriod: payload.billing_period ?? 'monthly',
+          paymobTransactionId: payload.transaction_id,
+          paidAt: new Date().toISOString(),
+          invoiceType: 'subscription',
+        })
+        if (invoiceResult.success) {
+          invoiceNumber = invoiceResult.invoiceNumber
+          if (invoiceResult.error) {
+            invoiceError = invoiceResult.error  // e.g. pdf_render_failed (row was created)
+          }
+        } else {
+          invoiceError = invoiceResult.error
+          console.error('[SubscriptionService] invoice creation failed:', invoiceResult.error)
+        }
+      } catch (invoiceErr: any) {
+        invoiceError = invoiceErr.message
+        console.error('[SubscriptionService] invoice exception:', invoiceErr)
+      }
+    } else {
+      invoiceError = 'pricing_snapshot_missing_in_payload'
+      console.warn('[SubscriptionService] No pricing_snapshot in payload — skipping invoice generation')
+    }
+
     // Log to audit_logs
     try {
       const admin = getAdminClient()
@@ -123,13 +162,15 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
           paymob_transaction_id: payload.transaction_id,
           seats_added: payload.additional_users,
           amount_egp: Math.round(payload.amount_cents / 100),
+          invoice_number: invoiceNumber ?? null,
+          invoice_error: invoiceError ?? null,
         },
       })
     } catch (logErr) {
       console.error('[SubscriptionService] audit log failed:', logErr)
     }
 
-    return { success: true, idempotent: result.idempotent }
+    return { success: true, idempotent: result.idempotent, invoiceNumber, invoiceError }
   } catch (err: any) {
     console.error('[SubscriptionService] handlePaymentSuccess error:', err)
     return { success: false, error: err.message }
@@ -207,7 +248,14 @@ export async function reactivateSubscription(companyId: string): Promise<void> {
 // ─────────────────────────────────────────
 export async function syncSubscriptionFromWebhook(
   payload: PaymobWebhookPayload
-): Promise<{ success: boolean; action: string; idempotent?: boolean; error?: string }> {
+): Promise<{
+  success: boolean
+  action: string
+  idempotent?: boolean
+  error?: string
+  invoiceNumber?: string
+  invoiceError?: string
+}> {
   // Successful, non-pending transaction
   if (payload.success && !payload.pending && !payload.error_occured) {
     const result = await handlePaymentSuccess(payload)
