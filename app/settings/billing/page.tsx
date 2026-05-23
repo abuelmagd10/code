@@ -7,8 +7,11 @@ import {
   CreditCard, Users, CheckCircle, AlertTriangle,
   Clock, ArrowLeft, Plus, Minus, Loader2, RefreshCw,
   Receipt, Calendar, Shield, Zap, TrendingDown, Sparkles, Globe,
-  Award, Gift,
+  Award, Gift, FileText,
 } from 'lucide-react'
+import InvoicesPanel from './invoices-panel'
+
+type BillingTab = 'subscription' | 'invoices'
 
 // ─────────────────────────────────────────
 // Types
@@ -97,6 +100,7 @@ function formatMoney(amount: number, currency: string): string {
 // ─────────────────────────────────────────
 export default function BillingPage() {
   const router = useRouter()
+  const [activeTab, setActiveTab] = useState<BillingTab>('subscription')
   const [status, setStatus] = useState<SeatStatus | null>(null)
   const [transactions, setTransactions] = useState<SeatTransaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -277,6 +281,38 @@ export default function BillingPage() {
             <RefreshCw className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-gray-100 dark:bg-slate-800/60 rounded-xl p-1 w-fit">
+          <button
+            onClick={() => setActiveTab('subscription')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'subscription'
+                ? 'bg-white dark:bg-slate-900 text-violet-600 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+            <CreditCard className="w-4 h-4" />
+            الاشتراك
+          </button>
+          <button
+            onClick={() => setActiveTab('invoices')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'invoices'
+                ? 'bg-white dark:bg-slate-900 text-violet-600 shadow-sm'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            الفواتير
+          </button>
+        </div>
+
+        {/* ───── Invoices Tab ───── */}
+        {activeTab === 'invoices' && <InvoicesPanel />}
+
+        {/* ───── Subscription Tab ───── */}
+        {activeTab === 'subscription' && <>
 
         {/* Status Banner */}
         <div className={`flex items-center gap-3 px-4 py-3 rounded-xl ${subStatus.color}`}>
@@ -627,6 +663,9 @@ export default function BillingPage() {
             <p className="text-gray-600 dark:text-gray-400">خصم 20%</p>
           </div>
         </div>
+
+        </>}
+        {/* ───── /Subscription Tab ───── */}
 
         {/* Back link */}
         <div className="flex justify-center">

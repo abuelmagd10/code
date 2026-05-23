@@ -4,6 +4,83 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.31.0] - 2026-05-23
+
+### 👤 Enterprise Billing v2.0 — Phase C: Customer Portal
+
+بوابة العميل لإدارة الاشتراك والفواتير من داخل `/settings/billing`، عبر تبويب جديد "الفواتير".
+
+### ✅ التغييرات
+
+#### 1. `app/settings/billing/invoices-panel.tsx` (جديد)
+- **`SubscriptionBanner`**: عرض الخطة الحالية + الحالة + تاريخ التجديد + عدد المقاعد
+  - زر "إلغاء الاشتراك" مع modal تأكيد يوضح:
+    - المقاعد تبقى نشطة حتى نهاية الفترة الحالية
+    - لا يُسترد المبلغ
+    - يمكن إعادة الاشتراك بشراء مقاعد جديدة
+  - تنبيهات لـ grace period + canceled state
+- **`InvoicesList`**: جدول الفواتير
+  - أعمدة: رقم الفاتورة، التاريخ، الفترة (شهرية/سنوية)، المقاعد، الحالة، المبلغ، تحميل
+  - Filter: حسب الحالة (مدفوعة/معلقة/فاشلة/ملغاة)
+  - Pagination: 10 فواتير لكل صفحة
+  - زر تحميل PDF: يفتح signed URL فى tab جديد
+
+#### 2. `app/settings/billing/page.tsx`
+- إضافة Tabs UI: "الاشتراك" | "الفواتير"
+- لف المحتوى الحالى داخل `{activeTab === 'subscription' && (...)}`
+- إدراج `<InvoicesPanel />` للـ tab الثانى
+
+#### 3. `app/api/billing/subscription/route.ts` (جديد)
+- `GET` — يعيد `{ subscription, seats }`: الخطة + الحالة + الفترة + عدد المقاعد + سعر المقعد
+
+#### 4. `app/api/billing/subscription/cancel/route.ts` (جديد)
+- `POST` — يستدعى `cancelSubscription()` من subscription-service
+- **owner-only** (المالك فقط، الـ admin/manager لا يمكنهم)
+- يتحقق من وجود اشتراك مدفوع قبل الإلغاء
+- idempotent: لو الاشتراك مُلغى بالفعل يعيد `already_canceled: true`
+
+### 🧠 المعمارية
+
+```
+/settings/billing
+   │
+   ├── Tab: الاشتراك (Subscription) — موجود من قبل
+   │     ├─ Status banner
+   │     ├─ Seat stats
+   │     ├─ Live pricing preview
+   │     ├─ Purchase form
+   │     └─ Seat transactions history
+   │
+   └── Tab: الفواتير (Invoices) — جديد فى Phase C
+         ├─ SubscriptionBanner
+         │    ├─ Plan + Status + Renewal date
+         │    └─ Cancel button (with modal)
+         │       └─► POST /api/billing/subscription/cancel
+         │
+         └─ InvoicesList
+              ├─ Status filter dropdown
+              ├─ Pagination (10/page)
+              └─ Each row → Download → GET /api/billing/invoices/[id]/pdf
+                                       (signed URL 5 min from Supabase Storage)
+```
+
+### 🔒 الأمان
+
+- إلغاء الاشتراك: **owner role فقط** (defensive check)
+- تحميل الفواتير: signed URL محدود (5 دقائق) + التحقق أن `invoice.company_id === user.company_id`
+- جميع الـ endpoints الجديدة: `runtime = 'nodejs'` + `dynamic = 'force-dynamic'`
+
+### 🚦 Phase Roadmap (مكتمل)
+
+- ✅ Phase 1: Foundation (v3.29.0)
+- ✅ Phase A: EGP Charging via Paymob (v3.29.2)
+- ✅ Phase B: PDF Invoices VAT-compliant (v3.30.0/v3.30.1)
+- ✅ **Phase C: Customer Portal (v3.31.0)** ← هذا الإصدار
+
+🎉 **نظام الفوترة Enterprise Billing v2.0 مكتمل!**
+
+---
+
 ## [3.30.0] - 2026-05-23
 
 ### 📄 Enterprise Billing v2.0 — Phase B: PDF Invoices VAT-Compliant
