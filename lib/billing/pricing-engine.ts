@@ -252,9 +252,8 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
   if (targetCurrency.toUpperCase() !== 'USD') {
     try {
       const admin = getAdminClient()
-      const rateResult = await getExchangeRate(admin, 'USD', targetCurrency.toUpperCase())
-      const rate = typeof rateResult === 'number' ? rateResult : (rateResult?.rate ?? 1)
-      exchangeRate = rate > 0 ? rate : 1
+      exchangeRate = await getExchangeRate(admin, 'USD', targetCurrency.toUpperCase())
+      if (!exchangeRate || exchangeRate <= 0) exchangeRate = 1
     } catch (e) {
       console.warn('[pricing-engine] Exchange rate fetch failed, using 1.0', e)
       exchangeRate = 1
@@ -273,9 +272,8 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
   if (CHARGE_CURRENCY !== 'USD') {
     try {
       const admin = getAdminClient()
-      const rateResult = await getExchangeRate(admin, 'USD', CHARGE_CURRENCY)
-      const rate = typeof rateResult === 'number' ? rateResult : (rateResult?.rate ?? 1)
-      chargeExchangeRate = rate > 0 ? rate : 1
+      chargeExchangeRate = await getExchangeRate(admin, 'USD', CHARGE_CURRENCY)
+      if (!chargeExchangeRate || chargeExchangeRate <= 0) chargeExchangeRate = 1
     } catch (e) {
       console.warn('[pricing-engine] EGP exchange rate fetch failed', e)
       chargeExchangeRate = 50  // fallback approximate rate
