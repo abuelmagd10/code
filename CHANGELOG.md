@@ -4,6 +4,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.9] - 2026-05-23
+
+### ⚡ SW v4.3.0 — Whitelist approach (يحل /dashboard 'Failed to fetch' نهائياً)
+
+v4.2.0 حاول `isHtmlOrRscRequest()` blacklist لكن لم ينجح — Next.js fetch لـ /dashboard لم يطابق أى من الـ 4 conditions (mode/destination/accept/rsc headers). الـ SW استلم الطلب وحاول fetchWithRetry → فشل.
+
+### ✅ الإصلاح: تغيير الفلسفة — Whitelist بدلاً من Blacklist
+
+بدلاً من محاولة تخمين أى requests "navigations"، نُحدد بصرامة ما الذى SW يتعامل معه:
+
+```js
+function shouldSWHandle(url) {
+  // External: Supabase REST
+  if (url.hostname.includes('supabase.co')) return true;
+
+  // Same-origin: ONLY static assets
+  if (url.pathname.startsWith('/_next/static/')) return true;
+  if (url.pathname.match(/\.(css|js|woff|woff2|...)$/i)) return true;
+
+  // Everything else (pages, /api/*) → bypass SW
+  return false;
+}
+```
+
+النتيجة:
+- ✅ `/dashboard` → bypass (browser handles natively, no SW overhead)
+- ✅ `/api/*` → bypass (browser handles natively)
+- ✅ Static assets → cached
+- ✅ Supabase REST → handled with retry
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `public/sw.js` | v4.2.0 → v4.3.0 (whitelist instead of blacklist) |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.8] - 2026-05-23
 
 ### ⚡ Performance — SW v4.2.0 + Vercel maxDuration للـ dashboard

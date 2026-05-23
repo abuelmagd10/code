@@ -1,8 +1,8 @@
 // 7ESAB ERP Service Worker - Secure Multi-Tenant Version
-// Version: 4.2.0 - 2026-05-23 - Aggressive HTML bypass + 3 retries + 45s timeout
+// Version: 4.3.0 - 2026-05-23 - Pages bypass SW completely (only static + supabase REST)
 // ✅ Production Ready: No caching for dynamic/sensitive data
-// ✅ v4.2.0: ALL HTML/RSC fetches bypass SW (mode/destination/accept-based)
-const VERSION = '4.2.0-' + Date.now(); // Force unique version on each deployment
+// ✅ v4.3.0: SW only handles static assets + supabase REST API; all pages bypass
+const VERSION = '4.3.0-' + Date.now(); // Force unique version on each deployment
 const BUILD_DATE = new Date().toISOString().split('T')[0];
 const STATIC_CACHE = `7esab-static-v${VERSION}`;
 
@@ -238,25 +238,30 @@ async function fetchWithRetry(request, { maxAttempts = 3, timeoutMs = 45000 } = 
 }
 
 /**
- * v4.2.0 — Detect HTML/RSC requests aggressively (3 layers)
- * - request.mode === 'navigate' (top-level browser nav)
- * - request.destination === 'document' (HTML doc)
- * - accept header contains 'text/html' OR 'text/x-component' (Next.js RSC)
- * - URL is a known app route (not /api/, /rest/, /auth/, static)
+ * v4.3.0 — Determine if SW should handle this request at all
+ *
+ * SW handles ONLY:
+ *   1. Static assets (_next/static, *.css, *.js, *.png, etc.)
+ *   2. Supabase REST API (supabase.co/rest/v1/*)
+ *
+ * SW BYPASSES (returns from listener without respondWith):
+ *   - All same-origin pages (/dashboard, /auth/callback, /, etc.)
+ *   - All Next.js internal API (/api/*)
+ *   - Anything else (let browser handle natively)
  */
-function isHtmlOrRscRequest(request, url) {
-  if (request.mode === 'navigate') return true;
-  if (request.destination === 'document') return true;
+function shouldSWHandle(url) {
+  // External API: Supabase REST/Auth
+  if (url.hostname.includes('supabase.co')) {
+    return true; // SW will handle with retry logic
+  }
 
-  const accept = request.headers.get('accept') || '';
-  if (accept.includes('text/html')) return true;
-  if (accept.includes('text/x-component')) return true; // Next.js RSC
-
-  // Check for Next.js RSC fetch headers
-  if (request.headers.get('rsc') || request.headers.get('next-router-state-tree')) {
+  // Same-origin: only handle static assets
+  if (url.pathname.startsWith('/_next/static/')) return true;
+  if (url.pathname.match(/\.(css|js|woff|woff2|ttf|eot|otf|png|jpg|jpeg|gif|svg|webp|ico|mp4|webm|ogg|mp3|wav)$/i)) {
     return true;
   }
 
+  // Everything else (pages, /api/*, etc.) → bypass SW
   return false;
 }
 
@@ -266,7 +271,6 @@ self.addEventListener('fetch', (event) => {
 
   // ✅ تجاهل الطلبات من schemes غير مدعومة (chrome-extension, etc.)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    // ✅ تجاهل الطلبات من chrome-extension وغيرها من الـ schemes غير المدعومة
     console.debug(`[SW v${VERSION}] Ignoring request from unsupported scheme: ${url.protocol}`);
     event.respondWith(fetch(request).catch(() => new Response('', { status: 0 })));
     return;
@@ -278,27 +282,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ✅ v4.2.0: ALL HTML/RSC requests bypass SW entirely (3-layer detection)
-  //   - Lets the browser handle them natively with no SW overhead/retries
-  //   - Solves cold-start /dashboard 503/Failed-to-fetch issues
-  if (isHtmlOrRscRequest(request, url)) {
-    // Let browser handle it natively (no respondWith) — fastest path
+  // ✅ v4.3.0: If SW shouldn't handle this URL, bypass entirely
+  //   - Pages (/dashboard, /, /auth/callback, etc.) — browser native
+  //   - Same-origin /api/* — browser native
+  //   - Only static assets + Supabase REST go through SW logic
+  if (!shouldSWHandle(url)) {
+    // Let browser handle natively (no respondWith) — fastest path, no overhead
     return;
   }
 
-  // ✅ NetworkOnly للبيانات الديناميكية والحساسة (with retry + long timeout)
-  if (shouldNeverCache(url, request)) {
-    console.log(`[SW v${VERSION}] NetworkOnly for: ${url.pathname}`);
+  // ✅ Supabase REST API: NetworkOnly with retry
+  if (url.hostname.includes('supabase.co')) {
+    console.log(`[SW v${VERSION}] Supabase API: ${url.pathname}`);
     event.respondWith(
-      fetchWithRetry(request, { maxAttempts: 3, timeoutMs: 45000 })
-        .then((response) => {
-          // ✅ عدم تخزين الاستجابة نهائيًا
-          return response;
-        })
+      fetchWithRetry(request, { maxAttempts: 2, timeoutMs: 30000 })
         .catch((error) => {
-          console.error(`[SW v${VERSION}] Network failed permanently for: ${url.pathname}`, error);
-          // ✅ Re-throw to let the browser handle it as a network error
-          //    (no synthesized 503 that masks real errors)
+          console.error(`[SW v${VERSION}] Supabase API failed: ${url.pathname}`, error);
           throw error;
         })
     );
