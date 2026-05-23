@@ -4,6 +4,69 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.29.2] - 2026-05-23
+
+### 💳 Enterprise Billing v2.0 — Phase A: EGP Charging (Paymob)
+
+تكميل Phase A من Enterprise Billing: ربط الـ pricing-engine بـ Paymob للتحصيل بالجنيه المصرى، مع الحفاظ على عرض السعر بأى عملة يختارها العميل.
+
+### ✅ التغييرات
+
+#### 1. `lib/billing/pricing-engine.ts`
+- ثابت جديد: `CHARGE_CURRENCY = 'EGP'` (Paymob يقبل EGP فقط)
+- دالة `extractRate()` type-safe لاستخراج قيمة السعر من نتيجة `getExchangeRate` (يدعم رقم أو object `{rate, ...}`)
+- حقول جديدة فى `PricingBreakdown`:
+  - `chargeCurrency` (دائماً 'EGP')
+  - `chargeExchangeRate` (USD → EGP لحظى)
+  - `chargeTotalEgp` (المبلغ النهائى المُحصَّل بالجنيه)
+- خطوة 7: تحويل USD → EGP باستخدام سعر صرف لحظى من جدول `exchange_rates` مع fallback ~50 EGP/USD
+
+#### 2. `app/api/billing/seats/route.ts`
+- استبدال `SEAT_PRICE_EGP` (500 ج ثابت) بـ `calculatePricing()` كمصدر وحيد للحقيقة
+- دعم `billing_period` ('monthly' | 'annual') من body
+- دعم `coupon` (كود خصم) من body
+- جلب `companies.base_currency` + `companies.country` لاستخدامها فى الـ pricing
+- `amountCents` = `Math.round(pricing.chargeTotalEgp * 100)` بدلاً من الحساب الثابت
+- إضافة `pricing_snapshot` كامل فى Paymob `extras` للـ webhook (audit trail)
+- response جديد يحتوى: `amount_egp`, `amount_display`, `display_currency`, `pricing` (breakdown)
+
+#### 3. `app/settings/billing/page.tsx`
+- Banner أصفر اللون يظهر للعميل غير المصرى:
+  - "💳 سيتم التحصيل بالجنيه المصرى"
+  - المبلغ بالجنيه + سعر الصرف اللحظى المُستخدم
+
+### 🧠 المعمارية
+
+```
+Customer (any currency)
+   │
+   │  /settings/billing → calculatePricing()
+   ▼
+pricing-engine.ts
+   │  - Base $10/seat/month (USD)
+   │  - Volume + Annual + Coupon discounts
+   │  - VAT per country
+   │  - Display amount = totalUsd × FX(USD→targetCurrency)
+   │  - Charge amount  = totalUsd × FX(USD→EGP)  ← Paymob
+   ▼
+POST /api/billing/seats
+   │
+   ▼
+Paymob Intention (currency: EGP, amount: chargeTotalEgp × 100)
+   │
+   ▼
+Customer pays in EGP → webhook → activate seats
+```
+
+### 🚦 Phase Roadmap (محدّث)
+
+- ✅ Phase 1: Foundation (v3.29.0)
+- ✅ Phase A: EGP Charging via Paymob (v3.29.2)
+- ⏳ Phase B: PDF Invoices VAT-compliant
+- ⏳ Phase C: Customer Portal للفواتير
+
+---
+
 ## [3.29.0] - 2026-05-23
 
 ### 🌍 Enterprise Billing v2.0 — Phase 1: Foundation

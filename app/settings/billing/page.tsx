@@ -46,6 +46,10 @@ interface PricingPreview {
   afterDiscountsDisplay: number
   taxAmountDisplay: number
   totalDisplay: number
+  // EGP charge fields (Paymob)
+  chargeCurrency?: string
+  chargeExchangeRate?: number
+  chargeTotalEgp?: number
   monthsInPeriod: number
   couponApplied?: string
   couponValid?: boolean
@@ -508,6 +512,29 @@ export default function BillingPage() {
                   <p className="text-xs text-gray-400 text-end">
                     ≈ ${pricing.totalUsd} USD
                   </p>
+
+                  {/* EGP charge notice (when display currency != EGP) */}
+                  {displayCurrency !== 'EGP' && pricing.chargeTotalEgp && (
+                    <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <CreditCard className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 text-xs">
+                          <p className="font-semibold text-amber-800 dark:text-amber-300 mb-1">💳 سيتم التحصيل بالجنيه المصرى</p>
+                          <div className="flex justify-between items-center">
+                            <span className="text-amber-700 dark:text-amber-400">المبلغ المُحصَّل عبر Paymob:</span>
+                            <span className="font-bold text-amber-900 dark:text-amber-200 text-base">
+                              {formatMoney(pricing.chargeTotalEgp, 'EGP')}
+                            </span>
+                          </div>
+                          {pricing.chargeExchangeRate && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-500 mt-1">
+                              سعر الصرف: 1 USD = {pricing.chargeExchangeRate.toFixed(2)} EGP (لحظى)
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

@@ -18,7 +18,21 @@ import { getExchangeRate } from '@/lib/currency-service'
 
 export const BASE_PRICE_USD = 10  // $10/seat/month (matches landing page)
 export const BASE_CURRENCY = 'USD'
+export const CHARGE_CURRENCY = 'EGP'  // Paymob only accepts EGP
 export const ANNUAL_DISCOUNT_PERCENT = 17  // ~2 months free
+
+/**
+ * Type-safe extraction of rate value from getExchangeRate result
+ * (function may return number or {rate, rateId, source} object)
+ */
+function extractRate(result: unknown, fallback: number = 1): number {
+  if (typeof result === 'number' && result > 0) return result
+  if (result && typeof result === 'object' && 'rate' in result) {
+    const rate = (result as { rate: unknown }).rate
+    if (typeof rate === 'number' && rate > 0) return rate
+  }
+  return fallback
+}
 
 // ─────────────────────────────────────────
 // Types
@@ -61,6 +75,11 @@ export interface PricingBreakdown {
   afterDiscountsDisplay: number
   taxAmountDisplay: number
   totalDisplay: number
+
+  // Charge amounts in EGP (Paymob requirement)
+  chargeCurrency: string  // always 'EGP'
+  chargeExchangeRate: number  // USD → EGP rate
+  chargeTotalEgp: number  // Final amount in EGP
 
   // Metadata
   monthsInPeriod: number  // 1 for monthly, 12 for annual
@@ -238,9 +257,8 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
   if (targetCurrency.toUpperCase() !== 'USD') {
     try {
       const admin = getAdminClient()
-      const rateResult: any = await getExchangeRate(admin, 'USD', targetCurrency.toUpperCase())
-      const rate = typeof rateResult === 'number' ? rateResult : (rateResult?.rate ?? 1)
-      exchangeRate = rate > 0 ? rate : 1
+      const rateResult = await getExchangeRate(admin, 'USD', targetCurrency.toUpperCase())
+      exchangeRate = extractRate(rateResult, 1)
     } catch (e) {
       console.warn('[pricing-engine] Exchange rate fetch failed, using 1.0', e)
       exchangeRate = 1
@@ -253,6 +271,22 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
   const afterDiscountsDisplay = round2(afterDiscountsUsd * exchangeRate)
   const taxAmountDisplay = round2(taxAmountUsd * exchangeRate)
   const totalDisplay = round2(totalUsd * exchangeRate)
+
+  // ── Step 7: Convert to EGP for Paymob charging ──
+  // CHARGE_CURRENCY is always 'EGP' (Paymob constraint) — always fetch the rate
+  let chargeExchangeRate = 50  // fallback ~50 EGP/USD
+  try {
+    const admin = getAdminClient()
+    const rateResult = await getExchangeRate(admin, 'USD', CHARGE_CURRENCY)
+    chargeExchangeRate = extractRate(rateResult, 50)
+  } catch (e) {
+    console.warn('[pricing-engine] EGP rate fetch failed', e)
+    notes.push(`Warning: using fallback USD→EGP rate (~50)`)
+  }
+  const chargeTotalEgp = round2(totalUsd * chargeExchangeRate)
+  if (targetCurrency.toUpperCase() !== 'EGP') {
+    notes.push(`💳 Charged in EGP via Paymob: ${chargeTotalEgp.toLocaleString()} EGP`)
+  }
 
   return {
     seats,
@@ -280,6 +314,10 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
     afterDiscountsDisplay,
     taxAmountDisplay,
     totalDisplay,
+
+    chargeCurrency: CHARGE_CURRENCY,
+    chargeExchangeRate,
+    chargeTotalEgp,
 
     monthsInPeriod,
     couponApplied: coupon.valid ? couponCode : undefined,
