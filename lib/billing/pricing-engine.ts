@@ -1,19 +1,12 @@
 /**
- * Pricing Engine - 7ESAB ERP v3.29.1
+ * Pricing Engine - 7ESAB ERP v3.29.0
  *
  * Single source of truth for ALL pricing calculations:
- * - Base price: $10 USD per seat/month (for marketing alignment)
- * - Display currency: any (EGP, USD, EUR, GBP, SAR, AED) - live FX
- * - Charge currency: EGP ONLY (Paymob merchant account is EGP)
+ * - Base price: $10 USD per seat/month
+ * - Multi-currency: live conversion using exchange_rates
  * - Volume discounts: 10/25/50+ seats
  * - Annual billing: -17% (2 months free)
  * - VAT: per-country, auto-calculated
- *
- * Payment flow:
- *   1. Customer sees price in their currency (e.g. SAR 38)
- *   2. We convert SAR 38 → EGP via live rate (e.g. EGP 510)
- *   3. Paymob charges EGP 510
- *   4. Invoice records both: display + chargedEgp + exchange_rate
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -25,7 +18,6 @@ import { getExchangeRate } from '@/lib/currency-service'
 
 export const BASE_PRICE_USD = 10  // $10/seat/month (matches landing page)
 export const BASE_CURRENCY = 'USD'
-export const CHARGE_CURRENCY = 'EGP'  // ⚠️ Paymob only accepts EGP
 export const ANNUAL_DISCOUNT_PERCENT = 17  // ~2 months free
 
 // ─────────────────────────────────────────
@@ -63,18 +55,12 @@ export interface PricingBreakdown {
   totalUsd: number
 
   // Display amounts (in target currency, live FX rate applied)
-  exchangeRate: number       // USD → targetCurrency rate
+  exchangeRate: number
   subtotalDisplay: number
   discountDisplay: number
   afterDiscountsDisplay: number
   taxAmountDisplay: number
   totalDisplay: number
-
-  // Charge amounts (EGP - what Paymob will actually charge)
-  // ⚠️ The customer will ALWAYS be charged in EGP via Paymob
-  chargeCurrency: 'EGP'
-  chargeExchangeRate: number  // USD → EGP rate
-  chargeTotalEgp: number       // Final amount in EGP
 
   // Metadata
   monthsInPeriod: number  // 1 for monthly, 12 for annual
@@ -267,25 +253,6 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
   const taxAmountDisplay = round2(taxAmountUsd * exchangeRate)
   const totalDisplay = round2(totalUsd * exchangeRate)
 
-  // ── Step 7: Convert to EGP (charge currency - Paymob requirement) ──
-  let chargeExchangeRate = 1
-  if (CHARGE_CURRENCY !== 'USD') {
-    try {
-      const admin = getAdminClient()
-      chargeExchangeRate = await getExchangeRate(admin, 'USD', CHARGE_CURRENCY)
-      if (!chargeExchangeRate || chargeExchangeRate <= 0) chargeExchangeRate = 1
-    } catch (e) {
-      console.warn('[pricing-engine] EGP exchange rate fetch failed', e)
-      chargeExchangeRate = 50  // fallback approximate rate
-      notes.push(`Warning: using fallback USD→EGP rate (~50)`)
-    }
-  }
-  const chargeTotalEgp = round2(totalUsd * chargeExchangeRate)
-
-  if (targetCurrency.toUpperCase() !== 'EGP') {
-    notes.push(`💳 Charged in EGP via Paymob: ${chargeTotalEgp.toLocaleString()} EGP`)
-  }
-
   return {
     seats,
     billingPeriod,
@@ -312,10 +279,6 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
     afterDiscountsDisplay,
     taxAmountDisplay,
     totalDisplay,
-
-    chargeCurrency: CHARGE_CURRENCY,
-    chargeExchangeRate,
-    chargeTotalEgp,
 
     monthsInPeriod,
     couponApplied: coupon.valid ? couponCode : undefined,
