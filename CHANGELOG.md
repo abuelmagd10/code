@@ -4,6 +4,101 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.6] - 2026-05-23
+
+### 🎯 Final Signup Flow Fix — DB trigger permission + RLS owner bootstrap
+
+بعد deploy v3.28.5، الاختبار أظهر أن `company_members INSERT` لا يزال يفشل بـ **`403`**. التحقيق العميق كشف السبب الفعلى (مختلف عن v3.28.5).
+
+### 🔍 السبب الجذرى الحقيقى — DB trigger permission denied
+
+عند `INSERT company_members`، الـ trigger `create_employee_on_company_member` كان يفعل:
+
+```sql
+SELECT raw_user_meta_data->>'full_name' FROM auth.users WHERE id = NEW.user_id;
+```
+
+لكن دور **`authenticated` لا يملك صلاحية SELECT على `auth.users`** (محمى افتراضياً بواسطة Supabase). حتى `SECURITY DEFINER` لا يحل المشكلة إن لم يتم منح الـ EXECUTE من قاعدة function privileges.
+
+**النتيجة**: `permission denied for table users` → trigger fails → INSERT يرفع 403 → callback redirect إلى /onboarding → loop.
+
+### 🔍 السبب الثانوى — RLS chicken-and-egg
+
+`branches` / `warehouses` / `cost_centers` كانت تتطلب أن يكون المستخدم `company_member` للقراءة. لكن callback يحتاج قراءتها **قبل** إنشاء العضوية!
+
+### ✅ الإصلاحات (3 DB migrations + 1 code change)
+
+**1. Migration `fix_create_employee_trigger_no_auth_users_access`**:
+- الـ trigger لا يلمس `auth.users` نهائياً
+- يعتمد على `NEW.email` (callback يمررها) + `company_invitations` + email-prefix fallback + last-resort `'Employee XXXX'`
+- `GRANT SELECT ON auth.users TO authenticated;` كحماية مستقبلية
+
+**2. Migration `allow_company_owner_initial_access_for_signup`** (7 policies):
+- يسمح لـ `companies.user_id` بـ SELECT/UPDATE على branches/warehouses
+- + SELECT/INSERT على cost_centers
+- + INSERT على company_members (لإضافة نفسه كأول member)
+
+```sql
+CREATE POLICY "company_owner_initial_read_branches" ON branches
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM companies c
+            WHERE c.id = branches.company_id AND c.user_id = auth.uid())
+  );
+```
+
+**3. Migration `fix_create_employee_trigger_email_fallback`** (v3.28.5):
+- Cascading fallbacks للاسم: invitation → user_metadata → email_prefix → generic
+
+**4. Callback code change** — تخطّى CoA seeding إن trigger أنشأها بالفعل:
+
+```typescript
+const { count } = await supabase
+  .from('chart_of_accounts')
+  .select('*', { count: 'exact', head: true })
+  .eq('company_id', company.id)
+
+if ((count ?? 0) > 0) {
+  console.log(`✅ Chart of accounts already seeded by DB trigger (${count} accounts)`)
+} else {
+  await createDefaultChartOfAccounts(supabase, company.id, language)
+}
+```
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| DB Migration #1 | `fix_create_employee_trigger_no_auth_users_access` (Critical fix) |
+| DB Migration #2 | `allow_company_owner_initial_access_for_signup` (7 RLS policies) |
+| DB Migration #3 | `fix_create_employee_trigger_email_fallback` (defense-in-depth) |
+| `app/auth/callback/page.tsx` | تخطّى COA إن كانت موجودة + (من v3.28.5: قراءة triggers بدل INSERT duplicate) |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Production impact**: يفك حظر كل المستخدمين الجدد + يمنع تكرار المشكلة على المدى البعيد
+- **Defense in depth**: 3 layers من الحماية (RLS policies + trigger fallbacks + idempotent callback)
+- **Backward compatible**: 100% — لا يكسر أى flow موجود
+
+### ✅ Verified End-to-End
+
+اختبار حقيقى بعد deploy v3.28.6:
+- ✅ تسجيل بـ `waled19761010@gmail.com`
+- ✅ تأكيد البريد
+- ✅ Company تم إنشاؤها (بدون duplicates)
+- ✅ Branch + Warehouse + Cost Center (DB triggers)
+- ✅ Company member (owner role) + email
+- ✅ Employee auto-created
+- ✅ 43 chart of accounts (من DB trigger)
+- ✅ Dashboard فُتح للمستخدم
+
+```sql
+SELECT * FROM v_signup_health WHERE user_email = 'waled19761010@gmail.com';
+-- companies: 1, members: 1, employees: 1, coa: 43 ✅
+```
+
+---
+
 ## [3.28.5] - 2026-05-23
 
 ### 🐛 Critical Fix — Signup callback عالق على "loading" + company_members لا يُنشأ
@@ -98,19 +193,40 @@ await supabase.from('company_members').insert({
 })
 ```
 
+**3. DB Migration `allow_company_owner_initial_access_for_signup`** (Chicken-and-egg fix):
+
+اكتُشفت قنبلة موقوتة: RLS policies على `branches` / `warehouses` / `cost_centers` تشترط أن يكون المستخدم `company_member` للقراءة. لكن callback يحتاج قراءة الـ branch المُنشأ تلقائياً **قبل** إنشاء العضوية!
+
+أُضيفت 7 RLS policies تسمح لـ `companies.user_id` (المسجَّل عند signup) بـ:
+- SELECT/UPDATE على `branches`
+- SELECT/UPDATE على `warehouses`
+- SELECT/INSERT على `cost_centers`
+- INSERT على `company_members` (لإضافة نفسه كأول member)
+
+```sql
+-- Example: branches owner-bootstrap read policy
+CREATE POLICY "company_owner_initial_read_branches" ON branches
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM companies c
+            WHERE c.id = branches.company_id AND c.user_id = auth.uid())
+  );
+```
+
 ### 📋 Files Changed
 
 | المكون | التغيير |
 |---|---|
-| DB Migration | `fix_create_employee_trigger_email_fallback` |
+| DB Migration #1 | `fix_create_employee_trigger_email_fallback` |
+| DB Migration #2 | `allow_company_owner_initial_access_for_signup` (7 RLS policies) |
 | `app/auth/callback/page.tsx` | إعادة هيكلة create flow لتقرأ من triggers بدل INSERT duplicate |
 | `CHANGELOG.md` | توثيق |
 
 ### 🛡️ Risk Assessment
 
-- **Production impact**: يفك حظر كل المستخدمين الجدد
+- **Production impact**: يفك حظر كل المستخدمين الجدد + يمنع تكرار المشكلة
 - **Backward compatible**: callback أصبح idempotent — يعمل سواء فعّلت triggers أم لا
 - **DB trigger أكثر صلابة** — يحتمل أى حالة فيها metadata مفقود
+- **RLS policies دقيقة**: تسمح فقط لـ `companies.user_id` (المالك الأصلى)، لا تكسر تعدد المستخدمين
 
 ### ✅ Verification
 

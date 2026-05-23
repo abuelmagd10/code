@@ -217,13 +217,22 @@ function CallbackInner() {
     console.log('Company created with base_currency:', currency)
     console.log('Using global_currencies table - no per-company currencies needed')
 
-    // Create default chart of accounts
+    // Create default chart of accounts (skip if DB trigger trg_seed_company_accounts already seeded them)
     setStatus("جاري إنشاء الشجرة الحسابية...")
-    const coaResult = await createDefaultChartOfAccounts(supabase, company.id, language)
-    if (!coaResult.success) {
-      console.warn('Warning: Could not create default chart of accounts:', coaResult.error)
+    const { count: existingAccountsCount } = await supabase
+      .from('chart_of_accounts')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', company.id)
+
+    if ((existingAccountsCount ?? 0) > 0) {
+      console.log(`✅ Chart of accounts already seeded by DB trigger (${existingAccountsCount} accounts) - skipping callback seeding`)
     } else {
-      console.log(`Created ${coaResult.accountsCreated} default accounts`)
+      const coaResult = await createDefaultChartOfAccounts(supabase, company.id, language)
+      if (!coaResult.success) {
+        console.warn('Warning: Could not create default chart of accounts:', coaResult.error)
+      } else {
+        console.log(`Created ${coaResult.accountsCreated} default accounts`)
+      }
     }
 
     // Save to localStorage and cookies
