@@ -4,6 +4,65 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.8] - 2026-05-23
+
+### ⚡ Performance — SW v4.2.0 + Vercel maxDuration للـ dashboard
+
+بعد deploy v3.28.7، الاختبار أظهر أن `/dashboard` لا يزال يفشل بـ `TypeError: Failed to fetch`. التحقيق العميق كشف:
+
+### 🔍 ما حدث فى v3.28.7 (لم يكفِ)
+
+الـ SW v4.1.0 كان يتحقق فقط من `request.mode === 'navigate'` لتجنب navigation requests. لكن Next.js App Router يستخدم **RSC fetches** بـ `mode: 'cors'` للـ client navigation - لذا SW استلمها وحاول fetchWithRetry → فشلت → "Failed to fetch".
+
+### ✅ الإصلاحات v3.28.8
+
+**1. Service Worker v4.2.0** (aggressive HTML/RSC bypass):
+
+```js
+function isHtmlOrRscRequest(request, url) {
+  if (request.mode === 'navigate') return true;
+  if (request.destination === 'document') return true;
+
+  const accept = request.headers.get('accept') || '';
+  if (accept.includes('text/html')) return true;
+  if (accept.includes('text/x-component')) return true; // Next.js RSC
+
+  // Next.js RSC headers
+  if (request.headers.get('rsc') || request.headers.get('next-router-state-tree')) {
+    return true;
+  }
+
+  return false;
+}
+```
+
+- **3-layer detection**: mode + destination + accept/rsc headers
+- **45s timeout** (بدلاً من 30s) للـ API requests
+- **3 retries** (بدلاً من 2) مع backoff 1s/2s/4s
+
+**2. Vercel `maxDuration: 60`** للـ dashboard:
+
+```json
+{
+  "functions": {
+    "app/dashboard/page.tsx": { "maxDuration": 60 },
+    "app/api/**/*.{js,ts}": { "maxDuration": 30 }
+  }
+}
+```
+
+هذا يطيل عمر Vercel function لمدة 60 ثانية (يحتاج Pro plan أو أعلى).
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `public/sw.js` | v4.1.0 → v4.2.0 (aggressive HTML/RSC bypass + 3 retries + 45s) |
+| `vercel.json` | إضافة `functions.maxDuration` |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.7] - 2026-05-23
 
 ### ⚡ Performance — Dashboard Cold-Start Optimization (يحل 503 transient)

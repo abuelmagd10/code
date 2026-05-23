@@ -1,8 +1,8 @@
 // 7ESAB ERP Service Worker - Secure Multi-Tenant Version
-// Version: 4.1.0 - 2026-05-23 - Cold start resilience for /dashboard navigation
+// Version: 4.2.0 - 2026-05-23 - Aggressive HTML bypass + 3 retries + 45s timeout
 // ✅ Production Ready: No caching for dynamic/sensitive data
-// ✅ v4.1.0: Navigation requests bypass SW; API requests get retry+long timeout
-const VERSION = '4.1.0-' + Date.now(); // Force unique version on each deployment
+// ✅ v4.2.0: ALL HTML/RSC fetches bypass SW (mode/destination/accept-based)
+const VERSION = '4.2.0-' + Date.now(); // Force unique version on each deployment
 const BUILD_DATE = new Date().toISOString().split('T')[0];
 const STATIC_CACHE = `7esab-static-v${VERSION}`;
 
@@ -208,11 +208,11 @@ self.addEventListener('activate', (event) => {
 // ✅ CacheFirst فقط للملفات الثابتة
 
 /**
- * v4.1.0 — fetch with retry + long timeout, used for non-navigation requests
- * عند فشل الـ network، يحاول مرة ثانية بـ exponential backoff قبل الفشل.
+ * v4.2.0 — fetch with retry + long timeout, used for non-HTML API requests
+ * عند فشل الـ network، يحاول مرات بـ exponential backoff قبل الفشل.
  * لو فشل نهائياً، نرمى الخطأ (لا نولّد 503 synthesized).
  */
-async function fetchWithRetry(request, { maxAttempts = 2, timeoutMs = 30000 } = {}) {
+async function fetchWithRetry(request, { maxAttempts = 3, timeoutMs = 45000 } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController();
@@ -227,14 +227,37 @@ async function fetchWithRetry(request, { maxAttempts = 2, timeoutMs = 30000 } = 
       clearTimeout(timer);
       lastError = err;
       if (attempt < maxAttempts) {
-        // exponential backoff: 500ms, 1000ms, 2000ms...
-        const delay = Math.min(500 * Math.pow(2, attempt - 1), 2000);
+        // exponential backoff: 1000ms, 2000ms, 4000ms
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
         console.warn(`[SW v${VERSION}] Fetch attempt ${attempt} failed for ${new URL(request.url).pathname}, retrying in ${delay}ms`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
   throw lastError;
+}
+
+/**
+ * v4.2.0 — Detect HTML/RSC requests aggressively (3 layers)
+ * - request.mode === 'navigate' (top-level browser nav)
+ * - request.destination === 'document' (HTML doc)
+ * - accept header contains 'text/html' OR 'text/x-component' (Next.js RSC)
+ * - URL is a known app route (not /api/, /rest/, /auth/, static)
+ */
+function isHtmlOrRscRequest(request, url) {
+  if (request.mode === 'navigate') return true;
+  if (request.destination === 'document') return true;
+
+  const accept = request.headers.get('accept') || '';
+  if (accept.includes('text/html')) return true;
+  if (accept.includes('text/x-component')) return true; // Next.js RSC
+
+  // Check for Next.js RSC fetch headers
+  if (request.headers.get('rsc') || request.headers.get('next-router-state-tree')) {
+    return true;
+  }
+
+  return false;
 }
 
 self.addEventListener('fetch', (event) => {
@@ -255,10 +278,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ✅ v4.1.0: Navigation requests (HTML pages) bypass SW entirely
-  //   - lets the browser handle them natively with no synthesized errors
-  //   - solves cold-start /dashboard 503 issue
-  if (request.mode === 'navigate' || request.destination === 'document') {
+  // ✅ v4.2.0: ALL HTML/RSC requests bypass SW entirely (3-layer detection)
+  //   - Lets the browser handle them natively with no SW overhead/retries
+  //   - Solves cold-start /dashboard 503/Failed-to-fetch issues
+  if (isHtmlOrRscRequest(request, url)) {
     // Let browser handle it natively (no respondWith) — fastest path
     return;
   }
@@ -267,7 +290,7 @@ self.addEventListener('fetch', (event) => {
   if (shouldNeverCache(url, request)) {
     console.log(`[SW v${VERSION}] NetworkOnly for: ${url.pathname}`);
     event.respondWith(
-      fetchWithRetry(request, { maxAttempts: 2, timeoutMs: 30000 })
+      fetchWithRetry(request, { maxAttempts: 3, timeoutMs: 45000 })
         .then((response) => {
           // ✅ عدم تخزين الاستجابة نهائيًا
           return response;
