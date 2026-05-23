@@ -15,6 +15,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getInvoiceSignedUrl, regenerateInvoicePdf } from '@/lib/billing/invoice-generator'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 interface RouteContext {
   params: Promise<{ id: string }>

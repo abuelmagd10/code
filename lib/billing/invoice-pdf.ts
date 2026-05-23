@@ -17,7 +17,15 @@
  * Path:   {company_id}/{invoice_number}.pdf
  */
 
-import PDFDocument from 'pdfkit'
+// pdfkit is loaded dynamically (await import) so Turbopack does NOT analyze
+// fontkit (a transitive dependency that ships an ESM build incompatible with
+// the newer @swc/helpers export shape). Combined with `serverExternalPackages`
+// in next.config.mjs this guarantees pdfkit is loaded as a plain Node CJS
+// module at runtime only.
+//
+// Note: @types/pdfkit declares `export = PDFDocument` (CJS-style), so the
+// module type IS the class itself. At runtime, the ESM dynamic-import wrapper
+// may expose it via `.default` or directly — we handle both.
 
 // ─────────────────────────────────────────
 // Types
@@ -148,6 +156,12 @@ function statusLabel(status: InvoiceData['status']): { text: string; color: stri
  * doc.registerFont('Arabic', '/path/to/font.ttf').
  */
 export async function renderInvoicePdf(data: InvoiceData): Promise<Buffer> {
+  // Dynamic import keeps pdfkit out of the Turbopack module graph at build time.
+  // pdfkit ships CJS (`export = PDFDocument`); ESM dynamic-import wraps it as
+  // either the class directly or under `.default` depending on the runtime.
+  const pdfkitMod = (await import('pdfkit')) as unknown as Record<string, any>
+  const PDFDocument: typeof import('pdfkit') = pdfkitMod.default ?? pdfkitMod
+
   return new Promise<Buffer>((resolve, reject) => {
     try {
       const doc = new PDFDocument({

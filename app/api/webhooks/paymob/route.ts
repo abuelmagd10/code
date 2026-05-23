@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { syncSubscriptionFromWebhook, type PaymobWebhookPayload } from '@/lib/billing/subscription-service'
 
+// Force Node.js runtime — pdfkit (loaded transitively for invoice generation)
+// requires Node APIs not available on the Edge runtime.
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 const PAYMOB_HMAC = process.env.PAYMOB_HMAC!
 
 // ─────────────────────────────────────────

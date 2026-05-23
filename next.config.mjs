@@ -4,6 +4,10 @@ const nextConfig = {
     // Explicitly set project root to avoid lockfile root inference warning
     root: process.cwd(),
   },
+  // pdfkit + fontkit must NOT be bundled — they're CommonJS Node modules with
+  // optional native deps that Turbopack/webpack can't safely transform.
+  // They're required only by server API routes (Node.js runtime).
+  serverExternalPackages: ['pdfkit', 'fontkit'],
   images: {
     unoptimized: true,
   },
