@@ -238,8 +238,9 @@ export async function calculatePricing(input: PricingInput): Promise<PricingBrea
   if (targetCurrency.toUpperCase() !== 'USD') {
     try {
       const admin = getAdminClient()
-      exchangeRate = await getExchangeRate(admin, 'USD', targetCurrency.toUpperCase())
-      if (!exchangeRate || exchangeRate <= 0) exchangeRate = 1
+      const rateResult: any = await getExchangeRate(admin, 'USD', targetCurrency.toUpperCase())
+      const rate = typeof rateResult === 'number' ? rateResult : (rateResult?.rate ?? 1)
+      exchangeRate = rate > 0 ? rate : 1
     } catch (e) {
       console.warn('[pricing-engine] Exchange rate fetch failed, using 1.0', e)
       exchangeRate = 1
