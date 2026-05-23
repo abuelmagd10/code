@@ -4,6 +4,98 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.34.0] - 2026-05-23
+
+### 🪑 Enterprise Billing v2.0 — Phase F + G: Effective Suspension & Per-Seat Assignment
+
+نظام إيقاف حقيقى محكم — كل موظف مربوط بمقعد محدد، وإذا لم يُجدَّد مقعده يُحظَر هو فقط (دون المساس بباقى الموظفين أو المالك).
+
+### ✅ التغييرات
+
+#### 1. **Phase F: Effective Suspension** (إيقاف فعلى)
+
+السابقاً، الإيقاف كان "رمزى فقط" (تنبيه فى UI). الآن إيقاف حقيقى:
+
+- **`lib/supabase/middleware.ts`**: يستدعى `get_user_company_status` لكل request
+- إذا (subscription_status='payment_failed' AND not_owner) → redirect لـ `/suspended`
+- **المالك** يدخل دائماً (مقعده مجانى) ويرى banner أحمر فى `/settings/billing`
+- **الموظفون** عند الإيقاف لا يدخلون ولا يستخدمون النظام
+
+#### 2. **Phase G: Per-Seat Assignment** (ربط المقعد بالموظف)
+
+كل موظف يحصل على **رقم مقعد** عند قبول الدعوة:
+
+- **DB**: عمود جديد `seat_number` فى `company_members`
+  - المالك → seat 0 (مجانى أبدى)
+  - الموظف الأول → seat 1
+  - الموظف الثانى → seat 2
+  - ...وهكذا
+- **`reserve_seat`** يستدعى `assign_next_seat_number()` ويُسند الرقم على الدعوة
+- **`activate_seat`** يُورِّث الرقم لـ `company_members` عند قبول الدعوة
+
+#### 3. **سيناريو "10 موظفين → تجديد بـ 9 مقاعد"**
+
+عند الدفع لـ N مقاعد:
+- موظفون بمقاعد 1 إلى N → نشطون ✅
+- موظفون بمقاعد > N → مُحظَرون 🔒 (يرون شاشة "مقعدك غير مدفوع")
+
+#### 4. **`get_user_company_status` v2**
+
+ترجع الآن:
+```json
+{
+  "has_company": true,
+  "is_owner": false,
+  "seat_number": 5,
+  "paid_seats": 4,
+  "is_company_suspended": false,
+  "is_seat_suspended": true,   ← مقعد فوق الحد
+  "is_suspended": true          ← القرار النهائى للحظر
+}
+```
+
+#### 5. **صفحة `/suspended` ذكية**
+
+- إذا الشركة كلها مُوقَفة → "تم إيقاف حساب شركتك"
+- إذا المقعد فقط مُوقَف → "مقعدك رقم #5 أعلى من 4 مقاعد مدفوعة"
+- معلومات تواصل المالك (الاسم + البريد + زر إيميل مباشر)
+- زر تسجيل خروج (POST لمنع prefetching)
+
+#### 6. **POST `/auth/sign-out`** (جديد)
+
+- Endpoint نظيف لتسجيل الخروج server-side
+- GET handler يحوّل لـ `/auth/login` بدون أى action
+
+### 🧠 المعمارية
+
+```
+موظف يحاول الدخول
+       │
+       ▼
+Middleware يستدعى:
+get_user_company_status(user_id)
+       │
+       ├─ has_company = false → /onboarding
+       ├─ is_owner = true     → السماح ✅
+       ├─ is_company_suspended → /suspended
+       ├─ is_seat_suspended    → /suspended (مع رقم المقعد)
+       └─ otherwise           → السماح ✅
+```
+
+### 🚦 Phase Roadmap (مُكتمل بالكامل)
+
+- ✅ Phase 1: Foundation (v3.29.0)
+- ✅ Phase A: EGP Charging (v3.29.2)
+- ✅ Phase B: PDF Invoices (v3.30.0/v3.30.1)
+- ✅ Phase C: Customer Portal (v3.31.0)
+- ✅ Phase D: Subscription Lifecycle (v3.32.0/v3.32.1)
+- ✅ Phase E: Frictionless Renewal Link (v3.33.0)
+- ✅ **Phase F+G: Effective Suspension + Per-Seat Assignment (v3.34.0)** ← هذا الإصدار
+
+🎯 **نظام الفوترة الآن enterprise-grade بحق — كل عملية محكومة، وكل مقعد مربوط بموظف!**
+
+---
+
 ## [3.33.0] - 2026-05-23
 
 ### ⚡ Enterprise Billing v2.0 — Phase E: Frictionless Renewal Link

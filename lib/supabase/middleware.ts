@@ -85,6 +85,55 @@ export async function updateSession(request: NextRequest) {
       // السماح للصفحة الرئيسية / أن تعيد التوجيه بنفسها
     }
 
+    // ─────────────────────────────────────────
+    // Phase F: Suspension enforcement
+    // Non-owner members of a suspended company can ONLY see /suspended.
+    // Owner is unaffected (always free seat) and uses the app normally —
+    // they see the suspension banner in /settings/billing.
+    // ─────────────────────────────────────────
+    if (session?.user) {
+      const isSuspendedPage = request.nextUrl.pathname.startsWith("/suspended")
+      const isBillingPage = request.nextUrl.pathname.startsWith("/settings/billing")
+      const isOnboarding = request.nextUrl.pathname.startsWith("/onboarding") ||
+                            request.nextUrl.pathname.startsWith("/auth")
+      const isStatic = request.nextUrl.pathname.startsWith("/_next") ||
+                       request.nextUrl.pathname === "/manifest.json" ||
+                       request.nextUrl.pathname.endsWith(".png") ||
+                       request.nextUrl.pathname.endsWith(".svg") ||
+                       request.nextUrl.pathname.endsWith(".ico")
+
+      // Skip the check on pages where blocking would be wrong/wasteful
+      if (
+        !isAuthPage && !isInvitationAcceptPage && !isPublicApi &&
+        !isSuspendedPage && !isOnboarding && !isStatic
+      ) {
+        // Fast RPC: one query returns { has_company, is_owner, is_suspended }
+        const { data: statusData } = await supabase.rpc('get_user_company_status', {
+          p_user_id: session.user.id,
+        })
+
+        const status = statusData as {
+          has_company?: boolean
+          is_owner?: boolean
+          is_suspended?: boolean
+        } | null
+
+        const isNonOwnerOnSuspendedCompany =
+          status?.has_company === true &&
+          status?.is_suspended === true &&
+          status?.is_owner === false
+
+        if (isNonOwnerOnSuspendedCompany) {
+          // Non-owner member of a suspended company → redirect to /suspended
+          // Allow them to log out though (handled by /auth/* exclusion above)
+          const url = request.nextUrl.clone()
+          url.pathname = "/suspended"
+          url.search = ""
+          return NextResponse.redirect(url)
+        }
+      }
+    }
+
     return supabaseResponse
   } catch (error) {
     console.error('Middleware error:', error)
