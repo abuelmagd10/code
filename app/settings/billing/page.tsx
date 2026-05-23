@@ -4,9 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  CreditCard, Users, TrendingUp, CheckCircle, AlertTriangle,
+  CreditCard, Users, CheckCircle, AlertTriangle,
   Clock, ArrowLeft, Plus, Minus, Loader2, RefreshCw,
-  Receipt, Calendar, Shield, Zap, ChevronRight
+  Receipt, Calendar, Shield, Zap, TrendingDown, Sparkles, Globe,
+  Award, Gift,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────
@@ -19,7 +20,36 @@ interface SeatStatus {
   available_seats: number
   can_invite: boolean
   subscription_status: string
-  price_per_seat_egp: number
+}
+
+interface PricingPreview {
+  seats: number
+  billingPeriod: 'monthly' | 'annual'
+  targetCurrency: string
+  countryCode: string
+  basePriceUsd: number
+  subtotalUsd: number
+  volumeDiscountPercent: number
+  volumeDiscountUsd: number
+  annualDiscountPercent: number
+  annualDiscountUsd: number
+  couponDiscountPercent: number
+  couponDiscountUsd: number
+  totalDiscountUsd: number
+  afterDiscountsUsd: number
+  taxRate: number
+  taxAmountUsd: number
+  totalUsd: number
+  exchangeRate: number
+  subtotalDisplay: number
+  discountDisplay: number
+  afterDiscountsDisplay: number
+  taxAmountDisplay: number
+  totalDisplay: number
+  monthsInPeriod: number
+  couponApplied?: string
+  couponValid?: boolean
+  notes: string[]
 }
 
 interface SeatTransaction {
@@ -32,9 +62,6 @@ interface SeatTransaction {
   metadata: Record<string, any>
 }
 
-// ─────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────
 const STATUS_MAP: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   free:           { label: 'مجاني (مالك فقط)',  color: 'text-gray-600 bg-gray-100 dark:bg-gray-800',  icon: <Shield className="w-4 h-4" /> },
   active:         { label: 'نشط',                color: 'text-green-700 bg-green-100 dark:bg-green-900/30', icon: <CheckCircle className="w-4 h-4" /> },
@@ -51,6 +78,16 @@ const TXN_TYPE_MAP: Record<string, string> = {
   refund:   '↩️ استرداد',
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', EUR: '€', GBP: '£', EGP: 'ج.م', SAR: 'ر.س', AED: 'د.إ'
+}
+
+function formatMoney(amount: number, currency: string): string {
+  const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] || currency
+  const formatted = amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${symbol} ${formatted}`
+}
+
 // ─────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────
@@ -61,7 +98,15 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true)
   const [txnLoading, setTxnLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Pricing UI state
   const [seatsToAdd, setSeatsToAdd] = useState(1)
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly')
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState('')
+  const [pricing, setPricing] = useState<PricingPreview | null>(null)
+  const [pricingLoading, setPricingLoading] = useState(false)
+
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
@@ -88,16 +133,36 @@ export default function BillingPage() {
     }
   }, [router])
 
-  // ─── Fetch transactions ───
+  // ─── Fetch live pricing preview ───
+  const fetchPricing = useCallback(async () => {
+    if (seatsToAdd < 1) return
+    setPricingLoading(true)
+    try {
+      const params = new URLSearchParams({
+        seats: String(seatsToAdd),
+        period: billingPeriod,
+      })
+      if (appliedCoupon) params.set('coupon', appliedCoupon)
+
+      const res = await fetch(`/api/billing/preview?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPricing(data)
+      }
+    } catch (e) {
+      console.warn('Pricing preview failed', e)
+    } finally {
+      setPricingLoading(false)
+    }
+  }, [seatsToAdd, billingPeriod, appliedCoupon])
+
   const fetchTransactions = useCallback(async () => {
     setTxnLoading(true)
     try {
       const res = await fetch('/api/billing/transactions')
       const data = await res.json()
-      if (res.ok && Array.isArray(data)) {
-        setTransactions(data)
-      }
-    } catch { /* transactions are optional — don't block UI */ }
+      if (res.ok && Array.isArray(data)) setTransactions(data)
+    } catch { }
     finally { setTxnLoading(false) }
   }, [])
 
@@ -106,23 +171,32 @@ export default function BillingPage() {
     fetchTransactions()
   }, [fetchStatus, fetchTransactions])
 
+  // Debounced pricing fetch on inputs change
+  useEffect(() => {
+    const timer = setTimeout(fetchPricing, 300)
+    return () => clearTimeout(timer)
+  }, [fetchPricing])
+
   // ─── Initiate payment ───
   const handlePurchase = async () => {
-    if (seatsToAdd < 1 || seatsToAdd > 50) return
+    if (seatsToAdd < 1 || seatsToAdd > 1000) return
     setCheckoutLoading(true)
     setCheckoutError(null)
     try {
       const res = await fetch('/api/billing/seats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seats: seatsToAdd }),
+        body: JSON.stringify({
+          seats: seatsToAdd,
+          billing_period: billingPeriod,
+          coupon: appliedCoupon || undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
         setCheckoutError(data?.error || 'فشل في إنشاء طلب الدفع')
         return
       }
-      // Redirect to Paymob checkout
       if (data?.checkout_url) {
         window.location.href = data.checkout_url
       } else {
@@ -135,8 +209,15 @@ export default function BillingPage() {
     }
   }
 
-  const pricePerSeat = status?.price_per_seat_egp ?? 500
-  const totalCost = seatsToAdd * pricePerSeat
+  const handleApplyCoupon = () => {
+    setAppliedCoupon(couponCode.trim().toUpperCase())
+  }
+
+  const displayCurrency = pricing?.targetCurrency || 'USD'
+  const monthsLabel = billingPeriod === 'annual' ? '/سنة' : '/شهر'
+  const perSeatPriceUsd = pricing
+    ? (pricing.afterDiscountsUsd / pricing.seats / pricing.monthsInPeriod).toFixed(2)
+    : '10.00'
 
   // ─────────────────────────────────────────
   // Render
@@ -171,7 +252,7 @@ export default function BillingPage() {
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950" dir="rtl">
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -181,11 +262,11 @@ export default function BillingPage() {
             </Link>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">إدارة الاشتراك</h1>
-              <p className="text-sm text-gray-500">إدارة مقاعد المستخدمين والدفع الشهري</p>
+              <p className="text-sm text-gray-500">أسعار عالمية بـ {displayCurrency} • تحويل تلقائى من $10 USD</p>
             </div>
           </div>
           <button
-            onClick={() => { fetchStatus(); fetchTransactions() }}
+            onClick={() => { fetchStatus(); fetchTransactions(); fetchPricing() }}
             className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
             title="تحديث"
           >
@@ -230,18 +311,36 @@ export default function BillingPage() {
           />
         </div>
 
-        {/* Pricing info */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-gray-100 dark:border-slate-800 flex items-center gap-3">
-          <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
-            <Zap className="w-5 h-5 text-violet-600" />
+        {/* Live Pricing Display */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-gray-100 dark:border-slate-800">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
+              <Globe className="w-5 h-5 text-violet-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">سعر المقعد</h3>
+              <p className="text-xs text-gray-500">$10 USD/شهر — يتم تحويله للعملة المحلية بسعر الصرف اللحظى</p>
+            </div>
           </div>
-          <div>
-            <p className="font-semibold text-gray-900 dark:text-white text-sm">سعر المقعد الشهري</p>
-            <p className="text-gray-500 text-xs">يُجدَّد شهرياً • المالك المؤسس مجاني دائماً</p>
-          </div>
-          <div className="mr-auto text-right">
-            <p className="text-2xl font-bold text-violet-600">{pricePerSeat} جنيه</p>
-            <p className="text-xs text-gray-400">/مقعد/شهر</p>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center p-3 rounded-lg bg-gray-50 dark:bg-slate-800">
+              <p className="text-xs text-gray-500 mb-1">USD</p>
+              <p className="text-2xl font-bold text-violet-600">${perSeatPriceUsd}</p>
+              <p className="text-[10px] text-gray-400">{monthsLabel}</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-violet-50 dark:bg-violet-900/20 ring-2 ring-violet-200">
+              <p className="text-xs text-violet-700 dark:text-violet-300 mb-1">{displayCurrency}</p>
+              <p className="text-2xl font-bold text-violet-700 dark:text-violet-300">
+                {pricing ? formatMoney(pricing.afterDiscountsDisplay / pricing.seats / pricing.monthsInPeriod, displayCurrency) : '...'}
+              </p>
+              <p className="text-[10px] text-violet-500">سعر الصرف: {pricing?.exchangeRate.toFixed(4)}</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-green-50 dark:bg-green-900/20">
+              <p className="text-xs text-green-700 dark:text-green-300 mb-1">VAT</p>
+              <p className="text-2xl font-bold text-green-700 dark:text-green-300">{pricing?.taxRate ?? 0}%</p>
+              <p className="text-[10px] text-green-500">{pricing?.countryCode}</p>
+            </div>
           </div>
         </div>
 
@@ -256,41 +355,161 @@ export default function BillingPage() {
               <p className="text-xs text-gray-500">ستُضاف المقاعد فور تأكيد الدفع</p>
             </div>
           </div>
-          <div className="p-5 space-y-4">
-            {/* Seat counter */}
-            <div className="flex items-center gap-4">
+          <div className="p-5 space-y-5">
+
+            {/* Billing period toggle */}
+            <div className="flex items-center gap-3">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex-shrink-0">
-                عدد المقاعد المطلوبة:
+                دورة الفوترة:
               </label>
-              <div className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 rounded-xl p-1">
+              <div className="flex bg-gray-100 dark:bg-slate-800 rounded-xl p-1">
                 <button
-                  onClick={() => setSeatsToAdd(Math.max(1, seatsToAdd - 1))}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                  onClick={() => setBillingPeriod('monthly')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    billingPeriod === 'monthly'
+                      ? 'bg-white dark:bg-slate-700 text-violet-600 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400'
+                  }`}
                 >
-                  <Minus className="w-4 h-4" />
+                  شهرى
                 </button>
-                <span className="w-12 text-center font-bold text-lg text-gray-900 dark:text-white">
-                  {seatsToAdd}
-                </span>
                 <button
-                  onClick={() => setSeatsToAdd(Math.min(50, seatsToAdd + 1))}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                  onClick={() => setBillingPeriod('annual')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all relative ${
+                    billingPeriod === 'annual'
+                      ? 'bg-white dark:bg-slate-700 text-violet-600 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400'
+                  }`}
                 >
-                  <Plus className="w-4 h-4" />
+                  سنوى
+                  <span className="absolute -top-2 -end-2 px-1.5 py-0.5 bg-green-500 text-white text-[10px] rounded-full font-bold">
+                    -17%
+                  </span>
                 </button>
               </div>
             </div>
 
-            {/* Cost breakdown */}
+            {/* Seat counter */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex-shrink-0">
+                عدد المقاعد:
+              </label>
+              <div className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 rounded-xl p-1">
+                <button
+                  onClick={() => setSeatsToAdd(Math.max(1, seatsToAdd - 1))}
+                  className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={seatsToAdd}
+                  onChange={(e) => setSeatsToAdd(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
+                  className="w-16 text-center font-bold text-lg text-gray-900 dark:text-white bg-transparent focus:outline-none"
+                />
+                <button
+                  onClick={() => setSeatsToAdd(Math.min(1000, seatsToAdd + 1))}
+                  className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Volume discount badge */}
+              {pricing && pricing.volumeDiscountPercent > 0 && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-semibold">
+                  <Award className="w-3.5 h-3.5" />
+                  خصم الكمية: -{pricing.volumeDiscountPercent}%
+                </span>
+              )}
+            </div>
+
+            {/* Coupon input */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex-shrink-0">
+                كود خصم:
+              </label>
+              <input
+                type="text"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                placeholder="WELCOME20"
+                className="flex-1 px-3 py-2 bg-gray-50 dark:bg-slate-800 rounded-lg text-sm text-gray-900 dark:text-white border border-transparent focus:border-violet-400 focus:outline-none"
+              />
+              <button
+                onClick={handleApplyCoupon}
+                disabled={!couponCode.trim()}
+                className="px-3 py-2 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 rounded-lg text-sm font-medium hover:bg-violet-200 disabled:opacity-50"
+              >
+                <Gift className="w-4 h-4 inline" /> طبّق
+              </button>
+              {appliedCoupon && pricing?.couponValid && (
+                <span className="text-xs text-green-600 font-medium">✓ {appliedCoupon}</span>
+              )}
+            </div>
+
+            {/* Live cost breakdown */}
             <div className="bg-gray-50 dark:bg-slate-800 rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">{seatsToAdd} مقعد × {pricePerSeat} جنيه/شهر</span>
-                <span className="font-medium">{totalCost.toLocaleString()} جنيه</span>
-              </div>
-              <div className="border-t border-gray-200 dark:border-slate-700 pt-2 flex justify-between">
-                <span className="font-semibold text-gray-900 dark:text-white">الإجمالي</span>
-                <span className="font-bold text-violet-600 text-lg">{totalCost.toLocaleString()} جنيه/شهر</span>
-              </div>
+              {pricingLoading && (
+                <div className="flex justify-center py-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                </div>
+              )}
+              {pricing && !pricingLoading && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {seatsToAdd} مقعد × ${pricing.basePriceUsd} × {pricing.monthsInPeriod} {pricing.monthsInPeriod === 12 ? 'شهر' : 'شهر'}
+                    </span>
+                    <span className="font-medium">{formatMoney(pricing.subtotalDisplay, displayCurrency)}</span>
+                  </div>
+
+                  {pricing.volumeDiscountPercent > 0 && (
+                    <div className="flex justify-between text-sm text-green-700 dark:text-green-400">
+                      <span className="flex items-center gap-1"><TrendingDown className="w-3.5 h-3.5" />خصم الكمية ({pricing.volumeDiscountPercent}%)</span>
+                      <span>-{formatMoney(round2(pricing.volumeDiscountUsd * pricing.exchangeRate), displayCurrency)}</span>
+                    </div>
+                  )}
+
+                  {pricing.annualDiscountPercent > 0 && (
+                    <div className="flex justify-between text-sm text-green-700 dark:text-green-400">
+                      <span className="flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" />خصم سنوى ({pricing.annualDiscountPercent}%)</span>
+                      <span>-{formatMoney(round2(pricing.annualDiscountUsd * pricing.exchangeRate), displayCurrency)}</span>
+                    </div>
+                  )}
+
+                  {pricing.couponValid && pricing.couponDiscountUsd > 0 && (
+                    <div className="flex justify-between text-sm text-green-700 dark:text-green-400">
+                      <span className="flex items-center gap-1"><Gift className="w-3.5 h-3.5" />كوبون ({pricing.couponApplied})</span>
+                      <span>-{formatMoney(round2(pricing.couponDiscountUsd * pricing.exchangeRate), displayCurrency)}</span>
+                    </div>
+                  )}
+
+                  <div className="border-t border-gray-200 dark:border-slate-700 pt-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">المجموع قبل الضريبة</span>
+                      <span className="font-medium">{formatMoney(pricing.afterDiscountsDisplay, displayCurrency)}</span>
+                    </div>
+                  </div>
+
+                  {pricing.taxRate > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">ضريبة القيمة المضافة ({pricing.taxRate}%)</span>
+                      <span className="font-medium">{formatMoney(pricing.taxAmountDisplay, displayCurrency)}</span>
+                    </div>
+                  )}
+
+                  <div className="border-t-2 border-gray-300 dark:border-slate-600 pt-2 flex justify-between">
+                    <span className="font-semibold text-gray-900 dark:text-white">الإجمالى</span>
+                    <span className="font-bold text-violet-600 text-xl">{formatMoney(pricing.totalDisplay, displayCurrency)}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 text-end">
+                    ≈ ${pricing.totalUsd} USD
+                  </p>
+                </>
+              )}
             </div>
 
             {checkoutError && (
@@ -302,13 +521,13 @@ export default function BillingPage() {
 
             <button
               onClick={handlePurchase}
-              disabled={checkoutLoading}
+              disabled={checkoutLoading || !pricing}
               className="w-full flex items-center justify-center gap-2 py-3 px-6 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 disabled:opacity-60 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-violet-500/25"
             >
               {checkoutLoading ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> جارٍ التحويل لبوابة الدفع...</>
               ) : (
-                <><CreditCard className="w-5 h-5" /> الدفع الآن — {totalCost.toLocaleString()} جنيه</>
+                <><CreditCard className="w-5 h-5" /> الدفع الآن {pricing && `— ${formatMoney(pricing.totalDisplay, displayCurrency)}`}</>
               )}
             </button>
 
@@ -366,6 +585,22 @@ export default function BillingPage() {
           </div>
         </div>
 
+        {/* Volume discount info */}
+        <div className="grid md:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-lg border border-violet-100 dark:border-violet-800">
+            <p className="font-semibold text-violet-700 dark:text-violet-300 mb-1">🎯 10+ مقاعد</p>
+            <p className="text-gray-600 dark:text-gray-400">خصم 10%</p>
+          </div>
+          <div className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+            <p className="font-semibold text-blue-700 dark:text-blue-300 mb-1">🚀 25+ مقاعد</p>
+            <p className="text-gray-600 dark:text-gray-400">خصم 15%</p>
+          </div>
+          <div className="p-3 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg border border-green-100 dark:border-green-800">
+            <p className="font-semibold text-green-700 dark:text-green-300 mb-1">🏆 50+ مقاعد</p>
+            <p className="text-gray-600 dark:text-gray-400">خصم 20%</p>
+          </div>
+        </div>
+
         {/* Back link */}
         <div className="flex justify-center">
           <Link
@@ -383,8 +618,12 @@ export default function BillingPage() {
 }
 
 // ─────────────────────────────────────────
-// StatCard helper
+// Helpers
 // ─────────────────────────────────────────
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
+}
+
 function StatCard({
   icon, label, value, bg, note, highlight
 }: {

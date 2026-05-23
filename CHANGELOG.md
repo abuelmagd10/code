@@ -4,6 +4,82 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.29.0] - 2026-05-23
+
+### 🌍 Enterprise Billing v2.0 — Phase 1: Foundation
+
+تم إعادة تصميم نظام الفوترة بالكامل ليكون **enterprise-grade عالمى المعايير**، متوافق مع الـ landing page (Free + $10/user/month).
+
+### 🆕 الميزات الجديدة (Phase 1)
+
+#### 1. Multi-Currency Pricing 🌐
+- **سعر أساسى**: $10 USD/seat/month (مطابق لـ landing page)
+- **تحويل لحظى** لـ 6 عملات: EGP, USD, EUR, GBP, SAR, AED
+- يستخدم `getExchangeRate()` من `lib/currency-service` للسعر اللحظى
+- يُحفظ الإكسشينج رايت المُستخدم فى الـ invoice للـ audit trail
+
+#### 2. Plans Hierarchy 📦
+- **Free Plan**: 1 user مجانى للأبد، جميع ميزات ERP
+- **Paid Addon**: $10/user/month مع feature flags إضافية (AI Copilot, API access, Priority support, SSO)
+
+#### 3. Volume Discounts 💰
+| Seats | Discount |
+|---|---|
+| 10+ | 10% |
+| 25+ | 15% |
+| 50+ | 20% |
+
+#### 4. Annual Billing 📅
+- خصم **17%** على الدفع السنوى (شهران مجاناً)
+- prepay model
+
+#### 5. VAT Compliance 🧾
+- 19 دولة محملة بـ VAT rates صحيحة:
+  - مصر 14%، السعودية 15%، الإمارات 5%
+  - الاتحاد الأوروبى: حسب الدولة (19-25%)
+  - الولايات المتحدة: 0% (varies by state)
+- يُحسب تلقائياً بناءً على `companies.country`
+
+#### 6. Coupons & Promo Codes 🎟️
+- جدول `billing_coupons` جاهز
+- يدعم: percent / fixed_usd
+- قيود: applies_to (all/annual_only/new_customers)
+
+#### 7. Dunning Management ⚠️
+- جدول `dunning_events` لتتبع failed payments
+- retry strategy: pending → retrying → succeeded/failed/abandoned
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| DB Migration | `enterprise_billing_v2_foundation` (8 tables + functions) |
+| `lib/billing/pricing-engine.ts` | **جديد** - Single source of truth للـ pricing |
+| `app/api/billing/preview/route.ts` | **جديد** - Live pricing preview API |
+| `app/settings/billing/page.tsx` | UI كامل بـ multi-currency + volume + annual + coupons |
+| `CHANGELOG.md` | توثيق |
+
+### 🏗️ DB Schema
+
+```
+✅ subscription_plans (Free + Paid Addon)
+✅ volume_discount_tiers (10/25/50+)
+✅ country_vat_rates (19 countries)
+✅ billing_invoices (مع invoice_number INV-YYYY-NNNNNN)
+✅ billing_coupons (promo codes)
+✅ dunning_events (failed payment retry)
+✅ Updated: company_seats (plan_id, display_currency, trial_ends_at)
+```
+
+### 🚦 Phase Roadmap
+
+- ✅ **Phase 1: Foundation** - Multi-currency, Plans, Volume, Annual, VAT, Coupons schema, Dunning schema
+- ⏳ **Phase 2: Payment Expansion** - Stripe + multi-gateway
+- ⏳ **Phase 3: Invoicing & Subscription Mgmt** - PDF invoices + Customer portal
+- ⏳ **Phase 4: Growth & Analytics** - Coupons UI + Referrals + MRR/ARR dashboard
+
+---
+
 ## [3.28.14] - 2026-05-23
 
 ### 🔄 Force full navigation بدلاً من SPA router.replace
