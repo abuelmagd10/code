@@ -4,6 +4,61 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.13] - 2026-05-23
+
+### 🔐 Auto-recovery من stale JWT (critical UX fix)
+
+عند حذف مستخدم من DB، JWT الـ token الذى يحمله المتصفح يصبح غير صالح. Supabase ترفض الطلب بـ 403 + رسالة:
+
+```
+AuthApiError: User from sub claim in JWT does not exist
+```
+
+التطبيق كان يحاول جلب المستخدم بشكل مستمر، يفشل، يستمر فى التحميل بلا نهاية. المستخدم يضطر لـ:
+- مسح بيانات الموقع يدوياً
+- استخدام Incognito tab
+
+### ✅ الإصلاح: Auto-Recovery
+
+`lib/access-context.tsx` يكتشف الخطأ ويتصرف تلقائياً:
+
+```typescript
+const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+if (userError) {
+  const errMsg = String(userError.message || '')
+  const isStaleJwt = errMsg.includes('sub claim') ||
+                    errMsg.includes('does not exist') ||
+                    errMsg.includes('User not found')
+  if (isStaleJwt) {
+    console.warn('🧹 Stale JWT detected, clearing session')
+    await supabase.auth.signOut()
+    localStorage.clear()
+    // Clear cookies
+    document.cookie.split(';').forEach((c) => {
+      const name = c.split('=')[0].trim()
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
+    })
+    window.location.href = '/auth/login'
+  }
+}
+```
+
+### النتيجة
+
+- ✅ المستخدم يُحوَّل تلقائياً إلى `/auth/login` خلال ثانية واحدة
+- ✅ كل الـ cookies/localStorage تُمسح
+- ✅ يستطيع تسجيل الدخول من جديد بدون مسح يدوى
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `lib/access-context.tsx` | إضافة auto-recovery للـ stale JWT |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.12] - 2026-05-23
 
 ### ⚡ Pre-warm /dashboard itself (not just APIs)

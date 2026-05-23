@@ -471,7 +471,37 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       console.log('🔄 [AccessContext] loadAccessProfile called')
       setIsLoading(true)
 
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+      // ✅ v3.28.13: Auto-recovery from stale JWT
+      // If JWT references a user that no longer exists (was deleted), clear session
+      if (userError) {
+        const errMsg = String(userError.message || '')
+        const isStaleJwt = errMsg.includes('sub claim') ||
+                          errMsg.includes('does not exist') ||
+                          errMsg.includes('User not found')
+        if (isStaleJwt) {
+          console.warn('🧹 [AccessContext] Stale JWT detected, clearing session and redirecting to login')
+          try {
+            await supabase.auth.signOut()
+            if (typeof window !== 'undefined') {
+              try { localStorage.clear() } catch { }
+              try {
+                document.cookie.split(';').forEach((c) => {
+                  const eqPos = c.indexOf('=')
+                  const name = eqPos > -1 ? c.substr(0, eqPos).trim() : c.trim()
+                  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
+                })
+              } catch { }
+              window.location.href = '/auth/login'
+            }
+          } catch (e) {
+            console.error('[AccessContext] Failed to clear stale session:', e)
+          }
+          return null
+        }
+      }
+
       if (!user) {
         console.warn('⚠️ [AccessContext] No user found in loadAccessProfile')
         setProfile(null)
