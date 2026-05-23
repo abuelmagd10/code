@@ -65,9 +65,13 @@ export async function updateSession(request: NextRequest) {
     // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
     const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
     // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
+    // + cron jobs (تحمى نفسها بـ CRON_SECRET)
+    // + webhooks (تحمى نفسها بـ HMAC verification)
     const isPublicApi = request.nextUrl.pathname.startsWith("/api/get-invitation") ||
       request.nextUrl.pathname.startsWith("/api/accept-invite") ||
-      request.nextUrl.pathname.startsWith("/api/resend-confirmation")
+      request.nextUrl.pathname.startsWith("/api/resend-confirmation") ||
+      request.nextUrl.pathname.startsWith("/api/cron/") ||
+      request.nextUrl.pathname.startsWith("/api/webhooks/")
 
     if (!isAuthPage && !isInvitationAcceptPage && !isPublicApi && !session) {
       // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
