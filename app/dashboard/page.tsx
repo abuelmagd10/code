@@ -147,7 +147,7 @@ export default async function DashboardPage({
     visibilityRules = buildDashboardVisibilityRules(userContext, selectedScope, selectedBranchId)
 
     // ── 7. Branch info — parallel fetching where possible ────────
-    const branchQueries: Promise<any>[] = []
+    const branchQueries: any[] = []
     if (visibilityRules.branchId) {
       branchQueries.push(
         supabase.from("branches").select("name").eq("id", visibilityRules.branchId).maybeSingle()
@@ -160,14 +160,14 @@ export default async function DashboardPage({
     }
 
     if (branchQueries.length > 0) {
-      const branchResults = await Promise.all(branchQueries)
+      const branchResults: any[] = await Promise.all(branchQueries)
       let idx = 0
       if (visibilityRules.branchId) {
-        currentBranchName = (branchResults[idx]?.data as any)?.name || null
+        currentBranchName = branchResults[idx]?.data?.name || null
         idx++
       }
       if (visibilityRules.canSeeAllBranches) {
-        allBranches = (branchResults[idx]?.data as any) || []
+        allBranches = (branchResults[idx]?.data as { id: string; name: string }[]) || []
       }
     }
   } else {
