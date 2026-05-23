@@ -4,6 +4,37 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.14] - 2026-05-23
+
+### 🔄 Force full navigation بدلاً من SPA router.replace
+
+callback كان يستخدم `router.replace("/dashboard")` للـ navigation. لكن هذا SPA navigation لا يُجبر fresh page load — React state يُحتفظ به من callback إلى dashboard. هذا قد يسبب:
+- مشاكل فى hydration
+- تعليق على loading state إن لم تكتمل state transitions
+
+### ✅ الإصلاح: window.location.href
+
+```typescript
+// قبل (SPA navigation)
+router.replace("/dashboard")
+
+// بعد (full page navigation)
+if (typeof window !== 'undefined') {
+  window.location.href = "/dashboard"
+}
+```
+
+النتيجة: fresh page load، state جديد، لا مشاكل state stale.
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `app/auth/callback/page.tsx` | استبدال router.replace بـ window.location.href فى مكانين |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.13] - 2026-05-23
 
 ### 🔐 Auto-recovery من stale JWT (critical UX fix)

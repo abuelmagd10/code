@@ -437,10 +437,10 @@ function CallbackInner() {
           // ✅ الانتظار ثم التوجيه
           await waitForBootstrap()
 
-          // ✅ v3.28.12: Pre-warm /dashboard ITSELF (not just APIs)
-          //   - fetch /dashboard makes Vercel cold-start the function
-          //   - By the time user navigates (after timeout), function is warm
-          //   - Result: dashboard loads quickly on first visit
+          // ✅ v3.28.14: Pre-warm Vercel + force full navigation
+          //   - Pre-fetch /dashboard to warm up Vercel function
+          //   - Use window.location.href for FULL navigation (not SPA replace)
+          //   - This forces fresh load, avoids React state issues
           setStatus("جاري تجهيز لوحة التحكم...")
           try {
             await Promise.race([
@@ -449,11 +449,16 @@ function CallbackInner() {
                 fetch('/api/my-company').catch(() => null),
                 fetch('/api/user-profile').catch(() => null),
               ]),
-              new Promise((r) => setTimeout(r, 8000)) // 8s max wait
+              new Promise((r) => setTimeout(r, 8000))
             ])
           } catch { }
 
-          router.replace("/dashboard")
+          // ✅ Full page navigation (bypasses SPA router, forces fresh load)
+          if (typeof window !== 'undefined') {
+            window.location.href = "/dashboard"
+          } else {
+            router.replace("/dashboard")
+          }
         } catch (createErr: any) {
           console.error('Error creating company:', createErr)
           setStatus("سيتم توجيهك لإعداد شركتك...")
@@ -494,16 +499,21 @@ function CallbackInner() {
         // ✅ الانتظار ثم التوجيه
         await waitForBootstrap()
 
-        // ✅ v3.28.10: fetch with 3s timeout — avoids cold-start hang
+        // ✅ v3.28.14: fetch with 3s timeout + force full navigation
+        let targetPath = "/dashboard"
         try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 3000)
           const res = await fetch("/api/first-allowed-page", { signal: controller.signal })
           clearTimeout(timeoutId)
           const data = await res.json()
-          router.replace(data.path || "/dashboard")
-        } catch {
-          router.replace("/dashboard")
+          targetPath = data.path || "/dashboard"
+        } catch { }
+
+        if (typeof window !== 'undefined') {
+          window.location.href = targetPath
+        } else {
+          router.replace(targetPath)
         }
       }
     }
