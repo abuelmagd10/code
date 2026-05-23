@@ -200,7 +200,15 @@ function SubscriptionBanner() {
   const status = SUB_STATUS_MAP[data.subscription.subscription_status] || SUB_STATUS_MAP.free
   const isPaidActive = data.subscription.subscription_status === 'active'
   const isCanceled = data.subscription.subscription_status === 'canceled'
+  const isPastDue = data.subscription.subscription_status === 'past_due'
+  const isSuspended = data.subscription.subscription_status === 'payment_failed'
   const planName = data.seats.total_paid_seats > 0 ? 'Paid Addon' : 'Free Plan'
+
+  // Days until renewal (negative = past due)
+  const daysToRenewal = data.subscription.current_period_end
+    ? Math.ceil((new Date(data.subscription.current_period_end).getTime() - Date.now()) / 86400_000)
+    : null
+  const isExpiringSoon = isPaidActive && daysToRenewal !== null && daysToRenewal <= 3 && daysToRenewal >= 0
 
   return (
     <>
@@ -250,13 +258,57 @@ function SubscriptionBanner() {
           )}
         </div>
 
-        {/* Grace period warning */}
-        {data.subscription.is_in_grace_period && (
-          <div className="mt-3 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-start gap-2 text-xs">
+        {/* Expiring soon warning (3 days or less) */}
+        {isExpiringSoon && (
+          <div className="mt-3 p-3 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-start gap-2 text-xs">
             <Clock className="w-4 h-4 text-amber-700 dark:text-amber-300 mt-0.5 flex-shrink-0" />
-            <p className="text-amber-800 dark:text-amber-300">
-              أنت فى فترة سماح 3 أيام بعد فشل الدفع. يرجى تجديد الدفع لتجنب توقف الخدمة.
-            </p>
+            <div className="flex-1">
+              <p className="font-semibold text-amber-900 dark:text-amber-200 mb-0.5">
+                اشتراكك ينتهى خلال {daysToRenewal === 0 ? 'اليوم' : daysToRenewal === 1 ? 'يوم واحد' : `${daysToRenewal} أيام`}
+              </p>
+              <p className="text-amber-800 dark:text-amber-300">
+                جدّد الاشتراك من تبويب "الاشتراك" لتجنب أى انقطاع.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Past due — grace period active */}
+        {isPastDue && (
+          <div className="mt-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded-lg flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-bold text-red-800 dark:text-red-200 text-sm mb-1">
+                ⚠️ الاشتراك منتهٍ — فترة سماح
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-300 mb-2">
+                لم نتلقَّ دفعتك الجديدة. الحساب يعمل بشكل كامل خلال فترة سماح 3 أيام من تاريخ الانتهاء،
+                ثم يُوقَف الحساب تلقائياً.
+              </p>
+              <p className="text-xs text-red-800 dark:text-red-200 font-semibold">
+                ادفع الآن من تبويب "الاشتراك" لاستئناف التجديد.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Suspended — grace period exceeded */}
+        {isSuspended && (
+          <div className="mt-3 p-4 bg-gray-800 dark:bg-gray-900 text-white rounded-lg flex items-start gap-3">
+            <XCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-bold text-sm mb-1">
+                🛑 الحساب مُوقَف مؤقتاً
+              </p>
+              <p className="text-xs text-gray-300 mb-2">
+                انتهت فترة السماح بدون تجديد. المستخدمون لا يستطيعون تسجيل الدخول حالياً.
+                <br />
+                بياناتك آمنة 100%، وعند الدفع يُعاد تفعيل الحساب فوراً.
+              </p>
+              <p className="text-xs font-semibold text-red-300">
+                اذهب إلى تبويب "الاشتراك" وادفع لاستعادة الوصول.
+              </p>
+            </div>
           </div>
         )}
 

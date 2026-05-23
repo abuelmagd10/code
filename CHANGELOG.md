@@ -4,6 +4,123 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.32.0] - 2026-05-23
+
+### 🔄 Enterprise Billing v2.0 — Phase D: Subscription Lifecycle
+
+نظام دورة حياة الاشتراك الكامل: تنبيه قبل الانتهاء، فترة سماح، إيقاف، إعادة تفعيل — مع cron يومى عبر Vercel.
+
+### ✅ التغييرات
+
+#### 1. DB Migration `subscription_lifecycle_phase_d`
+- أعمدة جديدة على `companies`:
+  - `renewal_reminder_sent_at` — منع تكرار إيميل التذكير فى نفس الفترة
+  - `suspended_at` — وقت الإيقاف
+  - `reactivated_at` — آخر إعادة تفعيل
+- index جديد `idx_companies_lifecycle` لتسريع الـ cron scans
+- 3 دوال SQL جديدة:
+  - `mark_subscription_past_due()` — active → past_due (idempotent)
+  - `suspend_subscription()` — past_due → payment_failed + suspend seats
+  - `reactivate_after_payment()` — تجديد + استعادة الـ seats المُوقَفة
+
+#### 2. `increase_seats` (محدّثة)
+- معامل جديد `p_billing_period` (monthly/annual) لتحديد طول التجديد
+- تستدعى `reactivate_after_payment()` بدلاً من تحديث `companies` يدوياً
+- ترجع `reactivation: { previous_status, was_reactivated }` لتحديد ما إذا كان دفع reactivation أم تجديد عادى
+
+#### 3. `get_seat_status` (محدّثة)
+- تحترم `subscription_status`:
+  - `payment_failed` (suspended) → `can_invite = false` بغض النظر عن المقاعد
+  - `free` → `can_invite = false`
+  - `active / past_due / canceled` (حتى period_end) → seat-based
+- ترجع حقل `is_suspended` جديد
+
+#### 4. `lib/billing/renewal-emails.ts` (جديد)
+- 4 قوالب HTML/RTL احترافية بنودميلر:
+  - `sendRenewalReminder()` — تذكير قبل يومين من الانتهاء
+  - `sendPastDueNotice()` — انتهاء + فترة سماح 3 أيام
+  - `sendSuspensionNotice()` — إيقاف بعد انتهاء فترة السماح
+  - `sendReactivationNotice()` — أهلاً بك مرة أخرى بعد الدفع
+- آمنة: ترجع `{ sent: false, skipped: true }` لو SMTP غير مُعد، بدون throw
+
+#### 5. `app/api/cron/subscription-renewal/route.ts` (جديد)
+- Vercel cron daily at 02:00 UTC (5 AM Cairo)
+- Auth: `Authorization: Bearer CRON_SECRET`
+- ثلاث مراحل:
+  1. **STEP 1**: تذكيرات للاشتراكات التى تنتهى خلال يومين (idempotent عبر `renewal_reminder_sent_at`)
+  2. **STEP 2**: active → past_due للاشتراكات المنتهية
+  3. **STEP 3**: past_due → suspended بعد 3 أيام من انتهاء الفترة
+- يكتب summary فى audit_logs بعد كل run
+
+#### 6. `vercel.json`
+- إضافة cron schedule: `/api/cron/subscription-renewal` daily at `0 2 * * *`
+
+#### 7. `lib/billing/subscription-service.ts`
+- `handlePaymentSuccess()` يكتشف إعادة التفعيل ويرسل welcome-back email
+- يمرر `billing_period` إلى `increaseSeats()`
+
+#### 8. `app/settings/billing/invoices-panel.tsx`
+- Banner ديناميكى حسب الحالة:
+  - **Expiring soon** (≤3 أيام): تنبيه أصفر "ينتهى خلال X يوم"
+  - **Past due**: تنبيه أحمر "فترة سماح — ادفع الآن"
+  - **Suspended**: تنبيه أسود "الحساب مُوقَف — بياناتك آمنة"
+
+### 🧠 المعمارية — Subscription Lifecycle
+
+```
+الحالة             الإجراء التلقائى                  الإيميل
+────────          ─────────────────                ──────
+active            (الحساب يعمل)                      —
+   │
+   │ ↓ (period_end - 2 days)
+   │
+active            cron يرسل تذكير                   📧 "اشتراكك ينتهى خلال يومين"
+                  (renewal_reminder_sent_at)
+   │
+   │ ↓ (period_end passes)
+   │
+past_due          cron: mark_subscription_past_due  📧 "انتهى — فترة سماح 3 أيام"
+                  الحساب لا يزال يعمل
+   │
+   │ ↓ (3 days pass)
+   │
+payment_failed    cron: suspend_subscription        📧 "تم إيقاف الحساب"
+(suspended)       company_seats.status='suspended'
+                  المستخدمون لا يدخلون
+
+   ↓ (العميل يدفع)
+   ↓ webhook → increase_seats → reactivate_after_payment
+   ↓
+active            period_end += 1 month             📧 "🎉 أهلاً بك مرة أخرى"
+                  company_seats.status='active'
+                  suspended_at = NULL
+```
+
+### 🔐 المتغيرات المطلوبة (Env Vars)
+
+| Variable | الوصف |
+|---|---|
+| `CRON_SECRET` | secret للـ cron auth (يُوضع تلقائياً فى Vercel) |
+| `SMTP_HOST` | SMTP server (e.g. smtp.gmail.com) |
+| `SMTP_PORT` | عادة 587 أو 465 |
+| `SMTP_USER` | حساب SMTP |
+| `SMTP_PASS` | كلمة المرور |
+| `SMTP_FROM` | من سيظهر فى "From:" (e.g. `"7esab.com <noreply@7esab.com>"`) |
+
+⚠️ **مهم**: لو SMTP غير مُعد، الـ cron سيعمل لكن لن يرسل إيميلات (سيُسجل warning فى logs).
+
+### 🚦 Phase Roadmap (مكتمل بالكامل)
+
+- ✅ Phase 1: Foundation (v3.29.0)
+- ✅ Phase A: EGP Charging via Paymob (v3.29.2)
+- ✅ Phase B: PDF Invoices VAT-compliant (v3.30.0/v3.30.1)
+- ✅ Phase C: Customer Portal (v3.31.0)
+- ✅ **Phase D: Subscription Lifecycle (v3.32.0)** ← هذا الإصدار
+
+🎉 **Enterprise Billing v2.0 — الإصدار النهائى الكامل!**
+
+---
+
 ## [3.31.0] - 2026-05-23
 
 ### 👤 Enterprise Billing v2.0 — Phase C: Customer Portal

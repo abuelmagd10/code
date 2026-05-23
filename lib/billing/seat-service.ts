@@ -33,6 +33,8 @@ export interface SeatStatus {
   can_invite: boolean
   owner_id: string
   subscription_status: string
+  /** True when subscription_status = 'payment_failed' (account suspended) */
+  is_suspended?: boolean
   price_per_seat_egp: number
 }
 
@@ -157,8 +159,9 @@ export async function increaseSeats(
   seatsCount: number,
   paymobTxnId: string,
   amountEgp?: number,
-  performedBy?: string
-): Promise<SeatResult> {
+  performedBy?: string,
+  billingPeriod: 'monthly' | 'annual' = 'monthly'
+): Promise<SeatResult & { reactivation?: { previous_status?: string; was_reactivated?: boolean } }> {
   const admin = getAdminClient()
   const { data, error } = await admin.rpc('increase_seats', {
     p_company_id:       companyId,
@@ -166,6 +169,7 @@ export async function increaseSeats(
     p_paymob_txn_id:    paymobTxnId,
     p_amount_egp:       amountEgp ?? null,
     p_performed_by:     performedBy ?? null,
+    p_billing_period:   billingPeriod,
   })
 
   if (error) {
@@ -173,7 +177,7 @@ export async function increaseSeats(
     return { success: false, error: error.message }
   }
 
-  return data as SeatResult
+  return data as SeatResult & { reactivation?: { previous_status?: string; was_reactivated?: boolean } }
 }
 
 // ─────────────────────────────────────────

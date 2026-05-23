@@ -12,6 +12,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { increaseSeats } from './seat-service'
 import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generator'
+import { sendReactivationNotice } from './renewal-emails'
 
 const GRACE_PERIOD_DAYS = 3
 
@@ -113,10 +114,38 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
       payload.additional_users,
       payload.transaction_id,
       Math.round(payload.amount_cents / 100), // convert piasters to EGP
+      undefined,
+      payload.billing_period ?? 'monthly',
     )
 
     if (!result.success) {
       return { success: false, error: result.error }
+    }
+
+    // ── Reactivation email (if company was suspended/past_due/canceled) ──
+    if (result.reactivation?.was_reactivated && !result.idempotent) {
+      try {
+        const admin = getAdminClient()
+        const { data: company } = await admin
+          .from('companies')
+          .select('name, user_id, current_period_end')
+          .eq('id', payload.company_id)
+          .single()
+
+        if (company?.user_id) {
+          const { data: userData } = await admin.auth.admin.getUserById(company.user_id)
+          const ownerEmail = userData?.user?.email
+          if (ownerEmail) {
+            await sendReactivationNotice({
+              to: ownerEmail,
+              companyName: company.name || 'عميلنا العزيز',
+              newPeriodEnd: new Date(company.current_period_end || Date.now() + 30 * 86400_000),
+            })
+          }
+        }
+      } catch (mailErr) {
+        console.error('[SubscriptionService] reactivation email failed:', mailErr)
+      }
     }
 
     // ── Generate invoice + PDF (idempotent on paymob_transaction_id) ──
