@@ -4,6 +4,59 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.10] - 2026-05-23
+
+### 🐛 Critical Fix — Callback hanging على /api/first-allowed-page
+
+بعد deploy v3.28.9 (SW v4.3.0)، الـ 503 على /dashboard اختفى. لكن أبلغ المستخدم: **"يستمر فى التحميل ولكن اذا قام المستخدم بتحديث الصفحة يتم الدخول"**.
+
+### 🔍 السبب الجذرى
+
+callback page كان يفعل:
+
+```typescript
+await waitForBootstrap()  // 5s timeout
+try {
+  const res = await fetch("/api/first-allowed-page")  // ❌ بدون timeout!
+  const data = await res.json()
+  router.replace(data.path || "/dashboard")
+} catch { ... }
+```
+
+لو `/api/first-allowed-page` cold start على Vercel يأخذ 30s، callback يعلق على "loading" بلا نهاية. عند refresh، Vercel function تكون warm فترد بسرعة.
+
+### ✅ الإصلاح
+
+**للمستخدمين الجدد** (newly created owner):
+- تخطّى `/api/first-allowed-page` تماماً → `router.replace("/dashboard")` مباشرة
+- المالك يعرف أن لديه dashboard access (تم التحقق منه DB)
+- لو dashboard يحتاج redirect، يفعلها داخلياً عبر `canAccessPage()`
+
+**للمستخدمين الموجودين** (existing members):
+- إضافة `AbortController` بـ 3s timeout على fetch
+- لو timeout، يذهب لـ `/dashboard` افتراضياً
+
+```typescript
+try {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 3000)
+  const res = await fetch("/api/first-allowed-page", { signal: controller.signal })
+  clearTimeout(timeoutId)
+  // ...
+} catch {
+  router.replace("/dashboard")
+}
+```
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `app/auth/callback/page.tsx` | Skip /api/first-allowed-page للمالك الجديد + 3s timeout للموجود |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.9] - 2026-05-23
 
 ### ⚡ SW v4.3.0 — Whitelist approach (يحل /dashboard 'Failed to fetch' نهائياً)

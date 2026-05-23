@@ -437,13 +437,11 @@ function CallbackInner() {
           // ✅ الانتظار ثم التوجيه
           await waitForBootstrap()
 
-          try {
-            const res = await fetch("/api/first-allowed-page")
-            const data = await res.json()
-            router.replace(data.path || "/dashboard")
-          } catch {
-            router.replace("/dashboard")
-          }
+          // ✅ v3.28.10: For new owners, skip /api/first-allowed-page entirely
+          //   - owner always has dashboard access (DB-verified)
+          //   - avoids cold-start hang on /api/first-allowed-page
+          //   - if dashboard needs redirect, it handles internally via canAccessPage
+          router.replace("/dashboard")
         } catch (createErr: any) {
           console.error('Error creating company:', createErr)
           setStatus("سيتم توجيهك لإعداد شركتك...")
@@ -484,8 +482,12 @@ function CallbackInner() {
         // ✅ الانتظار ثم التوجيه
         await waitForBootstrap()
 
+        // ✅ v3.28.10: fetch with 3s timeout — avoids cold-start hang
         try {
-          const res = await fetch("/api/first-allowed-page")
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 3000)
+          const res = await fetch("/api/first-allowed-page", { signal: controller.signal })
+          clearTimeout(timeoutId)
           const data = await res.json()
           router.replace(data.path || "/dashboard")
         } catch {
