@@ -143,6 +143,8 @@ export async function sendRenewalReminder(args: {
   companyName: string
   periodEnd: Date
   seats: number
+  /** One-click renewal URL with signed token (preferred). Falls back to BILLING_URL. */
+  renewalUrl?: string
 }): Promise<MailResult> {
   const dateStr = args.periodEnd.toLocaleDateString('ar-EG', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -152,7 +154,10 @@ export async function sendRenewalReminder(args: {
     <h2 style="margin:0 0 14px;font-size:20px;color:#111827;">تذكير: اشتراكك ينتهى قريباً 🔔</h2>
     <p>أهلاً <strong>${escapeHtml(args.companyName)}</strong>،</p>
     <p>اشتراكك الحالى (<strong>${args.seats}</strong> مقعد) ينتهى فى <strong>${dateStr}</strong>.</p>
-    <p>لضمان استمرار الخدمة بدون انقطاع، يرجى تجديد الاشتراك قبل تاريخ الانتهاء.</p>
+    <p>لضمان استمرار الخدمة بدون انقطاع، اضغط الزر أدناه للتجديد بنقرة واحدة:</p>
+    <div style="background:#EEF2FF;border-right:4px solid #4F46E5;padding:12px 14px;border-radius:8px;margin:16px 0;font-size:13px;color:#3730A3;">
+      ⚡ <strong>تجديد سريع:</strong> الزر يفتح صفحة الدفع مباشرة بنفس عدد المقاعد ودورة الفوترة الحالية.
+    </div>
     <div style="background:#FEF3C7;border-right:4px solid #F59E0B;padding:12px 14px;border-radius:8px;margin:16px 0;font-size:13px;color:#92400E;">
       💡 <strong>ما يحدث لو لم تُجدِّد؟</strong><br/>
       بعد تاريخ الانتهاء سنُعطيك مهلة 3 أيام، ثم يُوقَف الحساب تلقائياً حتى الدفع.
@@ -165,8 +170,8 @@ export async function sendRenewalReminder(args: {
       title: 'تذكير تجديد الاشتراك',
       preheader: `اشتراكك ينتهى فى ${dateStr}`,
       bodyHtml: body,
-      ctaText: 'جدّد الاشتراك الآن',
-      ctaUrl: BILLING_URL,
+      ctaText: '⚡ جدّد بنقرة واحدة',
+      ctaUrl: args.renewalUrl || BILLING_URL,
     })
   )
 }
@@ -179,6 +184,8 @@ export async function sendPastDueNotice(args: {
   to: string
   companyName: string
   graceEndsAt: Date
+  /** One-click renewal URL with signed token (preferred). Falls back to BILLING_URL. */
+  renewalUrl?: string
 }): Promise<MailResult> {
   const graceStr = args.graceEndsAt.toLocaleDateString('ar-EG', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -201,8 +208,8 @@ export async function sendPastDueNotice(args: {
       title: 'انتهاء الاشتراك',
       preheader: `فترة السماح حتى ${graceStr}`,
       bodyHtml: body,
-      ctaText: 'ادفع الآن لتجنب الإيقاف',
-      ctaUrl: BILLING_URL,
+      ctaText: '⚡ ادفع الآن بنقرة واحدة',
+      ctaUrl: args.renewalUrl || BILLING_URL,
       accentColor: '#DC2626',
     })
   )
@@ -215,6 +222,8 @@ export async function sendPastDueNotice(args: {
 export async function sendSuspensionNotice(args: {
   to: string
   companyName: string
+  /** One-click renewal URL with signed token (preferred). Falls back to BILLING_URL. */
+  renewalUrl?: string
 }): Promise<MailResult> {
   const body = `
     <h2 style="margin:0 0 14px;font-size:20px;color:#1F2937;">تم إيقاف حسابك مؤقتاً</h2>
@@ -233,8 +242,8 @@ export async function sendSuspensionNotice(args: {
       title: 'إيقاف الحساب',
       preheader: 'بياناتك آمنة — جدّد للاستعادة الفورية',
       bodyHtml: body,
-      ctaText: 'استعد الوصول الآن',
-      ctaUrl: BILLING_URL,
+      ctaText: '⚡ استعد الوصول الآن',
+      ctaUrl: args.renewalUrl || BILLING_URL,
       accentColor: '#1F2937',
     })
   )

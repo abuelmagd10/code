@@ -4,6 +4,95 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.33.0] - 2026-05-23
+
+### ⚡ Enterprise Billing v2.0 — Phase E: Frictionless Renewal Link
+
+تجربة تجديد بنقرة واحدة من إيميل التذكير — يفتح Paymob checkout مباشرة بدون تسجيل دخول.
+
+### ✅ التغييرات
+
+#### 1. `lib/billing/renewal-token.ts` (جديد)
+- توليد + التحقق من tokens موقّعة بـ HMAC-SHA256
+- TTL: 7 أيام (يغطى فترة التذكير + الـ past_due + suspended)
+- Payload: `{ cid, seats, period, exp, nonce }` (مشفّر base64url)
+- Constant-time signature comparison لمنع timing attacks
+- `buildRenewalUrl()` — يعيد URL كامل جاهز للإيميل
+
+#### 2. `app/api/billing/renew/route.ts` (جديد)
+- **Public endpoint** (بدون login) — يتحقق بـ token
+- يحسب pricing بنفس الـ pricing-engine
+- يُنشئ Paymob intention جديد
+- 302-redirect مباشرة لـ Paymob checkout
+- صفحة خطأ HTML بعربى لو الـ token غير صالح/منتهى
+
+#### 3. `lib/billing/renewal-emails.ts`
+- 3 helpers (`sendRenewalReminder`, `sendPastDueNotice`, `sendSuspensionNotice`) تقبل الآن `renewalUrl` اختيارى
+- إذا مُمرَّر → زر CTA يفتح الـ renewal link مباشرة
+- إذا لم يُمرَّر → fallback لـ `/settings/billing` (السلوك القديم)
+
+#### 4. `app/api/cron/subscription-renewal/route.ts`
+- يولّد `renewalUrl` لكل شركة قبل إرسال الإيميل
+- يقرأ `billing_period` و `seats` من آخر فاتورة مدفوعة لإعادة الـ renewal على نفس الخطة
+- safeBuildRenewalUrl يتعامل مع غياب `RENEWAL_TOKEN_SECRET` (fallback to /settings/billing)
+
+#### 5. `lib/supabase/middleware.ts`
+- أضيف `/api/billing/renew` للـ public APIs (يحمى نفسه بـ HMAC token)
+
+### 🧠 المعمارية
+
+```
+يوم 28 من الاشتراك
+   │
+   │  cron يقرأ آخر invoice → seats + billing_period
+   ▼
+buildRenewalUrl({ companyId, seats, period })
+   │  HMAC-SHA256({cid, seats, period, exp, nonce}, SECRET)
+   ▼
+https://7esab.com/api/billing/renew?token=eyJ...xxx
+   │
+   │  العميل يستلم الإيميل
+   ▼
+العميل ينقر "⚡ جدّد بنقرة واحدة"
+   │
+   ▼
+GET /api/billing/renew?token=...
+   ├─ verifyRenewalToken (HMAC + expiry)
+   ├─ fetch company info
+   ├─ calculatePricing()
+   ├─ POST Paymob intention
+   └─ 302 redirect → Paymob checkout
+       │
+       │  العميل يدفع (OTP / 3DSecure)
+       ▼
+   Paymob webhook → reactivate_after_payment → 🎉
+```
+
+### 🔐 الأمان
+
+- Token HMAC-signed بـ `RENEWAL_TOKEN_SECRET` (≥32 chars enforced)
+- 7-day expiry hardcoded
+- Token يفوّض **فقط** إنشاء intention للشركة المحددة بالخطة المحددة
+- لا يلزم تسجيل دخول لكن الدفع نفسه يحتاج OTP من البطاقة (3D Secure)
+- Audit log entry `renewal_link_used` فى كل استخدام
+
+### 🔑 Env Var جديدة
+
+| Variable | الوصف |
+|---|---|
+| `RENEWAL_TOKEN_SECRET` | ≥32 chars secret لـ HMAC signing (يجب إضافتها على Vercel) |
+
+### 🚦 Phase Roadmap (مُحدَّث)
+
+- ✅ Phase 1: Foundation (v3.29.0)
+- ✅ Phase A: EGP Charging (v3.29.2)
+- ✅ Phase B: PDF Invoices (v3.30.0/v3.30.1)
+- ✅ Phase C: Customer Portal (v3.31.0)
+- ✅ Phase D: Subscription Lifecycle (v3.32.0/v3.32.1)
+- ✅ **Phase E: Frictionless Renewal Link (v3.33.0)** ← هذا الإصدار
+
+---
+
 ## [3.32.0] - 2026-05-23
 
 ### 🔄 Enterprise Billing v2.0 — Phase D: Subscription Lifecycle

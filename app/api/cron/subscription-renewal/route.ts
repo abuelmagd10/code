@@ -29,6 +29,7 @@ import {
   sendPastDueNotice,
   sendSuspensionNotice,
 } from '@/lib/billing/renewal-emails'
+import { buildRenewalUrl } from '@/lib/billing/renewal-token'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -109,12 +110,15 @@ export async function GET(req: NextRequest) {
 
       const seatsCount = await fetchSeatsCount(admin, c.id)
       const periodEnd = c.current_period_end ? new Date(c.current_period_end) : new Date()
+      const billingPeriod = await fetchLastBillingPeriod(admin, c.id)
+      const renewalUrl = safeBuildRenewalUrl(c.id, seatsCount, billingPeriod)
 
       const mailRes = await sendRenewalReminder({
         to: email,
         companyName: c.name || 'عميلنا العزيز',
         periodEnd,
         seats: seatsCount,
+        renewalUrl,
       })
 
       if (mailRes.sent) {
@@ -153,10 +157,15 @@ export async function GET(req: NextRequest) {
       const periodEnd = c.current_period_end ? new Date(c.current_period_end) : new Date()
       const graceEndsAt = new Date(periodEnd.getTime() + GRACE_PERIOD_DAYS * 86400_000)
 
+      const seatsCount = await fetchSeatsCount(admin, c.id)
+      const billingPeriod = await fetchLastBillingPeriod(admin, c.id)
+      const renewalUrl = safeBuildRenewalUrl(c.id, seatsCount, billingPeriod)
+
       const mailRes = await sendPastDueNotice({
         to: email,
         companyName: c.name || 'عميلنا العزيز',
         graceEndsAt,
+        renewalUrl,
       })
       if (!mailRes.sent && !mailRes.skipped) result.emails_failed++
     }
@@ -183,9 +192,14 @@ export async function GET(req: NextRequest) {
       const email = await resolveOwnerEmail(admin, c.user_id)
       if (!email) continue
 
+      const seatsCount = await fetchSeatsCount(admin, c.id)
+      const billingPeriod = await fetchLastBillingPeriod(admin, c.id)
+      const renewalUrl = safeBuildRenewalUrl(c.id, seatsCount, billingPeriod)
+
       const mailRes = await sendSuspensionNotice({
         to: email,
         companyName: c.name || 'عميلنا العزيز',
+        renewalUrl,
       })
       if (!mailRes.sent && !mailRes.skipped) result.emails_failed++
     }
@@ -242,4 +256,42 @@ async function fetchSeatsCount(
     .eq('company_id', companyId)
     .maybeSingle()
   return (data?.total_paid_seats as number) || 0
+}
+
+/**
+ * Look up the last billing_period from invoices so we renew under the
+ * same plan. Defaults to 'monthly' if no prior invoice exists.
+ */
+async function fetchLastBillingPeriod(
+  admin: ReturnType<typeof getAdminClient>,
+  companyId: string
+): Promise<'monthly' | 'annual'> {
+  const { data } = await admin
+    .from('billing_invoices')
+    .select('billing_period')
+    .eq('company_id', companyId)
+    .eq('status', 'paid')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data?.billing_period === 'annual' ? 'annual' : 'monthly'
+}
+
+/**
+ * Build a renewal URL or return undefined if token generation fails
+ * (e.g. RENEWAL_TOKEN_SECRET missing). Email helpers fall back to the
+ * generic /settings/billing link in that case.
+ */
+function safeBuildRenewalUrl(
+  companyId: string,
+  seats: number,
+  billingPeriod: 'monthly' | 'annual'
+): string | undefined {
+  if (seats < 1) return undefined
+  try {
+    return buildRenewalUrl({ companyId, seats, billingPeriod })
+  } catch (e) {
+    console.warn('[cron] renewal URL generation failed:', e)
+    return undefined
+  }
 }
