@@ -437,10 +437,21 @@ function CallbackInner() {
           // ✅ الانتظار ثم التوجيه
           await waitForBootstrap()
 
-          // ✅ v3.28.10: For new owners, skip /api/first-allowed-page entirely
-          //   - owner always has dashboard access (DB-verified)
-          //   - avoids cold-start hang on /api/first-allowed-page
-          //   - if dashboard needs redirect, it handles internally via canAccessPage
+          // ✅ v3.28.11: Pre-warm Vercel functions for dashboard
+          //   - Dashboard widgets call /api/my-company, /api/user-profile
+          //   - Pre-fetch them now (in parallel, fire-and-forget with timeout)
+          //   - When user navigates to /dashboard, those functions are warm
+          setStatus("جاري تجهيز لوحة التحكم...")
+          try {
+            await Promise.race([
+              Promise.all([
+                fetch('/api/my-company').catch(() => null),
+                fetch('/api/user-profile').catch(() => null),
+              ]),
+              new Promise((r) => setTimeout(r, 4000)) // 4s max wait
+            ])
+          } catch { }
+
           router.replace("/dashboard")
         } catch (createErr: any) {
           console.error('Error creating company:', createErr)

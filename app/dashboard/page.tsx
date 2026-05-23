@@ -91,13 +91,14 @@ export default async function DashboardPage({
   const selectedGroups   = selectedFromList.length > 0 ? selectedFromList : collectByKeyBase(sp, "group")
   const selectedAccountIds = collectByKeyBase(sp, "acct")
 
-  // ── 4. Company & Currency (fast cookie + parallel queries) ──
-  // ✅ v3.28.7: Cold-start optimization — parallel fetching of user+company data
+  // ── 4. Company & Currency (cookie-only, NO server query) ──
+  // ✅ v3.28.11: Skip getActiveCompanyId fallback (contains 3+ queries)
+  // If cookie is empty, render shell with no companyId (widgets show empty state)
   const cookieStore    = await cookies()
   const cookieCid      = cookieStore.get("active_company_id")?.value || ""
   const cookieCurrency = cookieStore.get("app_currency")?.value || "EGP"
   const cidParam       = readOne("cid")
-  const companyId      = cidParam || cookieCid || await getActiveCompanyId(supabase)
+  const companyId      = cidParam || cookieCid || null
 
   // ── 5. Parallel data fetching (replaces 3 sequential queries) ─
   let currency = cookieCurrency

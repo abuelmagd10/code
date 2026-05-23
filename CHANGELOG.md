@@ -4,6 +4,69 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.11] - 2026-05-23
+
+### ⚡ Dashboard Cold-Start Final Fix — Pre-warming + Cookie-only companyId
+
+بعد v3.28.10 (skip /api/first-allowed-page)، المستخدم أبلغ: "**يستمر فى التحميل، وعند refresh يفتح**". هذا يعنى:
+- callback ينتهى بنجاح ✅
+- router.replace("/dashboard") يفعل ✅
+- dashboard SSR + widgets API routes cold-starting → بطئ شديد للمرة الأولى
+- refresh: functions warm، يفتح بسرعة
+
+### ✅ الإصلاحات v3.28.11
+
+**1. Dashboard SSR Minimization** (`app/dashboard/page.tsx`):
+
+تخطّى `getActiveCompanyId(supabase)` fallback (يحتوى 3+ queries داخلية):
+
+```typescript
+// قبل
+const companyId = cidParam || cookieCid || await getActiveCompanyId(supabase)
+// بعد
+const companyId = cidParam || cookieCid || null
+```
+
+إذا لا توجد cookie، dashboard يعرض shell فارغ (مع رسالة "لا توجد شركة نشطة"). توفير ~500ms-1s على cold start.
+
+**2. Vercel Functions Pre-warming** (`app/auth/callback/page.tsx`):
+
+قبل redirect لـ /dashboard، callback يستدعى APIs الرئيسية بشكل متوازى (fire-and-forget مع 4s max):
+
+```typescript
+setStatus("جاري تجهيز لوحة التحكم...")
+try {
+  await Promise.race([
+    Promise.all([
+      fetch('/api/my-company').catch(() => null),
+      fetch('/api/user-profile').catch(() => null),
+    ]),
+    new Promise((r) => setTimeout(r, 4000))
+  ])
+} catch { }
+router.replace("/dashboard")
+```
+
+هذا يُسخّن Vercel functions قبل أن تطلبها widgets على /dashboard. النتيجة: الـ widgets تجد functions warm جاهزة للرد فوراً.
+
+### 📊 الأثر المتوقع
+
+| الخطوة | قبل | بعد |
+|---|---|---|
+| Dashboard SSR | ~1.5-2s | ~1s |
+| Widgets cold start | متتالى متعدد | warm parallel ⚡ |
+| First-visit experience | "loading forever" | < 5s مع loading states |
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `app/dashboard/page.tsx` | Cookie-only companyId (skip getActiveCompanyId fallback) |
+| `app/auth/callback/page.tsx` | Pre-warm /api/my-company + /api/user-profile قبل redirect |
+| `CHANGELOG.md` | توثيق |
+
+---
+
 ## [3.28.10] - 2026-05-23
 
 ### 🐛 Critical Fix — Callback hanging على /api/first-allowed-page
