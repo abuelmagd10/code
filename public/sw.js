@@ -1,7 +1,8 @@
 // 7ESAB ERP Service Worker - Secure Multi-Tenant Version
-// Version: 4.0.1 - 2025-01-31 - Force cache clear for expense number fix
+// Version: 4.1.0 - 2026-05-23 - Cold start resilience for /dashboard navigation
 // ✅ Production Ready: No caching for dynamic/sensitive data
-const VERSION = '4.0.1-' + Date.now(); // Force unique version on each deployment
+// ✅ v4.1.0: Navigation requests bypass SW; API requests get retry+long timeout
+const VERSION = '4.1.0-' + Date.now(); // Force unique version on each deployment
 const BUILD_DATE = new Date().toISOString().split('T')[0];
 const STATIC_CACHE = `7esab-static-v${VERSION}`;
 
@@ -205,10 +206,41 @@ self.addEventListener('activate', (event) => {
 
 // ✅ استراتيجية NetworkOnly للبيانات الديناميكية
 // ✅ CacheFirst فقط للملفات الثابتة
+
+/**
+ * v4.1.0 — fetch with retry + long timeout, used for non-navigation requests
+ * عند فشل الـ network، يحاول مرة ثانية بـ exponential backoff قبل الفشل.
+ * لو فشل نهائياً، نرمى الخطأ (لا نولّد 503 synthesized).
+ */
+async function fetchWithRetry(request, { maxAttempts = 2, timeoutMs = 30000 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      // ✅ Clone the request so subsequent attempts work
+      const reqClone = attempt === 1 ? request : request.clone();
+      const response = await fetch(reqClone, { signal: controller.signal });
+      clearTimeout(timer);
+      return response;
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+      if (attempt < maxAttempts) {
+        // exponential backoff: 500ms, 1000ms, 2000ms...
+        const delay = Math.min(500 * Math.pow(2, attempt - 1), 2000);
+        console.warn(`[SW v${VERSION}] Fetch attempt ${attempt} failed for ${new URL(request.url).pathname}, retrying in ${delay}ms`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  
+
   // ✅ تجاهل الطلبات من schemes غير مدعومة (chrome-extension, etc.)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     // ✅ تجاهل الطلبات من chrome-extension وغيرها من الـ schemes غير المدعومة
@@ -216,36 +248,35 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(request).catch(() => new Response('', { status: 0 })));
     return;
   }
-  
+
   // ✅ تجاهل الطلبات غير GET
   if (request.method !== 'GET') {
     event.respondWith(fetch(request));
     return;
   }
-  
-  // ✅ NetworkOnly للبيانات الديناميكية والحساسة
+
+  // ✅ v4.1.0: Navigation requests (HTML pages) bypass SW entirely
+  //   - lets the browser handle them natively with no synthesized errors
+  //   - solves cold-start /dashboard 503 issue
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    // Let browser handle it natively (no respondWith) — fastest path
+    return;
+  }
+
+  // ✅ NetworkOnly للبيانات الديناميكية والحساسة (with retry + long timeout)
   if (shouldNeverCache(url, request)) {
     console.log(`[SW v${VERSION}] NetworkOnly for: ${url.pathname}`);
     event.respondWith(
-      fetch(request)
+      fetchWithRetry(request, { maxAttempts: 2, timeoutMs: 30000 })
         .then((response) => {
           // ✅ عدم تخزين الاستجابة نهائيًا
           return response;
         })
         .catch((error) => {
-          console.error(`[SW v${VERSION}] Network failed for: ${url.pathname}`, error);
-          // ✅ إرجاع خطأ بدلاً من cache قديم
-          return new Response(
-            JSON.stringify({ 
-              error: 'Network error', 
-              message: 'Unable to fetch data. Please check your connection.' 
-            }),
-            {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: { 'Content-Type': 'application/json' }
-            }
-          );
+          console.error(`[SW v${VERSION}] Network failed permanently for: ${url.pathname}`, error);
+          // ✅ Re-throw to let the browser handle it as a network error
+          //    (no synthesized 503 that masks real errors)
+          throw error;
         })
     );
     return;

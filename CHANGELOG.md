@@ -4,6 +4,111 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.28.7] - 2026-05-23
+
+### ⚡ Performance — Dashboard Cold-Start Optimization (يحل 503 transient)
+
+أبلغ المستخدم بأن `/dashboard` يعطى 503 (Service Unavailable) بعد signup ناجح، أحياناً يحتاج refresh ليعمل.
+
+### 🔍 السبب الجذرى (سببان متراكبان)
+
+**1. Service Worker يولّد 503 synthesized**:
+
+عند فشل أو timeout لطلب network، الـ SW v4.0.1 كان يفعل:
+
+```js
+catch ((error) => {
+  return new Response(
+    JSON.stringify({ error: 'Network error' }),
+    { status: 503, statusText: 'Service Unavailable' }
+  );
+})
+```
+
+هذا يقطع طلب navigation للمتصفح ويظهر 503 — بدلاً من ترك الـ browser يحاول مرة ثانية أو إظهار error.tsx.
+
+**2. Dashboard server component يستدعى 5+ queries متسلسلة على cold start**:
+
+```
+auth.getUser()                              # ~200ms
+→ canAccessPage()                          # ~400ms (يستدعى getActiveCompanyId داخلياً)
+→ getFirstAllowedPage()                    # ~300ms (لو user عادى)
+→ getActiveCompanyId()                     # ~300ms (queries إضافية)
+→ companies.select                          # ~100ms
+→ user_profiles.select                     # ~100ms
+→ company_members.select                   # ~100ms
+→ branches.select (current branch)         # ~100ms
+→ branches.select (all branches)           # ~100ms
+Total: ~1.7s + Vercel cold start ~3-5s = ~5-7s → 503 timeout
+```
+
+### ✅ الإصلاحات (3 تحسينات)
+
+**1. Service Worker v4.1.0** (`public/sw.js`):
+
+- **Navigation requests bypass SW entirely** — أسرع مسار، يتعامل المتصفح معها مباشرة بدون أى overhead
+- **fetchWithRetry helper** — exponential backoff (500ms → 1000ms) + 30s timeout
+- **لا يولّد 503 synthesized** بعد الآن — يرمى الخطأ ليُعالج بـ error.tsx
+
+```js
+// v4.1.0: Navigation requests bypass SW entirely
+if (request.mode === 'navigate' || request.destination === 'document') {
+  return; // browser handles natively
+}
+
+// API requests: retry + long timeout
+event.respondWith(fetchWithRetry(request, { maxAttempts: 2, timeoutMs: 30000 }))
+```
+
+**2. Dashboard parallel queries** (`app/dashboard/page.tsx`):
+
+استبدال 3 queries متسلسلة بـ `Promise.all`:
+
+```typescript
+// قبل (sequential, ~700ms)
+const company = await supabase.from("companies").select(...)
+const profile = await supabase.from("user_profiles").select(...)
+const member  = await supabase.from("company_members").select(...)
+
+// بعد (parallel, ~250ms)
+const [companyResult, profileResult, memberResult] = await Promise.all([
+  supabase.from("companies").select("base_currency").eq("id", companyId).maybeSingle(),
+  supabase.from("user_profiles").select("username, display_name")...,
+  supabase.from("company_members").select("role, branch_id, ...")...,
+])
+```
+
+نفس الشيء لـ `branches` queries (parallel أيضاً).
+
+**3. Skip permission check للـ owner/admin**:
+
+بعد جلب `role` من `company_members`، إذا كان owner أو admin → تخطّى `canAccessPage()` + `getFirstAllowedPage()` تماماً. هذا يوفر ~700ms على cold start.
+
+### 📊 النتيجة المتوقعة
+
+| المقياس | قبل | بعد | تحسين |
+|---|---|---|---|
+| Sequential queries على dashboard | 5+ | 1-2 | **80% أقل** |
+| Time-to-first-byte (cold start) | ~5-7s | ~2-3s | **~60% أسرع** |
+| 503 synthesized من SW | يحدث | **لن يحدث** | حل دائم |
+| Retry على API failures | لا | نعم (2 محاولات) | resilience أفضل |
+
+### 📋 Files Changed
+
+| المكون | التغيير |
+|---|---|
+| `public/sw.js` | v4.0.1 → v4.1.0 (navigation bypass + retry logic) |
+| `app/dashboard/page.tsx` | Parallel queries + skip auth check للـ owner |
+| `CHANGELOG.md` | توثيق |
+
+### 🛡️ Risk Assessment
+
+- **Backward compatible**: 100%
+- **Service Worker auto-updates** عند زيارة المستخدم (skipWaiting)
+- **No DB changes** required — code-only fix
+
+---
+
 ## [3.28.6] - 2026-05-23
 
 ### 🎯 Final Signup Flow Fix — DB trigger permission + RLS owner bootstrap

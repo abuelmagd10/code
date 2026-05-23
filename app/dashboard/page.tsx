@@ -55,12 +55,9 @@ export default async function DashboardPage({
   const { data, error } = await supabase.auth.getUser()
   if (error || !data?.user) redirect("/auth/login")
 
-  // ── 2. Permission Check ────────────────────────────────
-  const canAccessDashboard = await canAccessPage(supabase, "dashboard")
-  if (!canAccessDashboard) {
-    const fallbackPage = await getFirstAllowedPage(supabase)
-    if (fallbackPage !== "/dashboard") redirect(fallbackPage)
-  }
+  // ── 2. Parse search params (no async work, can run early) ────
+  // moved up to allow parallel queries below
+  // (parsing block continues at section 3)
 
   // ── 3. Parse search params ─────────────────────────────
   const sp = await Promise.resolve(searchParams || {}) as any
@@ -94,49 +91,33 @@ export default async function DashboardPage({
   const selectedGroups   = selectedFromList.length > 0 ? selectedFromList : collectByKeyBase(sp, "group")
   const selectedAccountIds = collectByKeyBase(sp, "acct")
 
-  // ── 4. Company & Currency (fast cookie + small query) ──
+  // ── 4. Company & Currency (fast cookie + parallel queries) ──
+  // ✅ v3.28.7: Cold-start optimization — parallel fetching of user+company data
   const cookieStore    = await cookies()
   const cookieCid      = cookieStore.get("active_company_id")?.value || ""
   const cookieCurrency = cookieStore.get("app_currency")?.value || "EGP"
   const cidParam       = readOne("cid")
   const companyId      = cidParam || cookieCid || await getActiveCompanyId(supabase)
 
+  // ── 5. Parallel data fetching (replaces 3 sequential queries) ─
   let currency = cookieCurrency
-  if (companyId) {
-    try {
-      const { data: companyData } = await supabase
-        .from("companies")
-        .select("base_currency")
-        .eq("id", companyId)
-        .maybeSingle()
-      if (companyData?.base_currency) currency = companyData.base_currency
-    } catch { }
-  }
-
-  // ── 5. User Context (role, branch) ────────────────────
   let userProfile: { username?: string; display_name?: string } | null = null
   let userContext: DashboardUserContext | null = null
   let visibilityRules: ReturnType<typeof buildDashboardVisibilityRules> | null = null
   let currentBranchName: string | null = null
   let allBranches: { id: string; name: string }[] = []
 
-  // جلب ملف المستخدم (اسم العرض)
-  try {
-    const { data: profile } = await supabase
-      .from("user_profiles")
-      .select("username, display_name")
-      .eq("user_id", data.user.id)
-      .maybeSingle()
-    userProfile = profile
-  } catch { }
-
+  // Build the parallel query batch — only fetch what we need based on companyId
   if (companyId) {
-    const { data: member } = await supabase
-      .from("company_members")
-      .select("role, branch_id, cost_center_id, warehouse_id")
-      .eq("company_id", companyId)
-      .eq("user_id", data.user.id)
-      .maybeSingle()
+    const [companyResult, profileResult, memberResult] = await Promise.all([
+      supabase.from("companies").select("base_currency").eq("id", companyId).maybeSingle(),
+      supabase.from("user_profiles").select("username, display_name").eq("user_id", data.user.id).maybeSingle(),
+      supabase.from("company_members").select("role, branch_id, cost_center_id, warehouse_id").eq("company_id", companyId).eq("user_id", data.user.id).maybeSingle(),
+    ])
+
+    if (companyResult.data?.base_currency) currency = companyResult.data.base_currency
+    userProfile = profileResult.data || null
+    const member = memberResult.data
 
     userContext = {
       user_id:        data.user.id,
@@ -147,6 +128,17 @@ export default async function DashboardPage({
       warehouse_id:   member?.warehouse_id || null,
     }
 
+    // ── 6. Permission Check (now we have role - skip queries for owner/admin) ──
+    const role = String(member?.role || "")
+    const isOwnerOrAdmin = role === "owner" || role === "admin"
+    if (!isOwnerOrAdmin) {
+      const canAccessDashboard = await canAccessPage(supabase, "dashboard")
+      if (!canAccessDashboard) {
+        const fallbackPage = await getFirstAllowedPage(supabase)
+        if (fallbackPage !== "/dashboard") redirect(fallbackPage)
+      }
+    }
+
     const scopeParam      = readOne("scope") as DashboardScope | ""
     const branchParam     = readOne("branch")
     const selectedScope   = (scopeParam === "company" || scopeParam === "branch") ? scopeParam : undefined
@@ -154,25 +146,36 @@ export default async function DashboardPage({
 
     visibilityRules = buildDashboardVisibilityRules(userContext, selectedScope, selectedBranchId)
 
-    // اسم الفرع الحالي للعرض
+    // ── 7. Branch info — parallel fetching where possible ────────
+    const branchQueries: Promise<any>[] = []
     if (visibilityRules.branchId) {
-      const { data: branchData } = await supabase
-        .from("branches")
-        .select("name")
-        .eq("id", visibilityRules.branchId)
-        .maybeSingle()
-      currentBranchName = branchData?.name || null
+      branchQueries.push(
+        supabase.from("branches").select("name").eq("id", visibilityRules.branchId).maybeSingle()
+      )
+    }
+    if (visibilityRules.canSeeAllBranches) {
+      branchQueries.push(
+        supabase.from("branches").select("id, name").eq("company_id", companyId).eq("is_active", true).order("name")
+      )
     }
 
-    // جميع الفروع للمستخدمين المميزين (Scope Switcher)
-    if (visibilityRules.canSeeAllBranches) {
-      const { data: branchesData } = await supabase
-        .from("branches")
-        .select("id, name")
-        .eq("company_id", companyId)
-        .eq("is_active", true)
-        .order("name")
-      allBranches = branchesData || []
+    if (branchQueries.length > 0) {
+      const branchResults = await Promise.all(branchQueries)
+      let idx = 0
+      if (visibilityRules.branchId) {
+        currentBranchName = (branchResults[idx]?.data as any)?.name || null
+        idx++
+      }
+      if (visibilityRules.canSeeAllBranches) {
+        allBranches = (branchResults[idx]?.data as any) || []
+      }
+    }
+  } else {
+    // No companyId yet — still check permissions (rare path for users without company)
+    const canAccessDashboard = await canAccessPage(supabase, "dashboard")
+    if (!canAccessDashboard) {
+      const fallbackPage = await getFirstAllowedPage(supabase)
+      if (fallbackPage !== "/dashboard") redirect(fallbackPage)
     }
   }
 
