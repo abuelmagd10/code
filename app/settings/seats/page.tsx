@@ -12,7 +12,7 @@ import Link from 'next/link'
 import {
   Users, Crown, AlertTriangle, CheckCircle, XCircle, Clock,
   Calendar, RefreshCw, ArrowLeft, Loader2, CreditCard, Lock,
-  UserCheck, UserX, ShieldAlert,
+  UserCheck, UserX, ShieldAlert, ChevronUp, ChevronDown,
 } from 'lucide-react'
 
 interface Member {
@@ -74,6 +74,8 @@ export default function SeatsManagementPage() {
   const [data, setData] = useState<AssignmentsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [swappingSeats, setSwappingSeats] = useState<Set<number>>(new Set())
+  const [swapError, setSwapError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -92,6 +94,29 @@ export default function SeatsManagementPage() {
       setLoading(false)
     }
   }, [])
+
+  const swapSeats = useCallback(async (seatA: number, seatB: number) => {
+    if (seatA === 0 || seatB === 0) return  // never touch owner seat
+    setSwappingSeats(new Set([seatA, seatB]))
+    setSwapError(null)
+    try {
+      const res = await fetch('/api/billing/seats/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seat_a: seatA, seat_b: seatB }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSwapError(json?.error || 'فشل تبديل المقاعد')
+        return
+      }
+      await fetchData()
+    } catch (e: any) {
+      setSwapError(e?.message || 'خطأ فى الاتصال')
+    } finally {
+      setSwappingSeats(new Set())
+    }
+  }, [fetchData])
 
   useEffect(() => {
     fetchData()
@@ -275,11 +300,18 @@ export default function SeatsManagementPage() {
               <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
                 <Users className="w-5 h-5 text-violet-600" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h2 className="font-semibold text-gray-900 dark:text-white">جدول المقاعد</h2>
-                <p className="text-xs text-gray-500">المالك (مقعد 0) مجانى دائماً. باقى المقاعد مدفوعة.</p>
+                <p className="text-xs text-gray-500">المالك (مقعد 0) مجانى دائماً. استخدم الأسهم لإعادة ترتيب الموظفين.</p>
               </div>
             </div>
+
+            {swapError && (
+              <div className="mx-5 mt-3 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-xs flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {swapError}
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -291,12 +323,28 @@ export default function SeatsManagementPage() {
                     <th className="px-5 py-3 text-start font-medium">الدور</th>
                     <th className="px-5 py-3 text-start font-medium">الحالة</th>
                     <th className="px-5 py-3 text-start font-medium">تاريخ الإضافة</th>
+                    {data.is_caller_owner && (
+                      <th className="px-5 py-3 text-center font-medium w-24">ترتيب</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-slate-800">
-                  {data.seats.map((s) => (
-                    <SeatRow key={`${s.seat_number}-${s.member?.user_id ?? 'empty'}`} seat={s} />
-                  ))}
+                  {data.seats.map((s, idx) => {
+                    const prev = idx > 0 ? data.seats[idx - 1] : null
+                    const next = idx < data.seats.length - 1 ? data.seats[idx + 1] : null
+                    return (
+                      <SeatRow
+                        key={`${s.seat_number}-${s.member?.user_id ?? 'empty'}`}
+                        seat={s}
+                        canMoveUp={!!data.is_caller_owner && !!prev && prev.seat_number > 0 && s.seat_number > 0 && s.role !== 'free_owner'}
+                        canMoveDown={!!data.is_caller_owner && !!next && next.seat_number > 0 && s.seat_number > 0 && s.role !== 'free_owner'}
+                        onMoveUp={prev && prev.seat_number > 0 ? () => swapSeats(s.seat_number, prev.seat_number) : undefined}
+                        onMoveDown={next && next.seat_number > 0 ? () => swapSeats(s.seat_number, next.seat_number) : undefined}
+                        isSwapping={swappingSeats.has(s.seat_number)}
+                        showActions={!!data.is_caller_owner}
+                      />
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -351,7 +399,17 @@ export default function SeatsManagementPage() {
 // Seat Row
 // ─────────────────────────────────────────
 
-function SeatRow({ seat }: { seat: SeatAssignment }) {
+interface SeatRowProps {
+  seat: SeatAssignment
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+  isSwapping?: boolean
+  showActions?: boolean
+}
+
+function SeatRow({ seat, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isSwapping, showActions }: SeatRowProps) {
   const m = seat.member
 
   const seatBadge = (() => {
@@ -371,7 +429,7 @@ function SeatRow({ seat }: { seat: SeatAssignment }) {
   return (
     <tr className={`hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors ${
       seat.is_over_quota ? 'bg-red-50/30 dark:bg-red-900/5' : ''
-    }`}>
+    } ${isSwapping ? 'opacity-50' : ''}`}>
       <td className="px-5 py-3 font-bold text-gray-900 dark:text-white">
         <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg ${
           seat.role === 'free_owner' ? 'bg-violet-100 dark:bg-violet-900/30' :
@@ -400,6 +458,33 @@ function SeatRow({ seat }: { seat: SeatAssignment }) {
       <td className="px-5 py-3 text-xs text-gray-500">
         {fmtDate(m?.created_at ?? null)}
       </td>
+      {showActions && (
+        <td className="px-5 py-3">
+          {/* Only show up/down for non-owner occupied seats */}
+          {m && seat.role !== 'free_owner' ? (
+            <div className="flex items-center justify-center gap-1">
+              <button
+                onClick={onMoveUp}
+                disabled={!canMoveUp || isSwapping}
+                title="تحريك لأعلى (تبديل مع المقعد الأقل رقماً)"
+                className="p-1.5 rounded-md text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+              >
+                {isSwapping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={onMoveDown}
+                disabled={!canMoveDown || isSwapping}
+                title="تحريك لأسفل (تبديل مع المقعد الأعلى رقماً)"
+                className="p-1.5 rounded-md text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+              >
+                {isSwapping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+          ) : (
+            <span className="text-gray-300 text-xs">—</span>
+          )}
+        </td>
+      )}
     </tr>
   )
 }
