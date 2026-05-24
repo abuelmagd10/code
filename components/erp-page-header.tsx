@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { SmartBreadcrumbs } from "@/components/SmartBreadcrumbs"
 
 // ============================================================================
 // TypeScript Interfaces
@@ -129,6 +130,18 @@ export interface ERPPageHeaderProps {
      * Additional CSS classes
      */
     className?: string
+
+    /**
+     * إخفاء مُؤشّر مسار التَنقّل (Breadcrumbs)
+     * Hide auto-generated breadcrumbs trail
+     *
+     * Defaults to false — breadcrumbs are shown automatically based on URL.
+     * Set to true for pages where breadcrumbs are not desired
+     * (e.g., dashboard, auth pages, full-screen reports).
+     *
+     * @default false
+     */
+    hideBreadcrumbs?: boolean
 }
 
 // ============================================================================
@@ -146,6 +159,7 @@ export function ERPPageHeader({
     extra,
     lang = "ar",
     className = "",
+    hideBreadcrumbs = false,
 }: ERPPageHeaderProps) {
     const router = useRouter()
 
@@ -183,7 +197,11 @@ export function ERPPageHeader({
     // ============================================================================
 
     return (
-        <div className={`flex flex-col gap-4 mb-6 ${className}`}>
+        <div className={`flex flex-col gap-3 mb-6 ${className}`}>
+            {/* الصف العلوى: مُؤشّر مسار التَنقّل (Breadcrumbs) */}
+            {/* Top row: Breadcrumbs trail */}
+            {!hideBreadcrumbs && <SmartBreadcrumbs lang={lang} />}
+
             {/* الصف الأول: زر العودة + العنوان + الإجراءات */}
             {/* Row 1: Back button + Title + Actions */}
             <div className="flex items-center justify-between gap-4">

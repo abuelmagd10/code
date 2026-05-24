@@ -4,6 +4,55 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.40.0] - 2026-05-24
+
+### 🧭 UI Phase 1 (Quick Wins) — Step 1: Smart Breadcrumbs
+
+أول خطوة فى موجة توحيد UI: مُؤشّر مسار تَنقّل ذكى يَظهر فى كل صفحة تَستخدم `ERPPageHeader`.
+
+### ✅ ما هو جديد
+
+#### `components/SmartBreadcrumbs.tsx` (جديد)
+مكون يَقرأ الـ pathname تلقائياً ويُولّد breadcrumbs:
+- قاموس شامل لأسماء العربية لـ 130+ route segment
+- يَدعم RTL/LTR (ChevronLeft فى العربى، ChevronRight فى الإنجليزى)
+- يَتعامل بذكاء مع dynamic segments:
+  - UUIDs → "تفاصيل" / "Details"
+  - أرقام → `#123`
+  - أى segment غير معروف → title-case
+- responsive: home label يَختفى على mobile (icon فقط)
+- truncation للـ paths الطويلة
+- يَتجاهل صفحات الـ auth والـ dashboard (لا يُضايق المستخدم)
+
+#### `components/erp-page-header.tsx`
+- `SmartBreadcrumbs` يَظهر تلقائياً فوق العُنوان
+- prop جديد `hideBreadcrumbs?: boolean` (افتراضى false)
+- **زِيرو breaking change** — كل الصفحات الموجودة تَعمل كما هى
+
+### 🎯 الأثر
+- 23 صفحة تَستخدم `ERPPageHeader` حالياً ستَحصل على breadcrumbs تلقائياً
+- لا أى تغيير وظيفى — إضافة بَصرية بحتة
+- يَمنح المستخدم سياق التَنقّل فى كل صفحة (Linear/Stripe-grade UX)
+
+### 🛡️ ضمانات الأمان
+- branch منفصل (`ui-phase-1-breadcrumbs`) للاختبار على Vercel Preview قبل دمج main
+- TypeScript validation
+- لا تَعديل فى أى منطق وظيفى
+
+### 📋 خُطوة من خُطّة UI Phase 1
+هذا أول 1 من 10 إصلاحات Quick Wins. التالية:
+- Command Palette (Ctrl+K)
+- Status color tokens
+- Dark mode toggle global
+- Typography hierarchy
+- DataTable mobile fix
+- Touch targets upgrade
+- Custom 404 page
+- Empty/Error state components
+- Sidebar accordion persistence
+
+---
+
 ## [3.39.1] - 2026-05-24
 
 ### 🐛 Hotfix: NotificationCenter crash على priority=critical
