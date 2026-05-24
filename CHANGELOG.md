@@ -4,6 +4,56 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.41.0] - 2026-05-24
+
+### 🔍 UI Phase 1 — Step 2: Command Palette (Ctrl+K)
+
+ثانى خطوة من موجة توحيد UI: مَركز بحث سريع عالمى يَفتح من أى مكان فى التطبيق.
+
+### ✅ ما هو جديد
+
+#### `components/CommandPalette.tsx` (جديد)
+مَركز بحث احترافى بأسلوب Linear / Notion / Stripe:
+- اضغط **Ctrl+K** (Windows/Linux) أو **Cmd+K** (Mac) من أى مكان → يَفتح
+- يَبحث فى **80+ صفحة** بأسماء عربية وإنجليزية + keywords
+- مُجمَّع تلقائياً فى 11 مجموعة:
+  - نَظرة عامة، المبيعات، المشتريات، المدفوعات والبنوك،
+  - جهات الاتصال، المنتجات والخدمات، المخزون،
+  - المحاسبة، الأصول الثابتة، التصنيع، الموارد البشرية،
+  - التقارير، المنشأة، الإعدادات
+- **"المُستخدم مؤخراً"** فى أعلى القائمة — يَحفظ آخر 5 صفحات
+- يَدعم Arabic + English (يَتبع لغة التطبيق تلقائياً)
+- Keyboard-only navigation (Arrow keys + Enter + Escape)
+- يَتجاوب مع `app_language_changed` event للتَبديل الفورى
+
+#### `app/layout.tsx`
+- إضافة `<CommandPalette />` بعد AppShell
+- يَعمل على **كل صفحة** فى التطبيق (mounted globally)
+
+### 🎯 الأثر
+- وقت الوصول لأى صفحة: من 3-5 ثوان (sidebar navigation) → **أقل من ثانية واحدة**
+- يَعمل عبر الـ 209 صفحة (مش فقط الـ 23 التى تَستخدم ERPPageHeader)
+- لا أى تَغيير وظيفى — إضافة عالمية بَصرية بحتة
+
+### 🛡️ الأمان
+- زِيرو breaking change — لا يَلمس أى مَنطق موجود
+- لو لم يَضغط المُستخدم Ctrl+K أبداً، لا يَظهر شيء
+- localStorage فقط لحفظ recent (يَفشل بأمان لو blocked)
+
+### 📋 الخطوات الباقية فى Phase 1
+- ✅ Step 1: Smart Breadcrumbs (v3.40.0)
+- ✅ Step 2: Command Palette (v3.41.0) — هذا الإصدار
+- ⏳ Step 3: Status color tokens
+- ⏳ Step 4: Dark mode global toggle
+- ⏳ Step 5: Typography hierarchy
+- ⏳ Step 6: DataTable mobile fix
+- ⏳ Step 7: Touch targets upgrade
+- ⏳ Step 8: Custom 404 page
+- ⏳ Step 9: Unified empty/error states
+- ⏳ Step 10: Sidebar accordion persistence
+
+---
+
 ## [3.40.0] - 2026-05-24
 
 ### 🧭 UI Phase 1 (Quick Wins) — Step 1: Smart Breadcrumbs

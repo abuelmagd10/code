@@ -15,6 +15,7 @@ import { AppShell } from "@/components/app-shell"
 import { SidebarLayoutProvider } from "@/components/SidebarLayoutProvider"
 // dynamic with ssr:false must live inside a Client Component — see client-loader.tsx
 import { AIAssistantClientLoader } from "@/components/ai-assistant/client-loader"
+import { CommandPalette } from "@/components/CommandPalette"
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -116,6 +117,7 @@ export default function RootLayout({
                         {children}
                       </ErrorBoundary>
                     </AppShell>
+                    <CommandPalette />
                     <AIAssistantClientLoader />
                     <Toaster />
                     {process.env.NEXT_PUBLIC_ENABLE_VERCEL_ANALYTICS === "true" ? <Analytics /> : null}
