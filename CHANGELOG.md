@@ -4,6 +4,69 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.39.0] - 2026-05-24
+
+### 📧 Phase L: Email Escalation & Multi-Channel Dispatcher
+
+البريد الإلكترونى الآن **يحترم تفضيلات المستخدم** مع تجاوز إجبارى للإشعارات الحرجة (severity=critical).
+
+### ✅ التغييرات
+
+#### 1. `lib/notifications/dispatcher.ts` (جديد) — Generic Multi-Channel Dispatcher
+- `dispatchNotification()` — دالة موحَّدة تُرسَل عبر in_app + email معاً
+- `shouldDeliverChannel()` — utility لفحص تفضيل المستخدم لقناة محددة
+- يستدعى DB function `should_user_be_notified()` مع فحص severity
+- **critical severity** يتجاوز التفضيلات (إجبارى)
+- Default email HTML template مع branding 7esab
+- Resolve email تلقائياً من `auth.users` لو لم يُمرَّر
+- يرجع نتائج منفصلة لكل قناة (partial success مسموح)
+
+#### 2. `app/api/cron/subscription-renewal/route.ts` (محدّث)
+ربط email preference لكل نوع إيميل:
+
+| الإيميل | severity | احترام تفضيل المستخدم؟ |
+|---|---|---|
+| Renewal reminder (T-2) | warning | ✅ نعم |
+| Past-due notice | error | ✅ نعم |
+| **Suspension notice** | **critical** | ❌ **يتجاوز** (إجبارى) |
+
+#### 3. `lib/billing/subscription-service.ts` (محدّث)
+- Reactivation email (severity=info) يحترم تفضيل المستخدم
+
+### 🛡️ القاعدة الذهبية المُطبَّقة
+
+```
+severity = 'critical'  → email + in_app إجبارى (لا يمكن كتمه)
+severity = 'error'     → يحترم تفضيل المستخدم
+severity = 'warning'   → يحترم تفضيل المستخدم
+severity = 'info'      → يحترم تفضيل المستخدم
+```
+
+### 🎯 السيناريو المُختبَر
+
+**المستخدم يكتم "billing → email" فى `/settings/notifications`:**
+
+| الحدث | severity | الإيميل يصل؟ |
+|---|---|---|
+| تذكير T-2 | warning | ❌ مكتوم |
+| Past-due | error | ❌ مكتوم |
+| **Suspension** | **critical** | ✅ **يصل رغم الكتم** (لحماية المالك) |
+| Reactivation | info | ❌ مكتوم |
+
+**فى جميع الحالات، الإشعار In-App يحترم نفس القاعدة.**
+
+### 🚀 جاهز للتوسع
+
+`dispatchNotification()` متاح للاستخدام فى أى business workflow:
+- Sales orders
+- Approval requests
+- Inventory alerts
+- HR notifications
+
+كل ما يحتاجه: `userId, companyId, category, severity, title, message` ويُرسَل لـ in_app + email تلقائياً.
+
+---
+
 ## [3.38.0] - 2026-05-24
 
 ### ⚙️ Phase K: Notification Preferences UI

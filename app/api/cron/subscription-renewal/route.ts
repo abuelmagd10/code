@@ -35,6 +35,7 @@ import {
   notifyPastDue,
   notifySuspension,
 } from '@/lib/billing/subscription-notifications'
+import { shouldDeliverChannel } from '@/lib/notifications/dispatcher'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -118,13 +119,24 @@ export async function GET(req: NextRequest) {
       const billingPeriod = await fetchLastBillingPeriod(admin, c.id)
       const renewalUrl = safeBuildRenewalUrl(c.id, seatsCount, billingPeriod)
 
-      const mailRes = await sendRenewalReminder({
-        to: email,
-        companyName: c.name || 'عميلنا العزيز',
-        periodEnd,
-        seats: seatsCount,
-        renewalUrl,
-      })
+      // Phase L: respect user email preference (severity=warning, NOT critical)
+      const emailAllowed = c.user_id ? await shouldDeliverChannel({
+        userId: c.user_id,
+        companyId: c.id,
+        category: 'billing',
+        channel: 'email',
+        severity: 'warning',
+      }) : true
+
+      const mailRes = emailAllowed
+        ? await sendRenewalReminder({
+            to: email,
+            companyName: c.name || 'عميلنا العزيز',
+            periodEnd,
+            seats: seatsCount,
+            renewalUrl,
+          })
+        : { sent: false, skipped: true } as const
 
       // In-app notification (non-blocking — even if email failed)
       try {
@@ -175,12 +187,23 @@ export async function GET(req: NextRequest) {
       const billingPeriod = await fetchLastBillingPeriod(admin, c.id)
       const renewalUrl = safeBuildRenewalUrl(c.id, seatsCount, billingPeriod)
 
-      const mailRes = await sendPastDueNotice({
-        to: email,
-        companyName: c.name || 'عميلنا العزيز',
-        graceEndsAt,
-        renewalUrl,
-      })
+      // Phase L: severity=error — user MAY mute (but most won't for billing)
+      const emailAllowed = c.user_id ? await shouldDeliverChannel({
+        userId: c.user_id,
+        companyId: c.id,
+        category: 'billing',
+        channel: 'email',
+        severity: 'error',
+      }) : true
+
+      const mailRes = emailAllowed
+        ? await sendPastDueNotice({
+            to: email,
+            companyName: c.name || 'عميلنا العزيز',
+            graceEndsAt,
+            renewalUrl,
+          })
+        : { sent: false, skipped: true } as const
       if (!mailRes.sent && !mailRes.skipped) result.emails_failed++
 
       // In-app notification — past_due
@@ -215,6 +238,9 @@ export async function GET(req: NextRequest) {
       const billingPeriod = await fetchLastBillingPeriod(admin, c.id)
       const renewalUrl = safeBuildRenewalUrl(c.id, seatsCount, billingPeriod)
 
+      // Phase L: severity=critical — BYPASSES preferences (always sends)
+      // suspension is a hard event that the owner MUST know about, even
+      // if they muted billing emails. Skip the preference check entirely.
       const mailRes = await sendSuspensionNotice({
         to: email,
         companyName: c.name || 'عميلنا العزيز',
@@ -222,7 +248,7 @@ export async function GET(req: NextRequest) {
       })
       if (!mailRes.sent && !mailRes.skipped) result.emails_failed++
 
-      // In-app notification — suspended
+      // In-app notification — suspended (severity=critical also bypasses prefs)
       try {
         await notifySuspension({ companyId: c.id })
       } catch (e) { /* non-fatal */ }

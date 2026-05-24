@@ -14,6 +14,7 @@ import { increaseSeats } from './seat-service'
 import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generator'
 import { sendReactivationNotice } from './renewal-emails'
 import { notifyReactivation, notifyPaymentSuccess } from './subscription-notifications'
+import { shouldDeliverChannel } from '@/lib/notifications/dispatcher'
 
 const GRACE_PERIOD_DAYS = 3
 
@@ -135,16 +136,25 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
 
         const newPeriodEnd = new Date(company?.current_period_end || Date.now() + 30 * 86400_000)
 
-        // Send reactivation email (best-effort)
+        // Send reactivation email (respects user preferences — severity=info)
         if (company?.user_id) {
-          const { data: userData } = await admin.auth.admin.getUserById(company.user_id)
-          const ownerEmail = userData?.user?.email
-          if (ownerEmail) {
-            await sendReactivationNotice({
-              to: ownerEmail,
-              companyName: company.name || 'عميلنا العزيز',
-              newPeriodEnd,
-            })
+          const emailAllowed = await shouldDeliverChannel({
+            userId: company.user_id,
+            companyId: payload.company_id,
+            category: 'billing',
+            channel: 'email',
+            severity: 'info',
+          })
+          if (emailAllowed) {
+            const { data: userData } = await admin.auth.admin.getUserById(company.user_id)
+            const ownerEmail = userData?.user?.email
+            if (ownerEmail) {
+              await sendReactivationNotice({
+                to: ownerEmail,
+                companyName: company.name || 'عميلنا العزيز',
+                newPeriodEnd,
+              })
+            }
           }
         }
 
