@@ -333,8 +333,8 @@ export function NotificationCenter({
 
       // Sort by priority and date
       enriched.sort((a, b) => {
-        const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
-        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
+        const priorityOrder: Record<NotificationPriority, number> = { critical: 0, urgent: 1, high: 2, normal: 3, low: 4 }
+        const priorityDiff = (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
         if (priorityDiff !== 0) return priorityDiff
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
@@ -446,8 +446,8 @@ export function NotificationCenter({
       map.set(notification.id, notification)
       const updated = Array.from(map.values())
       updated.sort((a, b) => {
-        const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 }
-        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
+        const priorityOrder: Record<NotificationPriority, number> = { critical: 0, urgent: 1, high: 2, normal: 3, low: 4 }
+        const priorityDiff = (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
         if (priorityDiff !== 0) return priorityDiff
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
@@ -682,6 +682,14 @@ export function NotificationCenter({
   // 🔹 Get priority styling
   const getPriorityStyles = (priority: NotificationPriority) => {
     switch (priority) {
+      case 'critical':
+        // أعلى مستوى — أحمر داكن مع pulse
+        return {
+          bg: 'bg-red-100 dark:bg-red-950/40',
+          border: 'border-red-400 dark:border-red-700 ring-2 ring-red-500/30',
+          icon: <Zap className="w-5 h-5 text-red-700 dark:text-red-300 animate-pulse" />,
+          badge: 'bg-red-600/15 text-red-700 dark:text-red-300 border-red-600/30 font-bold'
+        }
       case 'urgent':
         return {
           bg: 'bg-red-50 dark:bg-red-950/20',
@@ -708,6 +716,14 @@ export function NotificationCenter({
           bg: 'bg-gray-50 dark:bg-gray-900/50',
           border: 'border-gray-200 dark:border-gray-700',
           icon: <AlertCircle className="w-5 h-5 text-gray-500" />,
+          badge: 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'
+        }
+      default:
+        // Defensive fallback — يمنع crash على أى priority غير متوقع
+        return {
+          bg: 'bg-gray-50 dark:bg-gray-900/50',
+          border: 'border-gray-200 dark:border-gray-700',
+          icon: <Bell className="w-5 h-5 text-gray-500" />,
           badge: 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'
         }
     }
@@ -751,11 +767,11 @@ export function NotificationCenter({
 
   // 🔹 Get priority label
   const getPriorityLabel = (priority: NotificationPriority) => {
-    const labels = {
-      ar: { urgent: 'عاجل', high: 'عالي', normal: 'عادي', low: 'منخفض' },
-      en: { urgent: 'Urgent', high: 'High', normal: 'Normal', low: 'Low' }
+    const labels: Record<'ar' | 'en', Record<NotificationPriority, string>> = {
+      ar: { critical: 'حرج', urgent: 'عاجل', high: 'عالي', normal: 'عادي', low: 'منخفض' },
+      en: { critical: 'Critical', urgent: 'Urgent', high: 'High', normal: 'Normal', low: 'Low' }
     }
-    return labels[appLang][priority]
+    return labels[appLang][priority] || (appLang === 'ar' ? 'غير محدد' : 'Unknown')
   }
 
   // 🔹 Get status label
@@ -908,6 +924,7 @@ export function NotificationCenter({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{appLang === 'en' ? 'All' : 'الكل'}</SelectItem>
+                <SelectItem value="critical">{appLang === 'en' ? 'Critical' : 'حرج'}</SelectItem>
                 <SelectItem value="urgent">{appLang === 'en' ? 'Urgent' : 'عاجل'}</SelectItem>
                 <SelectItem value="high">{appLang === 'en' ? 'High' : 'عالي'}</SelectItem>
                 <SelectItem value="normal">{appLang === 'en' ? 'Normal' : 'عادي'}</SelectItem>
@@ -924,7 +941,10 @@ export function NotificationCenter({
                 <SelectItem value="approvals">{appLang === 'en' ? 'Approvals' : 'موافقات'}</SelectItem>
                 <SelectItem value="inventory">{appLang === 'en' ? 'Inventory' : 'مخزون'}</SelectItem>
                 <SelectItem value="finance">{appLang === 'en' ? 'Finance' : 'مالية'}</SelectItem>
+                <SelectItem value="billing">{appLang === 'en' ? 'Billing' : 'فوترة'}</SelectItem>
                 <SelectItem value="sales">{appLang === 'en' ? 'Sales' : 'مبيعات'}</SelectItem>
+                <SelectItem value="hr">{appLang === 'en' ? 'HR' : 'موارد بشرية'}</SelectItem>
+                <SelectItem value="manufacturing">{appLang === 'en' ? 'Manufacturing' : 'تصنيع'}</SelectItem>
                 <SelectItem value="system">{appLang === 'en' ? 'System' : 'نظام'}</SelectItem>
               </SelectContent>
             </Select>

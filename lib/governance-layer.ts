@@ -12,10 +12,12 @@ import { normalizeNotificationSeverity } from '@/lib/notification-workflow'
 // Types
 // =====================================================
 
-export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent'
+export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent' | 'critical'
 export type NotificationStatus = 'unread' | 'read' | 'archived' | 'actioned'
 export type NotificationSeverity = 'info' | 'warning' | 'error' | 'critical'
-export type NotificationCategory = 'finance' | 'inventory' | 'sales' | 'approvals' | 'system'
+export type NotificationCategory =
+  | 'finance' | 'inventory' | 'sales' | 'approvals' | 'system'
+  | 'billing' | 'hr' | 'manufacturing'
 
 export type ApprovalStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'executed' | 'cancelled'
 export type WorkflowType = 'financial' | 'inventory' | 'refund' | 'transfer' | 'adjustment'

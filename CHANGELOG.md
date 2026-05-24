@@ -4,6 +4,34 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.39.1] - 2026-05-24
+
+### 🐛 Hotfix: NotificationCenter crash على priority=critical
+
+كان `NotificationCenter` يَنهار عند عرض إشعار بـ `priority='critical'` لأن `getPriorityStyles` switch لم يكن لديه case لها ولا default fallback، فيُرجع `undefined` ثم محاولة قراءة `.border` تُسبب TypeError. هذا أخفى إشعارات Phase L الحرجة (مثل suspension) عن المستخدم رغم نجاح إنشائها فى قاعدة البيانات.
+
+### ✅ التغييرات
+
+#### 1. `lib/governance-layer.ts`
+- `NotificationPriority` تَوَسّع إلى `'low' | 'normal' | 'high' | 'urgent' | 'critical'`
+- `NotificationCategory` تَوَسّع إلى يشمل `'billing' | 'hr' | 'manufacturing'` (لمطابقة DB constraint)
+
+#### 2. `components/NotificationCenter.tsx`
+- `getPriorityStyles()` — أُضيفت حالة `'critical'` (أحمر داكن مع pulse + ring) و `default` fallback آمن
+- `getPriorityLabel()` — أُضيفت ترجمات `'critical' → 'حرج' / 'Critical'`
+- Priority filter dropdown — أُضيف عنصر `Critical/حرج`
+- Category filter dropdown — أُضيفت عناصر `Billing / HR / Manufacturing`
+
+### 🗃️ DB Migration
+- `notifications_priority_check` تَوَسّع لقبول `'critical'`
+- `company_seats.status` تَوَسّع لقبول `'suspended'` (إصلاح فى نفس الجلسة)
+
+### 🧪 Verified
+- إشعار suspension بـ `priority='critical'` ينشأ بنجاح فى DB
+- جرس الإشعارات يعرضه بدون crash مع تنسيق أحمر مُميَّز
+
+---
+
 ## [3.39.0] - 2026-05-24
 
 ### 📧 Phase L: Email Escalation & Multi-Channel Dispatcher
