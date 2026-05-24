@@ -30,6 +30,11 @@ import {
   sendSuspensionNotice,
 } from '@/lib/billing/renewal-emails'
 import { buildRenewalUrl } from '@/lib/billing/renewal-token'
+import {
+  notifyRenewalReminder,
+  notifyPastDue,
+  notifySuspension,
+} from '@/lib/billing/subscription-notifications'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -121,6 +126,15 @@ export async function GET(req: NextRequest) {
         renewalUrl,
       })
 
+      // In-app notification (non-blocking — even if email failed)
+      try {
+        await notifyRenewalReminder({
+          companyId: c.id,
+          periodEnd,
+          seats: seatsCount,
+        })
+      } catch (e) { /* non-fatal */ }
+
       if (mailRes.sent) {
         result.reminders_sent++
         await admin
@@ -168,6 +182,11 @@ export async function GET(req: NextRequest) {
         renewalUrl,
       })
       if (!mailRes.sent && !mailRes.skipped) result.emails_failed++
+
+      // In-app notification — past_due
+      try {
+        await notifyPastDue({ companyId: c.id, graceEndsAt })
+      } catch (e) { /* non-fatal */ }
     }
 
     // ─────────────────────────────────────────
@@ -202,6 +221,11 @@ export async function GET(req: NextRequest) {
         renewalUrl,
       })
       if (!mailRes.sent && !mailRes.skipped) result.emails_failed++
+
+      // In-app notification — suspended
+      try {
+        await notifySuspension({ companyId: c.id })
+      } catch (e) { /* non-fatal */ }
     }
 
     // ─────────────────────────────────────────

@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js'
 import { increaseSeats } from './seat-service'
 import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generator'
 import { sendReactivationNotice } from './renewal-emails'
+import { notifyReactivation, notifyPaymentSuccess } from './subscription-notifications'
 
 const GRACE_PERIOD_DAYS = 3
 
@@ -122,7 +123,7 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
       return { success: false, error: result.error }
     }
 
-    // ── Reactivation email (if company was suspended/past_due/canceled) ──
+    // ── Reactivation email + in-app notification (if company was suspended/past_due/canceled) ──
     if (result.reactivation?.was_reactivated && !result.idempotent) {
       try {
         const admin = getAdminClient()
@@ -132,6 +133,9 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
           .eq('id', payload.company_id)
           .single()
 
+        const newPeriodEnd = new Date(company?.current_period_end || Date.now() + 30 * 86400_000)
+
+        // Send reactivation email (best-effort)
         if (company?.user_id) {
           const { data: userData } = await admin.auth.admin.getUserById(company.user_id)
           const ownerEmail = userData?.user?.email
@@ -139,13 +143,30 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
             await sendReactivationNotice({
               to: ownerEmail,
               companyName: company.name || 'عميلنا العزيز',
-              newPeriodEnd: new Date(company.current_period_end || Date.now() + 30 * 86400_000),
+              newPeriodEnd,
             })
           }
         }
+
+        // In-app notification — welcome back (non-blocking)
+        try {
+          await notifyReactivation({
+            companyId: payload.company_id,
+            newPeriodEnd,
+          })
+        } catch (e) { /* non-fatal */ }
       } catch (mailErr) {
         console.error('[SubscriptionService] reactivation email failed:', mailErr)
       }
+    } else if (!result.idempotent) {
+      // Normal add-seats payment (not reactivation) — lighter notification
+      try {
+        await notifyPaymentSuccess({
+          companyId: payload.company_id,
+          seatsAdded: payload.additional_users,
+          amountEgp: Math.round(payload.amount_cents / 100),
+        })
+      } catch (e) { /* non-fatal */ }
     }
 
     // ── Generate invoice + PDF (idempotent on paymob_transaction_id) ──

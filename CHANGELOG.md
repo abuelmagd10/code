@@ -4,6 +4,70 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.37.0] - 2026-05-23
+
+### 🔔 Phase J: In-App Notifications للـ Subscription Lifecycle
+
+كل أحداث الاشتراك تُرسَل الآن إيميل **+** إشعار داخل التطبيق للمالك (الـ admin).
+
+### ✅ التغييرات
+
+#### 1. `lib/billing/subscription-notifications.ts` (جديد)
+- 5 دوال للإشعارات:
+  - `notifyRenewalReminder()` — يوم -2: "اشتراكك ينتهى قريباً"
+  - `notifyPastDue()` — يوم 0: "انتهى — فترة سماح 3 أيام"
+  - `notifySuspension()` — يوم +3: "تم إيقاف الحساب"
+  - `notifyReactivation()` — بعد الدفع: "🎉 أهلاً بك مرة أخرى"
+  - `notifyPaymentSuccess()` — أى دفعة ناجحة (إضافة مقاعد)
+- تستخدم RPC `create_notification` الموجود
+- `assigned_to_user` = `companies.user_id` (المالك) + `assigned_to_role = 'owner'`
+- `category = 'billing'`، `event_key` لمنع التكرار
+- Server-side (service role client)
+
+#### 2. `app/api/cron/subscription-renewal/route.ts`
+- بعد كل إيميل، يُرسَل إشعار in-app مطابق
+- non-blocking: فشل الإشعار لا يُلغى الـ cron flow
+
+#### 3. `lib/billing/subscription-service.ts`
+- `handlePaymentSuccess` يُرسَل:
+  - `notifyReactivation` لو كان reactivation (suspended → active)
+  - `notifyPaymentSuccess` لو كان دفعة عادية (إضافة مقاعد)
+
+### 🧠 المعمارية
+
+```
+الحدث            الإيميل                      الإشعار In-App
+────────────    ────────────                ────────────────
+يوم 28           sendRenewalReminder         🔔 notifyRenewalReminder
+                                              "اشتراكك ينتهى — جدد بنقرة"
+                                              priority: high, severity: warning
+
+يوم 30           sendPastDueNotice           ⚠️ notifyPastDue
+                                              "انتهى — فترة سماح 3 أيام"
+                                              priority: critical, severity: error
+
+يوم 33           sendSuspensionNotice        🛑 notifySuspension
+                                              "تم إيقاف الحساب"
+                                              priority: critical, severity: critical
+
+بعد الدفع        sendReactivationNotice      🎉 notifyReactivation
+                                              "أهلاً بك مرة أخرى"
+                                              priority: high, severity: info
+
+شراء مقاعد       (لا إيميل)                   ✅ notifyPaymentSuccess
+                                              "تم استلام الدفعة"
+                                              priority: normal, severity: info
+```
+
+### 🎯 موقع ظهور الإشعارات
+
+الإشعارات تظهر فى:
+- 🔔 أيقونة الجرس فى الـ sidebar (badge بعدد غير المقروء)
+- صفحة الإشعارات الكاملة `/notifications`
+- Real-time push عبر Supabase realtime (الموجود فى governance channel)
+
+---
+
 ## [3.36.1] - 2026-05-23
 
 ### 💰 Vercel Hobby Plan Compatibility
