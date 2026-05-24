@@ -70,20 +70,35 @@ async function postSubscriptionNotification(args: {
   priority?: 'low' | 'normal' | 'high' | 'critical'
   severity?: 'info' | 'warning' | 'error' | 'critical'
   eventKey?: string
-}): Promise<{ sent: boolean; error?: string }> {
+}): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
   try {
     const admin = getAdminClient()
     const ownerId = await getCompanyOwnerId(admin, args.companyId)
 
-    // created_by is required by the RPC — use the owner if available,
-    // else the system service role user UUID won't work (it's not in
-    // public.users). Best fallback: use the owner as both creator and
-    // recipient, which makes audit trails clean ("notification self-
-    // posted because the system acted on this owner's behalf").
     const createdBy = ownerId
     if (!createdBy) {
       console.warn('[subscription-notifications] No owner found for company', args.companyId)
       return { sent: false, error: 'no_owner_found' }
+    }
+
+    // ── Check user preference (Phase K)
+    // Critical severity bypasses preferences automatically (DB function logic)
+    const severity = args.severity || 'warning'
+    try {
+      const { data: shouldNotify } = await admin.rpc('should_user_be_notified', {
+        p_user_id: ownerId,
+        p_company_id: args.companyId,
+        p_category: 'billing',
+        p_channel: 'in_app',
+        p_severity: severity,
+      })
+      if (shouldNotify === false) {
+        // User explicitly muted billing in_app notifications and this isn't critical
+        return { sent: false, skipped: true }
+      }
+    } catch (prefErr) {
+      // If preference lookup fails, default to sending (fail-open for billing safety)
+      console.warn('[subscription-notifications] preference check failed, sending anyway:', prefErr)
     }
 
     const { error } = await admin.rpc('create_notification', {
@@ -97,10 +112,10 @@ async function postSubscriptionNotification(args: {
       p_cost_center_id: null,
       p_warehouse_id: null,
       p_assigned_to_role: 'owner',
-      p_assigned_to_user: ownerId,  // direct delivery to the admin
+      p_assigned_to_user: ownerId,
       p_priority: args.priority || 'high',
       p_event_key: args.eventKey || null,
-      p_severity: args.severity || 'warning',
+      p_severity: severity,
       p_category: 'billing',
     })
 

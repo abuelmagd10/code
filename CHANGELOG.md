@@ -4,6 +4,75 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.38.0] - 2026-05-24
+
+### ⚙️ Phase K: Notification Preferences UI
+
+صفحة `/settings/notifications` تتيح للمستخدم التحكم فى الإشعارات التى يستلمها وقنوات الاستلام، مع تجاوز إجبارى للإشعارات الحرجة.
+
+### ✅ التغييرات
+
+#### 1. DB Migration `user_notification_preferences`
+- جدول جديد: `(user_id, company_id, category, channel, enabled)`
+- 8 فئات: `billing`, `finance`, `sales`, `approvals`, `system`, `inventory`, `hr`, `manufacturing`
+- قنوات: `in_app`, `email` (sms/push محجوزة للمستقبل)
+- RLS: المستخدم يرى/يعدّل تفضيلاته فقط
+- UNIQUE(user_id, company_id, category, channel)
+- Trigger لتحديث `updated_at`
+
+#### 2. SQL function `should_user_be_notified(user_id, company_id, category, channel, severity)`
+- يفحص تفضيلات المستخدم
+- **`severity = 'critical'` يتجاوز التفضيلات دائماً** (إشعارات الإيقاف، فشل الدفع، التنبيهات الأمنية)
+- Default = enabled إذا لم يُحدّد المستخدم تفضيلاً صريحاً (fail-open)
+
+#### 3. `app/api/notifications/preferences/route.ts` (جديد)
+- `GET` — يعيد matrix كاملة `{ category: { channel: boolean } }`
+- `PUT` — تحديث جماعى via upsert
+
+#### 4. `app/settings/notifications/page.tsx` (جديد)
+- 8 cards (كل فئة) مع toggles للقنوات
+- اختصارات: "تفعيل الكل" / "كتم الكل" لكل قناة + لكل فئة
+- زر "تراجع" + "حفظ"
+- Banner تحذير: الإشعارات الحرجة تتجاوز هذه الإعدادات
+- RTL Arabic كامل + dark mode
+
+#### 5. `lib/billing/subscription-notifications.ts` (محدّث)
+- يستدعى `should_user_be_notified` قبل الإنشاء
+- إذا المستخدم كتم billing in_app → skip بدون خطأ
+- Critical severity يتجاوز التفضيلات (للسلامة)
+
+### 🎯 الواجهة
+
+```
+/settings/notifications
+   ├─ Header: تفضيلات الإشعارات + Save/Reset
+   ├─ Banner تحذير: الإشعارات الحرجة تتجاوز
+   ├─ اختصارات: تفعيل/كتم كل قناة
+   └─ 8 cards فئات:
+      [💳 الفوترة]      [🔔 داخل التطبيق ●] [📧 بريد ●]
+      [💰 المالية]      [🔔 ●] [📧 ●]
+      [🛒 المبيعات]     [🔔 ●] [📧 ●]
+      [🛡️ الموافقات]    [🔔 ●] [📧 ●]
+      [⚙️ النظام]       [🔔 ●] [📧 ●]
+      [📦 المخزون]      [🔔 ●] [📧 ●]
+      [👥 HR]          [🔔 ●] [📧 ●]
+      [🏭 التصنيع]      [🔔 ●] [📧 ●]
+```
+
+### 🛡️ القاعدة الذهبية
+
+**critical severity = إشعار إلزامى لا يمكن كتمه**
+
+مثل:
+- إيقاف الحساب (suspension)
+- فشل دفع متكرر
+- تنبيهات أمنية حرجة
+- انتهاء فترة السماح
+
+هذا يحمى المستخدم والشركة من تجاوز تنبيهات حياتية بطريق الخطأ.
+
+---
+
 ## [3.37.0] - 2026-05-23
 
 ### 🔔 Phase J: In-App Notifications للـ Subscription Lifecycle
