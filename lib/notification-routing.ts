@@ -31,11 +31,29 @@ export type ReferenceType =
   | 'manufacturing_product_receive_approval'
   | 'manufacturing_production_order'
   | 'booking'
+  | 'subscription'
 
 /**
  * خريطة reference_type إلى route
  */
 const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, category?: string) => string> = {
+  // ───────────────────────────────────────
+  // الفوترة والاشتراكات (Phase J)
+  // ───────────────────────────────────────
+  // يفتح صفحة إدارة الاشتراك مع تبويب مناسب حسب نوع الحدث
+  'subscription': (_id, eventKey) => {
+    // event_key أمثلة:
+    //   subscription:reminder:{cid}:{date}     → /settings/billing
+    //   subscription:past_due:{cid}:{date}     → /settings/billing
+    //   subscription:suspended:{cid}:{date}    → /settings/billing
+    //   subscription:reactivated:{cid}:{date}  → /settings/billing
+    //   subscription:payment:{cid}:{ts}        → /settings/billing (tab: invoices)
+    if (eventKey?.includes(':payment:') || eventKey?.includes(':reactivated:')) {
+      return '/settings/billing?tab=invoices'
+    }
+    return '/settings/billing'
+  },
+
   // المخزون
   'write_off': (id) => `/inventory/write-offs?highlight=${id}`,
   'inventory_write_off': (id) => `/inventory/write-offs?highlight=${id}`,

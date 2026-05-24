@@ -33,6 +33,11 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
   - `notifyReactivation` لو كان reactivation (suspended → active)
   - `notifyPaymentSuccess` لو كان دفعة عادية (إضافة مقاعد)
 
+#### 4. `lib/notification-routing.ts`
+- إضافة route لنوع `'subscription'` (كان يُسجِّل warning سابقاً)
+- النقر على إشعار اشتراك → `/settings/billing` (أو `?tab=invoices` للمدفوعات/التفعيل)
+- يقرأ `event_key` لاختيار التبويب الصحيح
+
 ### 🧠 المعمارية
 
 ```
