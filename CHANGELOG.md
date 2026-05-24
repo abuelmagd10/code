@@ -4,6 +4,42 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.36.1] - 2026-05-23
+
+### 💰 Vercel Hobby Plan Compatibility
+
+تم التحويل من Pro إلى Hobby plan لتوفير $20/شهر. Vercel Hobby يفرض قيدين على الـ vercel.json:
+- Cron jobs: daily فقط (مرة واحدة فى اليوم)
+- Function maxDuration: 10 ثوانٍ ثابت (لا overrides)
+
+### ✅ التغييرات
+
+#### `vercel.json`
+
+| الإعداد | قبل (Pro) | بعد (Hobby) |
+|---|---|---|
+| `booking-reminders` cron | `*/15 * * * *` (كل 15د) | `0 8 * * *` (يومى 8 ص UTC) |
+| `subscription-renewal` cron | `0 2 * * *` (يومى) | `0 2 * * *` ✅ (لا تغيير) |
+| `dashboard maxDuration` | 60s | **محذوف** (default 10s) |
+| `app/api/** maxDuration` | 30s | **محذوف** (default 10s) |
+
+### 📊 تأثير الـ booking-reminders اليومى
+
+السابق: تذكير كل 15 دقيقة لـ bookings خلال الـ 24 ساعة القادمة
+الجديد: تذكير صباحى واحد يومياً لكل bookings الـ 24 ساعة القادمة
+
+✅ كافٍ لمعظم حالات الاستخدام (المستخدم يحصل على تذكير صباحاً قبل الموعد)
+⚠️ لو احتجت "تذكير قبل ساعة من الموعد" → نقل لـ Supabase pg_cron لاحقاً
+
+### 💵 التوفير
+
+- Pro Plan: **$20/شهر = $240/سنة**
+- Hobby Plan: **$0/شهر = $0/سنة**
+- **توفير سنوى: $240** (~7,200 جنيه)
+- استرداد فورى: **$16.77** (رصيد Pro المتبقى)
+
+---
+
 ## [3.36.0] - 2026-05-23
 
 ### 🔀 Phase I: إعادة ترتيب المقاعد يدوياً

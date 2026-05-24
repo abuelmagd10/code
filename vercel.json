@@ -1,18 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "functions": {
-    "app/dashboard/page.tsx": {
-      "maxDuration": 60
-    },
-    "app/api/**/*.{js,ts}": {
-      "maxDuration": 30
-    }
-  },
   "crons": [
     {
       "path": "/api/cron/booking-reminders",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/subscription-renewal",
