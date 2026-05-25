@@ -53,6 +53,16 @@ body:has([data-radix-select-content]) {
   --accent-foreground: #262626;
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
+  /* Status color tokens — v3.43.0 (UI Phase 1 Step 4) */
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --success-muted: #dcfce7;
+  --warning: #f59e0b;
+  --warning-foreground: #ffffff;
+  --warning-muted: #fef3c7;
+  --info: #2563eb;
+  --info-foreground: #ffffff;
+  --info-muted: #dbeafe;
   --border: #e5e5e5;
   --input: #e5e5e5;
   --ring: #a3a3a3;
@@ -89,6 +99,16 @@ body:has([data-radix-select-content]) {
   --accent-foreground: #fafafa;
   --destructive: #b91c1c;
   --destructive-foreground: #fafafa;
+  /* Status color tokens (dark mode) */
+  --success: #22c55e;
+  --success-foreground: #ffffff;
+  --success-muted: #052e16;
+  --warning: #fbbf24;
+  --warning-foreground: #1f2937;
+  --warning-muted: #422006;
+  --info: #3b82f6;
+  --info-foreground: #ffffff;
+  --info-muted: #172554;
   --border: #404040;
   --input: #404040;
   --ring: #525252;
@@ -126,6 +146,16 @@ body:has([data-radix-select-content]) {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  /* Status color tokens registered with Tailwind for bg-success / text-success / etc. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-muted: var(--warning-muted);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-muted: var(--info-muted);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

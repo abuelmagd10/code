@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.43.0] - 2026-05-25
+
+### 🎨 UI Phase 1 — Step 4: Status Color Tokens + StatusBadge
+
+تَوحيد ألوان الحالات (success/error/warning/info) عبر CSS variables ومكون مُوحَّد.
+
+### ✅ ما هو جديد
+
+#### `app/globals.css`
+- إضافة 9 status tokens (3 لكل من success/warning/info):
+  - `--success` / `--success-foreground` / `--success-muted`
+  - `--warning` / `--warning-foreground` / `--warning-muted`
+  - `--info` / `--info-foreground` / `--info-muted`
+- نُسخ مُختلفة للـ dark mode (mute backgrounds تُصبح dark variants)
+- تَسجيلها فى `@theme inline` كـ `--color-success` إلخ
+- Tailwind utilities الآن تَعمل: `bg-success`, `text-warning`, `bg-info-muted`
+
+#### `components/StatusBadge.tsx` (جديد)
+مكون موحَّد بـ 6 variants + 4 sizes + outline/filled:
+```tsx
+<StatusBadge variant="success">معتمد</StatusBadge>
+<StatusBadge variant="warning" size="sm">قيد المراجعة</StatusBadge>
+<StatusBadge variant="error" outline>مرفوض</StatusBadge>
+```
+- variants: success, error, warning, info, neutral, pending
+- sizes: xs, sm, md, lg
+- يَدعم: outline, withIcon, custom icon, pulse animation
+- helper `inferStatusVariant(status)` يَستنتج المتغير من نص حالة (عربى + إنجليزى)
+
+### 🎯 الأثر
+- استبدال 180+ مَوضع مُتناثر يَستخدم `text-green-600`, `bg-red-100`, إلخ
+- Dark mode يَعمل تلقائياً (الـ tokens dark-mode-aware)
+- مَكان واحد للتحكم فى ألوان الحالات عبر التطبيق بأكمله
+- لا تَغيير وظيفى — only design tokens + reusable component
+
+### 🛡️ الأمان
+- زِيرو تَغيير فى الـ business logic
+- المكون مُضاف فقط — لا يَستبدل أى شيء موجود تلقائياً
+- الصفحات الحالية تَعمل كما هى حتى تَتم migration تَدريجى
+
+---
+
 ## [3.42.0] - 2026-05-25
 
 ### 🧭 UI Phase 1 — Step 3: Sidebar + Permissions Sync
