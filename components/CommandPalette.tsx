@@ -19,10 +19,11 @@
  */
 
 "use client"
-// v3.42.1 — force Turbopack rebuild
+// v3.48.1 — respect role-based permissions (useAccess.canAccessPage)
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useAccess } from "@/lib/access-context"
 import {
   CommandDialog,
   CommandEmpty,
@@ -89,6 +90,97 @@ interface CommandEntry {
   /** Group label. */
   groupAr: string
   groupEn: string
+}
+
+/**
+ * Map href → resource key used by useAccess().canAccessPage()
+ * Mirrors the logic in components/sidebar.tsx getResourceFromHref().
+ * Returns null for entries that should always be visible (e.g. dashboard
+ * is profile-level and visible to all signed-in users).
+ */
+function getResourceForHref(href: string): string | null {
+  // Always-visible
+  if (href === "/dashboard") return null
+  if (href.startsWith("/settings/profile")) return null
+
+  // Most-specific first
+  if (href === "/approvals") return "approvals"
+  if (href.startsWith("/inventory/dispatch-approvals")) return "dispatch_approvals"
+  if (href.startsWith("/inventory/goods-receipt")) return "inventory_goods_receipt"
+  if (href.startsWith("/inventory/product-availability")) return "product_availability"
+  if (href.startsWith("/inventory/third-party")) return "third_party_inventory"
+  if (href.startsWith("/inventory/write-offs")) return "write_offs"
+  if (href.startsWith("/inventory-transfers")) return "inventory_transfers"
+  if (href.startsWith("/inventory")) return "inventory"
+
+  if (href.startsWith("/manufacturing")) return "manufacturing_boms"
+
+  if (href.startsWith("/hr/employees")) return "employees"
+  if (href.startsWith("/hr/attendance")) return "attendance"
+  if (href.startsWith("/hr/payroll")) return "payroll"
+  if (href.startsWith("/hr/instant-payouts")) return "instant_payouts"
+  if (href === "/hr") return "hr"
+
+  if (href.startsWith("/fixed-assets/categories")) return "asset_categories"
+  if (href.startsWith("/fixed-assets/reports")) return "fixed_assets_reports"
+  if (href.startsWith("/fixed-assets")) return "fixed_assets"
+
+  if (href.startsWith("/accounting/periods") || href.startsWith("/accounting/period-closing")) return "accounting_periods"
+
+  if (href.startsWith("/customer-credits")) return "customer_credits"
+  if (href.startsWith("/customer-debit-notes")) return "customer_debit_notes"
+  if (href.startsWith("/customer-refund-requests")) return "customer_refund_requests"
+  if (href.startsWith("/customers")) return "customers"
+
+  if (href.startsWith("/sales-orders")) return "sales_orders"
+  if (href.startsWith("/sales-returns")) return "sales_returns"
+  if (href.startsWith("/sales-return-requests")) return "sales_return_requests"
+  if (href.startsWith("/sent-invoice-returns")) return "sent_invoice_returns"
+  if (href.startsWith("/estimates")) return "estimates"
+
+  if (href.startsWith("/purchase-orders")) return "purchase_orders"
+  if (href.startsWith("/purchase-returns")) return "purchase_returns"
+  if (href.startsWith("/vendor-credits")) return "vendor_credits"
+  if (href.startsWith("/suppliers")) return "suppliers"
+  if (href.startsWith("/bills")) return "bills"
+
+  if (href.startsWith("/services")) return "services"
+  if (href.startsWith("/bookings")) return "bookings"
+
+  if (href.startsWith("/products")) return "products"
+
+  if (href.startsWith("/invoices")) return "invoices"
+  if (href.startsWith("/payments")) return "payments"
+  if (href.startsWith("/expenses")) return "expenses"
+  if (href.startsWith("/drawings")) return "drawings"
+  if (href.startsWith("/journal-entries")) return "journal_entries"
+  if (href.startsWith("/banking")) return "banking"
+  if (href.startsWith("/chart-of-accounts")) return "chart_of_accounts"
+  if (href.startsWith("/shareholders")) return "shareholders"
+  if (href.startsWith("/annual-closing")) return "annual_closing"
+
+  if (href.startsWith("/reports")) return "reports"
+
+  if (href.startsWith("/branches")) return "branches"
+  if (href.startsWith("/cost-centers")) return "cost_centers"
+  if (href.startsWith("/warehouses")) return "warehouses"
+
+  // Settings sub-pages
+  if (href.startsWith("/settings/users")) return "users"
+  if (href.startsWith("/settings/notifications")) return "notifications"
+  if (href.startsWith("/settings/billing")) return "billing"
+  if (href.startsWith("/settings/seats")) return "seats"
+  if (href.startsWith("/settings/taxes")) return "taxes"
+  if (href.startsWith("/settings/exchange-rates")) return "exchange_rates"
+  if (href.startsWith("/settings/fx-revaluation")) return "fx_revaluation"
+  if (href.startsWith("/settings/audit-log")) return "audit_log"
+  if (href.startsWith("/settings/backup")) return "backup"
+  if (href.startsWith("/settings/tooltips")) return "tooltips"
+  if (href.startsWith("/settings/fix-cogs")) return "fix_cogs"
+  if (href.startsWith("/settings/employee-bonuses")) return "employee_bonuses"
+  if (href.startsWith("/settings")) return "settings"
+
+  return null  // unknown → always visible (safe default)
 }
 
 const COMMANDS: CommandEntry[] = [
@@ -268,8 +360,28 @@ function useLang(): "ar" | "en" {
 export function CommandPalette() {
   const router = useRouter()
   const lang = useLang()
+  const { canAccessPage, isReady: accessReady, profile } = useAccess()
   const [open, setOpen] = React.useState(false)
   const [recentHrefs, setRecentHrefs] = React.useState<string[]>([])
+
+  /**
+   * v3.48.1: Permission-aware command filtering
+   *
+   * Only show commands the user is allowed to access (per role-permissions
+   * configured in /settings/users). Owner/admin see everything.
+   * If access context isn't ready yet, we show all (graceful degradation —
+   * the page itself enforces permissions on visit anyway).
+   */
+  const visibleCommands = React.useMemo(() => {
+    if (!accessReady || !profile) return COMMANDS
+    // Owner/admin shortcut — see everything
+    if (profile.is_owner || profile.is_admin) return COMMANDS
+    return COMMANDS.filter((cmd) => {
+      const resource = getResourceForHref(cmd.href)
+      if (resource === null) return true   // always-visible (dashboard, profile)
+      return canAccessPage(resource)
+    })
+  }, [accessReady, profile, canAccessPage])
 
   // Global Ctrl+K / Cmd+K listener
   React.useEffect(() => {
@@ -288,10 +400,10 @@ export function CommandPalette() {
     if (open) setRecentHrefs(getRecent())
   }, [open])
 
-  // Group commands by group label
+  // Group commands by group label (only the visible/permitted ones)
   const grouped = React.useMemo(() => {
     const map = new Map<string, CommandEntry[]>()
-    for (const cmd of COMMANDS) {
+    for (const cmd of visibleCommands) {
       const groupKey = lang === "ar" ? cmd.groupAr : cmd.groupEn
       const arr = map.get(groupKey) || []
       arr.push(cmd)
@@ -302,9 +414,9 @@ export function CommandPalette() {
 
   const recentCommands = React.useMemo(() => {
     return recentHrefs
-      .map((href) => COMMANDS.find((c) => c.href === href))
+      .map((href) => visibleCommands.find((c) => c.href === href))
       .filter((c): c is CommandEntry => c !== undefined)
-  }, [recentHrefs])
+  }, [recentHrefs, visibleCommands])
 
   const handleSelect = React.useCallback(
     (href: string) => {

@@ -4,6 +4,43 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.48.1] - 2026-05-25
+
+### 🔐 Hotfix: تَطبيق حوكمة الصلاحيات على CommandPalette + 404
+
+نَقطة أمنية حَرجة: الـ CommandPalette كان يَعرض كل الـ 80+ صفحة لأى مستخدم، حتى لو لا يَملك صلاحية. الـ 404 page كذلك. هذا تَسريب UX (و leakage معلومات structural). الـ هذا الإصدار يَدمج نظام `useAccess().canAccessPage()` فى كلا المكونين.
+
+### ✅ التَغييرات
+
+#### `components/CommandPalette.tsx`
+- **import:** `useAccess` من `@/lib/access-context`
+- **`getResourceForHref(href)`** — دالة جديدة تُحَوِّل href إلى resource key (مُطابق لمنطق `getResourceFromPath` فى sidebar.tsx)
+- **`visibleCommands`** — useMemo يُصَفِّى الـ COMMANDS:
+  - Owner/Admin: يَرى كل شيء
+  - باقى الأدوار: فقط الـ commands التى لها `canAccessPage(resource) === true`
+  - resource = null (dashboard, profile) → دائماً مَرئى
+- **`grouped`** — يَستخدم `visibleCommands` بدلاً من `COMMANDS`
+- **`recentCommands`** — يَستخدم `visibleCommands` (recent من صفحة محظورة لن يَظهر)
+
+#### `app/not-found.tsx`
+- تَحَوَّل من server component إلى **"use client"** (يَحتاج access context)
+- **suggestions** الآن مُصَفَّاة بـ `canAccessPage`
+- **`homeHref`** ذَكِى:
+  - Owner/Admin → `/dashboard`
+  - باقى الأدوار → أول صفحة مَسموحة من `allowed_pages`
+- نَص الـ description مُحدَّث ليُشير إلى احتمال "عَدم الصلاحية"
+
+### 🎯 الأثر الأمنى/UX
+- موظف بدور `accountant` يَفتح Ctrl+K → يَرى فقط الصفحات المُحاسبية
+- موظف بدور `store_manager` → يَرى فقط المخزون والأوامر
+- مَنع تَسريب أسماء صفحات لا يَستطيع الوصول إليها
+- تَناسق كامل مع حوكمة الـ Sidebar الموجودة (نَفس الـ resource keys)
+
+### 🛡️ Fail-Open Safety
+لو الـ access context لم يَكتمل تَحميله بَعد، الـ components تَعرض كل شيء (graceful degradation) — الصفحة نَفسها تُنفّذ الـ permission check عند الزيارة على أى حال (middleware + PageGuard).
+
+---
+
 ## [3.48.0] - 2026-05-25
 
 ### 🔍 UI Phase 1 — Step 9: Custom 404 Page

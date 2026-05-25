@@ -1,17 +1,68 @@
 /**
- * Custom 404 Not Found Page
- * صفحة 404 مُخَصَّصة لـ 7esab.com
+ * Custom 404 Not Found Page (permission-aware)
+ * صفحة 404 مُخَصَّصة تَحترم صلاحيات الأدوار
  *
- * v3.48.0 — UI Phase 1 Step 9
+ * v3.48.1 — UI Phase 1 Step 9
  *
- * Replaces Next.js default 404 with a branded, bilingual page.
- * Server-rendered (no client state needed for static content).
+ * Suggested links are filtered via useAccess().canAccessPage() so a user
+ * never sees a link to a page their role is not allowed to open.
  */
 
+"use client"
+
+import * as React from "react"
 import Link from "next/link"
 import { Home, Search, ArrowRight, ArrowLeft } from "lucide-react"
+import { useAccess } from "@/lib/access-context"
+
+interface Suggestion {
+  href: string
+  labelAr: string
+  labelEn: string
+  /** Resource key in allowed_pages; null = always visible. */
+  resource: string | null
+}
+
+const ALL_SUGGESTIONS: Suggestion[] = [
+  { href: "/invoices",  labelAr: "الفواتير",    labelEn: "Invoices",   resource: "invoices" },
+  { href: "/customers", labelAr: "العملاء",     labelEn: "Customers",  resource: "customers" },
+  { href: "/reports",   labelAr: "التقارير",    labelEn: "Reports",    resource: "reports" },
+  { href: "/settings",  labelAr: "الإعدادات",   labelEn: "Settings",   resource: "settings" },
+]
 
 export default function NotFound() {
+  const { canAccessPage, isReady, profile } = useAccess()
+
+  // Filter suggestions by role permissions
+  const visibleSuggestions = React.useMemo(() => {
+    if (!isReady || !profile) return ALL_SUGGESTIONS  // fail-open while loading
+    if (profile.is_owner || profile.is_admin) return ALL_SUGGESTIONS
+    return ALL_SUGGESTIONS.filter((s) => s.resource === null || canAccessPage(s.resource))
+  }, [isReady, profile, canAccessPage])
+
+  // Decide where the "Home" button should land — first allowed page
+  const homeHref = React.useMemo(() => {
+    if (!isReady || !profile) return "/dashboard"
+    if (profile.is_owner || profile.is_admin) return "/dashboard"
+    // canAccessPage('dashboard') usually true; otherwise fall back to first allowed page
+    if (canAccessPage("dashboard")) return "/dashboard"
+    if (profile.allowed_pages?.[0]) {
+      // Best-effort: rewrite resource → route
+      const first = profile.allowed_pages[0]
+      const map: Record<string, string> = {
+        invoices: "/invoices",
+        customers: "/customers",
+        reports: "/reports",
+        products: "/products",
+        inventory: "/inventory",
+        bills: "/bills",
+        suppliers: "/suppliers",
+      }
+      return map[first] || "/dashboard"
+    }
+    return "/dashboard"
+  }, [isReady, profile, canAccessPage])
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-12">
       <div className="max-w-lg w-full text-center">
@@ -28,38 +79,35 @@ export default function NotFound() {
           </div>
         </div>
 
-        {/* Arabic title — always visible (app is RTL-first) */}
         <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-3" dir="rtl" lang="ar">
           الصفحة غير مَوجودة
         </h2>
 
-        {/* English subtitle */}
         <p className="text-lg sm:text-xl font-semibold text-muted-foreground mb-4" dir="ltr" lang="en">
           Page Not Found
         </p>
 
-        {/* Description — bilingual */}
         <p className="text-sm sm:text-base text-muted-foreground mb-2 leading-relaxed" dir="rtl" lang="ar">
-          الرابط الذى تَبحث عنه غير صحيح أو تَم نَقل الصفحة. تأكد من العُنوان أو عُد للصفحة الرَئيسية.
+          الرابط الذى تَبحث عنه غير صحيح أو تَم نَقل الصفحة، أَو لا تَملك صلاحية للوصول إليها.
         </p>
         <p className="text-sm text-muted-foreground/80 mb-8 leading-relaxed" dir="ltr" lang="en">
-          The page you are looking for does not exist or has been moved.
+          This page does not exist, has been moved, or you lack permission to access it.
         </p>
 
         {/* Action buttons */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 mb-10">
           <Link
-            href="/dashboard"
+            href={homeHref}
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity tap-target shadow-sm"
           >
             <Home className="w-5 h-5" aria-hidden="true" />
-            <span>لوحة التحكم</span>
+            <span>الصفحة الرَئيسية</span>
           </Link>
 
           <Link
-            href="/dashboard"
+            href={homeHref}
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-border bg-card text-foreground font-medium hover:bg-accent transition-colors tap-target"
-            aria-label="Go to dashboard"
+            aria-label="Go home"
           >
             <span dir="ltr" lang="en">Go Home</span>
             <ArrowLeft className="w-4 h-4 rtl:hidden" aria-hidden="true" />
@@ -67,40 +115,28 @@ export default function NotFound() {
           </Link>
         </div>
 
-        {/* Helpful suggestions */}
-        <div className="bg-card border border-border rounded-lg p-4 sm:p-5 text-start" dir="rtl" lang="ar">
-          <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-            <Search className="w-4 h-4 text-info" />
-            هل تَبحث عن...؟
-          </p>
-          <ul className="space-y-2 text-sm">
-            <li>
-              <Link href="/invoices" className="text-info hover:underline">
-                ← الفواتير
-              </Link>
-            </li>
-            <li>
-              <Link href="/customers" className="text-info hover:underline">
-                ← العملاء
-              </Link>
-            </li>
-            <li>
-              <Link href="/reports" className="text-info hover:underline">
-                ← التقارير
-              </Link>
-            </li>
-            <li>
-              <Link href="/settings" className="text-info hover:underline">
-                ← الإعدادات
-              </Link>
-            </li>
-          </ul>
-          <p className="text-xs text-muted-foreground mt-4">
-            💡 يُمكنك أيضاً الضَغط على <kbd className="text-code">Ctrl + K</kbd> للبحث السريع
-          </p>
-        </div>
+        {/* Helpful suggestions (permission-filtered) */}
+        {visibleSuggestions.length > 0 && (
+          <div className="bg-card border border-border rounded-lg p-4 sm:p-5 text-start" dir="rtl" lang="ar">
+            <p className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Search className="w-4 h-4 text-info" />
+              هل تَبحث عن...؟
+            </p>
+            <ul className="space-y-2 text-sm">
+              {visibleSuggestions.map((s) => (
+                <li key={s.href}>
+                  <Link href={s.href} className="text-info hover:underline">
+                    ← {s.labelAr}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground mt-4">
+              💡 يُمكنك أيضاً الضَغط على <kbd className="text-code">Ctrl + K</kbd> للبحث السريع
+            </p>
+          </div>
+        )}
 
-        {/* Footer */}
         <p className="mt-8 text-xs text-muted-foreground">
           7esab.com — Enterprise Resource Planning
         </p>
