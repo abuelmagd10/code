@@ -34,6 +34,7 @@ import {
   PackageCheck,
   PackagePlus,
   Calculator,
+  Cpu,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1101,16 +1102,22 @@ export function Sidebar() {
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
               const groups: Array<{ key: string; icon: any; label: string; badge?: number; items: Array<{ label: string; href: string; icon: any; badge?: number }> }> = [
                 { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
-                { key: 'approvals', icon: CheckCircle, label: (lang === 'en' ? '🔔 Approvals' : '🔔 الموافقات'), badge: pendingApprovalsCount, items: [{ label: (lang === 'en' ? 'Approval Inbox' : 'صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle }] },
                 {
                   key: 'sales', icon: FileText, label: (lang === 'en' ? 'Sales' : 'المبيعات'), items: [
                     { label: (lang === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
+                    { label: (lang === 'en' ? 'Estimates' : 'عروض الأسعار'), href: `/estimates${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
                     { label: (lang === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Customer Credit Balances' : 'الأرصدة الدائنة للعملاء'), href: `/customer-credits${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Customer Refund Requests' : 'طلبات استرداد العملاء'), href: `/customer-refund-requests${q}`, icon: RefreshCw },
+                  ]
+                },
+                {
+                  key: 'services_bookings', icon: Calendar, label: (lang === 'en' ? 'Services & Bookings' : 'الخدمات والحجوزات'), items: [
+                    { label: (lang === 'en' ? 'Services' : 'الخدمات'), href: `/services${q}`, icon: ClipboardList },
+                    { label: (lang === 'en' ? 'Bookings' : 'الحجوزات'), href: `/bookings${q}`, icon: Calendar },
                   ]
                 },
                 {
@@ -1135,19 +1142,17 @@ export function Sidebar() {
                   ]
                 },
                 {
-                  key: 'services_bookings', icon: Calendar, label: (lang === 'en' ? 'Services & Bookings' : 'الخدمات والحجوزات'), items: [
-                    { label: (lang === 'en' ? 'Services' : 'الخدمات'), href: `/services${q}`, icon: ClipboardList },
-                    { label: (lang === 'en' ? 'Bookings' : 'الحجوزات'), href: `/bookings${q}`, icon: Calendar },
-                  ]
-                },
-                {
-                  key: 'manufacturing', icon: Factory, label: (lang === 'en' ? '🏭 Manufacturing' : '🏭 التصنيع'), items: [
+                  key: 'manufacturing', icon: Factory, label: (lang === 'en' ? '🏭 Manufacturing' : '🏭 التصنيع'), badge: pendingApprovalsCount, items: [
+                    // ── الموافقات (مَنقولة من top-level — كلها خاصة بالتَصنيع) ──
+                    { label: (lang === 'en' ? '🔔 Approval Inbox' : '🔔 صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle, badge: pendingApprovalsCount },
                     // ── الهندسة والإعداد ──
                     { label: (lang === 'en' ? 'Engineering Setup' : 'الهندسة والإعداد'), href: `#`, icon: Factory },
+                    { label: (lang === 'en' ? 'Work Centers' : 'مراكز العمل'), href: `/manufacturing/work-centers${q}`, icon: Cpu },
                     { label: (lang === 'en' ? 'Bills of Materials' : 'قوائم المواد'), href: `/manufacturing/boms${q}`, icon: Layers },
                     { label: (lang === 'en' ? 'Routings' : 'مسارات التصنيع'), href: `/manufacturing/routings${q}`, icon: GitMerge },
                     // ── التخطيط والتنفيذ ──
                     { label: (lang === 'en' ? 'Planning & Execution' : 'التخطيط والتنفيذ'), href: `#`, icon: Factory },
+                    { label: (lang === 'en' ? 'MRP' : 'تخطيط متطلبات المواد (MRP)'), href: `/manufacturing/mrp${q}`, icon: Calculator },
                     { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: ClipboardList },
                     { label: (lang === 'en' ? 'Issue Materials' : 'صرف المواد'), href: `/manufacturing/material-issue${q}`, icon: PackagePlus },
                     { label: (lang === 'en' ? 'Receive Finished Product' : 'استلام المنتج النهائي'), href: `/manufacturing/product-receive${q}`, icon: PackageCheck },
@@ -1161,7 +1166,8 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
-                    { label: (lang === 'en' ? 'Accounting Periods' : 'الفترات المحاسبية'), href: `/accounting/period-closing${q}`, icon: Calendar },
+                    { label: (lang === 'en' ? 'Accounting Periods' : 'الفترات المحاسبية'), href: `/accounting/periods${q}`, icon: Calendar },
+                    { label: (lang === 'en' ? 'Period Closing' : 'إقفال الفترة'), href: `/accounting/period-closing${q}`, icon: Calendar },
                     { label: (lang === 'en' ? 'Annual Closing' : 'الإقفال السنوي'), href: `/annual-closing${q}`, icon: CheckCircle },
                     { label: (lang === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
                     { label: (lang === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
