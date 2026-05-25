@@ -374,15 +374,37 @@ export function CommandPalette() {
    * the page itself enforces permissions on visit anyway).
    */
   const visibleCommands = React.useMemo(() => {
-    if (!accessReady || !profile) return COMMANDS
+    // v3.48.3: fail-CLOSED instead of fail-open.
+    // Until access is ready, show only the dashboard (resource=null) so an
+    // accountant never momentarily sees the full owner list during hydration.
+    if (!accessReady || !profile) {
+      return COMMANDS.filter((cmd) => getResourceForHref(cmd.href) === null)
+    }
     // Owner/admin shortcut — see everything
     if (profile.is_owner || profile.is_admin) return COMMANDS
+    // Everyone else: strict filter
     return COMMANDS.filter((cmd) => {
       const resource = getResourceForHref(cmd.href)
       if (resource === null) return true   // always-visible (dashboard, profile)
       return canAccessPage(resource)
     })
   }, [accessReady, profile, canAccessPage])
+
+  // Debug helper (visible in browser console when palette opens) — v3.48.3
+  React.useEffect(() => {
+    if (open && typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.log("[CommandPalette]", {
+        accessReady,
+        role: profile?.role ?? "(no profile)",
+        is_owner: profile?.is_owner ?? null,
+        is_admin: profile?.is_admin ?? null,
+        allowed_pages_count: profile?.allowed_pages?.length ?? 0,
+        visible_commands: visibleCommands.length,
+        total_commands: COMMANDS.length,
+      })
+    }
+  }, [open, accessReady, profile, visibleCommands.length])
 
   // Global Ctrl+K / Cmd+K listener
   React.useEffect(() => {
