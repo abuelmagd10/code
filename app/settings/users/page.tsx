@@ -1156,6 +1156,13 @@ export default function UsersSettingsPage() {
         { value: 'customer_refund_requests', label: 'طلبات استرداد العملاء' },
       ]
     },
+    services_bookings: {
+      label: '🎫 الخدمات والحجوزات',
+      resources: [
+        { value: 'services', label: 'الخدمات' },
+        { value: 'bookings', label: 'الحجوزات' },
+      ]
+    },
     purchases: {
       label: '🛒 المشتريات',
       resources: [
@@ -1186,6 +1193,7 @@ export default function UsersSettingsPage() {
       label: '🏭 التصنيع',
       resources: [
         { value: 'manufacturing_boms', label: 'التصنيع (هياكل المواد، مسارات التشغيل، أوامر الإنتاج)' },
+        { value: 'approvals', label: 'صندوق الموافقات (إنتاج، BOM، صرف المواد)' },
       ]
     },
     finance: {
@@ -1203,6 +1211,8 @@ export default function UsersSettingsPage() {
         { value: 'fixed_assets', label: 'الأصول الثابتة' },
         { value: 'asset_categories', label: 'فئات الأصول' },
         { value: 'fixed_assets_reports', label: 'تقارير الأصول الثابتة' },
+        { value: 'fx_revaluation', label: 'إعادة تقييم العملات' },
+        { value: 'fix_cogs', label: 'إصلاح تكلفة البضاعة المباعة' },
       ]
     },
     hr: {
@@ -1213,6 +1223,7 @@ export default function UsersSettingsPage() {
         { value: 'attendance', label: 'الحضور والانصراف' },
         { value: 'payroll', label: 'الرواتب' },
         { value: 'instant_payouts', label: 'السلف الفورية' },
+        { value: 'employee_bonuses', label: 'حوافز الموظفين' },
       ]
     },
     organization: {
@@ -1239,6 +1250,10 @@ export default function UsersSettingsPage() {
         { value: 'orders_rules', label: 'قواعد الطلبات' },
         { value: 'accounting_maintenance', label: 'صيانة المحاسبة' },
         { value: 'commissions', label: 'قواعد العمولات' },
+        { value: 'notifications', label: 'تفضيلات الإشعارات' },
+        { value: 'billing', label: 'الفوترة والاشتراك' },
+        { value: 'seats', label: 'إدارة المقاعد' },
+        { value: 'tooltips', label: 'نَصائح الواجهة' },
       ]
     },
     permissions: {
@@ -1262,7 +1277,7 @@ export default function UsersSettingsPage() {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     manager: [
-      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sales_return_requests', 'sent_invoice_returns', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
+      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sales_return_requests', 'sent_invoice_returns', 'customer_debit_notes', 'customer_credits', 'customer_refund_requests', 'services', 'bookings', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt', 'approvals', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers', 'warehouses', 'notifications'
     ],
     accountant: [
       'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'sales_return_requests', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt'
@@ -1272,7 +1287,7 @@ export default function UsersSettingsPage() {
     ],
     // ── الأدوار الجديدة ──────────────────────────────────────────
     manufacturing_officer: [
-      'dashboard', 'manufacturing_boms', 'products', 'inventory', 'product_availability', 'reports'
+      'dashboard', 'manufacturing_boms', 'approvals', 'products', 'inventory', 'product_availability', 'reports'
     ],
     booking_officer: [
       'dashboard', 'bookings', 'services', 'customers', 'payments', 'reports'

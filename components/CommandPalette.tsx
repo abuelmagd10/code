@@ -165,8 +165,7 @@ const COMMANDS: CommandEntry[] = [
   { labelAr: "مراكز العمل", labelEn: "Work Centers", keywords: ["work center"], href: "/manufacturing/work-centers", icon: Factory, groupAr: "التصنيع", groupEn: "Manufacturing" },
 
   // ── HR ──
-  { labelAr: "الموارد البشرية", labelEn: "HR", keywords: ["hr", "human resources"], href: "/hr", icon: UserCog, groupAr: "الموارد البشرية", groupEn: "Human Resources" },
-  { labelAr: "الموظفون", labelEn: "Employees", keywords: ["employee", "staff"], href: "/hr/employees", icon: Users, groupAr: "الموارد البشرية", groupEn: "Human Resources" },
+  { labelAr: "الموظفون", labelEn: "Employees", keywords: ["employee", "staff", "hr"], href: "/hr/employees", icon: Users, groupAr: "الموارد البشرية", groupEn: "Human Resources" },
   { labelAr: "الحضور والانصراف", labelEn: "Attendance", keywords: ["attendance"], href: "/hr/attendance", icon: Clock, groupAr: "الموارد البشرية", groupEn: "Human Resources" },
   { labelAr: "الحضور اليومى", labelEn: "Daily Attendance", keywords: ["daily attendance"], href: "/hr/attendance/daily", icon: Clock, groupAr: "الموارد البشرية", groupEn: "Human Resources" },
   { labelAr: "الورديات", labelEn: "Shifts", keywords: ["shift"], href: "/hr/attendance/shifts", icon: Clock, groupAr: "الموارد البشرية", groupEn: "Human Resources" },

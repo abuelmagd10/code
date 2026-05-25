@@ -4,6 +4,36 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.42.0] - 2026-05-25
+
+### 🧭 UI Phase 1 — Step 3: Sidebar + Permissions Sync
+
+موجة دَعم Command Palette: إضافة الصفحات اليَتيمة، نَقل الموافقات للمكان الصحيح، ومُزامنة نظام الصلاحيات.
+
+### ✅ Sidebar (`components/sidebar.tsx`)
+- نَقل "🔔 الموافقات" من top-level إلى أول item داخل مجموعة "التصنيع" (كل أنواع الموافقات خاصة بالتصنيع: BOM, Routing, Production Orders, Material Issues)
+- نَقل "الخدمات والحجوزات" أسفل المبيعات مباشرةً
+- إضافة 4 صفحات يَتيمة:
+  - `/estimates` (عروض الأسعار) — مجموعة المبيعات
+  - `/accounting/periods` (الفترات المحاسبية) — مجموعة المحاسبة
+  - `/manufacturing/work-centers` (مراكز العمل) — التصنيع/الهندسة
+  - `/manufacturing/mrp` (تخطيط المواد) — التصنيع/التخطيط
+
+### ✅ Command Palette (`components/CommandPalette.tsx`)
+- حذف `/hr` (الرئيسية) — صفحة redundant
+
+### ✅ Permissions (`app/settings/users/page.tsx`)
+- مجموعة جديدة "🎫 الخدمات والحجوزات" بـ services + bookings
+- 8 resources مَضافة: approvals, notifications, billing, seats, tooltips, fx_revaluation, fix_cogs, employee_bonuses
+- تحديث default permissions للـ manager و manufacturing_officer
+
+### 🛡️ الأمان
+- زِيرو DB changes
+- زِيرو تَغيير وظيفى — إضافة navigation/permission keys فقط
+- branch منفصل + Vercel Preview قبل main
+
+---
+
 ## [3.41.0] - 2026-05-24
 
 ### 🔍 UI Phase 1 — Step 2: Command Palette (Ctrl+K)
