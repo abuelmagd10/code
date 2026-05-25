@@ -1,5 +1,6 @@
 /**
  * CommandPalette - Global Ctrl+K Search
+ * v3.48.2 — force Turbopack rebuild after v3.48.1 build-cache miss
  * مَركز البحث العالمى — اضغط Ctrl+K من أى مكان للبحث السريع
  *
  * 🎯 Features:

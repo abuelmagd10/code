@@ -1,5 +1,6 @@
 /**
  * Custom 404 Not Found Page (permission-aware)
+ * v3.48.2 — force Turbopack rebuild after build-cache miss
  * صفحة 404 مُخَصَّصة تَحترم صلاحيات الأدوار
  *
  * v3.48.1 — UI Phase 1 Step 9
