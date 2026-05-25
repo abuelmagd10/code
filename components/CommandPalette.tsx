@@ -424,6 +424,7 @@ export function CommandPalette() {
   }, [open])
 
   // Group commands by group label (only the visible/permitted ones)
+  // v3.48.4: fixed memo dependency — must re-run when visibleCommands changes
   const grouped = React.useMemo(() => {
     const map = new Map<string, CommandEntry[]>()
     for (const cmd of visibleCommands) {
@@ -433,7 +434,7 @@ export function CommandPalette() {
       map.set(groupKey, arr)
     }
     return Array.from(map.entries())
-  }, [lang])
+  }, [lang, visibleCommands])
 
   const recentCommands = React.useMemo(() => {
     return recentHrefs
