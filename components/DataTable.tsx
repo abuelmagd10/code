@@ -134,7 +134,7 @@ export function DataTable<T = any>({
   emptyMessage,
   lang = 'ar',
   stickyHeader = true,
-  minWidth = 'min-w-[640px]',
+  minWidth = 'sm:min-w-[640px]',
   className = '',
   rowClassName = '',
   footer
@@ -147,9 +147,15 @@ export function DataTable<T = any>({
     )
   }
 
+  // v3.46.0: responsive min-width handling
+  // - On mobile (<640px): no min-width, table can shrink to viewport
+  // - On sm+ screens: applies min-width to ensure readability
+  // - Override via prop if a specific page needs different behavior
+  const responsiveMinWidth = minWidth.startsWith('sm:') ? minWidth : `sm:${minWidth}`
+
   return (
-    <div className="overflow-x-auto">
-      <table className={`${minWidth} w-full text-sm ${className}`}>
+    <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+      <table className={`w-full ${responsiveMinWidth} text-sm ${className}`}>
         <thead className={`border-b bg-gray-50 dark:bg-slate-800 ${stickyHeader ? 'sticky top-0 z-10' : ''}`}>
           <tr>
             {columns.map((column, index) => {

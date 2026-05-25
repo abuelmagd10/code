@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.46.0] - 2026-05-25
+
+### 📱 UI Phase 1 — Step 7: DataTable Mobile Fix
+
+إصلاح مَشكلة كَبيرة فى الـ audit: الجداول كانت تَكسر الـ layout على الموبايل (<640px).
+
+### المشكلة قبل الإصلاح
+```css
+min-w-[640px]   /* يَفرض عرض 640px حتى على شاشة 360px */
+```
+النتيجة: scroll أفقى مُزعج، layout مكسور، النَص يَطلع خارج الشاشة.
+
+### ✅ الحل (v3.46.0)
+
+#### `components/DataTable.tsx`
+- `minWidth` default تَحَوَّل من `min-w-[640px]` إلى `sm:min-w-[640px]`
+- على mobile (<640px): الجدول يَنكمش لِيَتناسب مع الشاشة
+- على sm+ (≥640px): يُحافظ على 640px للقراءة المُريحة
+- wrapper الجديد: `-mx-3 sm:mx-0 px-3 sm:px-0` → بدون edge cut على mobile
+
+#### `app/globals.css` (utility جديد)
+```html
+<div className="table-wrapper">
+  <table>...</table>
+</div>
+```
+يُطبّق نفس السلوك على أى جدول لا يَستخدم DataTable component. مفيد للـ migration التَدريجى.
+
+### 🎯 الأثر
+- **كل صفحة تَستخدم DataTable** (~40 صفحة) تَعمل الآن بشكل سليم على mobile
+- لا horizontal scroll مُزعج على الجوال
+- على desktop يَظل العَرض المُريح كما هو
+- migration path للجداول الـ custom عبر `.table-wrapper`
+
+### 🛡️ الأمان
+- لو صفحة تَحتاج min-width مُختلف، يُمكن تَمريره عبر prop `minWidth`
+- backwards compatible: لو الـ caller مَرّر `min-w-[800px]`، السكريبت يُحَوّله لـ `sm:min-w-[800px]` تلقائياً
+- Zero functional changes
+
+---
+
 ## [3.45.0] - 2026-05-25
 
 ### 📝 UI Phase 1 — Step 6: Typography Hierarchy

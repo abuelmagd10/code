@@ -266,6 +266,21 @@ body:has([data-radix-select-content]) {
   .text-code {
     @apply text-xs sm:text-sm font-mono bg-muted text-foreground px-1.5 py-0.5 rounded;
   }
+
+  /* ──────────────────────────────────────────────────────────
+   * Responsive table wrapper — v3.46.0 (UI Phase 1 Step 7)
+   * Use on any <div> wrapping a <table> to make it mobile-safe:
+   *   <div className="table-wrapper">
+   *     <table>...</table>
+   *   </div>
+   * Replaces hardcoded `overflow-x-auto` + `min-w-[640px]` patterns.
+   * ──────────────────────────────────────────────────────── */
+  .table-wrapper {
+    @apply overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0;
+  }
+  .table-wrapper > table {
+    @apply w-full sm:min-w-[640px] text-sm;
+  }
 }
 
 /* ========== Mobile Responsive Styles ========== */
