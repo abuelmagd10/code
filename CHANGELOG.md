@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.48.0] - 2026-05-25
+
+### 🔍 UI Phase 1 — Step 9: Custom 404 Page
+
+صفحة 404 احترافية مُخَصَّصة بدلاً من Next.js default.
+
+### ✅ ما هو جديد
+
+#### `app/not-found.tsx` (جديد)
+- **رقم 404 ضَخم** مع gradient (primary → info) + glow effect
+- **عُنوان عربى:** "الصفحة غير مَوجودة"
+- **عُنوان إنجليزى:** "Page Not Found"
+- **وَصف ثنائى اللغة** بـ RTL/LTR للنَصَّين
+- **زرَّان للإجراء:**
+  - "لوحة التحكم" (primary)
+  - "Go Home" (secondary outline)
+- **اقتراحات مُفيدة** — روابط للصفحات الشائعة (الفواتير، العملاء، التقارير، الإعدادات)
+- **اقتراح Ctrl+K** للبحث السريع (يُكَمِّل ميزة v3.41.0)
+
+### 🎯 المميزات الاحترافية
+- ✅ يَستخدم design tokens (primary, info, muted-foreground, card)
+- ✅ يَدعم dark mode تلقائياً
+- ✅ Responsive (موبايل + desktop)
+- ✅ Touch targets 44px (يَستخدم `.tap-target` من Step 8)
+- ✅ Bilingual (عربى أولاً + إنجليزى ثانوى)
+- ✅ Accessible (ARIA labels)
+- ✅ Server-rendered (لا يَحتاج JavaScript)
+
+### 🎯 الأثر
+- المستخدم لا يَرى صفحة Next.js default المُرعبة
+- تَجربة احترافية حتى عند الخطأ
+- روابط مُساعدة للوصول السريع
+- يُعَزِّز brand identity للتطبيق
+
+### 🛡️ الأمان
+- Server component فقط — لا JavaScript
+- لا يَلمس أى منطق موجود
+- لا يَحتاج Edit فى أى ملف موجود
+
+---
+
 ## [3.47.0] - 2026-05-25
 
 ### 👆 UI Phase 1 — Step 8: Touch Targets Upgrade (WCAG 2.5.5)
