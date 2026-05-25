@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.44.0] - 2026-05-25
+
+### 🌓 UI Phase 1 — Step 5: Dark Mode Global Toggle
+
+زر مَرئى للتَبديل بين الوضع الليلى/النهارى/التَلقائى من أى صفحة.
+
+### ✅ ما هو جديد
+
+#### `components/ThemeToggle.tsx` (جديد)
+- Dropdown menu بـ 3 خيارات: نهارى / ليلى / تَلقائى (نظام)
+- يَحفظ التَفضيل تلقائياً (next-themes + localStorage)
+- يَدعم Arabic + English (يَتبع لغة التطبيق)
+- variant: `icon` (زر صَغير) أو `full` (زر بِعنوان)
+- يَتجَنّب hydration mismatch عبر mounted state
+- ARIA labels للـ accessibility
+
+#### `components/sidebar.tsx`
+- إضافة `<ThemeToggle variant="full" />` فى أعلى قسم User Profile
+- يَظهر فوق جرس الإشعارات مباشرةً
+- مُتاح من كل صفحة فى التطبيق
+
+### 🎯 الأثر
+- لا حاجة للذهاب لـ `/settings` للتَبديل
+- زرار واحد فى مكان مَرئى يَجد كل المستخدمين
+- التَفضيل يُحفظ تلقائياً ويَستمر عبر الـ sessions
+- مع `defaultTheme="system"` فى الـ layout، التطبيق يَتبع تَفضيل OS بشكل افتراضى
+
+### 🛡️ الأمان
+- `next-themes` كان مُثبَّت بالفعل + `ThemeProvider` فى layout
+- المكون جديد فقط — لا تَعديل فى المنطق
+- مَنع hydration mismatch
+
+---
+
 ## [3.43.0] - 2026-05-25
 
 ### 🎨 UI Phase 1 — Step 4: Status Color Tokens + StatusBadge

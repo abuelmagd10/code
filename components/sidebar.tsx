@@ -46,6 +46,7 @@ import { getCachedPermissions, clearPermissionsCache, getResourceFromPath } from
 import { useAccess, getFirstAllowedRoute } from "@/lib/access-context"
 import { NotificationCenter } from "@/components/NotificationCenter"
 import { getUnreadNotificationCount } from "@/lib/governance-layer"
+import { ThemeToggle } from "@/components/ThemeToggle"
 
 function buildMenuItems(lang: string) {
   const ar = {
@@ -1208,6 +1209,11 @@ export function Sidebar() {
 
           {/* User Profile & Logout */}
           <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-slate-700 space-y-3">
+            {/* Theme Toggle */}
+            <div className="px-1">
+              <ThemeToggle variant="full" lang={appLanguage as 'ar' | 'en'} />
+            </div>
+
             {/* Notification Bell */}
             {currentUserId && activeCompanyId && (
               <Button
