@@ -1,4 +1,5 @@
 "use client"
+// v3.42.1 — force Turbopack rebuild
 import { useEffect, useState } from "react"
 export const dynamic = "force-dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

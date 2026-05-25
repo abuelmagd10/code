@@ -1,4 +1,6 @@
 "use client"
+// v3.42.1 — force Turbopack rebuild after stale build cache
+// Re-touched: 2026-05-25 to invalidate Vercel build cache
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import Link from "next/link"
