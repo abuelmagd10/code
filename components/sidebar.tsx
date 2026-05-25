@@ -1184,6 +1184,7 @@ export function Sidebar() {
                 },
                 ...(allowHr ? [{
                   key: 'hr', icon: Users, label: (lang === 'en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
+                    { label: (lang === 'en' ? 'HR Home' : 'الرئيسية'), href: `/hr${q}`, icon: Users },
                     { label: (lang === 'en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
                     { label: (lang === 'en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
