@@ -281,10 +281,38 @@ body:has([data-radix-select-content]) {
   .table-wrapper > table {
     @apply w-full sm:min-w-[640px] text-sm;
   }
+
+  /* ──────────────────────────────────────────────────────────
+   * Touch target utilities — v3.47.0 (UI Phase 1 Step 8)
+   * WCAG 2.5.5 (Level AAA) recommends 44×44 CSS px minimum for
+   * interactive elements. Use these classes for explicit control.
+   * ──────────────────────────────────────────────────────── */
+
+  /* Standard 44×44 — main action buttons, primary CTAs */
+  .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Smaller 36×36 — secondary actions, table-row icons (still tappable) */
+  .tap-target-sm {
+    min-height: 36px;
+    min-width: 36px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* For elements that should NOT enforce min-height (e.g. table cells with custom layout) */
+  .tap-target-none {
+    min-height: auto !important;
+    min-width: auto !important;
+  }
 }
 
 /* ========== Mobile Responsive Styles ========== */
-/* ... existing mobile styles ... */
+/* v3.47.0: Touch target enhancements (WCAG 2.5.5) */
 @media (max-width: 768px) {
 
   button,
@@ -294,6 +322,8 @@ body:has([data-radix-select-content]) {
   .touch-target {
     min-height: 44px;
     min-width: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   input,

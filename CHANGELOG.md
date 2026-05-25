@@ -4,6 +4,39 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.47.0] - 2026-05-25
+
+### 👆 UI Phase 1 — Step 8: Touch Targets Upgrade (WCAG 2.5.5)
+
+تَحسينات على touch targets للجوال للوصول لمعيار WCAG 2.5.5 (Level AAA).
+
+### ✅ ما هو جديد فى `app/globals.css`
+
+#### 1. تَحسين الـ existing rule
+الـ media query الموجود (`@media (max-width: 768px)`) يَضمن min-height/width=44px. أُضِيف له:
+- **`touch-action: manipulation`** → يَحذف 300ms delay من double-tap zoom (يَجعل النَقر فورياً)
+- **`-webkit-tap-highlight-color: transparent`** → يَحذف الـ blue flash المُزعج على iOS Safari
+
+#### 2. 3 Utility Classes جديدة للتَحكم الصَريح:
+```html
+<button class="tap-target">Primary Action</button>  <!-- 44×44 -->
+<button class="tap-target-sm">Icon</button>          <!-- 36×36 -->
+<td class="tap-target-none">Custom layout</td>       <!-- لا حد أدنى -->
+```
+
+### 🎯 الأثر
+- **WCAG 2.5.5 (AAA) compliance** للأَزرار على mobile
+- **نَقر فورى** بدون 300ms delay على iOS
+- **لا blue flash** عند النَقر
+- **utility classes** لتَخصيص الـ targets فى حالات استثنائية
+
+### 🛡️ الأمان
+- الـ rule الموجود لم يَتَغيَّر (فقط أُضيفت properties)
+- زِيرو تأثير على desktop (`max-width: 768px` فقط)
+- زِيرو تَغيير وظيفى
+
+---
+
 ## [3.46.0] - 2026-05-25
 
 ### 📱 UI Phase 1 — Step 7: DataTable Mobile Fix
