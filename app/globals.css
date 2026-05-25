@@ -186,6 +186,86 @@ body:has([data-radix-select-content]) {
   body {
     @apply bg-background text-foreground;
   }
+
+  /* ──────────────────────────────────────────────────────────
+   * Typography Hierarchy — v3.45.0 (UI Phase 1 Step 6)
+   * Semantic defaults for raw h1-h6 tags + utility classes
+   * for consistent page headings across all 209 pages
+   * ──────────────────────────────────────────────────────── */
+
+  /* Raw semantic headings — apply only when no Tailwind class is present */
+  h1:where(:not([class*="text-"])) {
+    @apply text-2xl sm:text-3xl font-bold text-foreground tracking-tight;
+  }
+  h2:where(:not([class*="text-"])) {
+    @apply text-xl sm:text-2xl font-semibold text-foreground tracking-tight;
+  }
+  h3:where(:not([class*="text-"])) {
+    @apply text-lg sm:text-xl font-semibold text-foreground;
+  }
+  h4:where(:not([class*="text-"])) {
+    @apply text-base sm:text-lg font-semibold text-foreground;
+  }
+  h5:where(:not([class*="text-"])) {
+    @apply text-sm sm:text-base font-semibold text-foreground;
+  }
+  h6:where(:not([class*="text-"])) {
+    @apply text-xs sm:text-sm font-semibold text-muted-foreground uppercase tracking-wider;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+ * Typography utility classes — explicit, opt-in
+ * Use these anywhere you need consistent text styling:
+ *   <div className="heading-1">صفحة الفواتير</div>
+ *   <p className="text-body">وصف بسيط</p>
+ *   <span className="text-caption">آخر تَحديث</span>
+ * ──────────────────────────────────────────────────────── */
+@layer components {
+  /* Page-level heading (e.g. inside ERPPageHeader) */
+  .heading-page {
+    @apply text-2xl sm:text-3xl font-bold text-foreground tracking-tight;
+  }
+  /* Section heading inside a card or page region */
+  .heading-section {
+    @apply text-xl sm:text-2xl font-semibold text-foreground tracking-tight;
+  }
+  /* Card / subsection heading */
+  .heading-card {
+    @apply text-lg sm:text-xl font-semibold text-foreground;
+  }
+  /* Small heading (e.g. group label) */
+  .heading-group {
+    @apply text-base font-semibold text-foreground;
+  }
+  /* Eyebrow / category label above a heading */
+  .heading-eyebrow {
+    @apply text-xs font-semibold text-muted-foreground uppercase tracking-wider;
+  }
+  /* Body text — default content */
+  .text-body {
+    @apply text-sm sm:text-base text-foreground leading-relaxed;
+  }
+  /* Body muted — secondary content / descriptions */
+  .text-body-muted {
+    @apply text-sm sm:text-base text-muted-foreground leading-relaxed;
+  }
+  /* Small text — helper text under inputs, table cells */
+  .text-small {
+    @apply text-xs sm:text-sm text-foreground;
+  }
+  /* Caption / hint — timestamps, fine print */
+  .text-caption {
+    @apply text-xs text-muted-foreground;
+  }
+  /* Numeric tabular text — prices, amounts in tables */
+  .text-tabular {
+    @apply text-sm sm:text-base font-medium text-foreground tabular-nums;
+  }
+  /* Inline code or identifier */
+  .text-code {
+    @apply text-xs sm:text-sm font-mono bg-muted text-foreground px-1.5 py-0.5 rounded;
+  }
 }
 
 /* ========== Mobile Responsive Styles ========== */

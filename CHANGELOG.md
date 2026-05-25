@@ -4,6 +4,52 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.45.0] - 2026-05-25
+
+### 📝 UI Phase 1 — Step 6: Typography Hierarchy
+
+نظام موحَّد للعناوين والنصوص عبر 209 صفحة — semantic defaults + utility classes.
+
+### ✅ ما هو جديد فى `app/globals.css`
+
+#### 1. Semantic Defaults لـ `<h1>`-`<h6>`
+أى صفحة تَستخدم raw `<h1>` بدون className ستَحصل على ستايل افتراضى مُوحَّد:
+- `h1` → `text-2xl sm:text-3xl font-bold` (24-30px)
+- `h2` → `text-xl sm:text-2xl font-semibold` (20-24px)
+- `h3` → `text-lg sm:text-xl font-semibold` (18-20px)
+- `h4` → `text-base sm:text-lg font-semibold` (16-18px)
+- `h5` → `text-sm sm:text-base font-semibold` (14-16px)
+- `h6` → `text-xs sm:text-sm uppercase tracking-wider` (eyebrow)
+
+**الأمان:** `:where(:not([class*="text-"]))` selector → specificity صفر → **أى Tailwind class موجود يَفوز عليه**. الصفحات الـ 209 لن تَتأثر.
+
+#### 2. Utility Classes اختيارية
+للاستخدام الصَريح فى الصفحات الجديدة + migration:
+- `.heading-page` — عُنوان الصفحة الرَئيسى
+- `.heading-section` — عُنوان قسم داخل الصفحة
+- `.heading-card` — عُنوان card
+- `.heading-group` — عُنوان مَجموعة
+- `.heading-eyebrow` — eyebrow label فوق العُنوان
+- `.text-body` — نَص أساسى
+- `.text-body-muted` — نَص ثانوى
+- `.text-small` — نَص صَغير
+- `.text-caption` — caption / timestamps
+- `.text-tabular` — أرقام جدولية (tabular-nums)
+- `.text-code` — code identifier
+
+### 🎯 الأثر
+- semantic HTML الآن يَعمل بشكل صحيح خارج الصندوق
+- معايير واضحة للمطور: متى تَستخدم h1 vs h2 vs h3
+- migration تَدريجى — نَستخدم utility classes فى الصفحات الجديدة
+- **لا تَغيير بَصرى على الـ 209 صفحة الموجودة** (semantic defaults لا تُؤثر على elements بـ Tailwind classes)
+
+### 🛡️ الأمان
+- Zero functional changes
+- Zero visual impact على الصفحات الحالية (specificity protection)
+- Additive only — utility classes اختيارية
+
+---
+
 ## [3.44.0] - 2026-05-25
 
 ### 🌓 UI Phase 1 — Step 5: Dark Mode Global Toggle
