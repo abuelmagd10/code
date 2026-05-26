@@ -4,6 +4,37 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.50.0] - 2026-05-25
+
+### 🚀 UI Phase 2 — Pilot: ERPPageHeader Migration
+
+أُولى صفحات **المرحلة 2 (Migration Wave)** — تَطبيق الـ ERPPageHeader المُوحَّد على صفحة `/branches` كـ pilot قبل الـ batch الكبير.
+
+### ✅ ما تَغيَّر فى `app/branches/page.tsx`
+- استبدال الـ header المُخَصَّص بـ `<ERPPageHeader>`
+- تَلقائياً يَكتسب الصفحة:
+  - **Breadcrumbs** (🏠 الرئيسية ‹ الفروع)
+  - **Typography hierarchy** مُوحَّد
+  - **Spacing & responsive** قياسى
+- زرار "فرع جديد" مُحَافَظ عليه (action prop)
+- Governance notice مُحَافَظ عليه (extra prop)
+
+### 🛡️ ضَمانات الأمان
+- ✅ **زِيرو تَغيير وظيفى** — كل الـ CRUD و الـ logic يَعمل كما هو
+- ✅ **`canWrite` check محفوظ** — الزر يَظهر فقط للأَدمين
+- ✅ **لا تَعديل فى `PageGuard` أو الـ permissions**
+- ✅ **لا تَعديل فى الـ data fetching**
+- ✅ branch محلى pre-merge
+
+### 🎯 ما التالى لو الـ pilot نَجَح
+نَستخدم نَفس النَهج على:
+- `/cost-centers` (مَشابهة جداً)
+- `/warehouses` (مَشابهة جداً)
+- `/customers` (أكثر تَعقيداً)
+- ... ثم باقى الـ 186 صفحة على دفعات
+
+---
+
 ## [3.49.0] - 2026-05-25
 
 ### 🎯 UI Phase 1 — Step 10 (FINAL): Unified Empty/Error/Loading States
