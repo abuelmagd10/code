@@ -4,6 +4,31 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.52.0] - 2026-05-26
+
+### 🚀 UI Phase 2 — Batch 2: ERPPageHeader على /customers
+
+### ✅ تَغيير وحيد آمن
+- `app/customers/page.tsx` — استبدال custom header بـ `<ERPPageHeader>`
+  - `actions` = `<CustomerFormDialog>` المُرَكَّب (state داخلى لذا آمن)
+  - `extra` = governance notice مُعتمد على `currentUserRole`:
+    - `manager` / `accountant` → 🏢 "تعرض العملاء الخاصين بفرعك فقط"
+    - `staff` / `sales` / `employee` → 👨‍💼 "تعرض العملاء الذين أنشأتهم فقط"
+
+### 🔍 فَحص النِطاق
+- `/services` — يَستخدم `ERPPageHeader` بالفعل ✅
+- `/bookings` — يَستخدم `ERPPageHeader` بالفعل ✅
+- `/suppliers` — مُؤجَّل (نَفس نمط Dialog المُتداخل مع `/shareholders`)
+- `/products` — مُؤجَّل (نَفس نمط Dialog المُتداخل)
+
+### 🛡️ ضَمانات الأمان
+- ✅ `currentUserRole` checks مُحَافَظ عليها بِالكامل
+- ✅ `CustomerFormDialog` state (`isDialogOpen`, `editingId`, `onSaveComplete`) سَليم
+- ✅ كل الـ CRUD وَ BranchFilter وَ search/filters بدون لَمس
+- ✅ صَلاحيات الـ pageGuard وَ `useAccess` بدون تَعديل
+
+---
+
 ## [3.51.0] - 2026-05-25
 
 ### 🚀 UI Phase 2 — Batch 1: ERPPageHeader على Cost Centers + Warehouses
