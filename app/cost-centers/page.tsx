@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -282,34 +283,26 @@ export default function CostCentersPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 max-w-full">
-          {/* Header */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                  <Target className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
-                    {t("Cost Centers", "مراكز التكلفة")}
-                  </h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                    {t("Manage cost centers for expense tracking", "إدارة مراكز التكلفة لتتبع المصروفات")}
-                  </p>
-                  {/* 🔐 Governance Notice - Cost Centers are admin-only */}
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                    {t("👑 Admin access - All cost centers visible", "👑 صلاحية إدارية - جميع مراكز التكلفة مرئية")}
-                  </p>
-                </div>
-              </div>
-              {canWrite && branches.length > 0 && (
+          {/* Header — Migrated to ERPPageHeader (v3.51.0) */}
+          <ERPPageHeader
+            title={t("Cost Centers", "مراكز التكلفة")}
+            description={t("Manage cost centers for expense tracking", "إدارة مراكز التكلفة لتتبع المصروفات")}
+            variant="list"
+            lang={appLang}
+            actions={
+              canWrite && branches.length > 0 ? (
                 <Button onClick={openNewDialog} className="bg-purple-600 hover:bg-purple-700 h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4">
                   <Plus className="w-4 h-4 ml-1 sm:ml-2" />
                   {t("New Cost Center", "مركز تكلفة جديد")}
                 </Button>
-              )}
-            </div>
-          </div>
+              ) : undefined
+            }
+            extra={
+              <p className="text-xs text-green-600 dark:text-green-400">
+                {t("👑 Admin access - All cost centers visible", "👑 صلاحية إدارية - جميع مراكز التكلفة مرئية")}
+              </p>
+            }
+          />
 
           {branches.length === 0 ? (
             <Card>

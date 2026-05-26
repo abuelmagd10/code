@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -326,29 +327,28 @@ export default function WarehousesPage() {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
-        <Card>
-          <CardHeader className="flex flex-col gap-2">
-            <div className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Warehouse className="h-6 w-6" />
-                {appLang === 'en' ? 'Warehouses' : 'المخازن'}
-              </CardTitle>
-              <Button onClick={openCreateDialog} className="gap-2">
-                <Plus className="h-4 w-4" />
-                {appLang === 'en' ? 'Add Warehouse' : 'إضافة مخزن'}
-              </Button>
-            </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {appLang === 'en' ? 'Manage storage locations and inventory points' : 'إدارة مواقع التخزين ونقاط المخزون'}
-            </p>
-            {/* 🔐 Governance Notice */}
-            {userContext && userContext.role && !['owner', 'admin', 'general_manager'].includes(userContext.role) && (
+      <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8 space-y-4">
+        {/* Header — Migrated to ERPPageHeader (v3.51.0) */}
+        <ERPPageHeader
+          title={appLang === 'en' ? 'Warehouses' : 'المخازن'}
+          description={appLang === 'en' ? 'Manage storage locations and inventory points' : 'إدارة مواقع التخزين ونقاط المخزون'}
+          variant="list"
+          lang={appLang}
+          actions={
+            <Button onClick={openCreateDialog} className="gap-2">
+              <Plus className="h-4 w-4" />
+              {appLang === 'en' ? 'Add Warehouse' : 'إضافة مخزن'}
+            </Button>
+          }
+          extra={
+            userContext && userContext.role && !['owner', 'admin', 'general_manager'].includes(userContext.role) ? (
               <p className="text-xs text-blue-600 dark:text-blue-400">
                 {appLang === 'en' ? '🏢 Showing warehouses from your branch only' : '🏢 تعرض المخازن الخاصة بفرعك فقط'}
               </p>
-            )}
-          </CardHeader>
+            ) : undefined
+          }
+        />
+        <Card>
           <CardContent>
             {userContextLoading || loading ? (
               <div className="text-center py-8 text-gray-500">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>

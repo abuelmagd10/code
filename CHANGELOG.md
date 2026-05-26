@@ -4,6 +4,28 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.51.0] - 2026-05-25
+
+### 🚀 UI Phase 2 — Batch 1: ERPPageHeader على Cost Centers + Warehouses
+
+تَوسيع نَجاح pilot `/branches` إلى صفحَتَين CRUD مَشابهتَين.
+
+### ✅ التَغييرات
+- `app/cost-centers/page.tsx` — استبدال custom header بـ `<ERPPageHeader>`
+- `app/warehouses/page.tsx` — استبدال CardHeader بـ `<ERPPageHeader>` خارج Card
+
+### ما تَم الحَفاظ عليه
+- ✅ `canWrite` و `branches.length > 0` checks (cost-centers)
+- ✅ Governance notice "👑 صلاحية إدارية..."
+- ✅ Branch-restricted notice للـ non-admin (warehouses)
+- ✅ كل الـ CRUD logic بدون لمس
+- ✅ نَفس الزر، نَفس الـ icon، نَفس الـ functionality
+
+### ⏭️ مُؤجَّل
+- `/shareholders` — يَحتوى Dialog nested معقد. سيَتم لاحقاً بعَناية إضافية.
+
+---
+
 ## [3.50.0] - 2026-05-25
 
 ### 🚀 UI Phase 2 — Pilot: ERPPageHeader Migration
