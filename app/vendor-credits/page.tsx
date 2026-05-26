@@ -4,10 +4,11 @@ import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye } from "lucide-react"
+import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye, Plus } from "lucide-react"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -348,32 +349,32 @@ export default function VendorCreditsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2 sm:p-3 bg-red-100 dark:bg-red-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                <FileCheck className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Vendor Credits' : 'إشعارات دائنة للموردين'}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage supplier credit notes' : 'إدارة إشعارات الدائن للموردين'}</p>
-                {/* 🔐 Governance Notice */}
-                {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {appLang === 'en' ? '🏢 Showing credits from your branch only' : '🏢 تعرض الإشعارات الخاصة بفرعك فقط'}
-                  </p>
-                )}
-                {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {appLang === 'en' ? '👨‍💼 Showing credits you created only' : '👨‍💼 تعرض الإشعارات التي أنشأتها فقط'}
-                  </p>
-                )}
-              </div>
-            </div>
-            <Link href="/vendor-credits/new"><Button className="h-10 sm:h-11 text-sm sm:text-base">{appLang === 'en' ? 'New' : 'جديد'}</Button></Link>
-          </div>
-        </div>
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.53.0) */}
+        <ERPPageHeader
+          title={appLang === 'en' ? 'Vendor Credits' : 'إشعارات دائنة للموردين'}
+          description={appLang === 'en' ? 'Manage supplier credit notes' : 'إدارة إشعارات الدائن للموردين'}
+          variant="list"
+          lang={appLang}
+          actions={
+            <Link href="/vendor-credits/new">
+              <Button className="gap-2">
+                <Plus className="w-4 h-4" />
+                {appLang === 'en' ? 'New' : 'جديد'}
+              </Button>
+            </Link>
+          }
+          extra={
+            (currentUserRole === 'manager' || currentUserRole === 'accountant') ? (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {appLang === 'en' ? '🏢 Showing credits from your branch only' : '🏢 تعرض الإشعارات الخاصة بفرعك فقط'}
+              </p>
+            ) : (currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') ? (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {appLang === 'en' ? '👨‍💼 Showing credits you created only' : '👨‍💼 تعرض الإشعارات التي أنشأتها فقط'}
+              </p>
+            ) : undefined
+          }
+        />
 
         <ListErrorBoundary>
           {/* Statistics Cards */}

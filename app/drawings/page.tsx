@@ -7,7 +7,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Plus, DollarSign, Eye } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { PageHeaderList } from "@/components/PageHeader"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { getDrawings } from "@/app/actions/drawings"
@@ -135,18 +135,21 @@ export default function DrawingsPage() {
     return (
         <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
             <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-                {/* Page Header */}
-                <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-                    <PageHeaderList
-                        title={appLang === 'en' ? 'Shareholder Drawings' : 'المسحوبات الشخصية'}
-                        description={appLang === 'en' ? 'Manage shareholder personal withdrawals' : 'إدارة مسحوبات المساهمين الشخصية'}
-                        icon={DollarSign}
-                        createHref="/drawings/new"
-                        createLabel={appLang === 'en' ? 'New Drawing' : 'تسجيل مسحوب'}
-                        lang={appLang}
-                        userRole="admin" // Simplified for now
-                    />
-                </div>
+                {/* Page Header — Migrated to ERPPageHeader (v3.53.0) */}
+                <ERPPageHeader
+                    title={appLang === 'en' ? 'Shareholder Drawings' : 'المسحوبات الشخصية'}
+                    description={appLang === 'en' ? 'Manage shareholder personal withdrawals' : 'إدارة مسحوبات المساهمين الشخصية'}
+                    variant="list"
+                    lang={appLang}
+                    actions={
+                        <Link href="/drawings/new">
+                            <Button className="gap-2">
+                                <Plus className="w-4 h-4" />
+                                {appLang === 'en' ? 'New Drawing' : 'تسجيل مسحوب'}
+                            </Button>
+                        </Link>
+                    }
+                />
 
                 {/* Table */}
                 <Card className="dark:bg-slate-900 dark:border-slate-800">

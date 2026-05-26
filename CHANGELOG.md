@@ -4,6 +4,29 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.53.0] - 2026-05-26
+
+### 🚀 UI Phase 2 — Batch 3: ERPPageHeader على 4 صفحات
+
+تَوسيع موجة الـ migration على صفحات يومية الاستخدام.
+
+### ✅ تَغييرات
+- `app/drawings/page.tsx` — استبدال `<PageHeaderList>` (القديم) بـ `<ERPPageHeader>` + Link/Button للإضافة
+- `app/customer-credits/page.tsx` — استبدال custom h1 header بـ `<ERPPageHeader>` (no action — display-only)
+- `app/vendor-credits/page.tsx` — استبدال custom h1 header بـ `<ERPPageHeader>` + `extra` لـ governance notice
+- `app/expenses/page.tsx` — استبدال `<PageHeaderList governanceType="branch_creator">` بـ `<ERPPageHeader>` مع توليد يدوى للـ governance notice في `extra` + معالجة `canCreate=false` كزر `disabled`
+
+### 🛡️ ضَمانات الأمان
+- ✅ `canCreate` على expenses (مع toast/title رسالة عدم الصلاحية)
+- ✅ Governance notices (🏢 branch / 👨‍💼 creator) مُحَافَظ عليها في `extra`
+- ✅ كل الـ CRUD وَ `BranchFilter` وَ `useRealtimeTable` بدون لمس
+- ✅ صلاحيات `useAccess` وَ `PageGuard` بدون تَعديل
+
+### ⚠️ ملاحظة
+- `userRole="admin"` في drawings كان hardcoded (تعليق "Simplified for now") — لذا governance notice لم يَكن فعَّالاً أصلاً قَبل التَغيير. لم يَتغيَّر شيء وظيفياً.
+
+---
+
 ## [3.52.0] - 2026-05-26
 
 ### 🚀 UI Phase 2 — Batch 2: ERPPageHeader على /customers

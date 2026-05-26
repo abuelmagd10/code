@@ -18,7 +18,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
-import { PageHeaderList } from "@/components/PageHeader"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -463,22 +463,43 @@ export default function ExpensesPage() {
   return (
     <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* Page Header */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <PageHeaderList
-            title={appLang === 'en' ? 'Expenses' : 'المصروفات'}
-            description={appLang === 'en' ? 'Manage and track company expenses' : 'إدارة وتتبع مصروفات الشركة'}
-            icon={Receipt}
-            createHref={canCreate ? "/expenses/new" : undefined}
-            createLabel={appLang === 'en' ? 'New Expense' : 'مصروف جديد'}
-            createDisabled={!canCreate}
-            createTitle={!canCreate ? (appLang === 'en' ? 'No permission to create expenses' : 'لا توجد صلاحية لإنشاء مصروفات') : undefined}
-            lang={appLang}
-            userRole={currentUserRole}
-            governanceType="branch_creator"
-            governanceEntityName={appLang === 'en' ? 'expenses' : 'المصروفات'}
-          />
-        </div>
+        {/* Page Header — Migrated to ERPPageHeader (v3.53.0) */}
+        <ERPPageHeader
+          title={appLang === 'en' ? 'Expenses' : 'المصروفات'}
+          description={appLang === 'en' ? 'Manage and track company expenses' : 'إدارة وتتبع مصروفات الشركة'}
+          variant="list"
+          lang={appLang}
+          actions={
+            canCreate ? (
+              <Link href="/expenses/new">
+                <Button className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  {appLang === 'en' ? 'New Expense' : 'مصروف جديد'}
+                </Button>
+              </Link>
+            ) : (
+              <Button
+                disabled
+                className="gap-2"
+                title={appLang === 'en' ? 'No permission to create expenses' : 'لا توجد صلاحية لإنشاء مصروفات'}
+              >
+                <Plus className="w-4 h-4" />
+                {appLang === 'en' ? 'New Expense' : 'مصروف جديد'}
+              </Button>
+            )
+          }
+          extra={
+            (currentUserRole === 'manager' || currentUserRole === 'accountant') ? (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {appLang === 'en' ? '🏢 Showing expenses from your branch only' : '🏢 تعرض المصروفات الخاصة بفرعك فقط'}
+              </p>
+            ) : (currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') ? (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {appLang === 'en' ? '👨‍💼 Showing expenses you created only' : '👨‍💼 تعرض المصروفات التي أنشأتها فقط'}
+              </p>
+            ) : undefined
+          }
+        />
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 sm:gap-4">

@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Wallet, TrendingUp, Users, ChevronLeft, Search, ArrowUpRight } from "lucide-react"
 import { usePagination } from "@/lib/pagination"
@@ -100,24 +101,13 @@ export default function CustomerCreditsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
 
-        {/* Header */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-3 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-xl shadow-md flex-shrink-0">
-                <Wallet className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
-                  {appLang === 'en' ? 'Customer Credit Balances' : 'الأرصدة الدائنة للعملاء'}
-                </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                  {appLang === 'en' ? 'Track and apply customer credit from returns' : 'متابعة وتطبيق الرصيد الدائن الناتج عن المرتجعات'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Header — Migrated to ERPPageHeader (v3.53.0) */}
+        <ERPPageHeader
+          title={appLang === 'en' ? 'Customer Credit Balances' : 'الأرصدة الدائنة للعملاء'}
+          description={appLang === 'en' ? 'Track and apply customer credit from returns' : 'متابعة وتطبيق الرصيد الدائن الناتج عن المرتجعات'}
+          variant="list"
+          lang={appLang}
+        />
 
         <ListErrorBoundary>
           {/* Statistics */}
