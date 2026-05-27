@@ -4,6 +4,33 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.1] - 2026-05-27
+
+### 🐛 Hotfix: قائمة اختيار صنف فى /estimates لا تَظهر
+
+**المُشكلة:**
+عند إنشاء عرض سعرى جديد وإضافة بند، قائمة "اختر الصنف" كانت فارغة/مُعطَّلة.
+
+**السَبب الجَذرى:**
+الاستعلام كان يَطلب عمود `sale_price` غير المَوجود فى جدول `products` — العمود الفعلى اسمه `unit_price`. هذا كان يُؤدى إلى فَشل الاستعلام صامِتاً (`prod` يَعود null) → قائمة فارغة.
+
+### ✅ التَغييرات
+- `app/estimates/page.tsx`:
+  - استبدال `sale_price` بـ `unit_price` (العمود الصحيح فى جدول products)
+  - إضافة `is_active = true` filter (لِعدم عَرض المنتجات المُؤرشَفة)
+  - إضافة `item_type` للـ SELECT (لِتَظهر الأَيقونة 🔧/📦 صحيحة)
+  - **🔐 حوكمة الفرع:** للأَدوار غير `owner/admin/manager`، تُفلتر المنتجات بـ `branch_id.eq.${userBranchId},branch_id.is.null` (نَفس نَمط `/invoices/new`)
+  - إضافة معالجة أَخطاء + toast عند فَشل تَحميل المنتجات
+  - رسالة "لا توجد منتجات متاحة" داخل القائمة بَدلاً من قائمة فارغة صامتة
+  - تَحديث `Product` type: `sale_price` → `unit_price` + إضافة `branch_id`
+
+### 🛡️ الحوكمة المُحَافَظ عليها
+- ✅ `OVERRIDE_ALLOWED_ROLES = ['owner', 'admin', 'manager']` — المُتَحَكِّمون يَرون كل المنتجات
+- ✅ باقى الأَدوار (`accountant`, `staff`, `sales`, `employee`) يَرَون فقط منتجات فَرعهم + المُشترَكة
+- ✅ كل CRUD وَ logic الفلاتر بدون لمس
+
+---
+
 ## [3.55.0] - 2026-05-27
 
 ### 🚀 UI Phase 2 — Batch 5: ERPPageHeader على 10 صفحات (إنهاء آمن Phase 2)

@@ -17,7 +17,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 import { getActiveCompanyId } from "@/lib/company";
 
 type Customer = { id: string; name: string; phone?: string | null };
-type Product = { id: string; name: string; sale_price?: number; item_type?: 'product' | 'service' };
+type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service'; branch_id?: string | null };
 
 type Estimate = {
   id: string;
@@ -112,22 +112,75 @@ export default function EstimatesPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const companyId = await getActiveCompanyId(supabase);
-      if (!companyId) { setLoading(false); return; }
-      const { data: cust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).order("name");
-      setCustomers(cust || []);
-      const { data: prod } = await supabase.from("products").select("id, name, sale_price").eq("company_id", companyId).order("name");
-      setProducts(prod || []);
-      const { data: est } = await supabase
-        .from("estimates")
-        .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false });
-      setEstimates(est || []);
-      setLoading(false);
+      try {
+        const companyId = await getActiveCompanyId(supabase);
+        if (!companyId) { setLoading(false); return; }
+
+        // 🔐 Governance: resolve user's role + branch for product visibility
+        const { data: { user } } = await supabase.auth.getUser();
+        let userBranchId: string | null = null;
+        let canOverrideBranch = true;
+        if (user) {
+          const { data: member } = await supabase
+            .from("company_members")
+            .select("role, branch_id")
+            .eq("user_id", user.id)
+            .eq("company_id", companyId)
+            .maybeSingle();
+          if (member) {
+            // OVERRIDE_ALLOWED_ROLES = ['owner', 'admin', 'manager']
+            canOverrideBranch = ['owner', 'admin', 'manager'].includes(member.role);
+            userBranchId = member.branch_id || null;
+          }
+        }
+
+        // Customers
+        const { data: cust, error: custErr } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("company_id", companyId)
+          .order("name");
+        if (custErr) console.error("Failed to load customers:", custErr);
+        setCustomers(cust || []);
+
+        // 🔐 Products query — uses unit_price (correct column),
+        // filters is_active=true, includes item_type for icon,
+        // and applies branch governance for non-admin users
+        let productsQuery = supabase
+          .from("products")
+          .select("id, name, unit_price, item_type, branch_id")
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+          .order("name");
+
+        if (!canOverrideBranch && userBranchId) {
+          productsQuery = productsQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`);
+        }
+
+        const { data: prod, error: prodErr } = await productsQuery;
+        if (prodErr) {
+          console.error("Failed to load products:", prodErr);
+          toastActionError(toast, "خطأ في تحميل المنتجات", prodErr.message);
+        }
+        setProducts(prod || []);
+
+        // Estimates
+        const { data: est, error: estErr } = await supabase
+          .from("estimates")
+          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false });
+        if (estErr) console.error("Failed to load estimates:", estErr);
+        setEstimates(est || []);
+      } catch (err: any) {
+        console.error("Estimates load error:", err);
+        toastActionError(toast, "خطأ في التحميل", err?.message || "");
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, [supabase]);
+  }, [supabase, toast]);
 
   const resetForm = () => {
     setCustomerId("");
@@ -483,14 +536,18 @@ export default function EstimatesPage() {
                             value={it.product_id || ""}
                             onValueChange={(v) => {
                               const prod = products.find((p) => p.id === v);
-                              updateItem(idx, { product_id: v, unit_price: prod?.sale_price || it.unit_price });
+                              updateItem(idx, { product_id: v, unit_price: prod?.unit_price ?? it.unit_price });
                             }}
                           >
                             <SelectTrigger><SelectValue placeholder="اختر الصنف" /></SelectTrigger>
                             <SelectContent>
-                              {products.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
-                              ))}
+                              {products.length === 0 ? (
+                                <div className="p-2 text-xs text-gray-500 text-center">لا توجد منتجات متاحة</div>
+                              ) : (
+                                products.map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
+                                ))
+                              )}
                             </SelectContent>
                           </Select>
                         </td>
