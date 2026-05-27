@@ -12,16 +12,20 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
-import { FileText } from "lucide-react";
+import { FileText, UserCheck, X } from "lucide-react";
 import { ERPPageHeader } from "@/components/erp-page-header";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
+import { FilterContainer } from "@/components/ui/filter-container";
+import { BranchFilter } from "@/components/BranchFilter";
+import { useBranchFilter } from "@/hooks/use-branch-filter";
 import { getActiveCompanyId } from "@/lib/company";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control";
 import type { UserContext } from "@/lib/validation";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Member   = { user_id: string; full_name?: string | null; email?: string | null; role?: string };
-type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service'; branch_id?: string | null };
+type Employee = { user_id: string; display_name: string; role: string; email?: string };
+type Product  = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service'; branch_id?: string | null };
 
 type Estimate = {
   id: string;
@@ -61,16 +65,27 @@ export default function EstimatesPage() {
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   // 🔐 Governance context (role + branch + creator scope)
   const [userContext, setUserContext] = useState<UserContext | null>(null);
-  // Members (only loaded for privileged roles, used for "filter by employee")
+  // Members (legacy, kept for compatibility)
   const [members, setMembers] = useState<Member[]>([]);
+  // Employees (enriched, used by blue Employee filter row)
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>("");
 
-  // Filter state — aligned with /sales-orders pattern (MultiSelect for status + customer, single select for employee)
-  const [filterStatuses, setFilterStatuses]   = useState<string[]>([]);
-  const [filterCustomers, setFilterCustomers] = useState<string[]>([]);
+  // Branch filter hook (visible internally only for privileged roles)
+  const branchFilter = useBranchFilter();
+  const [isPending, startTransition] = useTransition();
+
+  // Filter state — aligned with /sales-orders pattern
+  const [filterStatuses, setFilterStatuses]     = useState<string[]>([]);
+  const [filterCustomers, setFilterCustomers]   = useState<string[]>([]);
+  const [filterProducts, setFilterProducts]     = useState<string[]>([]);
   const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  const [dateTo, setDateTo]     = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  // estimate_id -> product_ids index for Products filter
+  const [itemsByEstimate, setItemsByEstimate] = useState<Record<string, string[]>>({});
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Estimate | null>(null);
@@ -88,6 +103,11 @@ export default function EstimatesPage() {
     return estimates.filter((e) => {
       if (filterStatuses.length > 0 && !filterStatuses.includes(e.status)) return false;
       if (filterCustomers.length > 0 && !filterCustomers.includes(e.customer_id)) return false;
+      if (filterProducts.length > 0) {
+        const ids = itemsByEstimate[e.id] || [];
+        const hit = filterProducts.some(pid => ids.includes(pid));
+        if (!hit) return false;
+      }
       if (filterEmployeeId !== "all" && (e.created_by_user_id || "") !== filterEmployeeId) return false;
       if (dateFrom && e.estimate_date < dateFrom) return false;
       if (dateTo && e.estimate_date > dateTo) return false;
@@ -99,11 +119,12 @@ export default function EstimatesPage() {
       }
       return true;
     });
-  }, [estimates, filterStatuses, filterCustomers, filterEmployeeId, dateFrom, dateTo, searchQuery, customers]);
+  }, [estimates, filterStatuses, filterCustomers, filterProducts, itemsByEstimate, filterEmployeeId, dateFrom, dateTo, searchQuery, customers]);
 
   const activeFilterCount = [
     filterStatuses.length > 0,
     filterCustomers.length > 0,
+    filterProducts.length > 0,
     filterEmployeeId !== "all",
     !!dateFrom,
     !!dateTo,
@@ -113,11 +134,17 @@ export default function EstimatesPage() {
   const clearFilters = () => {
     setFilterStatuses([]);
     setFilterCustomers([]);
+    setFilterProducts([]);
     setFilterEmployeeId("all");
     setDateFrom("");
     setDateTo("");
     setSearchQuery("");
   };
+
+  // Privileged role flag — used to gate BranchFilter + Employee filter
+  const canViewAllEstimates = ['owner', 'admin', 'general_manager'].includes(
+    (userContext?.role || '').toLowerCase()
+  );
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
@@ -166,6 +193,31 @@ export default function EstimatesPage() {
                 .select("user_id, role, email")
                 .eq("company_id", companyId);
               setMembers((mems as Member[]) || []);
+
+              // Enriched list for blue Employee filter row
+              const userIds = (mems || []).map((m: any) => m.user_id);
+              const { data: profiles } = userIds.length > 0
+                ? await supabase
+                    .from("user_profiles")
+                    .select("user_id, display_name, username")
+                    .in("user_id", userIds)
+                : { data: [] as any[] };
+              const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
+              const roleLabels: Record<string, string> = {
+                owner: 'مالك', admin: 'مدير', manager: 'مدير فرع',
+                supervisor: 'مشرف', staff: 'موظف', accountant: 'محاسب',
+                sales: 'مبيعات', viewer: 'مشاهد',
+              };
+              const employeesList: Employee[] = (mems || []).map((m: any) => {
+                const profile: any = profileMap.get(m.user_id);
+                return {
+                  user_id: m.user_id,
+                  display_name: profile?.display_name || profile?.username || m.email || m.user_id.slice(0, 8),
+                  role: roleLabels[m.role] || m.role,
+                  email: profile?.username || m.email,
+                };
+              });
+              setEmployees(employeesList);
             }
           }
         }
@@ -235,8 +287,11 @@ export default function EstimatesPage() {
           .eq("company_id", companyId)
           .order("created_at", { ascending: false });
 
+        const selectedBranchOverride = branchFilter.getFilteredBranchId();
         if (privileged) {
-          // All company estimates — no extra filter
+          if (selectedBranchOverride) {
+            estQuery = estQuery.eq('branch_id', selectedBranchOverride);
+          }
         } else if (isBranchLevel && ctx?.branch_id) {
           if (role === 'accountant') {
             estQuery = estQuery.or(`branch_id.eq.${ctx.branch_id},branch_id.is.null`);
@@ -250,6 +305,24 @@ export default function EstimatesPage() {
         const { data: est, error: estErr } = await estQuery;
         if (estErr) console.error("Failed to load estimates:", estErr);
         setEstimates(est || []);
+
+        // Build estimate_id -> product_ids index for Products filter
+        if (est && est.length > 0) {
+          const estIds = est.map((e: any) => e.id);
+          const { data: itemRows } = await supabase
+            .from("estimate_items")
+            .select("estimate_id, product_id")
+            .in("estimate_id", estIds);
+          const idx: Record<string, string[]> = {};
+          (itemRows || []).forEach((row: any) => {
+            if (!row.product_id) return;
+            if (!idx[row.estimate_id]) idx[row.estimate_id] = [];
+            idx[row.estimate_id].push(row.product_id);
+          });
+          setItemsByEstimate(idx);
+        } else {
+          setItemsByEstimate({});
+        }
       } catch (err: any) {
         console.error("Estimates load error:", err);
         toastActionError(toast, "خطأ في التحميل", err?.message || "");
@@ -258,7 +331,8 @@ export default function EstimatesPage() {
       }
     };
     load();
-  }, [supabase, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, toast, branchFilter.selectedBranchId]);
 
   const resetForm = () => {
     setCustomerId("");
@@ -528,20 +602,89 @@ export default function EstimatesPage() {
           }
         />
 
-        {/* Filters bar — aligned with /sales-orders pattern (MultiSelect status + customer, employee for privileged) */}
-        <Card className="p-3 mb-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
-            <div className="md:col-span-2">
-              <label className="text-xs text-gray-600 dark:text-gray-400">بحث</label>
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="رقم العرض أو اسم العميل"
-                className="h-9"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-600 dark:text-gray-400">الحالة</label>
+        {/* Filters Section — fully aligned with /sales-orders */}
+        <FilterContainer
+          title="الفلاتر"
+          activeCount={activeFilterCount + (branchFilter.selectedBranchId ? 1 : 0)}
+          onClear={() => { clearFilters(); branchFilter.resetFilter(); }}
+          defaultOpen={false}
+        >
+          <div className="space-y-4">
+            {/* BranchFilter (privileged only — auto-hides internally) */}
+            <BranchFilter
+              lang="ar"
+              externalHook={branchFilter}
+              className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
+            />
+
+            {/* Employee filter row — privileged only */}
+            {canViewAllEstimates && employees.length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">فلترة حسب الموظف:</span>
+                <Select value={filterEmployeeId} onValueChange={(value) => setFilterEmployeeId(value)}>
+                  <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
+                    <SelectValue placeholder="جميع الموظفين" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
+                      <Input
+                        value={employeeSearchQuery}
+                        onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                        placeholder="بحث في الموظفين..."
+                        className="text-sm h-8"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <SelectItem value="all">جميع الموظفين</SelectItem>
+                    {employees
+                      .filter(emp => {
+                        if (!employeeSearchQuery.trim()) return true;
+                        const q = employeeSearchQuery.toLowerCase();
+                        return (
+                          emp.display_name.toLowerCase().includes(q) ||
+                          (emp.email || "").toLowerCase().includes(q) ||
+                          emp.role.toLowerCase().includes(q)
+                        );
+                      })
+                      .map(emp => (
+                        <SelectItem key={emp.user_id} value={emp.user_id}>
+                          {emp.display_name} <span className="text-xs text-gray-400">({emp.role})</span>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {filterEmployeeId !== "all" && (
+                  <Button variant="ghost" size="sm" onClick={() => setFilterEmployeeId("all")} className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100">
+                    <X className="w-4 h-4 mr-1" />
+                    مسح
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Search + advanced filters grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="sm:col-span-2 lg:col-span-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="بحث برقم العرض، اسم العميل..."
+                    value={searchQuery}
+                    onChange={(e) => { const val = e.target.value; startTransition(() => setSearchQuery(val)); }}
+                    className={"w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm " + (isPending ? "opacity-70" : "")}
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => startTransition(() => setSearchQuery(""))}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                    >
+                      X
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <MultiSelect
                 options={[
                   { value: "draft",     label: "مسودة" },
@@ -552,61 +695,63 @@ export default function EstimatesPage() {
                   { value: "converted", label: "محوَّل لأمر بيع" },
                 ]}
                 selected={filterStatuses}
-                onChange={setFilterStatuses}
+                onChange={(val) => startTransition(() => setFilterStatuses(val))}
                 placeholder="جميع الحالات"
                 searchPlaceholder="بحث في الحالات..."
                 emptyMessage="لا توجد حالات"
-                className="h-9 text-sm"
+                className="h-10 text-sm"
               />
-            </div>
-            <div>
-              <label className="text-xs text-gray-600 dark:text-gray-400">العميل</label>
-              {/* 🔐 قائمة العملاء مَفلتَرة بالحوكمة (مُطابق لِنَمط /sales-orders) */}
+
               <MultiSelect
-                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                options={customers.map(c => ({ value: c.id, label: c.name }))}
                 selected={filterCustomers}
-                onChange={setFilterCustomers}
+                onChange={(val) => startTransition(() => setFilterCustomers(val))}
                 placeholder="جميع العملاء"
                 searchPlaceholder="بحث في العملاء..."
                 emptyMessage="لا يوجد عملاء"
-                className="h-9 text-sm"
+                className="h-10 text-sm"
               />
+
+              <MultiSelect
+                options={products.map(p => ({ value: p.id, label: p.name }))}
+                selected={filterProducts}
+                onChange={(val) => startTransition(() => setFilterProducts(val))}
+                placeholder="فلترة بالمنتجات"
+                searchPlaceholder="بحث في المنتجات..."
+                emptyMessage="لا توجد منتجات"
+                className="h-10 text-sm"
+              />
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 dark:text-gray-400">من تاريخ</label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => { const val = e.target.value; startTransition(() => setDateFrom(val)); }}
+                  className="h-10 text-sm"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 dark:text-gray-400">إلى تاريخ</label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => { const val = e.target.value; startTransition(() => setDateTo(val)); }}
+                  className="h-10 text-sm"
+                />
+              </div>
             </div>
-            {/* 🔐 Employee filter — only for privileged roles */}
-            {['owner', 'admin', 'general_manager'].includes((userContext?.role || '').toLowerCase()) && (
-              <div>
-                <label className="text-xs text-gray-600 dark:text-gray-400">الموظف المُنشئ</label>
-                <Select value={filterEmployeeId} onValueChange={setFilterEmployeeId}>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">الكل</SelectItem>
-                    {members.map((m) => (
-                      <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.full_name || m.email || m.user_id.slice(0, 8)} <span className="text-xs text-gray-400">({(m as any).role || ""})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+            {activeFilterCount > 0 && (
+              <div className="flex justify-start items-center pt-2 border-t">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  عرض {filteredEstimates.length} من {estimates.length} عَرض سعرى
+                </span>
               </div>
             )}
-            <div>
-              <label className="text-xs text-gray-600 dark:text-gray-400">من تاريخ</label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-600 dark:text-gray-400">إلى تاريخ</label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9" />
-            </div>
           </div>
-          {activeFilterCount > 0 && (
-            <div className="flex items-center justify-between mt-3 pt-2 border-t">
-              <span className="text-xs text-gray-500">
-                {activeFilterCount} فلتر نشط — {filteredEstimates.length} من {estimates.length}
-              </span>
-              <Button variant="outline" size="sm" onClick={clearFilters}>مسح الفلاتر</Button>
-            </div>
-          )}
-        </Card>
+        </FilterContainer>
 
         <Card className="p-3">
           {loading && <div className="text-sm">جارٍ التحميل...</div>}

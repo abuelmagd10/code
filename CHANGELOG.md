@@ -52,6 +52,66 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.13] - 2026-05-27
+
+### 🎨 توحيد بَصرى كامِل لقائمة `/estimates` مع `/sales-orders`
+
+نَفس بِنية الفلاتر بِالحَرف الواحد فى الصَفحَتَيْن.
+
+### ✅ التَغييرات — `app/estimates/page.tsx`
+
+**Imports + Types الجَديدة:**
+- `FilterContainer` (بَدلاً من Card بَسيط)
+- `BranchFilter` + `useBranchFilter`
+- `UserCheck` + `X` icons
+- `Employee` type جَديد (display_name + role + email)
+
+**State الجَديد:**
+- `employees: Employee[]` (مَجلوب مع display_name من user_profiles)
+- `employeeSearchQuery` (للبَحث داخل dropdown الموظف)
+- `branchFilter` hook
+- `isPending` + `startTransition` للسلاسة
+- `filterProducts: string[]` (MultiSelect المنتجات)
+- `itemsByEstimate: Record<string, string[]>` (فِهرس مُنتَجات كل عَرض)
+
+**Load logic:**
+- Employees: تُحَمَّل من `company_members` + `user_profiles` للأَدوار المُمَيَّزة
+- Estimates query: يَحترِم `branchFilter.selectedBranchId` للأَدمين
+- `estimate_items` تُحَمَّل دفعة واحدة وتُبنى كَفِهرس `estimate_id → product_ids`
+- useEffect deps تَشمل `branchFilter.selectedBranchId`
+
+**Filter UI:**
+- `FilterContainer` قابِل للطَى مع عَدَّاد الفلاتر النَشطة + زر مَسح
+- `BranchFilter` purple-tinted (يَختَفى تَلقائياً لِغير المُمَيَّزين)
+- Employee filter صَف أَزرَق مُنفصِل مع UserCheck icon + search داخلى + زر Clear
+- Search input كَبير مع زر X لمَسح البحث
+- 5-column grid:
+  * Search (×2 cols)
+  * MultiSelect Status
+  * MultiSelect Customer
+  * MultiSelect Products (جَديد)
+  * Date from / to
+- عَدَّاد النَتائج فى الأَسفل بنَص /sales-orders
+
+### 🔐 الحَوكمة الكامِلة فى الفلاتر
+
+| الفلتر | Owner / Admin / GM | Manager / Accountant | Staff / Sales / Employee |
+|---|:---:|:---:|---|
+| BranchFilter | ✅ يَختار | (مَخفى) | (مَخفى) |
+| Employee row | ✅ يَختار | (مَخفى) | (مَخفى) |
+| Status MultiSelect | ✅ | ✅ | ✅ |
+| Customer MultiSelect | كل الشركة | فَرعه | عُملاءه فقط |
+| Products MultiSelect | كل المنتجات | فَرعه + المُشترَك | فَرعه + المُشترَك |
+| Date from / to | ✅ | ✅ | ✅ |
+
+### 🛡️ ضَمانات
+- ✅ نَفس MultiSelect المُستخدم فى /sales-orders
+- ✅ كل القَوائم مَفلتَرة بالحَوكمة (لا تَسريب)
+- ✅ كل دوال CRUD + delete + link governance من v3.55.12 بدون تَعديل
+- ✅ تَطبيق Python patches بَدلاً من Edit tool لِتَجَنُّب فَشل template literals
+
+---
+
 ## [3.55.12] - 2026-05-27
 
 ### 🔗 تَطوير /estimates: ربط بِأَمر البَيع + حَذف بِحَوكمة
