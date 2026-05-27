@@ -253,7 +253,17 @@ export default function EstimatesPage() {
       return;
     }
     setLoading(true);
+
+    // 🔐 Required for RLS: company_id must be in payload (can_modify_data check)
+    const companyId = await getActiveCompanyId(supabase);
+    if (!companyId) {
+      toastActionError(toast, "خطأ", "العرض", "تعذر تحديد الشركة");
+      setLoading(false);
+      return;
+    }
+
     const payload = {
+      company_id: companyId,
       customer_id: customerId,
       estimate_number: estimateNumber,
       estimate_date: estimateDate,
@@ -268,7 +278,8 @@ export default function EstimatesPage() {
     if (editing) {
       const { error } = await supabase.from("estimates").update(payload).eq("id", editing.id);
       if (error) {
-        toastActionError(toast, "التحديث", "العرض", "تعذر تحديث العرض");
+        console.error("Estimate update error:", error);
+        toastActionError(toast, "التحديث", "العرض", error.message || "تعذر تحديث العرض");
         setLoading(false);
         return;
       }
@@ -278,7 +289,8 @@ export default function EstimatesPage() {
     } else {
       const { data, error } = await supabase.from("estimates").insert(payload).select("id").single();
       if (error) {
-        toastActionError(toast, "الإنشاء", "العرض", "تعذر إنشاء العرض");
+        console.error("Estimate insert error:", error);
+        toastActionError(toast, "الإنشاء", "العرض", error.message || "تعذر إنشاء العرض");
         setLoading(false);
         return;
       }
@@ -315,7 +327,15 @@ export default function EstimatesPage() {
 
   const convertToSO = async (estimate: Estimate) => {
     setLoading(true);
+    // 🔐 Required for RLS on sales_orders
+    const companyId = estimate.company_id || (await getActiveCompanyId(supabase));
+    if (!companyId) {
+      toast({ title: "تعذر تحديد الشركة", variant: "destructive" });
+      setLoading(false);
+      return;
+    }
     const soPayload = {
+      company_id: companyId,
       customer_id: estimate.customer_id,
       so_number: `SO-${Date.now()}`,
       so_date: new Date().toISOString().slice(0, 10),

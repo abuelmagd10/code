@@ -4,6 +4,64 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.3] - 2026-05-27
+
+### 🐛 Hotfix: 403 Forbidden عند حِفظ عرض سعرى
+
+**المُشكلة:**
+بعد إنشاء جدول `estimates` (v3.55.2)، حِفظ عرض جديد كان يُرجِع `POST /rest/v1/estimates 403 (Forbidden)` رغم أَن المُستخدم `role=owner`.
+
+**السَبب الجَذرى:**
+الـ payload المُرسَل لم يَحوى `company_id`. الـ RLS policy `estimates_insert WITH CHECK can_modify_data(company_id)` كانت تَتحَقَّق من `company_id = NULL` فتَفشل الحماية.
+
+### ✅ التَغييرات
+- `app/estimates/page.tsx` — `saveEstimate()`:
+  - استدعاء `getActiveCompanyId(supabase)` قَبل الـ INSERT
+  - فحص أَن companyId مَوجود (مع رسالة خطأ واضِحة لو غير ذلك)
+  - إضافة `company_id: companyId` للـ payload (إلزامى لـ RLS)
+  - تَحسين رَسائل الخطأ: عَرض `error.message` بَدلاً من نَص ثابت
+  - `console.error` لتَشخيص أَفضل
+- `app/estimates/page.tsx` — `convertToSO()`:
+  - نَفس الإصلاح لِمَنع 403 على `sales_orders` عند التَحويل
+  - استخدام `estimate.company_id` إن وُجد، وإلا `getActiveCompanyId`
+
+### 🛡️ الحوكمة مَضمونة
+- `can_modify_data(company_id)` تَتحَقَّق الآن بنَجاح للـ `owner`/`admin`/`manager`/`accountant`/`staff`
+- لو المُستخدم ليس فى الشركة → لن يَستطيع إنشاء عَرض (RLS تَحمى)
+
+---
+
+## [3.55.2] - 2026-05-27
+
+### 🛠️ DB Migration: إنشاء جداول `estimates` + `estimate_items` المَفقودة
+
+**المُشكلة:**
+عند حِفظ عرض سعرى جديد، كانت تَظهر أَخطاء 404 من Supabase REST API على endpoint الـ `estimates`. الجدول لم يَكُن مَوجوداً فى DB رغم أَنه مُعَرَّف فى `scripts/004_sales_flow.sql` — يَبدو أَن السكريبت لم يَتم تَشغيله يَوماً.
+
+### ✅ تَم تَطبيقه عَبر Supabase MCP migration
+- إنشاء جدول `public.estimates` (id, company_id, customer_id, estimate_number, dates, amounts, status, notes)
+- إنشاء جدول `public.estimate_items` (id, estimate_id, product_id, qty, prices, line_total)
+- `UNIQUE(company_id, estimate_number)` لِمنع التَكرار
+- 4 indexes للأَداء (company, customer, status, estimate_id)
+- تَفعيل RLS على الجَدولَيْن
+
+### 🔐 RLS Policies — نَفس نَمط `invoices`
+- `estimates_select` → `is_company_member(company_id)`
+- `estimates_insert` → `can_modify_data(company_id)` (يَمنع `viewer` من الإدخال)
+- `estimates_update` → `can_modify_data(company_id)`
+- `estimates_delete` → `can_delete_resource(company_id, 'estimates')`
+- `estimate_items_*` → join through parent estimate_id (نَفس الـ 4 سياسات)
+
+### 🛡️ الحوكمة مَضمونة
+- `is_company_member` تَستخدم `company_members` (Single Source of Truth)
+- `can_modify_data` تَتحَقَّق من الـ role + المُستخدم النَشط
+- `can_delete_resource` تَتحَقَّق من صلاحية `delete` المُسجَّلة فى نظام الـ RBAC
+
+### 📝 ملاحظة
+الـ migration طُبِّق مُباشرة على production DB (لا يَحتاج push كود).
+
+---
+
 ## [3.55.1] - 2026-05-27
 
 ### 🐛 Hotfix: قائمة اختيار صنف فى /estimates لا تَظهر
