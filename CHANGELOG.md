@@ -52,6 +52,50 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.14] - 2026-05-27
+
+### 📊 جَدوَل /estimates: عَمود الفَرع + عَمود أَمر البَيع المَرتبط
+
+تَحسين عَرض القائمة لِيُطابِق /sales-orders.
+
+### ✅ التَغييرات — `app/estimates/page.tsx`
+
+**1) Estimate type يَحوى الآن الـ joined data:**
+```ts
+branches?: { name: string } | null;
+converted_so?: { id: string; so_number: string } | null;
+```
+
+**2) استعلامات SELECT تَستخدم Supabase FK joins:**
+```js
+.select("..., branches:branch_id(name), converted_so:converted_so_id(id, so_number)")
+```
+
+**3) أَعمدة جَديدة فى الجَدوَل:**
+- **الفَرع** (`hidden md:table-cell`) — badge أَزرَق بِاسم الفَرع، أَو "رئيسي" إن لم يَكن مُحَدَّداً
+- **أَمر البَيع المَرتبط** (`hidden md:table-cell`) — chip أَخضَر بِرَقم الـ SO يُؤدى لـ `/sales-orders/<id>`، أَو "—" إن غير مَربوط
+
+**4) رَقم العَرض يُعرَض الآن بِأَزرَق غامِق (نَفس نَمط /sales-orders)**
+
+### 🎯 السلوك النِهائى للجَدوَل
+| العَمود | Mobile | Desktop |
+|---|:---:|:---:|
+| رَقم العَرض | ✅ | ✅ (أَزرَق) |
+| العَميل | ✅ | ✅ |
+| **الفَرع** | (مَخفى) | ✅ badge أَزرَق |
+| التاريخ | ✅ | ✅ |
+| المَجموع | ✅ | ✅ |
+| الحالة | ✅ | ✅ |
+| **أَمر البَيع المَرتبط** | (مَخفى) | ✅ link أَخضَر |
+| إجراءات | ✅ | ✅ |
+
+### 🛡️ ضَمانات
+- ✅ كل الحَوكمة من v3.55.12 و v3.55.13 بدون تَعديل
+- ✅ Supabase FK joins تَستفيد من RLS تَلقائياً (لا تَسريب)
+- ✅ Python patches آمنة (لا فَشل Edit tool)
+
+---
+
 ## [3.55.13] - 2026-05-27
 
 ### 🎨 توحيد بَصرى كامِل لقائمة `/estimates` مع `/sales-orders`

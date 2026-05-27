@@ -43,6 +43,9 @@ type Estimate = {
   cost_center_id?: string | null;
   created_by_user_id?: string | null;
   converted_so_id?: string | null;
+  // Joined fields (loaded via FK join in SELECT)
+  branches?: { name: string } | null;
+  converted_so?: { id: string; so_number: string } | null;
 };
 
 type EstimateItem = {
@@ -283,7 +286,7 @@ export default function EstimatesPage() {
         // so we can't use applyDataVisibilityFilter as-is). Mirrors /customers pattern.
         let estQuery: any = supabase
           .from("estimates")
-          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id")
+          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id, branches:branch_id(name), converted_so:converted_so_id(id, so_number)")
           .eq("company_id", companyId)
           .order("created_at", { ascending: false });
 
@@ -479,7 +482,7 @@ export default function EstimatesPage() {
     //    because estimates lacks warehouse_id and that helper would add an invalid filter)
     let estReload: any = supabase
       .from("estimates")
-      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id")
+      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id, branches:branch_id(name), converted_so:converted_so_id(id, so_number)")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
     const reloadRole = (userContext?.role || "").toLowerCase();
@@ -773,20 +776,43 @@ export default function EstimatesPage() {
                   <tr className="text-left">
                     <th>رقم العرض</th>
                     <th>العميل</th>
+                    <th className="hidden md:table-cell">الفرع</th>
                     <th>التاريخ</th>
                     <th>المجموع</th>
                     <th>الحالة</th>
+                    <th className="hidden md:table-cell">أمر البيع المرتبط</th>
                     <th>إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEstimates.map((e) => (
                     <tr key={e.id} className="border-t">
-                      <td>{e.estimate_number}</td>
+                      <td className="font-medium text-blue-600 dark:text-blue-400">{e.estimate_number}</td>
                       <td>{customers.find((c) => c.id === e.customer_id)?.name || ""}</td>
+                      <td className="hidden md:table-cell">
+                        {e.branches?.name ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                            {e.branches.name}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500">رئيسي</span>
+                        )}
+                      </td>
                       <td>{e.estimate_date}</td>
                       <td>{e.total_amount.toFixed(2)}</td>
                       <td>{e.status}</td>
+                      <td className="hidden md:table-cell">
+                        {e.converted_so ? (
+                          <a
+                            href={"/sales-orders/" + e.converted_so.id}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
+                          >
+                            {e.converted_so.so_number}
+                          </a>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="space-x-2">
                         <Button variant="secondary" onClick={() => onEdit(e)} disabled={!!e.converted_so_id}>
                           تعديل
