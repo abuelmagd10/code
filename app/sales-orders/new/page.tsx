@@ -219,6 +219,11 @@ export default function NewSalesOrderPage() {
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   })
 
+  // 🔗 If we arrived from /estimates via "Convert to SO", remember the source estimate id
+  // so we can (a) send it as source_estimate_id in the POST and (b) flip the estimate
+  // to status='converted' + set converted_so_id after the SO is created successfully.
+  const [sourceEstimateId, setSourceEstimateId] = useState<string | null>(null)
+
   useEffect(() => {
     loadData()
     try {
@@ -245,6 +250,9 @@ export default function NewSalesOrderPage() {
         const prefill = JSON.parse(raw)
         sessionStorage.removeItem("so_prefill_from_estimate")
         if (prefill && typeof prefill === "object") {
+          if (prefill.estimate_id) {
+            setSourceEstimateId(prefill.estimate_id)
+          }
           if (prefill.customer_id) {
             setFormData((prev) => ({ ...prev, customer_id: prefill.customer_id }))
           }
@@ -892,6 +900,7 @@ export default function NewSalesOrderPage() {
           branch_id: branchId,
           cost_center_id: costCenterId,
           warehouse_id: warehouseId,
+          source_estimate_id: sourceEstimateId,
           items: soItems
             .filter((item) => !!item.product_id && (item.quantity ?? 0) > 0)
             // Build clean objects — never spread the row, otherwise the
@@ -922,6 +931,17 @@ export default function NewSalesOrderPage() {
 
       const soData = createJson.data
 
+      // 🔗 Flip the source estimate to "converted" so it cannot be deleted/edited
+      if (sourceEstimateId && soData?.id) {
+        try {
+          await supabase
+            .from("estimates")
+            .update({ status: "converted", converted_so_id: soData.id })
+            .eq("id", sourceEstimateId)
+        } catch (e) {
+          console.warn("Failed to mark source estimate as converted", e)
+        }
+      }
 
       toastActionSuccess(toast, appLang === 'en' ? "Create" : "الإنشاء", appLang === 'en' ? "Sales Order" : "أمر البيع")
       router.push(`/sales-orders/${soData.id}`)

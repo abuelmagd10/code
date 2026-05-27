@@ -52,6 +52,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.12] - 2026-05-27
+
+### 🔗 تَطوير /estimates: ربط بِأَمر البَيع + حَذف بِحَوكمة
+
+3 تَحسينات مُتَرابِطة على دَورة حَياة عَرض السعر.
+
+### 🗄️ DB Migration (طُبِّق عَبر Supabase MCP)
+- `sales_orders.source_estimate_id UUID REFERENCES estimates(id) ON DELETE SET NULL`
+- `estimates.converted_so_id UUID REFERENCES sales_orders(id) ON DELETE SET NULL`
+- 2 indexes + COMMENTs توضيحية
+
+### ✅ التَغييرات
+
+**`app/sales-orders/new/page.tsx`:**
+- `sourceEstimateId` state يُلتَقَط من sessionStorage prefill
+- POST body يَحوى `source_estimate_id: sourceEstimateId`
+- بعد نَجاح الحفظ → UPDATE على `estimates` بِـ `status='converted'` + `converted_so_id=soData.id`
+
+**`app/estimates/page.tsx`:**
+- `Estimate` type يَحوى `converted_so_id?: string | null`
+- استعلامات SELECT تَجلب `converted_so_id`
+- دالة `canDeleteEstimate(e)`:
+  - ❌ إذا `converted_so_id` مَوجود → لا حَذف
+  - ✅ Owner / Admin / General_Manager → يَحذف أَى عَرض غير مَربوط
+  - ✅ باقى الأَدوار → يَحذف فقط ما أَنشأَه هو نَفسه
+- دالة `deleteEstimate(e)` مع confirm + cascade لـ estimate_items
+- زر "حذف" يَظهر شَرطياً فى جَدوَل العُروض
+- زر "تَعديل" يُعَطَّل إن كان العَرض مَربوطاً
+- زر "تَحويل لأَمر بَيع" يُعرَض كـ "مُحَوَّل" مع disabled إن كان مَربوطاً
+
+### 🛡️ الحَوكمة المُكتَمِلة
+| الدَور | تَعديل | تَحويل | حَذف |
+|---|---|---|---|
+| Owner / Admin / GM | ✅ (إن لم يُحَوَّل) | ✅ مَرة واحدة | ✅ أَى عَرض غير مَربوط |
+| Manager / Accountant | ✅ (فَرع، لم يُحَوَّل) | ✅ مَرة واحدة | ❌ |
+| Staff / Sales / Employee | ✅ (أَنشَأها هو، لم تُحَوَّل) | ✅ مَرة واحدة | ✅ أَنشَأها هو + غير مَربوطة |
+
+### 📝 ملاحظة
+- بعد حَذف SO، الـ DB تُحَدِّث `estimates.converted_so_id = NULL` تَلقائياً (ON DELETE SET NULL) → العَرض يُصبِح قابلاً للحَذف مَرة أُخرى
+- التَوحيد البَصرى الكامل للقائمة (FilterContainer + BranchFilter + Products MultiSelect) مُؤجَّل لـ v3.55.13
+
+---
+
 ## [3.55.11] - 2026-05-27
 
 ### ✨ تَبسيط: تَحويل عَرض السعر يَفتَح صَفحة "أَمر بَيع جديد" مَع تَعبئة مُسبَقة

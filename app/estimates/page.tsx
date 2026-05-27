@@ -38,6 +38,7 @@ type Estimate = {
   branch_id?: string | null;
   cost_center_id?: string | null;
   created_by_user_id?: string | null;
+  converted_so_id?: string | null;
 };
 
 type EstimateItem = {
@@ -230,7 +231,7 @@ export default function EstimatesPage() {
         // so we can't use applyDataVisibilityFilter as-is). Mirrors /customers pattern.
         let estQuery: any = supabase
           .from("estimates")
-          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id")
+          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id")
           .eq("company_id", companyId)
           .order("created_at", { ascending: false });
 
@@ -403,7 +404,7 @@ export default function EstimatesPage() {
     // 🔐 Reload with visibility filter (same governance as initial load)
     let estReload: any = supabase
       .from("estimates")
-      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id")
+      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id")
       .order("created_at", { ascending: false });
     if (userContext) {
       const rules = buildDataVisibilityFilter(userContext);
@@ -453,6 +454,48 @@ export default function EstimatesPage() {
     } catch (err: any) {
       console.error("convertToSO prepare error:", err);
       toast({ title: "تعذر تحضير البيانات للتحويل", variant: "destructive" });
+      setLoading(false);
+    }
+  };
+
+  // 🔐 Delete an estimate (with governance)
+  //  - Cannot delete if already linked to a Sales Order
+  //  - Privileged roles (owner/admin/general_manager): can delete any unlinked estimate
+  //  - Other roles: can only delete estimates they themselves created
+  const canDeleteEstimate = (e: Estimate): boolean => {
+    if (e.converted_so_id) return false;
+    const role = (userContext?.role || "").toLowerCase();
+    if (["owner", "admin", "general_manager"].includes(role)) return true;
+    return !!userContext?.user_id && e.created_by_user_id === userContext.user_id;
+  };
+
+  const deleteEstimate = async (estimate: Estimate) => {
+    if (!canDeleteEstimate(estimate)) {
+      toast({ title: "لا تملك صلاحية حذف هذا العرض", variant: "destructive" });
+      return;
+    }
+    if (estimate.converted_so_id) {
+      toast({ title: "لا يمكن حذف عرض مُحَوَّل لأمر بيع", variant: "destructive" });
+      return;
+    }
+    if (!window.confirm("هل أنت متأكد من حذف عرض السعر " + estimate.estimate_number + "؟")) return;
+    setLoading(true);
+    try {
+      // First clear estimate_items (RLS allows this via parent join)
+      await supabase.from("estimate_items").delete().eq("estimate_id", estimate.id);
+      const { error } = await supabase.from("estimates").delete().eq("id", estimate.id);
+      if (error) {
+        console.error("Delete estimate error:", error);
+        toastActionError(toast, "الحذف", "العرض", error.message || "تعذر الحذف");
+        setLoading(false);
+        return;
+      }
+      toastActionSuccess(toast, "الحذف", "العرض");
+      setEstimates((prev) => prev.filter((x) => x.id !== estimate.id));
+    } catch (err: any) {
+      console.error("Delete estimate exception:", err);
+      toastActionError(toast, "الحذف", "العرض", err?.message || "");
+    } finally {
       setLoading(false);
     }
   };
@@ -589,12 +632,17 @@ export default function EstimatesPage() {
                       <td>{e.total_amount.toFixed(2)}</td>
                       <td>{e.status}</td>
                       <td className="space-x-2">
-                        <Button variant="secondary" onClick={() => onEdit(e)}>
+                        <Button variant="secondary" onClick={() => onEdit(e)} disabled={!!e.converted_so_id}>
                           تعديل
                         </Button>
-                        <Button variant="outline" onClick={() => convertToSO(e)} disabled={e.status === "converted"}>
-                          تحويل لأمر بيع
+                        <Button variant="outline" onClick={() => convertToSO(e)} disabled={!!e.converted_so_id || e.status === "converted"}>
+                          {e.converted_so_id ? "مُحَوَّل" : "تحويل لأمر بيع"}
                         </Button>
+                        {canDeleteEstimate(e) && (
+                          <Button variant="destructive" onClick={() => deleteEstimate(e)}>
+                            حذف
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
