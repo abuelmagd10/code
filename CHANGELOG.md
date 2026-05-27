@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.8] - 2026-05-27
+
+### 🎨 توحيد فلترة `/estimates` مع `/sales-orders` (MultiSelect + Employee filter)
+
+**الطَلَب:**
+أَن تَكون فلاتر العَرض السعرى مُطابِقة لِفلاتر أَوامر البَيع — نَفس النَمط والـ governance.
+
+### ✅ التَغييرات — `app/estimates/page.tsx`
+
+**1) State + UI converted to MultiSelect pattern (مُطابق /sales-orders):**
+- `filterStatus: string` → `filterStatuses: string[]` (MultiSelect)
+- `filterCustomerId: string` → `filterCustomers: string[]` (MultiSelect)
+- إضافة `filterEmployeeId: string` (يُعرَض للأَدوار المُمَيَّزة فقط)
+
+**2) Members loaded for privileged roles only:**
+- `owner` / `admin` / `general_manager` → تُحَمَّل قائمة الموظفين فى الشركة → فلتر "الموظف المُنشئ"
+- بَاقى الأَدوار → لا حاجة (يَرَون فقط ما أَنشأوه)
+
+**3) Customer dropdown in filter uses governed customers list:**
+- نَفس قائمة `customers` state المَفلتَرة بالحَوكمة (v3.55.7)
+- الـ staff/sales يَرى فقط عملاءه فى الفلتر — لا تَسريب
+
+**4) Active filter count + clearFilters محدَّثة لِكل الفلاتر الجَديدة**
+
+### 🔐 الحَوكمة الكامِلة فى فلاتر /estimates الآن
+| الفلتر | Owner / Admin | Manager / Accountant | Staff / Sales / Employee |
+|---|---|---|---|
+| الحالة (MultiSelect) | جميع الحالات | جميع الحالات | جميع الحالات |
+| العميل (MultiSelect) | كل عُملاء الشركة | عُملاء فَرعه | عُملاء أَنشأهم |
+| الموظف المُنشئ | كل أَعضاء الشركة ⭐ | (مَخفى) | (مَخفى) |
+| تاريخ من / إلى | متاح | متاح | متاح |
+| البحث النَصى | متاح | متاح | متاح |
+
+### 🛡️ الضَمانات
+- ✅ نَفس `MultiSelect` المُستخدم فى `/sales-orders` — توحيد UI/UX
+- ✅ قائمة العملاء فى الفلتر مَفلتَرة بالحَوكمة (لا تَسريب)
+- ✅ الموظف filter يَظهر فقط للأَدوار المُمَيَّزة
+- ✅ كل CRUD وَ governance على الـ load بدون تَغيير
+
+---
+
 ## [3.55.7] - 2026-05-27
 
 ### 🔐 Hotfix: ثَغرة حَوكمة فى قائمة العملاء داخل نَموذج عَرض سعر جديد

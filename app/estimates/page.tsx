@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
@@ -19,6 +20,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data
 import type { UserContext } from "@/lib/validation";
 
 type Customer = { id: string; name: string; phone?: string | null };
+type Member   = { user_id: string; full_name?: string | null; email?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service'; branch_id?: string | null };
 
 type Estimate = {
@@ -58,10 +60,13 @@ export default function EstimatesPage() {
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   // 🔐 Governance context (role + branch + creator scope)
   const [userContext, setUserContext] = useState<UserContext | null>(null);
+  // Members (only loaded for privileged roles, used for "filter by employee")
+  const [members, setMembers] = useState<Member[]>([]);
 
-  // Filter state
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [filterCustomerId, setFilterCustomerId] = useState<string>("all");
+  // Filter state — aligned with /sales-orders pattern (MultiSelect for status + customer, single select for employee)
+  const [filterStatuses, setFilterStatuses]   = useState<string[]>([]);
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([]);
+  const [filterEmployeeId, setFilterEmployeeId] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -77,11 +82,12 @@ export default function EstimatesPage() {
   const [items, setItems] = useState<EstimateItem[]>([]);
   const [taxAmount, setTaxAmount] = useState<number>(0);
 
-  // Filtered estimates — applies status, customer, date range, and search
+  // Filtered estimates — multi-select status + multi-select customer + employee + dates + search
   const filteredEstimates = useMemo(() => {
     return estimates.filter((e) => {
-      if (filterStatus !== "all" && e.status !== filterStatus) return false;
-      if (filterCustomerId !== "all" && e.customer_id !== filterCustomerId) return false;
+      if (filterStatuses.length > 0 && !filterStatuses.includes(e.status)) return false;
+      if (filterCustomers.length > 0 && !filterCustomers.includes(e.customer_id)) return false;
+      if (filterEmployeeId !== "all" && (e.created_by_user_id || "") !== filterEmployeeId) return false;
       if (dateFrom && e.estimate_date < dateFrom) return false;
       if (dateTo && e.estimate_date > dateTo) return false;
       if (searchQuery.trim()) {
@@ -92,19 +98,21 @@ export default function EstimatesPage() {
       }
       return true;
     });
-  }, [estimates, filterStatus, filterCustomerId, dateFrom, dateTo, searchQuery, customers]);
+  }, [estimates, filterStatuses, filterCustomers, filterEmployeeId, dateFrom, dateTo, searchQuery, customers]);
 
   const activeFilterCount = [
-    filterStatus !== "all",
-    filterCustomerId !== "all",
+    filterStatuses.length > 0,
+    filterCustomers.length > 0,
+    filterEmployeeId !== "all",
     !!dateFrom,
     !!dateTo,
     !!searchQuery,
   ].filter(Boolean).length;
 
   const clearFilters = () => {
-    setFilterStatus("all");
-    setFilterCustomerId("all");
+    setFilterStatuses([]);
+    setFilterCustomers([]);
+    setFilterEmployeeId("all");
     setDateFrom("");
     setDateTo("");
     setSearchQuery("");
@@ -148,6 +156,16 @@ export default function EstimatesPage() {
             // For products query
             canOverrideBranch = ['owner', 'admin', 'manager'].includes(member.role);
             userBranchId = member.branch_id || null;
+
+            // 🔐 Load company members for the "Employee" filter — only for privileged roles
+            //    (other roles already only see their own estimates, so a filter is useless)
+            if (['owner', 'admin', 'general_manager'].includes(member.role)) {
+              const { data: mems } = await supabase
+                .from("company_members")
+                .select("user_id, full_name, email")
+                .eq("company_id", companyId);
+              setMembers((mems as Member[]) || []);
+            }
           }
         }
 
@@ -485,7 +503,7 @@ export default function EstimatesPage() {
           }
         />
 
-        {/* Filters bar */}
+        {/* Filters bar — aligned with /sales-orders pattern (MultiSelect status + customer, employee for privileged) */}
         <Card className="p-3 mb-3">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
             <div className="md:col-span-2">
@@ -499,31 +517,53 @@ export default function EstimatesPage() {
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-400">الحالة</label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">الكل</SelectItem>
-                  <SelectItem value="draft">مسودة</SelectItem>
-                  <SelectItem value="sent">مُرسَل</SelectItem>
-                  <SelectItem value="accepted">مقبول</SelectItem>
-                  <SelectItem value="rejected">مرفوض</SelectItem>
-                  <SelectItem value="expired">منتهي</SelectItem>
-                  <SelectItem value="converted">محوَّل لأمر بيع</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                options={[
+                  { value: "draft",     label: "مسودة" },
+                  { value: "sent",      label: "مُرسَل" },
+                  { value: "accepted",  label: "مقبول" },
+                  { value: "rejected",  label: "مرفوض" },
+                  { value: "expired",   label: "منتهي" },
+                  { value: "converted", label: "محوَّل لأمر بيع" },
+                ]}
+                selected={filterStatuses}
+                onChange={setFilterStatuses}
+                placeholder="جميع الحالات"
+                searchPlaceholder="بحث في الحالات..."
+                emptyMessage="لا توجد حالات"
+                className="h-9 text-sm"
+              />
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-400">العميل</label>
-              <Select value={filterCustomerId} onValueChange={setFilterCustomerId}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">جميع العملاء</SelectItem>
-                  {customers.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* 🔐 قائمة العملاء مَفلتَرة بالحوكمة (مُطابق لِنَمط /sales-orders) */}
+              <MultiSelect
+                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                selected={filterCustomers}
+                onChange={setFilterCustomers}
+                placeholder="جميع العملاء"
+                searchPlaceholder="بحث في العملاء..."
+                emptyMessage="لا يوجد عملاء"
+                className="h-9 text-sm"
+              />
             </div>
+            {/* 🔐 Employee filter — only for privileged roles */}
+            {['owner', 'admin', 'general_manager'].includes((userContext?.role || '').toLowerCase()) && (
+              <div>
+                <label className="text-xs text-gray-600 dark:text-gray-400">الموظف المُنشئ</label>
+                <Select value={filterEmployeeId} onValueChange={setFilterEmployeeId}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">الكل</SelectItem>
+                    {members.map((m) => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.full_name || m.email || m.user_id.slice(0, 8)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-400">من تاريخ</label>
               <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9" />
