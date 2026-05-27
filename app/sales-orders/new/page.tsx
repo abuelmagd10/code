@@ -236,6 +236,35 @@ export default function NewSalesOrderPage() {
     } catch {
       setTaxCodes([])
     }
+
+    // 🔄 Prefill from /estimates "Convert to Sales Order" handoff
+    // The estimates page stashes a payload in sessionStorage and navigates here.
+    try {
+      const raw = sessionStorage.getItem("so_prefill_from_estimate")
+      if (raw) {
+        const prefill = JSON.parse(raw)
+        sessionStorage.removeItem("so_prefill_from_estimate")
+        if (prefill && typeof prefill === "object") {
+          if (prefill.customer_id) {
+            setFormData((prev) => ({ ...prev, customer_id: prefill.customer_id }))
+          }
+          if (prefill.branch_id)      setBranchId(prefill.branch_id)
+          if (prefill.cost_center_id) setCostCenterId(prefill.cost_center_id)
+          if (Array.isArray(prefill.items) && prefill.items.length > 0) {
+            setSoItems(prefill.items.map((it: any) => ({
+              product_id: it.product_id || "",
+              quantity: Number(it.quantity) || 1,
+              unit_price: Number(it.unit_price) || 0,
+              tax_rate: Number(it.tax_rate) || 0,
+              discount_percent: Number(it.discount_percent) || 0,
+              description: it.description || "",
+            })))
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to read prefill from sessionStorage", e)
+    }
   }, [])
 
   useEffect(() => {

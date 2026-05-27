@@ -52,6 +52,68 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.11] - 2026-05-27
+
+### ✨ تَبسيط: تَحويل عَرض السعر يَفتَح صَفحة "أَمر بَيع جديد" مَع تَعبئة مُسبَقة
+
+**الطَلَب:**
+بَدلاً من إنشاء أَمر البَيع تَلقائياً مِن /estimates (الذى كان يَتَعَطَّل بـ NOT NULL violations + branch defaults issues)، نَفتَح صَفحة `/sales-orders/new` ونَترُك المُستَخدِم يُراجع البَيانات ويَحفَظها بِنَفسه.
+
+### ✅ التَغييرات
+
+**`app/estimates/page.tsx` → دالة `convertToSO`:**
+- تَجمَع بَنود العَرض من `estimate_items`
+- تَحفَظ payload فى `sessionStorage["so_prefill_from_estimate"]`:
+  - `customer_id`, `notes`, `branch_id`, `cost_center_id`, `items[]`
+- تَنتَقل لـ `/sales-orders/new?from=estimate&estimate_id=...`
+- لا حِسابات NOT NULL هُنا، لا insert مُباشر — صَفحة الـ SO تَتَكَفَّل بِكُل شَىء
+
+**`app/sales-orders/new/page.tsx`:**
+- يَقرأ `sessionStorage["so_prefill_from_estimate"]` عند الـ mount
+- يُعَبِّئ تَلقائياً: `formData.customer_id` + `branchId` + `costCenterId` + `soItems[]`
+- يَمسح الـ sessionStorage بَعد القِراءة (لا تَكرار)
+- المُستَخدِم يُراجع الكُل ويَحفَظ — كل validation/governance/warehouse defaults تَجرى داخل الصَفحة الأَصلية
+
+### 🛡️ الفائدة
+- ✅ لا 400 errors — كل validation فى مَكان واحد (/sales-orders/new)
+- ✅ المُستَخدِم يُراجع قَبل الحِفظ (إضافة شَحن، مخزن، عُملة، إلخ.)
+- ✅ تَوحيد المنطق: لا تَكرار لِـ branch/warehouse defaults
+- ✅ يَدعَم كل ميزات SO (bundles, shipping, currency, tax codes) تَلقائياً
+- ✅ الحَوكمة سَليمة — صَفحة SO تَفرِض كل القَواعد بِنَفسها
+
+### 📝 ملاحظات
+- `estimate.status` لم يَعُد يَتَحَوَّل تَلقائياً إلى `'converted'` فى /estimates
+  (هذا تَغيير سُلوكى — قَد نُضيفه لاحقاً عَبر hook على /sales-orders/new عند الـ save successfully)
+
+---
+
+## [3.55.10] - 2026-05-27
+
+### 🐛 Hotfix: 400 Bad Request عند تَحويل عَرض سعرى إلى أَمر بَيع
+
+**المُشكلة:**
+الضَغط على "تَحويل لأَمر بَيع" يُرجِع `POST /rest/v1/sales_orders 400 (Bad Request)`.
+
+**السَبب الجَذرى:**
+جَدول `sales_orders` لديه **3 أَعمدة NOT NULL** يَجب تَوفيرها: `branch_id`, `cost_center_id`, `warehouse_id`. لكن دالة `convertToSO` فى `app/estimates/page.tsx` كانت تُرسِل فقط `branch_id` + `cost_center_id` — وَ `warehouse_id` مَفقود نَهائياً. PostgreSQL يَرفُض الإدخال بـ NOT NULL violation.
+
+### ✅ الإصلاح (طُبِّق عَبر Python patch لِتَجَنُّب فَشل Edit tool)
+
+دالة `convertToSO` الآن:
+1. تَجلب `branchId` من estimate أَو userContext
+2. تَجلب `costCenterId` من estimate أَو userContext
+3. تَجلب `warehouseId` من userContext أَولاً
+4. **إن نَقَص أَى منهما**، تَستعلم `branches` للحُصول على `default_warehouse_id` + `default_cost_center_id`
+5. إن ظَلَّت أَى قيمة null → تَعرض رِسالة خَطأ واضِحة بَدلاً من 400 صامِت
+6. تُرسِل الـ 3 قيم فى الـ payload
+
+### 🛡️ الفائِدة
+- ✅ التَحويل يَعمل لِكل المُستخدمين بفُروع كامِلة الإعداد (تَملك default warehouse + cost_center)
+- ✅ رِسالة خَطأ واضِحة بِالعربية للمُستخدم بَدلاً من 400 silent
+- ✅ الحَوكمة سَليمة (created_by_user_id محفوظ + branch_id موروث من العَرض)
+
+---
+
 ## [3.55.9] - 2026-05-27
 
 ### 🐛 Hotfix: فلتر "الموظف المُنشئ" فى /estimates كان فارغاً

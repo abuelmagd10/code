@@ -417,62 +417,44 @@ export default function EstimatesPage() {
   };
 
   const convertToSO = async (estimate: Estimate) => {
+    // Simplified flow: stash estimate data in sessionStorage and navigate to
+    // /sales-orders/new -- the new SO page will read it and prefill the form.
+    // This avoids replicating SO insert logic (NOT NULL checks, branch defaults,
+    // shipping, currency, etc.) and lets the user review before saving.
     setLoading(true);
-    // 🔐 Required for RLS on sales_orders
-    const companyId = estimate.company_id || (await getActiveCompanyId(supabase));
-    if (!companyId) {
-      toast({ title: "تعذر تحديد الشركة", variant: "destructive" });
+    try {
+      const { data: estItems } = await supabase
+        .from("estimate_items")
+        .select("product_id, description, quantity, unit_price, tax_rate, discount_percent")
+        .eq("estimate_id", estimate.id);
+
+      const prefill = {
+        source: "estimate" as const,
+        estimate_id: estimate.id,
+        customer_id: estimate.customer_id,
+        notes: estimate.notes || "",
+        branch_id: estimate.branch_id ?? null,
+        cost_center_id: estimate.cost_center_id ?? null,
+        items: (estItems || []).map((i: any) => ({
+          product_id: i.product_id || null,
+          description: i.description || "",
+          quantity: Number(i.quantity) || 1,
+          unit_price: Number(i.unit_price) || 0,
+          tax_rate: Number(i.tax_rate) || 0,
+          discount_percent: Number(i.discount_percent) || 0,
+        })),
+      };
+      try {
+        sessionStorage.setItem("so_prefill_from_estimate", JSON.stringify(prefill));
+      } catch (e) {
+        console.warn("sessionStorage unavailable, prefill skipped", e);
+      }
+      window.location.href = "/sales-orders/new?from=estimate&estimate_id=" + encodeURIComponent(estimate.id);
+    } catch (err: any) {
+      console.error("convertToSO prepare error:", err);
+      toast({ title: "تعذر تحضير البيانات للتحويل", variant: "destructive" });
       setLoading(false);
-      return;
     }
-    // 🔐 Inherit governance scoping from the source estimate
-    const { data: { user } } = await supabase.auth.getUser();
-    const soPayload = {
-      company_id: companyId,
-      customer_id: estimate.customer_id,
-      so_number: `SO-${Date.now()}`,
-      so_date: new Date().toISOString().slice(0, 10),
-      due_date: null,
-      subtotal: estimate.subtotal,
-      tax_amount: estimate.tax_amount,
-      total_amount: estimate.total_amount,
-      status: "draft",
-      notes: estimate.notes || null,
-      branch_id: estimate.branch_id ?? userContext?.branch_id ?? null,
-      cost_center_id: estimate.cost_center_id ?? userContext?.cost_center_id ?? null,
-      created_by_user_id: user?.id ?? null,
-    };
-    const { data: so, error } = await supabase.from("sales_orders").insert(soPayload).select("id").single();
-    if (error) {
-      toast({ title: "تعذر التحويل لأمر بيع", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-    const { data: estItems } = await supabase
-      .from("estimate_items")
-      .select("product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total")
-      .eq("estimate_id", estimate.id);
-    if (estItems && estItems.length) {
-      const rows = estItems.map((i: any) => ({
-        sales_order_id: so.id,
-        product_id: i.product_id || null,
-        description: i.description || null,
-        quantity: i.quantity,
-        unit_price: i.unit_price,
-        tax_rate: i.tax_rate || 0,
-        discount_percent: i.discount_percent || 0,
-        line_total: i.line_total,
-      }));
-      await supabase.from("sales_order_items").insert(rows);
-    }
-    await supabase.from("estimates").update({ status: "converted" }).eq("id", estimate.id);
-    toastActionSuccess(toast, "التحويل", "إلى أمر بيع");
-    const { data: est } = await supabase
-      .from("estimates")
-      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")
-      .order("created_at", { ascending: false });
-    setEstimates(est || []);
-    setLoading(false);
   };
 
   return (
