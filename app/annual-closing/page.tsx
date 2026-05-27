@@ -31,6 +31,7 @@ import {
   History,
   ArrowRight,
 } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 
 interface AccountLine {
   id: string
@@ -277,24 +278,15 @@ export default function AnnualClosingPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-6 max-w-5xl mx-auto">
 
-          {/* Page Header */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl">
-                <Lock className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white" suppressHydrationWarning>
-                  {(hydrated && appLang === 'en') ? 'Annual Closing Entry' : 'قيد الإقفال السنوي'}
-                </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1" suppressHydrationWarning>
-                  {(hydrated && appLang === 'en')
-                    ? 'Zero out revenue & expense accounts and transfer net income to Retained Earnings'
-                    : 'إقفال حسابات الإيرادات والمصروفات وترحيل صافي الدخل للأرباح المحتجزة'}
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Page Header — Migrated to ERPPageHeader (v3.55.0) */}
+          <ERPPageHeader
+            title={(hydrated && appLang === 'en') ? 'Annual Closing Entry' : 'قيد الإقفال السنوي'}
+            description={(hydrated && appLang === 'en')
+              ? 'Zero out revenue & expense accounts and transfer net income to Retained Earnings'
+              : 'إقفال حسابات الإيرادات والمصروفات وترحيل صافي الدخل للأرباح المحتجزة'}
+            variant="list"
+            lang={appLang as "ar" | "en"}
+          />
 
           <CompanyHeader />
 

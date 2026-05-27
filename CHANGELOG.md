@@ -4,6 +4,41 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.0] - 2026-05-27
+
+### 🚀 UI Phase 2 — Batch 5: ERPPageHeader على 10 صفحات (إنهاء آمن Phase 2)
+
+أَكبر دفعة وآخر دفعة فى Phase 2 — تَوحيد كل الـ Headers الآمنة.
+
+### ✅ تَغييرات (10 صفحات)
+- `app/purchase-orders/page.tsx` — `permWrite` + governance
+- `app/purchase-returns/page.tsx` — Store-manager pending count + governance + New Return
+- `app/sales-returns/page.tsx` — `permWrite` + governance
+- `app/sales-return-requests/page.tsx` — Status filter dropdown فى actions
+- `app/sent-invoice-returns/page.tsx` — **أُضِيف Header جديد** (الصفحة كانت بدون header)
+- `app/customer-debit-notes/page.tsx` — `permWrite` + governance
+- `app/estimates/page.tsx` — Action button "عرض جديد" + 👑 governance
+- `app/annual-closing/page.tsx` — Header بسيط (financial admin page)
+- `app/settings/page.tsx` — Language Badge في actions + 👑 admin governance
+- `app/saas-admin/page.tsx` — Server component → ERPPageHeader (client island)
+
+### ⏭️ مُؤجَّل (Dialog Lifting — Phase B)
+- `/chart-of-accounts/ClientPage.tsx` — Dialog مُتداخل مع DialogTrigger وَ onClick بـ async logic معقد. يحتاج Dialog state lifting بحَذر بالغ.
+- `/shareholders`, `/suppliers`, `/products` (من batches سابقة)
+
+### 🛡️ ضَمانات الأمان
+- ✅ كل `permWrite` checks سَليمة
+- ✅ كل governance notices (🏢 / 👨‍💼 / 👑) سَليمة فى `extra`
+- ✅ `currentUserRole`, `userContext`, `isStoreManager`, `myPendingCount` كلها بدون لمس
+- ✅ كل الـ CRUD وَ الـ Filters وَ Realtime بدون تَعديل
+- ✅ صلاحيات `useAccess` + `PageGuard` بدون تَغيير
+
+### 🎉 المُحَصِّلة
+- **Phase 2 المُكتَمِل: 28 صفحة** بـ Header موحد (`<ERPPageHeader>`)
+- **مُؤجَّل لـ Phase B: 4 صفحات** فقط (Dialog patterns)
+
+---
+
 ## [3.54.0] - 2026-05-27
 
 ### 🚀 UI Phase 2 — Batch 4: ERPPageHeader على 8 صفحات (Accounting Core + Inventory)

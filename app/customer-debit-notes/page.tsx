@@ -12,6 +12,7 @@ import { canAction } from "@/lib/authz"
 import { usePermissions } from "@/lib/permissions-context"
 import { useRouter } from "next/navigation"
 import { Plus, Eye, FileText, DollarSign, CheckCircle, Clock, Loader2 } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
@@ -486,36 +487,37 @@ export default function CustomerDebitNotesPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         <ListErrorBoundary>
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-                {appLang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'}
-              </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {appLang === 'en' ? 'Manage additional charges to customers' : 'إدارة الرسوم الإضافية للعملاء'}
-              </p>
-              {/* 🔐 Governance Notice */}
-              {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  {appLang === 'en' ? '🏢 Showing notes from your branch only' : '🏢 تعرض الإشعارات الخاصة بفرعك فقط'}
-                </p>
-              )}
-              {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  {appLang === 'en' ? '👨‍💼 Showing notes you created only' : '👨‍💼 تعرض الإشعارات التي أنشأتها فقط'}
-                </p>
-              )}
-            </div>
-            {permWrite && (
-              <Link href="/customer-debit-notes/new">
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {appLang === 'en' ? 'New Debit Note' : 'إشعار جديد'}
-                </Button>
-              </Link>
-            )}
-          </div>
+          {/* Header — Migrated to ERPPageHeader (v3.55.0) */}
+          <ERPPageHeader
+            title={appLang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'}
+            description={appLang === 'en' ? 'Manage additional charges to customers' : 'إدارة الرسوم الإضافية للعملاء'}
+            variant="list"
+            lang={appLang}
+            actions={
+              permWrite ? (
+                <Link href="/customer-debit-notes/new">
+                  <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+                    <Plus className="h-4 w-4" />
+                    {appLang === 'en' ? 'New Debit Note' : 'إشعار جديد'}
+                  </Button>
+                </Link>
+              ) : undefined
+            }
+            extra={
+              <>
+                {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    {appLang === 'en' ? '🏢 Showing notes from your branch only' : '🏢 تعرض الإشعارات الخاصة بفرعك فقط'}
+                  </p>
+                )}
+                {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    {appLang === 'en' ? '👨‍💼 Showing notes you created only' : '👨‍💼 تعرض الإشعارات التي أنشأتها فقط'}
+                  </p>
+                )}
+              </>
+            }
+          />
 
           {/* Statistics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

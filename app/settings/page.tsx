@@ -18,6 +18,7 @@ import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
 import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye, Bot, Bell } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings } from "@/lib/page-guides"
 import { Progress } from "@/components/ui/progress"
 import { getActiveCurrencies, getFXAccounts, type Currency } from "@/lib/currency-service"
@@ -1280,30 +1281,24 @@ export default function SettingsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
-        <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm rounded-xl sm:rounded-2xl">
-          <CardContent className="py-4 sm:py-6 px-4 sm:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg sm:rounded-xl shadow-lg shadow-violet-500/20 flex-shrink-0">
-                  <Settings className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{L.settings}</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{language === 'en' ? 'Manage app and company settings' : 'إدارة إعدادات التطبيق والشركة'}</p>
-                  {/* 🔐 Governance Notice */}
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                    {language === 'en' ? '👑 Admin access - Full settings control' : '👑 صلاحية إدارية - تحكم كامل في الإعدادات'}
-                  </p>
-                </div>
-              </div>
-              <Badge variant="outline" className="hidden sm:flex items-center gap-1 px-3 py-1.5 border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
-                <Globe className="w-3.5 h-3.5" />
-                {language === 'en' ? 'English' : 'العربية'}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.55.0) */}
+        <ERPPageHeader
+          title={L.settings}
+          description={language === 'en' ? 'Manage app and company settings' : 'إدارة إعدادات التطبيق والشركة'}
+          variant="list"
+          lang={language as "ar" | "en"}
+          actions={
+            <Badge variant="outline" className="hidden sm:flex items-center gap-1 px-3 py-1.5 border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+              <Globe className="w-3.5 h-3.5" />
+              {language === 'en' ? 'English' : 'العربية'}
+            </Badge>
+          }
+          extra={
+            <p className="text-xs text-green-600 dark:text-green-400">
+              {language === 'en' ? '👑 Admin access - Full settings control' : '👑 صلاحية إدارية - تحكم كامل في الإعدادات'}
+            </p>
+          }
+        />
 
         {/* روابط سريعة */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

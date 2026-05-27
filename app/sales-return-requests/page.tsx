@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { CheckCircle, XCircle, Clock, Loader2, ArrowLeft, RotateCcw, FileText, Warehouse } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import Link from "next/link"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -248,17 +249,13 @@ export default function SalesReturnRequestsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         <div className="space-y-6 max-w-6xl mx-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
-                  <RotateCcw className="w-6 h-6 text-orange-600 dark:text-orange-400" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">طلبات مرتجعات المبيعات</h1>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Workflow ثنائي المرحلة: اعتماد الإدارة ثم اعتماد المخزن ثم التنفيذ النهائي</p>
-                </div>
-              </div>
+          {/* Header — Migrated to ERPPageHeader (v3.55.0) */}
+          <ERPPageHeader
+            title="طلبات مرتجعات المبيعات"
+            description="Workflow ثنائي المرحلة: اعتماد الإدارة ثم اعتماد المخزن ثم التنفيذ النهائي"
+            variant="list"
+            lang="ar"
+            actions={
               <div className="flex items-center gap-3" data-ai-help="sales_return_requests.status_filter">
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger className="w-[220px]">
@@ -271,8 +268,8 @@ export default function SalesReturnRequestsPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-          </div>
+            }
+          />
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-ai-help="sales_return_requests.summary_cards">
             <Card className="border-0 shadow-sm bg-yellow-50 dark:bg-yellow-900/20">

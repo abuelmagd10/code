@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { Plus, Eye, RotateCcw, FileText, AlertCircle, CheckCircle } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { Badge } from "@/components/ui/badge"
 import { canAction } from "@/lib/authz"
 import { type UserContext, getAccessFilter } from "@/lib/validation"
@@ -408,36 +409,34 @@ export default function SalesReturnsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2 sm:p-3 bg-red-100 dark:bg-red-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customer returns and refunds' : 'إدارة مرتجعات العملاء والمستردات'}</p>
-                {/* 🔐 Governance Notice */}
-                {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {appLang === 'en' ? '🏢 Showing returns from your branch only' : '🏢 تعرض المرتجعات الخاصة بفرعك فقط'}
-                  </p>
-                )}
-                {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {appLang === 'en' ? '👨‍💼 Showing returns you created only' : '👨‍💼 تعرض المرتجعات التي أنشأتها فقط'}
-                  </p>
-                )}
-              </div>
-            </div>
-            {permWrite && (
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.55.0) */}
+        <ERPPageHeader
+          title={appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}
+          description={appLang === 'en' ? 'Manage customer returns and refunds' : 'إدارة مرتجعات العملاء والمستردات'}
+          variant="list"
+          lang={appLang}
+          actions={
+            permWrite ? (
               <Link href="/sales-returns/new">
-                <Button className="h-10 sm:h-11 text-sm sm:text-base"><Plus className="w-4 h-4 mr-2" /> {appLang === 'en' ? 'New' : 'جديد'}</Button>
+                <Button className="gap-2"><Plus className="w-4 h-4" /> {appLang === 'en' ? 'New' : 'جديد'}</Button>
               </Link>
-            )}
-          </div>
-        </div>
+            ) : undefined
+          }
+          extra={
+            <>
+              {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  {appLang === 'en' ? '🏢 Showing returns from your branch only' : '🏢 تعرض المرتجعات الخاصة بفرعك فقط'}
+                </p>
+              )}
+              {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  {appLang === 'en' ? '👨‍💼 Showing returns you created only' : '👨‍💼 تعرض المرتجعات التي أنشأتها فقط'}
+                </p>
+              )}
+            </>
+          }
+        />
 
         <ListErrorBoundary>
           {/* Statistics Cards */}

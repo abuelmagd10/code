@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { ERPPageHeader } from '@/components/erp-page-header'
 
 async function getAdminStats() {
   const supabase = await createClient()
@@ -40,7 +41,13 @@ export default async function SaasAdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">System Dashboard</h1>
+      {/* Header — Migrated to ERPPageHeader (v3.55.0) */}
+      <ERPPageHeader
+        title="System Dashboard"
+        description="Platform-wide health, subscriptions, and error monitoring"
+        variant="list"
+        lang="en"
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -12,6 +12,7 @@ import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
 import { FileText } from "lucide-react";
+import { ERPPageHeader } from "@/components/erp-page-header";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 import { getActiveCompanyId } from "@/lib/company";
 
@@ -309,25 +310,19 @@ export default function EstimatesPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2 sm:p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600 dark:text-orange-400" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">العروض السعرية</h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">إدارة عروض الأسعار للعملاء</p>
-                {/* 🔐 Governance Notice */}
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                  👑 جميع العروض السعرية مرئية
-                </p>
-              </div>
-            </div>
-            <Button onClick={onOpenNew} className="h-10 sm:h-11 text-sm sm:text-base">عرض جديد</Button>
-          </div>
-        </div>
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.55.0) */}
+        <ERPPageHeader
+          title="العروض السعرية"
+          description="إدارة عروض الأسعار للعملاء"
+          variant="list"
+          lang="ar"
+          actions={<Button onClick={onOpenNew}>عرض جديد</Button>}
+          extra={
+            <p className="text-xs text-green-600 dark:text-green-400">
+              👑 جميع العروض السعرية مرئية
+            </p>
+          }
+        />
 
         {/* Filters bar */}
         <Card className="p-3 mb-3">
