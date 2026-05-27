@@ -151,12 +151,39 @@ export default function EstimatesPage() {
           }
         }
 
-        // Customers
-        const { data: cust, error: custErr } = await supabase
+        // 🔐 Customers — mirror /customers page governance exactly:
+        //   Owner/Admin/General_Manager  → all company customers
+        //   Manager                      → branch customers only
+        //   Accountant                   → branch customers + shared (branch_id IS NULL)
+        //   Staff/Sales/Employee         → customers they themselves created
+        let custQuery: any = supabase
           .from("customers")
           .select("id, name, phone")
           .eq("company_id", companyId)
           .order("name");
+
+        const role = (ctx?.role || '').toLowerCase();
+        const privileged = ['owner', 'admin', 'general_manager'].includes(role);
+        const isBranchLevel = ['manager', 'accountant', 'branch_manager'].includes(role);
+        const isCreatorLevel = ['staff', 'sales', 'employee'].includes(role);
+
+        if (privileged) {
+          // All company customers — no extra filter
+        } else if (isBranchLevel && ctx?.branch_id) {
+          if (role === 'accountant') {
+            // Accountant: branch customers + customers without a branch
+            custQuery = custQuery.or(`branch_id.eq.${ctx.branch_id},branch_id.is.null`);
+          } else {
+            // Manager: only branch customers
+            custQuery = custQuery.eq('branch_id', ctx.branch_id);
+          }
+        } else if (isCreatorLevel && ctx?.user_id) {
+          // Staff/Sales/Employee: only customers they themselves created
+          custQuery = custQuery.eq('created_by_user_id', ctx.user_id);
+        }
+        // ctx unresolved → defaults to company-only (no role-based filter)
+
+        const { data: cust, error: custErr } = await custQuery;
         if (custErr) console.error("Failed to load customers:", custErr);
         setCustomers(cust || []);
 
@@ -181,19 +208,24 @@ export default function EstimatesPage() {
         }
         setProducts(prod || []);
 
-        // 🔐 Estimates query — apply data visibility filter (company → branch → creator)
-        // mirrors customers + sales_orders governance pattern
+        // 🔐 Estimates query — explicit governance (estimates has no warehouse_id,
+        // so we can't use applyDataVisibilityFilter as-is). Mirrors /customers pattern.
         let estQuery: any = supabase
           .from("estimates")
           .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id")
+          .eq("company_id", companyId)
           .order("created_at", { ascending: false });
 
-        if (ctx) {
-          const rules = buildDataVisibilityFilter(ctx);
-          estQuery = applyDataVisibilityFilter(estQuery, rules, "estimates");
-        } else {
-          // No userContext → fall back to company isolation only
-          estQuery = estQuery.eq("company_id", companyId);
+        if (privileged) {
+          // All company estimates — no extra filter
+        } else if (isBranchLevel && ctx?.branch_id) {
+          if (role === 'accountant') {
+            estQuery = estQuery.or(`branch_id.eq.${ctx.branch_id},branch_id.is.null`);
+          } else {
+            estQuery = estQuery.eq('branch_id', ctx.branch_id);
+          }
+        } else if (isCreatorLevel && ctx?.user_id) {
+          estQuery = estQuery.eq('created_by_user_id', ctx.user_id);
         }
 
         const { data: est, error: estErr } = await estQuery;
