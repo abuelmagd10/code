@@ -4,6 +4,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.6] - 2026-05-27
+
+### 🔐 Hotfix: تَطبيق creator-filter على staff / sales / employee فى كل الـ APIs
+
+**المُشكلة:**
+الأَدوار العادية (`staff` / `sales` / `employee`) كانت تَرى **كل** أَوامر البيع فى فَرعها، وليس فقط الأَوامر التى أَنشأتها بِنَفسها — على عَكس النَمط المُطَبَّق فى `/customers` و `/estimates`.
+
+**السَبب الجَذرى:**
+الـ `applyGovernanceFilters` فى `lib/governance-middleware.ts` كان يَفلتر فقط بـ `company + branch + warehouse + cost_center` لكنه **لا يُطَبِّق `created_by_user_id` filter** للأَدوار العادية. التَعليق فى الكود قال "الموظف يرى فقط بياناته" لكن المُنَفَّذ كان branch-level فقط.
+
+### ✅ التَغييرات
+
+**`lib/governance-middleware.ts`:**
+- `GovernanceContext` يَحوى الآن `userId: string` و `filterByCreator: boolean`
+- `buildGovernanceContext` يَستَقبِل `userId` كَمُعامل وَ يَضَع `filterByCreator = true` لِأَدوار: `staff` / `employee` / **`sales` (مُضاف)**
+- `applyGovernanceFilters` يُضيف `.eq('created_by_user_id', userId)` تَلقائياً حين `filterByCreator = true`
+
+**`app/api/sales-orders/route.ts`:**
+- الـ POST endpoint يُلَقِّم تَلقائياً `created_by_user_id = governance.userId` فى الـ payload — وَ بِالتالى الـ filter اللَّاحِق يَعمل صَحيحاً عند القراءة
+
+**DB Migration (طُبِّق عَبر Supabase MCP):**
+- إضافة `created_by_user_id` لِجَداول كانت تَنقصها (لتَسير الحَوكمة بِشَكل مُتَّسِق):
+  - `customer_debit_notes`
+  - `payments`
+  - `sales_returns`
+  - `vendor_credits`
+- 4 indexes للأَداء
+
+### 🎯 السلوك الفعلى الآن (مُحاذى لِنَمط `/customers` و `/estimates`)
+| الدَور | يَرى | الـ Filter المُطَبَّق |
+|---|---|---|
+| `owner` / `admin` / `general_manager` | كل أَوامر الشركة (يَختار أَى فَرع) | `company_id` فقط |
+| `manager` / `accountant` / `branch_manager` | أَوامر فَرعه فقط | `company_id + branch_id` |
+| `staff` / `sales` / `employee` | أَوامر هو أَنشأها فقط | `company_id + branch_id + created_by_user_id` |
+| خارج الشركة | ⛔ لا شَىء | (RLS تَمنع) |
+
+### 🛡️ الفائدة العامة
+- **يَنطَبِق على كل الـ APIs التى تَستخدم `applyGovernanceFilters`**: bills, customer-debit-notes, customers (الموجودة)، payments, purchase-orders, sales-orders, sales-returns, suppliers, vendor-credits, warehouses
+- **لا تَكسير لِشَىء**: الأَدوار المُمَيَّزة لا تَتأَثَّر (filterByCreator = false لها)
+- **أَنماط الحَوكمة مُحاذاة فى DB + API + UI** — `/customers` + `/estimates` + `/sales-orders` الآن لها نَفس السلوك بِالضَبط
+
+---
+
 ## [3.55.5] - 2026-05-27
 
 ### 🔐 حَوكمة العَرض حسب الدَور (Branch + Creator visibility) على `/estimates`

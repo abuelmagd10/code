@@ -8,6 +8,13 @@ export interface GovernanceContext {
   warehouseIds: string[]
   costCenterIds: string[]
   role: string
+  /** ID of the authenticated user — required for creator-level filtering */
+  userId: string
+  /**
+   * When true, results must be filtered by created_by_user_id = userId.
+   * Set for staff / employee / sales roles (creator-only visibility).
+   */
+  filterByCreator: boolean
 }
 
 export interface GovernanceOptions {
@@ -99,7 +106,7 @@ export async function enforceGovernance(
       throw new Error('Governance Error: User is not a company member')
     }
     // استخدام العضوية البديلة
-    return buildGovernanceContext(supabase, fallbackMember)
+    return buildGovernanceContext(supabase, fallbackMember, user.id)
   }
 
   if (memberError || !member) {
@@ -107,10 +114,10 @@ export async function enforceGovernance(
     throw new Error('Governance Error: User is not a company member')
   }
 
-  return buildGovernanceContext(supabase, member)
+  return buildGovernanceContext(supabase, member, user.id)
 }
 
-async function buildGovernanceContext(supabase: any, member: any): Promise<GovernanceContext> {
+async function buildGovernanceContext(supabase: any, member: any, userId: string): Promise<GovernanceContext> {
   if (!member.company_id) {
     throw new Error('Governance Error: User has no company assigned')
   }
@@ -124,7 +131,9 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
     branchIds: [],
     warehouseIds: [],
     costCenterIds: [],
-    role: member.role
+    role: member.role,
+    userId,
+    filterByCreator: false,
   }
 
   // تحديد النطاق حسب الدور
@@ -157,8 +166,10 @@ async function buildGovernanceContext(supabase: any, member: any): Promise<Gover
   switch (role) {
     case 'staff':
     case 'employee':
-      // الموظف يرى فقط بياناته
+    case 'sales':
+      // 🔐 الموظف / المندوب يرى فقط ما أنشأه (creator-level visibility)
       context.branchIds = [member.branch_id]
+      context.filterByCreator = true
       {
         const defaults = await getBranchDefaults(member.branch_id)
         if (defaults.defaultWarehouseId) context.warehouseIds = [defaults.defaultWarehouseId]
@@ -245,6 +256,12 @@ export function applyGovernanceFilters(
 
   if (context.costCenterIds.length > 0) {
     query = query.in('cost_center_id', context.costCenterIds)
+  }
+
+  // 🔐 Creator-level filter: staff / employee / sales see only what they created
+  // (matches the rule already enforced on /customers + /estimates)
+  if (context.filterByCreator && context.userId) {
+    query = query.eq('created_by_user_id', context.userId)
   }
 
   return query

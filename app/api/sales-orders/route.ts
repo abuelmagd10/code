@@ -230,6 +230,12 @@ export async function POST(request: NextRequest) {
     // ✅ استخراج items قبل الإدراج (ليست عموداً في جدول sales_orders)
     const { items: _bodyItems, ...orderDataToInsert } = finalData
 
+    // 🔐 Auto-fill created_by_user_id from governance context (Req: creator-level visibility)
+    // matches /customers + /estimates pattern — staff/sales/employee only see their own
+    if (!orderDataToInsert.created_by_user_id && governance.userId) {
+      orderDataToInsert.created_by_user_id = governance.userId
+    }
+
     // 7.5️⃣ Defensive bundle-completeness guard (Req 2 / Phase B.4.4)
     //   Refuses an SO that omits mandatory bundle children for any product
     //   the caller included. Protects non-UI callers from bypassing the
