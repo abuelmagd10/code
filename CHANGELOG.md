@@ -110,6 +110,10 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 - ✅ كل دوال CRUD + delete + link governance من v3.55.12 بدون تَعديل
 - ✅ تَطبيق Python patches بَدلاً من Edit tool لِتَجَنُّب فَشل template literals
 
+### 🐛 إصلاح إضافى: 400 على reload بعد الحفظ
+- `saveEstimate` reload كان يَستخدم `applyDataVisibilityFilter(estReload, rules, "estimates")` الذى يُضيف `warehouse_id` filter — لكن جدول `estimates` لا يَملك هذا العَمود → 400 صَامِت
+- استُبدِل بِنَفس نَمط الـ explicit governance المُستخدم فى الـ initial load (privileged / branch / creator)
+
 ---
 
 ## [3.55.12] - 2026-05-27

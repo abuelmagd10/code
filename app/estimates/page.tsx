@@ -475,16 +475,27 @@ export default function EstimatesPage() {
     toastActionSuccess(toast, editing ? "التحديث" : "الإنشاء", "العرض");
     setOpen(false);
     resetForm();
-    // 🔐 Reload with visibility filter (same governance as initial load)
+    // 🔐 Reload with same explicit governance as initial load (no applyDataVisibilityFilter
+    //    because estimates lacks warehouse_id and that helper would add an invalid filter)
     let estReload: any = supabase
       .from("estimates")
       .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id, converted_so_id")
+      .eq("company_id", companyId)
       .order("created_at", { ascending: false });
-    if (userContext) {
-      const rules = buildDataVisibilityFilter(userContext);
-      estReload = applyDataVisibilityFilter(estReload, rules, "estimates");
-    } else {
-      estReload = estReload.eq("company_id", companyId);
+    const reloadRole = (userContext?.role || "").toLowerCase();
+    const reloadPrivileged   = ["owner", "admin", "general_manager"].includes(reloadRole);
+    const reloadBranchLevel  = ["manager", "accountant", "branch_manager"].includes(reloadRole);
+    const reloadCreatorLevel = ["staff", "sales", "employee"].includes(reloadRole);
+    if (reloadPrivileged) {
+      // no extra filter
+    } else if (reloadBranchLevel && userContext?.branch_id) {
+      if (reloadRole === "accountant") {
+        estReload = estReload.or(`branch_id.eq.${userContext.branch_id},branch_id.is.null`);
+      } else {
+        estReload = estReload.eq("branch_id", userContext.branch_id);
+      }
+    } else if (reloadCreatorLevel && userContext?.user_id) {
+      estReload = estReload.eq("created_by_user_id", userContext.user_id);
     }
     const { data: est } = await estReload;
     setEstimates(est || []);
