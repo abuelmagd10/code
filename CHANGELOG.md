@@ -4,6 +4,80 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.9] - 2026-05-27
+
+### 🎨 توحيد كامِل لفلاتر `/estimates` مع `/sales-orders`
+
+نَفس بِنية الفلاتر بِالحَرف الواحد فى الصَفحَتَيْن.
+
+### ✅ التَغييرات — `app/estimates/page.tsx`
+
+**1) المُكَوِّنات المُضافة (مُطابقة /sales-orders):**
+- `FilterContainer` — حاوية قابلة للطَى مع عَدَّاد الفلاتر النَشطة (بَدلاً من Card بَسيط)
+- `BranchFilter` + `useBranchFilter` — فلتر الفروع (يَظهر داخلياً فقط للأَدوار المُمَيَّزة)
+- `MultiSelect` للمنتجات (`filterProducts`) — فلتر العَرض إذا احتَوى مُنتَجاً مُعَيَّناً
+- Employee filter صَف مُنفصِل أَزرَق مع `UserCheck` icon + search داخلى + زر Clear
+- عَدَّاد النَتائج فى أَسفل الفلاتر (نَفس نَص /sales-orders)
+
+**2) State الجديد:**
+- `employees: Employee[]` (مع `display_name` + `role` + `email`) — استبدال `members`
+- `employeeSearchQuery: string` — للبَحث داخل dropdown الموظف
+- `filterProducts: string[]` — MultiSelect المنتجات
+- `branchFilter` hook — يَتَحَكَّم فى scope الـ load
+- `itemsByEstimate: Record<string, string[]>` — فِهرس مُنتَجات كل عَرض (لِفلتَرة client-side)
+
+**3) Load logic:**
+- Employees تُحَمَّل من `company_members` + `user_profiles` بِنَفس نَمط /sales-orders (Owner/Admin/GM فقط)
+- Estimates query يَحترم `branchFilter.selectedBranchId` للأَدوار المُمَيَّزة
+- `estimate_items` تُحَمَّل لِكل العُروض المَعروضة → فِهرس `product_id` per estimate
+
+**4) Search input أَعلى (mirror /sales-orders):**
+- input مع icon X لمَسح البَحث
+- `startTransition` لِسلاسة الـ UI
+
+### 🔐 السلوك حسب الدَور (بعد التَحديث)
+
+| الدَور | فلتر الفرع | فلتر الموظف | فلتر العميل | فلتر المنتج |
+|---|:---:|:---:|---|---|
+| `owner` / `admin` / `general_manager` | ✅ يَختار | ✅ يَختار | كل العُملاء | كل المنتجات |
+| `manager` / `accountant` | (مَخفى) | (مَخفى) | فَرعه (acc: + المُشتَرَك) | فَرعه + المُشتَرَك |
+| `staff` / `sales` / `employee` | (مَخفى) | (مَخفى) | عُملاءه فقط | فَرعه + المُشتَرَك |
+
+### 🛡️ ضَمانات
+- ✅ كل الـ MultiSelect يَستخدم قَوائم مَفلتَرة بالحَوكمة (لا تَسريب)
+- ✅ Employee filter يَظهر فقط للأَدوار المُمَيَّزة
+- ✅ BranchFilter داخلياً يَخفى نَفسه للأَدوار غير المُمَيَّزة
+- ✅ `clearFilters` يَمسح كل الفلاتر + يُعيد BranchFilter
+- ✅ نَفس UI/UX patterns بِالحَرف الواحد مع /sales-orders
+
+---
+
+## [3.55.9] - 2026-05-27
+
+### 🐛 Hotfix: فلتر "الموظف المُنشئ" فى /estimates كان فارغاً
+
+**المُشكلة:**
+الأَدوار العُليا (`owner` / `admin` / `general_manager`) لم تَكُن تَرى أَى مُوظَّفين فى قائمة فلتر "الموظف المُنشئ" بصَفحة عُروض الأَسعار.
+
+**السَبب الجَذرى:**
+استعلام `company_members` فى `app/estimates/page.tsx` كان يَطلب عَمود `full_name` — لكن هذا العَمود **غير مَوجود** فى الجَدول. أَعمدة `company_members` الفعلية: `branch_id, company_id, cost_center_id, created_at, currency_sync_enabled, email, employee_id, id, invited_by, preferred_currency, role, seat_number, user_id, warehouse_id`. الـ Supabase REST كان يُرجِع خَطأ صَامِت → `mems = null` → القائمة فارغة.
+
+### ✅ التَغييرات (sed-based edits لِتَجَنُّب فَشل Edit tool مع template literals)
+
+- `app/estimates/page.tsx` السطر 165: تَغيير الـ select من `"user_id, full_name, email"` إلى `"user_id, role, email"`
+- `app/estimates/page.tsx` السطر 560: عَرض الـ role بَجانب الاسم/الإيميل `(role)`
+- `app/estimates/page.tsx` السطر 23: تَوسيع `Member` type لإضافة `role?: string`
+
+### 🛡️ المُحَصِّلة
+- ✅ القائمة الآن تَعرض كل المُوظَّفين فى الشركة مع الـ role
+- ✅ كل المُستخدمين سيَظهرون حتى لو لم يَكُن لديهم full_name مَوجود
+- ✅ لا تَغيير فى الحَوكمة (الفلتر يَظهر فقط للأَدوار العُليا كما هو)
+
+### 📝 ملاحظة
+هذا الإصلاح هو الذى كان يَمنع التَوحيد الكامِل البَصرى مع `/sales-orders` فى المُحاولات السابقة — لأَن قائمة الموظفين كانت فارغة دائماً، فلم نَكُن نَراها تَعمل حتى لو غَيَّرنا الـ UI.
+
+---
+
 ## [3.55.8] - 2026-05-27
 
 ### 🎨 توحيد فلترة `/estimates` مع `/sales-orders` (MultiSelect + Employee filter)

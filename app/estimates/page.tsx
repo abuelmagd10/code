@@ -20,7 +20,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data
 import type { UserContext } from "@/lib/validation";
 
 type Customer = { id: string; name: string; phone?: string | null };
-type Member   = { user_id: string; full_name?: string | null; email?: string | null };
+type Member   = { user_id: string; full_name?: string | null; email?: string | null; role?: string };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service'; branch_id?: string | null };
 
 type Estimate = {
@@ -162,7 +162,7 @@ export default function EstimatesPage() {
             if (['owner', 'admin', 'general_manager'].includes(member.role)) {
               const { data: mems } = await supabase
                 .from("company_members")
-                .select("user_id, full_name, email")
+                .select("user_id, role, email")
                 .eq("company_id", companyId);
               setMembers((mems as Member[]) || []);
             }
@@ -557,7 +557,7 @@ export default function EstimatesPage() {
                     <SelectItem value="all">الكل</SelectItem>
                     {members.map((m) => (
                       <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.full_name || m.email || m.user_id.slice(0, 8)}
+                        {m.full_name || m.email || m.user_id.slice(0, 8)} <span className="text-xs text-gray-400">({(m as any).role || ""})</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
