@@ -27,6 +27,7 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
+import { ERPPageHeader } from "@/components/erp-page-header"
 
 interface Account {
   id: string
@@ -407,48 +408,46 @@ export default function JournalEntriesPage() {
           <ListErrorBoundary listType="generic" lang={appLang}>
             <CompanyHeader />
             <div className="space-y-4 sm:space-y-6 max-w-full">
-              {/* رأس الصفحة - تحسين للهاتف */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-                  <div className="flex items-center gap-3 sm:gap-4">
-                    <div className="p-2 sm:p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                      <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Journal Entries' : 'قيود اليومية'}</h1>
-                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage accounting journal entries' : 'إدارة القيود المحاسبية'}</p>
-                      {/* 🔐 Governance Notice */}
-                      {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                          {appLang === 'en' ? '🏢 Showing entries from your branch only' : '🏢 تعرض القيود الخاصة بفرعك فقط'}
-                        </p>
-                      )}
-                      {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                          {appLang === 'en' ? '👨‍💼 Showing entries you created only' : '👨‍💼 تعرض القيود التي أنشأتها فقط'}
-                        </p>
-                      )}
-                      {(accountIdParam || fromParam || toParam) && (
-                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          <span>{appLang === 'en' ? 'Filter: ' : 'تصفية: '}</span>
-                          {accountIdParam && <span>{appLang === 'en' ? `Account: ${accountName || accountIdParam} ` : `الحساب: ${accountName || accountIdParam} `}</span>}
-                          {fromParam && <span>{appLang === 'en' ? `From ${new Date(fromParam).toLocaleDateString('en')} ` : `من ${new Date(fromParam).toLocaleDateString('ar')} `}</span>}
-                          {toParam && <span>{appLang === 'en' ? `To ${new Date(toParam).toLocaleDateString('en')} ` : `إلى ${new Date(toParam).toLocaleDateString('ar')} `}</span>}
-                          <Link href="/journal-entries" className="ml-2 underline">{appLang === 'en' ? 'Clear' : 'مسح التصفية'}</Link>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {permWrite ? (
+              {/* رأس الصفحة — Migrated to ERPPageHeader (v3.54.0) */}
+              <ERPPageHeader
+                title={appLang === 'en' ? 'Journal Entries' : 'قيود اليومية'}
+                description={appLang === 'en' ? 'Manage accounting journal entries' : 'إدارة القيود المحاسبية'}
+                variant="list"
+                lang={appLang}
+                actions={
+                  permWrite ? (
                     <Link href="/journal-entries/new">
-                      <Button>
-                        <Plus className="w-4 h-4 mr-2" />
+                      <Button className="gap-2">
+                        <Plus className="w-4 h-4" />
                         {appLang === 'en' ? 'New Entry' : 'قيد جديد'}
                       </Button>
                     </Link>
-                  ) : null}
-                </div>
-              </div>
+                  ) : undefined
+                }
+                extra={
+                  <>
+                    {(currentUserRole === 'manager' || currentUserRole === 'accountant') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400">
+                        {appLang === 'en' ? '🏢 Showing entries from your branch only' : '🏢 تعرض القيود الخاصة بفرعك فقط'}
+                      </p>
+                    )}
+                    {(currentUserRole === 'staff' || currentUserRole === 'sales' || currentUserRole === 'employee') && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400">
+                        {appLang === 'en' ? '👨‍💼 Showing entries you created only' : '👨‍💼 تعرض القيود التي أنشأتها فقط'}
+                      </p>
+                    )}
+                    {(accountIdParam || fromParam || toParam) && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <span>{appLang === 'en' ? 'Filter: ' : 'تصفية: '}</span>
+                        {accountIdParam && <span>{appLang === 'en' ? `Account: ${accountName || accountIdParam} ` : `الحساب: ${accountName || accountIdParam} `}</span>}
+                        {fromParam && <span>{appLang === 'en' ? `From ${new Date(fromParam).toLocaleDateString('en')} ` : `من ${new Date(fromParam).toLocaleDateString('ar')} `}</span>}
+                        {toParam && <span>{appLang === 'en' ? `To ${new Date(toParam).toLocaleDateString('en')} ` : `إلى ${new Date(toParam).toLocaleDateString('ar')} `}</span>}
+                        <Link href="/journal-entries" className="ml-2 underline">{appLang === 'en' ? 'Clear' : 'مسح التصفية'}</Link>
+                      </div>
+                    )}
+                  </>
+                }
+              />
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card>

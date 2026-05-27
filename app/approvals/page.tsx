@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
@@ -488,35 +489,26 @@ function ApprovalsContent() {
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="max-w-4xl mx-auto space-y-6">
 
-          {/* Header */}
-          <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm">
-            <CardContent className="py-5">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-                    <AlertCircle className="w-6 h-6 text-amber-600" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-bold">{t("صندوق الموافقات", "Approval Inbox")}</h1>
-                    <p className="text-sm text-muted-foreground">
-                      {t("الطلبات المعلقة التي تحتاج موافقتك", "Pending requests awaiting your approval")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {totalPending > 0 && (
-                    <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                      {totalPending} {t("معلق", "pending")}
-                    </Badge>
-                  )}
-                  <Button variant="outline" size="sm" onClick={load} disabled={isLoading} className="gap-1">
-                    <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-                    {t("تحديث", "Refresh")}
-                  </Button>
-                </div>
+          {/* Header — Migrated to ERPPageHeader (v3.54.0) */}
+          <ERPPageHeader
+            title={t("صندوق الموافقات", "Approval Inbox")}
+            description={t("الطلبات المعلقة التي تحتاج موافقتك", "Pending requests awaiting your approval")}
+            variant="list"
+            lang={appLang as "ar" | "en"}
+            actions={
+              <div className="flex items-center gap-2">
+                {totalPending > 0 && (
+                  <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                    {totalPending} {t("معلق", "pending")}
+                  </Badge>
+                )}
+                <Button variant="outline" size="sm" onClick={load} disabled={isLoading} className="gap-1">
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+                  {t("تحديث", "Refresh")}
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+            }
+          />
 
           {/* Tabs */}
           <div className="flex gap-2 flex-wrap">

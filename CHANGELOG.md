@@ -4,6 +4,32 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.54.0] - 2026-05-27
+
+### 🚀 UI Phase 2 — Batch 4: ERPPageHeader على 8 صفحات (Accounting Core + Inventory)
+
+أَكبر دُفعة Phase 2 حتى الآن — 8 صفحات يَومية الاستخدام فى المحاسبة والمخزون.
+
+### ✅ تَغييرات
+- `app/journal-entries/page.tsx` — `permWrite` action + governance + Filter chip فى `extra`
+- `app/banking/page.tsx` — `permWrite` action (إضافة حساب) + Role-based notice (admin/owner/manager → 👑، باقى → 📍)
+- `app/payments/page.tsx` — governance notice + offline banner فى `extra`
+- `app/bills/page.tsx` — "أمر شراء جديد" action + governance notice
+- `app/inventory/page.tsx` — header مُنفصل عن branch/warehouse filters (الفلاتر بَقت فى Card مُستقل تَحت الـ Header)
+- `app/inventory-transfers/page.tsx` — `canCreate` action + governance notice
+- `app/fixed-assets/page.tsx` — 3 actions (Post Depreciation + Refresh + Add Asset) + governance notice
+- `app/approvals/page.tsx` — Badge عدد المُعلق + Refresh button في `actions`
+
+### 🛡️ ضَمانات الأمان
+- ✅ كل `permWrite` / `canCreate` / `permPostDepreciation` checks مُحَافَظ عليها
+- ✅ Governance notices (🏢 branch / 👨‍💼 creator / 👑 admin) فى `extra` لكل الصفحات
+- ✅ Branch + Warehouse filter logic فى inventory سَليم (مُنفصل بَصرياً لكن مُتَّصل وَظيفياً)
+- ✅ `userContext`, `userRole`, `currentUserRole` كلها بدون لمس
+- ✅ كل الـ CRUD وَ `BranchFilter` وَ `useRealtimeTable` بدون تَعديل
+- ✅ `useAccess` + `PageGuard` بدون تَغيير
+
+---
+
 ## [3.53.0] - 2026-05-26
 
 ### 🚀 UI Phase 2 — Batch 3: ERPPageHeader على 4 صفحات

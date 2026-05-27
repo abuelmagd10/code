@@ -20,6 +20,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications";
 import { getActiveCompanyId } from "@/lib/company";
 import { canAction } from "@/lib/authz";
 import { Landmark, Building2, MapPin, Filter } from "lucide-react";
+import { ERPPageHeader } from "@/components/erp-page-header";
 import {
   getExchangeRate,
   getActiveCurrencies,
@@ -606,54 +607,37 @@ export default function BankingPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="p-2 sm:p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-                <Landmark className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="min-w-0">
-                <h1
-                  className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate"
-                  suppressHydrationWarning
-                >
-                  {hydrated && appLang === "en" ? "Banking" : "البنوك"}
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">
-                  {appLang === "en"
-                    ? "Manage bank & cash accounts"
-                    : "إدارة الحسابات البنكية والخزينة"}
-                </p>
-                {/* 🔐 Governance Notice - Banking Role Access */}
-                {userContext?.role === "admin" ||
-                  userContext?.role === "owner" ||
-                  userContext?.role === "manager" ? (
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                    {appLang === "en"
-                      ? "👑 Company-wide accounts - All bank accounts visible"
-                      : "👑 حسابات على مستوى الشركة - جميع الحسابات البنكية مرئية"}
-                  </p>
-                ) : (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {appLang === "en"
-                      ? "📍 Branch accounts only - Viewing banks assigned to your branch"
-                      : "📍 حسابات الفرع فقط - يتم عرض البنوك المخصصة لفرعك"}
-                  </p>
-                )}
-              </div>
-            </div>
-            {permWrite ? (
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.54.0) */}
+        <ERPPageHeader
+          title={hydrated && appLang === "en" ? "Banking" : "البنوك"}
+          description={appLang === "en" ? "Manage bank & cash accounts" : "إدارة الحسابات البنكية والخزينة"}
+          variant="list"
+          lang={appLang}
+          actions={
+            permWrite ? (
               <Button variant="outline" asChild>
                 <a href="/chart-of-accounts">
-                  {appLang === "en"
-                    ? "Add bank/cash account"
-                    : "إضافة حساب بنكي/خزينة"}
+                  {appLang === "en" ? "Add bank/cash account" : "إضافة حساب بنكي/خزينة"}
                 </a>
               </Button>
-            ) : null}
-          </div>
-        </div>
+            ) : undefined
+          }
+          extra={
+            (userContext?.role === "admin" || userContext?.role === "owner" || userContext?.role === "manager") ? (
+              <p className="text-xs text-green-600 dark:text-green-400">
+                {appLang === "en"
+                  ? "👑 Company-wide accounts - All bank accounts visible"
+                  : "👑 حسابات على مستوى الشركة - جميع الحسابات البنكية مرئية"}
+              </p>
+            ) : (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                {appLang === "en"
+                  ? "📍 Branch accounts only - Viewing banks assigned to your branch"
+                  : "📍 حسابات الفرع فقط - يتم عرض البنوك المخصصة لفرعك"}
+              </p>
+            )
+          }
+        />
 
         {/* Transfer Feature - ONLY for Higher Roles */}
         {(userContext?.role === "admin" ||

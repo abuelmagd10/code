@@ -13,6 +13,7 @@ import { usePermissions } from "@/lib/permissions-context"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeftRight, Plus, Package, Warehouse, CheckCircle2, Clock, XCircle, Truck, Eye, Loader2, AlertTriangle, Edit } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
 interface Transfer {
@@ -312,43 +313,37 @@ export default function InventoryTransfersPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
         <div className="space-y-6 max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
-                  <ArrowLeftRight className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
-                    {appLang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'}
-                  </h1>
-                  <p className="text-gray-500 dark:text-gray-400">
-                    {appLang === 'en' ? 'Transfer products between warehouses' : 'نقل المنتجات بين المخازن'}
-                  </p>
-                  {/* 🔐 Governance Notice */}
-                  {(userRole === 'manager' || userRole === 'accountant') && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      {appLang === 'en' ? '🏢 Showing transfers from your branch only' : '🏢 تعرض التحويلات الخاصة بفرعك فقط'}
-                    </p>
-                  )}
-                  {(userRole === 'staff' || userRole === 'sales' || userRole === 'employee') && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      {appLang === 'en' ? '👨‍💼 Showing transfers you created only' : '👨‍💼 تعرض التحويلات التي أنشأتها فقط'}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {canCreate && (
+          {/* Header — Migrated to ERPPageHeader (v3.54.0) */}
+          <ERPPageHeader
+            title={appLang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'}
+            description={appLang === 'en' ? 'Transfer products between warehouses' : 'نقل المنتجات بين المخازن'}
+            variant="list"
+            lang={appLang}
+            actions={
+              canCreate ? (
                 <Link href="/inventory-transfers/new">
                   <Button className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700">
                     <Plus className="w-4 h-4" />
                     {appLang === 'en' ? 'New Transfer' : 'طلب نقل جديد'}
                   </Button>
                 </Link>
-              )}
-            </div>
-          </div>
+              ) : undefined
+            }
+            extra={
+              <>
+                {(userRole === 'manager' || userRole === 'accountant') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    {appLang === 'en' ? '🏢 Showing transfers from your branch only' : '🏢 تعرض التحويلات الخاصة بفرعك فقط'}
+                  </p>
+                )}
+                {(userRole === 'staff' || userRole === 'sales' || userRole === 'employee') && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    {appLang === 'en' ? '👨‍💼 Showing transfers you created only' : '👨‍💼 تعرض التحويلات التي أنشأتها فقط'}
+                  </p>
+                )}
+              </>
+            }
+          />
 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

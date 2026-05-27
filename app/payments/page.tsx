@@ -33,6 +33,7 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CreditCard } from "lucide-react"
+import { ERPPageHeader } from "@/components/erp-page-header"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
@@ -1775,34 +1776,32 @@ export default function PaymentsPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة - تحسين للهاتف */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="p-2 sm:p-3 bg-green-100 dark:bg-green-900/30 rounded-lg sm:rounded-xl flex-shrink-0">
-              <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{appLang === 'en' ? 'Payments' : 'المدفوعات'}</h1>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 truncate">{appLang === 'en' ? 'Manage customer and supplier payments' : 'إدارة مدفوعات العملاء والموردين'}</p>
-              {/* 🔐 Governance Notice */}
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.54.0) */}
+        <ERPPageHeader
+          title={appLang === 'en' ? 'Payments' : 'المدفوعات'}
+          description={appLang === 'en' ? 'Manage customer and supplier payments' : 'إدارة مدفوعات العملاء والموردين'}
+          variant="list"
+          lang={appLang}
+          extra={
+            <>
               {(userContext?.role === 'manager' || userContext?.role === 'accountant') && (
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                <p className="text-xs text-blue-600 dark:text-blue-400">
                   {appLang === 'en' ? '🏢 Showing payments from your branch only' : '🏢 تعرض المدفوعات الخاصة بفرعك فقط'}
                 </p>
               )}
               {(userContext?.role === 'staff' || userContext?.role === 'sales' || userContext?.role === 'employee') && (
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                <p className="text-xs text-blue-600 dark:text-blue-400">
                   {appLang === 'en' ? '👨‍💼 Showing payments you created only' : '👨‍💼 تعرض المدفوعات التي أنشأتها فقط'}
                 </p>
               )}
-            </div>
-          </div>
-          {!online && (
-            <div className="mt-3 sm:mt-4 p-2 sm:p-3 rounded border border-amber-300 bg-amber-50 text-amber-700 text-xs sm:text-sm">
-              {appLang === 'en' ? 'Offline - Save actions disabled' : 'غير متصل - التخزين معطّل'}
-            </div>
-          )}
-        </div>
+              {!online && (
+                <div className="p-2 sm:p-3 rounded border border-amber-300 bg-amber-50 text-amber-700 text-xs sm:text-sm">
+                  {appLang === 'en' ? 'Offline - Save actions disabled' : 'غير متصل - التخزين معطّل'}
+                </div>
+              )}
+            </>
+          }
+        />
 
         {/* 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager) */}
         <Card>
