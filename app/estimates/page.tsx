@@ -770,38 +770,45 @@ export default function EstimatesPage() {
         <Card className="p-3">
           {loading && <div className="text-sm">جارٍ التحميل...</div>}
           {!loading && (
-            <div className="overflow-auto">
+            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left">
-                    <th>رقم العرض</th>
-                    <th>العميل</th>
-                    <th className="hidden md:table-cell">الفرع</th>
-                    <th>التاريخ</th>
-                    <th>المجموع</th>
-                    <th>الحالة</th>
-                    <th className="hidden md:table-cell">أمر البيع المرتبط</th>
-                    <th>إجراءات</th>
+                <thead className="border-b bg-gray-50 dark:bg-slate-800">
+                  <tr>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">رقم العرض</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">العميل</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">الفرع</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right hidden sm:table-cell">التاريخ</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">المجموع</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">الحالة</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">أمر البيع المرتبط</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEstimates.map((e) => (
-                    <tr key={e.id} className="border-t">
-                      <td className="font-medium text-blue-600 dark:text-blue-400">{e.estimate_number}</td>
-                      <td>{customers.find((c) => c.id === e.customer_id)?.name || ""}</td>
-                      <td className="hidden md:table-cell">
+                    <tr
+                      key={e.id}
+                      className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50"
+                    >
+                      <td className="px-3 py-3 text-right font-medium text-blue-600 dark:text-blue-400">{e.estimate_number}</td>
+                      <td className="px-3 py-3 text-right">{customers.find((c) => c.id === e.customer_id)?.name || "-"}</td>
+                      <td className="px-3 py-3 text-center hidden md:table-cell">
                         {e.branches?.name ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                             {e.branches.name}
                           </span>
                         ) : (
-                          <span className="text-gray-400 dark:text-gray-500">رئيسي</span>
+                          <span className="text-gray-400 dark:text-gray-500 text-xs">رئيسي</span>
                         )}
                       </td>
-                      <td>{e.estimate_date}</td>
-                      <td>{e.total_amount.toFixed(2)}</td>
-                      <td>{e.status}</td>
-                      <td className="hidden md:table-cell">
+                      <td className="px-3 py-3 text-right hidden sm:table-cell text-gray-600 dark:text-gray-300">{e.estimate_date}</td>
+                      <td className="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">{e.total_amount.toFixed(2)}</td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200">
+                          {e.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-center hidden md:table-cell">
                         {e.converted_so ? (
                           <a
                             href={"/sales-orders/" + e.converted_so.id}
@@ -813,7 +820,7 @@ export default function EstimatesPage() {
                           <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>
                         )}
                       </td>
-                      <td className="space-x-2">
+                      <td className="px-3 py-3 text-center space-x-2">
                         <Button variant="secondary" onClick={() => onEdit(e)} disabled={!!e.converted_so_id}>
                           تعديل
                         </Button>

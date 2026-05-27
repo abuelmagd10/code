@@ -52,6 +52,38 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.15] - 2026-05-27
+
+### 🎨 تَنسيق جَدوَل /estimates مع نَمط DataTable المُوحَّد
+
+### ✅ التَغييرات — `app/estimates/page.tsx`
+
+**Outer wrapper:** `overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0` (responsive scroll)
+
+**Thead:**
+- خَلفية رَمادية فاتِحة `bg-gray-50 dark:bg-slate-800`
+- border-bottom + font-semibold + اللَون `text-gray-900 dark:text-white`
+- كل `<th>` لديها `px-3 py-3` (padding مُوحَّد)
+- المُحاذاة الصَحيحة لكل عَمود:
+  * رَقم العَرض / العَميل / التاريخ / المَجموع → text-right
+  * الفَرع / الحالة / أَمر البَيع المَرتبط / إجراءات → text-center
+- التاريخ مَخفى على mobile (`hidden sm:table-cell`)
+
+**Tbody:**
+- صَفوف بـ `border-b border-gray-100` + `hover:bg-gray-50 dark:hover:bg-slate-800/50`
+- كل `<td>` لديها `px-3 py-3` (مُطابق للـ thead)
+- الحالة الآن badge رَمادى موحَّد مع باقى الصَفحات
+- التاريخ بِلَون أَخف `text-gray-600`
+- المَجموع بِخَط أَقوى `font-medium`
+
+### 🎯 المُحَصِّلة
+- ✅ نَفس padding + borders + hover effect كَـ DataTable
+- ✅ نَفس header background + font weight
+- ✅ مُحاذاة نَصية ثابِتة بَين الـ header وَ البيانات
+- ✅ responsive (التاريخ + الفَرع + أَمر البَيع المَرتبط مَخفية تَدريجياً على mobile)
+
+---
+
 ## [3.55.14] - 2026-05-27
 
 ### 📊 جَدوَل /estimates: عَمود الفَرع + عَمود أَمر البَيع المَرتبط
