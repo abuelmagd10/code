@@ -4,6 +4,78 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.55.5] - 2026-05-27
+
+### 🔐 حَوكمة العَرض حسب الدَور (Branch + Creator visibility) على `/estimates`
+
+**الطَلَب:**
+أَن تَكون الحَوكمة على `/estimates` مُماثِلة لنَمط `/customers` و `/sales_orders` — أَى أَن الأَدوار العادية لا تَرى إلا ما أَنشأته بِنفسها، والـ branch-level roles تَرى ما يَخُص فَرعها.
+
+### ✅ تَم تَطبيقه على DB
+- إضافة 3 أَعمدة لجدول `estimates`:
+  - `branch_id UUID` REFERENCES `branches(id)`
+  - `cost_center_id UUID` REFERENCES `cost_centers(id)`
+  - `created_by_user_id UUID` REFERENCES `auth.users(id)`
+- 3 indexes للأَداء (`branch_id`, `created_by_user_id`, مُركَّب `company_id + branch_id`)
+
+### ✅ تَعديلات الكود — `app/estimates/page.tsx`
+- **استيراد** `buildDataVisibilityFilter` + `applyDataVisibilityFilter` من `lib/data-visibility-control`
+- **`userContext` state**: يَجلب `role + branch_id + cost_center_id + warehouse_id` من `company_members` عند التَحميل
+- **استعلام الـ estimates**: يُطَبِّق `applyDataVisibilityFilter(query, rules, "estimates")` تَلقائياً
+- **INSERT payload**: يَملأ تَلقائياً `branch_id` + `cost_center_id` + `created_by_user_id` من `userContext`
+- **convertToSO**: يَرِث `branch_id` + `cost_center_id` من العَرض الأَصلى مع `created_by_user_id = current user`
+- **Reload بعد الحِفظ**: يَستخدم نَفس الـ filter (لا يَظهر سَجل لمَن لا يَحِق له رُؤيته)
+
+### 🎯 السلوك الفعلى الآن
+| الدَور | الوُصول | الإشعار |
+|---|---|---|
+| `owner` / `admin` / `general_manager` | كل عُروض الشركة | 👑 جميع العروض السعرية مرئية |
+| `manager` / `accountant` | عُروض فَرعه فقط | 🏢 تعرض العروض الخاصة بفرعك فقط |
+| `staff` / `sales` / `employee` | عُروض هو أَنشأها فقط | 👨‍💼 تعرض العروض التي أنشأتها فقط |
+| خارج الشركة | لا شَىء | (RLS تَمنع) |
+
+### 🛡️ ضَمانات الأَمان
+- ✅ مالك الشركة لا يَفقد التَحكم أَبداً (`owner_dml` + `owner_select`)
+- ✅ المُستخدم خارج الشركة يَتم رَفضه بـ RLS (`is_company_member`)
+- ✅ `viewer` لا يَستطيع إنشاء أَو تَعديل (`can_modify_data`)
+- ✅ Delete يَتبع نظام RBAC (`can_delete_resource`)
+- ✅ نَفس النَمط بالضَبط فى `/customers` و `/sales_orders`
+
+---
+
+## [3.55.4] - 2026-05-27
+
+### 🔐 مُحاذاة حوكمة `estimates` مع `customers` + `sales_orders`
+
+**الطَلَب:**
+أَن تَكون الحَوكمة على عُروض الأَسعار مُماثِلة لنَمط جداول `customers` و `sales_orders` (نَفس مُستَوى الإحكام والصلاحيات).
+
+### ✅ تَم تَطبيقه على DB (Supabase migration)
+
+**قَبل** — `estimates` كانت 4 policies فقط (نَمط `invoices` الحَديث):
+- estimates_select, estimates_insert, estimates_update, estimates_delete
+
+**بعد** — `estimates` الآن 6 policies (نَمط `customers` الكامِل):
+1. `estimates_select` → `is_company_member(company_id)` *(أَى عُضو يَرى)*
+2. `estimates_insert` → `can_modify_data(company_id)` *(role قابل للكتابة)*
+3. `estimates_update` → `can_modify_data(company_id)`
+4. `estimates_delete` → `can_delete_resource(company_id, 'estimates')` *(يَتبع RBAC)*
+5. **`estimates_owner_select`** → ownership من `companies.user_id` *(جَديد)*
+6. **`estimates_owner_dml`** → ownership كامل ALL *(جَديد)*
+
+**+ نَفس البِنية لـ `estimate_items`** (6 policies مَع `owner_select` و `owner_dml`).
+
+### 🛡️ الفائِدة
+- **مالك الشركة** (`companies.user_id`) يَملك صَلاحية كامِلة دائماً (حتى لو فَشلت policies أُخرى)
+- **role-based access**: `owner/admin/manager/accountant/staff` يَستطيعون الإنشاء والتَحديث
+- **RBAC على Delete**: تَتبع نظام `can_delete_resource` المُسجَّل
+- **مُحاذاة كامِلة** مع `customers` (نَفس عدد الـ policies، نَفس الأَنماط)
+
+### 📝 ملاحظة
+تَم التَطبيق مُباشرة على production DB عَبر Supabase MCP. لا يَحتاج push كود.
+
+---
+
 ## [3.55.3] - 2026-05-27
 
 ### 🐛 Hotfix: 403 Forbidden عند حِفظ عرض سعرى

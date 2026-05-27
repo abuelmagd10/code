@@ -15,6 +15,8 @@ import { FileText } from "lucide-react";
 import { ERPPageHeader } from "@/components/erp-page-header";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 import { getActiveCompanyId } from "@/lib/company";
+import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control";
+import type { UserContext } from "@/lib/validation";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service'; branch_id?: string | null };
@@ -31,6 +33,9 @@ type Estimate = {
   total_amount: number;
   status: string;
   notes?: string | null;
+  branch_id?: string | null;
+  cost_center_id?: string | null;
+  created_by_user_id?: string | null;
 };
 
 type EstimateItem = {
@@ -51,6 +56,8 @@ export default function EstimatesPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
+  // 🔐 Governance context (role + branch + creator scope)
+  const [userContext, setUserContext] = useState<UserContext | null>(null);
 
   // Filter state
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -116,19 +123,29 @@ export default function EstimatesPage() {
         const companyId = await getActiveCompanyId(supabase);
         if (!companyId) { setLoading(false); return; }
 
-        // 🔐 Governance: resolve user's role + branch for product visibility
+        // 🔐 Governance: build full UserContext (role + branch + cost_center + warehouse)
         const { data: { user } } = await supabase.auth.getUser();
+        let ctx: UserContext | null = null;
         let userBranchId: string | null = null;
         let canOverrideBranch = true;
         if (user) {
           const { data: member } = await supabase
             .from("company_members")
-            .select("role, branch_id")
+            .select("role, branch_id, cost_center_id, warehouse_id")
             .eq("user_id", user.id)
             .eq("company_id", companyId)
             .maybeSingle();
           if (member) {
-            // OVERRIDE_ALLOWED_ROLES = ['owner', 'admin', 'manager']
+            ctx = {
+              user_id: user.id,
+              company_id: companyId,
+              role: member.role,
+              branch_id: member.branch_id || null,
+              cost_center_id: member.cost_center_id || null,
+              warehouse_id: member.warehouse_id || null,
+            };
+            setUserContext(ctx);
+            // For products query
             canOverrideBranch = ['owner', 'admin', 'manager'].includes(member.role);
             userBranchId = member.branch_id || null;
           }
@@ -164,12 +181,22 @@ export default function EstimatesPage() {
         }
         setProducts(prod || []);
 
-        // Estimates
-        const { data: est, error: estErr } = await supabase
+        // 🔐 Estimates query — apply data visibility filter (company → branch → creator)
+        // mirrors customers + sales_orders governance pattern
+        let estQuery: any = supabase
           .from("estimates")
-          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")
-          .eq("company_id", companyId)
+          .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id")
           .order("created_at", { ascending: false });
+
+        if (ctx) {
+          const rules = buildDataVisibilityFilter(ctx);
+          estQuery = applyDataVisibilityFilter(estQuery, rules, "estimates");
+        } else {
+          // No userContext → fall back to company isolation only
+          estQuery = estQuery.eq("company_id", companyId);
+        }
+
+        const { data: est, error: estErr } = await estQuery;
         if (estErr) console.error("Failed to load estimates:", estErr);
         setEstimates(est || []);
       } catch (err: any) {
@@ -262,6 +289,8 @@ export default function EstimatesPage() {
       return;
     }
 
+    // 🔐 Governance scoping — branch + cost_center + created_by (from userContext if available)
+    const { data: { user } } = await supabase.auth.getUser();
     const payload = {
       company_id: companyId,
       customer_id: customerId,
@@ -273,6 +302,10 @@ export default function EstimatesPage() {
       total_amount: Number(totals.total.toFixed(2)),
       status: editing ? editing.status : "draft",
       notes: notes || null,
+      // Preserve existing values on edit; set from userContext on new
+      branch_id: editing ? (editing.branch_id ?? userContext?.branch_id ?? null) : (userContext?.branch_id ?? null),
+      cost_center_id: editing ? (editing.cost_center_id ?? userContext?.cost_center_id ?? null) : (userContext?.cost_center_id ?? null),
+      created_by_user_id: editing ? (editing.created_by_user_id ?? user?.id ?? null) : (user?.id ?? null),
     };
     let estimateId = editing?.id;
     if (editing) {
@@ -317,10 +350,18 @@ export default function EstimatesPage() {
     toastActionSuccess(toast, editing ? "التحديث" : "الإنشاء", "العرض");
     setOpen(false);
     resetForm();
-    const { data: est } = await supabase
+    // 🔐 Reload with visibility filter (same governance as initial load)
+    let estReload: any = supabase
       .from("estimates")
-      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes")
+      .select("id, company_id, customer_id, estimate_number, estimate_date, expiry_date, subtotal, tax_amount, total_amount, status, notes, branch_id, cost_center_id, created_by_user_id")
       .order("created_at", { ascending: false });
+    if (userContext) {
+      const rules = buildDataVisibilityFilter(userContext);
+      estReload = applyDataVisibilityFilter(estReload, rules, "estimates");
+    } else {
+      estReload = estReload.eq("company_id", companyId);
+    }
+    const { data: est } = await estReload;
     setEstimates(est || []);
     setLoading(false);
   };
@@ -334,6 +375,8 @@ export default function EstimatesPage() {
       setLoading(false);
       return;
     }
+    // 🔐 Inherit governance scoping from the source estimate
+    const { data: { user } } = await supabase.auth.getUser();
     const soPayload = {
       company_id: companyId,
       customer_id: estimate.customer_id,
@@ -345,6 +388,9 @@ export default function EstimatesPage() {
       total_amount: estimate.total_amount,
       status: "draft",
       notes: estimate.notes || null,
+      branch_id: estimate.branch_id ?? userContext?.branch_id ?? null,
+      cost_center_id: estimate.cost_center_id ?? userContext?.cost_center_id ?? null,
+      created_by_user_id: user?.id ?? null,
     };
     const { data: so, error } = await supabase.from("sales_orders").insert(soPayload).select("id").single();
     if (error) {
@@ -383,7 +429,7 @@ export default function EstimatesPage() {
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
-        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.55.0) */}
+        {/* رأس الصفحة — Migrated to ERPPageHeader (v3.55.0), governance v3.55.5 */}
         <ERPPageHeader
           title="العروض السعرية"
           description="إدارة عروض الأسعار للعملاء"
@@ -391,9 +437,19 @@ export default function EstimatesPage() {
           lang="ar"
           actions={<Button onClick={onOpenNew}>عرض جديد</Button>}
           extra={
-            <p className="text-xs text-green-600 dark:text-green-400">
-              👑 جميع العروض السعرية مرئية
-            </p>
+            (userContext?.role === 'manager' || userContext?.role === 'accountant') ? (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                🏢 تعرض العروض الخاصة بفرعك فقط
+              </p>
+            ) : (userContext?.role === 'staff' || userContext?.role === 'sales' || userContext?.role === 'employee') ? (
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                👨‍💼 تعرض العروض التي أنشأتها فقط
+              </p>
+            ) : (
+              <p className="text-xs text-green-600 dark:text-green-400">
+                👑 جميع العروض السعرية مرئية
+              </p>
+            )
           }
         />
 
