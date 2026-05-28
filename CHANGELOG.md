@@ -4,6 +4,59 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.58.1] - 2026-05-28
+
+### 🧠 المرحلة 3 — Indexer: ملء قاعدة المعرفة من page_guides
+
+تَفعيل الـ Indexer الذى يُحَوِّل كل page_guides إِلى chunks قابلة للبحث الـ FTS داخل `ai_knowledge_chunks`. هذه أَيضاً **runtime-neutral** — لا يَستخدمها الكود بعد، لكن البيانات أَصبحت جاهزة لـ v3.58.2.
+
+### ✅ Migration: `20260528000100_ai_knowledge_chunks_seed_from_page_guides.sql`
+
+**1) دالة `ai_reindex_page_guides()`:**
+- `SECURITY DEFINER` + `search_path` آمن
+- تَحذف الـ chunks القديمة (`source_type LIKE 'page_guide%' AND company_id IS NULL`)
+- تُعيد بناء كل شىء من `page_guides` المُفَعَّلَة
+- قابلة للتَنفيذ المُتَكَرِّر (idempotent)
+
+**2) تَفصيل الـ chunks لكل دليل:**
+- `page_guide_title` — العنوان الكامل
+- `page_guide_description` — الوصف
+- `page_guide_step` — كل خطوة فى chunk مُنفصل (`source_field = 'step:N'`)
+- `page_guide_tip` — كل نَصيحة فى chunk مُنفصل (`source_field = 'tip:N'`)
+
+**3) مُعالجة Schema المُختَلِط:**
+- `steps_*` (jsonb arrays) → استخدام `jsonb_array_length` و `->> i`
+- `tips_*` (text[]) → استخدام `array_length` و `arr[i]` (1-indexed)
+- المُحاذاة بين العربية والإِنجليزية حتى لو اختَلَفَت الأَطوال
+
+**4) النَتائج الفعلية (مَوضع التَنفيذ):**
+- 42 page_guide_title (عَناوين)
+- 42 page_guide_description (أَوصاف)
+- 184 page_guide_step (خَطوات)
+- 72 page_guide_tip (نَصائح)
+- **المَجموع: 340 chunk** قابل للبحث FTS
+
+**5) اختبار صِحَة FTS:**
+بحث "فاتورة" يَرجع نَتائج صَحيحة تماماً:
+- `/invoices` — "انقر فاتورة جديدة لإنشاء فاتورة"
+- `/bills` — "انقر فاتورة شراء جديدة"
+- `/estimates` — "حوّل لطلب مبيعات أو فاتورة"
+- `/purchase_returns` — "حدد فاتورة الشراء"
+- `/vendor_credits` — "طبّق الرصيد الدائن على فاتورة"
+- `/warehouses` — "كل فاتورة شراء تحدد المخزن"
+
+**هذه قَفزة جَودة هائلة مُقارَنَةً بـ ILIKE القديم.**
+
+### 🛡️ ضَمانات السلامة
+
+- **runtime-neutral** — لا يَستخدم الكود الحالى الجَدوَل بعد
+- **idempotent** — يُمكن إِعادة التَشغيل بأَمان عند تَغيير الأَدلة
+- **SECURITY DEFINER** مع search_path مُقَيَّد
+- **RLS لا يَتَأَثَّر** — البيانات تَدخل بواسطة الدالة فقط
+- **TypeScript: لا تَغيير**
+
+---
+
 ## [3.58.0] - 2026-05-28
 
 ### 🧠 المرحلة 3 — RAG Foundation (الخطوة الأَولى)
