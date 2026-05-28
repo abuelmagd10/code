@@ -1426,8 +1426,8 @@ export default function SettingsPage() {
                   </CardTitle>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                         {language === 'en'
-                      ? 'Context-aware page guide and read-only ERP copilot powered by local providers such as Ollama, shown as a floating assistant'
-                        : 'دليل صفحة ذكي ومساعد ERP للقراءة فقط يعمل عبر مزودات محلية مثل Ollama ويظهر كمساعد عائم داخل النظام'}
+                      ? 'A smart, read-only assistant that helps you on every page — explains the workflow, clarifies permissions, and answers your questions. Appears as a floating button.'
+                        : 'مساعد ذكى للقراءة فقط يساعدك فى كل صفحة — يشرح الخطوات، يُوضِّح صلاحياتك، ويُجيب على أسئلتك. يظهر كزر عائم فى كل صفحة.'}
                       </p>
                 </div>
             </div>
@@ -1531,8 +1531,8 @@ export default function SettingsPage() {
             {/* Info note */}
                   <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2.5 border border-blue-100 dark:border-blue-800/40">
                     {language === 'en'
-                  ? 'The AI assistant now runs through local providers such as Ollama with a safe fallback layer. It provides read-only page guidance and cannot execute financial operations, approvals, or data changes.'
-                    : 'يعمل المساعد الذكي الآن عبر مزودات محلية مثل Ollama مع طبقة fallback آمنة. يقدم دليل صفحة وإجابات للقراءة فقط، ولا يمكنه تنفيذ عمليات مالية أو اعتماد طلبات أو تعديل أي بيانات.'}
+                  ? 'The assistant is read-only. It shows you a quick page overview on opening, then chats with you in plain language. It cannot execute financial operations, approve requests, or modify any data.'
+                    : 'هذا المساعد للقراءة فقط. يَفتَح لك نظرة سريعة على الصفحة عند الضغط على الزر العائم، ثم يَرُد على أسئلتك بلغة طبيعية. لا يُنفِّذ أى عملية مالية، ولا يَعتمد أى طلب، ولا يُعدِّل أى بيانات.'}
                   </div>
 
             <Button

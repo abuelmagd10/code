@@ -4,6 +4,51 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.56.0] - 2026-05-28
+
+### 🤖 المرحلة 1 — دَمج الدليل + المساعد + تَنقية لُغة المستخدم
+
+أَول إِصدار من خُطة تَطوير المساعد الذكى على 7 مَراحل لرفعه إِلى مستوى أَنظمة ERP المؤسسية.
+
+### ✅ التَغييرات الرئيسية
+
+**`components/ai-assistant/guide-panel.tsx` (إِعادة هَيكلة كامِلة):**
+- إِزالة التبويبَين `Tabs` (Guide / Copilot) — أَصبحت تجربة دردشة موحدة واحدة
+- محتوى الدليل (الخطوات + النصائح + النَمط المحاسبى) يَظهر الآن كرسائل تَرحيبية من المساعد داخل الـ Chat نفسه (`WelcomeBlock` → `StepsCard` + `TipsCard` + `AccountingPatternCard`)
+- إِزالة كل المُصطَلحات التقنية الموجَّهة للمُطَوِّر:
+  - `Copilot` → `مساعدك الذكى`
+  - `Fallback` → `وضع آمن`
+  - `Page Context` → حُذف
+  - `Interactive Payload` → حُذف
+  - `Bootstrap` → حُذف
+  - `Governance Summary` → `صلاحياتك`
+  - `Insights` → `ملاحظات تستحق الانتباه`
+  - `Next Actions` → `ماذا تفعل الآن`
+  - `Predicted Actions` → `الخطوة التالية الذكية`
+  - `Quick Prompts` → `أسئلة سريعة`
+  - `Live Scene` → `ملخص الصفحة الآن`
+- إِضافة Badge "للقراءة فقط" فى الـ Header للتَأكيد البصرى على الأَمان
+- المحادثة تُحَمَّل تلقائياً عند فَتح الـ Drawer (بدون انتظار تَبديل تبويب)
+- خَيار "لا تُظهر مرة أُخرى" أَصبح داخل الترحيب نفسه
+- TypingIndicator مُحَسَّن مع نَص طبيعى ("أفكر فى ردى...")
+
+**`components/ai-assistant/floating-help-button.tsx`:**
+- Tooltip: `الدليل والمساعد المحلي` → `مساعدك الذكى`
+
+**`app/settings/page.tsx`:**
+- وصف الكارت: حُذف ذكر `Ollama` و `copilot` و `fallback` من النص الموجَّه للمستخدم
+- ملاحظة الـ Info: لُغة طبيعية بدلاً من المصطلحات التقنية
+
+### 🛡️ ضَمانات السلامة
+
+- **صِفر تَغيير على Backend / APIs** (`/api/ai/chat`, `/api/ai/review`, `/api/ai/provider-status` لم تُمَس)
+- **صِفر تَغيير على قاعدة البيانات** (لا migrations)
+- **صِفر تَغيير على `lib/ai/*`** (محرك المساعد بـ 16,000 سطر لم يُمَس)
+- **TypeScript: OK** (صِفر أَخطاء)
+- **الحوكمة بَدون تَغيير** — RLS + permission checks كما هى
+
+---
+
 ## [3.55.9] - 2026-05-27
 
 ### 🎨 توحيد كامِل لفلاتر `/estimates` مع `/sales-orders`

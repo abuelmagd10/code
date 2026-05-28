@@ -10,8 +10,8 @@ interface FloatingHelpButtonProps {
 }
 
 const TOOLTIP_TEXT = {
-  ar: "الدليل والمساعد المحلي",
-  en: "Guide + Local Copilot",
+  ar: "مساعدك الذكى",
+  en: "Your smart assistant",
 }
 
 /**
