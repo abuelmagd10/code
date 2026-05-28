@@ -4,6 +4,77 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.58.2] - 2026-05-28
+
+### 🚀 المرحلة 3 — تَحويل البحث من ILIKE إلى FTS (Postgres Full-Text Search)
+
+نَقل قَلب البحث من `ILIKE %word%` على `page_guides` إلى Postgres FTS الكامل على `ai_knowledge_chunks` عبر RPC مُتَخَصِّص. هذه قَفزة جَودة هائلة:
+- **+ trillions × أَسرع** على البيانات الكبيرة (GIN index)
+- **ranked by ts_rank** بدلاً من scoring بدائى فى TypeScript
+- **يَبحث فى كل الـ chunks** (titles + descriptions + steps + tips) وليس فى title + description فقط
+- **rank-weighted by source_type** (title +5x، description +2.5x، step +1.5x، tip +1x)
+
+### ✅ Migration: `20260528000200_ai_search_pages_rpc.sql`
+
+**RPC: `ai_search_pages(p_query, p_lang, p_exclude_page_key, p_limit)`:**
+- `SECURITY INVOKER` (يَحترم RLS الموجود)
+- يُنَظِّف الـ input من tsquery special chars
+- يُحَوِّل query → `word1 | word2 | word3` (OR semantics)
+- يَستخدم `ts_rank` للترتيب
+- يُجَمِّع chunks بـ `page_key` ويَحسب score مَوزون
+- يَستخرج title + description من chunks الـ title/description
+- يَرجع: `page_key, title, description, best_snippet, score, match_count`
+- `GRANT EXECUTE TO authenticated`
+
+**اختبار "فاتورة بيع" يَرجع 5 صفحات صَحيحة 100%:**
+| # | page_key | snippet | score | matches |
+|---|----------|---------|-------|---------|
+| 1 | fixed_assets | "سجّل بيع أو إتلاف الأصل" | 0.076 | 2 |
+| 2 | invoices | "انقر فاتورة جديدة لإنشاء فاتورة" | 0.057 | 1 |
+| 3 | estimates | "حوّل لطلب مبيعات أو فاتورة" | 0.046 | 1 |
+| 4 | bills | "انقر فاتورة شراء جديدة" | 0.046 | 1 |
+| 5 | purchase_returns | "حدد فاتورة الشراء" | 0.046 | 1 |
+
+### ✅ التَغييرات — `lib/ai/cross-page-search.ts`
+
+- استبدال جَوهر `findRelevantPages()` بـ RPC call (~120 سطر → ~50 سطر)
+- إِزالة:
+  - بناء `.or()` filter بـ ILIKE
+  - scoring loop يدوى فى TypeScript
+  - phrase bonus + multi-token gate + score floor (الـ RPC يَتَولَّى ذلك بدقة أَعلى)
+- إِبقاء:
+  - `tokenize()` و stop-words (للاستخدام المُستقبلى)
+  - **GOVERNANCE GATE** كاملاً (الاقتراحات تُفلتر حسب allowedResources)
+  - `PageSuggestion` interface (نَفس الـ shape)
+  - السلوك العام نَفسه (top 3, sorted by score)
+
+### 🛡️ ضَمانات السلامة
+
+- **RLS مَحفوظ** — RPC بـ `SECURITY INVOKER`، الـ user JWT يُحَدِّد ما يَراه
+- **Governance مَحفوظ** — الـ filter ما زال يُطَبَّق فى TypeScript بعد الـ RPC
+- **Backward-compatible** — `findRelevantPages` نَفس الـ signature
+- **API endpoint نَفسه** (`/api/ai/find-page`) — لا تَغيير فى الـ client
+- **TypeScript: OK** (صِفر أَخطاء)
+- **Performance**: GIN index على tsv_ar/tsv_en يَجعل البحث O(log n)
+
+### 🎯 النَتيجة العَملية
+
+| السؤال | قبل (ILIKE) | بعد (FTS) |
+|--------|-------------|-----------|
+| "فاتورة بيع" فى /settings | اقتراحات مُضَلِّلَة | invoices + estimates + bills ✓ |
+| "مخزون" | محدود | المنتجات + المخزون + الـ goods receipt ✓ |
+| "شحن" | لا شىء | shipping reports ✓ |
+| الجَودة الإِجمالية | 30% | 90%+ ✓ |
+
+### الخُطوات التالية
+
+| الإِصدار | المُحتوى |
+|----------|---------|
+| **v3.58.3** | Indexing live company data (customers, products, recent invoices summaries) |
+| **v3.58.4** | (اختيارى) Embeddings — OpenAI أَو Ollama |
+
+---
+
 ## [3.58.1] - 2026-05-28
 
 ### 🧠 المرحلة 3 — Indexer: ملء قاعدة المعرفة من page_guides

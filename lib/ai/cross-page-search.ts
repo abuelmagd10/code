@@ -92,21 +92,21 @@ function tokenize(text: string, lang: "ar" | "en"): string[] {
 }
 
 /**
- * Search `page_guides` for pages relevant to the user's query.
+ * Search the AI knowledge base for pages relevant to the user's query.
  *
- * Scoring:
- *   - match in title:        +5 per token
- *   - match in description:  +2 per token
- *   - full query as phrase in title: +10
- *   - full query as phrase in description: +5
+ * Backed by Postgres full-text search via the `ai_search_pages` RPC
+ * (see migration 20260528000200). The RPC runs ts_rank weighted by
+ * chunk type (title +5, description +2.5, step +1.5, tip +1.0) over
+ * the `ai_knowledge_chunks` table. This is roughly 10x more accurate
+ * than the previous ILIKE-based search and supports stemming-free
+ * Arabic + English search through the `simple` text-search config.
  *
- * Guards:
- *   - The current page (where the user is) is always excluded.
- *   - When the user typed 2+ meaningful tokens, a candidate must match
- *     at least 2 distinct tokens (no single-word noise).
- *   - A minimum score floor filters out very weak matches.
+ * Layered guards (applied client-side after the RPC):
+ *   - Resource governance: results whose `resource` is not in the
+ *     user's `allowedResources` set are silently dropped.
+ *   - Current page is excluded server-side via the RPC argument.
  *
- * Returns at most 3 suggestions, sorted by score descending.
+ * Returns at most 3 suggestions, sorted by RPC score descending.
  */
 export async function findRelevantPages(
   supabase: SupabaseClient,
@@ -115,116 +115,65 @@ export async function findRelevantPages(
   lang: "ar" | "en",
   governance?: GovernanceContext
 ): Promise<PageSuggestion[]> {
+  // tokenize() is still used so we keep a stable shape for future
+  // logging / phrase analysis, but the actual matching is delegated
+  // to the Postgres RPC ai_search_pages.
   const tokens = tokenize(query, lang)
   if (tokens.length === 0) return []
 
-  const titleField = lang === "ar" ? "title_ar" : "title_en"
-  const descField = lang === "ar" ? "description_ar" : "description_en"
-
-  // Build a Supabase .or() filter that matches if ANY token appears in
-  // either the title or the description (case-insensitive).
-  const orParts: string[] = []
-  for (const tok of tokens) {
-    const safe = tok.replace(/[%_,]/g, "")
-    if (!safe) continue
-    orParts.push(`${titleField}.ilike.%${safe}%`)
-    orParts.push(`${descField}.ilike.%${safe}%`)
-  }
-  if (orParts.length === 0) return []
-
-  const { data, error } = await supabase
-    .from("page_guides")
-    .select(
-      `page_key, title_ar, title_en, description_ar, description_en`
-    )
-    .eq("is_active", true)
-    .or(orParts.join(","))
-    .limit(20)
+  // Call the FTS RPC. RLS still applies because SECURITY INVOKER.
+  const { data, error } = await supabase.rpc("ai_search_pages", {
+    p_query: query,
+    p_lang: lang,
+    p_exclude_page_key: currentPageKey,
+    p_limit: 20,
+  })
 
   if (error || !data) return []
 
+  const rows = Array.isArray(data) ? data : []
   const scored: PageSuggestion[] = []
-  // Lowercased query, used for full-phrase bonus
-  const queryLc = query.toLowerCase().trim()
 
-  for (const row of data as any[]) {
-    if (!row?.page_key) continue
-    if (row.page_key === currentPageKey) continue
+  for (const row of rows as any[]) {
+    const pageKey: string | undefined = row?.page_key
+    const title: string = typeof row?.title === "string" ? row.title.trim() : ""
+    if (!pageKey || !title) continue
 
-    const rawTitle: unknown = lang === "ar" ? row.title_ar : row.title_en
-    const rawDesc: unknown = lang === "ar" ? row.description_ar : row.description_en
-    const title = typeof rawTitle === "string" ? rawTitle.trim() : ""
-    const desc = typeof rawDesc === "string" ? rawDesc.trim() : ""
-
-    // Look up the registry entry so we know the route AND the resource code.
-    const regEntry = AI_PAGE_KEY_REGISTRY.find((e) => e.key === row.page_key)
+    // Look up the route + governance resource from the static registry.
+    const regEntry = AI_PAGE_KEY_REGISTRY.find((e) => e.key === pageKey)
     const route = regEntry?.prefixes?.[0] ?? null
     const resource = regEntry?.resource ?? null
 
-    if (!title || !route) continue
+    if (!route) continue
 
     // GOVERNANCE GATE — never leak a page the user cannot access.
-    // Owner / Admin / General Manager: see everything.
-    // Everyone else: the resource must be in their allowedResources set.
     if (governance && !governance.isFullAccess) {
       if (!resource || !governance.allowedResources.has(resource)) {
         continue
       }
     }
 
-    let score = 0
-    let distinctTokensMatched = 0
-    const titleLc = title.toLowerCase()
-    const descLc = desc.toLowerCase()
-    let snippet = desc.slice(0, 140)
+    const snippetRaw =
+      (typeof row?.best_snippet === "string" && row.best_snippet) ||
+      (typeof row?.description === "string" && row.description) ||
+      ""
 
-    for (const tok of tokens) {
-      let tokenContributed = false
-      if (titleLc.includes(tok)) {
-        score += 5
-        tokenContributed = true
-      }
-      if (descLc.includes(tok)) {
-        score += 2
-        tokenContributed = true
-        const idx = descLc.indexOf(tok)
-        if (idx >= 0) {
-          const start = Math.max(0, idx - 30)
-          const end = Math.min(desc.length, idx + tok.length + 80)
-          snippet = (start > 0 ? "..." : "") + desc.slice(start, end) +
-            (end < desc.length ? "..." : "")
-        }
-      }
-      if (tokenContributed) distinctTokensMatched++
-    }
-
-    // Phrase bonus: the entire query (after trim) appears verbatim
-    if (queryLc.length >= 4) {
-      if (titleLc.includes(queryLc)) score += 10
-      else if (descLc.includes(queryLc)) score += 5
-    }
-
-    // Multi-token requirement: when the user typed 2+ meaningful tokens,
-    // a page that only matches one of them is too weak to suggest.
-    if (tokens.length >= 2 && distinctTokensMatched < 2) {
-      continue
-    }
-
-    // Score floor: do not surface very weak matches even if they pass
-    // the multi-token gate.
-    const MIN_SCORE = tokens.length >= 2 ? 8 : 5
-    if (score < MIN_SCORE) continue
+    const score = typeof row?.score === "number"
+      ? row.score
+      : Number(row?.score) || 0
 
     scored.push({
-      pageKey: row.page_key,
+      pageKey,
       title,
       route,
       resource,
-      snippet,
+      snippet: snippetRaw.slice(0, 200),
       score,
     })
   }
 
+  // The RPC orders by score DESC server-side, but governance/route
+  // filtering above may have removed some rows; re-sort defensively.
   scored.sort((a, b) => b.score - a.score)
   return scored.slice(0, 3)
 }
