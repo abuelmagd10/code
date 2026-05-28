@@ -16,8 +16,13 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Bell,
   Bot,
   CheckCircle2,
+  Clock,
+  Info,
   Lightbulb,
   ListChecks,
   Loader2,
@@ -33,6 +38,7 @@ import type { AICopilotInteractivePayload } from "@/lib/ai/contracts"
 import { buildERPQuestionBankPrompts } from "@/lib/ai/question-bank"
 import type { AccountingPattern, PageGuide } from "@/lib/page-guides"
 import type { PageSuggestion } from "@/lib/ai/cross-page-search"
+import type { AIProactiveAlert } from "@/hooks/use-ai-alerts"
 
 interface GuidePanelProps {
   isOpen: boolean
@@ -44,6 +50,8 @@ interface GuidePanelProps {
   showDontShowAgain: boolean
   isAlreadySeen: boolean
   onMarkSeen: () => void
+  /** Proactive smart suggestions (v3.60.0 Phase 4) */
+  alerts?: AIProactiveAlert[]
 }
 
 interface ChatMessage {
@@ -126,6 +134,13 @@ const L = {
 
     relatedPagesTitle: "ربما تقصد إحدى هذه الصفحات",
     goToPage: "افتح الصفحة",
+
+    // Proactive alerts (v3.60.0 Phase 4)
+    proactiveAlertsHeadline: "لاحظتُ بعض الأمور التى تحتاج مُتابَعَتك",
+    proactiveActionOpen: "افتح الصفحة",
+    severityCritical: "عاجِل",
+    severityWarning: "تحذير",
+    severityInfo: "للعِلم",
   },
   en: {
     panelTitle: "Your smart assistant",
@@ -183,6 +198,13 @@ const L = {
 
     relatedPagesTitle: "You might be looking for",
     goToPage: "Open page",
+
+    // Proactive alerts (v3.60.0 Phase 4)
+    proactiveAlertsHeadline: "I noticed a few things that need follow-up",
+    proactiveActionOpen: "Open page",
+    severityCritical: "Urgent",
+    severityWarning: "Warning",
+    severityInfo: "FYI",
   },
 }
 
@@ -198,7 +220,9 @@ export function GuidePanel({
   showDontShowAgain,
   isAlreadySeen,
   onMarkSeen,
+  alerts,
 }: GuidePanelProps) {
+  const proactiveAlerts = Array.isArray(alerts) ? alerts : []
   const t = L[lang]
   const dir = lang === "ar" ? "rtl" : "ltr"
 
@@ -497,6 +521,16 @@ export function GuidePanel({
           <div className="flex min-h-0 flex-1 flex-col px-6 py-5">
             <div className={scrollAreaClass}>
               <div className="space-y-4 pb-4">
+                {/* Proactive alerts (v3.60.0 Phase 4) — first thing the user sees */}
+                {proactiveAlerts.length > 0 && messages.length === 0 && (
+                  <ProactiveAlertsBlock
+                    labels={t}
+                    lang={lang}
+                    alerts={proactiveAlerts}
+                    onClose={handleClose}
+                  />
+                )}
+
                 {/* Welcome / Guide cards (rendered as if from assistant) */}
                 {isLoading ? (
                   <WelcomeLoadingSkeleton labels={t} />
@@ -1408,4 +1442,156 @@ function asInteractivePayload(value: unknown): AICopilotInteractivePayload | nul
   }
 
   return candidate as AICopilotInteractivePayload
+}
+
+
+// ─── Proactive Alerts Block (v3.60.0 Phase 4) ─────────────────────────────────
+
+function ProactiveAlertsBlock({
+  labels,
+  lang,
+  alerts,
+  onClose,
+}: {
+  labels: Labels
+  lang: "ar" | "en"
+  alerts: AIProactiveAlert[]
+  onClose: () => void
+}) {
+  if (alerts.length === 0) return null
+
+  const Arrow = lang === "ar" ? ArrowLeft : ArrowRight
+
+  const order: Record<string, number> = { critical: 0, warning: 1, info: 2 }
+  const sorted = [...alerts].sort(
+    (a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9)
+  )
+
+  return (
+    <div className="flex justify-start">
+      <div className="flex w-full max-w-[95%] items-start gap-3">
+        <Avatar className="mt-0.5 size-8 flex-shrink-0 border border-blue-200 bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30">
+          <AvatarFallback className="bg-transparent text-blue-700 dark:text-blue-300">
+            <Bell className="h-4 w-4" />
+          </AvatarFallback>
+        </Avatar>
+
+        <div className="flex-1 space-y-3">
+          <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <p className="mb-1.5 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+              {labels.assistant}
+            </p>
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+              {labels.proactiveAlertsHeadline}
+            </p>
+          </div>
+
+          <section className="space-y-2">
+            {sorted.map((alert) => (
+              <ProactiveAlertCard
+                key={alert.key}
+                labels={labels}
+                alert={alert}
+                Arrow={Arrow}
+                onClose={onClose}
+              />
+            ))}
+          </section>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProactiveAlertCard({
+  labels,
+  alert,
+  Arrow,
+  onClose,
+}: {
+  labels: Labels
+  alert: AIProactiveAlert
+  Arrow: typeof ArrowLeft
+  onClose: () => void
+}) {
+  const isCritical = alert.severity === "critical"
+  const isWarning = alert.severity === "warning"
+
+  const containerCls = isCritical
+    ? "border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/30"
+    : isWarning
+      ? "border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30"
+      : "border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30"
+
+  const iconCls = isCritical
+    ? "text-rose-600 dark:text-rose-300"
+    : isWarning
+      ? "text-amber-600 dark:text-amber-300"
+      : "text-blue-600 dark:text-blue-300"
+
+  const chipCls = isCritical
+    ? "bg-rose-600 text-white"
+    : isWarning
+      ? "bg-amber-500 text-white"
+      : "bg-blue-600 text-white"
+
+  const chipLabel = isCritical
+    ? labels.severityCritical
+    : isWarning
+      ? labels.severityWarning
+      : labels.severityInfo
+
+  const Icon = isCritical ? AlertTriangle : isWarning ? Clock : Info
+
+  const handleNavigate = () => {
+    if (!alert.actionUrl) return
+    onClose()
+    if (typeof window !== "undefined") {
+      window.location.href = alert.actionUrl
+    }
+  }
+
+  return (
+    <div
+      className={[
+        "rounded-2xl border px-4 py-3 shadow-sm transition-shadow",
+        containerCls,
+      ].join(" ")}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Icon className={"h-4 w-4 " + iconCls} />
+          <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+            {alert.title}
+          </h4>
+        </div>
+        <span
+          className={[
+            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+            chipCls,
+          ].join(" ")}
+        >
+          {chipLabel}
+        </span>
+      </div>
+
+      <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+        {alert.message}
+      </p>
+
+      {alert.actionUrl && (
+        <div className="mt-2.5 flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            onClick={handleNavigate}
+          >
+            <span>{labels.proactiveActionOpen}</span>
+            <Arrow className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 }
