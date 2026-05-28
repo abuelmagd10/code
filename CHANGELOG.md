@@ -4,6 +4,64 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.58.0] - 2026-05-28
+
+### 🧠 المرحلة 3 — RAG Foundation (الخطوة الأَولى)
+
+أُسُّ بناء نظام Retrieval-Augmented Generation للمساعد الذكى. هذه المرحلة **runtime-neutral** بالكامل — تُنشِئ البِنية فقط، بدون أَى تَأثير على الكود الحالى أَو سلوك المساعد.
+
+### ✅ Migration: `20260528000000_ai_knowledge_chunks_foundation.sql`
+
+**1) تَفعيل pgvector:**
+- `CREATE EXTENSION IF NOT EXISTS vector` (v0.8.0)
+- جاهز للاستخدام عند تَفعيل embeddings لاحقاً (v3.58.4)
+
+**2) جَدوَل `ai_knowledge_chunks`:**
+- `id UUID PRIMARY KEY`
+- `source_type` + `source_key` + `source_field` — توثيق مَصدر كل chunk
+- `content_ar` + `content_en` — مُحتوى ثنائى اللغة
+- `tsv_ar` + `tsv_en` — أَعمدة FTS مَولَّدَة تلقائياً (`GENERATED ALWAYS AS STORED`)
+- `embedding_ar` + `embedding_en` — `vector(1536)` (nullable للآن، تُملأ لاحقاً)
+- `resource` — مَفتاح الحَوكمة (مُطابق لـ `company_role_permissions.resource`)
+- `company_id` — NULL = مُحتوى عام، قيمة = خاص بالشركة (مع FK + ON DELETE CASCADE)
+- `metadata JSONB` — مَرونة للمَيتاداتا
+- `created_at` + `updated_at` (مع Trigger)
+- **UNIQUE (source_type, source_key, source_field, company_id)** لـ upsert deterministic
+
+**3) Indexes (5 مَجاميع):**
+- 2× GIN على `tsv_ar` و `tsv_en` للبحث النَصى السريع
+- 1× B-Tree على `(source_type, source_key)` لإعادة الفَهرَسَة
+- 1× Partial B-Tree على `resource` (للحوكمة)
+- 1× Partial B-Tree على `company_id` (للتَوزيع)
+
+**4) RLS مُتَكامِل:**
+- SELECT: أَى مُستخدم مُسَجَّل دخول يَرَى `company_id IS NULL` (المُحتوى العام)
+- SELECT: أَعضاء الشركة يَرَون `company_id` الخاص بشركتهم فقط
+- ALL (INSERT/UPDATE/DELETE): `service_role` فقط — مَنع أَى مُستخدم من الكتابة
+
+**5) Function + Trigger:**
+- `ai_knowledge_chunks_touch_updated_at()` — يُحَدِّث `updated_at` تلقائياً
+
+### 🛡️ ضَمانات السلامة
+
+- **runtime-neutral** — لا كود حالى يَستخدم هذا الجَدوَل
+- **زَر إِيقاف فورى** — لو حَدث مشكلة، يمكن `DROP TABLE` بدون أَى تَأثير على النظام
+- **read-only للمُستخدمين** — لا يَستطيع أَى مُستخدم الكتابة فيه
+- **يَحترم RLS متعدد المُستأجرين** — بيانات شركة لا تَتسرَّب لأُخرى
+- **يَدعم بدائل المُستقبل** — embedding_ar/en مُجَهَّز لـ OpenAI أَو Ollama
+- **TypeScript: لا تَغيير** (هذه migration فقط)
+
+### 📋 الخُطوات التالية
+
+| الإِصدار | المُحتوى |
+|----------|---------|
+| **v3.58.1** | Indexing pipeline — قراءة `page_guides` وتَخزينها كـ chunks |
+| **v3.58.2** | تَحويل `findRelevantPages` لاستخدام FTS بدلاً من ILIKE |
+| **v3.58.3** | Indexing live company data (customers, products, invoices summaries) |
+| **v3.58.4** | (اختيارى) Embeddings — يَحتاج اختيار مزود (OpenAI / Ollama) |
+
+---
+
 ## [3.56.5] - 2026-05-28
 
 ### 🔒 سَد ثغرة حَوكمة فى Cross-Page Suggestions
