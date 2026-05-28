@@ -4,6 +4,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.58.6] - 2026-05-28
+
+### 🐛 Hotfix حَرِج — إِصلاح خَطَأ syntax يَكسِر الـ RPC للجميع
+
+كشَف المُستخدم أَن `/api/ai/find-page` يَرجع `matches: []` لجَميع المستخدمين (حتى Owner) بعد v3.58.5. السبب: خَطَأ syntax فى دالة `ai_current_user_allowed_resources()` يَكسِر تَقييم الـ RLS كاملاً.
+
+### 🔍 Root Cause
+
+```sql
+-- المعطوب:
+RETURN ARRAY(SELECT DISTINCT unnest(v_set) WHERE unnest IS NOT NULL);
+-- ERROR: column "unnest" does not exist
+```
+
+`unnest` فى Postgres ليس عمود يَمكن الإِشارَة إِليه فى WHERE clause. يجب إِعطاؤه alias.
+
+### ✅ Migration: `20260528000600_ai_allowed_resources_unnest_fix.sql`
+
+```sql
+-- الصحيح:
+RETURN ARRAY(SELECT DISTINCT x FROM unnest(v_set) AS x WHERE x IS NOT NULL);
+```
+
+### 🎯 لماذا الـ Owner تَأَثَّر؟
+
+كان مَن المُتَوَقَّع أَن `is_full_access()` يَقصُر الدائرة فى الـ OR، لكن Postgres planner يُقَيِّم الـ branches للـ RLS، فالخَطَأ يَنتَشِر ويَنتُج عنه `matches: []`.
+
+### ✅ التَأكيد على Production
+
+| المُستخدم | السُؤال | النَتيجة |
+|----------|---------|----------|
+| Owner | "شحن" | `shipping_reports` (score 0.83) ✅ |
+| Staff | "فاتورة بيع" | `estimates`, `sales_orders` ✅ (bills/fixed_assets مَحجوبَة) |
+
+### 🛡️ ضَمانات السلامة
+
+- **runtime-neutral** — مُجَرَّد إِصلاح دالة
+- **TypeScript: لا تَغيير**
+- **RLS ما زال يَفلتر** — الحَوكمة تَعمل بشكل صَحيح الآن
+- **Defense in Depth كامِل** — 4 طَبَقات تَعمل كما هو مُتَوَقَّع
+
+---
+
 ## [3.58.5] - 2026-05-28
 
 ### 🔒 Defense in Depth — حَوكمة على مستوى DB لـ `ai_knowledge_chunks`
