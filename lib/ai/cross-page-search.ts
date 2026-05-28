@@ -19,8 +19,24 @@ export interface PageSuggestion {
   pageKey: string
   title: string
   route: string
+  /** The resource code from page-key-registry (e.g. "chart_of_accounts"). */
+  resource: string | null
   snippet: string
   score: number
+}
+
+/**
+ * Server-side governance gate for cross-page suggestions.
+ * The API route builds this from the user's role + company_role_permissions
+ * and passes it to findRelevantPages so the search never leaks pages that
+ * the user is not allowed to access.
+ */
+export interface GovernanceContext {
+  role: string | null
+  /** Set of resource codes the user is allowed to access. */
+  allowedResources: Set<string>
+  /** Owner/admin/general_manager bypass — see all pages. */
+  isFullAccess: boolean
 }
 
 // Common Arabic stop-words we drop before searching.
@@ -76,15 +92,6 @@ function tokenize(text: string, lang: "ar" | "en"): string[] {
 }
 
 /**
- * Look up the canonical route for a page_key from the AI page registry.
- * Returns null when the key has no registered prefix.
- */
-function pageKeyToRoute(pageKey: string): string | null {
-  const entry = AI_PAGE_KEY_REGISTRY.find((e) => e.key === pageKey)
-  return entry?.prefixes?.[0] ?? null
-}
-
-/**
  * Search `page_guides` for pages relevant to the user's query.
  *
  * Scoring:
@@ -105,7 +112,8 @@ export async function findRelevantPages(
   supabase: SupabaseClient,
   query: string,
   currentPageKey: string | null,
-  lang: "ar" | "en"
+  lang: "ar" | "en",
+  governance?: GovernanceContext
 ): Promise<PageSuggestion[]> {
   const tokens = tokenize(query, lang)
   if (tokens.length === 0) return []
@@ -147,9 +155,22 @@ export async function findRelevantPages(
     const rawDesc: unknown = lang === "ar" ? row.description_ar : row.description_en
     const title = typeof rawTitle === "string" ? rawTitle.trim() : ""
     const desc = typeof rawDesc === "string" ? rawDesc.trim() : ""
-    const route = pageKeyToRoute(row.page_key)
+
+    // Look up the registry entry so we know the route AND the resource code.
+    const regEntry = AI_PAGE_KEY_REGISTRY.find((e) => e.key === row.page_key)
+    const route = regEntry?.prefixes?.[0] ?? null
+    const resource = regEntry?.resource ?? null
 
     if (!title || !route) continue
+
+    // GOVERNANCE GATE — never leak a page the user cannot access.
+    // Owner / Admin / General Manager: see everything.
+    // Everyone else: the resource must be in their allowedResources set.
+    if (governance && !governance.isFullAccess) {
+      if (!resource || !governance.allowedResources.has(resource)) {
+        continue
+      }
+    }
 
     let score = 0
     let distinctTokensMatched = 0
@@ -198,6 +219,7 @@ export async function findRelevantPages(
       pageKey: row.page_key,
       title,
       route,
+      resource,
       snippet,
       score,
     })

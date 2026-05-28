@@ -4,6 +4,55 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.56.5] - 2026-05-28
+
+### 🔒 سَد ثغرة حَوكمة فى Cross-Page Suggestions
+
+اكتُشِفَت ثغرة حَوكمة (information leakage) فى v3.56.3+: جَدوَل `page_guides` لديه RLS مَفتوح لكل مُستخدم مُسَجَّل دخول (`auth.role() = 'authenticated'`)، بِحيث يَستطيع مُستخدم `staff/sales/accountant` رؤية اقتراحات لصفحات لا يَملك صلاحية الوصول إِليها (مثل `/chart-of-accounts`, `/payroll`, `/journal-entries`). حتى لو كان الـ middleware يَحجِب الوصول الفعلى، فإِظهار العنوان + الوصف يَكشف معلومات يجب ألَّا يَراها هذا الدور.
+
+### ✅ التَغييرات
+
+**`lib/ai/cross-page-search.ts`:**
+- إِضافة حَقل `resource` إِلى `PageSuggestion` (من `page-key-registry.resource`)
+- إِضافة interface جديد `GovernanceContext`:
+  - `role: string | null`
+  - `allowedResources: Set<string>`
+  - `isFullAccess: boolean`
+- توسيع signature: `findRelevantPages(supabase, query, currentPageKey, lang, governance?)`
+- **بَوَّابة حَوكمة جديدة فى داخل الـ scoring loop:**
+  - Owner / Admin / General Manager → يَرَون كل الاقتراحات
+  - باقى الأَدوار → الـ `resource` يجب أَن يَكون فى `governance.allowedResources` وإِلا يُستَبعَد المُرَشَّح تماماً
+
+**`app/api/ai/find-page/route.ts`:**
+- بناء `GovernanceContext` server-side قبل استدعاء `findRelevantPages`
+- دالة `buildGovernanceContext()`:
+  - تَستخرج الـ role من `security.member.role`
+  - Owner/Admin/General Manager → `isFullAccess: true`
+  - باقى الأَدوار → تَجلب `defaultRolePages` (نُسخة طِبق الأَصل من `lib/access-context.tsx`)
+  - تُطَبِّق overrides من `company_role_permissions`
+  - تُضيف `dashboard` كحَق دائم (مُطابق لسلوك الـ sidebar)
+- `DEFAULT_ROLE_PAGES`: خَريطة لكل الأَدوار (manager, accountant, store_manager, manufacturing_officer, booking_officer, purchasing_officer, staff, sales, employee, viewer)
+
+### 🛡️ ضَمانات السلامة
+
+- **تَنفيذ server-side فقط** — العميل لا يَستطيع التَحايُل بإِرسال `governance` مُزَيَّف
+- **Defense in Depth** — حتى لو رَأى مُستخدم اقتراحاً عبر cache قديم، الـ middleware يَحجِب الوصول الفعلى
+- **read-only تماماً**
+- **TypeScript: OK**
+
+### 🎯 النَتيجة العَملية
+
+| الدور | كان يَرى الاقتراحات | الآن |
+|-------|---------------------|-------|
+| Owner / Admin / General Manager | كل الصفحات ✓ | كل الصفحات ✓ |
+| Manager | كل الصفحات (ثغرة) | الصفحات المُسَمَّوحَة فقط ✓ |
+| Accountant | كل الصفحات (ثغرة) | الصفحات المالية والمحاسبية فقط ✓ |
+| Staff / Sales | كل الصفحات (ثغرة) | dashboard + invoices + customers + ... فقط ✓ |
+| Employee | كل الصفحات (ثغرة) | dashboard + attendance فقط ✓ |
+| Viewer | كل الصفحات (ثغرة) | dashboard + reports فقط ✓ |
+
+---
+
 ## [3.56.4] - 2026-05-28
 
 ### 🎯 تَحسين دقة الـ Cross-Page Search
