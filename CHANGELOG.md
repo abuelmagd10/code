@@ -4,6 +4,87 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.59.0] - 2026-05-28
+
+### 🎯 إِكمال قاعدة المعرفة — 30 صفحة جديدة (60 → 90 دليل)
+
+تَغطيَة كامِلَة لكل الـ AI_PAGE_KEY_REGISTRY. المساعد الآن يَعرف **كل صفحة** فى النظام.
+
+### ✅ Migration: `20260528000700_ai_page_guides_complete_remaining_30.sql`
+
+**Inventory operational (5):**
+- `inventory_goods_receipt` — إِيصال استلام البضاعة
+- `inventory_dispatch_approvals` — اعتمادات صَرف المخزون
+- `product_availability` — تَوَفُّر المنتجات
+- `third_party_inventory` — مخزون الأَطراف الأُخرى
+- `write_offs` — إِسقاطات المخزون (الخَسائر)
+
+**HR / Attendance (7):**
+- `attendance` — الحُضور والانصراف
+- `attendance_daily` — سَجل الحُضور اليومى
+- `attendance_devices` — أَجهزة البَصمة
+- `attendance_reports` — تَقارير الحُضور
+- `attendance_settings` — إِعدادات الحُضور
+- `attendance_shifts` — الورديات
+- `attendance_anomalies` — استثناءات الحُضور
+
+**Returns / Credits (4):**
+- `customer_credits` — أَرصدة العملاء الدائنة
+- `customer_refund_requests` — طَلبات استرجاع العملاء
+- `sales_return_requests` — طَلبات مَرتجع المَبيعات
+- `sent_invoice_returns` — مَرتجعات الفواتير المُرسَلَة
+
+**Fixed Assets (2):**
+- `asset_categories` — فِئات الأَصول الثابتة
+- `fixed_assets_reports` — تَقارير الأَصول الثابتة
+
+**Settings sub-pages (12):**
+- `settings_users` — إِدارَة المُستخدمين
+- `settings_taxes` — إِعدادات الضَرائب
+- `settings_exchange_rates` — أَسعار الصرف
+- `settings_shipping` — إِعدادات الشحن
+- `settings_audit_log` — سَجل المُراجَعَة
+- `settings_backup` — النَسخ الاحتياطى
+- `settings_orders_rules` — قواعد أَوامر البيع
+- `settings_profile` — مَلفّى الشَخصى
+- `settings_tooltips` — تَلميحات الواجهة
+- `settings_commissions` — إِعدادات العُمولات
+- `settings_accounting_maintenance` — صيانة المُحاسبة
+- `login_activity` — سَجل تَسجيلات الدُخول
+
+### 📊 الإِحصائيات النِهائية على Production
+
+| المَقياس | القيمة |
+|----------|--------|
+| Active page_guides | **90** (من 60 = +50%) |
+| ai_knowledge_chunks | **724** (من 484 = +50%) |
+| chunks بدون resource | **0** ✅ |
+| Defense in Depth layers | **4** ✅ |
+
+### 🛡️ ضَمانات السلامة
+
+- **DB-only** — لا تَغيير على app code
+- **TypeScript: لا تَغيير**
+- **RLS لكل صفحة جَديدة** — resource مُحَدَّد، الحَوكمَة تَفلتر تلقائياً
+- **حَسَّاسة admin** (users, audit_log, backup, accounting_maintenance) → resource يَحجِبها عن staff/sales
+- **Idempotent** — يُمكن إِعادة التَنفيذ بأَمان
+
+### 🎯 ما يَستطيع المساعد الآن
+
+- "كيف أَستلم بضاعَة من المورد" → `inventory_goods_receipt`
+- "كَشف حضور المُوظَّفين" → `attendance_daily` + `attendance_reports`
+- "كيف أَرُد فاتورة" → `sales_return_requests` + `sent_invoice_returns`
+- "إِعدادات الضَرائب" → `settings_taxes`
+- "أَسعار صَرف الدولار" → `settings_exchange_rates`
+- "نَسخَة احتياطية" → `settings_backup` (لـ admin فقط — Defense in Depth)
+
+### الخُطوات التالية مُمكِنَة:
+- المرحلة 4: اقتراحات استباقية (proactive alerts)
+- المرحلة 5: Personalization + Memory عبر الصفحات
+- (اختيارى) Embeddings — لو أُتيح OpenAI / Ollama
+
+---
+
 ## [3.58.6] - 2026-05-28
 
 ### 🐛 Hotfix حَرِج — إِصلاح خَطَأ syntax يَكسِر الـ RPC للجميع
