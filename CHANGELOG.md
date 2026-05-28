@@ -4,6 +4,82 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.58.4] - 2026-05-28
+
+### 🧠 المرحلة 3 — Batch 1: إِكمال أَدِلَّة التقارير + تَطبيع البحث العربى
+
+تَوسيع قاعدة معرفة المساعد من 42 → 60 دليل + إِصلاح جَوهرى لجَودَة البحث العربى يَجعل "شحن"، "الشحن"، "الشَحن" مُطابقَة بَعضها بَعضاً.
+
+### ✅ Migration 1: `20260528000300_ai_page_guides_batch1_reports.sql`
+
+**+18 دليل لعائلة التقارير** (مَع title_ar/en + description + 4 steps + 2 tips):
+- `aging_ar` — أَعمار ديون العملاء
+- `aging_ap` — أَعمار ديون الموردين
+- `cash_flow` — قائمة التدفقات النقدية
+- `cost_center_reports` — تقارير مراكز التكلفة
+- `daily_payments_receipts` — التحصيلات والمدفوعات اليومية
+- `dashboard_reports` — تقارير لوحة التحكم
+- `equity_changes` — تغيرات حقوق الملكية
+- `financial_trace_reports` — التَتَبُّع المالى
+- `inventory_reports` — تقارير المخزون
+- `product_reports` — تقارير المنتجات
+- `purchase_reports` — تقارير المشتريات
+- `sales_bonus_reports` — حَوافز المَبيعات
+- `sales_reports` — تقارير المَبيعات
+- `shipping_reports` — تقارير الشحن
+- `simple_summary_reports` — التقارير المُبَسَّطَة
+- `supplier_price_comparison` — مقارنة أَسعار الموردين
+- `update_account_balances` — تحديث أَرصدة الحسابات
+- `vat_reports` — تقارير ضريبة القيمة المُضافة
+
+### ✅ Migration 2: `20260528000400_ai_knowledge_chunks_arabic_normalization.sql`
+
+**مُشكلة جَوهرية اكتُشِفَت:** `to_tsvector('simple', ...)` يَتعامل مع "الشَحن"، "الشحن"، "شحن" كـ **3 tokens مُختَلفة** → recall ضعيف جداً للعربية.
+
+**الحَل:** دالة `ai_normalize_for_fts(text)`:
+1. تُزيل diacritics (U+064B-U+0652، U+0670 alef khanjareeya، U+0640 tatweel)
+2. تُسقِط بادئات word-initial: `ال`، `وال`، `بال`، `لل`، `كال`، `فال`
+3. تُجَمِّع المسافات الزائدة
+
+**تَطبيق:**
+- إِعادة بناء `tsv_ar` + `tsv_en` كـ `GENERATED ALWAYS AS (to_tsvector('simple', ai_normalize_for_fts(...)))`
+- إِعادة بناء GIN indexes
+- تَحديث `ai_search_pages` RPC ليُطَبِّع query المستخدم بنفس الطريقة
+
+### 🎯 النَتائج (مُؤَكَّدَة على Production)
+
+| السؤال | قبل | بعد |
+|--------|-----|-----|
+| "شحن" | لا نَتائج | `shipping_reports` (score 0.83) ✅ |
+| "فاتورة بيع" | fixed_assets أَولاً | **invoices أَولاً** (0.18) ✅ |
+| "الشحن" | لا تَطابُق مع "الشَحن" | يَتَطابق ✅ |
+| "تقرير مَبيعات" | تقريبى | **sales_reports** مُباشرَة ✅ |
+
+### 📊 إِحصائيات
+
+- page_guides: 42 → **60** (+43%)
+- Chunks: 340 → **484** (+42%)
+  - 60 titles + 60 descriptions + 256 steps + 108 tips
+
+### 🛡️ ضَمانات السلامة
+
+- **runtime-neutral** — الـ migrations تَعمل دون لمس runtime code
+- **TypeScript: لا تَغيير**
+- **RLS مَحفوظ** (SECURITY INVOKER على RPC)
+- **Idempotent** — يُمكن إِعادة التَنفيذ بأَمان
+- **Governance gate** ما زال مُطَبَّقاً client-side
+
+### الخُطوات التالية
+
+| Batch | المُحتوى | عدد الصفحات |
+|-------|---------|-------------|
+| **Batch 2** | Settings sub-pages (taxes, users, exchange_rates, ...) | ~12 |
+| **Batch 3** | Attendance / HR pages | 7 |
+| **Batch 4** | Inventory operational (goods_receipt, dispatch_approvals, ...) | 5 |
+| **Batch 5** | Returns / Credits + Misc | 6 |
+
+---
+
 ## [3.58.3] - 2026-05-28
 
 ### 🎯 Hotfix — تَنقية tokens قبل RPC + توسيع stop words
