@@ -38,6 +38,12 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 - 2 stale draft sales orders (info)
 - 0 due-soon invoices
 
+### Fixed
+- **Dashboard live insights — false positives eliminated.** The legacy `buildDashboardLiveContext` was surfacing two misleading messages:
+  - `"عملية تسليم أو اعتماد فاتورة معلقة"` was counting any invoice with `warehouse_status='pending'` regardless of age — paid invoices from months ago were being flagged. Now bounded to invoices from the last 30 days.
+  - `"منتجاً منخفض المخزون"` was using a hardcoded `quantity_on_hand <= 5` filter that swept up out-of-stock items, archived products, and integration-test products. Now requires `quantity_on_hand > 0 AND is_active = true` and excludes obvious test naming conventions (`GP-%`, `FP-%`, `MRP-%`, `%E2E%`, `%TEST%`).
+- Result: dashboard alerts now reflect actionable signals only. On the test company this reduced `pending_dispatch` from 61 → 1 and `low_stock` from 60 → 7 — matching what an operator would call real attention items.
+
 ### Safety
 - Read-only RPC, no `INSERT/UPDATE/DELETE` paths exist anywhere in the alert engine.
 - Returns at most 20 alert rows per call to bound work.

@@ -428,11 +428,34 @@ async function loadDashboardContext(
       countCompanyRows(supabase, "invoices", scope, {
         branchColumn: "branch_id",
         warehouseColumn: "warehouse_id",
-        mutate: (query) =>
-          query.or("approval_status.eq.pending,warehouse_status.eq.pending"),
+        // v3.60.0 fix: only RECENT pending invoices (last 30 days).
+        // Older paid invoices with warehouse_status=pending were creating
+        // noise — they're not actionable months after the fact.
+        mutate: (query) => {
+          const cutoff = new Date()
+          cutoff.setDate(cutoff.getDate() - 30)
+          return query
+            .or("approval_status.eq.pending,warehouse_status.eq.pending")
+            .gte("invoice_date", cutoff.toISOString().slice(0, 10))
+        },
       }),
       countCompanyRows(supabase, "products", scope, {
-        mutate: (query) => query.neq("item_type", "service").lte("quantity_on_hand", 5),
+        // v3.60.0 fix: realistic low-stock signal.
+        // - require quantity_on_hand > 0 (out-of-stock is a different state)
+        // - require is_active = true (skip archived / never-stocked items)
+        // - exclude obvious test product naming conventions
+        // - reorder_level is preferred when set, otherwise threshold of 5
+        mutate: (query) =>
+          query
+            .neq("item_type", "service")
+            .gt("quantity_on_hand", 0)
+            .lte("quantity_on_hand", 5)
+            .eq("is_active", true)
+            .not("name", "ilike", "GP-%")
+            .not("name", "ilike", "FP-%")
+            .not("name", "ilike", "MRP-%")
+            .not("name", "ilike", "%E2E%")
+            .not("name", "ilike", "%TEST%"),
       }),
       countCompanyRows(supabase, "sales_return_requests", scope, {
         warehouseColumn: "warehouse_id",
