@@ -4,6 +4,59 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.56.3] - 2026-05-28
+
+### 🧠 Cross-Page Knowledge Search — المُساعد أَصبح يَعرف كل صفحات النظام
+
+السبب: المُستخدم سَأَل "كيف اضيف شركة شحن" داخل صفحة الإِعدادات، فأَجاب المُساعد بخطوات الإِعدادات لأَن الـ fallback يَقرأ دليل الصفحة الحالية فقط. الآن إذا لم يَكن السؤال مُتعَلِّقاً بالصفحة الحالية، يَبحث المُساعد فى الـ 91 صفحة المُسَجَّلَة ويَقترِح الصفحة الصحيحة.
+
+### ✅ المَلفات الجديدة
+
+**`lib/ai/cross-page-search.ts`** (170 سطر):
+- `findRelevantPages(supabase, query, currentPageKey, lang)` — يَبحث فى `page_guides` بـ SQL ILIKE
+- Tokenizer ذكى يُزيل الـ stop-words (Arabic + English)
+- Scoring: match فى العنوان = +3 لكل token، match فى الوصف = +2
+- يَستثنى الصفحة الحالية تلقائياً
+- يَرجع أَفضل 3 نَتائج
+- يَحترم RLS تماماً (لا تَجاوز للصلاحيات)
+
+**`app/api/ai/find-page/route.ts`** (~50 سطر):
+- GET endpoint مع auth + company check
+- يُمَرِّر الـ query + pageKey + language
+- read-only تماماً
+
+### ✅ تَحديث `components/ai-assistant/guide-panel.tsx`
+
+- Import `PageSuggestion` type
+- إِضافة `relatedPages?: PageSuggestion[]` فى `ChatMessage`
+- بعد كل `handleSend` ناجح: استدعاء `/api/ai/find-page` بالتوازى (silent on failure)
+- النَتائج تُرفَق بآخر رسالة من المُساعد
+- مُكَوِّن جديد `RelatedPagesBlock` يَعرض الاقتراحات كبطاقات قابلة للنَقر تَنتقل للصفحة المطلوبة
+- Labels جديدة: `relatedPagesTitle` = "ربما تقصد إحدى هذه الصفحات" / "You might be looking for"
+
+### 🛡️ ضَمانات السلامة
+
+- **صِفر تَغيير على Backend الموجود** (`/api/ai/chat` لم يُمَس)
+- **صِفر تَغيير على قاعدة البيانات** (لا migrations)
+- **read-only تماماً** — يَبحث فى `page_guides` فقط
+- **يَحترم RLS** الموجود
+- **silent failure** — إذا فشل البحث، المُحادَثة تَستمر طبيعياً
+- **TypeScript: OK**
+
+### 🎯 النَتيجة العَملية
+
+عندما يَسأَل المستخدم:
+> "كيف اضيف شركة شحن" (داخل صفحة الإِعدادات)
+
+سَيَحصُل على:
+1. الرَد المعتاد من المُساعد (الـ fallback)
+2. **بطاقة جديدة "ربما تقصد إحدى هذه الصفحات"** مع روابط مباشرة إلى:
+   - صفحة الموردين أَو
+   - تقارير الشحن أَو
+   - الصفحة الأَكثر صلة
+
+---
+
 ## [3.56.2] - 2026-05-28
 
 ### 🐛 Hotfix - إِصلاح أَكثر صَرامة للمَشاكل البَصرية

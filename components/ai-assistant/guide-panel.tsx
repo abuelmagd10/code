@@ -32,6 +32,7 @@ import {
 import type { AICopilotInteractivePayload } from "@/lib/ai/contracts"
 import { buildERPQuestionBankPrompts } from "@/lib/ai/question-bank"
 import type { AccountingPattern, PageGuide } from "@/lib/page-guides"
+import type { PageSuggestion } from "@/lib/ai/cross-page-search"
 
 interface GuidePanelProps {
   isOpen: boolean
@@ -53,6 +54,7 @@ interface ChatMessage {
   fallbackReason?: string | null
   model?: string | null
   responseMeta?: AICopilotInteractivePayload | null
+  relatedPages?: PageSuggestion[]
 }
 
 const MAX_OUTGOING_CHAT_HISTORY = 12
@@ -121,6 +123,9 @@ const L = {
 
     // Header safety chip
     readOnlyChip: "للقراءة فقط",
+
+    relatedPagesTitle: "ربما تقصد إحدى هذه الصفحات",
+    goToPage: "افتح الصفحة",
   },
   en: {
     panelTitle: "Your smart assistant",
@@ -175,6 +180,9 @@ const L = {
       "This is a safe local reply because the external AI service is unavailable right now.",
 
     readOnlyChip: "Read-only",
+
+    relatedPagesTitle: "You might be looking for",
+    goToPage: "Open page",
   },
 }
 
@@ -364,6 +372,33 @@ export function GuidePanel({
           asInteractivePayload(result?.meta?.interactivePayload) ?? current
       )
       setHasHydratedChat(true)
+
+      // Cross-page knowledge search runs in parallel (silent on failure).
+      void (async () => {
+        try {
+          const url = `/api/ai/find-page?q=${encodeURIComponent(question)}` +
+            `&pageKey=${encodeURIComponent(pageKey)}&language=${lang}`
+          const r = await fetch(url)
+          if (!r.ok) return
+          const payload = await r.json()
+          const matches: PageSuggestion[] = Array.isArray(payload?.matches)
+            ? payload.matches
+            : []
+          if (matches.length === 0) return
+          setMessages((current) => {
+            const next = [...current]
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].role === "assistant") {
+                next[i] = { ...next[i], relatedPages: matches }
+                break
+              }
+            }
+            return next
+          })
+        } catch {
+          // Silent: this is a non-essential enhancement
+        }
+      })()
     } catch (error: any) {
       setChatError(
         typeof error?.message === "string" && error.message.trim()
@@ -1151,7 +1186,51 @@ function ChatBubble({
               {labels.safeModeNote}
             </p>
           )}
+          {!isUser && message.relatedPages && message.relatedPages.length > 0 && (
+            <RelatedPagesBlock labels={labels} pages={message.relatedPages} />
+          )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Related pages block (cross-page knowledge search) ──────────────────
+
+function RelatedPagesBlock({
+  labels,
+  pages,
+}: {
+  labels: Labels
+  pages: PageSuggestion[]
+}) {
+  return (
+    <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50/60 px-3 py-2.5 dark:border-blue-900/40 dark:bg-blue-950/30">
+      <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+        {labels.relatedPagesTitle}
+      </p>
+      <div className="space-y-1.5">
+        {pages.map((page) => (
+          <a
+            key={page.pageKey}
+            href={page.route}
+            className="block rounded-lg border border-blue-200 bg-white px-3 py-2 transition hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800/60 dark:bg-slate-900 dark:hover:bg-blue-950/50"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                {page.title}
+              </span>
+              <span className="text-[10px] text-blue-600 dark:text-blue-400">
+                {labels.goToPage}
+              </span>
+            </div>
+            {page.snippet && (
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+                {page.snippet}
+              </p>
+            )}
+          </a>
+        ))}
       </div>
     </div>
   )
