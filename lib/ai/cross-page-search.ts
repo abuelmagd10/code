@@ -45,9 +45,22 @@ const STOP_WORDS_AR = new Set([
   "في", "من", "إلى", "إِلى", "على", "عن", "كيف", "أين", "اين", "متى",
   "ماذا", "هذا", "هذه", "ما", "هل", "أن", "أنا", "أنت", "نحن", "هو",
   "هى", "هي", "ذلك", "تلك", "أو", "ثم", "كل", "بعض", "أى", "اى",
-  "اضيف", "أضيف", "اعمل", "افعل", "يا", "لا", "نعم", "للقيام", "كان",
-  "كانت", "يكون", "تكون", "لكى", "لكي", "حتى", "حسب", "بعد", "قبل",
+  "يا", "لا", "نعم", "للقيام", "كان", "كانت", "يكون", "تكون",
+  "لكى", "لكي", "حتى", "حسب", "بعد", "قبل",
   "مع", "بين", "أمام", "خلف", "فوق", "تحت",
+  // Intent / desire verbs (very common in questions)
+  "اريد", "أريد", "اود", "أود", "احتاج", "أحتاج", "ابحث", "أبحث",
+  "اعرف", "أعرف", "اعلم", "أعلم", "معرفة", "افهم", "أفهم",
+  "يمكن", "يمكننى", "يمكنني", "ينبغى", "ينبغي", "يجب", "لازم", "اقدر",
+  "ساعد", "ساعدنى", "ساعدني", "اخبرنى", "اخبرني",
+  // Action verbs (appear in almost every step instruction)
+  "اضيف", "أضيف", "اضافة", "أضافة", "إضافة", "اضافه",
+  "اعمل", "أعمل", "افعل", "أفعل",
+  "انشاء", "إنشاء", "أنشئ", "انشئ", "اصنع",
+  "حذف", "تعديل", "تعديله", "تغيير", "فتح", "اغلاق", "إغلاق",
+  // Adjectives / qualifiers
+  "جديد", "جديدة", "قديم", "قديمة", "جدا", "جداً",
+  "مختلف", "مختلفة", "مهم", "مهمة", "افضل", "أفضل",
   // Domain noise (appear in almost every ERP page description)
   "شركة", "الشركة", "شركتى", "شركتك", "شركات", "بيانات", "بياناتك",
   "إدارة", "ادارة", "النظام", "نظام", "صفحة", "الصفحة", "صفحات",
@@ -121,9 +134,15 @@ export async function findRelevantPages(
   const tokens = tokenize(query, lang)
   if (tokens.length === 0) return []
 
+  // Send only the cleaned, meaningful tokens to the RPC. Sending the raw
+  // query lets the RPC OR over every word — including very common verbs
+  // ("اريد", "اضافة"), adjectives ("جديدة") and domain noise ("شركة")
+  // that appear in nearly every page guide and drown out the signal.
+  const cleanedQuery = tokens.join(" ")
+
   // Call the FTS RPC. RLS still applies because SECURITY INVOKER.
   const { data, error } = await supabase.rpc("ai_search_pages", {
-    p_query: query,
+    p_query: cleanedQuery,
     p_lang: lang,
     p_exclude_page_key: currentPageKey,
     p_limit: 20,
