@@ -4,6 +4,65 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.59.1] - 2026-05-28
+
+### 🎯 `company_role_permissions` أَصبَحَت مَصدَر الحَقيقة الوَحيد
+
+ملاحَظة المُستخدم: المساعد كان يَستخدم defaults مَدفونَة بدلاً من الإِعدادات الفعلية فى `/settings/users/role_permissions`. الآن الإِعدادات هى الحَكَم.
+
+### ✅ المَنطق الجَديد
+
+```
+لكل (شركة، دَور) للمُستخدم:
+  هل توجد صفوف فى company_role_permissions؟
+    نَعم → استخدم فقط ما هو مُكَوَّن صَراحَةً (can_access OR can_read OR all_access)
+    لا  → fall back للـ defaults (شركات جَديدة فقط)
+
+dashboard دائماً مَوجود (مُطابق للـ sidebar)
+```
+
+### 🔄 التَأثير الفعلى على البيانات الموجودة
+
+**staff قبل:** dashboard, customers, estimates, sales_orders, invoices, inventory, product_availability, attendance (defaults)
+
+**staff بعد** (من `company_role_permissions`):
+- customer_credits, customers, sales_orders, shipments, estimates, third_party_inventory, dashboard, inventory
+- ❌ invoices/attendance/product_availability → **اختَفَت** لأَن الأَدمن لم يُكَوِّنها
+- ✅ customer_credits/shipments/third_party_inventory → **ظَهَرَت** لأَن الأَدمن كَوَّنها
+
+**store_manager قبل:** ... + shipping (default)
+
+**store_manager بعد:**
+- dashboard, inventory, write_offs, payments, warehouses, inventory_transfers, inventory_goods_receipt, purchase_returns, dispatch_approvals, cost_centers, customers, sales_orders, shipments, third_party_inventory
+- ❌ shipping → **اختَفَت** (الأَدمن لم يَضَعها صَراحَةً)
+
+### ✅ Migration: `20260528000800_ai_allowed_resources_use_configured_first.sql`
+
+تَحديث `ai_current_user_allowed_resources()` على Supabase production مع نَفس المَنطق الجَديد.
+
+### ✅ التَحديث على `app/api/ai/find-page/route.ts`
+
+`buildGovernanceContext()` التَطبيق الـ TypeScript المُماثل: يَفحَص أَولاً ما إذا كانت توجد صفوف، ثم يُقَرِّر المَصدَر.
+
+### 🛡️ ضَمانات السلامة
+
+- **لا تَغيير على schema** — فقط منطق دالة
+- **TypeScript: OK**
+- **Owner/Admin/GM** لم يَتَأَثَّروا (full access)
+- **شركات جَديدة بدون تَكوين** → defaults تَظل تَعمل
+- **الأَدمن يَتَحَكَّم بالكامل** — أَى تَغيير فى /settings/users يَنعَكِس فوراً على المساعد
+
+### 🎯 الاختبارات على Production
+
+| دَور | المُكَوَّن فى الإِعدادات | المساعد الآن يَكشِف عَنه |
+|------|--------------------------|---------------------------|
+| **staff** | 8 مَوارد | 8 فقط (لا defaults) ✅ |
+| **store_manager** | 14 مَوارد | 14 فقط (لا "shipping" المَفقود) ✅ |
+| **accountant** | 41 مَوارد (تَفصيلى) | حسب التَكوين ✅ |
+| **owner** | full | كل شَىء ✅ |
+
+---
+
 ## [3.59.0] - 2026-05-28
 
 ### 🎯 إِكمال قاعدة المعرفة — 30 صفحة جديدة (60 → 90 دليل)

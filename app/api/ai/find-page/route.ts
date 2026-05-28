@@ -95,34 +95,50 @@ async function buildGovernanceContext(
     }
   }
 
-  const allowedResources = new Set<string>(
-    DEFAULT_ROLE_PAGES[role] ?? []
-  )
+  // company_role_permissions is the source of truth when the admin has
+  // configured anything for this (company, role). Hardcoded defaults are
+  // only a fallback for brand-new companies that haven't configured perms.
+  const allowedResources = new Set<string>()
 
   try {
     const { data: permissions } = await supabase
       .from("company_role_permissions")
-      .select("resource, can_access")
+      .select("resource, can_access, can_read, all_access")
       .eq("company_id", companyId)
       .eq("role", role)
 
-    if (Array.isArray(permissions)) {
-      for (const perm of permissions as Array<{
+    const rows = Array.isArray(permissions) ? permissions : []
+
+    if (rows.length > 0) {
+      // Admin has configured this role - use ONLY the configured permissions.
+      for (const perm of rows as Array<{
         resource?: string | null
         can_access?: boolean | null
+        can_read?: boolean | null
+        all_access?: boolean | null
       }>) {
         if (!perm?.resource) continue
-        if (perm.can_access === false) {
-          allowedResources.delete(perm.resource)
-        } else if (perm.can_access === true) {
+        const granted = perm.can_access === true
+          || perm.can_read === true
+          || perm.all_access === true
+        if (granted) {
           allowedResources.add(perm.resource)
         }
       }
+    } else {
+      // No configuration yet - fall back to role defaults.
+      for (const r of (DEFAULT_ROLE_PAGES[role] ?? [])) {
+        allowedResources.add(r)
+      }
     }
   } catch {
-    // Silent: fall back to defaults only.
+    // Silent: on error, fall back to defaults so user is not locked out.
+    for (const r of (DEFAULT_ROLE_PAGES[role] ?? [])) {
+      allowedResources.add(r)
+    }
   }
 
+  // Dashboard is always allowed (matches sidebar behaviour).
   allowedResources.add("dashboard")
 
   return {
