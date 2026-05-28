@@ -662,9 +662,9 @@ function StepsCard({ labels, steps }: { labels: Labels; steps: string[] }) {
         <CheckCircle2 className="h-4 w-4 text-green-500" />
         {labels.howToUse}
       </h3>
-      <ol className="space-y-2.5">
+      <ol className="list-none space-y-2.5 p-0">
         {steps.map((step, index) => (
-          <li key={index} className="flex gap-3 text-sm">
+          <li key={index} className="flex list-none gap-3 text-sm">
             <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
               {index + 1}
             </span>
@@ -685,9 +685,9 @@ function TipsCard({ labels, tips }: { labels: Labels; tips: string[] }) {
         <Lightbulb className="h-4 w-4 text-amber-500" />
         {labels.tips}
       </h3>
-      <ul className="space-y-2">
+      <ul className="list-none space-y-2 p-0">
         {tips.map((tip, index) => (
-          <li key={index} className="flex gap-2.5 text-sm">
+          <li key={index} className="flex list-none gap-2.5 text-sm">
             <span className="mt-0.5 flex-shrink-0 text-amber-500">•</span>
             <span className="leading-relaxed text-amber-800 dark:text-amber-200">
               {tip}
@@ -811,7 +811,9 @@ function LiveInsightsPanel({
   payload: AICopilotInteractivePayload
   onPromptSelect: (prompt: string) => void
 }) {
-  const summary = typeof payload.summary === "string" ? payload.summary : ""
+  const summary = sanitizeUserFacingText(
+    typeof payload.summary === "string" ? payload.summary : ""
+  )
   const governanceSummary =
     typeof payload.governanceSummary === "string" ? payload.governanceSummary : ""
   const metrics = Array.isArray(payload.metrics) ? payload.metrics : []
@@ -961,14 +963,20 @@ function LiveInsightsPanel({
         </section>
       )}
 
-      {governanceSummary && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-          <span className="font-semibold text-slate-700 dark:text-slate-200">
-            {labels.permissionsLine}:
-          </span>{" "}
-          {governanceSummary.split("\n")[0]}
-        </div>
-      )}
+      {(() => {
+        const cleanedGovernance = sanitizeUserFacingText(
+          governanceSummary.split("\n")[0] || ""
+        )
+        if (!cleanedGovernance) return null
+        return (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              {labels.permissionsLine}:
+            </span>{" "}
+            {cleanedGovernance}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -1254,6 +1262,53 @@ function buildOutgoingChatHistory(messages: ChatMessage[]) {
       content: truncateChatContent(message.content),
     }))
     .filter((message) => message.content.length > 0)
+}
+
+/**
+ * Clean text coming from the backend (governanceSummary, summary, etc.)
+ * before showing it to the end user:
+ * - strip raw UUIDs (e.g. company / branch / warehouse IDs)
+ * - rewrite developer phrases ("الطبقة المحلية"/"local layer") to natural language
+ * - collapse extra whitespace and dangling punctuation left after stripping IDs
+ */
+function sanitizeUserFacingText(input: string): string {
+  if (!input) return ""
+
+  let out = input
+
+  // 1) Remove UUIDs
+  out = out.replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    ""
+  )
+
+  // 2) Replace developer phrases with friendlier language
+  const replacements: Array<[RegExp, string]> = [
+    [/الطبقة المحلية تحافظ على/g, "نحافظ على"],
+    [/الطبقة المحلية/g, "المساعد"],
+    [/the local layer( still)? preserves?/gi, "we preserve"],
+    [/the local layer/gi, "the assistant"],
+    [/governance summary/gi, "permissions"],
+    [/fallback layer/gi, "safe mode"],
+  ]
+  for (const [pattern, replacement] of replacements) {
+    out = out.replace(pattern, replacement)
+  }
+
+  // 3) Remove labels that contain only IDs after stripping (e.g. "الشركة: ")
+  out = out.replace(
+    /(?:الشركة|الفرع|المخزن|مركز التكلفة|company|branch|warehouse|cost\s+center)\s*[:：]\s*(?=[,،;؛]|$)/gi,
+    ""
+  )
+
+  // 4) Collapse leftover separators and whitespace
+  out = out.replace(/\s+/g, " ")
+  out = out.replace(/\s*[,،;؛]\s*[,،;؛]+/g, ",")
+  out = out.replace(/^\s*[,،;؛.\-]+/, "")
+  out = out.replace(/[,،;؛\-]+\s*$/, "")
+  out = out.trim()
+
+  return out
 }
 
 function asInteractivePayload(value: unknown): AICopilotInteractivePayload | null {
