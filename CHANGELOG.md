@@ -4,6 +4,75 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.58.5] - 2026-05-28
+
+### 🔒 Defense in Depth — حَوكمة على مستوى DB لـ `ai_knowledge_chunks`
+
+سَد ثُغرة information disclosure: قبل هذا الإِصدار، أَى مُستخدم مُسَجَّل دخول كان يَستطيع تَجاوُز `/api/ai/find-page` واستدعاء Supabase REST مباشرَة على `ai_knowledge_chunks` لرؤية title/description/snippet لكل صفحة فى النظام — بِما فيها الصفحات الإِدارية الحَسَّاسَة.
+
+### ✅ Migration: `20260528000500_ai_chunks_governance_hardening.sql`
+
+**1) دالة `ai_resource_for_page_key(text)`:**
+- mapping كامل من page_key → resource
+- IMMUTABLE + PARALLEL SAFE
+- mirror لـ `lib/ai/page-key-registry.ts`
+- يَغطى كل 90 page_key مُسَجَّل
+
+**2) دالة `ai_current_user_is_full_access()`:**
+- تُعيد TRUE لو المُستخدم له دور `owner` / `admin` / `general_manager` فى أَى شركة
+- STABLE + SECURITY INVOKER
+
+**3) دالة `ai_current_user_allowed_resources()`:**
+- مرايا تطابقاً لـ `DEFAULT_ROLE_PAGES` فى `app/api/ai/find-page/route.ts`
+- تَجمع المَوارد لكل الأَدوار التى يَملكها المُستخدم
+- تُطَبِّق `company_role_permissions` overrides
+- تَدعم: manager, accountant, store_manager, manufacturing_officer, booking_officer, purchasing_officer, staff, sales, employee, viewer
+
+**4) تَحديث `ai_reindex_page_guides()`:**
+- يُمَلِّأ عَمود `resource` لكل chunk من `ai_resource_for_page_key()`
+- تَنفيذ تلقائى → 484 chunk الآن لها resource صَحيح
+- صِفر NULL متبقى
+
+**5) RLS Policy جَديدة:**
+```sql
+CREATE POLICY "ai_knowledge_chunks_select"
+  FOR SELECT USING (
+    company_id IS NULL AND (
+      resource IS NULL
+      OR ai_current_user_is_full_access()
+      OR resource = ANY(ai_current_user_allowed_resources())
+    )
+    OR
+    (company_id IN (...company_members...)
+     AND same resource gate)
+  )
+```
+
+### 🛡️ Defense in Depth — الطَبَقات الآن
+
+| الطَبَقَة | ما تَحجِبه |
+|----------|-----------|
+| **1. DB-level RLS** ✨ جَديد | Direct REST access — chunks الصفحات المُقَيَّدَة لا تَظهر فى الاستعلام |
+| 2. RPC `ai_search_pages` | RLS-aware (SECURITY INVOKER) |
+| 3. `findRelevantPages` Governance gate | يَفلتر النَتائج client-side |
+| 4. Middleware navigation | يَحجِب الوصول الفعلى للصفحة |
+
+### 🎯 النَتيجة العَملية
+
+**مُستخدم بدور `staff`** يَستدعى `GET /rest/v1/ai_knowledge_chunks?select=*`:
+- **قبل v3.58.5:** يَرَى كل 484 chunk بما فيها chart_of_accounts, payroll, journal_entries
+- **بعد v3.58.5:** يَرَى فقط chunks الصفحات فى `staff.allowed_resources` (dashboard, customers, estimates, sales_orders, invoices, inventory, product_availability, attendance)
+
+### 🛡️ ضَمانات السلامة
+
+- **runtime-neutral** — لا تَغيير على app code
+- **TypeScript: لا تَغيير**
+- **Owner / Admin / GM لا يَتَأَثَّرون** — يَرَون كل شَىء كما هو
+- **Backward-compatible** — `/api/ai/find-page` يَستمر بنفس السلوك
+- **Performance**: RLS يَستخدم functions STABLE قابلة للـ caching داخل الـ query
+
+---
+
 ## [3.58.4] - 2026-05-28
 
 ### 🧠 المرحلة 3 — Batch 1: إِكمال أَدِلَّة التقارير + تَطبيع البحث العربى
