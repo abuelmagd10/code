@@ -662,18 +662,18 @@ function StepsCard({ labels, steps }: { labels: Labels; steps: string[] }) {
         <CheckCircle2 className="h-4 w-4 text-green-500" />
         {labels.howToUse}
       </h3>
-      <ol className="list-none space-y-2.5 p-0">
+      <div className="space-y-2.5">
         {steps.map((step, index) => (
-          <li key={index} className="flex list-none gap-3 text-sm">
+          <div key={index} className="flex gap-3 text-sm">
             <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
               {index + 1}
             </span>
             <span className="leading-relaxed text-gray-700 dark:text-gray-300">
               {step}
             </span>
-          </li>
+          </div>
         ))}
-      </ol>
+      </div>
     </section>
   )
 }
@@ -685,16 +685,16 @@ function TipsCard({ labels, tips }: { labels: Labels; tips: string[] }) {
         <Lightbulb className="h-4 w-4 text-amber-500" />
         {labels.tips}
       </h3>
-      <ul className="list-none space-y-2 p-0">
+      <div className="space-y-2">
         {tips.map((tip, index) => (
-          <li key={index} className="flex list-none gap-2.5 text-sm">
+          <div key={index} className="flex gap-2.5 text-sm">
             <span className="mt-0.5 flex-shrink-0 text-amber-500">•</span>
             <span className="leading-relaxed text-amber-800 dark:text-amber-200">
               {tip}
             </span>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </section>
   )
 }
@@ -1144,7 +1144,7 @@ function ChatBubble({
           </div>
 
           <p className="whitespace-pre-wrap text-sm leading-relaxed">
-            {message.content}
+            {isUser ? message.content : sanitizeUserFacingText(message.content)}
           </p>
           {!isUser && message.fallbackUsed && (
             <p className="mt-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
