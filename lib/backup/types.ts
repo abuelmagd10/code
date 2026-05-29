@@ -120,68 +120,198 @@ export interface AuditLogEntry {
 }
 
 // ترتيب الجداول للتصدير والاستعادة (Topological Order)
+// v3.61.0 A3: expanded from 38 → ~95 tables after a full DB audit.
+// Order is parent-first → children-after so a transactional restore can satisfy
+// FKs as it inserts. Items / lines tables follow their parent document.
 export const EXPORT_ORDER = [
-  // 1. Core Config (No FKs or Self-Ref)
+  // 1. Core config / hierarchy (no FKs to other company tables)
   'companies',
   'branches',
   'warehouses',
   'cost_centers',
-  'chart_of_accounts', // Beware of Parent-Child
+  'fiscal_periods',
+  'accounting_periods',
+  'chart_of_accounts',
+  'tax_codes',
+  'currencies',
+  'exchange_rates',
+  'exchange_rate_log',
 
-  // 2. Entities
+  // 2. Governance (CRITICAL — must be restored to preserve /settings/users config)
+  'company_role_permissions',
+  'permission_sharing',
+  'permission_transfers',
+  'user_branch_access',
+  'user_branch_cost_center',
+
+  // 3. Entities (master data)
+  'company_members',
   'customers',
   'suppliers',
   'employees',
   'shareholders',
-  'company_members', // Users/Permissions
+  'shareholder_percentage_history',
+  'shipping_providers',
 
-  // 3. Catalog
+  // 4. Catalog
   'products',
+  'product_bundle_items',
   'services',
+  'service_staff',
+  'service_schedules',
 
-  // 4. Sales Cycle
+  // 5. Settings / configuration (after entities they may reference)
+  'company_ai_settings',
+  'company_dashboard_alert_limits',
+  'company_drawings_settings',
+  'company_expenses_settings',
+  'expense_category_account_mappings',
+  'attendance_payroll_settings',
+  'attendance_shifts',
+  'biometric_devices',
+  'commission_plans',
+  'employee_bonus_config',
+  'profit_distribution_settings',
+  'approval_workflows',
+  'budgets',
+  'budget_lines',
+
+  // 6. Sales cycle (documents → items)
   'estimates',
+  'estimate_items',
   'sales_orders',
   'sales_order_items',
   'invoices',
   'invoice_items',
+  'sales_return_requests',
   'sales_returns',
   'sales_return_items',
   'customer_debit_notes',
   'customer_debit_note_items',
+  'customer_debit_note_applications',
   'customer_credits',
+  'customer_credit_ledger',
   'customer_credit_applications',
+  'customer_refund_requests',
+  'credit_notes',
+  'shipments',
+  'shipment_status_logs',
 
-  // 5. Purchase Cycle
+  // 7. Purchase cycle (documents → items)
+  'purchase_requests',
+  'purchase_request_items',
   'purchase_orders',
   'purchase_order_items',
+  'goods_receipts',
+  'goods_receipt_items',
   'bills',
   'bill_items',
   'purchase_returns',
   'purchase_return_items',
-  'supplier_debit_notes',
+  'purchase_return_warehouse_allocations',
+  'supplier_debit_credits',
   'vendor_credits',
+  'vendor_credit_items',
+  'vendor_credit_applications',
+  'vendor_refund_requests',
 
-  // 6. Inventory & Assets
+  // 8. Inventory operations
   'inventory_transactions',
+  'inventory_transfers',
+  'inventory_transfer_items',
   'inventory_write_offs',
-  'fixed_assets',
+  'inventory_write_off_items',
+  'third_party_inventory',
+  'inventory_reservations',
+  'inventory_reservation_lines',
+  'inventory_reservation_allocations',
+  'inventory_reservation_consumptions',
+  'fifo_cost_lots',
+  'fifo_lot_consumptions',
+  'cogs_transactions',
+
+  // 9. Manufacturing (BOMs → orders → events)
+  'manufacturing_work_centers',
+  'manufacturing_routings',
+  'manufacturing_routing_versions',
+  'manufacturing_routing_operations',
+  'manufacturing_boms',
+  'manufacturing_bom_versions',
+  'manufacturing_bom_lines',
+  'manufacturing_bom_line_substitutes',
+  'manufacturing_production_orders',
+  'manufacturing_production_order_operations',
+  'manufacturing_material_issue_approvals',
+  'manufacturing_product_receive_approvals',
+  'production_order_material_requirements',
+  'production_order_issue_events',
+  'production_order_issue_lines',
+  'production_order_receipt_events',
+  'production_order_receipt_lines',
+  'mrp_runs',
+  'mrp_demand_rows',
+  'mrp_supply_rows',
+  'mrp_net_rows',
+  'mrp_suggestions',
+
+  // 10. Bookings / services scheduling
+  'bookings',
+  'booking_payments',
+  'booking_status_history',
+
+  // 11. Fixed assets
   'asset_categories',
+  'fixed_assets',
   'asset_transactions',
   'depreciation_schedules',
 
-  // 7. Finance & Accounting (The Result of above)
+  // 12. Finance & accounting (result of above)
   'journal_entries',
   'journal_entry_lines',
   'payments',
+  'payment_allocations',
   'bank_accounts',
   'bank_transactions',
   'bank_reconciliations',
+  'bank_reconciliation_lines',
+  'bank_voucher_requests',
+  'account_balances',
+  'fiscal_year_closings',
 
-  // 8. HR
+  // 13. HR / Attendance / Payroll / Commissions
+  'attendance_records',
+  'attendance_raw_logs',
+  'biometric_device_logs',
+  'commission_ledger',
+  'commission_runs',
+  'commission_advance_payments',
+  'employee_commissions',
+  'advance_applications',
   'payroll_runs',
+  'payroll_components',
+  'payroll_ledger',
   'payslips',
-  'user_bonuses'
+  'payroll_items',
+  'user_bonuses',
+
+  // 14. Shareholders & profit distribution
+  'capital_contributions',
+  'shareholder_drawings',
+  'dividend_payments',
+  'profit_distributions',
+  'profit_distribution_lines',
+
+  // 15. Expenses
+  'expenses',
+
+  // 16. Approvals / dunning / workflow events
+  'approval_requests',
+  'dunning_events',
+
+  // 17. Notifications (user-scoped state)
+  'notifications',
+  'user_notification_preferences',
+  'notification_escalations',
 ] as const
 
 // الجداول المستثناة من التصدير (أمان)

@@ -5,7 +5,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { BackupData, ValidationResult, ValidationError, ValidationWarning, ValidationReport } from './types'
-import crypto from 'crypto'
+import { checksumOfData } from './checksum-utils'
 
 const SYSTEM_VERSION = '1.0.0'
 
@@ -115,16 +115,11 @@ function validateSystemVersion(backupVersion: string): { valid: boolean; message
 }
 
 /**
- * التحقق من Checksum
+ * التحقق من Checksum (canonical form — matches what exportCompanyBackup writes)
  */
 function validateChecksum(backupData: BackupData): boolean {
-  const dataString = JSON.stringify(backupData.data)
-  const calculatedChecksum = crypto
-    .createHash('sha256')
-    .update(dataString)
-    .digest('hex')
-
-  return calculatedChecksum === backupData.metadata.checksum
+  const calculated = checksumOfData(backupData.data)
+  return calculated === backupData.metadata.checksum
 }
 
 /**

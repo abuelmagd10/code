@@ -4,6 +4,33 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.61.0] - 2026-05-28 — Enterprise Backup Hardening (Phase A: critical fixes)
+
+### Fixed (Critical)
+- **A1 — Checksum was broken end-to-end.** Export computed it via `JSON.stringify(data, Object.keys(data).sort())` (the second argument is a replacer, not a sort hint) while validation used `JSON.stringify(backupData.data)`. The two sides produced different bytes, so the checksum has **never matched** since the feature shipped. Now both sides go through a new `canonicalStringify` helper that sorts keys recursively and returns deterministic bytes, then hashed with SHA-256.
+- **A2 — Cross-tenant restore protection.** The restore and validate endpoints now reject any backup whose `metadata.company_id` does not match the target company. Returns 403 with both IDs in the response body for the auditor. Closes a vector where an owner of company B who obtained company A's file could overwrite B with A's data.
+- **A3 — `EXPORT_ORDER` was missing ~120 tables.** Audited every `company_id`-bearing table in the production schema and rebuilt the export list as a proper topological order (parent documents → child items). The most damaging omission was `company_role_permissions` — the single source of truth from v3.59.1. Other criticals now included: `shipments`, `goods_receipts`, `inventory_transfers`, `manufacturing_*`, `production_order_*`, `mrp_*`, `attendance_*`, `payroll_*`, `commission_*`, `notifications`, `user_notification_preferences`, `company_ai_settings`, `expenses`, `exchange_rates`, `accounting_periods`, `bookings`, `services`, `shareholder_*`, `profit_distribution_*`, `tax_codes`, and all item/line child tables (`invoice_items`, `journal_entry_lines`, etc.). Total: 38 → 157 tables.
+
+### Files
+- New: `lib/backup/checksum-utils.ts`
+- Modified: `lib/backup/export-utils.ts`, `lib/backup/validation-utils.ts`, `lib/backup/types.ts`
+- Modified: `app/api/backup/restore/route.ts`, `app/api/backup/validate/route.ts`
+
+### What still ships in Phase B (v3.61.1+)
+- AES-256-GCM client-side encryption with user passphrase + PBKDF2
+- SYSTEM_VERSION sync with package.json (compare major.minor, not full string)
+- `canExportBackup` routed through `ai_current_user_allowed_resources()` (v3.59.1 single-source governance)
+- Storage bucket + backup history UI + retention policy + cron + email notifications
+- HMAC signature, rate limiting, restore progress polling
+
+### Safety
+- All changes are backward compatible at the API level. Old backups created before v3.61.0 will fail checksum validation (because the old checksum was wrong) — operators should re-export to get a backup whose integrity can actually be verified.
+- No DB migrations required.
+- No UI changes; user-facing flow is unchanged.
+
+---
+
+
 ## [3.60.0] - 2026-05-28 — Phase 4: Proactive Smart Suggestions
 
 ### Added

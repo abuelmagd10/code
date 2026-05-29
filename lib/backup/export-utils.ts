@@ -5,7 +5,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { BackupData, BackupMetadata, EXPORT_ORDER, EXCLUDED_TABLES } from './types'
-import crypto from 'crypto'
+import { checksumOfData } from './checksum-utils'
 
 const SYSTEM_VERSION = '1.0.0'
 const BACKUP_VERSION = '2.0'
@@ -49,12 +49,9 @@ export async function exportCompanyBackup(
   }
 
   // 2. حساب Checksum للبيانات
-  // نستخدم مفاتيح مرتبة لضمان تطابق الهاش
-  const dataString = JSON.stringify(data, Object.keys(data).sort())
-  const checksum = crypto
-    .createHash('sha256')
-    .update(dataString)
-    .digest('hex')
+  // v3.61.0 A1: canonical JSON (sorted keys recursively) — same algo used in
+  // validation-utils so the checksum actually matches on restore.
+  const checksum = checksumOfData(data)
 
   // 3. إنشاء Metadata
   const metadata: BackupMetadata = {

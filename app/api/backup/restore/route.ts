@@ -49,6 +49,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // v3.61.0 A2: cross-tenant restore protection.
+    // The backup metadata MUST reference the same company we are restoring into.
+    // Without this check, an owner of company B who somehow obtained company A's
+    // backup file could restore A's data into B.
+    if (backupData.metadata.company_id && backupData.metadata.company_id !== companyId) {
+      return NextResponse.json(
+        {
+          error: 'هذه النسخة الاحتياطية تخص شركة أخرى ولا يمكن استعادتها هنا',
+          error_en: 'This backup belongs to a different company and cannot be restored here',
+          details: {
+            backup_company_id: backupData.metadata.company_id,
+            target_company_id: companyId,
+          },
+        },
+        { status: 403 }
+      )
+    }
+
     // 4. إعداد خيارات الاستعادة
     const restoreOptions: RestoreOptions = {
       mode: 'restore_to_empty',
