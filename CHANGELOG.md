@@ -4,6 +4,58 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.0] - 2026-05-29 — Phase B start: Backup Storage + History (B1+B2)
+
+### Added
+- **B1 — Supabase Storage bucket for backups.** Every export now uploads a copy of the file to a private `backups` bucket (one folder per company, `{company_id}/{history_id}.json`). The local download still happens, so the user has both a personal copy and a server-side copy. Files automatically expire after 30 days.
+- **B1 — `backup_history` table.** Each successful export gets a metadata row recording: who created it, when, size, total records / table count, system version, schema version, SHA-256 checksum, encryption flag, status, `expires_at`, and free-form notes. Full RLS:
+  - SELECT: owner / admin / general_manager of the same company
+  - INSERT: server-side only (via the export endpoint)
+  - DELETE: owner only (soft-delete: status → 'deleted', file removed, audit log entry written)
+- **B1 — Storage policies** on `storage.objects` for the `backups` bucket: read / insert restricted to owner/admin/GM of the matching company folder, delete restricted to owner.
+- **B2 — `BackupHistoryTable` component** (`components/backup/BackupHistoryTable.tsx`): bilingual (ar/en), responsive table showing the last 20 backups with:
+  - Created date/time (locale-formatted)
+  - File size (auto-scaled B/KB/MB)
+  - Total records (with table count tooltip)
+  - System version badge
+  - Encryption badge (green check for encrypted, gray shield-off for plain)
+  - Expiry countdown (amber when ≤ 3 days)
+  - Download button (uses a short-lived 5-minute signed URL)
+  - Delete button (owner-only, with confirm dialog)
+  - Manual refresh button + automatic refresh after a new export
+- **B2 — Three new API endpoints:**
+  - `GET /api/backup/list?limit=20` — paginated list of company backups
+  - `GET /api/backup/[id]/download` — issues a 5-minute signed URL
+  - `DELETE /api/backup/[id]` — owner-only soft-delete + Storage removal + audit log
+
+### Files
+- New migration: `v3_62_0_backup_history_and_storage` (applied via MCP)
+- New: `app/api/backup/list/route.ts`
+- New: `app/api/backup/[id]/download/route.ts`
+- New: `app/api/backup/[id]/route.ts` (DELETE handler)
+- New: `components/backup/BackupHistoryTable.tsx`
+- Modified: `app/api/backup/export/route.ts` (uploads to Storage + inserts history row)
+- Modified: `app/settings/page.tsx` (renders `BackupHistoryTable`, bumps refresh key on export)
+- Modified: `lib/version.ts` (APP_VERSION 3.61.3 → 3.62.0)
+
+### Security
+- Storage objects path convention `{company_id}/{id}.json` is enforced by the RLS policy on `storage.objects` — a malicious user cannot upload into another company's folder even with a valid `INSERT` permission.
+- Download URLs are signed and expire in 5 minutes. Once expired, the user must request a fresh signed URL via the API (which re-checks RLS).
+- Delete is a soft-delete: the history row stays with `status='deleted'` so the audit trail is complete. The Storage object is removed.
+- `expires_at` is set at export time (now + 30 days). A future cron (Phase B, item B3) will use this column to auto-purge expired files.
+
+### Open items still in Phase B
+- B3 — scheduled (cron) automatic weekly backups
+- B4 — restore progress polling from `restore_queue.status`
+- B5 — email notifications on success/failure
+- B6 — HMAC signature (separate from per-file passphrase encryption)
+- B7 — rate limiting on the export endpoint
+- B8 — gzip compression of the JSON payload before upload
+- Bonus — fix the `companies: 0` cosmetic issue in the export breakdown
+
+---
+
+
 ## [3.61.3] - 2026-05-29 — Critical hotfix: child tables now actually exported
 
 ### Fixed

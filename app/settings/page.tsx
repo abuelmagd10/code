@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { PassphraseDialog } from "@/components/backup/PassphraseDialog"
+import { BackupHistoryTable } from "@/components/backup/BackupHistoryTable"
 import { encryptBackup, decryptBackup, isEncryptedBackup, type EncryptedBackup } from "@/lib/backup/crypto-utils"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -290,6 +291,9 @@ export default function SettingsPage() {
   const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null)
   const backupFileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // v3.62.0 B2 — bump this after a successful export so the history reloads
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+
   // v3.61.2 A7 — encryption state
   const [passDialogOpen, setPassDialogOpen] = useState(false)
   const [passDialogMode, setPassDialogMode] = useState<"encrypt" | "decrypt">("encrypt")
@@ -443,6 +447,8 @@ export default function SettingsPage() {
       localStorage.setItem('last_backup_date', now)
       setLastBackupDate(now)
 
+      // v3.62.0 — refresh the history table so the new row appears
+      setHistoryRefreshKey((k) => k + 1)
       toastActionSuccess(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية')
     } catch (err: any) {
       console.error('Encryption error:', err)
@@ -2446,6 +2452,13 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* v3.62.0 B2 — backup history table */}
+        <BackupHistoryTable
+          language={language as 'ar' | 'en'}
+          refreshKey={historyRefreshKey}
+          canDelete={userRole === 'owner'}
+        />
 
         {/* v3.61.2 A7 — Encrypt/Decrypt passphrase dialog */}
         <PassphraseDialog
