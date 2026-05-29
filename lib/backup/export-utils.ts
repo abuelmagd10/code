@@ -7,7 +7,9 @@ import { createClient } from '@/lib/supabase/server'
 import { BackupData, BackupMetadata, EXPORT_ORDER, EXCLUDED_TABLES } from './types'
 import { checksumOfData } from './checksum-utils'
 
-const SYSTEM_VERSION = '1.0.0'
+import { APP_VERSION } from '@/lib/version'
+
+// Backup file format version — bumped only on breaking schema changes.
 const BACKUP_VERSION = '2.0'
 
 /**
@@ -56,7 +58,7 @@ export async function exportCompanyBackup(
   // 3. إنشاء Metadata
   const metadata: BackupMetadata = {
     version: BACKUP_VERSION,
-    system_version: SYSTEM_VERSION,
+    system_version: APP_VERSION,
     schema_version: '2026.02', // يجب تحديثه مع كل تحديث للكيما
     erp_version: '1.0.0', // إصدار المنطق المحاسبي
     created_at: new Date().toISOString(),
@@ -123,7 +125,17 @@ function cleanSensitiveFields(record: any, tableName: string): any {
 }
 
 /**
- * التحقق من صلاحية المستخدم للتصدير
+ * التحقق من صلاحية المستخدم للتصدير.
+ *
+ * v3.61.1 A6 — governance unified with v3.59.1 single source of truth:
+ *   1. Full-access roles (owner / admin / general_manager) are always allowed.
+ *   2. Any other role is allowed if /settings/users has explicitly granted
+ *      the `backup` resource to that role via company_role_permissions.
+ *   3. Everything else is denied.
+ *
+ * The hardcoded ['owner','admin'] check that existed here before was a second
+ * source of truth inconsistent with the rest of the app. /settings/users is
+ * now the only place anyone changes who can export.
  */
 export async function canExportBackup(
   userId: string,
@@ -142,11 +154,30 @@ export async function canExportBackup(
     return { allowed: false, reason: 'المستخدم ليس عضواً في الشركة' }
   }
 
-  if (!['owner', 'admin'].includes(member.role)) {
-    return { allowed: false, reason: 'فقط المالك أو المدير يمكنه تصدير النسخ الاحتياطية' }
+  const role = String(member.role || '').toLowerCase().trim()
+
+  // Layer 1 — full-access roles bypass the resource check (mirrors AI assistant rules)
+  if (['owner', 'admin', 'general_manager'].includes(role)) {
+    return { allowed: true }
   }
 
-  return { allowed: true }
+  // Layer 2 — explicit grant of 'backup' resource via /settings/users
+  const { data: perm } = await supabase
+    .from('company_role_permissions')
+    .select('can_access, can_read, all_access')
+    .eq('company_id', companyId)
+    .eq('role', role)
+    .eq('resource', 'backup')
+    .maybeSingle()
+
+  if (perm && (perm.can_access === true || perm.can_read === true || perm.all_access === true)) {
+    return { allowed: true }
+  }
+
+  return {
+    allowed: false,
+    reason: 'صلاحية النسخ الاحتياطية تتطلب أن تكون مالكاً/مديراً، أو أن يمنحك المالك صلاحية "backup" من إعدادات المستخدمين',
+  }
 }
 
 /**

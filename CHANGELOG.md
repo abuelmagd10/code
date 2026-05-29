@@ -4,6 +4,34 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.61.1] - 2026-05-29 — Backup Hardening (A5 + A6)
+
+### Added
+- **A5 — Single source of truth for version (`lib/version.ts`).** New `APP_VERSION` constant ("3.61.1") replaces the hardcoded `SYSTEM_VERSION = "1.0.0"` that lived independently in `export-utils.ts` and `validation-utils.ts`. The release script verifies the constant matches the version it is pushing.
+- **A5 — Major.minor compatibility check (`isBackupVersionCompatible`).** Validation now accepts any backup whose major version matches and whose minor is `<=` the current system. Legacy "1.0.0" backups produced before v3.61.1 are accepted with a friendly note (backward compat). Hard reject only on major mismatch or future-minor mismatch.
+
+### Fixed
+- **A6 — `canExportBackup` unified with v3.59.1 single-source governance.** The hardcoded `['owner','admin']` second check was inconsistent with the rest of the app. Now:
+  - `owner` / `admin` / `general_manager` → always allowed (mirrors AI assistant rules).
+  - Any other role → allowed only when `/settings/users` has explicitly granted the `backup` resource to that role in `company_role_permissions`.
+  - No code change is needed to delegate backup permission to a different role — admin just toggles it in the UI.
+
+### Files
+- New: `lib/version.ts`
+- Modified: `lib/backup/export-utils.ts`, `lib/backup/validation-utils.ts`
+
+### Notes
+- No DB migration required.
+- No UI changes.
+- A new export will now stamp `system_version: "3.61.1"` instead of the meaningless legacy `"1.0.0"`.
+- Backups produced by v3.61.0 (which still wrote "1.0.0") remain restorable.
+
+### Still to ship in Phase A
+- **A7 — AES-256-GCM encryption** with user passphrase + PBKDF2 (the most important remaining gap).
+
+---
+
+
 ## [3.61.0] - 2026-05-28 — Enterprise Backup Hardening (Phase A: critical fixes)
 
 ### Fixed (Critical)

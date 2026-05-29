@@ -6,8 +6,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { BackupData, ValidationResult, ValidationError, ValidationWarning, ValidationReport } from './types'
 import { checksumOfData } from './checksum-utils'
-
-const SYSTEM_VERSION = '1.0.0'
+import { APP_VERSION, isBackupVersionCompatible } from '@/lib/version'
 
 /**
  * التحقق من صحة النسخة الاحتياطية
@@ -39,7 +38,7 @@ export async function validateBackup(
     errors.push({
       type: 'system_version',
       message: versionCheck.message,
-      details: { backup: backupData.metadata.system_version, current: SYSTEM_VERSION }
+      details: { backup: backupData.metadata.system_version, current: APP_VERSION }
     })
   }
 
@@ -101,17 +100,21 @@ export async function validateBackup(
 }
 
 /**
- * التحقق من توافق إصدار النظام
+ * v3.61.1 A5 — version compatibility check based on major.minor (not exact match).
+ *   * major mismatch  → reject (breaking schema)
+ *   * backup minor > system minor → reject (newer than what we can read)
+ *   * legacy "1.0.0" → accept (hardcoded value used in v3.61.0 and earlier)
+ *   * otherwise → accept
  */
 function validateSystemVersion(backupVersion: string): { valid: boolean; message: string } {
-  // حالياً نقبل نفس الإصدار فقط
-  if (backupVersion !== SYSTEM_VERSION) {
+  const result = isBackupVersionCompatible(backupVersion, APP_VERSION)
+  if (!result.compatible) {
     return {
       valid: false,
-      message: `إصدار النظام غير متوافق. النسخة الاحتياطية: ${backupVersion}، النظام الحالي: ${SYSTEM_VERSION}`
+      message: `إصدار النظام غير متوافق. النسخة الاحتياطية: ${backupVersion}، النظام الحالي: ${APP_VERSION}. ${result.reason}`,
     }
   }
-  return { valid: true, message: 'إصدار النظام متوافق' }
+  return { valid: true, message: result.reason }
 }
 
 /**
