@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
+import { PassphraseDialog } from "@/components/backup/PassphraseDialog"
+import { encryptBackup, decryptBackup, isEncryptedBackup, type EncryptedBackup } from "@/lib/backup/crypto-utils"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -288,6 +290,14 @@ export default function SettingsPage() {
   const [restorePreview, setRestorePreview] = useState<Record<string, number> | null>(null)
   const backupFileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // v3.61.2 A7 — encryption state
+  const [passDialogOpen, setPassDialogOpen] = useState(false)
+  const [passDialogMode, setPassDialogMode] = useState<"encrypt" | "decrypt">("encrypt")
+  const [passDialogHint, setPassDialogHint] = useState<EncryptedBackup["metadata_hint"] | null>(null)
+  const [passDialogError, setPassDialogError] = useState<string | null>(null)
+  const [pendingExportData, setPendingExportData] = useState<any | null>(null)
+  const [pendingEncryptedFile, setPendingEncryptedFile] = useState<EncryptedBackup | null>(null)
+
   // Load last backup date
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -337,22 +347,15 @@ export default function SettingsPage() {
       }
       setBackupStats(stats)
 
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `backup_${name?.replace(/\s+/g, '_') || 'company'}_${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      const now = new Date().toISOString()
-      localStorage.setItem('last_backup_date', now)
-      setLastBackupDate(now)
+      // v3.61.2 A7 — defer download. Ask the user whether to encrypt first.
+      // The actual write-to-disk happens in finishExport() after the dialog.
       setExportProgress(100)
-
-      toastActionSuccess(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية')
+      setIsBackupDialogOpen(false)
+      setPendingExportData(backup)
+      setPassDialogMode("encrypt")
+      setPassDialogError(null)
+      setPassDialogOpen(true)
+      // toast deferred to finishExport
     } catch (err: any) {
       console.error('Backup error:', err)
       toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', err?.message)
@@ -362,10 +365,8 @@ export default function SettingsPage() {
     }
   }
 
-  // Handle file selection for restore — v3.61.0: accepts new BackupData format
-  // (metadata + data). Old v1.0 files ({version, tables, ...}) are rejected
-  // with a clear message since they were missing checksum & cross-tenant
-  // guards. Operators should re-export to upgrade.
+  // Handle file selection for restore — v3.61.0 + A7: accepts new BackupData
+  // format AND encrypted backups. Legacy v1.0 files are rejected.
   const handleRestoreFileSelect = async (file: File) => {
     try {
       const text = await file.text()
@@ -384,13 +385,23 @@ export default function SettingsPage() {
         return
       }
 
+      // v3.61.2 A7 — encrypted backup: ask for passphrase before validating
+      if (isEncryptedBackup(data)) {
+        setRestoreFile(file)
+        setPendingEncryptedFile(data)
+        setPassDialogHint(data.metadata_hint)
+        setPassDialogMode("decrypt")
+        setPassDialogError(null)
+        setPassDialogOpen(true)
+        return
+      }
+
       if (!data || !data.metadata || !data.data) {
         toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'Invalid backup file format' : 'تنسيق ملف النسخة الاحتياطية غير صالح')
         return
       }
 
       setRestoreFile(file)
-      // Build stats from the new format for the preview dialog
       const stats: Record<string, number> = {}
       if (data.data && typeof data.data === 'object') {
         for (const [tbl, rows] of Object.entries(data.data)) {
@@ -401,6 +412,97 @@ export default function SettingsPage() {
       setIsRestoreDialogOpen(true)
     } catch (err: any) {
       toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'Error reading backup file' : 'خطأ في قراءة ملف النسخة الاحتياطية')
+    }
+  }
+
+  // v3.61.2 A7 — finalize an export: optionally encrypt then download.
+  const finishExport = async (passphrase: string | null) => {
+    const backup = pendingExportData
+    if (!backup) return
+    try {
+      let fileContent: string
+      let suffix = ""
+      if (passphrase) {
+        const enc = await encryptBackup(backup, passphrase)
+        fileContent = JSON.stringify(enc, null, 2)
+        suffix = "_encrypted"
+      } else {
+        fileContent = JSON.stringify(backup, null, 2)
+      }
+      const blob = new Blob([fileContent], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `backup_${name?.replace(/\s+/g, '_') || 'company'}_${new Date().toISOString().split('T')[0]}${suffix}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      const now = new Date().toISOString()
+      localStorage.setItem('last_backup_date', now)
+      setLastBackupDate(now)
+
+      toastActionSuccess(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية')
+    } catch (err: any) {
+      console.error('Encryption error:', err)
+      toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', err?.message)
+    } finally {
+      setPendingExportData(null)
+      setPassDialogOpen(false)
+    }
+  }
+
+  // v3.61.2 A7 — finalize a restore from an encrypted file.
+  const finishDecryptAndStage = async (passphrase: string) => {
+    const enc = pendingEncryptedFile
+    if (!enc) return
+    try {
+      const plain = await decryptBackup(enc, passphrase)
+      // Pass to the normal restore staging UX
+      const stats: Record<string, number> = {}
+      if (plain.data && typeof plain.data === 'object') {
+        for (const [tbl, rows] of Object.entries(plain.data)) {
+          if (Array.isArray(rows)) stats[tbl] = (rows as unknown[]).length
+        }
+      }
+      setRestorePreview(stats)
+      // Replace the restoreFile blob in memory with a decrypted-text Blob so
+      // handleImportBackup re-parses cleanly.
+      const decBlob = new Blob([JSON.stringify(plain)], { type: 'application/json' })
+      const decFile = new File([decBlob], (restoreFile?.name || 'backup.json'), { type: 'application/json' })
+      setRestoreFile(decFile)
+      setPendingEncryptedFile(null)
+      setPassDialogOpen(false)
+      setIsRestoreDialogOpen(true)
+    } catch (err: any) {
+      const msg = err?.message === 'WRONG_PASSPHRASE' ? 'WRONG_PASSPHRASE' : (err?.message || 'Decryption failed')
+      setPassDialogError(msg)
+    }
+  }
+
+  // v3.61.2 A7 — passphrase dialog handlers (encrypt mode = optional)
+  const handlePassDialogConfirm = (pass: string | null) => {
+    if (passDialogMode === "encrypt") {
+      // null = user chose plain export
+      void finishExport(pass)
+    } else {
+      if (!pass) {
+        setPassDialogOpen(false)
+        return
+      }
+      void finishDecryptAndStage(pass)
+    }
+  }
+
+  const handlePassDialogCancel = () => {
+    setPassDialogOpen(false)
+    setPassDialogError(null)
+    if (passDialogMode === "encrypt") {
+      setPendingExportData(null)
+    } else {
+      setPendingEncryptedFile(null)
+      setRestoreFile(null)
     }
   }
 
@@ -2344,6 +2446,17 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* v3.61.2 A7 — Encrypt/Decrypt passphrase dialog */}
+        <PassphraseDialog
+          open={passDialogOpen}
+          mode={passDialogMode}
+          language={language as 'ar' | 'en'}
+          hint={passDialogHint}
+          error={passDialogError}
+          onConfirm={handlePassDialogConfirm}
+          onCancel={handlePassDialogCancel}
+        />
 
         {/* Export Progress Dialog */}
         <Dialog open={isBackupDialogOpen} onOpenChange={setIsBackupDialogOpen}>

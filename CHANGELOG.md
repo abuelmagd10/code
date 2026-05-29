@@ -4,6 +4,50 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.61.2] - 2026-05-29 — Backup Encryption (Phase A complete)
+
+### Added
+- **A7 — AES-256-GCM client-side encryption.** Backups can now be optionally encrypted with a passphrase before the file leaves the browser. The server never sees the passphrase.
+  - Key derivation: PBKDF2 + SHA-256 + 250 000 iterations + 16-byte random salt
+  - Encryption: AES-256-GCM with 12-byte random IV; the authentication tag detects tampering or wrong passphrase
+  - File format (`ERB-BACKUP-AES256GCM-v1`):
+    ```json
+    { "encrypted": true, "format": "...", "kdf": {...}, "cipher": {...}, "metadata_hint": {...} }
+    ```
+  - `metadata_hint` keeps **non-sensitive** identifiers (company_id, company_name, created_at, total_records, system_version) outside the ciphertext so the user can see what file they have without the passphrase. Sensitive data (every business record) remains fully encrypted.
+- **Bilingual `PassphraseDialog`** (`components/backup/PassphraseDialog.tsx`):
+  - Encrypt mode: optional checkbox + passphrase + confirm + live strength meter (0-4) + bilingual hints + safety warning that lost passphrase = unrecoverable file
+  - Decrypt mode: shows the file's `metadata_hint` (so the user can verify what they're about to open) + passphrase input + wrong-passphrase detection
+  - Show/hide passphrase toggle, full RTL support
+- **Strength estimator** (no external library):
+  - Scores 0-4 based on length (≥12 / ≥16), character class diversity (lower/upper/digit/symbol)
+  - Penalties for repeated characters, common words ("password", "12345", "qwerty")
+  - Bilingual labels and improvement hints
+- Encrypted backups detected automatically on restore (via `isEncryptedBackup`); passphrase dialog appears, decrypts in memory, then continues with the normal validate → restore flow.
+
+### Files
+- New: `lib/backup/crypto-utils.ts` (Web Crypto API helpers, 9.7 KB)
+- New: `components/backup/PassphraseDialog.tsx` (bilingual dialog, 11.4 KB)
+- Modified: `app/settings/page.tsx` (export/import flow wired through dialog)
+- Modified: `lib/version.ts` (APP_VERSION → 3.61.2)
+
+### Security model
+- Encryption is **client-side only**. The server endpoints (`/api/backup/export`, `/api/backup/restore`, `/api/backup/validate`) never see the passphrase and never store ciphertext.
+- A2 cross-tenant guard still applies **after** decryption — the decrypted `metadata.company_id` must still match the target.
+- A1 checksum (canonical SHA-256) is computed on the plain BackupData; after decryption, validation re-verifies it, so tampering with the ciphertext fails both GCM auth AND the checksum.
+- PBKDF2 at 250 000 iterations makes brute-forcing the passphrase computationally expensive (~250 ms per attempt on consumer hardware). AES-NI hardware acceleration in modern browsers keeps the actual encrypt/decrypt step in tens of milliseconds for backups in the single-MB range.
+
+### UX notes
+- Encryption is **opt-in**: the dialog shows a clear "تشفير النسخة بكلمة مرور (موصى به)" checkbox. Choosing "Export without encryption" still works exactly as before.
+- The file extension stays `.json`. Encrypted files get `_encrypted` in the filename for at-a-glance recognition.
+- If a user picks a weak passphrase (score < 2), the "Export encrypted" button stays disabled and the dialog shows targeted hints.
+
+### Phase A status
+With A7 shipped, the original Phase A plan from the v3.60.0 review (A1–A7) is complete. Outstanding gaps now move to **Phase B**: Supabase Storage retention bucket, backup history UI, scheduled cron backups, HMAC signing, rate-limiting, restore progress polling, email notifications.
+
+---
+
+
 ## [3.61.1] - 2026-05-29 — Backup Hardening (A5 + A6)
 
 ### Added
