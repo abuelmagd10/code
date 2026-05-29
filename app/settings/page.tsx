@@ -296,7 +296,10 @@ export default function SettingsPage() {
     }
   }, [])
 
-  // Export backup function
+  // Export backup function — v3.61.0: routed through hardened API (Phase A).
+  // The old inline client-side export bypassed the API entirely, missing
+  // checksum, audit log, sensitive-field cleanup, and 120+ tables. Now we
+  // go through /api/backup/export which has all of those.
   const handleExportBackup = async () => {
     if (!companyId) {
       toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'No active company' : 'لا توجد شركة نشطة')
@@ -305,87 +308,34 @@ export default function SettingsPage() {
 
     try {
       setIsExporting(true)
-      setExportProgress(0)
+      setExportProgress(10)
       setIsBackupDialogOpen(true)
 
-      const tables = [
-        { name: 'companies', label: language === 'en' ? 'Company Data' : 'بيانات الشركة', icon: 'Building2' },
-        { name: 'customers', label: language === 'en' ? 'Customers' : 'العملاء', icon: 'Users' },
-        { name: 'vendors', label: language === 'en' ? 'Vendors' : 'الموردين', icon: 'Truck' },
-        { name: 'products', label: language === 'en' ? 'Products' : 'المنتجات', icon: 'Package' },
-        { name: 'invoices', label: language === 'en' ? 'Invoices' : 'الفواتير', icon: 'FileText' },
-        { name: 'invoice_items', label: language === 'en' ? 'Invoice Items' : 'عناصر الفواتير', icon: 'FileText' },
-        { name: 'bills', label: language === 'en' ? 'Bills' : 'فواتير الموردين', icon: 'FileText' },
-        { name: 'bill_items', label: language === 'en' ? 'Bill Items' : 'عناصر فواتير الموردين', icon: 'FileText' },
-        { name: 'payments', label: language === 'en' ? 'Payments' : 'المدفوعات', icon: 'CreditCard' },
-        { name: 'journal_entries', label: language === 'en' ? 'Journal Entries' : 'القيود اليومية', icon: 'BookOpen' },
-        { name: 'journal_entry_lines', label: language === 'en' ? 'Journal Lines' : 'سطور القيود', icon: 'BookOpen' },
-        { name: 'accounts', label: language === 'en' ? 'Chart of Accounts' : 'دليل الحسابات', icon: 'BookOpen' },
-        { name: 'inventory_transactions', label: language === 'en' ? 'Inventory Transactions' : 'حركات المخزون', icon: 'Package' },
-        { name: 'bank_accounts', label: language === 'en' ? 'Bank Accounts' : 'الحسابات البنكية', icon: 'CreditCard' },
-        { name: 'bank_transactions', label: language === 'en' ? 'Bank Transactions' : 'المعاملات البنكية', icon: 'CreditCard' },
-        { name: 'employees', label: language === 'en' ? 'Employees' : 'الموظفين', icon: 'Users' },
-        { name: 'shareholders', label: language === 'en' ? 'Shareholders' : 'المساهمون', icon: 'Users' },
-        { name: 'estimates', label: language === 'en' ? 'Estimates' : 'العروض السعرية', icon: 'FileText' },
-        { name: 'sales_orders', label: language === 'en' ? 'Sales Orders' : 'أوامر البيع', icon: 'ShoppingCart' },
-        { name: 'purchase_orders', label: language === 'en' ? 'Purchase Orders' : 'أوامر الشراء', icon: 'Truck' },
-        { name: 'credit_notes', label: language === 'en' ? 'Credit Notes' : 'إشعارات الدائن', icon: 'FileText' },
-        { name: 'sales_returns', label: language === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات', icon: 'RefreshCcw' },
-      ]
+      setExportProgress(30)
+      const response = await fetch('/api/backup/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: name || 'Unknown' }),
+      })
+      setExportProgress(60)
 
-      const backupData: Record<string, any[]> = {}
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || err.error_en || (language === 'en' ? 'Export failed' : 'فشل التصدير'))
+      }
+
+      const result = await response.json()
+      const backup = result.data
+      setExportProgress(85)
+
+      // Stats for the dialog (table name -> row count)
       const stats: Record<string, number> = {}
-      let progress = 0
-      const progressStep = 100 / tables.length
-
-      for (const table of tables) {
-        try {
-          const { data, error } = await supabase
-            .from(table.name)
-            .select('*')
-            .eq('company_id', companyId)
-
-          if (!error && data) {
-            backupData[table.name] = data
-            stats[table.name] = data.length
-          } else {
-            backupData[table.name] = []
-            stats[table.name] = 0
-          }
-        } catch {
-          backupData[table.name] = []
-          stats[table.name] = 0
+      if (backup && backup.data && typeof backup.data === 'object') {
+        for (const [tbl, rows] of Object.entries(backup.data)) {
+          if (Array.isArray(rows)) stats[tbl] = rows.length
         }
-        progress += progressStep
-        setExportProgress(Math.min(progress, 95))
-        await new Promise(r => setTimeout(r, 50))
       }
-
-      // Get company info separately (no company_id filter)
-      try {
-        const { data: companyData } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('id', companyId)
-          .single()
-        if (companyData) {
-          backupData['companies'] = [companyData]
-          stats['companies'] = 1
-        }
-      } catch { }
-
-      setExportProgress(100)
       setBackupStats(stats)
-
-      // Create backup file
-      const backup = {
-        version: '1.0',
-        created_at: new Date().toISOString(),
-        company_id: companyId,
-        company_name: name || 'Unknown',
-        tables: backupData,
-        stats: stats
-      }
 
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
@@ -397,10 +347,10 @@ export default function SettingsPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
 
-      // Save last backup date
       const now = new Date().toISOString()
       localStorage.setItem('last_backup_date', now)
       setLastBackupDate(now)
+      setExportProgress(100)
 
       toastActionSuccess(toast, language === 'en' ? 'Export' : 'التصدير', language === 'en' ? 'Backup' : 'النسخة الاحتياطية')
     } catch (err: any) {
@@ -412,26 +362,53 @@ export default function SettingsPage() {
     }
   }
 
-  // Handle file selection for restore
+  // Handle file selection for restore — v3.61.0: accepts new BackupData format
+  // (metadata + data). Old v1.0 files ({version, tables, ...}) are rejected
+  // with a clear message since they were missing checksum & cross-tenant
+  // guards. Operators should re-export to upgrade.
   const handleRestoreFileSelect = async (file: File) => {
     try {
       const text = await file.text()
       const data = JSON.parse(text)
 
-      if (!data.version || !data.tables || !data.company_id) {
+      const isOldFormat = data && data.version === '1.0' && data.tables && !data.metadata
+      if (isOldFormat) {
+        toastActionError(
+          toast,
+          language === 'en' ? 'Import' : 'الاستيراد',
+          language === 'en' ? 'Backup' : 'النسخة الاحتياطية',
+          language === 'en'
+            ? 'This backup uses the legacy format and is no longer supported. Please re-export to upgrade.'
+            : 'هذه النسخة بصيغة قديمة وغير مدعومة. أنشئ نسخة احتياطية جديدة أولاً.'
+        )
+        return
+      }
+
+      if (!data || !data.metadata || !data.data) {
         toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'Invalid backup file format' : 'تنسيق ملف النسخة الاحتياطية غير صالح')
         return
       }
 
       setRestoreFile(file)
-      setRestorePreview(data.stats || {})
+      // Build stats from the new format for the preview dialog
+      const stats: Record<string, number> = {}
+      if (data.data && typeof data.data === 'object') {
+        for (const [tbl, rows] of Object.entries(data.data)) {
+          if (Array.isArray(rows)) stats[tbl] = (rows as unknown[]).length
+        }
+      }
+      setRestorePreview(stats)
       setIsRestoreDialogOpen(true)
     } catch (err: any) {
       toastActionError(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup' : 'النسخة الاحتياطية', language === 'en' ? 'Error reading backup file' : 'خطأ في قراءة ملف النسخة الاحتياطية')
     }
   }
 
-  // Import/Restore backup function
+  // Import/Restore backup — v3.61.0: routed through hardened API path.
+  // The old inline implementation looped INSERT/UPDATE on every record
+  // bypassing transactions, governance, validation, dry-run, and cross-tenant
+  // protection. Now we delegate to /api/backup/validate then
+  // /api/backup/restore which run as a single atomic RPC with full safeguards.
   const handleImportBackup = async () => {
     if (!restoreFile || !companyId) return
 
@@ -440,97 +417,50 @@ export default function SettingsPage() {
       setImportProgress(0)
 
       const text = await restoreFile.text()
-      const backup = JSON.parse(text)
+      const backupData = JSON.parse(text)
 
-      // ترتيب الجداول حسب العلاقات (الجداول المستقلة أولاً)
-      const tableOrder = [
-        'accounts',
-        'customers',
-        'vendors',
-        'products',
-        'employees',
-        'shareholders',
-        'bank_accounts',
-        'invoices',
-        'invoice_items',
-        'bills',
-        'bill_items',
-        'estimates',
-        'estimate_items',
-        'sales_orders',
-        'sales_order_items',
-        'purchase_orders',
-        'purchase_order_items',
-        'credit_notes',
-        'credit_note_items',
-        'sales_returns',
-        'sales_return_items',
-        'payments',
-        'journal_entries',
-        'journal_entry_lines',
-        'inventory_transactions',
-        'bank_transactions',
-      ]
+      setImportProgress(15)
 
-      // فلترة الجداول الموجودة في النسخة الاحتياطية
-      const tables = tableOrder.filter(t => backup.tables[t] && backup.tables[t].length > 0)
-      let progress = 0
-      const progressStep = 100 / Math.max(tables.length, 1)
-      let restoredCount = 0
-      let errorCount = 0
+      // 1. Validate first — this checks checksum, schema, FKs, accounting, AND
+      //    the v3.61.0 A2 cross-tenant guard.
+      const validateResponse = await fetch('/api/backup/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupData }),
+      })
+      setImportProgress(40)
 
-      for (const tableName of tables) {
-        const records = backup.tables[tableName]
-        if (Array.isArray(records) && records.length > 0) {
-          try {
-            // الاحتفاظ بالـ ID الأصلي لاستعادة السجلات المحذوفة
-            for (const record of records) {
-              const recordToInsert = {
-                ...record,
-                company_id: companyId
-              }
+      if (!validateResponse.ok) {
+        const err = await validateResponse.json().catch(() => ({}))
+        throw new Error(err.error || err.error_en || (language === 'en' ? 'Validation failed' : 'فشل التحقق'))
+      }
+      const validation = await validateResponse.json()
+      if (validation.validation && validation.validation.valid === false) {
+        const firstErr = validation.validation.errors?.[0]
+        throw new Error(firstErr?.message || (language === 'en' ? 'Backup did not pass validation' : 'النسخة الاحتياطية لم تجتز التحقق'))
+      }
 
-              // محاولة الإدراج أولاً
-              const { error: insertError } = await supabase
-                .from(tableName)
-                .insert(recordToInsert)
+      // 2. Perform the actual restore (atomic, governed, audited).
+      setImportProgress(55)
+      const restoreResponse = await fetch('/api/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupData, dryRun: false }),
+      })
+      setImportProgress(90)
 
-              if (insertError) {
-                // إذا فشل الإدراج بسبب وجود السجل، نحاول التحديث
-                if (insertError.code === '23505') { // duplicate key violation
-                  const { error: updateError } = await supabase
-                    .from(tableName)
-                    .update(recordToInsert)
-                    .eq('id', record.id)
-
-                  if (updateError) {
-                    console.warn(`Update failed for ${tableName}:`, updateError.message)
-                    errorCount++
-                  } else {
-                    restoredCount++
-                  }
-                } else {
-                  console.warn(`Insert failed for ${tableName}:`, insertError.message)
-                  errorCount++
-                }
-              } else {
-                restoredCount++
-              }
-            }
-          } catch (e) {
-            console.warn(`Error restoring ${tableName}:`, e)
-            errorCount++
-          }
-        }
-        progress += progressStep
-        setImportProgress(Math.min(progress, 95))
-        await new Promise(r => setTimeout(r, 50))
+      if (!restoreResponse.ok) {
+        const err = await restoreResponse.json().catch(() => ({}))
+        throw new Error(err.error || err.error_en || (language === 'en' ? 'Restore failed' : 'فشل الاستعادة'))
+      }
+      const restoreResult = await restoreResponse.json()
+      if (restoreResult.success === false) {
+        throw new Error(restoreResult.error || restoreResult.error_en || (language === 'en' ? 'Restore failed' : 'فشل الاستعادة'))
       }
 
       setImportProgress(100)
       toastActionSuccess(toast, language === 'en' ? 'Import' : 'الاستيراد', language === 'en' ? 'Backup restored successfully' : 'تم استعادة النسخة الاحتياطية بنجاح')
 
-      // Reload page after successful import
       setTimeout(() => {
         window.location.reload()
       }, 2000)
