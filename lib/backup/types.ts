@@ -314,6 +314,47 @@ export const EXPORT_ORDER = [
   'notification_escalations',
 ] as const
 
+// v3.61.3 — child tables that have NO company_id column. They inherit company
+// scope through a FK to their parent. The export must fetch them via that FK
+// (`SELECT ... WHERE parent_fk IN (<parent_ids_for_company>)`), because a
+// naive `.eq('company_id', companyId)` returns 0 rows and silently loses them.
+//
+// Without this map the export wrote 0 rows for invoice_items, journal_entry_lines,
+// sales_order_items, bill_items, etc. — i.e. every business document was an
+// empty shell. Found during v3.61.2 end-to-end testing.
+//
+// All FK column names below were verified against information_schema. A few
+// are non-obvious (`transfer_id`, `write_off_id`, `distribution_id`) — they
+// do NOT follow the `<parent>_id` convention.
+export const CHILD_TABLE_PARENTS: Record<string, { parent: string; fk: string }> = {
+  // ── Items / lines ──
+  invoice_items:                  { parent: 'invoices',             fk: 'invoice_id' },
+  bill_items:                     { parent: 'bills',                fk: 'bill_id' },
+  sales_order_items:              { parent: 'sales_orders',         fk: 'sales_order_id' },
+  purchase_order_items:           { parent: 'purchase_orders',      fk: 'purchase_order_id' },
+  sales_return_items:             { parent: 'sales_returns',        fk: 'sales_return_id' },
+  purchase_return_items:          { parent: 'purchase_returns',     fk: 'purchase_return_id' },
+  customer_debit_note_items:      { parent: 'customer_debit_notes', fk: 'customer_debit_note_id' },
+  vendor_credit_items:            { parent: 'vendor_credits',       fk: 'vendor_credit_id' },
+  estimate_items:                 { parent: 'estimates',            fk: 'estimate_id' },
+  goods_receipt_items:            { parent: 'goods_receipts',       fk: 'goods_receipt_id' },
+  purchase_request_items:         { parent: 'purchase_requests',    fk: 'purchase_request_id' },
+  // Non-conventional FK names:
+  inventory_transfer_items:       { parent: 'inventory_transfers',  fk: 'transfer_id' },
+  inventory_write_off_items:      { parent: 'inventory_write_offs', fk: 'write_off_id' },
+  profit_distribution_lines:      { parent: 'profit_distributions', fk: 'distribution_id' },
+  // Other "_lines" tables:
+  journal_entry_lines:            { parent: 'journal_entries',      fk: 'journal_entry_id' },
+  bank_reconciliation_lines:      { parent: 'bank_reconciliations', fk: 'bank_reconciliation_id' },
+  budget_lines:                   { parent: 'budgets',              fk: 'budget_id' },
+  payroll_items:                  { parent: 'payroll_runs',         fk: 'payroll_run_id' },
+  // ── Application / link tables ──
+  customer_credit_applications:    { parent: 'customer_credits',     fk: 'customer_credit_id' },
+  customer_debit_note_applications:{ parent: 'customer_debit_notes', fk: 'customer_debit_note_id' },
+  vendor_credit_applications:      { parent: 'vendor_credits',       fk: 'vendor_credit_id' },
+  payment_allocations:             { parent: 'payments',             fk: 'payment_id' },
+}
+
 // الجداول المستثناة من التصدير (أمان)
 export const EXCLUDED_TABLES = [
   'auth.users',

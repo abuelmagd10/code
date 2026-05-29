@@ -4,6 +4,34 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.61.3] - 2026-05-29 — Critical hotfix: child tables now actually exported
+
+### Fixed
+- **Item / line / application tables were exporting 0 rows.** Discovered during the v3.61.2 end-to-end test: the restore preview showed `invoices: 4, invoice_items: 0`, `journal_entries: 13, journal_entry_lines: 0`, `sales_orders: 4, sales_order_items: 0`, `bills: 1, bill_items: 0` — every business document was an empty shell.
+  - **Root cause:** the export ran `SELECT * FROM <table> WHERE company_id = ?` against every table in `EXPORT_ORDER`. But 22 of those tables have **no** `company_id` column — they inherit company scope through a foreign key to their parent (invoices → invoice_items via `invoice_id`, etc.). The `.eq('company_id', ...)` query returned 0 rows for them and the result was silently treated as "this table is empty."
+  - **Fix:** new `CHILD_TABLE_PARENTS` map in `lib/backup/types.ts` lists every child table's parent and FK column. The export loop now picks the right strategy: parent tables are queried by `company_id`; child tables are queried by `parent_fk IN (<parent_ids_for_company>)`. Topological order in `EXPORT_ORDER` guarantees the parent rows are already in memory when the child query runs.
+  - **A few non-obvious FK names** caught during the audit (would have caused silent failures if assumed): `inventory_transfer_items.transfer_id`, `inventory_write_off_items.write_off_id`, `profit_distribution_lines.distribution_id`.
+
+### Affected tables (22)
+`invoice_items`, `bill_items`, `sales_order_items`, `purchase_order_items`,
+`sales_return_items`, `purchase_return_items`, `customer_debit_note_items`,
+`vendor_credit_items`, `estimate_items`, `goods_receipt_items`,
+`purchase_request_items`, `inventory_transfer_items`, `inventory_write_off_items`,
+`journal_entry_lines`, `bank_reconciliation_lines`, `budget_lines`,
+`payroll_items`, `profit_distribution_lines`, `customer_credit_applications`,
+`customer_debit_note_applications`, `vendor_credit_applications`, `payment_allocations`
+
+### Files
+- Modified: `lib/backup/types.ts` (CHILD_TABLE_PARENTS map)
+- Modified: `lib/backup/export-utils.ts` (export loop now branches on parent map)
+- Modified: `lib/version.ts` (APP_VERSION 3.61.2 → 3.61.3)
+
+### Severity
+**Critical.** Any backup taken before v3.61.3 will restore an accounting system with documents but no line items — i.e. unbalanced books, no posted journal lines, no payment allocations. Anyone who took a v3.61.2 backup should re-export it after this deploys.
+
+---
+
+
 ## [3.61.2] - 2026-05-29 — Backup Encryption (Phase A complete)
 
 ### Added

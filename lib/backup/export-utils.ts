@@ -4,7 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import { BackupData, BackupMetadata, EXPORT_ORDER, EXCLUDED_TABLES } from './types'
+import { BackupData, BackupMetadata, EXPORT_ORDER, EXCLUDED_TABLES, CHILD_TABLE_PARENTS } from './types'
 import { checksumOfData } from './checksum-utils'
 
 import { APP_VERSION } from '@/lib/version'
@@ -28,17 +28,43 @@ export async function exportCompanyBackup(
   const data: Record<string, any[]> = {}
   let totalRecords = 0
 
-  // 1. تصدير الجداول حسب الترتيب الطوبولوجي (Topological Order)
+  // 1. تصدير الجداول حسب الترتيب الطوبولوجي.
+  //    v3.61.3 — child tables (items/lines/applications) lack company_id and
+  //    must be queried via their parent FK. The parent has already been
+  //    fetched earlier in the loop because EXPORT_ORDER is topological.
   for (const tableName of EXPORT_ORDER) {
     try {
-      const { data: tableData, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .eq('company_id', companyId)
+      const parentMap = CHILD_TABLE_PARENTS[tableName]
+      let tableData: Record<string, unknown>[] | null = null
+      let error: unknown = null
+
+      if (parentMap) {
+        const parentRows = data[parentMap.parent] || []
+        const parentIds = parentRows
+          .map((r: Record<string, unknown>) => r.id as string | undefined)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+
+        if (parentIds.length === 0) {
+          tableData = []
+        } else {
+          const result = await supabase
+            .from(tableName)
+            .select('*')
+            .in(parentMap.fk, parentIds)
+          tableData = result.data as Record<string, unknown>[] | null
+          error = result.error
+        }
+      } else {
+        const result = await supabase
+          .from(tableName)
+          .select('*')
+          .eq('company_id', companyId)
+        tableData = result.data as Record<string, unknown>[] | null
+        error = result.error
+      }
 
       if (!error && tableData && tableData.length > 0) {
-        // استبعاد الحقول الحساسة
-        const cleanedData = tableData.map((record: Record<string, unknown>) => cleanSensitiveFields(record, tableName))
+        const cleanedData = tableData.map((record) => cleanSensitiveFields(record, tableName))
         data[tableName] = cleanedData
         totalRecords += cleanedData.length
       } else {
