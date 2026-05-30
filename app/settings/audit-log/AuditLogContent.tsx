@@ -113,6 +113,8 @@ interface AuditLog {
   created_at: string;
   ip_address?: string;
   user_agent?: string;
+  // v3.62.3 — generic metadata for non-CRUD actions (backup_*, LOGIN, etc.)
+  metadata?: Record<string, any> | null;
 }
 
 interface Pagination {
@@ -181,6 +183,9 @@ const tableNameTranslations: Record<string, string> = {
   companies: "الشركات",
   user_sessions: "جلسات المستخدمين",
   settings: "الإعدادات",
+  // v3.62.3 — backup-related
+  backup_history: "سجل النسخ الاحتياطية",
+  system: "النظام",
 };
 
 // تصنيف الموارد
@@ -242,6 +247,18 @@ const fieldTranslations: Record<string, string> = {
   quantity: "الكمية",
   description: "الوصف",
   notes: "ملاحظات",
+  // v3.62.3 — backup metadata fields
+  total_records: "إجمالى السجلات",
+  size_mb: "الحجم (ميجابايت)",
+  size_bytes: "الحجم (بايت)",
+  duration_seconds: "المدة (ثانية)",
+  history_id: "رقم النسخة",
+  storage_path: "مسار التخزين",
+  records_restored: "السجلات المستعادة",
+  success: "نجح",
+  errors: "الأخطاء",
+  warnings: "تحذيرات",
+  error: "خطأ",
   account_name: "اسم الحساب",
   account_code: "رقم الحساب",
   account_id: "الحساب",
@@ -443,6 +460,11 @@ const getActionText = (action: string): string => {
     case "ACCESS_DENIED": return "وصول مرفوض";
     case "SETTINGS": return "إعدادات";
     case "PERMISSIONS": return "صلاحيات";
+    // v3.62.3 — backup lifecycle actions
+    case "backup_export": return "تصدير نسخة احتياطية";
+    case "backup_delete": return "حذف نسخة احتياطية";
+    case "backup_restore": return "استعادة نسخة احتياطية";
+    case "backup_restore_failed": return "فشل الاستعادة";
     default: return action;
   }
 };
@@ -1135,6 +1157,37 @@ export default function AuditLogPage() {
                 </div>
               </div>
             )}
+
+            {/* v3.62.3 — Metadata block for non-CRUD actions (backup, LOGIN, etc.) */}
+            {selectedLog.metadata &&
+              typeof selectedLog.metadata === "object" &&
+              !Array.isArray(selectedLog.metadata) &&
+              Object.keys(selectedLog.metadata).length > 0 &&
+              !["INSERT", "UPDATE", "DELETE"].includes(selectedLog.action) && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-blue-100">
+                      <Info className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800">بيانات إضافية</p>
+                    <Badge className="bg-blue-100 text-blue-700 text-xs">
+                      {Object.keys(selectedLog.metadata).filter((k) => !hiddenFields.includes(k)).length} حقل
+                    </Badge>
+                  </div>
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-200 max-h-64 overflow-auto">
+                    <div className="grid grid-cols-2 gap-3">
+                      {Object.entries(selectedLog.metadata)
+                        .filter(([key]) => !hiddenFields.includes(key))
+                        .map(([key, value]) => (
+                          <div key={key} className="bg-white/80 rounded-lg p-2.5 border border-blue-100">
+                            <p className="text-xs text-gray-500 mb-0.5">{translateField(key)}</p>
+                            <p className="text-sm font-medium text-gray-800 break-words">{formatValue(key, value)}</p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
             {/* قسم إجراءات المالك */}
             {selectedLog.action !== "REVERT" && (

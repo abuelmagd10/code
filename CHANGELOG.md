@@ -4,6 +4,44 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.3] - 2026-05-30 — Audit log: bilingual labels + metadata details for backup actions
+
+### Added
+- **Backup action translations** in the audit log dialog:
+  - `backup_export` → "تصدير نسخة احتياطية"
+  - `backup_delete` → "حذف نسخة احتياطية"
+  - `backup_restore` → "استعادة نسخة احتياطية"
+  - `backup_restore_failed` → "فشل الاستعادة"
+- **Table name translations** for backup-related rows:
+  - `backup_history` → "سجل النسخ الاحتياطية"
+  - `system` → "النظام"
+- **Metadata block in details dialog.** Until now the dialog had three exclusive blocks (UPDATE → changed_fields, INSERT → new_data, DELETE → old_data) and ignored `metadata` entirely. A backup_export row would open with only the header info and nothing else visible. New block "بيانات إضافية" renders the `metadata` JSON as labelled cards (same visual language as the existing INSERT/DELETE blocks) for any action that isn't INSERT/UPDATE/DELETE.
+- **Field name translations** for the new metadata keys we write from server-side backup routes:
+  - `total_records` → "إجمالى السجلات"
+  - `size_mb` → "الحجم (ميجابايت)"
+  - `size_bytes` → "الحجم (بايت)"
+  - `duration_seconds` → "المدة (ثانية)"
+  - `history_id` → "رقم النسخة"
+  - `storage_path` → "مسار التخزين"
+  - `records_restored` → "السجلات المستعادة"
+  - `success`, `errors`, `warnings`, `error` → bilingual labels
+
+### Files
+- Modified: `app/settings/audit-log/AuditLogContent.tsx` (translations + new dialog block)
+- Modified: `lib/version.ts` (3.62.2 → 3.62.3)
+
+### Result
+Opening the details dialog on a backup_export row now shows:
+  - المستخدم: 7esab.erb (from v3.62.2)
+  - التاريخ: ٢٩ مايو ٢٠٢٦
+  - نوع العملية: تصدير نسخة احتياطية (badge, new)
+  - الجدول: سجل النسخ الاحتياطية (translated, new)
+  - السجل: تصدير نسخة احتياطية كاملة (852 سجل)
+  - بيانات إضافية (5 حقل): إجمالى السجلات / الحجم / المدة / رقم النسخة / مسار التخزين
+
+---
+
+
 ## [3.62.2] - 2026-05-30 — Audit log: populate user_email + user_name
 
 ### Fixed
