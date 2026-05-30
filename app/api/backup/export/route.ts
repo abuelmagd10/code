@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwnerOrAdmin } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
+import { resolveActorInfo } from '@/lib/audit-actor'
 import { exportCompanyBackup, canExportBackup, estimateBackupSize } from '@/lib/backup/export-utils'
 
 const RETENTION_DAYS = 30
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
       await auditSupabase.from('audit_logs').insert({
         company_id: companyId,
         user_id: user.id,
+        ...resolveActorInfo(user),
         action: 'backup_export',
         target_table: 'backup_history',
         record_id: historyId || companyId,

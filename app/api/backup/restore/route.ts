@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
+import { resolveActorInfo } from '@/lib/audit-actor'
 import { restoreBackup, canRestoreBackup } from '@/lib/backup/restore-utils'
 import { BackupData, RestoreOptions } from '@/lib/backup/types'
 
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
       await auditSupabase.from('audit_logs').insert({
         company_id: companyId,
         user_id: user.id,
+        ...resolveActorInfo(user),
         action: result.success ? 'backup_restore' : 'backup_restore_failed',
         target_table: 'system',
         record_id: companyId,
@@ -147,6 +149,7 @@ export async function POST(request: NextRequest) {
         await auditSupabase.from('audit_logs').insert({
           company_id: companyId,
           user_id: user.id,
+          ...resolveActorInfo(user),
           action: 'backup_restore_failed',
           target_table: 'system',
           record_id: companyId,

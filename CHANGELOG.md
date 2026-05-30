@@ -4,6 +4,33 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.2] - 2026-05-30 — Audit log: populate user_email + user_name
+
+### Fixed
+- **`audit_logs` rows for backup actions had `user_email = user_name = null`.** The /settings/audit-log page rendered an empty user cell because the backup routes only set `user_id`. The display logic falls back to `user_name || user_email`; both being null produced a blank row.
+- **Resolution order** (new helper `lib/audit-actor.ts → resolveActorInfo`):
+  1. `auth.users.raw_user_meta_data.full_name`
+  2. `auth.users.raw_user_meta_data.name`
+  3. local-part of email (everything before `@`)
+  4. raw email
+- **All four backup audit inserts** (export, delete, restore success, restore failure) now spread `...resolveActorInfo(user)` so `user_email` and `user_name` are populated automatically.
+
+### Backfilled
+- Existing v3.62.0 / v3.62.1 backup audit rows updated in-place (2 rows for the owner of company "تست"). Future backup actions will populate the fields at insert-time.
+
+### Files
+- New: `lib/audit-actor.ts` (the helper)
+- Modified: `app/api/backup/export/route.ts`
+- Modified: `app/api/backup/[id]/route.ts`
+- Modified: `app/api/backup/restore/route.ts` (two inserts)
+- Modified: `lib/version.ts` (3.62.1 → 3.62.2)
+
+### Note
+- The helper is generic. As we wire more server-side actions into `audit_logs` it should be reused everywhere instead of leaving the user columns blank.
+
+---
+
+
 ## [3.62.1] - 2026-05-29 — Phase B hotfix: three silent failures uncovered in v3.62.0 testing
 
 The v3.62.0 testing on production exposed three silent-failure paths that

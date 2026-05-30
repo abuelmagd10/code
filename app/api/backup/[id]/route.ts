@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
+import { resolveActorInfo } from '@/lib/audit-actor'
 
 /**
  * DELETE /api/backup/[id]
@@ -63,6 +64,7 @@ export async function DELETE(
       await supabase.from('audit_logs').insert({
         company_id: companyId,
         user_id: user.id,
+        ...resolveActorInfo(user),
         action: 'backup_delete',
         target_table: 'backup_history',
         record_id: id,
