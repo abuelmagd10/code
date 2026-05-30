@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireOwnerOrAdmin } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
 import { exportCompanyBackup, canExportBackup, estimateBackupSize } from '@/lib/backup/export-utils'
-import { logAudit } from '@/lib/audit-log'
 
 const RETENTION_DAYS = 30
 const BUCKET = 'backups'
@@ -97,22 +96,27 @@ export async function POST(request: NextRequest) {
       storagePath = null
     }
 
-    // 7. تسجيل في Audit Log
-    await logAudit({
-      company_id: companyId,
-      user_id: user.id,
-      action: 'backup_export',
-      target_table: 'backup_history',
-      target_id: historyId || companyId,
-      description: `تصدير نسخة احتياطية كاملة (${backupData.metadata.total_records} سجل)`,
-      metadata: {
-        total_records: backupData.metadata.total_records,
-        size_mb: sizeInfo.sizeInMB,
-        duration_seconds: Math.round((Date.now() - startTime) / 1000),
-        history_id: historyId,
-        storage_path: storagePath,
-      }
-    })
+    // 7. تسجيل في Audit Log — server-side direct insert (logAudit wrapper is client-only)
+    try {
+      const auditSupabase = await createClient()
+      await auditSupabase.from('audit_logs').insert({
+        company_id: companyId,
+        user_id: user.id,
+        action: 'backup_export',
+        target_table: 'backup_history',
+        record_id: historyId || companyId,
+        record_identifier: `تصدير نسخة احتياطية كاملة (${backupData.metadata.total_records} سجل)`,
+        metadata: {
+          total_records: backupData.metadata.total_records,
+          size_mb: sizeInfo.sizeInMB,
+          duration_seconds: Math.round((Date.now() - startTime) / 1000),
+          history_id: historyId,
+          storage_path: storagePath,
+        },
+      })
+    } catch (auditErr: any) {
+      console.warn('[Backup Export] audit log skipped:', auditErr?.message || auditErr)
+    }
 
     // 8. إرجاع النسخة الاحتياطية + رقم history للـ UI ليُحدِّث القائمة
     return NextResponse.json({

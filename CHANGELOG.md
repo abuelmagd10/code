@@ -4,6 +4,36 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.1] - 2026-05-29 — Phase B hotfix: three silent failures uncovered in v3.62.0 testing
+
+The v3.62.0 testing on production exposed three silent-failure paths that
+made backups appear to succeed (file downloaded) but left the history
+table and audit log empty. All three fixed.
+
+### Fixed
+- **`audit_logs.action` CHECK constraint** was missing `backup_*` values. Every backup audit log insert was being rejected by the database and the error swallowed. Constraint extended to include `backup_export`, `backup_delete`, `backup_restore`, `backup_restore_failed`. Migration: `20260529100000_v3_62_1_backup_audit_and_insert_fix.sql`.
+- **`backup_history` had no INSERT policy.** The export endpoint runs with the user's cookie session (not service-role), so RLS blocked the insert and the history table stayed empty. Added INSERT policy for owner/admin/general_manager of the row's company.
+- **`logAudit` does not work server-side.** It is a client-side wrapper that calls `fetch('/api/audit-log')` with a relative URL — which fails inside Next.js API routes (no host context). All three backup routes (`export`, `[id]` delete, `restore`) now write to `audit_logs` directly via `supabase.from('audit_logs').insert(...)` with the server client. Each insert is wrapped in its own `try/catch` so audit failure cannot break the user-visible flow.
+
+### Files
+- New: `supabase/migrations/20260529100000_v3_62_1_backup_audit_and_insert_fix.sql` (applied via MCP)
+- Modified: `app/api/backup/export/route.ts` (direct insert, removed `logAudit` import)
+- Modified: `app/api/backup/[id]/route.ts` (direct insert, removed `logAudit` import)
+- Modified: `app/api/backup/restore/route.ts` (direct insert ×2, added `createClient` import, removed `logAudit` import)
+- Modified: `lib/version.ts` (APP_VERSION 3.62.0 → 3.62.1)
+
+### Verified on production after the hotfix
+- Two test exports created two `backup_history` rows + two files in the `backups` bucket
+- Storage path matches: `{company_id}/{id}.json`
+- Identical canonical checksums for repeated exports (A1 still deterministic)
+- Expires at = NOW() + 30 days
+
+### Remaining gap
+- The previous two test exports (before the hotfix) made it into `backup_history` and Storage, but their corresponding `audit_logs` rows are missing because the constraint was blocking. New exports from now on will have the audit row.
+
+---
+
+
 ## [3.62.0] - 2026-05-29 — Phase B start: Backup Storage + History (B1+B2)
 
 ### Added

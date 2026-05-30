@@ -5,9 +5,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/api-security'
+import { createClient } from '@/lib/supabase/server'
 import { restoreBackup, canRestoreBackup } from '@/lib/backup/restore-utils'
 import { BackupData, RestoreOptions } from '@/lib/backup/types'
-import { logAudit } from '@/lib/audit-log'
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
@@ -79,24 +79,29 @@ export async function POST(request: NextRequest) {
     // 5. تنفيذ الاستعادة
     const result = await restoreBackup(backupData, restoreOptions)
 
-    // 6. تسجيل في Audit Log
-    await logAudit({
-      company_id: companyId,
-      user_id: user.id,
-      action: result.success ? 'backup_restore' : 'backup_restore_failed',
-      target_table: 'system',
-      target_id: companyId,
-      description: result.success
-        ? `استعادة نسخة احتياطية (${result.recordsRestored} سجل)`
-        : `فشل استعادة نسخة احتياطية: ${result.error || 'Unknown Error'}`,
-      metadata: {
-        records_restored: result.recordsRestored || 0,
-        duration_seconds: Math.round((result.duration || 0) / 1000),
-        success: result.success,
-        errors: result.error ? [result.error] : [],
-        warnings: result.warnings
-      }
-    })
+    // 6. تسجيل في Audit Log (server-side direct insert)
+    try {
+      const auditSupabase = await createClient()
+      await auditSupabase.from('audit_logs').insert({
+        company_id: companyId,
+        user_id: user.id,
+        action: result.success ? 'backup_restore' : 'backup_restore_failed',
+        target_table: 'system',
+        record_id: companyId,
+        record_identifier: result.success
+          ? `استعادة نسخة احتياطية (${result.recordsRestored} سجل)`
+          : `فشل استعادة نسخة احتياطية: ${result.error || 'Unknown Error'}`,
+        metadata: {
+          records_restored: result.recordsRestored || 0,
+          duration_seconds: Math.round((result.duration || 0) / 1000),
+          success: result.success,
+          errors: result.error ? [result.error] : [],
+          warnings: result.warnings,
+        },
+      })
+    } catch (auditErr: any) {
+      console.warn('[Backup Restore] audit log skipped:', auditErr?.message || auditErr)
+    }
 
     // 7. إرجاع النتيجة
     if (result.success) {
@@ -138,17 +143,18 @@ export async function POST(request: NextRequest) {
     try {
       const { user, companyId } = await requireOwner(request)
       if (user && companyId) {
-        await logAudit({
+        const auditSupabase = await createClient()
+        await auditSupabase.from('audit_logs').insert({
           company_id: companyId,
           user_id: user.id,
           action: 'backup_restore_failed',
           target_table: 'system',
-          target_id: companyId,
-          description: `فشل استعادة نسخة احتياطية: ${err.message}`,
+          record_id: companyId,
+          record_identifier: `فشل استعادة نسخة احتياطية: ${err.message}`,
           metadata: {
             error: err.message,
-            duration_seconds: Math.round((Date.now() - startTime) / 1000)
-          }
+            duration_seconds: Math.round((Date.now() - startTime) / 1000),
+          },
         })
       }
     } catch {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
-import { logAudit } from '@/lib/audit-log'
 
 /**
  * DELETE /api/backup/[id]
@@ -60,18 +59,22 @@ export async function DELETE(
       return NextResponse.json({ error: 'Failed to mark deleted' }, { status: 500 })
     }
 
-    await logAudit({
-      company_id: companyId,
-      user_id: user.id,
-      action: 'backup_delete',
-      target_table: 'backup_history',
-      target_id: id,
-      description: 'حذف نسخة احتياطية من السجل',
-      metadata: {
-        storage_path: row.storage_path,
-        size_bytes: row.file_size_bytes,
-      },
-    })
+    try {
+      await supabase.from('audit_logs').insert({
+        company_id: companyId,
+        user_id: user.id,
+        action: 'backup_delete',
+        target_table: 'backup_history',
+        record_id: id,
+        record_identifier: 'حذف نسخة احتياطية من السجل',
+        metadata: {
+          storage_path: row.storage_path,
+          size_bytes: row.file_size_bytes,
+        },
+      })
+    } catch (auditErr: any) {
+      console.warn('[Backup Delete] audit log skipped:', auditErr?.message || auditErr)
+    }
 
     return NextResponse.json({ success: true })
   } catch (err: any) {
