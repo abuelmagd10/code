@@ -4,6 +4,37 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.4] - 2026-05-30 — Dashboard AR/AP widgets correctly show customer credits & supplier advances
+
+### Fixed
+- **AR widget showing negative balance (e.g. `-0.68 ج.م`).** A negative receivables aggregate means customers have overpaid (FX residual or pending refund) — that's a credit owed to the customer, not a receivable. The widget now:
+  - Displays `max(0, glReceivables)` as the receivables amount (never negative)
+  - When `glReceivables < 0`, shows a small purple sub-line:
+    `⚖ ائتمان للعملاء: |amount|` (`⚖ Customer credit: |amount|`)
+  - Tooltip explains: "رصيد ائتمانى للعملاء (دفع زائد أو فروق صرف)"
+- **AP widget given the same treatment for symmetry.** A negative payables aggregate means we paid suppliers more than owed — a supplier advance, not a payable. Sub-line: `⚖ سُلَف للموردين: |amount|`.
+
+### Why this matters
+End-to-end testing exposed a card on the dashboard showing `ذمم مدينة: -0.68 ج.م`. The number was accounting-correct (the customer paid 10.68 EGP against a 10 EGP invoice because of a USD→EGP conversion rounding) but the **label** was wrong — that's a customer credit, not a receivable. The same situation already displayed correctly on `/customers`; the dashboard widget just needed to mirror that classification.
+
+### Files
+- Modified: `components/DashboardSecondaryStats.tsx`
+- Modified: `lib/version.ts` (3.62.3 → 3.62.4)
+
+### Verified scenarios
+- Customer credit = 0.68 EGP from overpayment on INV-00003 (FX residual)
+- Widget now displays: `ذمم مدينة: 0` + small sub-line `⚖ ائتمان للعملاء: 0.68 EGP`
+- Matches `/customers` page treatment
+- No behavioural change for the common case (positive AR continues to display unchanged)
+
+### Open after this fix
+- Cold-start performance > 30 s on first navigation (Vercel warm-up)
+- `/invoices` page top widget showed `الإجمالى: 0` momentarily during load (likely loading-state; need to verify after deploy)
+- "بادجات" on monthly cards showing values while main number is 0 (UI consistency review)
+
+---
+
+
 ## [3.62.3] - 2026-05-30 — Audit log: bilingual labels + metadata details for backup actions
 
 ### Added

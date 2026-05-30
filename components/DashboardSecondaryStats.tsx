@@ -170,7 +170,10 @@ export default function DashboardSecondaryStats({
           
           {glReceivables !== undefined ? (
             <>
-              <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(glReceivables)}</p>
+              {/* v3.62.4: clamp AR to 0 when negative; show credit as a sub-line.
+                  A negative AR means customers overpaid (FX residual or refund pending)
+                  — that's a credit owed to the customer, not a receivable. */}
+              <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{formatNumber(Math.max(0, glReceivables))}</p>
               <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
                 {currency}
                 {pendingInvoicesCount > 0 && (
@@ -178,12 +181,17 @@ export default function DashboardSecondaryStats({
                     · {pendingInvoicesCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
                   </span>
                 )}
-                {glReceivables === 0 && pendingInvoicesCount === 0 && (
+                {glReceivables <= 0 && pendingInvoicesCount === 0 && (
                   <span className="mr-1 text-emerald-500">
                     · {appLang === 'en' ? 'All invoices settled' : 'جميع الفواتير مسددة'}
                   </span>
                 )}
               </p>
+              {glReceivables < 0 && (
+                <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-1 truncate" title={appLang === 'en' ? 'Customer credit balance (overpayment / FX residual)' : 'رصيد ائتمانى للعملاء (دفع زائد أو فروق صرف)'}>
+                  ⚖ {appLang === 'en' ? 'Customer credit:' : 'ائتمان للعملاء:'} {currency}{formatNumber(Math.abs(glReceivables))}
+                </p>
+              )}
               {Math.abs(glReceivables - receivablesOutstanding) > 1 && (
                 <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 truncate" title={appLang === 'en' ? `Operational (invoices): ${currency}${formatNumber(receivablesOutstanding)}` : `تشغيلي (فواتير): ${currency}${formatNumber(receivablesOutstanding)}`}>
                   ⚡ {appLang === 'en' ? 'Operational:' : 'تشغيلي:'} {currency}{formatNumber(receivablesOutstanding)}
@@ -228,7 +236,10 @@ export default function DashboardSecondaryStats({
 
           {glPayables !== undefined ? (
             <>
-              <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(glPayables)}</p>
+              {/* v3.62.4: clamp AP to 0 when negative; show advance as a sub-line.
+                  A negative AP means we paid suppliers more than owed (overpayment / FX residual).
+                  That's a supplier advance / asset, not a payable. */}
+              <p className="text-2xl font-bold text-red-700 dark:text-red-300">{formatNumber(Math.max(0, glPayables))}</p>
               <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
                 {currency}
                 {pendingBillsCount > 0 && (
@@ -236,12 +247,17 @@ export default function DashboardSecondaryStats({
                     · {pendingBillsCount} {appLang === 'en' ? 'pending' : 'فاتورة معلقة'}
                   </span>
                 )}
-                {glPayables === 0 && pendingBillsCount === 0 && (
+                {glPayables <= 0 && pendingBillsCount === 0 && (
                   <span className="mr-1 text-emerald-500">
                     · {appLang === 'en' ? 'All bills settled' : 'جميع الفواتير مسددة'}
                   </span>
                 )}
               </p>
+              {glPayables < 0 && (
+                <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-1 truncate" title={appLang === 'en' ? 'Supplier advance (overpayment / FX residual)' : 'سُلَف على الموردين (دفع زائد أو فروق صرف)'}>
+                  ⚖ {appLang === 'en' ? 'Supplier advance:' : 'سُلَف للموردين:'} {currency}{formatNumber(Math.abs(glPayables))}
+                </p>
+              )}
               {Math.abs(glPayables - payablesOutstanding) > 1 && (
                 <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 truncate" title={appLang === 'en' ? `Operational (bills): ${currency}${formatNumber(payablesOutstanding)}` : `تشغيلي (فواتير مشتريات): ${currency}${formatNumber(payablesOutstanding)}`}>
                   ⚡ {appLang === 'en' ? 'Operational:' : 'تشغيلي:'} {currency}{formatNumber(payablesOutstanding)}
