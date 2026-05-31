@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.6] - 2026-05-31 — Legal pages (P0-3)
+
+### Added
+- **`/legal/terms`** — Terms of Service in Arabic. 13 sections covering eligibility, account responsibilities, allowed/prohibited uses, subscription billing, data ownership, SLA (99% monthly uptime), liability limits, termination, governing law (Egyptian + Cairo jurisdiction).
+- **`/legal/privacy`** — Privacy Policy aligned with both **Egyptian PDPL (Law 151/2020)** and **GDPR**. Discloses what we collect (account info, technical telemetry, business data, NO payment cards — Paymob handles those), who we share with (Supabase, Vercel, Paymob, Resend, Sentry — no resellers, no advertisers, ever), how we protect (TLS 1.3 in transit, AES-256 at rest, AES-256-GCM for backup files, RLS for tenant isolation, full audit log), retention windows (30-day grace after cancel, 90-day full purge), data-subject rights (access, correction, deletion, portability, objection, withdraw consent), DPO contact, complaint route to the Egyptian DPC.
+- **`/legal/refund`** — Refund Policy. 14-day full-refund cooling-off (cap: 50 invoices issued), tiered partial refund for annual plans by months elapsed (90% → 60% → 40% → 20% → 0%), monthly plans non-refundable after day 14, guaranteed full refund for outages > 7 days, data loss, double charges, or service mismatch. Clear request process to `billing@7esab.com` with 3-business-day SLA. Aligned with **Egyptian Consumer Protection Law 181/2018**.
+- **`/legal`** — landing page with three illustrated cards linking each policy. Single source for contact addresses (info / privacy / billing / support / dpo @ 7esab.com).
+- **Shared RTL layout** for the whole `/legal` section: blue header with site logo, top-nav (desktop) and bottom-nav (mobile) between policies, contact footer with `info@7esab.com`. Uses Tailwind `prose` for typography. Public route — no auth required.
+
+### Files
+- New: `app/legal/layout.tsx`
+- New: `app/legal/page.tsx`
+- New: `app/legal/terms/page.tsx`
+- New: `app/legal/privacy/page.tsx`
+- New: `app/legal/refund/page.tsx`
+- Modified: `lib/version.ts` (3.62.5 → 3.62.6)
+
+### Verify after deploy
+- `https://7esab.com/legal` → 3 cards
+- `/legal/terms`, `/legal/privacy`, `/legal/refund` all render in RTL with proper typography
+- Mobile responsive (header collapses, footer nav appears)
+- Email links open the mail client
+
+### Disclaimer
+The text is written carefully and references the relevant Egyptian and EU statutes by number, but it is a sensible default — not legal advice for your specific business. Have a lawyer review before paying customers actually rely on it. The pages note this at the end.
+
+---
+
+
 ## [3.62.5] - 2026-05-30 — Sentry observability (P0-2)
 
 ### Added
