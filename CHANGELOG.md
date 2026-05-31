@@ -4,6 +4,31 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.63.3] - 2026-05-31 — Backup B5: failure email to company owner
+
+### Added
+- **`lib/backup/backup-emails.ts`** — `sendBackupFailureNotice(...)` sends a clean Arabic/RTL email to a company owner when their nightly cron backup fails. The email explains what happened, embeds the truncated error message, links straight to `/settings/backup`, and reminds the owner that the next attempt is automatic the following morning. SMTP transport is the same one renewal emails already use.
+- **`/api/cron/backup-daily`** — after the main loop finishes, iterates the failed companies one more time, resolves each owner's email via `admin.auth.admin.getUserById(...)`, and dispatches the failure notice. Email failures are non-fatal — the underlying backup failure was already recorded in `audit_logs` and `companies.auto_backup_last_error`, so an SMTP outage cannot mask the real signal.
+- **`emails_sent` / `emails_failed`** counters added to the cron summary JSON so the next run after `?dry=1` can be verified at a glance.
+
+### Why only failures
+A success email every day for every tenant would be noise the owner trains themselves to ignore. `/settings/backup` already shows successes in the history table — the owner can check whenever they want. Email is reserved for the case that actually needs a human: something is wrong, please act today.
+
+### Files
+- New: `lib/backup/backup-emails.ts`
+- Modified: `app/api/cron/backup-daily/route.ts` (import + post-loop email block + summary counters)
+- Modified: `lib/version.ts` (3.63.2 → 3.63.3)
+
+### Verify after deploy
+1. Pause the cron temporarily, or call the endpoint manually with a forced-failure scenario (corrupt the Supabase Storage bucket name locally).
+2. Confirm the failed company's row in `companies` has `auto_backup_last_status='failed'` and a non-null `auto_backup_last_error`.
+3. Owner mailbox receives `⚠️ فشل النسخة الاحتياطية اليومية — <company>` within ~1 minute.
+4. Click the CTA → `/settings/backup` opens.
+5. Restore Storage, manually re-run, ensure the next success does NOT email anyone.
+
+---
+
+
 ## [3.63.2] - 2026-05-31 — Dashboard cold-start polish
 
 ### Added

@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { exportCompanyBackupWithClient } from "@/lib/backup/export-utils"
 import { estimateBackupSize } from "@/lib/backup/export-utils"
+import { sendBackupFailureNotice } from "@/lib/backup/backup-emails"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -204,6 +205,46 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // ─── B5: email each owner whose backup failed ────────────
+  // We do this AFTER the main loop so the cron's primary work is recorded
+  // before any email-related delay. Email failures here are non-fatal —
+  // the audit log already captured the backup failure.
+  const failed = results.filter(r => !r.ok)
+  let emails_sent = 0
+  let emails_failed = 0
+  if (failed.length > 0) {
+    const failedIds = failed.map(f => f.company_id)
+    // Get owner user_id for each failed company
+    const { data: failedCompanies } = await admin
+      .from("companies")
+      .select("id, name, user_id")
+      .in("id", failedIds)
+
+    for (const fc of failedCompanies || []) {
+      try {
+        // Look up the owner's email from auth.users (service-role can read it)
+        const { data: ownerUser } = await admin.auth.admin.getUserById(fc.user_id as string)
+        const ownerEmail = ownerUser?.user?.email
+        if (!ownerEmail) {
+          console.warn(`[cron:backup-daily] no email for owner of ${fc.id}, skipping`)
+          continue
+        }
+        const r = failed.find(f => f.company_id === fc.id)
+        const result = await sendBackupFailureNotice({
+          to: ownerEmail,
+          companyName: (fc.name as string) || "شركتك",
+          errorMessage: r?.error || "خطأ غير معروف",
+          runAt: startedAt,
+        })
+        if (result.sent) emails_sent++
+        else emails_failed++
+      } catch (err) {
+        console.error(`[cron:backup-daily] failure-email path errored for ${fc.id}:`, err)
+        emails_failed++
+      }
+    }
+  }
+
   const summary = {
     ok: true,
     ran_at: startedAt,
@@ -211,6 +252,8 @@ export async function GET(request: NextRequest) {
     companies_considered: companies?.length || 0,
     backed_up: results.filter(r => r.ok).length,
     failed: results.filter(r => !r.ok).length,
+    failure_emails_sent: emails_sent,
+    failure_emails_failed: emails_failed,
     results,
   }
 
