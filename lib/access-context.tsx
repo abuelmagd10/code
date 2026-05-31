@@ -527,6 +527,23 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
         allowedPages: accessProfile?.allowed_pages?.length || 0,
         allowedBranches: accessProfile?.allowed_branches?.length || 0,
       })
+
+      // v3.62.5 — tag every Sentry event with who hit it + company scope.
+      // Lets us filter errors per user/company in the dashboard and ping the
+      // right operator when a real issue surfaces.
+      try {
+        const { setSentryUser } = await import("@/lib/sentry-user")
+        setSentryUser({
+          userId: user.id,
+          email: user.email ?? null,
+          companyId,
+          role: accessProfile?.role ?? null,
+          branchId: accessProfile?.branch_id ?? null,
+        })
+      } catch {
+        // Sentry tagging is best-effort; never block auth flow on it.
+      }
+
       setProfile(accessProfile)
       setIsReady(true)
       return accessProfile

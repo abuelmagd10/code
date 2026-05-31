@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.5] - 2026-05-30 — Sentry observability (P0-2)
+
+### Added
+- **Error monitoring via Sentry** (`@sentry/nextjs`). Project: `7esaberb / 7esab-erb` on Sentry.io. Every uncaught error in client, server, or edge runtime is now reported with the full stack trace + release version + user identity.
+- **`instrumentation.ts` + `instrumentation-client.ts`** — required hooks for Next.js 15 App Router. They wire Sentry SDK into each runtime at boot.
+- **`next.config.mjs` wrapped with `withSentryConfig`** so source maps upload at build time and stack traces stay symbolicated in Sentry, even after Vercel minifies the bundle.
+- **`lib/sentry-user.ts`** — helper that tags every event with `user.id`, `user.email`, `tags.company_id`, `tags.role`, `tags.branch_id`. Called automatically from `AccessContext` once the auth bootstrap completes, so we see immediately who hit each error.
+- **`/api/sentry-test`** — controlled endpoint that throws on demand to verify the integration. In production it requires `?confirm=1` to avoid accidental noise.
+
+### Configuration
+- DSN is read from `NEXT_PUBLIC_SENTRY_DSN` with a hardcoded fallback to the production DSN (which is a public identifier — by design, Sentry DSNs are not secrets).
+- `tracesSampleRate`: 10% in production, 100% in dev.
+- `replaysSessionSampleRate`: 5% of normal sessions, `replaysOnErrorSampleRate`: 100% of error sessions.
+- **`ignoreErrors`** filters out known noise: ResizeObserver loops, browser-extension errors, network blips, Vercel feedback widget's known InvalidNodeTypeError.
+- **`denyUrls`** blocks events from `vercel.live/*` and browser extensions.
+- **`beforeSend`** strips `Authorization`, `Cookie`, and `x-supabase-auth` headers from any breadcrumb to prevent secret leakage.
+- **Tunnel route** at `/monitoring` so ad-blockers can't drop our events.
+- **Release tag**: `7esab@<APP_VERSION>` so we can filter errors by release in Sentry.
+
+### Files
+- New: `instrumentation.ts`, `instrumentation-client.ts`
+- New: `lib/sentry-user.ts`
+- New: `app/api/sentry-test/route.ts`
+- Modified: `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts` (release, filters, header scrubbing)
+- Modified: `next.config.mjs` (wrapped with withSentryConfig)
+- Modified: `lib/access-context.tsx` (calls `setSentryUser` after bootstrap)
+- Modified: `lib/version.ts` (3.62.4 → 3.62.5)
+
+### Optional: set DSN env var on Vercel
+Hardcoded fallback works fine. To override per environment (recommended for staging/preview):
+1. Vercel → Project → Settings → Environment Variables
+2. Add `NEXT_PUBLIC_SENTRY_DSN` = `https://dd6a41caacb85a1659636020ed677818@o4511483798880256.ingest.us.sentry.io/4511483825356800`
+3. Redeploy
+
+### Verify after deploy
+- Visit `https://7esab.com/api/sentry-test?confirm=1` → 200 response + a new event appears in Sentry within ~30 seconds.
+- Open `/dashboard` → check Sentry dashboard: the event should carry `user.id`, `company_id`, `role=owner` tags from the AccessContext bootstrap.
+- Trigger a real client-side error → it shows up in Sentry within minutes with session replay.
+
+---
+
+
 ## [3.62.4] - 2026-05-30 — Dashboard AR/AP widgets correctly show customer credits & supplier advances
 
 ### Fixed
