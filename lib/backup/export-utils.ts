@@ -12,11 +12,21 @@ import { APP_VERSION } from '@/lib/version'
 // Backup file format version — bumped only on breaking schema changes.
 const BACKUP_VERSION = '2.0'
 
+// Minimal shape of the Supabase client used here — works for both the
+// cookie-bound user client (lib/supabase/server) and the service-role
+// admin client created via @supabase/supabase-js. We only need .from().
+interface MinimalSupabaseClient {
+  from(table: string): {
+    select(cols: string): {
+      eq(col: string, val: unknown): Promise<{ data: unknown; error: unknown }>
+      in(col: string, vals: unknown[]): Promise<{ data: unknown; error: unknown }>
+    }
+  }
+}
+
 /**
  * تصدير نسخة احتياطية كاملة لشركة
- */
-/**
- * تصدير نسخة احتياطية كاملة لشركة
+ * Wrapper that creates the user-bound server client.
  */
 export async function exportCompanyBackup(
   companyId: string,
@@ -24,7 +34,20 @@ export async function exportCompanyBackup(
   companyName: string
 ): Promise<BackupData> {
   const supabase = await createClient()
+  return exportCompanyBackupWithClient(supabase as unknown as MinimalSupabaseClient, companyId, userId, companyName)
+}
 
+/**
+ * v3.63.1 B3 — Same as exportCompanyBackup but takes an explicit Supabase
+ * client. The cron job passes a service-role admin client so it can read
+ * across companies without a user session (no RLS context to inherit).
+ */
+export async function exportCompanyBackupWithClient(
+  supabase: MinimalSupabaseClient,
+  companyId: string,
+  userId: string,
+  companyName: string
+): Promise<BackupData> {
   const data: Record<string, any[]> = {}
   let totalRecords = 0
 

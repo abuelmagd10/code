@@ -4,6 +4,36 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.63.1] - 2026-05-31 — Nightly auto-backup (B3)
+
+### Added
+- **`GET /api/cron/backup-daily`** — runs every night at 3 AM UTC (5 AM Cairo) via Vercel Cron. For every company with `auto_backup_enabled = true` it builds a full backup, uploads it to Supabase Storage at `backups/{company_id}/{history_id}.json`, inserts a `backup_history` row with `notes = "[cron] daily auto-backup"`, and stamps the company row with `auto_backup_last_run_at` + `auto_backup_last_status`. Each company runs in its own try/catch — a failure on company A never blocks company B.
+- **Audit:** every successful run is logged with `action = "backup_auto_export"`, `user_name = "System (cron)"`, and the `history_id` / `storage_path` / `size_mb` in `metadata`. Failures are audited too, with `metadata.failed = true` and the truncated error.
+- **`lib/backup/export-utils.ts`** — refactored. Added `exportCompanyBackupWithClient(client, companyId, userId, companyName)` that accepts an explicit Supabase client. The existing `exportCompanyBackup` is now a thin wrapper that creates the cookie-bound user client. The cron passes a service-role admin client so it can read across companies without a user session (no RLS context to inherit). The function still filters every query by `company_id`, so the admin client only ever reads the targeted tenant's data.
+
+### DB
+- `companies` got four new columns: `auto_backup_enabled BOOLEAN NOT NULL DEFAULT TRUE`, `auto_backup_last_run_at TIMESTAMPTZ`, `auto_backup_last_status TEXT CHECK ('success'/'failed')`, `auto_backup_last_error TEXT`. Defaulting to `TRUE` means every existing company is opted in on first run — owners can disable from `/settings/backup` later if they prefer.
+- `audit_logs_action_check` extended to allow `backup_auto_export`. Legacy uppercase actions (`INSERT`/`UPDATE`/`DELETE`/`APPROVE`/...) are preserved in the constraint so historical rows remain valid.
+
+### Files
+- New: `app/api/cron/backup-daily/route.ts`
+- Modified: `lib/backup/export-utils.ts` (refactor)
+- Modified: `vercel.json` (third cron entry)
+- Modified: `lib/version.ts` (3.63.0 → 3.63.1)
+
+### Verify after deploy
+1. Vercel dashboard → Settings → Cron Jobs → confirm three entries (booking-reminders, subscription-renewal, **backup-daily**).
+2. Trigger manually with `curl -H "Authorization: Bearer $CRON_SECRET" https://7esab.com/api/cron/backup-daily` → JSON summary with `backed_up` count.
+3. `/settings/backup` → the history table shows a new row tagged `[cron]` within a minute.
+4. SQL: `SELECT id, name, auto_backup_last_run_at, auto_backup_last_status FROM companies;` — every active company has a recent stamp.
+5. Tomorrow at 5 AM Cairo, repeat (3) — a second `[cron]` row appears automatically.
+
+### Why this matters
+Until tonight, every backup was manual. A customer who forgot to click "Export" for two weeks would lose everything between the last manual backup and a hypothetical data-corruption event. This change turns that catastrophic risk into a one-day-at-most risk. The 30-day Storage retention window means an owner who notices a corruption today still has 30 daily snapshots to roll back to.
+
+---
+
+
 ## [3.63.0] - 2026-05-31 — Public support: `/contact` + form + email + WhatsApp (P0-5)
 
 ### Added
