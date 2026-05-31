@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useEffect } from 'react'
-import { ArrowRight, CheckCircle, Menu, X, Sparkles, ChevronDown, Star } from 'lucide-react'
+import { ArrowRight, CheckCircle, Menu, X, Sparkles, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { HeroSection } from '@/components/landing/HeroSection'
 import { ERPModulesSection } from '@/components/landing/ERPModulesSection'
@@ -11,7 +11,6 @@ import { IndustriesSection } from '@/components/landing/IndustriesSection'
 const ERPWebsite = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [scrollY, setScrollY] = useState(0)
-  const [activeTestimonial, setActiveTestimonial] = useState(0)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
 
   useEffect(() => {
@@ -21,27 +20,18 @@ const ERPWebsite = () => {
   }, [])
 
   useEffect(() => {
-    const interval = setInterval(() => setActiveTestimonial((p) => (p + 1) % 3), 5000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
   }, [])
 
   const isAr = appLang === 'ar'
 
+  // ✅ v3.64.0 — إحصائيات تَقنية صادقة بدلاً من أرقام مُختَلَقة
+  // كل ما هنا قابل للتَّحقُّق من الكود/الـ DB، لا "500+ شركة" كاذبة
   const stats = [
-    { num: '500+', label: isAr ? 'شركة تثق بنا' : 'Companies Trust Us' },
-    { num: '99.9%', label: isAr ? 'وقت التشغيل' : 'Uptime' },
-    { num: '24/7', label: isAr ? 'دعم فنى' : 'Support' },
-    { num: '50K+', label: isAr ? 'معاملة شهرياً' : 'Monthly Transactions' },
-  ]
-
-  const testimonials = [
-    { name: isAr ? 'أحمد محمد' : 'Ahmed Mohamed', role: isAr ? 'مدير عام' : 'CEO', company: isAr ? 'شركة النور التجارية' : 'Al-Nour Trading', text: isAr ? 'نظام رائع وفر علينا أكثر من 40% من الوقت فى العمليات اليومية.' : 'Saved us 40% of daily ops time.' },
-    { name: isAr ? 'فاطمة على' : 'Fatima Ali', role: isAr ? 'مديرة مالية' : 'CFO', company: isAr ? 'مؤسسة الأمل' : 'Al-Amal Foundation', text: isAr ? 'سهولة استثنائية فى الاستخدام مع دقة عالية فى التقارير المالية.' : 'Exceptional ease with high accuracy.' },
-    { name: isAr ? 'محمد سالم' : 'Mohamed Salem', role: isAr ? 'صاحب عمل' : 'Business Owner', company: isAr ? 'متجر الإلكترونيات' : 'Electronics Store', text: isAr ? 'أفضل استثمار قمنا به هذا العام.' : 'Best investment this year.' },
+    { num: '150+', label: isAr ? 'ميزة وحدة كاملة' : 'Full features' },
+    { num: 'IAS 21', label: isAr ? 'تَعدُّد عملات كامل' : 'Multi-currency' },
+    { num: 'AES-256', label: isAr ? 'تشفير نسخك الاحتياطية' : 'Backup encryption' },
+    { num: 'Paymob', label: isAr ? 'دفع بالجنيه المصرى' : 'EGP payments' },
   ]
 
   const workProcess = [
@@ -161,8 +151,8 @@ const ERPWebsite = () => {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {[
-              { badge: isAr ? 'مجانى للأبد' : 'Free forever', title: isAr ? 'النسخة المجانية' : 'Free Plan', price: '$0', period: isAr ? '/شهر' : '/month', features: [isAr ? 'مستخدم واحد مجانى' : '1 user free', isAr ? 'جميع ميزات المحاسبة' : 'All accounting features', isAr ? 'إدارة المخزون الكاملة' : 'Full inventory', isAr ? 'تقارير شاملة' : 'Reports', isAr ? 'دعم فنى مجانى' : 'Free support', isAr ? 'بدون حدود زمنية' : 'No time limits'], cta: isAr ? 'ابدأ مجاناً' : 'Start Free', highlight: false },
-              { badge: isAr ? 'ادفع عند الحاجة' : 'Pay as you grow', title: isAr ? 'مستخدمين إضافيين' : 'Additional Users', price: '$10', period: isAr ? '/مستخدم/شهر' : '/user/month', features: [isAr ? 'كل مزايا النسخة المجانية' : 'All free features', isAr ? 'صلاحيات متقدمة' : 'Advanced permissions', isAr ? 'إدارة الفرق' : 'Team management', isAr ? 'دعم أولوية' : 'Priority support', isAr ? 'تكامل API' : 'API integrations', isAr ? 'تقارير مخصصة' : 'Custom reports'], cta: isAr ? 'أضف مستخدمين' : 'Add Users', highlight: true },
+              { badge: isAr ? 'مجانى للأبد' : 'Free forever', title: isAr ? 'النسخة المجانية' : 'Free Plan', price: isAr ? '0 ج.م' : 'EGP 0', period: isAr ? '/شهر' : '/month', features: [isAr ? 'مستخدم واحد للأبد' : '1 user forever', isAr ? 'جميع ميزات المحاسبة' : 'All accounting features', isAr ? 'إدارة المخزون الكاملة' : 'Full inventory', isAr ? 'تقارير شاملة' : 'Reports', isAr ? 'دعم فنى مجانى' : 'Free support', isAr ? 'بدون حدود زمنية' : 'No time limits'], cta: isAr ? 'ابدأ مجاناً' : 'Start Free', highlight: false },
+              { badge: isAr ? 'ادفع عند الحاجة' : 'Pay as you grow', title: isAr ? 'مستخدمين إضافيين' : 'Additional Users', price: isAr ? '500 ج.م' : 'EGP 500', period: isAr ? '/مستخدم/شهر' : '/user/month', features: [isAr ? 'كل مزايا النسخة المجانية' : 'All free features', isAr ? 'صلاحيات متقدمة' : 'Advanced permissions', isAr ? 'إدارة الفرق' : 'Team management', isAr ? 'دعم بأولوية' : 'Priority support', isAr ? 'دفع بـ Paymob' : 'Paymob payments', isAr ? 'فاتورة ضريبية' : 'Tax-compliant invoice'], cta: isAr ? 'أضف مستخدمين' : 'Add Users', highlight: true },
             ].map((plan, i) => (
               <div key={i} className={`relative p-8 rounded-3xl border-2 ${plan.highlight ? 'border-blue-500 bg-gradient-to-br from-blue-50/50 to-purple-50/50 dark:from-blue-950/30 dark:to-purple-950/30 shadow-xl' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'}`}>
                 <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2">{plan.badge}</div>
@@ -178,21 +168,44 @@ const ERPWebsite = () => {
         </div>
       </section>
 
+      {/* ✅ v3.64.0 — قسم "Early adopter" بدلاً من شهادات مُختَلَقة */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-blue-50 dark:from-gray-900 dark:to-blue-950/20">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-gray-900 dark:text-white">{isAr ? 'ماذا يقول عملاؤنا' : 'What Our Customers Say'}</h2>
-          </div>
-          <div className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-gray-900 shadow-xl border border-gray-200 dark:border-gray-800">
-            <div className="flex gap-1 mb-4">{[...Array(5)].map((_, i) => (<Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />))}</div>
-            <p className="text-lg sm:text-xl text-gray-700 dark:text-gray-300 leading-relaxed mb-6">{`"${testimonials[activeTestimonial].text}"`}</p>
-            <div>
-              <div className="font-bold text-gray-900 dark:text-white">{testimonials[activeTestimonial].name}</div>
-              <div className="text-sm text-gray-500">{testimonials[activeTestimonial].role} - {testimonials[activeTestimonial].company}</div>
+        <div className="max-w-4xl mx-auto">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-2 border-amber-200 dark:border-amber-900 p-8 sm:p-12">
+            <div className="inline-flex items-center gap-2 px-3 py-1 mb-4 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-xs font-bold">
+              <Sparkles className="w-3.5 h-3.5" />
+              {isAr ? 'إطلاق 2026' : 'Launching 2026'}
             </div>
-          </div>
-          <div className="flex justify-center gap-2 mt-6">
-            {testimonials.map((_, i) => (<button key={i} onClick={() => setActiveTestimonial(i)} className={`w-2.5 h-2.5 rounded-full transition-all ${i === activeTestimonial ? 'bg-blue-600 w-8' : 'bg-gray-300 dark:bg-gray-700'}`} aria-label={`t-${i}`} />))}
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-gray-900 dark:text-white">
+              {isAr ? 'كن من أوائل العملاء — مع امتيازات حقيقية' : 'Be one of our first customers — with real perks'}
+            </h2>
+            <p className="text-lg text-gray-700 dark:text-gray-300 mb-6 leading-relaxed">
+              {isAr
+                ? 'نحن منصة جديدة وصادقون فى ذلك. لا ندَّعى شهادات وَهْمية ولا نُلصق أرقاماً لم نَحقِّقها. بَدَلاً من ذلك، نُقدِّم للـ 20 شركة الأولى:'
+                : "We're new and we're honest about it. We don't fake testimonials or invent numbers. Instead, our first 20 customers get:"}
+            </p>
+            <ul className="space-y-3 mb-8">
+              {[
+                isAr ? '🎯 30% خصم دائم على الاشتراك' : '🎯 30% lifetime discount',
+                isAr ? '📞 خط دعم مباشر معى شخصياً عبر WhatsApp' : '📞 Direct WhatsApp support line with the founder',
+                isAr ? '✏️ تَأثير حقيقى على الميزات القادمة' : '✏️ Real influence on upcoming features',
+                isAr ? '🏆 شهادة "Founding Customer" تَظهر هنا (لو وافقت)' : '🏆 "Founding Customer" badge shown here (if you opt-in)',
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-3 text-gray-800 dark:text-gray-200">
+                  <span className="text-xl">{item.split(' ')[0]}</span>
+                  <span className="font-medium">{item.split(' ').slice(1).join(' ')}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Link href="/auth/sign-up" className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold shadow-lg hover:shadow-xl transition-all">
+                {isAr ? 'انضم كأحد الأوائل' : 'Join as a founder'}
+                <ArrowRight className="w-5 h-5 rtl:rotate-180" />
+              </Link>
+              <Link href="/contact" className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-bold hover:bg-amber-100/50 transition-all">
+                {isAr ? 'تَحدَّث معى أولاً' : 'Talk to me first'}
+              </Link>
+            </div>
           </div>
         </div>
       </section>
@@ -245,28 +258,28 @@ const ERPWebsite = () => {
               <h4 className="font-semibold text-gray-900 dark:text-white mb-3">{isAr ? 'الدعم' : 'Support'}</h4>
               <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                 <li><a href="#faq" className="hover:text-blue-600">{isAr ? 'الأسئلة الشائعة' : 'FAQ'}</a></li>
+                <li><Link href="/contact" className="hover:text-blue-600">{isAr ? 'تواصل معنا' : 'Contact'}</Link></li>
                 <li><a href="mailto:info@7esab.com" className="hover:text-blue-600 font-medium text-blue-600 dark:text-blue-400">info@7esab.com</a></li>
-                <li><a href="#" className="hover:text-blue-600">{isAr ? 'التدريب' : 'Training'}</a></li>
-                <li><a href="#" className="hover:text-blue-600">API</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold text-gray-900 dark:text-white mb-3">{isAr ? 'الشركة' : 'Company'}</h4>
+              <h4 className="font-semibold text-gray-900 dark:text-white mb-3">{isAr ? 'قانونى' : 'Legal'}</h4>
               <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                <li><a href="#" className="hover:text-blue-600">{isAr ? 'من نحن' : 'About'}</a></li>
-                <li><a href="#" className="hover:text-blue-600">{isAr ? 'المدونة' : 'Blog'}</a></li>
-                <li><a href="#" className="hover:text-blue-600">{isAr ? 'الشراكات' : 'Partners'}</a></li>
-                <li><a href="#" className="hover:text-blue-600">{isAr ? 'الوظائف' : 'Careers'}</a></li>
+                <li><Link href="/legal/terms" className="hover:text-blue-600">{isAr ? 'شروط الاستخدام' : 'Terms of Service'}</Link></li>
+                <li><Link href="/legal/privacy" className="hover:text-blue-600">{isAr ? 'سياسة الخصوصية' : 'Privacy Policy'}</Link></li>
+                <li><Link href="/legal/refund" className="hover:text-blue-600">{isAr ? 'سياسة الاسترداد' : 'Refund Policy'}</Link></li>
               </ul>
             </div>
           </div>
           <div className="pt-8 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-sm text-gray-500">{`© ${new Date().getFullYear()} 7ESAB ERP. ${isAr ? 'جميع الحقوق محفوظة.' : 'All rights reserved.'}`}</div>
+            {/* v3.64.0 — ادعاءات صادقة فقط. شَهادات لم نَحصُل عليها (مثل التَّدقيق الخارجى) تَم حَذفها. */}
             <div className="flex items-center gap-3 text-xs text-gray-500">
-              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">IAS 21</span>
+              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900" title={isAr ? 'تَعدُّد عملات وفقاً للمعيار' : ''}>IAS 21</span>
               <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">IFRS</span>
-              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">SOC 2</span>
-              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">GDPR</span>
+              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900" title={isAr ? 'قانون حماية البيانات المصرى' : ''}>PDPL</span>
+              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">AES-256</span>
+              <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-900">RLS</span>
             </div>
           </div>
         </div>

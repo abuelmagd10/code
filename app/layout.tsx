@@ -30,14 +30,42 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: "7ESAB ERP",
-  description: "نظام محاسبة وإدارة موارد المؤسسات - ERP Professional System",
+  metadataBase: new URL("https://7esab.com"),
+  title: {
+    default: "7esab.com — نظام محاسبة وERP عربى للشركات المصرية",
+    template: "%s | 7esab.com",
+  },
+  description:
+    "نظام محاسبة وإدارة موارد متكامل بالعربى للشركات الصغيرة والمتوسطة فى مصر. " +
+    "فواتير ضريبية، مخزون، مرتبات، تقارير IFRS، دفع بـ Paymob، مستخدم واحد مجانى للأبد.",
   generator: "Next.js",
   manifest: "/manifest.json",
-  keywords: ["ERP", "محاسبة", "فواتير", "مخزون", "accounting", "invoices", "inventory", "7ESAB"],
-  authors: [{ name: "7ESAB" }],
+  // v3.64.0 — keywords مُحسَّنة للسوق المصرى
+  keywords: [
+    "برنامج محاسبة", "محاسبة عربى", "ERP مصرى", "فواتير ضريبية", "VAT 14%",
+    "مخزون", "مرتبات", "Paymob", "محاسبة شركات صغيرة", "ERP system Egypt",
+    "Arabic accounting", "Egyptian SMB", "accounting invoices inventory", "7ESAB",
+  ],
+  authors: [{ name: "7ESAB", url: "https://7esab.com" }],
   creator: "7ESAB",
   publisher: "7ESAB",
+  // v3.64.0 — Twitter Card
+  twitter: {
+    card: "summary_large_image",
+    title: "7esab.com — نظام ERP عربى للشركات المصرية",
+    description: "محاسبة + مخزون + مرتبات + فواتير ضريبية بالجنيه المصرى. ابدأ مجاناً.",
+    images: ["/icons/icon-512x512.png"],
+  },
+  // v3.64.0 — robots / SEO
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
+  alternates: {
+    canonical: "https://7esab.com",
+    languages: { "ar-EG": "https://7esab.com", "en-US": "https://7esab.com" },
+  },
   formatDetection: {
     email: false,
     address: false,
@@ -50,9 +78,21 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    siteName: "7ESAB ERP",
-    title: "7ESAB ERP",
-    description: "نظام محاسبة وإدارة موارد المؤسسات",
+    siteName: "7esab.com",
+    title: "7esab.com — نظام ERP عربى للشركات المصرية",
+    description:
+      "محاسبة + مخزون + مرتبات + فواتير ضريبية بالجنيه المصرى. " +
+      "مستخدم واحد مجانى للأبد، دفع بـ Paymob، تَعدُّد عملات IAS 21.",
+    url: "https://7esab.com",
+    locale: "ar_EG",
+    images: [
+      {
+        url: "/icons/icon-512x512.png",
+        width: 512,
+        height: 512,
+        alt: "7esab.com — Enterprise Resource Planning",
+      },
+    ],
   },
   icons: {
     icon: [
@@ -98,6 +138,62 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/apple-icon.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
         <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
+        {/* v3.64.0 — JSON-LD structured data for SEO (SoftwareApplication + Organization) */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@graph": [
+                {
+                  "@type": "SoftwareApplication",
+                  name: "7esab.com ERP",
+                  description:
+                    "نظام محاسبة وإدارة موارد عربى للشركات المصرية الصغيرة والمتوسطة. فواتير، مخزون، مرتبات، تَعدُّد عملات.",
+                  applicationCategory: "BusinessApplication",
+                  applicationSubCategory: "AccountingSoftware",
+                  operatingSystem: "Web Browser",
+                  offers: [
+                    {
+                      "@type": "Offer",
+                      name: "Free Plan",
+                      price: "0",
+                      priceCurrency: "EGP",
+                      description: "مستخدم واحد مجانى للأبد",
+                    },
+                    {
+                      "@type": "Offer",
+                      name: "Additional User",
+                      price: "500",
+                      priceCurrency: "EGP",
+                      description: "EGP 500 / user / month",
+                    },
+                  ],
+                  inLanguage: ["ar", "en"],
+                  url: "https://7esab.com",
+                },
+                {
+                  "@type": "Organization",
+                  name: "7esab.com",
+                  url: "https://7esab.com",
+                  logo: "https://7esab.com/icons/icon-512x512.png",
+                  email: "info@7esab.com",
+                  contactPoint: {
+                    "@type": "ContactPoint",
+                    contactType: "customer support",
+                    email: "info@7esab.com",
+                    availableLanguage: ["Arabic", "English"],
+                    areaServed: "EG",
+                  },
+                  address: {
+                    "@type": "PostalAddress",
+                    addressCountry: "EG",
+                  },
+                },
+              ],
+            }),
+          }}
+        />
       </head>
       <body className={`font-sans antialiased touch-manipulation`}>
         <Script id="lang-init" strategy="beforeInteractive">

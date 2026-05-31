@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.64.0] - 2026-05-31 — Honest landing page + SEO foundation
+
+### Removed (honesty pass)
+- **Fabricated stats** "500+ شركة تثق بنا"، "50K+ معاملة شهرياً"، "99.9% uptime"، "24/7 دعم". Replaced with verifiable technical facts: "150+ ميزة"، "IAS 21 multi-currency"، "AES-256 backup encryption"، "Paymob EGP payments". Every claim now defendable from the codebase.
+- **Fabricated testimonials** (Ahmed Mohamed / Fatima Ali / Mohamed Salem with made-up companies). Egyptian SMB community is small enough that a single prospect Googling "شركة النور التجارية" and finding nothing would never trust us again. Replaced with a transparent "Be one of our first 20 customers — with real perks" CTA offering 30% lifetime discount, direct WhatsApp line, feature influence, and an opt-in "Founding Customer" badge.
+- **Fake SOC 2 badge** in the footer. SOC 2 is a formal third-party audit we have not done — claiming it is straight-up misrepresentation. Replaced with claims that are true: IAS 21, IFRS, **PDPL** (Egyptian data law we actually align with), AES-256 (real), RLS (real).
+
+### Fixed
+- Pricing was in USD ($0, $10/user) which mismatched the actual Paymob/EGP billing. Now reads "0 ج.م" and "500 ج.م / مستخدم / شهر" in Arabic, "EGP 0" and "EGP 500" in English.
+- Footer "Support" column had dead links ("التدريب", "API"). Replaced with `/contact` and the support email.
+- Footer "Company" column was a graveyard of dead links ("About", "Blog", "Partners", "Careers" all `href="#"`). Replaced with a "Legal" column linking to the three policy pages we actually published last week.
+
+### Added (SEO)
+- **`app/sitemap.ts`** — auto-generated at `/sitemap.xml`. Lists only the seven public URLs (landing, /contact, /legal/*, /auth/sign-up, /auth/login). Authenticated pages intentionally excluded — Google has no business indexing them.
+- **`app/robots.ts`** — auto-generated at `/robots.txt`. Allowlists the seven public URLs above and disallows every authenticated route prefix (`/dashboard`, `/settings`, `/customers`, `/invoices`, `/bills`, `/suppliers`, `/products`, `/inventory`, `/banking`, `/accounting`, `/reports`, `/hr`, `/manufacturing`, `/api/`, etc.). Sitemap declared at the bottom.
+- **Open Graph + Twitter Card** in `app/layout.tsx` metadata. Egyptian-Arabic title and description so Facebook, WhatsApp, and Twitter previews look professional.
+- **JSON-LD structured data** (`SoftwareApplication` + `Organization`) injected in the document head. Google can now show pricing snippets, contact info, and rich results for the brand. Both offers (`Free Plan EGP 0`, `Additional User EGP 500`) included with the correct currency code.
+- **`alternates.canonical`** + `alternates.languages` so duplicate-URL issues do not split SEO juice.
+- **Egyptian SMB keywords** added to metadata: "برنامج محاسبة"، "محاسبة عربى"، "ERP مصرى"، "فواتير ضريبية"، "VAT 14%"، "Paymob"، "محاسبة شركات صغيرة"، etc.
+
+### Files
+- Modified: `app/page.tsx` (stats + testimonials + pricing + footer)
+- Modified: `app/layout.tsx` (metadata + JSON-LD + Open Graph)
+- New: `app/sitemap.ts`
+- New: `app/robots.ts`
+- Modified: `lib/version.ts` (3.63.3 → 3.64.0)
+
+### Verify after deploy
+1. `https://7esab.com/robots.txt` returns the allow/disallow list above.
+2. `https://7esab.com/sitemap.xml` returns 7 `<url>` entries.
+3. Paste `https://7esab.com` into the [Facebook Sharing Debugger](https://developers.facebook.com/tools/debug/) — Arabic title + description + logo card all appear.
+4. Paste `https://7esab.com` into [Google's Rich Results Test](https://search.google.com/test/rich-results) — `SoftwareApplication` and `Organization` both detected with no errors.
+5. Open the landing page, scroll to "ماذا يقول عملاؤنا" — gone, replaced with the orange "Founding customer" callout.
+6. Pricing section reads "0 ج.م" and "500 ج.م".
+
+### Why this matters
+A landing page that fakes social proof scares away serious prospects and exposes you legally. A landing page that says "we just launched, here is what we built, join us early and shape what comes next" is what actually converts in the Egyptian SMB market — where word travels fast and honest founders are remembered. SEO + structured data + sitemap means every channel you push from here (Facebook ads, accountant referrals, blog posts) compounds into Google rather than vanishing.
+
+---
+
+
 ## [3.63.3] - 2026-05-31 — Backup B5: failure email to company owner
 
 ### Added
