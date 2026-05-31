@@ -62,6 +62,8 @@ export async function updateSession(request: NextRequest) {
     // redirect إلى /auth/login فقط للصفحات المحمية
     const isAuthPage = request.nextUrl.pathname.startsWith("/auth")
     const isRootPath = request.nextUrl.pathname === "/"
+    // الصفحات القانونية عامة بالكامل — يجب أن تُفتح بدون تسجيل دخول
+    const isLegalPage = request.nextUrl.pathname.startsWith("/legal")
     // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
     const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
     // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
@@ -75,7 +77,7 @@ export async function updateSession(request: NextRequest) {
       request.nextUrl.pathname.startsWith("/api/webhooks/") ||
       request.nextUrl.pathname === "/api/billing/renew"
 
-    if (!isAuthPage && !isInvitationAcceptPage && !isPublicApi && !session) {
+    if (!isAuthPage && !isLegalPage && !isInvitationAcceptPage && !isPublicApi && !session) {
       // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
       if (!isRootPath) {
         const url = request.nextUrl.clone()
@@ -104,7 +106,7 @@ export async function updateSession(request: NextRequest) {
 
       // Skip the check on pages where blocking would be wrong/wasteful
       if (
-        !isAuthPage && !isInvitationAcceptPage && !isPublicApi &&
+        !isAuthPage && !isLegalPage && !isInvitationAcceptPage && !isPublicApi &&
         !isSuspendedPage && !isOnboarding && !isStatic
       ) {
         // Fast RPC: one query returns { has_company, is_owner, is_suspended }

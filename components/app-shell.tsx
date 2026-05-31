@@ -21,6 +21,7 @@ const PUBLIC_PATHS = [
   "/auth/force-change-password",
   "/onboarding",
   "/invitations/accept",
+  "/legal", // الصفحات القانونية عامة — لا تحتاج صلاحيات
 ]
 
 interface AppShellProps {

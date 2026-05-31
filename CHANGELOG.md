@@ -4,6 +4,30 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.7] - 2026-05-31 — Hotfix: /legal as truly public route
+
+### Fixed
+- `/legal/*` was being treated as a protected route by three independent gates, so visiting it without a session redirected to `/auth/login`, and visiting it with a session showed the dashboard sidebar wrapping the page. Now the section is fully public.
+- **`middleware.ts`** — added `isLegalPage` check so unauthenticated requests to `/legal/*` no longer redirect to `/auth/login`, and the suspension enforcement skips them (suspended members can still read the Terms before deciding to renew).
+- **`AppShell`** — added `/legal` to `PUBLIC_PATHS` so the permissions gate stops trying to resolve `legal` as a resource key in `allowed_pages`.
+- **`SidebarLayoutProvider`** — added `/legal` to `PREFIX_HIDE_PATHS` so the dashboard sidebar is not rendered on policy pages.
+- **`app/legal/layout.tsx`** — login link was `/login` (which 404s), now correctly `/auth/login`.
+
+### Files
+- Modified: `lib/supabase/middleware.ts`
+- Modified: `components/app-shell.tsx`
+- Modified: `components/SidebarLayoutProvider.tsx`
+- Modified: `app/legal/layout.tsx`
+- Modified: `lib/version.ts` (3.62.6 → 3.62.7)
+
+### Verify after deploy
+- Open `https://7esab.com/legal` in **incognito** (no session) — page renders, no redirect to `/auth/login`, no sidebar visible.
+- Open the same URL while logged in — page renders, no sidebar, only the blue `/legal` header.
+- All three sub-pages (`/legal/terms`, `/legal/privacy`, `/legal/refund`) reachable both ways.
+
+---
+
+
 ## [3.62.6] - 2026-05-31 — Legal pages (P0-3)
 
 ### Added
