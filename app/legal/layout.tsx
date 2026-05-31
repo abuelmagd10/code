@@ -62,8 +62,10 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
 
       <footer className="border-t border-slate-200 py-8 text-center text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <p>© {new Date().getFullYear()} 7esab.com — جميع الحقوق محفوظة</p>
-        <p className="mt-1">
-          للتواصل:{" "}
+        <p className="mt-2 flex flex-wrap justify-center gap-x-6 gap-y-2">
+          <Link href="/contact" className="text-blue-700 hover:underline dark:text-blue-400">
+            تواصل معنا
+          </Link>
           <a href="mailto:info@7esab.com" className="text-blue-700 hover:underline dark:text-blue-400">
             info@7esab.com
           </a>

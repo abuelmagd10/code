@@ -22,6 +22,7 @@ const PUBLIC_PATHS = [
   "/onboarding",
   "/invitations/accept",
   "/legal", // الصفحات القانونية عامة — لا تحتاج صلاحيات
+  "/contact", // صفحة التواصل عامة
 ]
 
 interface AppShellProps {

@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 
 const EXACT_HIDE_PATHS = ["/"]
-const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal"]
+const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal", "/contact"]
 
 export function SidebarLayoutProvider() {
   const pathname = usePathname()

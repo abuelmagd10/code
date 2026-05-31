@@ -4,6 +4,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.63.0] - 2026-05-31 — Public support: `/contact` + form + email + WhatsApp (P0-5)
+
+### Added
+- **`/contact`** — public landing for customer inquiries. Three cards on top (Email, WhatsApp, Form), then a full bilingual form (name, email, subject, message) with live character count and inline validation. Public route, no auth required, no sidebar, RTL throughout.
+- **`/api/contact`** — POST endpoint that delivers the inquiry to `SUPPORT_EMAIL` (default `info@7esab.com`) via the existing SMTP transport, then sends an auto-reply confirmation to the submitter. Hardened with:
+  - **Rate limit:** 5 submissions per IP per hour (in-memory bucket — fine while volume is tiny; swap to KV when it grows).
+  - **Honeypot field** (`website`) — visually hidden, but bots fill it; the endpoint silently returns 200 without sending mail so the bot thinks it worked and moves on.
+  - **Strict server-side validation:** name 2-80, email regex + length 200, subject 3-120, message 10-2000. Client mirrors the same rules for instant feedback, but server is the source of truth.
+  - **Forensic context** in the support email body: client IP, user-agent, referer, timestamp.
+- **WhatsApp button** — opt-in via `NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER` env var. When set, renders a green card linking to `wa.me/<digits>` with a prefilled greeting. When unset, the card shows a polite "coming soon" placeholder rather than a dead button.
+- **Footer links** added to every `/legal/*` page pointing to `/contact`.
+
+### Made public
+- `lib/supabase/middleware.ts`, `components/app-shell.tsx`, `components/SidebarLayoutProvider.tsx` — same three-gate pattern used for `/legal` in v3.62.7, now also covers `/contact` and `/api/contact`.
+
+### Files
+- New: `app/contact/page.tsx`
+- New: `app/api/contact/route.ts`
+- New: `components/contact/ContactForm.tsx`
+- Modified: `lib/supabase/middleware.ts`
+- Modified: `components/app-shell.tsx`
+- Modified: `components/SidebarLayoutProvider.tsx`
+- Modified: `app/legal/layout.tsx` (footer link)
+- Modified: `lib/version.ts` (3.62.8 → 3.63.0)
+
+### Optional env vars
+- `SUPPORT_EMAIL` — destination for contact-form submissions. Defaults to `info@7esab.com` if unset.
+- `NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER` — international format, digits only (e.g. `201012345678`). Leave unset until the WhatsApp Business number is ready; the UI degrades gracefully.
+
+### Verify after deploy
+1. `https://7esab.com/contact` opens without auth, no sidebar, three cards visible.
+2. Fill the form with valid data → toast "تم استلام رسالتك", and a mail lands at `info@7esab.com` with the user's IP/UA/referer at the bottom.
+3. The submitter receives an Arabic auto-reply with the subject quoted back.
+4. Try posting the same form 6 times in an hour → 6th returns `429`.
+5. Set `NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER=201XXXXXXXXX` on Vercel and redeploy → WhatsApp card appears with click-to-chat link.
+
+---
+
+
 ## [3.62.8] - 2026-05-31 — Harden /api/sentry-test against drive-by hits
 
 ### Changed
