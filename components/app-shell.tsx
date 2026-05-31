@@ -23,6 +23,7 @@ const PUBLIC_PATHS = [
   "/invitations/accept",
   "/legal", // الصفحات القانونية عامة — لا تحتاج صلاحيات
   "/contact", // صفحة التواصل عامة
+  "/blog", // المدوَّنة عامة — قمع SEO
 ]
 
 interface AppShellProps {

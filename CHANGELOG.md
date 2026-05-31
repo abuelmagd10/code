@@ -4,6 +4,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.65.0] - 2026-05-31 — Blog SEO foundation + 3 long-form articles
+
+### Added
+- **`/blog`** — public Arabic blog hub with cards for every article (date, reading time, tags, excerpt). Server-rendered for SEO.
+- **`/blog/[slug]` dynamic article pages**, three of them launched today, each ~8-11 KB of curated content:
+  - **`/blog/best-arabic-accounting-software-egypt-2026`** — honest comparison of Excel / الحدُّوتة / Onyx Pro / Zoho / 7esab. Names competitors by name, gives the recommendation for each company size, ends with an opt-in CTA. Targets "أفضل برنامج محاسبة" + "محاسبة مصرى".
+  - **`/blog/vat-14-egypt-small-business-guide`** — practical VAT 14% guide with worked examples (1,000 ج.م sale → 140 ج.م VAT → 56 ج.م net after Input VAT), filing windows, penalty thresholds, the four mistakes that cost real customers money, and how an ERP automates the lot. Targets "ضريبة القيمة المضافة" + "VAT شركات".
+  - **`/blog/excel-to-erp-migration-guide`** — 6-step migration playbook (backup, cutover date, soft launch, training, parallel run, final cutoff). Includes the five biggest mistakes I see, realistic timeline by company size, and the six questions to ask any vendor before paying. Targets "Excel ERP" + "نقل البيانات".
+- **`components/blog/BlogPostLayout.tsx`** — shared shell for every article: sticky header with site nav, title block with metadata bar, prose body (Tailwind `prose` typography for headings/lists/links), end-of-article CTA card, and a "related posts" grid.
+- **`lib/blog-posts.ts`** — single source of truth for article metadata. Adding a fourth article = 1 line in this file + 1 new `app/blog/<slug>/page.tsx` + 1 line in `app/sitemap.ts`.
+- **JSON-LD `Article` schema** on every post page. Google can now show rich snippets with the author, publish date, and reading time.
+- **Per-post `<title>` + `<meta description>` + Open Graph + canonical** so each article shows up correctly in search results and shares.
+
+### Updated
+- **`app/sitemap.ts`** — now dynamically appends every entry from `lib/blog-posts.ts`. The list of seven static URLs grew to ten today; tomorrow when you publish the fourth article it grows to eleven automatically.
+- **`app/robots.ts`** — `/blog` added to the allow list.
+- **Public-route plumbing** (`middleware.ts`, `AppShell`, `SidebarLayoutProvider`) — `/blog/*` now bypasses auth, escapes the dashboard sidebar, and renders its own header. Same pattern we already use for `/legal` and `/contact`.
+
+### Files
+- New: `app/blog/page.tsx`
+- New: `app/blog/best-arabic-accounting-software-egypt-2026/page.tsx`
+- New: `app/blog/vat-14-egypt-small-business-guide/page.tsx`
+- New: `app/blog/excel-to-erp-migration-guide/page.tsx`
+- New: `components/blog/BlogPostLayout.tsx`
+- New: `lib/blog-posts.ts`
+- Modified: `app/sitemap.ts`, `app/robots.ts`
+- Modified: `lib/supabase/middleware.ts`, `components/app-shell.tsx`, `components/SidebarLayoutProvider.tsx`
+- Modified: `lib/version.ts` (3.64.0 → 3.65.0)
+
+### Verify after deploy
+1. `https://7esab.com/blog` shows three article cards in reverse chronological order.
+2. Each card opens its article in RTL with no sidebar bleed-through, a sticky `7esab.com` header on top, and an "ابدأ مجاناً" CTA at the end.
+3. `https://7esab.com/sitemap.xml` now lists 13 URLs (10 static + 3 blog).
+4. Paste any article URL into [Google's Rich Results Test](https://search.google.com/test/rich-results) — Article schema detected.
+5. Share an article URL in WhatsApp — Arabic title + description preview renders.
+6. Add `https://7esab.com/sitemap.xml` to Search Console → request re-indexing → articles appear in the index within 1-3 days.
+
+### Why this matters
+Three Egyptian-Arabic articles targeting high-intent searches give Google something to actually rank for. The technical SEO we did in v3.64.0 (sitemap, robots, JSON-LD, OG) was infrastructure with nothing to push through it — like a road with no cars. Today the road has cars. Each article compounds: it draws traffic for as long as it stays useful, costs nothing to keep running, and pulls in customers while you sleep. Even better — every article ends with a real CTA back to the product, so SEO traffic feeds directly into sign-ups.
+
+---
+
+
 ## [3.64.0] - 2026-05-31 — Honest landing page + SEO foundation
 
 ### Removed (honesty pass)

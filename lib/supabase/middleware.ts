@@ -67,6 +67,8 @@ export async function updateSession(request: NextRequest) {
     // صفحة التواصل + API نموذج الاتصال — يَفتحها العملاء قبل التسجيل
     const isContactPage = request.nextUrl.pathname.startsWith("/contact") ||
                           request.nextUrl.pathname === "/api/contact"
+    // المدوَّنة عامة بالكامل — جزء من قمع SEO
+    const isBlogPage = request.nextUrl.pathname.startsWith("/blog")
     // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
     const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
     // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
@@ -80,7 +82,7 @@ export async function updateSession(request: NextRequest) {
       request.nextUrl.pathname.startsWith("/api/webhooks/") ||
       request.nextUrl.pathname === "/api/billing/renew"
 
-    if (!isAuthPage && !isLegalPage && !isContactPage && !isInvitationAcceptPage && !isPublicApi && !session) {
+    if (!isAuthPage && !isLegalPage && !isContactPage && !isBlogPage && !isInvitationAcceptPage && !isPublicApi && !session) {
       // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
       if (!isRootPath) {
         const url = request.nextUrl.clone()
@@ -109,7 +111,7 @@ export async function updateSession(request: NextRequest) {
 
       // Skip the check on pages where blocking would be wrong/wasteful
       if (
-        !isAuthPage && !isLegalPage && !isContactPage && !isInvitationAcceptPage && !isPublicApi &&
+        !isAuthPage && !isLegalPage && !isContactPage && !isBlogPage && !isInvitationAcceptPage && !isPublicApi &&
         !isSuspendedPage && !isOnboarding && !isStatic
       ) {
         // Fast RPC: one query returns { has_company, is_owner, is_suspended }
