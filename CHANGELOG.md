@@ -4,6 +4,27 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.62.8] - 2026-05-31 — Harden /api/sentry-test against drive-by hits
+
+### Changed
+- **`/api/sentry-test`** now returns **404** in production unless the env var `SENTRY_TEST_ENABLED=1` is explicitly set. Even with the flag on, the endpoint still requires `?confirm=1` to actually fire. This closes a small but real abuse vector: a passing scanner could otherwise spam Sentry with fake errors, drown out real ones, and burn through the project's event quota.
+- To re-verify Sentry in the future: set `SENTRY_TEST_ENABLED=1` on Vercel, hit the URL with `?confirm=1`, then **unset the env var immediately**. The verification window stays open just as long as you need.
+
+### Files
+- Modified: `app/api/sentry-test/route.ts`
+- Modified: `lib/version.ts` (3.62.7 → 3.62.8)
+
+### Verify after deploy
+- `curl -i https://7esab.com/api/sentry-test` → expect `HTTP 404 Not Found`
+- `curl -i 'https://7esab.com/api/sentry-test?confirm=1'` → still `404` (env flag is off)
+- No new events should appear in Sentry from now on.
+
+### Notes
+- The 2 existing test events in Sentry (7ESAB-ERB-1 / 7ESAB-ERB-2 from v3.62.5 verification) have been marked Resolved with a note explaining they were intentional. They are NOT bugs.
+
+---
+
+
 ## [3.62.7] - 2026-05-31 — Hotfix: /legal as truly public route
 
 ### Fixed
