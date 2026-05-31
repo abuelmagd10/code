@@ -4,6 +4,24 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.65.1] - 2026-05-31 — Hotfix: middleware matcher excludes .html/.txt/.xml/.ico
+
+### Fixed
+- **Critical:** `middleware.ts` matcher was capturing static files in `/public` and redirecting unauthenticated requests to `/auth/login`. The most visible symptom: `https://7esab.com/googlebab064d0744a7afb.html` (Google Search Console verification file) returned the login page HTML instead of the plain verification line, so **Google could not verify ownership** of the site. Same problem would have hit `ads.txt`, `BingSiteAuth.txt`, and any future static HTML asset.
+- Extended the matcher exclusion list from just `_next/static`, `_next/image`, `favicon.ico`, `manifest.json`, `sw.js`, `sw-register.js`, and image extensions, to ALSO exclude `.html`, `.txt`, `.xml`, and `.ico`. Now any static file dropped in `/public` is served directly without the auth check.
+
+### Files
+- Modified: `middleware.ts`
+- Modified: `lib/version.ts` (3.65.0 → 3.65.1)
+
+### Verify after deploy
+1. `curl -L https://7esab.com/googlebab064d0744a7afb.html` → returns `google-site-verification: googlebab064d0744a7afb.html` (NOT the login page HTML).
+2. Go back to Google Search Console → click **VERIFY** → "Ownership verified" ✅.
+3. Submit `sitemap.xml` and request indexing for the three blog articles.
+
+---
+
+
 ## [3.65.0] - 2026-05-31 — Blog SEO foundation + 3 long-form articles
 
 ### Added

@@ -41,7 +41,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|sw-register\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    // v3.65.1 — added .html and .txt to exclusions so static files in /public
+    // (Google Search Console verification, ads.txt, etc.) bypass auth redirect.
+    "/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|sw-register\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|html|txt|xml|ico)$).*)"
   ],
 }
 
