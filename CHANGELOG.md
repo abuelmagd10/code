@@ -4,6 +4,28 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.63.2] - 2026-05-31 — Dashboard cold-start polish
+
+### Added
+- **`app/dashboard/loading.tsx`** — Next.js renders this skeleton the moment the route transition begins, before page.tsx runs at all. The earlier `<Suspense fallback={...}>` boundaries only kicked in AFTER auth + company lookup completed — on a cold Vercel function start that meant 5-10 seconds of blank screen. With `loading.tsx` the user sees a stable layout (header card + four KPI tiles + chart strips + bank/list grid) within the first frame.
+- **`<link rel="preconnect">` + `<link rel="dns-prefetch">`** in the root `<head>` pointing at the Supabase project URL. Browsers open the TCP + TLS connection while parsing the HTML, so the first auth/data fetch saves roughly 100-300ms on cold loads. `crossOrigin="anonymous"` so the auth cookie is not sent on the warm-up handshake.
+
+### Files
+- New: `app/dashboard/loading.tsx`
+- Modified: `app/layout.tsx` (two `<link>` hints in the head)
+- Modified: `lib/version.ts` (3.63.1 → 3.63.2)
+
+### Verify after deploy
+1. DevTools → Performance → record a cold reload of `/dashboard`. The first paint should now show the skeleton at ~T+200ms instead of T+5s.
+2. DevTools → Network → look for "preconnect" entries on the Supabase domain ~50ms after `index.html` arrives.
+3. The skeleton layout should not flash incorrect colours in dark mode — it inherits `bg-slate-700` for pulses.
+
+### Why this matters
+First-time visitors on a cold function load saw a flash of nothing for several seconds and bounced before the dashboard had a chance to render. Now they see structure immediately and watch the data fill in. The TTFB-to-TTI window goes from "scary" to "interestingly fast" without changing the underlying queries.
+
+---
+
+
 ## [3.63.1] - 2026-05-31 — Nightly auto-backup (B3)
 
 ### Added

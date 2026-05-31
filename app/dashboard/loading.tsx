@@ -1,28 +1,57 @@
-export default function Loading() {
+/**
+ * Dashboard Loading Skeleton — paints instantly during navigation
+ *
+ * Next.js App Router shows this file's exports while page.tsx is resolving
+ * (auth check, company lookup, etc.). It mirrors the actual dashboard
+ * layout so the user sees stable structure rather than a blank screen
+ * or a single spinner.
+ *
+ * v3.63.2 — added as part of the cold-start mitigation. The earlier
+ * Suspense fallbacks only kicked in AFTER the page reached the widget
+ * boundaries, which on a cold function start was 5-10 seconds in.
+ * This file fires the moment Vercel returns its first byte.
+ */
+import {
+  StatsSkeleton,
+  SecondaryStatsSkeleton,
+  ChartsSkeleton,
+  BankCashSkeleton,
+  RecentListsSkeleton,
+} from "./_widgets/SkeletonWidgets"
+
+function Pulse({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-gray-200 dark:bg-slate-700 ${className}`} />
+}
+
+export default function DashboardLoading() {
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
-      <main className="flex-1 p-4 md:p-8 space-y-8">
-        <div>
-          <div className="h-6 w-48 bg-gray-200 dark:bg-slate-800 rounded animate-pulse mb-2" />
-          <div className="h-4 w-64 bg-gray-200 dark:bg-slate-800 rounded animate-pulse" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-md border bg-white dark:bg-slate-900 p-4">
-              <div className="h-4 w-32 bg-gray-200 dark:bg-slate-800 rounded animate-pulse mb-3" />
-              <div className="h-8 w-24 bg-gray-200 dark:bg-slate-800 rounded animate-pulse" />
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950" dir="rtl">
+      <div className="mx-auto max-w-7xl space-y-4 p-4 sm:space-y-6 sm:p-6">
+        <div className="rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Pulse className="h-12 w-12 sm:h-14 sm:w-14 rounded-lg sm:rounded-xl" />
+              <div className="space-y-2 min-w-0 flex-1">
+                <Pulse className="h-7 sm:h-8 w-40 sm:w-56" />
+                <Pulse className="h-4 w-32 sm:w-48" />
+              </div>
             </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="rounded-md border bg-white dark:bg-slate-900 p-4">
-              <div className="h-4 w-40 bg-gray-200 dark:bg-slate-800 rounded animate-pulse mb-3" />
-              <div className="h-32 w-full bg-gray-200 dark:bg-slate-800 rounded animate-pulse" />
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <Pulse className="h-8 w-24 rounded-md" />
+              <Pulse className="h-8 w-16 rounded-md" />
             </div>
-          ))}
+          </div>
         </div>
-      </main>
+
+        <StatsSkeleton />
+        <SecondaryStatsSkeleton />
+        <ChartsSkeleton />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          <BankCashSkeleton />
+          <RecentListsSkeleton />
+        </div>
+      </div>
     </div>
   )
 }

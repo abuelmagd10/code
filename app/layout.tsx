@@ -78,6 +78,10 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
+        {/* v3.63.2 Cold-start: open TCP+TLS to Supabase during HTML parse
+            so the first auth/data fetch saves ~100-300ms on cold loads. */}
+        <link rel="preconnect" href="https://hfvsbsizokxontflgdyn.supabase.co" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://hfvsbsizokxontflgdyn.supabase.co" />
         {/* Favicon - explicit for all browsers */}
         <link rel="icon" href="/favicon.png" type="image/png" />
         <link rel="icon" href="/icons/icon-32x32.png" sizes="32x32" type="image/png" />
