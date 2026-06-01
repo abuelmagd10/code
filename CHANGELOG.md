@@ -4,6 +4,53 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.72.0] - 2026-06-01 — Phase C-1: Vacation Cover (one-click delegation)
+
+First piece of Phase C. The audit on the permission system flagged that the SAP/Oracle "vacation cover" pattern was missing — owners had to manually open the full sharing dialog, pick resource types, dates, and the right grantee. This release adds a focused, single-purpose dialog optimized for the most common case: "X is on vacation from D1 to D2, route their work to Y."
+
+### Why a dedicated dialog instead of using the existing share dialog?
+The existing "إدارة الصلاحيات" dialog covers Transfer + Share + Branch-access and has six fields with conditional visibility. For a vacation cover the user has exactly two questions: who's away, and who covers them. Asking five extra questions every time adds friction and increases the chance of operator error (forgetting `expires_at`, picking wrong resource type, leaving `can_edit=false` so the delegate can't actually work). The new dialog is opinionated:
+- `can_view=true`, `can_edit=true`, `can_delete=false` — sensible for cover, configurable later via the main dialog if needed.
+- `expires_at` is mandatory and defaults end-of-day UTC of the picked end date.
+- `notes` is auto-stamped with the vacation context for the audit trail and the receiving user's "مُشارَك مَعى" panel.
+- Sets `resource_type='all'` by default since the cover usually needs full scope; can be narrowed.
+
+### Done
+- **New state block** in `app/settings/users/page.tsx`: `showVacationDialog`, `vacGrantorId`, `vacGranteeIds[]`, `vacStartDate`, `vacEndDate`, `vacResourceType`, `vacReason`, `vacLoading`.
+- **New handler `handleVacationCover()`** — validates required fields (grantor, ≥1 grantee, end date), guards against end < start, posts to existing `/api/permissions` with `action='share'` plus `expires_at` and a structured note `[تَفويض إجازة] <grantor> — من <start> إلى <end> — <reason>`.
+- **New button "تَفويض إجازة"** with Calendar icon, sitting next to the existing "إدارة الصلاحيات" button in the "نقل وفتح الصلاحيات" card header.
+- **New dialog component** below the existing permission dialog. Five focused inputs: grantor select, grantee multi-checkbox, start/end date pair, resource type, reason text. Plus an inline summary panel that shows on the fly what the user is about to authorize.
+- **No backend changes.** The existing `/api/permissions` POST already accepted `expires_at` and `notes`. The v3.70.0 cron already auto-deactivates expired rows. The v3.71.0 RLS already honors active permission_sharing rows.
+
+### Why this was safe
+- Existing share API contract unchanged.
+- Existing share dialog unchanged — vacation cover is a separate code path.
+- Same DB rows in `permission_sharing`, so they appear in all three existing views: "المشاركات" tab (admin view), "مُشارَك مَعى" tab (grantee view), the v3.70.0 cron for expiration.
+- The dialog enforces `end >= start` client-side; the API and DB tolerate any expires_at value.
+- Uses the same `members` array already loaded for the page, no extra fetches.
+
+### Files
+- Modified: `app/settings/users/page.tsx` — new state, new handler, new button, new dialog component, +2 lucide imports (Calendar, UserCheck)
+- Modified: `lib/version.ts` → 3.72.0
+
+### Verify after deploy
+1. Open `/settings/users → نقل وفتح الصلاحيات`. The header now shows two buttons: "تَفويض إجازة" (outline blue, calendar icon) and "إدارة الصلاحيات" (gradient orange, share icon).
+2. Click "تَفويض إجازة". Dialog opens with grantor dropdown of all company members.
+3. Pick grantor, pick one or more grantees (excluding self-pick — grantor is filtered out), pick end date in the future. The blue summary panel appears showing the plan.
+4. Click "تَأكيد التَفويض". Toast: "✓ تَفويض إجازة — N بديل حتى YYYY-MM-DD".
+5. Open the "المشاركات" tab → the new share appears with the new notes line.
+6. Login as the grantee → "مُشارَك مَعى" tab shows the inbound share with auto-stamped notes "[تَفويض إجازة] ...".
+7. As grantee, open `/customers` (or `/sales-orders` etc.) — records originally created by the absent grantor are visible in the list, RLS-enforced from v3.71.0.
+8. Set `expires_at` in the past via DB (or wait for natural expiry + cron run at 04:00 UTC) → record disappears from grantee's view.
+
+### Phase C remaining
+- v3.73.0 — Approval workflow on transfers (owner-requested transfers must be approved by a second owner/admin before execution).
+- v3.74.0 — Position hierarchy table + RLS clause so a sales manager auto-sees their reports' work without an explicit share.
+- v3.75.0 — "Who can access X?" reporting endpoint + UI.
+
+---
+
+
 ## [3.71.0] - 2026-06-01 — Phase B: RLS-enforced sharing + "shared with me" panel
 
 This release closes the second of three gaps the v3.70.0 audit flagged on the permission sharing/transfer system. Sharing now works at the DB layer, not just in app code, and the receiving user finally has a place to see what was shared with them.

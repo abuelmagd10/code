@@ -18,7 +18,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { usePermissions } from "@/lib/permissions-context"
 import { canAdvancedAction, type AdvancedAction } from "@/lib/authz"
 import Link from "next/link"
-import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy, CreditCard } from "lucide-react"
+import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy, CreditCard, Calendar, UserCheck } from "lucide-react"
 import SeatStatusBanner from "@/components/billing/SeatStatusBanner"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string; employee_id?: string; employee_name?: string; employee_job_title?: string }
@@ -147,6 +147,16 @@ export default function UsersSettingsPage() {
   const [shareCanEdit, setShareCanEdit] = useState(false)
   const [shareCanDelete, setShareCanDelete] = useState(false)
   const [permissionLoading, setPermissionLoading] = useState(false)
+
+  // 🌴 v3.72.0 — Vacation Cover dialog state
+  const [showVacationDialog, setShowVacationDialog] = useState(false)
+  const [vacGrantorId, setVacGrantorId] = useState<string>("")
+  const [vacGranteeIds, setVacGranteeIds] = useState<string[]>([])
+  const [vacStartDate, setVacStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [vacEndDate, setVacEndDate] = useState<string>("")
+  const [vacResourceType, setVacResourceType] = useState<string>("all")
+  const [vacReason, setVacReason] = useState<string>("")
+  const [vacLoading, setVacLoading] = useState(false)
 
   // 🏢 إدارة فرع الموظف (Single Branch - Mandatory)
   const [showMemberBranchDialog, setShowMemberBranchDialog] = useState(false)
@@ -750,6 +760,65 @@ export default function UsersSettingsPage() {
       toastActionError(toast, "مشاركة", "الصلاحيات", err.message)
     } finally {
       setPermissionLoading(false)
+    }
+  }
+
+  // 🌴 v3.72.0 — Vacation Cover one-click delegation.
+  // Thin wrapper around the existing share API: same endpoint, plus an
+  // expires_at and a structured note so the receiving user knows it's a
+  // vacation cover and the cron auto-deactivates it on the end date.
+  const handleVacationCover = async () => {
+    if (!vacGrantorId || vacGranteeIds.length === 0 || !vacEndDate) {
+      toastActionError(toast, "تَفويض", "إجازة", "يجب تَحديد الموظف الغائب، البَديل، وتاريخ الانتهاء")
+      return
+    }
+    if (vacEndDate < vacStartDate) {
+      toastActionError(toast, "تَفويض", "إجازة", "تاريخ الانتهاء يجب أن يكون بعد تاريخ البَدء")
+      return
+    }
+    setVacLoading(true)
+    try {
+      const grantor = members.find(m => m.user_id === vacGrantorId)
+      const grantorLabel = grantor?.display_name || grantor?.email || "موظف"
+      const note = `[تَفويض إجازة] ${grantorLabel} — من ${vacStartDate} إلى ${vacEndDate}${vacReason ? ` — ${vacReason}` : ""}`
+
+      // expires_at is end-of-day in UTC for the picked end date
+      const expiresAt = new Date(`${vacEndDate}T23:59:59Z`).toISOString()
+
+      const res = await fetch("/api/permissions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          action: "share",
+          grantor_user_id: vacGrantorId,
+          grantee_user_ids: vacGranteeIds,
+          resource_type: vacResourceType,
+          can_view: true,
+          can_edit: true,    // vacation cover defaults to edit so the delegate can actually work
+          can_delete: false,
+          expires_at: expiresAt,
+          notes: note,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toastActionSuccess(toast, "تَفويض إجازة", `${vacGranteeIds.length} بديل حتى ${vacEndDate}`)
+        setShowVacationDialog(false)
+        setVacGrantorId("")
+        setVacGranteeIds([])
+        setVacStartDate(new Date().toISOString().slice(0, 10))
+        setVacEndDate("")
+        setVacResourceType("all")
+        setVacReason("")
+        loadPermissionData()
+      } else {
+        toastActionError(toast, "تَفويض إجازة", "فشل", data.error || "خطأ")
+      }
+    } catch (err: any) {
+      toastActionError(toast, "تَفويض إجازة", "خطأ", err.message)
+    } finally {
+      setVacLoading(false)
     }
   }
 
@@ -2793,13 +2862,24 @@ export default function UsersSettingsPage() {
                     <p className="text-xs text-gray-500 mt-1">نقل ملكية البيانات أو مشاركة الوصول بين الموظفين</p>
                   </div>
                 </div>
-                <Button
-                  onClick={() => { setShowPermissionDialog(true); setPermissionAction('share') }}
-                  className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
-                >
-                  <Share2 className="w-4 h-4" />
-                  إدارة الصلاحيات
-                </Button>
+                <div className="flex items-center gap-2">
+                  {/* v3.72.0 — Vacation Cover one-click */}
+                  <Button
+                    onClick={() => setShowVacationDialog(true)}
+                    variant="outline"
+                    className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    تَفويض إجازة
+                  </Button>
+                  <Button
+                    onClick={() => { setShowPermissionDialog(true); setPermissionAction('share') }}
+                    className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    إدارة الصلاحيات
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-5">
@@ -3007,6 +3087,154 @@ export default function UsersSettingsPage() {
         )}
 
         {/* موديال إدارة الصلاحيات */}
+        {/* 🌴 v3.72.0 — Vacation Cover Dialog */}
+        <Dialog open={showVacationDialog} onOpenChange={setShowVacationDialog}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <Calendar className="w-5 h-5" />
+                تَفويض إجازة (Vacation Cover)
+              </DialogTitle>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                تَفويض بَيانات الموظف الغائب إلى البَديل لفَترة مَحدودة. تنتهى المُشاركة تلقائياً فى تاريخ الانتهاء.
+              </p>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {/* الموظف الغائب */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  الموظف الذاهب فى إجازة
+                </Label>
+                <Select value={vacGrantorId} onValueChange={setVacGrantorId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر الموظف" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map(m => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.display_name || m.email}
+                        <span className="text-xs text-gray-400 mr-2">({roleLabels[m.role]?.ar || m.role})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* البَدائل */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4" />
+                  الموظف(ون) البَدائل
+                </Label>
+                <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
+                  {members
+                    .filter(m => m.user_id !== vacGrantorId)
+                    .map(m => {
+                      const checked = vacGranteeIds.includes(m.user_id)
+                      return (
+                        <label key={m.user_id} className="flex items-center gap-2 p-2 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(c) => {
+                              setVacGranteeIds(prev =>
+                                c ? [...prev, m.user_id] : prev.filter(id => id !== m.user_id)
+                              )
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{m.display_name || m.email}</p>
+                            <p className="text-xs text-gray-500">{roleLabels[m.role]?.ar || m.role}</p>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  {members.filter(m => m.user_id !== vacGrantorId).length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-3">لا يوجد موظفون آخرون</p>
+                  )}
+                </div>
+                {vacGranteeIds.length > 0 && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    تم اختيار {vacGranteeIds.length} بَديل
+                  </p>
+                )}
+              </div>
+
+              {/* تواريخ */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>تاريخ البَدء</Label>
+                  <Input
+                    type="date"
+                    value={vacStartDate}
+                    onChange={(e) => setVacStartDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>تاريخ الانتهاء</Label>
+                  <Input
+                    type="date"
+                    value={vacEndDate}
+                    min={vacStartDate}
+                    onChange={(e) => setVacEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* نوع البَيانات */}
+              <div className="space-y-2">
+                <Label>نوع البَيانات المُفَوَّضة</Label>
+                <Select value={vacResourceType} onValueChange={setVacResourceType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">الكل (عملاء + عروض + أوامر + حجوزات)</SelectItem>
+                    <SelectItem value="customers">العملاء فقط</SelectItem>
+                    <SelectItem value="estimates">عروض الأسعار فقط</SelectItem>
+                    <SelectItem value="sales_orders">أوامر البيع فقط</SelectItem>
+                    <SelectItem value="bookings">الحجوزات فقط</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* السَّبَب (اختيارى) */}
+              <div className="space-y-2">
+                <Label>السَّبَب أو مُلاحظات (اختيارى)</Label>
+                <Input
+                  type="text"
+                  value={vacReason}
+                  onChange={(e) => setVacReason(e.target.value)}
+                  placeholder="مثال: إجازة سَنوية"
+                  maxLength={200}
+                />
+              </div>
+
+              {/* مُلَخّص */}
+              {vacGrantorId && vacGranteeIds.length > 0 && vacEndDate && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+                  <p className="font-medium mb-1">📋 المُلَخّص:</p>
+                  <p>سَيتم تَفويض بَيانات <strong>{members.find(m => m.user_id === vacGrantorId)?.display_name || 'الموظف الغائب'}</strong> إلى <strong>{vacGranteeIds.length} بَديل</strong></p>
+                  <p>من <strong>{vacStartDate}</strong> إلى <strong>{vacEndDate}</strong> — ستنتهى تلقائياً.</p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowVacationDialog(false)} disabled={vacLoading}>
+                إلغاء
+              </Button>
+              <Button
+                onClick={handleVacationCover}
+                disabled={vacLoading || !vacGrantorId || vacGranteeIds.length === 0 || !vacEndDate}
+                className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+              >
+                {vacLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
+                تَأكيد التَفويض
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
