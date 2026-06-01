@@ -1275,79 +1275,64 @@ export default function UsersSettingsPage() {
       .find((r) => r.value === value)?.label || value
   }
 
-  // 🔐 v3.67.0 — Defaults match Ahmed's enterprise spec (branch-scoped governance)
-  // These are the sidebar resources NEW companies start with. Edits happen via
-  // /settings/users → صلاحيات الأدوار which writes to company_role_permissions.
+  // 🔐 v3.68.0 — STRICT defaults per Ahmed's spec, mirror of the DB seed function
+  // public.seed_default_role_permissions(p_company_id). The DB trigger on
+  // companies INSERT auto-seeds these defaults for every NEW company. This array
+  // is the UI-side mirror used only in non-trigger paths (legacy or test setups).
+  // Admins can override any of these per company from /settings/users → صلاحيات الأدوار.
   const defaultSidebarResourcesByRole: Record<string, string[]> = {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
-    // 7. المدير (branch manager) — READ-ONLY on every page below
-    manager: [
-      'dashboard', 'reports',
-      'customers', 'estimates', 'sales_orders', 'invoices', 'sales_returns',
-      'sent_invoice_returns', 'customer_credits', 'customer_debit_notes', 'customer_refund_requests',
-      'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
-      'products', 'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals', 'inventory_goods_receipt', 'product_availability',
-      'services', 'bookings',
-      'payments', 'expenses', 'banking', 'journal_entries',
-      'manufacturing_boms', 'approvals',
-      'employees', 'attendance', 'payroll',
-      'branches', 'cost_centers',
-    ],
-    // 2. المحاسب — Branch-scoped, NO new sales invoices (UI v3.69.0)
+    // 1. الموظف (sales rep) — 5 pages
+    staff: ['dashboard', 'customers', 'estimates', 'sales_orders', 'inventory'],
+    // 2. المحاسب — 17 pages branch-scoped
     accountant: [
-      'dashboard', 'reports',
-      'invoices', 'sales_returns', 'sent_invoice_returns', 'customer_credits',
-      'customer_debit_notes', 'customer_refund_requests',
-      'bills', 'purchase_returns', 'vendor_credits',
+      'dashboard',
+      'invoices', 'sales_returns', 'customer_credits',
+      'bills', 'purchase_returns',
       'products', 'services',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
       'dispatch_approvals', 'inventory_goods_receipt',
-      'payments', 'expenses', 'banking', 'journal_entries',
+      'payments', 'expenses', 'banking',
     ],
-    // 6. مسؤول المخزن — Branch-scoped warehouse operations
-    store_manager: [
-      'dashboard', 'reports',
-      'products', 'inventory', 'inventory_transfers', 'third_party_inventory',
-      'write_offs', 'dispatch_approvals', 'inventory_goods_receipt', 'product_availability',
-    ],
-    // 5. مسؤول التصنيع — All manufacturing under one umbrella + approvals
-    manufacturing_officer: [
-      'dashboard', 'reports',
-      'manufacturing_boms', 'approvals',
-      'products', 'inventory', 'product_availability',
-    ],
-    // 4. مسؤول الحجوزات — Bookings + own customers
-    booking_officer: [
-      'dashboard', 'reports',
-      'bookings', 'customers', 'services', 'payments',
-    ],
-    // 3. مسؤول المشتريات — Branch-scoped purchasing
+    // 3. مسؤول المشتريات — 6 pages
     purchasing_officer: [
-      'dashboard', 'reports',
+      'dashboard',
       'suppliers', 'purchase_orders',
-      'inventory', 'product_availability',
+      'inventory',
       'dispatch_approvals', 'inventory_goods_receipt',
     ],
-    // HR officer (added v3.65.4)
-    hr_officer: [
-      'dashboard', 'reports',
-      'hr', 'employees', 'payroll', 'attendance',
-      'instant_payouts', 'employee_bonuses',
-      'branches', 'cost_centers',
+    // 4. مسؤول الحجوزات — 3 pages
+    booking_officer: ['dashboard', 'bookings', 'customers'],
+    // 5. مسؤول التصنيع — 3 entries (umbrella covers 7 sub-pages)
+    manufacturing_officer: ['dashboard', 'manufacturing_boms', 'approvals'],
+    // 6. مسؤول المخزن — 7 pages
+    store_manager: [
+      'dashboard',
+      'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+      'dispatch_approvals', 'inventory_goods_receipt',
     ],
-    // 1. الموظف (sales rep) — Sees own customers, creates SO
-    staff: [
+    // 7. المدير (branch manager) — 25 pages, all READ-ONLY
+    manager: [
       'dashboard',
       'customers', 'estimates', 'sales_orders',
-      'inventory', 'product_availability',
-      'attendance',
+      'invoices', 'sales_returns', 'customer_credits',
+      'bills', 'purchase_returns',
+      'products', 'services',
+      'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+      'dispatch_approvals', 'inventory_goods_receipt',
+      'payments', 'expenses', 'banking',
+      'suppliers', 'purchase_orders',
+      'bookings',
+      'manufacturing_boms', 'approvals',
+    ],
+    // HR officer (kept from v3.65.4 — not redefined in this spec)
+    hr_officer: [
+      'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
+      'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
     ],
     // Read-only auditor (company-wide)
-    viewer: [
-      'dashboard', 'reports',
-    ],
+    viewer: ['dashboard', 'reports'],
   }
 
   // حالة التحميل

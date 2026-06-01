@@ -4,6 +4,43 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.68.0] - 2026-06-01 — STRICT spec adherence + auto-seed trigger for new companies
+
+### Why
+v3.67.0 implemented "the spec plus extras" — I added pages Ahmed didn't ask for (e.g. `reports`, `attendance`, `product_availability`, `journal_entries`, `customer_debit_notes`, `customer_refund_requests`, `sent_invoice_returns`, `vendor_credits`). This release strips back to the **literal spec only**, and makes those defaults apply automatically to every newly created company.
+
+### Done — DB
+1. **`seed_default_role_permissions(p_company_id uuid)` function** — encapsulates the spec for 7 roles. Idempotent: wipes the 7 target roles first, then re-inserts. Owner/admin/viewer/hr_officer untouched.
+2. **`trg_auto_seed_role_permissions_on_company_insert` trigger** — fires AFTER INSERT on `companies`, auto-invokes the seeder. Every new company born from `signup` / `create_company` / `signup_callback` gets the spec by default without code changes.
+3. **Re-applied** the seeder to existing company `تست` so it matches the spec exactly.
+
+### Per-role counts after strict re-seed (company تست)
+- staff: **5** — dashboard, customers (R+W), estimates (R+W), sales_orders (R+W), inventory (R)
+- accountant: **17** — dashboard, invoices (R+W complete only), sales_returns, customer_credits, bills (R+W complete only), purchase_returns, products (R), services (R), inventory, inventory_transfers, third_party_inventory, write_offs, dispatch_approvals (R), inventory_goods_receipt (R), payments, expenses, banking
+- purchasing_officer: **6** — dashboard, suppliers, purchase_orders, inventory (R), dispatch_approvals (R), inventory_goods_receipt (R)
+- booking_officer: **3** — dashboard, bookings, customers
+- manufacturing_officer: **3** — dashboard, manufacturing_boms (umbrella for work_centers + boms + routings + mrp + production_orders + material_issues + product_receipts), approvals
+- store_manager: **7** — dashboard, inventory, inventory_transfers, third_party_inventory (R per spec), write_offs (needs higher approval), dispatch_approvals, inventory_goods_receipt
+- manager (branch manager): **25** — all pages above, all `can_write = false` (READ-ONLY per spec)
+
+Anything not on the spec is gone: removed extras include `reports` (except hr_officer), `attendance` (except hr_officer), `product_availability`, `customer_debit_notes`, `customer_refund_requests`, `sent_invoice_returns`, `vendor_credits`, `journal_entries`, `services` for booking_officer, `payments` for booking_officer, `products` for manufacturing_officer.
+
+### Done — Code
+- `lib/version.ts` → 3.68.0
+- `app/settings/users/page.tsx` → `defaultSidebarResourcesByRole` reduced to STRICT per-spec lists. UI-side mirror only (DB trigger is the source of truth for new companies).
+
+### Admin override still works
+The whole point: every default above can be flipped on/off (`can_access`) or made read-only/read-write (`can_write`) by an owner/admin from `/settings/users → صلاحيات الأدوار`. The trigger seeds the defaults; the admin tunes them per company.
+
+### Open items
+- Manufacturing umbrella `manufacturing_boms` still covers all 7 sub-pages. Splitting into 7 distinct resources for true per-page control is deferred to v3.70.0.
+- Branch-scoped RLS on financial tables (payments, expenses, banking, journal_entries, invoices, bills) is deferred to v3.69.0.
+- Auto-create invoice from sales_orders approval + UI block on accountant "create new invoice" deferred to v3.69.0.
+- write_offs approval workflow (store_manager submits, owner/admin approves) deferred to v3.71.0.
+
+---
+
+
 ## [3.67.0] - 2026-06-01 — Full role spec implementation per Ahmed (7 roles + can_write)
 
 ### Why
