@@ -154,8 +154,9 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .single()
 
-    // 🔐 السماح للأدوار الإدارية بإدارة الصلاحيات
-    const allowedRoles = ["owner", "admin", "general_manager", "manager"]
+    // 🔐 v3.70.0 — Manager removed per v3.67.0 read-only spec.
+    // Only Owner/Admin/General Manager can grant/share permissions.
+    const allowedRoles = ["owner", "admin", "general_manager"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }

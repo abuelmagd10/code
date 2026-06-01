@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.70.0] - 2026-06-01 — Phase A: Permission sharing/transfer safety fixes
+
+Audit of `/settings/users → نقل وفتح الصلاحيات` flagged three issues this release fixes. Phase B (RLS-enforced sharing, more resources, "shared with me" panel) and Phase C (position hierarchy, approval workflow) are scoped for future versions.
+
+### Fixed
+
+**1. Schema/API mismatch on `permission_transfers`** — the API was writing `status`, `records_transferred`, and `transfer_data` into a table that had none of those columns. Every transfer attempt was failing silently or partially. **Fix:** added the three columns with proper defaults and CHECK constraint on `status` (`pending` / `completed` / `failed` / `reverted`), plus two indexes for cron-style queries.
+
+**2. Manager could share/transfer despite v3.67.0 read-only spec** — both `/api/permissions` (action=share) and `/api/permissions/transfer` listed `manager` in their `allowedRoles` array. Per the spec the branch manager is read-only on every page, so they cannot be the one granting access elsewhere. **Fix:** dropped `manager` from both APIs. Only `owner`, `admin`, `general_manager` can now share or transfer.
+
+**3. No automatic expiration enforcement** — `permission_sharing.expires_at` was being collected from the UI but no job was deactivating expired rows, so they stayed `is_active = true` forever. **Fix:** added two pieces:
+- `expire_permission_shares()` DB function that flips `is_active = false` and annotates the `notes` column for any share past its `expires_at`.
+- `/api/cron/expire-permission-shares` Vercel cron at `04:00 UTC` daily, gated by `CRON_SECRET`, with audit-log entry per run.
+
+### Added — dangling-reference cleanup
+
+`trg_cleanup_permission_sharing_on_member_leave` trigger on `company_members DELETE` deactivates any share where the leaving user was grantor or grantee, with an annotation in `notes`. Removes the previous footgun where ex-members' sharing records sat active referencing a user who no longer existed.
+
+### Files
+- DB migration: `v3_70_0_phase_a_permission_safety_fixes` (3 columns + 2 indexes + 1 trigger + 1 function)
+- Modified: `app/api/permissions/route.ts` — manager dropped from POST allowedRoles
+- Modified: `app/api/permissions/transfer/route.ts` — manager dropped from allowedRoles
+- New: `app/api/cron/expire-permission-shares/route.ts`
+- Modified: `vercel.json` — added the new cron schedule
+- Modified: `lib/version.ts` → 3.70.0
+
+### Not done in this release (Phase B/C)
+- RLS-enforced sharing (today still app-layer only on customers + sales_orders)
+- Expanding sharing to invoices, bills, suppliers, etc. (still only `customers` / `sales_orders` / `all`)
+- "Shared with me" panel for the grantee
+- Position hierarchy (manager auto-sees subordinates)
+- Approval workflow on transfers
+
+### Verify after deploy
+1. Old `manager` user trying to share customers → API returns 403 with "غير مصرح بهذه العملية".
+2. Owner transfers customers from user A → user B → `permission_transfers` row inserted with `status='completed'` and a non-zero `records_transferred` (no silent failure).
+3. Vercel → Crons → `/api/cron/expire-permission-shares` shows in the schedule list, runs successfully when invoked manually with `Authorization: Bearer <CRON_SECRET>`.
+4. Delete a `company_members` row → any active `permission_sharing` rows where that user was grantor or grantee flip to `is_active=false` and get a note "[auto-deactivated v3.70.0: member left company]".
+
+---
+
+
 ## [3.69.1] - 2026-06-01 — Hotfix: AccessContext was OR-merging hardcoded defaults with DB
 
 ### Why
