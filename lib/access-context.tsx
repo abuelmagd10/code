@@ -374,6 +374,40 @@ async function fetchAccessProfile(
         allowed_pages = defaultRolePages[role] ? [...defaultRolePages[role]] : []
       }
 
+      // 🔗 v3.73.3 — Inbound permission_sharing expands the user's allowed_pages.
+      // RLS already lets the grantee READ the shared records, but the sidebar
+      // wouldn't show the page if the grantee's role didn't already include it.
+      // After this block, an inbound share of resource_type='customers' adds
+      // 'customers' to the sidebar; resource_type='all' adds all four
+      // shareable resources.
+      try {
+        const SHAREABLE_RESOURCES = ['customers', 'estimates', 'sales_orders', 'bookings'] as const
+        const nowIso = new Date().toISOString()
+        const { data: inboundShares } = await supabase
+          .from('permission_sharing')
+          .select('resource_type, expires_at')
+          .eq('company_id', companyId)
+          .eq('grantee_user_id', userId)
+          .eq('is_active', true)
+
+        for (const s of inboundShares || []) {
+          // Active expiry check (DB might not enforce this fast enough between cron runs)
+          if (s.expires_at && s.expires_at < nowIso) continue
+
+          if (s.resource_type === 'all') {
+            for (const r of SHAREABLE_RESOURCES) {
+              if (!allowed_pages.includes(r)) allowed_pages.push(r)
+            }
+          } else if (s.resource_type && !allowed_pages.includes(s.resource_type)) {
+            allowed_pages.push(s.resource_type)
+          }
+        }
+      } catch (shareErr) {
+        // Inbound-share expansion is best-effort; if it fails, the user still
+        // has their role-based pages, just not the bonus ones from shares.
+        console.warn('[access-context] inbound share expansion failed:', shareErr)
+      }
+
       // بناء allowed_actions
       permissions?.forEach((perm: any) => {
         if (perm.all_access) {

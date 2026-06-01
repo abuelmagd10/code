@@ -4,6 +4,51 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.73.3] - 2026-06-01 — Hotfix: inbound shares now expand grantee's sidebar
+
+### Why
+Ahmed tested in company تست: A shared their customers with B. On B's session, the customers RLS already let B read A's records (v3.71.0 RLS-enforced sharing works correctly at the data layer). But B's **sidebar didn't show the "العملاء" page** because:
+
+- B's sidebar is built from `allowed_pages` in AccessContext
+- `allowed_pages` was computed only from `company_role_permissions` for B's role
+- It never consulted `permission_sharing` — so inbound shares didn't expand B's page visibility
+
+This is the "sharing pages, not records" half of the feature. The data layer was correct; the navigation layer was unaware.
+
+### Fixed
+In `lib/access-context.tsx`, after `allowed_pages` is computed from the role's permissions, we now also query `permission_sharing` for any active, non-expired rows where the current user is the `grantee_user_id`. For each share:
+
+- If `resource_type = 'all'` → add all four shareable resources (customers, estimates, sales_orders, bookings) to `allowed_pages`.
+- If `resource_type` is a specific value (customers / estimates / sales_orders / bookings) → add just that one.
+- Duplicates are skipped (de-dup against existing role-based pages).
+
+Best-effort: if the share query fails for any reason, B still keeps their role-based pages — they just don't get the bonus pages from shares.
+
+### Caveat — refresh timing
+The change applies on the **next** time B's `AccessContext` rebuilds, which happens on full page load / tab refresh. There's no Realtime push to B's session yet. So the workflow today is:
+
+1. Admin grants share via vacation cover or share dialog
+2. Toast confirms success
+3. Admin tells B to refresh their browser
+4. B sees the new sidebar item
+
+Real-time notification to the grantee is a future polish (would use Supabase Realtime on `permission_sharing` insert events).
+
+### Files
+- Modified: `lib/access-context.tsx` — new block right after the DB-authoritative `allowed_pages` build
+- Modified: `lib/version.ts` → 3.73.3
+
+### Verify after deploy
+1. Owner A creates a share: A→B, resource_type='customers'.
+2. B refreshes their browser session.
+3. B's sidebar now shows "العملاء" under المبيعات group (was hidden before).
+4. B clicks /customers → sees A's customer list (RLS-enforced, already worked from v3.71.0).
+5. Repeat with resource_type='all' → B sees customers + estimates + sales_orders + bookings (whichever apply to A's records).
+6. Expire the share via DB → B refreshes → those bonus items disappear from sidebar.
+
+---
+
+
 ## [3.73.2] - 2026-06-01 — Hybrid transfer execution (snapshot vs dynamic)
 
 ### Why
