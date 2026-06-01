@@ -158,6 +158,14 @@ export default function UsersSettingsPage() {
   const [vacReason, setVacReason] = useState<string>("")
   const [vacLoading, setVacLoading] = useState(false)
 
+  // 🧮 v3.73.1 — counts of records owned by the currently-selected source user.
+  // Used by both vacation-cover and share-permission dialogs to hide resource
+  // types where the source has nothing to share.
+  const [sourceUserCounts, setSourceUserCounts] = useState<{
+    customers: number; estimates: number; sales_orders: number; bookings: number;
+  } | null>(null)
+  const [sourceCountsLoading, setSourceCountsLoading] = useState(false)
+
   // 🏢 إدارة فرع الموظف (Single Branch - Mandatory)
   const [showMemberBranchDialog, setShowMemberBranchDialog] = useState(false)
   const [editingMemberId, setEditingMemberId] = useState<string>("")
@@ -682,6 +690,63 @@ export default function UsersSettingsPage() {
       console.error("Error loading permission data:", err)
     }
   }
+
+  // 🧮 v3.73.1 — fetch record counts owned by the source user.
+  // Called from both Vacation Cover and Share Permissions dialogs.
+  const fetchSourceUserCounts = async (sourceUserId: string) => {
+    if (!companyId || !sourceUserId) {
+      setSourceUserCounts(null)
+      return
+    }
+    setSourceCountsLoading(true)
+    try {
+      const { data, error } = await supabase.rpc("get_user_record_counts", {
+        p_company_id: companyId,
+        p_user_id: sourceUserId,
+      })
+      if (!error && data) {
+        setSourceUserCounts({
+          customers:    Number((data as any).customers    || 0),
+          estimates:    Number((data as any).estimates    || 0),
+          sales_orders: Number((data as any).sales_orders || 0),
+          bookings:     Number((data as any).bookings     || 0),
+        })
+      } else {
+        setSourceUserCounts(null)
+      }
+    } catch {
+      setSourceUserCounts(null)
+    } finally {
+      setSourceCountsLoading(false)
+    }
+  }
+
+  // 🧮 v3.73.1 — reactive: whenever the source user changes in either dialog,
+  // refresh counts and auto-narrow resource_type if "all" was selected but
+  // only one category has records.
+  useEffect(() => {
+    const sourceId = vacGrantorId || selectedSourceUser
+    if (sourceId) {
+      fetchSourceUserCounts(sourceId)
+    } else {
+      setSourceUserCounts(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vacGrantorId, selectedSourceUser, companyId])
+
+  // 🧮 v3.73.1 — auto-narrow: if user picked "all" but the source actually
+  // only has one type of record, set the dropdown to that type for them.
+  useEffect(() => {
+    if (!sourceUserCounts) return
+    const entries = (Object.entries(sourceUserCounts) as Array<[string, number]>)
+      .filter(([, n]) => n > 0)
+    if (entries.length === 1) {
+      const onlyKey = entries[0][0]
+      if (vacResourceType === "all" && vacGrantorId) setVacResourceType(onlyKey)
+      if (selectedResourceType === "all" && selectedSourceUser) setSelectedResourceType(onlyKey)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceUserCounts])
 
   // تحميل بيانات الصلاحيات عند تحميل الصفحة
   useEffect(() => {
@@ -3262,21 +3327,49 @@ export default function UsersSettingsPage() {
                 </div>
               </div>
 
-              {/* نوع البَيانات */}
+              {/* نوع البَيانات — v3.73.1: smart filter on source user's record counts */}
               <div className="space-y-2">
-                <Label>نوع البَيانات المُفَوَّضة</Label>
-                <Select value={vacResourceType} onValueChange={setVacResourceType}>
+                <Label className="flex items-center justify-between">
+                  <span>نوع البَيانات المُفَوَّضة</span>
+                  {sourceCountsLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                </Label>
+                <Select value={vacResourceType} onValueChange={setVacResourceType} disabled={!vacGrantorId}>
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder={vacGrantorId ? "اختر النوع" : "اختر الموظف المصدر أولاً"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">الكل (عملاء + عروض + أوامر + حجوزات)</SelectItem>
-                    <SelectItem value="customers">العملاء فقط</SelectItem>
-                    <SelectItem value="estimates">عروض الأسعار فقط</SelectItem>
-                    <SelectItem value="sales_orders">أوامر البيع فقط</SelectItem>
-                    <SelectItem value="bookings">الحجوزات فقط</SelectItem>
+                    {(() => {
+                      const c = sourceUserCounts
+                      const total = c ? (c.customers + c.estimates + c.sales_orders + c.bookings) : 0
+                      const allDisabled = !!c && total === 0
+                      return (
+                        <>
+                          <SelectItem value="all" disabled={allDisabled}>
+                            الكل {c ? `(${total} سجل)` : ''}
+                          </SelectItem>
+                          <SelectItem value="customers" disabled={!!c && c.customers === 0}>
+                            العملاء {c ? `(${c.customers})` : ''}
+                          </SelectItem>
+                          <SelectItem value="estimates" disabled={!!c && c.estimates === 0}>
+                            عروض الأسعار {c ? `(${c.estimates})` : ''}
+                          </SelectItem>
+                          <SelectItem value="sales_orders" disabled={!!c && c.sales_orders === 0}>
+                            أوامر البيع {c ? `(${c.sales_orders})` : ''}
+                          </SelectItem>
+                          <SelectItem value="bookings" disabled={!!c && c.bookings === 0}>
+                            الحجوزات {c ? `(${c.bookings})` : ''}
+                          </SelectItem>
+                        </>
+                      )
+                    })()}
                   </SelectContent>
                 </Select>
+                {sourceUserCounts &&
+                 (sourceUserCounts.customers + sourceUserCounts.estimates + sourceUserCounts.sales_orders + sourceUserCounts.bookings) === 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+                    ⚠ هذا الموظف لا يَمتلك أى سَجلات (عملاء/عروض/أوامر/حجوزات) قابلة للتَفويض.
+                  </p>
+                )}
               </div>
 
               {/* السَّبَب (اختيارى) */}
@@ -3436,22 +3529,50 @@ export default function UsersSettingsPage() {
                 </div>
               )}
 
-              {/* نوع البيانات (للنقل والمشاركة) */}
+              {/* نوع البيانات — v3.73.1: smart filter based on source user's record counts */}
               {permissionAction !== 'branch_access' && (
                 <div className="space-y-2">
-                  <Label>نوع البيانات</Label>
-                  <Select value={selectedResourceType} onValueChange={setSelectedResourceType}>
+                  <Label className="flex items-center justify-between">
+                    <span>نوع البيانات</span>
+                    {sourceCountsLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                  </Label>
+                  <Select value={selectedResourceType} onValueChange={setSelectedResourceType} disabled={!selectedSourceUser}>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder={selectedSourceUser ? 'اختر النوع' : 'اختر الموظف المصدر أولاً'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">الكل (عملاء + عروض + أوامر + حجوزات)</SelectItem>
-                      <SelectItem value="customers">العملاء فقط</SelectItem>
-                      <SelectItem value="estimates">عروض الأسعار فقط</SelectItem>
-                      <SelectItem value="sales_orders">أوامر البيع فقط</SelectItem>
-                      <SelectItem value="bookings">الحجوزات فقط</SelectItem>
+                      {(() => {
+                        const c = sourceUserCounts
+                        const total = c ? (c.customers + c.estimates + c.sales_orders + c.bookings) : 0
+                        const allDisabled = !!c && total === 0
+                        return (
+                          <>
+                            <SelectItem value="all" disabled={allDisabled}>
+                              الكل {c ? `(${total} سجل)` : ''}
+                            </SelectItem>
+                            <SelectItem value="customers" disabled={!!c && c.customers === 0}>
+                              العملاء {c ? `(${c.customers})` : ''}
+                            </SelectItem>
+                            <SelectItem value="estimates" disabled={!!c && c.estimates === 0}>
+                              عروض الأسعار {c ? `(${c.estimates})` : ''}
+                            </SelectItem>
+                            <SelectItem value="sales_orders" disabled={!!c && c.sales_orders === 0}>
+                              أوامر البيع {c ? `(${c.sales_orders})` : ''}
+                            </SelectItem>
+                            <SelectItem value="bookings" disabled={!!c && c.bookings === 0}>
+                              الحجوزات {c ? `(${c.bookings})` : ''}
+                            </SelectItem>
+                          </>
+                        )
+                      })()}
                     </SelectContent>
                   </Select>
+                  {sourceUserCounts &&
+                   (sourceUserCounts.customers + sourceUserCounts.estimates + sourceUserCounts.sales_orders + sourceUserCounts.bookings) === 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+                      ⚠ هذا الموظف لا يَمتلك أى سَجلات قابلة للنَقل أو المُشاركة.
+                    </p>
+                  )}
                 </div>
               )}
 

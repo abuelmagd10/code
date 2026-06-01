@@ -4,6 +4,39 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.73.1] - 2026-06-01 — Hotfix: smart resource-type dropdown based on source user's records
+
+### Why
+Ahmed pointed out a real UX gap: when you pick a source employee in either the Vacation Cover or Permission Management dialog, the "نوع البيانات" dropdown was showing all five options (الكل / customers / estimates / sales_orders / bookings) regardless of whether the source employee actually owns any records of that type. A booking officer with zero sales orders could still be "shared" for sales_orders — a confusing no-op. A purchasing officer with no creator-scoped records could be picked as a source at all, leading to silent failures.
+
+### Fixed
+- **New RPC `get_user_record_counts(company_id, user_id)`** returns a JSON object with counts of customers / estimates / sales_orders / bookings owned (created_by_user_id) by the given user in the given company.
+- **Reactive fetch in `/settings/users`** — whenever the source employee changes in either dialog (`vacGrantorId` or `selectedSourceUser`), counts are fetched and cached in `sourceUserCounts`.
+- **Smart dropdown rendering** in both dialogs:
+  - Each option shows its actual count: "العملاء (12)", "أوامر البيع (0)" etc.
+  - Options with zero count are **disabled** so they can't be picked.
+  - The "الكل" option shows total and is disabled if everything is zero.
+  - If only one category has records, the dropdown auto-narrows from "الكل" to that category (saves a click).
+  - A warning banner appears when the source has zero ownable records, explaining nothing can be shared.
+
+### Files
+- DB migration: `v3_73_1_get_user_record_counts_rpc`
+- Modified: `app/settings/users/page.tsx`
+  - Added state: `sourceUserCounts`, `sourceCountsLoading`.
+  - Added `fetchSourceUserCounts()` helper.
+  - Added two effects: one to refetch on source user change, one to auto-narrow when only one category has records.
+  - Rewrote both `<SelectContent>` blocks (vacation cover + share dialog) to render counts and disable empties.
+- Modified: `lib/version.ts` → 3.73.1
+
+### Verify after deploy
+1. Open Vacation Cover dialog, pick a `staff` user who created some customers and SOs but no estimates → the dropdown shows "العملاء (N)", "عروض الأسعار (0) — مُعطّل", "أوامر البيع (M)", "الحجوزات (0) — مُعطّل".
+2. Pick a `purchasing_officer` (who doesn't own any creator-scoped records) → all options show (0) and disabled; warning banner explains nothing can be shared.
+3. Pick a `booking_officer` with bookings only → dropdown auto-narrows to "الحجوزات" without manual change.
+4. Same flow in the Share Permissions dialog (إدارة الصلاحيات → action=share).
+
+---
+
+
 ## [3.73.0] - 2026-06-01 — Phase C-2: Two-eye approval workflow on transfers
 
 Second piece of Phase C. Permission transfers (re-owning customers + sales_orders from one user to another) used to execute immediately on submit. Now they create a pending request that must be approved by a SECOND owner/admin before any data is touched — the **Vier-Augen-Prinzip** every enterprise ERP from SAP to Oracle enforces on irreversible governance changes.
