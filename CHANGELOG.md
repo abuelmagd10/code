@@ -4,6 +4,42 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.65.3] - 2026-05-31 — Hotfix bundle: 3 new roles end-to-end
+
+### Fixed
+Three roles offered by the invite dropdown — `manufacturing_officer`, `booking_officer`, `purchasing_officer` — were only half-supported. After v3.65.2 they could be invited and assigned, but invitees got stuck because:
+
+1. **`company_role_permissions_role_check_v2`** (a third CHECK constraint I missed in v3.65.2) was rejecting permission rows for the new roles. Inviting succeeded, but the cascade that seeds permissions silently failed, leaving the new user with an empty `allowed_pages` list. The AccessContext then re-fetched and re-rendered in a tight loop. **Fix:** dropped and re-added the constraint to include the three new roles. Same one-line change as the other two CHECK constraints in v3.65.2.
+2. **No seed permissions existed** for the three new roles in the test company. **Fix:** copied `accountant` → `purchasing_officer` (41 resources, finance-focused) and `staff` → `manufacturing_officer`/`booking_officer` (52 resources each, broad operational access) for company `تست`. New companies still need a seed mechanism, but that is a separate task.
+3. **Sidebar label** (`components/sidebar.tsx` line 1254) hard-codes the Arabic translation of every role. The three new roles fell through to the `myRole` fallback so the sidebar displayed the raw English `purchasing_officer` next to the user's name.
+4. **Invite email template** (`app/api/send-invite/route.ts` line 142) had the same problem: every invitee with one of the three new roles received an email saying their role was "موظف" because the mapping defaulted everything unknown to that.
+
+### Files
+- Modified: `components/sidebar.tsx` (role label mapping)
+- Modified: `app/api/send-invite/route.ts` (email roleName mapping)
+- Modified: `lib/version.ts` (3.65.1 → 3.65.3)
+- DB: `company_role_permissions_role_check_v2` extended; permissions seeded for `تست` (no code, applied via migration).
+
+### Lesson learned (documented for next time)
+Adding a role is a **four-place change**, not one:
+1. `company_invitations_role_check`
+2. `company_members_role_check`
+3. `company_role_permissions_role_check_v2`
+4. Seed `company_role_permissions` rows for every existing company
+5. Sidebar Arabic label
+6. Invite email Arabic roleName
+
+Skipping any one of these creates a partial state that surfaces as "infinite loop after login" — exactly what the test invitee hit.
+
+### Verify after deploy
+1. Owner invites a new user with role `manufacturing_officer` → email arrives with Arabic role "مسؤول التصنيع" (not "موظف").
+2. Invitee accepts → lands on dashboard without redirect loops.
+3. Their sidebar shows their Arabic role label next to their name.
+4. They can navigate to the resources permitted to that role (52 for manufacturing/booking, 41 for purchasing).
+
+---
+
+
 ## [3.65.1] - 2026-05-31 — Hotfix: middleware matcher excludes .html/.txt/.xml/.ico
 
 ### Fixed

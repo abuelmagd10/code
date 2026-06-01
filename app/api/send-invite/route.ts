@@ -140,10 +140,16 @@ export async function POST(req: NextRequest) {
 
     const acceptLink = `${base}/invitations/accept?token=${acceptToken || ""}`
     const roleName =
-      role === "admin" ? "مدير" :
       role === "owner" ? "مالك" :
+      role === "admin" ? "مدير عام" :
+      role === "manager" ? "مدير" :
       role === "accountant" ? "محاسب" :
-      role === "manager" ? "مدير" : "موظف"
+      role === "store_manager" ? "مسؤول مخزن" :
+      role === "manufacturing_officer" ? "مسؤول التصنيع" :
+      role === "booking_officer" ? "مسؤول الحجوزات" :
+      role === "purchasing_officer" ? "مسؤول المشتريات" :
+      role === "viewer" ? "عرض فقط" :
+      "موظف"
 
     // Send email via Resend (unchanged)
     const resendApiKey = process.env.RESEND_API_KEY

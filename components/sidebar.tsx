@@ -1256,8 +1256,11 @@ export function Sidebar() {
                               myRole === 'manager' ? 'مدير' :
                                 myRole === 'accountant' ? 'محاسب' :
                                   myRole === 'store_manager' ? 'مسؤول مخزن' :
-                                    myRole === 'staff' ? 'موظف' :
-                                      myRole === 'viewer' ? 'عرض فقط' : myRole}
+                                    myRole === 'manufacturing_officer' ? 'مسؤول التصنيع' :
+                                      myRole === 'booking_officer' ? 'مسؤول الحجوزات' :
+                                        myRole === 'purchasing_officer' ? 'مسؤول المشتريات' :
+                                          myRole === 'staff' ? 'موظف' :
+                                            myRole === 'viewer' ? 'عرض فقط' : myRole}
                         </span>
                       )}
                       {userBranch && (
