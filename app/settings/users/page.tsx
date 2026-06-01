@@ -133,6 +133,8 @@ export default function UsersSettingsPage() {
 
   // 🔐 نقل وفتح الصلاحيات
   const [permissionSharing, setPermissionSharing] = useState<PermissionSharing[]>([])
+  // v3.71.0 — inbound shares (what was shared WITH the current user)
+  const [sharedWithMe, setSharedWithMe] = useState<any[]>([])
   const [permissionTransfers, setPermissionTransfers] = useState<PermissionTransfer[]>([])
   const [userBranchAccess, setUserBranchAccess] = useState<UserBranchAccess[]>([])
   const [showPermissionDialog, setShowPermissionDialog] = useState(false)
@@ -659,6 +661,13 @@ export default function UsersSettingsPage() {
       const branchAccessData = await branchAccessRes.json()
       console.log("📌 Branch Access API response:", branchAccessRes.ok, branchAccessData)
       if (branchAccessRes.ok) setUserBranchAccess(branchAccessData.data || [])
+
+      // v3.71.0 — جلب "مُشارَك مَعى" (inbound shares to current user)
+      const swmRes = await fetch(`/api/permissions/shared-with-me?company_id=${companyId}`)
+      if (swmRes.ok) {
+        const swmData = await swmRes.json()
+        setSharedWithMe(swmData.data || [])
+      }
     } catch (err) {
       console.error("Error loading permission data:", err)
     }
@@ -2795,10 +2804,14 @@ export default function UsersSettingsPage() {
             </CardHeader>
             <CardContent className="pt-5">
               <Tabs defaultValue="sharing" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 mb-4">
+                <TabsList className="grid w-full grid-cols-4 mb-4">
                   <TabsTrigger value="sharing" className="gap-2">
                     <Share2 className="w-4 h-4" />
                     المشاركات
+                  </TabsTrigger>
+                  <TabsTrigger value="shared_with_me" className="gap-2">
+                    <Eye className="w-4 h-4" />
+                    مُشارَك مَعى
                   </TabsTrigger>
                   <TabsTrigger value="transfers" className="gap-2">
                     <ArrowRightLeft className="w-4 h-4" />
@@ -2829,7 +2842,12 @@ export default function UsersSettingsPage() {
                                 </p>
                                 <div className="flex items-center gap-2 mt-1">
                                   <Badge variant="outline" className="text-[10px]">
-                                    {ps.resource_type === 'all' ? 'الكل' : ps.resource_type === 'customers' ? 'العملاء' : 'أوامر البيع'}
+                                    {ps.resource_type === 'all' ? 'الكل' :
+                                      ps.resource_type === 'customers' ? 'العملاء' :
+                                      ps.resource_type === 'estimates' ? 'عروض الأسعار' :
+                                      ps.resource_type === 'sales_orders' ? 'أوامر البيع' :
+                                      ps.resource_type === 'bookings' ? 'الحجوزات' :
+                                      ps.resource_type}
                                   </Badge>
                                   {ps.can_edit && <Badge className="text-[10px] bg-amber-100 text-amber-700">تعديل</Badge>}
                                   {ps.is_active && <Badge className="text-[10px] bg-green-100 text-green-700">نشط</Badge>}
@@ -2850,6 +2868,55 @@ export default function UsersSettingsPage() {
                     <div className="text-center py-8 text-gray-400">
                       <Share2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
                       <p className="text-sm">لا توجد صلاحيات مشتركة حالياً</p>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* v3.71.0 — مُشارَك مَعى (inbound shares to current user) */}
+                <TabsContent value="shared_with_me">
+                  {sharedWithMe.length > 0 ? (
+                    <div className="space-y-2">
+                      {sharedWithMe.map((sw: any) => {
+                        const resourceLabel =
+                          sw.resource_type === 'all' ? 'الكل (عملاء + عروض + أوامر + حجوزات)' :
+                          sw.resource_type === 'customers' ? 'العملاء' :
+                          sw.resource_type === 'estimates' ? 'عروض الأسعار' :
+                          sw.resource_type === 'sales_orders' ? 'أوامر البيع' :
+                          sw.resource_type === 'bookings' ? 'الحجوزات' :
+                          sw.resource_type
+                        const grantorDisplay = sw.grantor_name || sw.grantor_email || 'موظف (غير معروف)'
+                        const expiresLabel = sw.expires_at
+                          ? `ينتهى ${new Date(sw.expires_at).toLocaleDateString('ar-EG')}`
+                          : 'دائم'
+                        return (
+                          <div key={sw.id} className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="flex items-center gap-3">
+                              <Eye className="w-4 h-4 text-blue-600" />
+                              <div>
+                                <p className="text-sm font-medium">
+                                  <span className="text-gray-600 dark:text-gray-400">من:</span>{' '}
+                                  <span className="text-blue-700 dark:text-blue-400 font-semibold">{grantorDisplay}</span>
+                                </p>
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  <Badge variant="outline" className="text-[10px]">{resourceLabel}</Badge>
+                                  {sw.can_edit && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">تعديل</Badge>}
+                                  {sw.can_delete && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">حذف</Badge>}
+                                  <Badge className="text-[10px] bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{expiresLabel}</Badge>
+                                </div>
+                                {sw.notes && (
+                                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 italic">{sw.notes}</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      <Eye className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">لا يوجد بَيانات مُشارَكة مَعى حالياً</p>
+                      <p className="text-xs mt-2 text-gray-500">عند مُشاركة موظف آخر بَياناته معك، سيظهر هنا.</p>
                     </div>
                   )}
                 </TabsContent>
@@ -3069,9 +3136,11 @@ export default function UsersSettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">الكل (عملاء + أوامر بيع)</SelectItem>
+                      <SelectItem value="all">الكل (عملاء + عروض + أوامر + حجوزات)</SelectItem>
                       <SelectItem value="customers">العملاء فقط</SelectItem>
+                      <SelectItem value="estimates">عروض الأسعار فقط</SelectItem>
                       <SelectItem value="sales_orders">أوامر البيع فقط</SelectItem>
+                      <SelectItem value="bookings">الحجوزات فقط</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

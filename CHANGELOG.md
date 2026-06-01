@@ -4,6 +4,53 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.71.0] - 2026-06-01 — Phase B: RLS-enforced sharing + "shared with me" panel
+
+This release closes the second of three gaps the v3.70.0 audit flagged on the permission sharing/transfer system. Sharing now works at the DB layer, not just in app code, and the receiving user finally has a place to see what was shared with them.
+
+### Why this matters
+Before v3.71.0, a sales rep B who had been granted access to sales rep A's customers could see them only inside the in-app `/customers` page (which manually merged shared records into the list at app-layer). Any direct Supabase REST call as B — from a mobile app, an integration, a power-user with curl — would only return B's own records, because the RLS policy didn't know anything about `permission_sharing`. That was a real data-layer hole even though the UX looked correct.
+
+### Done — DB
+1. **`has_shared_access(company_id, resource_type, created_by_user_id)`** STABLE SECURITY DEFINER helper that returns true iff the current user is the grantee of an active, non-expired share covering the requested resource (or `'all'`) from the record's creator.
+2. **Replaced SELECT RLS** on `customers`, `estimates`, `sales_orders`, `bookings` (the four creator-filtered tables from v3.66.0). Each now has an additional clause: `OR has_shared_access(company_id, '<table>', created_by_user_id)`. Old `_v2` policies dropped; new `_v3` policies live.
+3. **`v_shared_with_me` VIEW** that returns active inbound shares for `auth.uid()` — used by the new UI tab.
+
+### Done — API
+- **New `/api/permissions/shared-with-me`** GET endpoint. Returns the rows from `v_shared_with_me` enriched with grantor display name + email (via service-role client peek at `user_profiles` then `auth.users` as fallback).
+- **Resource-type expansion** in `/api/permissions` POST: the share dialog dropdown now offers `customers`, `estimates`, `sales_orders`, `bookings`, and `all`. The API doesn't need code changes — `resource_type` is a free-text column and `has_shared_access` matches on whatever value is set.
+
+### Done — UI
+- **New tab "مُشارَك مَعى"** in the "نقل وفتح الصلاحيات" card. Shows every active inbound share with: grantor name/email, resource type badge, can_edit/can_delete badges, expiry date (or "دائم"), and any notes. Empty state explains what will appear when someone shares.
+- **Share dialog dropdown** in the existing flow now lists 5 resource options (was 3): الكل / العملاء / عروض الأسعار / أوامر البيع / الحجوزات.
+- **Resource label rendering** in the "المشاركات" tab updated to recognize `estimates` and `bookings`.
+
+### Not done in this release (Phase C — future)
+- Position hierarchy (manager auto-sees subordinates' work)
+- Approval workflow on transfers (currently transfers happen immediately)
+- Expanding to `invoices`, `bills`, `suppliers`, `payments`, `expenses` — these tables don't have creator-scoped RLS yet, so sharing them is moot until they do.
+- Vacation-cover convenience (one-click "while I'm away" share to a delegate)
+- "Who has access to X?" reporting
+
+### Why some integrations still happen at app-layer
+`/customers/page.tsx` (around line 386) and `/sales-orders/page.tsx` (around line 824) still manually merge shared records. After v3.71.0 that merge is redundant — RLS already returns the shared rows — but the code is harmless: each shared row appears once because the dedup `new Set(allCustomers.map(c => c.id))` skips already-present IDs. I'm leaving the app-layer code in for defense-in-depth and removing it cleanly in a later v3.71.x once we verify production traffic looks correct.
+
+### Files
+- DB migration: `v3_71_0_phase_b_rls_enforced_sharing`
+- New: `app/api/permissions/shared-with-me/route.ts`
+- Modified: `app/settings/users/page.tsx` — new tab + state + dropdown options + label rendering
+- Modified: `lib/version.ts` → 3.71.0
+
+### Verify after deploy
+1. Owner shares customers from user A to user B via the share dialog → tab "مُشارَك مَعى" on user B's session shows the new entry with A's name and the customer badge.
+2. As user B, direct REST: `GET /rest/v1/customers?select=id` returns own + shared customers (was: own only).
+3. As user B, direct REST: `GET /rest/v1/sales_orders?select=id` returns own + shared orders.
+4. Share an estimate-scope share → only estimates from A appear to B, not A's customers.
+5. Expire a share via DB or by setting `expires_at` in past + waiting for the v3.70.0 cron → it disappears from B's view and from B's "مُشارَك مَعى" tab.
+
+---
+
+
 ## [3.70.0] - 2026-06-01 — Phase A: Permission sharing/transfer safety fixes
 
 Audit of `/settings/users → نقل وفتح الصلاحيات` flagged three issues this release fixes. Phase B (RLS-enforced sharing, more resources, "shared with me" panel) and Phase C (position hierarchy, approval workflow) are scoped for future versions.
