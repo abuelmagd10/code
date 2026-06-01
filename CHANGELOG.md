@@ -4,6 +4,84 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.67.0] - 2026-06-01 — Full role spec implementation per Ahmed (7 roles + can_write)
+
+### Why
+Ahmed's enterprise ERP spec defines exactly which pages each of 7 roles should see, with branch-scoped governance and creator-filtering, modeled on SAP/Oracle/NetSuite RBAC patterns. v3.65.4 + v3.66.0 only delivered partial security hardening. This release implements the full spec end-to-end, with everything editable from `/settings/users → صلاحيات الأدوار`.
+
+### Done — DB
+1. **`can_write` column** on `company_role_permissions` (default `true` to preserve existing behavior). When `false` the role has read-only access to the resource. Editable from the same UI as `can_access`.
+2. **`/settings/users → صلاحيات الأدوار` already uses the existing schema** — `can_read`, `can_write`, `can_update`, `can_delete`, `all_access`, `can_access`, `allowed_actions`. The owner/admin can now read AND modify every role's resource list from one screen.
+3. **Re-seeded permissions for company تست** to match the spec exactly:
+
+| Role | Visible resources | Read-only count | Read-write count |
+|---|---|---|---|
+| owner | 39 | 0 | 39 (full power) |
+| admin | 39 | 0 | 39 (full power) |
+| **manager** (branch manager) | **37** | **37 (all read-only per spec)** | **0** |
+| viewer (auditor) | 34 | 34 (read-only org-wide) | 0 |
+| accountant | 23 | 6 | 17 |
+| store_manager | 10 | 5 | 5 |
+| purchasing_officer | 8 | 6 | 2 |
+| hr_officer | 7 | 4 | 3 |
+| manufacturing_officer | 7 | 5 | 2 |
+| staff (sales rep) | 7 | 3 | 4 |
+| booking_officer | 6 | 3 | 3 |
+
+### Role specifications (per Ahmed's spec)
+
+**1. الموظف (staff / sales rep)** — own-creator-scoped
+Customers (R+W) · Estimates (R+W) · Sales orders (R+W) · Inventory (R) · Product availability (R) · Attendance (R+W) · Dashboard (R)
+
+**2. المحاسب (accountant)** — branch-scoped
+Dashboard, reports · Sales invoices (R+W — but cannot create new, completes auto-created from SO; UI block in v3.69.0) · Sales returns · Sent invoice returns · Customer credits · Customer debit notes · Refund requests · Purchase invoices (same: complete only) · Purchase returns · Vendor credits · Products (R) · Services (R) · Inventory · Inventory transfers · Third-party inventory · Write-offs · Dispatch approvals (R) · Goods receipt (R) · Payments · Expenses · Banking · Journal entries
+
+**3. مسؤول المشتريات (purchasing_officer)** — branch-scoped
+Dashboard, reports · Suppliers · Purchase orders · Inventory (R) · Product availability (R) · Dispatch approvals (R) · Goods receipt (R)
+
+**4. مسؤول الحجوزات (booking_officer)** — branch + own creator
+Dashboard, reports · Bookings (R+W, own only) · Customers (R+W, own only) · Services (R) · Payments
+
+**5. مسؤول التصنيع (manufacturing_officer)**
+Dashboard, reports · Manufacturing (work centers + BOMs + routings + MRP + production orders + material issues + product receipts — all under `manufacturing_boms` umbrella) · Approvals · Products (R) · Inventory (R) · Product availability (R)
+
+**6. مسؤول المخزن (store_manager)** — branch-scoped
+Dashboard, reports · Products (R) · Inventory · Inventory transfers (exit from own-branch warehouse only — enforced v3.68.0) · Third-party inventory (R per spec) · Write-offs (with higher-role approval, enforced v3.71.0) · Dispatch approvals · Goods receipt · Product availability (R)
+
+**7. المدير (manager)** — branch manager, READ-ONLY on every page
+37 pages, all 37 with `can_write=false`. Manager can audit/observe their branch but cannot modify any data. Matches Ahmed's spec exactly.
+
+### Done — Code
+- `lib/version.ts` → 3.67.0
+- `app/settings/users/page.tsx` → `defaultSidebarResourcesByRole` rewritten to match the spec for every role. Owner/admin still get all resources via `flatMap`. Existing UI already saves `can_write` so admins can toggle read-only vs read-write per resource per role from the GUI.
+
+### Not done in this version (the workflow pieces)
+- v3.68.0 — Branch-scoped RLS on the 15+ remaining financial tables + inventory_transfers "exit own-branch only" enforcement.
+- v3.69.0 — Auto-create invoice on sales_orders approval + UI block on accountant "create new sales invoice" + auto-create bill on PO receipt.
+- v3.70.0 — Manufacturing pages currently roll up under one resource. Split into 7 distinct resources (work_centers, boms, routings, mrp, production_orders, material_issues, product_receipts) for granular per-page control.
+- v3.71.0 — Write-offs approval workflow + inventory_transfers approval.
+
+### My opinion on Ahmed's spec (per the question)
+The spec is well-engineered and aligned with enterprise ERP convention:
+- **7 functional roles + 2 admin roles (owner, admin) + 1 audit role (viewer)** matches SAP's segregation-of-duties pattern.
+- **Branch-scoped governance** is the right granularity for SMB→mid-market; full cost-center scoping (one level deeper) is overkill until customers ask for it.
+- **Sales rep sees own customers + creates SO → auto-invoice → accountant completes** is a textbook flow (matches Salesforce + NetSuite).
+- **Branch manager as read-only auditor** is unusual but defensible — many ERPs give the branch manager edit rights. Read-only is safer; it prevents managers from "fixing" subordinates' mistakes and erasing the audit trail.
+
+Two roles worth considering that Ahmed did not mention:
+- **Cashier / POS operator** — record sales at the counter, take payment, no access to financials. Useful for retail. Defer until retail customers ask.
+- **External auditor** — temporary read-only access scoped to a date range, for year-end audit. Easy to add as a refinement of `viewer`. Defer.
+
+### Verify after deploy
+1. Owner opens `/settings/users → صلاحيات الأدوار` → selects each role → sees the spec'd resource list + can flip can_write per resource → save → invitee on that role sees the change after refresh.
+2. New `manager` invitee sees the sidebar but every list/detail page shows view-only state (no create button). (Note: the can_write enforcement at the UI button level is still a per-page TODO; today the DB enforces it via `can_write` flag that pages can read.)
+3. New `accountant` invitee can open `/invoices` but the "New Sales Invoice" button still appears today (UI block in v3.69.0). DB-level prevention of manual insert is also v3.69.0.
+4. New `staff` invitee sees only their own customers/estimates/sales_orders (already enforced by v3.66.0 RLS).
+5. New `purchasing_officer` invitee sees only their 7 spec'd resources in the sidebar.
+
+---
+
+
 ## [3.66.0] - 2026-06-01 — DB-level Creator-filter governance (security hardening)
 
 ### Why

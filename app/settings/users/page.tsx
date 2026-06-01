@@ -1275,44 +1275,78 @@ export default function UsersSettingsPage() {
       .find((r) => r.value === value)?.label || value
   }
 
+  // 🔐 v3.67.0 — Defaults match Ahmed's enterprise spec (branch-scoped governance)
+  // These are the sidebar resources NEW companies start with. Edits happen via
+  // /settings/users → صلاحيات الأدوار which writes to company_role_permissions.
   const defaultSidebarResourcesByRole: Record<string, string[]> = {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
+    // 7. المدير (branch manager) — READ-ONLY on every page below
     manager: [
-      'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sales_return_requests', 'sent_invoice_returns', 'customer_debit_notes', 'customer_credits', 'customer_refund_requests', 'services', 'bookings', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt', 'approvals', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers', 'warehouses', 'notifications'
+      'dashboard', 'reports',
+      'customers', 'estimates', 'sales_orders', 'invoices', 'sales_returns',
+      'sent_invoice_returns', 'customer_credits', 'customer_debit_notes', 'customer_refund_requests',
+      'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
+      'products', 'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+      'dispatch_approvals', 'inventory_goods_receipt', 'product_availability',
+      'services', 'bookings',
+      'payments', 'expenses', 'banking', 'journal_entries',
+      'manufacturing_boms', 'approvals',
+      'employees', 'attendance', 'payroll',
+      'branches', 'cost_centers',
     ],
+    // 2. المحاسب — Branch-scoped, NO new sales invoices (UI v3.69.0)
     accountant: [
-      'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'sales_return_requests', 'customer_debit_notes', 'customer_credits', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'dispatch_approvals', 'inventory_goods_receipt'
+      'dashboard', 'reports',
+      'invoices', 'sales_returns', 'sent_invoice_returns', 'customer_credits',
+      'customer_debit_notes', 'customer_refund_requests',
+      'bills', 'purchase_returns', 'vendor_credits',
+      'products', 'services',
+      'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+      'dispatch_approvals', 'inventory_goods_receipt',
+      'payments', 'expenses', 'banking', 'journal_entries',
     ],
+    // 6. مسؤول المخزن — Branch-scoped warehouse operations
     store_manager: [
-      'dashboard', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'dispatch_approvals', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
+      'dashboard', 'reports',
+      'products', 'inventory', 'inventory_transfers', 'third_party_inventory',
+      'write_offs', 'dispatch_approvals', 'inventory_goods_receipt', 'product_availability',
     ],
-    // ── الأدوار الجديدة ──────────────────────────────────────────
+    // 5. مسؤول التصنيع — All manufacturing under one umbrella + approvals
     manufacturing_officer: [
-      'dashboard', 'manufacturing_boms', 'approvals', 'products', 'inventory', 'product_availability', 'reports'
+      'dashboard', 'reports',
+      'manufacturing_boms', 'approvals',
+      'products', 'inventory', 'product_availability',
     ],
+    // 4. مسؤول الحجوزات — Bookings + own customers
     booking_officer: [
-      'dashboard', 'bookings', 'services', 'customers', 'payments', 'reports'
+      'dashboard', 'reports',
+      'bookings', 'customers', 'services', 'payments',
     ],
+    // 3. مسؤول المشتريات — Branch-scoped purchasing
     purchasing_officer: [
       'dashboard', 'reports',
-      'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
-      'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts',
-      'banking', 'annual_closing', 'accounting_periods', 'shareholders',
-      'fixed_assets', 'asset_categories', 'fixed_assets_reports',
-      'taxes', 'exchange_rates', 'accounting_maintenance',
-      'products', 'inventory', 'inventory_transfers', 'inventory_goods_receipt',
-      'product_availability', 'write_offs', 'third_party_inventory',
+      'suppliers', 'purchase_orders',
+      'inventory', 'product_availability',
+      'dispatch_approvals', 'inventory_goods_receipt',
     ],
+    // HR officer (added v3.65.4)
     hr_officer: [
-      'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
-      'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
+      'dashboard', 'reports',
+      'hr', 'employees', 'payroll', 'attendance',
+      'instant_payouts', 'employee_bonuses',
+      'branches', 'cost_centers',
     ],
+    // 1. الموظف (sales rep) — Sees own customers, creates SO
     staff: [
-      'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
+      'dashboard',
+      'customers', 'estimates', 'sales_orders',
+      'inventory', 'product_availability',
+      'attendance',
     ],
+    // Read-only auditor (company-wide)
     viewer: [
-      'dashboard', 'reports'
+      'dashboard', 'reports',
     ],
   }
 
