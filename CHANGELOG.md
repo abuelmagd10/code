@@ -4,6 +4,69 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.0] - 2026-06-01 — CRITICAL security fix + Realtime push for shares
+
+Two big items in one release. Ahmed tested in تست and reported:
+
+> **"عملت صلاحية من موظف إلى محاسب، وفى صفحة العملاء بالنسبة للمحاسب ليس فقط عملاء الموظف المصدر ولكن أظهر جميع العملاء."**
+
+He was right — this is a security gap. Plus he flagged that we have Realtime infrastructure in the project already, and pointed us to use it instead of asking users to refresh manually.
+
+### 🔴 SECURITY FIX — Resource-aware visibility (CVE-grade)
+
+**Root cause:** v3.66.0's RLS used `current_user_record_visibility(company_id)` which returned a visibility scope based on **role only**. Accountant's role natively returns `'branch'`. So when a sharing row connected staff→accountant for `customers`, the accountant could see *all* branch customers — because the natural-access clause matched regardless of whether the role even had `customers` in its company_role_permissions.
+
+Per the v3.69.0 strict spec, accountant has NO `customers` resource in their role permissions. So they should only see customers via sharing, not via branch access.
+
+**Fix:** new function `current_user_resource_visibility(company_id, resource)` — same signature philosophy but **resource-aware**:
+
+- Returns `'company'` for the company owner or for `owner`/`admin` role members.
+- Returns `'company'` for `viewer` if the role has `can_access=true` on the resource.
+- Returns `'branch'` for branch-scoped roles (manager, accountant, store_manager, etc.) **only if** the role has `can_access=true` on the resource in `company_role_permissions`.
+- Returns `'own'` for staff/employee/sales/booking_officer **only if** the role has `can_access=true` on the resource.
+- Returns `'none'` if the role has no row (or `can_access=false`) for the resource. In `'none'` mode, only `has_shared_access()` can grant access.
+
+**Net effect:** accountant querying `/customers` now sees ONLY records explicitly shared with them. Sharing is no longer redundant with branch access for resources the role wasn't supposed to access.
+
+The four SELECT policies (`customers`, `estimates`, `sales_orders`, `bookings`) are now at `_v4` and call the new resource-aware function.
+
+### 🔗 Realtime push for permission_sharing
+
+**The pain:** in v3.73.3, when the admin granted a share, the grantee had to manually hard-refresh their browser to see the new sidebar items. The project already has a complete Realtime infrastructure (`lib/realtime-manager.ts`, `lib/realtime-provider.tsx`, `hooks/use-realtime-table.ts`) — we just hadn't plumbed `permission_sharing` into it.
+
+**Done:**
+- Added `permission_sharing` and `permission_transfers` to the `RealtimeTable` union type and the `tableMapping` table-name resolver in `lib/realtime-manager.ts`.
+- Added both tables to the `supabase_realtime` publication (idempotent migration block).
+- Added a useEffect inside `AccessProvider` that opens a per-user `postgres_changes` channel filtered to `grantee_user_id=eq.<current user>`. On any INSERT/UPDATE/DELETE there, it calls `loadAccessProfile()` and dispatches `permissions_updated` + `sidebar_refresh` window events.
+- The channel is cleaned up on unmount, so no leaks.
+
+**Result:** the moment an admin clicks "تَأكيد التَفويض" or "حفظ المُشاركة", the grantee's open tab refreshes its sidebar and allowed_pages within milliseconds — no manual reload required.
+
+### Done — DB
+- New function `current_user_resource_visibility(company_id, resource) RETURNS text` (STABLE SECURITY DEFINER).
+- Replaced `_v3` SELECT policies on `customers`, `estimates`, `sales_orders`, `bookings` with `_v4` versions that call the new function.
+- `ALTER PUBLICATION supabase_realtime ADD TABLE` for `permission_sharing` and `permission_transfers`.
+
+### Done — Code
+- `lib/realtime-manager.ts` — extended `RealtimeTable` union + table-name mapping with the two new tables.
+- `lib/access-context.tsx` — new useEffect in `AccessProvider` that opens a per-user realtime channel on `permission_sharing` (filtered by `grantee_user_id`) and triggers `loadAccessProfile()` on any event.
+- `lib/version.ts` → 3.74.0
+
+### Verify after deploy
+1. **Security**: log in as the accountant in تست. Open `/customers` → list is **empty** (was: showed all 3 branch customers).
+2. Owner shares one staff customer with accountant via the share dialog.
+3. Within ~1 second (Realtime push), accountant's sidebar updates to show "العملاء" under المبيعات and their list shows only the 1 shared customer.
+4. Revoke or expire the share → within ~1 second, the page disappears from accountant's sidebar.
+5. Owner / admin: visiting `/customers` still shows all 3 (company visibility preserved).
+6. Staff: visiting `/customers` still shows their own + any shared (own visibility preserved).
+
+### Phase C remaining
+- v3.75.0 — Position hierarchy table + RLS clause so a sales manager auto-sees their reports' work.
+- v3.76.0 — "Who can access X?" reporting endpoint + UI.
+
+---
+
+
 ## [3.73.3] - 2026-06-01 — Hotfix: inbound shares now expand grantee's sidebar
 
 ### Why

@@ -74,6 +74,9 @@ export type RealtimeTable =
   | 'warehouses'
   | 'company_role_permissions'
   | 'permissions'
+  // 🔗 v3.74.0 — Permission sharing/transfer events
+  | 'permission_sharing'
+  | 'permission_transfers'
 
 export interface RealtimeEvent<T = any> {
   type: RealtimeEventType
@@ -323,6 +326,9 @@ class RealtimeManager {
       'warehouses': 'warehouses',
       'company_role_permissions': 'company_role_permissions',
       'permissions': 'permissions',
+      // 🔗 v3.74.0 — Permission sharing/transfer
+      'permission_sharing': 'permission_sharing',
+      'permission_transfers': 'permission_transfers',
     }
     return tableMapping[table] || table
   }

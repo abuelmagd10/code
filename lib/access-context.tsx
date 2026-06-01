@@ -818,6 +818,43 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     loadAccessProfile()
   }, [loadAccessProfile])
 
+  // 🔗 v3.74.0 — Realtime push: when permission_sharing rows are inserted/
+  // updated/deleted for the current user as grantee, reload the profile
+  // so allowed_pages and the sidebar refresh without a manual reload.
+  useEffect(() => {
+    if (!profile?.user_id || !profile?.company_id) return
+
+    const channel = supabase
+      .channel(`access-shares-${profile.user_id}`)
+      .on(
+        'postgres_changes' as any,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'permission_sharing',
+          filter: `grantee_user_id=eq.${profile.user_id}`,
+        },
+        async (payload: any) => {
+          console.log('🔗 [AccessContext] permission_sharing realtime event received', payload?.eventType)
+          // Refresh on insert/update/delete — anything that could change my access
+          try {
+            await loadAccessProfile()
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new Event('permissions_updated'))
+              window.dispatchEvent(new Event('sidebar_refresh'))
+            }
+          } catch (err) {
+            console.warn('[AccessContext] failed to reload after share change:', err)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      try { supabase.removeChannel(channel) } catch { /* noop */ }
+    }
+  }, [profile?.user_id, profile?.company_id, supabase, loadAccessProfile])
+
   // 🔄 تحديث Access Profile عند تغيير الشركة النشطة من الواجهة (Sidebar أو غيره)
   useEffect(() => {
     const handleCompanyUpdated = () => {
