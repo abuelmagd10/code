@@ -4,6 +4,57 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.73.0] - 2026-06-01 — Phase C-2: Two-eye approval workflow on transfers
+
+Second piece of Phase C. Permission transfers (re-owning customers + sales_orders from one user to another) used to execute immediately on submit. Now they create a pending request that must be approved by a SECOND owner/admin before any data is touched — the **Vier-Augen-Prinzip** every enterprise ERP from SAP to Oracle enforces on irreversible governance changes.
+
+### Why this matters
+Re-owning records is the most dangerous governance action in the system. A single compromised or malicious owner account could quietly transfer every customer to themselves and lock out everyone else. With two-eye approval, that attack now requires two compromised accounts simultaneously, which is the industry-standard mitigation.
+
+### Done — DB
+1. **Extended `status` CHECK** on `permission_transfers` to include `'approved'` and `'rejected'` (was: `pending` / `completed` / `failed` / `reverted`).
+2. **Approval metadata columns**: `approved_by` (uuid, FK auth.users), `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, `completed_at`.
+3. **Partial index** `idx_permission_transfers_pending` on `(company_id, status) WHERE status = 'pending'` — keeps the approver-inbox query fast even as historic transfers accumulate.
+4. **`execute_permission_transfer(transfer_id)`** SECURITY DEFINER function. Locks the row `FOR UPDATE`, refuses to run on anything except `status='approved'`, runs the ownership rewrite atomically (customers + sales_orders, optionally narrowed to a branch read out of `transfer_data->>'branch_id'`), and stamps `records_transferred`, `completed_at`, plus the actual customer/sales_order IDs into `transfer_data` for the audit trail.
+
+### Done — API
+- **`POST /api/permissions/transfer`** no longer executes anything. It inserts the row at `status='pending'` (with optional branch_id stashed in `transfer_data`) and writes an `audit_logs` entry of type `permission_transfer_requested`. Response carries the new `transfer_id` and a message instructing the user to wait for a second approver.
+- **New `POST /api/permissions/transfer/[id]/approve`** — owner/admin/general_manager only, with the **two-eye guard**: rejected with a clear Arabic error if `transferred_by === auth.uid()`. Sets `status='approved'` then calls the RPC. On any failure, rolls the flag back to `'failed'` so the row doesn't stay stuck `approved` with no execution.
+- **New `POST /api/permissions/transfer/[id]/reject`** — same role + two-eye guards. Body must include a non-empty `reason`. Writes `rejected_by`, `rejected_at`, `rejected_reason`, status=`rejected`. No customer/sales_order rows touched. Audit log entry of type `permission_transfer_rejected`.
+
+### Done — UI
+- **"النَّقل" tab now an inbox.** Each row shows the request's current status as a colored chip: ⏳ بانتظار اعتماد (amber), ✓ مُعتَمَد (blue), ✓ مُنفَّذ (green), ✕ مَرفوض (red), ⚠ فَشل (red).
+- **Approve / Reject buttons** appear inline on `pending` rows only, only for users who didn't initiate the request, and only if they have a privileged role (`canManage`). The "approve" button shows a confirm dialog; "reject" prompts for a mandatory reason via `window.prompt`.
+- **Initiator note**: if the current user is the one who filed the pending request, the row carries an italicized hint "طَلَبت هذا النَّقل بنفسك — يَحتاج اعتماد مَسؤول آخر." so they're not confused why their own buttons are missing.
+- **Rejection reason** appears on rejected rows as a red sub-line.
+- **Resource label** updated to recognize `estimates` and `bookings` resource types added in v3.71.0.
+
+### Why no notification yet
+The receiving approver discovers pending requests by visiting `/settings/users → النَّقل` tab. A "you have N pending approvals" notification banner across the app would be the next polish — deferred to a later release since the inbox model works for an SMB workflow today and the right place for that banner is the `notifications` system, not the transfers UI.
+
+### Files
+- DB migration: `v3_73_0_phase_c_approval_workflow_on_transfers`
+- Modified: `app/api/permissions/transfer/route.ts` — execution removed, now pending-only
+- New: `app/api/permissions/transfer/[id]/approve/route.ts`
+- New: `app/api/permissions/transfer/[id]/reject/route.ts`
+- Modified: `app/settings/users/page.tsx` — transfers tab rewritten with approval inbox UX
+- Modified: `lib/version.ts` → 3.73.0
+
+### Verify after deploy
+1. Owner A opens transfer dialog → submits a transfer → toast says "تم تَسجيل طَلَب النَّقل". `permission_transfers` row exists at `status='pending'`. No `customers.created_by_user_id` changed yet.
+2. Owner A switches to the "النَّقل" tab → row shows ⏳ بانتظار اعتماد with no Approve/Reject buttons (initiator can't self-approve) — italic hint visible.
+3. Owner B logs in (or admin C) → sees the same row with Approve and Reject buttons.
+4. B clicks Approve → confirm dialog → toast: "اعتماد النَّقل — N سجل". Row chip flips to ✓ مُنفَّذ. `customers.created_by_user_id` updated for all of A's records to the new owner.
+5. Try a second transfer, B clicks Reject → enters reason "تَوزيع غير عادل" → row flips to ✕ مَرفوض with the reason visible. `customers` rows untouched.
+6. Try approving with same user who filed: API returns "لا يُمكنك اعتماد طَلَب قَدّمته بنفسك."
+
+### Phase C remaining
+- v3.74.0 — Position hierarchy table + RLS clause so a sales manager auto-sees their reports' work without an explicit share.
+- v3.75.0 — "Who can access X?" reporting endpoint + UI.
+
+---
+
+
 ## [3.72.0] - 2026-06-01 — Phase C-1: Vacation Cover (one-click delegation)
 
 First piece of Phase C. The audit on the permission system flagged that the SAP/Oracle "vacation cover" pattern was missing — owners had to manually open the full sharing dialog, pick resource types, dates, and the right grantee. This release adds a focused, single-purpose dialog optimized for the most common case: "X is on vacation from D1 to D2, route their work to Y."

@@ -59,12 +59,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
 
+    // 🔐 v3.73.0 — Two-eye approval workflow.
+    // POST no longer executes the ownership rewrite. It inserts the transfer
+    // request as status='pending' and waits for a DIFFERENT owner/admin to
+    // call /api/permissions/transfer/[id]/approve. That endpoint runs the
+    // atomic execute_permission_transfer() DB function.
     const results: any[] = []
-    let totalTransferred = 0
 
-    // نقل لكل مستخدم هدف
     for (const toUserId of to_user_ids) {
-      // إنشاء سجل النقل
       const { data: transfer, error: transferError } = await supabase
         .from("permission_transfers")
         .insert({
@@ -75,7 +77,9 @@ export async function POST(request: Request) {
           transferred_by: user.id,
           status: "pending",
           reason,
-          notes
+          notes,
+          // Stash the optional branch narrowing here so the executor can read it
+          transfer_data: branch_id ? { branch_id } : null,
         })
         .select()
         .single()
@@ -85,104 +89,29 @@ export async function POST(request: Request) {
         continue
       }
 
-      let recordsTransferred = 0
-      const transferredIds: string[] = []
-
-      // نقل العملاء (اختيارياً حسب الفرع: عملاء الفرع المنقول عنه فقط)
-      if (resource_type === "customers" || resource_type === "all") {
-        let customerQuery = supabase
-          .from("customers")
-          .select("id")
-          .eq("company_id", company_id)
-          .eq("created_by_user_id", from_user_id)
-        if (branch_id) {
-          customerQuery = customerQuery.eq("branch_id", branch_id)
-        }
-        const { data: customerIds } = await customerQuery
-
-        if (customerIds?.length) {
-          transferredIds.push(...customerIds.map((c: { id: string }) => c.id))
-
-          let updateQuery = supabase
-            .from("customers")
-            .update({ created_by_user_id: toUserId })
-            .eq("company_id", company_id)
-            .eq("created_by_user_id", from_user_id)
-          if (branch_id) {
-            updateQuery = updateQuery.eq("branch_id", branch_id)
-          }
-          const { error: updateError } = await updateQuery
-
-          if (!updateError) {
-            recordsTransferred += customerIds.length
-          }
-        }
-      }
-
-      // نقل أوامر البيع (اختيارياً حسب الفرع)
-      if (resource_type === "sales_orders" || resource_type === "all") {
-        let orderQuery = supabase
-          .from("sales_orders")
-          .select("id")
-          .eq("company_id", company_id)
-          .eq("created_by_user_id", from_user_id)
-        if (branch_id) {
-          orderQuery = orderQuery.eq("branch_id", branch_id)
-        }
-        const { data: orderIds } = await orderQuery
-
-        if (orderIds?.length) {
-          transferredIds.push(...orderIds.map((o: { id: string }) => o.id))
-
-          let updateOrderQuery = supabase
-            .from("sales_orders")
-            .update({ created_by_user_id: toUserId })
-            .eq("company_id", company_id)
-            .eq("created_by_user_id", from_user_id)
-          if (branch_id) {
-            updateOrderQuery = updateOrderQuery.eq("branch_id", branch_id)
-          }
-          const { error: updateError } = await updateOrderQuery
-
-          if (!updateError) {
-            recordsTransferred += orderIds.length
-          }
-        }
-      }
-
-      // تحديث سجل النقل
-      await supabase
-        .from("permission_transfers")
-        .update({
-          status: "completed",
-          records_transferred: recordsTransferred,
-          transfer_data: { record_ids: transferredIds }
-        })
-        .eq("id", transfer.id)
-
-      // تسجيل في Audit Log
+      // Audit log — the REQUEST was filed (not yet executed)
       await supabase.from("audit_logs").insert({
         company_id,
         user_id: user.id,
-        action_type: "permission_transfer",
+        action_type: "permission_transfer_requested",
         resource_type: "permissions",
         resource_id: transfer.id,
-        description: `نقل ${recordsTransferred} سجل من ${from_user_id} إلى ${toUserId}`,
-        new_data: { from_user_id, to_user_id: toUserId, resource_type, records_transferred: recordsTransferred }
+        description: `طُلِب نَقل ملكية (${resource_type}) من ${from_user_id} إلى ${toUserId} — بانتظار اعتماد`,
+        new_data: { from_user_id, to_user_id: toUserId, resource_type, branch_id: branch_id || null }
       })
 
       results.push({
         to_user_id: toUserId,
         transfer_id: transfer.id,
-        records_transferred: recordsTransferred
+        status: "pending",
       })
-      totalTransferred += recordsTransferred
     }
 
     return NextResponse.json({
       success: true,
-      total_transferred: totalTransferred,
-      results
+      pending: results.length,
+      results,
+      message: "تم تَسجيل طَلَب النَقل — بانتظار اعتماد من مَسؤول آخر (مَبدأ العَين الاثنتين)",
     })
   } catch (error: any) {
     console.error("Error transferring permissions:", error)

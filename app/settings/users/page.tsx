@@ -3001,35 +3001,116 @@ export default function UsersSettingsPage() {
                   )}
                 </TabsContent>
 
-                {/* سجل النقل */}
+                {/* سجل النقل — v3.73.0 with two-eye approval workflow */}
                 <TabsContent value="transfers">
                   {permissionTransfers.length > 0 ? (
                     <div className="space-y-2">
-                      {permissionTransfers.map((pt) => {
+                      {permissionTransfers.map((pt: any) => {
                         const fromUser = members.find(m => m.user_id === pt.from_user_id)
                         const toUser = members.find(m => m.user_id === pt.to_user_id)
+                        const isPending = pt.status === 'pending'
+                        const isInitiator = pt.transferred_by === currentUserId
+                        const canActOnRequest = isPending && !isInitiator && canManage
+                        const resourceLabel =
+                          pt.resource_type === 'all' ? 'الكل' :
+                          pt.resource_type === 'customers' ? 'العملاء' :
+                          pt.resource_type === 'sales_orders' ? 'أوامر البيع' :
+                          pt.resource_type === 'estimates' ? 'عروض الأسعار' :
+                          pt.resource_type === 'bookings' ? 'الحجوزات' :
+                          pt.resource_type
+                        const statusBadge =
+                          pt.status === 'completed' ? { cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', label: '✓ مُنفَّذ' } :
+                          pt.status === 'pending'   ? { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', label: '⏳ بانتظار اعتماد' } :
+                          pt.status === 'approved'  ? { cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', label: '✓ مُعتَمَد' } :
+                          pt.status === 'rejected'  ? { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', label: '✕ مَرفوض' } :
+                          pt.status === 'failed'    ? { cls: 'bg-red-100 text-red-700', label: '⚠ فَشل' } :
+                                                       { cls: 'bg-gray-100 text-gray-700', label: pt.status }
                         return (
-                          <div key={pt.id} className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <div className="flex items-center gap-3">
-                              <ArrowRightLeft className="w-4 h-4 text-blue-600" />
-                              <div>
-                                <p className="text-sm font-medium">
-                                  <span className="text-gray-700 dark:text-gray-300">{fromUser?.display_name || fromUser?.email || 'موظف'}</span>
-                                  <span className="mx-2 text-blue-500">→</span>
-                                  <span className="text-blue-700 dark:text-blue-400">{toUser?.display_name || toUser?.email || 'موظف'}</span>
-                                </p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="outline" className="text-[10px]">
-                                    {pt.resource_type === 'all' ? 'الكل' : pt.resource_type === 'customers' ? 'العملاء' : 'أوامر البيع'}
-                                  </Badge>
-                                  <Badge className="text-[10px] bg-blue-100 text-blue-700">{pt.records_transferred} سجل</Badge>
-                                  <span className="text-[10px] text-gray-500">{new Date(pt.transferred_at).toLocaleDateString('ar-EG')}</span>
+                          <div key={pt.id} className={`p-3 rounded-lg border ${isPending ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <ArrowRightLeft className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">
+                                    <span className="text-gray-700 dark:text-gray-300">{fromUser?.display_name || fromUser?.email || 'موظف'}</span>
+                                    <span className="mx-2 text-blue-500">→</span>
+                                    <span className="text-blue-700 dark:text-blue-400">{toUser?.display_name || toUser?.email || 'موظف'}</span>
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    <Badge variant="outline" className="text-[10px]">{resourceLabel}</Badge>
+                                    {pt.status === 'completed' && (
+                                      <Badge className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{pt.records_transferred} سجل</Badge>
+                                    )}
+                                    <span className="text-[10px] text-gray-500">{new Date(pt.transferred_at).toLocaleDateString('ar-EG')}</span>
+                                  </div>
+                                  {pt.status === 'rejected' && pt.rejected_reason && (
+                                    <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">سَبَب الرَّفض: {pt.rejected_reason}</p>
+                                  )}
+                                  {isPending && isInitiator && (
+                                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">طَلَبت هذا النَّقل بنفسك — يَحتاج اعتماد مَسؤول آخر.</p>
+                                  )}
                                 </div>
                               </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <Badge className={`text-[10px] ${statusBadge.cls}`}>{statusBadge.label}</Badge>
+                                {canActOnRequest && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      className="h-7 px-2 bg-green-600 hover:bg-green-700 text-white text-[11px] gap-1"
+                                      onClick={async () => {
+                                        const ok = window.confirm(`اعتماد نَقل ${resourceLabel} من ${fromUser?.display_name || 'موظف'} إلى ${toUser?.display_name || 'موظف'}؟`)
+                                        if (!ok) return
+                                        try {
+                                          const res = await fetch(`/api/permissions/transfer/${pt.id}/approve`, { method: 'POST' })
+                                          const data = await res.json()
+                                          if (res.ok && data.success) {
+                                            toastActionSuccess(toast, 'اعتماد النَّقل', `${data.result?.records_transferred ?? 0} سجل`)
+                                            loadPermissionData()
+                                          } else {
+                                            toastActionError(toast, 'اعتماد', 'النَّقل', data.error || 'فَشل')
+                                          }
+                                        } catch (err: any) {
+                                          toastActionError(toast, 'اعتماد', 'النَّقل', err?.message || 'خطأ')
+                                        }
+                                      }}
+                                    >
+                                      <Check className="w-3 h-3" />
+                                      اعتماد
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 border-red-300 text-red-700 hover:bg-red-50 text-[11px] gap-1"
+                                      onClick={async () => {
+                                        const reason = window.prompt('سَبَب الرَّفض (مَطلوب):')
+                                        if (!reason || !reason.trim()) return
+                                        try {
+                                          const res = await fetch(`/api/permissions/transfer/${pt.id}/reject`, {
+                                            method: 'POST',
+                                            headers: { 'content-type': 'application/json' },
+                                            body: JSON.stringify({ reason: reason.trim() }),
+                                          })
+                                          const data = await res.json()
+                                          if (res.ok && data.success) {
+                                            toastActionSuccess(toast, 'رفض النَّقل', 'تم')
+                                            loadPermissionData()
+                                          } else {
+                                            toastActionError(toast, 'رفض', 'النَّقل', data.error || 'فَشل')
+                                          }
+                                        } catch (err: any) {
+                                          toastActionError(toast, 'رفض', 'النَّقل', err?.message || 'خطأ')
+                                        }
+                                      }}
+                                    >
+                                      <X className="w-3 h-3" />
+                                      رفض
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </div>
-                            <Badge className={pt.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}>
-                              {pt.status === 'completed' ? 'مكتمل' : 'قيد التنفيذ'}
-                            </Badge>
                           </div>
                         )
                       })}
