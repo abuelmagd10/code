@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
       role === "manufacturing_officer" ? "مسؤول التصنيع" :
       role === "booking_officer" ? "مسؤول الحجوزات" :
       role === "purchasing_officer" ? "مسؤول المشتريات" :
+      role === "hr_officer" ? "مسؤول الموارد البشرية" :
       role === "viewer" ? "عرض فقط" :
       "موظف"
 

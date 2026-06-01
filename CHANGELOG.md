@@ -4,6 +4,60 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.65.4] - 2026-06-01 — Role permissions cleanup + `hr_officer` role end-to-end
+
+### Why
+Audit of `company_role_permissions` against the enterprise-ERP spec the user proposed (branch-scoped governance + Separation of Duties matching SAP/Oracle/NetSuite patterns) surfaced two classes of issues:
+- `viewer` had access to admin pages it had no business seeing (users, permission_sharing, permission_transfers, role_permissions, company_settings). That violates **least-privilege** — a "view-only" account could see who owns what and the company-wide settings panel.
+- `manager` could edit other users' permissions (permission_sharing, permission_transfers, role_permissions, users). That violates **separation of duties** — branch managers should not be able to grant themselves or their team broader access. Permission management belongs to `owner`/`admin` only.
+- Five operational roles (`staff`, `booking_officer`, `manufacturing_officer`, `store_manager`, `accountant`) were missing `dashboard` and/or `reports` access even though their day-to-day work depends on the dashboard widgets and basic reports.
+- `purchasing_officer` had accounting-only resources (`accounting_periods`, `annual_closing`, `expenses`, `sent_invoice_returns`, `journal_entries`, `chart_of_accounts`) which a purchasing officer should not be entering — those are accountant territory.
+- The spec proposed adding `hr_officer` (HR officer) for payroll/attendance/employees workflows. The current `manager` is overloaded — branch managers shouldn't manage company-wide HR policy.
+
+### Changed — DB (applied via migration, not in code)
+- **`viewer`** — removed 5 admin resources (users, permission_sharing, permission_transfers, role_permissions, company_settings). Now strictly read-only with no governance surface.
+- **`manager`** — removed 4 permission-management resources (permission_sharing, permission_transfers, role_permissions, users). Manager can still manage their branch's data, but cannot grant access to others.
+- **`staff` / `booking_officer` / `manufacturing_officer` / `store_manager` / `accountant`** — set `dashboard` + `reports` `can_access=true` (rows already existed; updated, no inserts needed so CHECK constraint untouched).
+- **`purchasing_officer`** — added `reports`; removed 6 accounting-only resources (`accounting_periods`, `annual_closing`, `expenses`, `sent_invoice_returns`, `journal_entries`, `chart_of_accounts`). Purchasing flow stays: bills, suppliers, POs, returns, vendor credits, banking, taxes, exchange rates, inventory operations.
+
+### Added — `hr_officer` role (end-to-end)
+Six-place change pattern (lesson from v3.65.3):
+1. **DB CHECK constraints** extended to include `hr_officer`:
+   - `company_invitations_role_check`
+   - `company_members_role_check`
+   - `company_role_permissions_role_check_v2`
+2. **Seed permissions for `تست`** — 7 resources granted: `dashboard`, `reports`, `employees`, `payroll`, `attendance`, `branches`, `cost_centers`.
+3. **Sidebar Arabic label** — `components/sidebar.tsx`: hr_officer → "مسؤول الموارد البشرية".
+4. **Invite email roleName mapping** — `app/api/send-invite/route.ts`: hr_officer → "مسؤول الموارد البشرية".
+5. **`/settings/users` dropdowns** (3 of them) — added `<SelectItem value="hr_officer">` with the same pink-500 dot used everywhere else.
+6. **`roleLabels` + `defaultSidebarResourcesByRole`** in `/settings/users` — hr_officer entry with pink color, description "إدارة الموظفين والمرتبات والحضور", and default resources `[dashboard, reports, hr, employees, payroll, attendance, instant_payouts, employee_bonuses, branches, cost_centers]`.
+
+### Final permission counts (company تست)
+- `owner` 39, `admin` 39, `manager` 33, `viewer` 34, `accountant` 24, `purchasing_officer` 20, `store_manager` 10, `staff` 9, `booking_officer` 9, `manufacturing_officer` 9, **`hr_officer` 7**.
+
+### Files
+- Modified: `lib/version.ts` (3.65.3 → 3.65.4)
+- Modified: `components/sidebar.tsx` (hr_officer label — done in same session)
+- Modified: `app/api/send-invite/route.ts` (hr_officer roleName — done in same session)
+- Modified: `app/settings/users/page.tsx` (3 dropdowns + roleLabels + defaultSidebarResourcesByRole)
+- DB migration: permission cleanup + hr_officer constraints + permission seed for `تست`
+
+### Out of scope (deferred)
+- Branch-scoped RLS hardening on the 50+ tables (Layer 3 of the user's spec) — needs a per-table audit and is a larger piece of work.
+- Adding manufacturing-specific resources (`manufacturing_orders`, `bom`, `routings`, `work_centers`, `mrp`, `material_issues`, `product_receipts`) to UI + DB + permissions (Layer 4).
+- `seed_default_permissions(company_id)` SQL function so new companies get all 11 roles seeded automatically (planned for v3.66.0). Today's seed covered company `تست` only.
+
+### Verify after deploy
+1. Open `/settings/users` → invite a new user with role `hr_officer` → email arrives saying their role is "مسؤول الموارد البشرية" (not "موظف").
+2. Invitee accepts → lands on dashboard without redirect loops → sidebar shows "مسؤول الموارد البشرية".
+3. Sidebar shows only HR + dashboard + reports + branches + cost centers (10 resources).
+4. Old `viewer` user no longer sees a "المستخدمون" or "إعدادات الشركة" tab.
+5. Old `manager` user no longer sees the "صلاحيات الأدوار" / "مشاركة الصلاحيات" sub-pages.
+6. `staff` / `booking_officer` / `accountant` / etc. see the Dashboard card after login (previously some hit "no-access" because `dashboard` was missing from their permissions).
+
+---
+
+
 ## [3.65.3] - 2026-05-31 — Hotfix bundle: 3 new roles end-to-end
 
 ### Fixed

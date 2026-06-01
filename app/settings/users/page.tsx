@@ -1129,6 +1129,7 @@ export default function UsersSettingsPage() {
     manufacturing_officer: { ar: 'مسؤول التصنيع', en: 'Manufacturing Officer', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', description: 'إدارة قوائم المواد والإنتاج' },
     booking_officer: { ar: 'مسؤول الحجوزات', en: 'Booking Officer', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة الحجوزات والخدمات' },
     purchasing_officer: { ar: 'مسؤول المشتريات', en: 'Purchasing Officer', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', description: 'إدارة المشتريات والموردين' },
+    hr_officer: { ar: 'مسؤول الموارد البشرية', en: 'HR Officer', color: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400', description: 'إدارة الموظفين والمرتبات والحضور' },
     staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'صلاحيات محدودة' },
     viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط' },
   }
@@ -1302,6 +1303,10 @@ export default function UsersSettingsPage() {
       'taxes', 'exchange_rates', 'accounting_maintenance',
       'products', 'inventory', 'inventory_transfers', 'inventory_goods_receipt',
       'product_availability', 'write_offs', 'third_party_inventory',
+    ],
+    hr_officer: [
+      'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
+      'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
     ],
     staff: [
       'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
@@ -1515,6 +1520,7 @@ export default function UsersSettingsPage() {
                               <SelectItem value="manufacturing_officer">مسؤول التصنيع</SelectItem>
                               <SelectItem value="booking_officer">مسؤول الحجوزات</SelectItem>
                               <SelectItem value="purchasing_officer">مسؤول المشتريات</SelectItem>
+                              <SelectItem value="hr_officer">مسؤول الموارد البشرية</SelectItem>
                               <SelectItem value="staff">موظف</SelectItem>
                               <SelectItem value="viewer">عرض فقط</SelectItem>
                             </SelectContent>
@@ -2003,6 +2009,7 @@ export default function UsersSettingsPage() {
                       <SelectItem value="manufacturing_officer">مسؤول التصنيع</SelectItem>
                       <SelectItem value="booking_officer">مسؤول الحجوزات</SelectItem>
                       <SelectItem value="purchasing_officer">مسؤول المشتريات</SelectItem>
+                      <SelectItem value="hr_officer">مسؤول الموارد البشرية</SelectItem>
                       <SelectItem value="staff">موظف</SelectItem>
                       <SelectItem value="viewer">عرض فقط</SelectItem>
                     </SelectContent>
@@ -2274,6 +2281,12 @@ export default function UsersSettingsPage() {
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
                           مسؤول المشتريات
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="hr_officer">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-pink-500"></span>
+                          مسؤول الموارد البشرية
                         </div>
                       </SelectItem>
                       <SelectItem value="staff">
