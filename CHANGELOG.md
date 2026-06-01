@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.69.0] - 2026-06-01 — VERBATIM spec: removed `dashboard` from 5 roles
+
+### Why
+In v3.68.0 I kept inserting `dashboard` as a fallback landing page for staff, purchasing_officer, booking_officer, manufacturing_officer, store_manager — but Ahmed never listed it for those 5 roles. The spec only mentions `dashboard` for the accountant ("يرى صفحة لوحة التحكم الخاصة بفرعة"). The manager inherits it transitively because manager = read-only union of all sub-roles, and accountant has it.
+
+### Done — DB
+Re-defined `seed_default_role_permissions(company_id)` to match the spec verbatim. Re-applied to company تست. The trigger on `companies` INSERT continues to auto-seed every new company.
+
+### Final per-role counts (matches spec)
+| Role | Count | Pages |
+|---|---:|---|
+| staff | 4 | customers, estimates, sales_orders, inventory(R) |
+| accountant | 17 | dashboard + the 16 finance/inventory pages |
+| purchasing_officer | 5 | suppliers, purchase_orders, inventory(R), dispatch_approvals(R), inventory_goods_receipt(R) |
+| booking_officer | 2 | bookings, customers |
+| manufacturing_officer | 2 | manufacturing_boms (umbrella for the 7 sub-pages), approvals |
+| store_manager | 6 | inventory, inventory_transfers, third_party_inventory(R), write_offs, dispatch_approvals, inventory_goods_receipt |
+| manager | 25 | union of all above + dashboard, ALL `can_write=false` |
+
+### Done — Code
+- `lib/version.ts` → 3.69.0
+- `app/settings/users/page.tsx` → `defaultSidebarResourcesByRole` mirror of the DB function exactly, no `dashboard` in the 5 non-accountant operational roles.
+
+### Note on post-login landing
+Users in roles without dashboard access (staff, purchasing_officer, booking_officer, manufacturing_officer, store_manager) will land on the first page in their permission list after login. If the redirect lands on `/dashboard` and bounces them, that's a follow-up routing fix — flagged but not included in this release per the user's strict-spec request.
+
+---
+
+
 ## [3.68.0] - 2026-06-01 — STRICT spec adherence + auto-seed trigger for new companies
 
 ### Why

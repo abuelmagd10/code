@@ -1275,17 +1275,17 @@ export default function UsersSettingsPage() {
       .find((r) => r.value === value)?.label || value
   }
 
-  // 🔐 v3.68.0 — STRICT defaults per Ahmed's spec, mirror of the DB seed function
+  // 🔐 v3.69.0 — VERBATIM defaults per Ahmed's spec. Mirror of DB function
   // public.seed_default_role_permissions(p_company_id). The DB trigger on
-  // companies INSERT auto-seeds these defaults for every NEW company. This array
-  // is the UI-side mirror used only in non-trigger paths (legacy or test setups).
-  // Admins can override any of these per company from /settings/users → صلاحيات الأدوار.
+  // companies INSERT auto-seeds these for every NEW company. Admins can
+  // override per-company from /settings/users → صلاحيات الأدوار.
+  // dashboard appears ONLY where Ahmed explicitly listed it (accountant + manager).
   const defaultSidebarResourcesByRole: Record<string, string[]> = {
     owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
     admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
-    // 1. الموظف (sales rep) — 5 pages
-    staff: ['dashboard', 'customers', 'estimates', 'sales_orders', 'inventory'],
-    // 2. المحاسب — 17 pages branch-scoped
+    // 1. الموظف (sales rep) — 4 pages verbatim
+    staff: ['customers', 'estimates', 'sales_orders', 'inventory'],
+    // 2. المحاسب — 17 pages (dashboard explicit in spec)
     accountant: [
       'dashboard',
       'invoices', 'sales_returns', 'customer_credits',
@@ -1295,24 +1295,21 @@ export default function UsersSettingsPage() {
       'dispatch_approvals', 'inventory_goods_receipt',
       'payments', 'expenses', 'banking',
     ],
-    // 3. مسؤول المشتريات — 6 pages
+    // 3. مسؤول المشتريات — 5 pages verbatim
     purchasing_officer: [
-      'dashboard',
-      'suppliers', 'purchase_orders',
-      'inventory',
+      'suppliers', 'purchase_orders', 'inventory',
       'dispatch_approvals', 'inventory_goods_receipt',
     ],
-    // 4. مسؤول الحجوزات — 3 pages
-    booking_officer: ['dashboard', 'bookings', 'customers'],
-    // 5. مسؤول التصنيع — 3 entries (umbrella covers 7 sub-pages)
-    manufacturing_officer: ['dashboard', 'manufacturing_boms', 'approvals'],
-    // 6. مسؤول المخزن — 7 pages
+    // 4. مسؤول الحجوزات — 2 pages verbatim
+    booking_officer: ['bookings', 'customers'],
+    // 5. مسؤول التصنيع — 2 entries verbatim (umbrella covers 7 sub-pages)
+    manufacturing_officer: ['manufacturing_boms', 'approvals'],
+    // 6. مسؤول المخزن — 6 pages verbatim
     store_manager: [
-      'dashboard',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
       'dispatch_approvals', 'inventory_goods_receipt',
     ],
-    // 7. المدير (branch manager) — 25 pages, all READ-ONLY
+    // 7. المدير (branch manager) — 25 pages, union, ALL READ-ONLY
     manager: [
       'dashboard',
       'customers', 'estimates', 'sales_orders',
@@ -1326,7 +1323,7 @@ export default function UsersSettingsPage() {
       'bookings',
       'manufacturing_boms', 'approvals',
     ],
-    // HR officer (kept from v3.65.4 — not redefined in this spec)
+    // HR officer (kept from v3.65.4 — not redefined in Ahmed's spec)
     hr_officer: [
       'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
       'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
