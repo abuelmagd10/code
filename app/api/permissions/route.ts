@@ -56,19 +56,27 @@ export async function GET(request: Request) {
     let data: any = null
 
     if (type === "sharing") {
-      // جلب الصلاحيات المشتركة (النشطة فقط)
-      const { data: sharing, error } = await supabase
+      // v3.74.1 — optional ?include_inactive=true returns the archive too
+      // (deactivated / expired). Default: active only.
+      const includeInactive = searchParams.get("include_inactive") === "true"
+
+      let query = supabase
         .from("permission_sharing")
         .select("*")
         .eq("company_id", companyId)
-        .eq("is_active", true)
         .order("created_at", { ascending: false })
+
+      if (!includeInactive) {
+        query = query.eq("is_active", true)
+      }
+
+      const { data: sharing, error } = await query
 
       if (error) {
         console.error("Error fetching permission_sharing:", error)
         throw error
       }
-      console.log("Permission sharing data:", sharing?.length || 0, "records")
+      console.log("Permission sharing data:", sharing?.length || 0, "records (include_inactive=" + includeInactive + ")")
       data = sharing
     } else if (type === "transfers") {
       // جلب سجل النقل

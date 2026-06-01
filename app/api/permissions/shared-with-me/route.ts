@@ -40,12 +40,31 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "company_id مطلوب" }, { status: 400 })
     }
 
-    // The view filters to auth.uid() automatically.
-    const { data: shares, error } = await supabase
-      .from("v_shared_with_me")
-      .select("*")
-      .eq("company_id", companyId)
-      .order("created_at", { ascending: false })
+    // v3.74.1 — when include_inactive=true, also return deactivated/expired
+    // shares from permission_sharing directly (the view filters to active+
+    // non-expired only). Default keeps the view (active history).
+    const includeInactive = searchParams.get("include_inactive") === "true"
+
+    let shares: any[] | null = null
+    let error: any = null
+    if (includeInactive) {
+      const result = await supabase
+        .from("permission_sharing")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("grantee_user_id", user.id)
+        .order("created_at", { ascending: false })
+      shares = result.data as any[] | null
+      error = result.error
+    } else {
+      const result = await supabase
+        .from("v_shared_with_me")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false })
+      shares = result.data as any[] | null
+      error = result.error
+    }
 
     if (error) {
       console.error("[shared-with-me] view query failed:", error)

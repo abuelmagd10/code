@@ -4,6 +4,70 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.1] - 2026-06-01 — Hotfix: role labels + expiry + archive history on share rows
+
+Ahmed reviewed the share row "خالد عجلان ← خالد زيتون | الكل | تعديل | نشط" and pointed out two gaps:
+
+1. The row doesn't show **how long** the share lasts (no expiry visible)
+2. The row doesn't show **the role** of either party (you have to remember who's a staff vs an accountant)
+3. After admin clicks ❌ to remove a share, **the row vanishes** — no audit history, no way for the user to refer back to it
+
+This release fixes all three.
+
+### Done — UI (share row enrichment)
+
+Each row in both the "المشاركات" tab (admin view) and the "مُشارَك مَعى" tab (grantee view) now shows:
+
+- **Role badge after each name** in light gray (e.g., "خالد عجلان (موظف) ← خالد زيتون (محاسب)") so anyone glancing knows the org context.
+- **Expiry chip** with a 🗓 calendar icon — either "🗓 ينتهى DD/MM/YYYY" or "🗓 دائم" — visible at a glance.
+- **Status chip** that switches color based on state:
+  - `نَشِط` (green) — active and not expired
+  - `انتَهى` (orange) — expires_at is in the past but row is still active (cron hasn't deactivated it yet)
+  - `مُؤرشَف` (gray) — `is_active = false`
+- **Vacation chip** "🌴 تَفويض إجازة" appears automatically when the notes contain the structured "[تَفويض إجازة]" tag that v3.72.0 adds.
+- **Created date** at the bottom of each row.
+- **Notes preview** (line-clamped to 2 lines) — visible even on archived rows so you can see the deactivation reason.
+
+### Done — Archive history
+
+New "إظهار المُؤرشَفة (N)" toggle button at the top of both tabs, showing the count of deactivated/expired shares. Click to expand:
+- Archived rows render with reduced opacity + gray "مُؤرشَف" or "انتَهى" badge so they don't visually compete with active ones
+- They keep all their context: who shared with whom, what, why (notes), when expiry was set
+- Toggle is per-tab — the admin tab archive is independent of the grantee tab archive
+- Once expanded, you see WHY a share ended:
+  - Cron auto-expiry leaves `[auto-expired v3.70.0 on ...]` in notes
+  - Member-leave cleanup leaves `[auto-deactivated v3.70.0: member left company on ...]`
+  - Manual delete just sets `is_active = false`; we now confirm-prompt the admin first to set expectations: "سَيتم أرشَفة هذه المُشاركة. يُمكن مُراجعتها لاحقاً..."
+
+### Done — API
+
+- `GET /api/permissions?type=sharing&include_inactive=true` — returns active + archived (default still returns active only).
+- `GET /api/permissions/shared-with-me?include_inactive=true` — bypasses the `v_shared_with_me` view (which only returns active+non-expired) and queries `permission_sharing` directly, scoped to `grantee_user_id = auth.uid()`.
+
+### Done — UI state
+
+Two new pieces of state in `/settings/users`:
+- `archivedSharing` + `showSharingArchive` — for the admin tab.
+- `archivedSharedWithMe` + `showSharedWithMeArchive` — for the grantee tab.
+
+`loadPermissionData` now fetches active + archive sets in parallel.
+
+### Files
+- Modified: `app/api/permissions/route.ts` — `include_inactive` query param on sharing
+- Modified: `app/api/permissions/shared-with-me/route.ts` — `include_inactive` query param
+- Modified: `app/settings/users/page.tsx` — both tabs reworked with new row layout + archive toggle
+- Modified: `lib/version.ts` → 3.74.1
+
+### Verify after deploy
+1. Open المشاركات tab. The existing row now shows روله (e.g., "موظف"), the expiry chip "🗓 ينتهى DD/MM/YYYY", and the vacation chip if applicable.
+2. Click ❌ on an active share → confirm dialog appears explaining it will be archived → row moves to the archive (count badge increments on the toggle button).
+3. Click "إظهار المُؤرشَفة (1)" → archived row appears below the active ones, opacity reduced, gray "مُؤرشَف" badge.
+4. Same flow on مُشارَك مَعى tab — works for grantee.
+5. After `expires_at` passes (or cron run at 04:00 UTC v3.70.0), the share auto-flips to archive — visible only when toggle is on.
+
+---
+
+
 ## [3.74.0] - 2026-06-01 — CRITICAL security fix + Realtime push for shares
 
 Two big items in one release. Ahmed tested in تست and reported:

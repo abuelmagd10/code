@@ -135,6 +135,11 @@ export default function UsersSettingsPage() {
   const [permissionSharing, setPermissionSharing] = useState<PermissionSharing[]>([])
   // v3.71.0 — inbound shares (what was shared WITH the current user)
   const [sharedWithMe, setSharedWithMe] = useState<any[]>([])
+  // v3.74.1 — archived (deactivated / expired) shares for audit history
+  const [archivedSharing, setArchivedSharing] = useState<any[]>([])
+  const [archivedSharedWithMe, setArchivedSharedWithMe] = useState<any[]>([])
+  const [showSharingArchive, setShowSharingArchive] = useState(false)
+  const [showSharedWithMeArchive, setShowSharedWithMeArchive] = useState(false)
   const [permissionTransfers, setPermissionTransfers] = useState<PermissionTransfer[]>([])
   const [userBranchAccess, setUserBranchAccess] = useState<UserBranchAccess[]>([])
   const [showPermissionDialog, setShowPermissionDialog] = useState(false)
@@ -685,6 +690,29 @@ export default function UsersSettingsPage() {
       if (swmRes.ok) {
         const swmData = await swmRes.json()
         setSharedWithMe(swmData.data || [])
+      }
+
+      // v3.74.1 — جلب الأرشيف (مَحذوف / مُنتَهى) لتَدقيق وحفظ السِّجل
+      const archSharingRes = await fetch(`/api/permissions?company_id=${companyId}&type=sharing&include_inactive=true`)
+      if (archSharingRes.ok) {
+        const archData = await archSharingRes.json()
+        const all = (archData.data || []) as any[]
+        // Show only the inactive ones in the archive view (active ones already in main tab)
+        setArchivedSharing(all.filter((p: any) => p.is_active === false))
+      }
+
+      const archSwmRes = await fetch(`/api/permissions/shared-with-me?company_id=${companyId}&include_inactive=true`)
+      if (archSwmRes.ok) {
+        const archSwmData = await archSwmRes.json()
+        const allSwm = (archSwmData.data || []) as any[]
+        setArchivedSharedWithMe(
+          allSwm.filter((p: any) => {
+            // Inactive OR expired
+            const isInactive = p.is_active === false
+            const isExpired = p.expires_at && new Date(p.expires_at) < new Date()
+            return isInactive || isExpired
+          })
+        )
       }
     } catch (err) {
       console.error("Error loading permission data:", err)
@@ -2968,102 +2996,226 @@ export default function UsersSettingsPage() {
                   </TabsTrigger>
                 </TabsList>
 
-                {/* الصلاحيات المشتركة */}
+                {/* الصلاحيات المشتركة — v3.74.1 with role labels, expiry, archive */}
                 <TabsContent value="sharing">
-                  {permissionSharing.length > 0 ? (
-                    <div className="space-y-2">
-                      {permissionSharing.map((ps) => {
-                        const grantor = members.find(m => m.user_id === ps.grantor_user_id)
-                        const grantee = members.find(m => m.user_id === ps.grantee_user_id)
-                        return (
-                          <div key={ps.id} className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                            <div className="flex items-center gap-3">
-                              <Share2 className="w-4 h-4 text-green-600" />
-                              <div>
-                                <p className="text-sm font-medium">
-                                  <span className="text-gray-700 dark:text-gray-300">{grantor?.display_name || grantor?.email || 'موظف'}</span>
-                                  <span className="mx-2 text-gray-400">←</span>
-                                  <span className="text-green-700 dark:text-green-400">{grantee?.display_name || grantee?.email || 'موظف'}</span>
-                                </p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="outline" className="text-[10px]">
-                                    {ps.resource_type === 'all' ? 'الكل' :
-                                      ps.resource_type === 'customers' ? 'العملاء' :
-                                      ps.resource_type === 'estimates' ? 'عروض الأسعار' :
-                                      ps.resource_type === 'sales_orders' ? 'أوامر البيع' :
-                                      ps.resource_type === 'bookings' ? 'الحجوزات' :
-                                      ps.resource_type}
-                                  </Badge>
-                                  {ps.can_edit && <Badge className="text-[10px] bg-amber-100 text-amber-700">تعديل</Badge>}
-                                  {ps.is_active && <Badge className="text-[10px] bg-green-100 text-green-700">نشط</Badge>}
-                                </div>
-                              </div>
-                            </div>
-                            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
-                              await supabase.from("permission_sharing").update({ is_active: false }).eq("id", ps.id)
-                              loadPermissionData()
-                            }}>
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-400">
-                      <Share2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">لا توجد صلاحيات مشتركة حالياً</p>
+                  {/* Archive toggle */}
+                  {archivedSharing.length > 0 && (
+                    <div className="flex items-center justify-end mb-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowSharingArchive(!showSharingArchive)}
+                        className="text-xs gap-1.5"
+                      >
+                        {showSharingArchive ? <Eye className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                        {showSharingArchive
+                          ? `إخفاء المُؤرشَفة`
+                          : `إظهار المُؤرشَفة (${archivedSharing.length})`}
+                      </Button>
                     </div>
                   )}
-                </TabsContent>
 
-                {/* v3.71.0 — مُشارَك مَعى (inbound shares to current user) */}
-                <TabsContent value="shared_with_me">
-                  {sharedWithMe.length > 0 ? (
-                    <div className="space-y-2">
-                      {sharedWithMe.map((sw: any) => {
-                        const resourceLabel =
-                          sw.resource_type === 'all' ? 'الكل (عملاء + عروض + أوامر + حجوزات)' :
-                          sw.resource_type === 'customers' ? 'العملاء' :
-                          sw.resource_type === 'estimates' ? 'عروض الأسعار' :
-                          sw.resource_type === 'sales_orders' ? 'أوامر البيع' :
-                          sw.resource_type === 'bookings' ? 'الحجوزات' :
-                          sw.resource_type
-                        const grantorDisplay = sw.grantor_name || sw.grantor_email || 'موظف (غير معروف)'
-                        const expiresLabel = sw.expires_at
-                          ? `ينتهى ${new Date(sw.expires_at).toLocaleDateString('ar-EG')}`
-                          : 'دائم'
-                        return (
-                          <div key={sw.id} className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <div className="flex items-center gap-3">
-                              <Eye className="w-4 h-4 text-blue-600" />
-                              <div>
-                                <p className="text-sm font-medium">
-                                  <span className="text-gray-600 dark:text-gray-400">من:</span>{' '}
-                                  <span className="text-blue-700 dark:text-blue-400 font-semibold">{grantorDisplay}</span>
-                                </p>
-                                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  <Badge variant="outline" className="text-[10px]">{resourceLabel}</Badge>
-                                  {sw.can_edit && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">تعديل</Badge>}
-                                  {sw.can_delete && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">حذف</Badge>}
-                                  <Badge className="text-[10px] bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{expiresLabel}</Badge>
+                  {(() => {
+                    const rows: any[] = [
+                      ...permissionSharing,
+                      ...(showSharingArchive ? archivedSharing : []),
+                    ]
+                    if (rows.length === 0) {
+                      return (
+                        <div className="text-center py-8 text-gray-400">
+                          <Share2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                          <p className="text-sm">لا توجد صلاحيات مشتركة حالياً</p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {rows.map((ps: any) => {
+                          const grantor = members.find(m => m.user_id === ps.grantor_user_id)
+                          const grantee = members.find(m => m.user_id === ps.grantee_user_id)
+                          const grantorRoleAr = grantor?.role ? (roleLabels[grantor.role]?.ar || grantor.role) : ''
+                          const granteeRoleAr = grantee?.role ? (roleLabels[grantee.role]?.ar || grantee.role) : ''
+                          const isInactive = ps.is_active === false
+                          const isExpired = ps.expires_at && new Date(ps.expires_at) < new Date()
+                          const expiryLabel = ps.expires_at
+                            ? `ينتهى ${new Date(ps.expires_at).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                            : 'دائم'
+                          const cardCls = isInactive
+                            ? 'bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 opacity-70'
+                            : isExpired
+                              ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'
+                              : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          const isVacation = (ps.notes || '').includes('[تَفويض إجازة]')
+                          return (
+                            <div key={ps.id} className={`p-3 rounded-lg border ${cardCls}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3 min-w-0 flex-1">
+                                  {isVacation ? <Calendar className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" /> : <Share2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />}
+                                  <div className="min-w-0 flex-1">
+                                    {/* Names + roles */}
+                                    <p className="text-sm font-medium">
+                                      <span className="text-gray-700 dark:text-gray-300">{grantor?.display_name || grantor?.email || 'موظف'}</span>
+                                      {grantorRoleAr && <span className="text-[10px] text-gray-500 mx-1">({grantorRoleAr})</span>}
+                                      <span className="mx-2 text-gray-400">←</span>
+                                      <span className={isInactive ? 'text-gray-600' : 'text-green-700 dark:text-green-400'}>{grantee?.display_name || grantee?.email || 'موظف'}</span>
+                                      {granteeRoleAr && <span className="text-[10px] text-gray-500 mx-1">({granteeRoleAr})</span>}
+                                    </p>
+                                    {/* Badges */}
+                                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                      <Badge variant="outline" className="text-[10px]">
+                                        {ps.resource_type === 'all' ? 'الكل' :
+                                          ps.resource_type === 'customers' ? 'العملاء' :
+                                          ps.resource_type === 'estimates' ? 'عروض الأسعار' :
+                                          ps.resource_type === 'sales_orders' ? 'أوامر البيع' :
+                                          ps.resource_type === 'bookings' ? 'الحجوزات' :
+                                          ps.resource_type}
+                                      </Badge>
+                                      {ps.can_edit && !isInactive && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">تعديل</Badge>}
+                                      {ps.can_delete && !isInactive && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">حذف</Badge>}
+                                      {isInactive ? (
+                                        <Badge className="text-[10px] bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">مُؤرشَف</Badge>
+                                      ) : isExpired ? (
+                                        <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">انتَهى</Badge>
+                                      ) : (
+                                        <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">نَشِط</Badge>
+                                      )}
+                                      <Badge className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400">
+                                        🗓 {expiryLabel}
+                                      </Badge>
+                                      {isVacation && (
+                                        <Badge className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-400">
+                                          🌴 تَفويض إجازة
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {/* Notes — esp. useful in archive to see why it was deactivated */}
+                                    {ps.notes && (
+                                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 italic line-clamp-2">{ps.notes}</p>
+                                    )}
+                                    {/* Dates */}
+                                    <p className="text-[10px] text-gray-400 mt-1">
+                                      أُنشئت {new Date(ps.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
+                                    </p>
+                                  </div>
                                 </div>
-                                {sw.notes && (
-                                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 italic">{sw.notes}</p>
+                                {!isInactive && (
+                                  <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50 flex-shrink-0" onClick={async () => {
+                                    if (!window.confirm('سَيتم أرشَفة هذه المُشاركة. يُمكن مُراجعتها لاحقاً من زر "إظهار المُؤرشَفة". تَأكيد؟')) return
+                                    await supabase.from("permission_sharing").update({ is_active: false }).eq("id", ps.id)
+                                    loadPermissionData()
+                                  }}>
+                                    <X className="w-4 h-4" />
+                                  </Button>
                                 )}
                               </div>
                             </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-400">
-                      <Eye className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">لا يوجد بَيانات مُشارَكة مَعى حالياً</p>
-                      <p className="text-xs mt-2 text-gray-500">عند مُشاركة موظف آخر بَياناته معك، سيظهر هنا.</p>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+                </TabsContent>
+
+                {/* v3.71.0 — مُشارَك مَعى — v3.74.1 with roles + expiry + archive */}
+                <TabsContent value="shared_with_me">
+                  {archivedSharedWithMe.length > 0 && (
+                    <div className="flex items-center justify-end mb-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowSharedWithMeArchive(!showSharedWithMeArchive)}
+                        className="text-xs gap-1.5"
+                      >
+                        {showSharedWithMeArchive ? <Eye className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                        {showSharedWithMeArchive
+                          ? `إخفاء المُؤرشَفة`
+                          : `إظهار المُؤرشَفة (${archivedSharedWithMe.length})`}
+                      </Button>
                     </div>
                   )}
+
+                  {(() => {
+                    const rows: any[] = [
+                      ...sharedWithMe,
+                      ...(showSharedWithMeArchive ? archivedSharedWithMe : []),
+                    ]
+                    if (rows.length === 0) {
+                      return (
+                        <div className="text-center py-8 text-gray-400">
+                          <Eye className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                          <p className="text-sm">لا يوجد بَيانات مُشارَكة مَعى حالياً</p>
+                          <p className="text-xs mt-2 text-gray-500">عند مُشاركة موظف آخر بَياناته معك، سيظهر هنا.</p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {rows.map((sw: any) => {
+                          const resourceLabel =
+                            sw.resource_type === 'all' ? 'الكل (عملاء + عروض + أوامر + حجوزات)' :
+                            sw.resource_type === 'customers' ? 'العملاء' :
+                            sw.resource_type === 'estimates' ? 'عروض الأسعار' :
+                            sw.resource_type === 'sales_orders' ? 'أوامر البيع' :
+                            sw.resource_type === 'bookings' ? 'الحجوزات' :
+                            sw.resource_type
+                          const grantor = members.find(m => m.user_id === sw.grantor_user_id)
+                          const grantorDisplay = grantor?.display_name || grantor?.email || sw.grantor_name || sw.grantor_email || 'موظف (غير معروف)'
+                          const grantorRoleAr = grantor?.role ? (roleLabels[grantor.role]?.ar || grantor.role) : ''
+                          const isInactive = sw.is_active === false
+                          const isExpired = sw.expires_at && new Date(sw.expires_at) < new Date()
+                          const expiresLabel = sw.expires_at
+                            ? `ينتهى ${new Date(sw.expires_at).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                            : 'دائم'
+                          const isVacation = (sw.notes || '').includes('[تَفويض إجازة]')
+                          const cardCls = isInactive
+                            ? 'bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 opacity-70'
+                            : isExpired
+                              ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'
+                              : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                          return (
+                            <div key={sw.id} className={`p-3 rounded-lg border ${cardCls}`}>
+                              <div className="flex items-start gap-3">
+                                {isVacation ? <Calendar className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" /> : <Eye className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium">
+                                    <span className="text-gray-600 dark:text-gray-400">من:</span>{' '}
+                                    <span className={isInactive ? 'text-gray-600' : 'text-blue-700 dark:text-blue-400 font-semibold'}>{grantorDisplay}</span>
+                                    {grantorRoleAr && <span className="text-[10px] text-gray-500 mx-1">({grantorRoleAr})</span>}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                    <Badge variant="outline" className="text-[10px]">{resourceLabel}</Badge>
+                                    {sw.can_edit && !isInactive && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">تعديل</Badge>}
+                                    {sw.can_delete && !isInactive && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">حذف</Badge>}
+                                    {isInactive ? (
+                                      <Badge className="text-[10px] bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">مُؤرشَف</Badge>
+                                    ) : isExpired ? (
+                                      <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">انتَهى</Badge>
+                                    ) : (
+                                      <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">نَشِط</Badge>
+                                    )}
+                                    <Badge className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400">
+                                      🗓 {expiresLabel}
+                                    </Badge>
+                                    {isVacation && (
+                                      <Badge className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-400">
+                                        🌴 تَفويض إجازة
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {sw.notes && (
+                                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 italic line-clamp-2">{sw.notes}</p>
+                                  )}
+                                  <p className="text-[10px] text-gray-400 mt-1">
+                                    أُنشئت {new Date(sw.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </TabsContent>
 
                 {/* سجل النقل — v3.73.0 with two-eye approval workflow */}
