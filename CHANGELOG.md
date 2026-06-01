@@ -4,6 +4,67 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.66.0] - 2026-06-01 — DB-level Creator-filter governance (security hardening)
+
+### Why
+The branch-scoped governance spec requires that each role sees only the records appropriate to its scope:
+- `owner` / `admin` / `viewer` → see all company records.
+- `manager` / `accountant` / `store_manager` / `purchasing_officer` / `manufacturing_officer` / `hr_officer` / `supervisor` → see records in their own branch only.
+- `staff` / `employee` / `sales` / `booking_officer` → see only the records they personally created.
+
+Before this release, this filtering was enforced **only in application code** (`buildDataVisibilityFilter` + `applyDataVisibilityFilter` in `lib/data-visibility-control.ts`). The SELECT RLS policies on `customers`, `estimates`, `sales_orders`, `bookings` only checked company membership. A malicious or curious authenticated user calling the Supabase API directly with their JWT could read every customer, estimate, sales order, and booking in the company regardless of role. That's a real data-isolation gap.
+
+### Data integrity audit (before fix)
+Found `created_by_user_id` was NULL on a large share of records — making per-creator RLS impossible without breaking app:
+- customers: 36/79 NULL (46%)
+- invoices: 60/64 NULL (94%)
+- sales_orders: 16/80 NULL (20%)
+- purchase_orders: 10/11 NULL (91%)
+- bills: 10/11 NULL (91%)
+
+Root cause: the previous test-company cleanup (deleting 46 zombie companies) didn't cascade to child records. **Of these, 95% turned out to be orphans referencing companies that no longer exist** — relics from the deleted test data, not real records.
+
+### Done — DB (applied via migration)
+1. **Orphan cleanup**: deleted records across 130+ tables WHERE `company_id NOT IN (SELECT id FROM companies)`. Bypassed user-defined triggers via `session_replication_role='replica'`. Final counts on the 2 living companies: customers 3, sales_orders 4, invoices 4, bookings 2, estimates 2, bills 1, purchase_orders 1, suppliers 2. **All remaining rows now have a non-NULL `created_by_user_id`.**
+2. **Added `created_by_user_id` to `bookings`** (the only governance table that was missing it) + index + FK to `auth.users(id) ON DELETE SET NULL`.
+3. **Auto-set trigger function `auto_set_created_by_user_id()`** + BEFORE INSERT triggers on `customers`, `estimates`, `sales_orders`, `invoices`, `bookings`, `purchase_orders`, `bills`, `suppliers`, `payments`. From now on, every new record auto-stamps the creator's `auth.uid()` if not explicitly provided. This closes the NULL-creator hole at the source.
+4. **Backfill** for any remaining NULL creator records → set to `companies.user_id` (owner) so all rows are attributable.
+5. **`current_user_record_visibility(p_company_id uuid)`** — STABLE SECURITY DEFINER function returning `'company' | 'branch' | 'own' | 'none'` based on the caller's role. Company owner via `companies.user_id` short-circuits to `'company'`. `viewer` mapped to `'company'` (read-only org-wide), all enterprise scope roles mapped to `'branch'`, all sales-rep-class roles default to `'own'`.
+6. **`current_user_branch_id(p_company_id uuid)`** — helper returning the caller's branch_id in a company (NULL if not set).
+7. **Replaced SELECT RLS** on `customers`, `estimates`, `sales_orders`, `bookings`:
+   ```sql
+   USING (
+     is_company_member(company_id) AND (
+       visibility = 'company'
+       OR (visibility = 'branch' AND (branch_id IS NULL OR branch_id = my_branch))
+       OR (visibility = 'own' AND created_by_user_id = auth.uid())
+     )
+   )
+   ```
+   Old policies (`customers_select`, `customers_owner_select`, `estimates_select`, `estimates_owner_select`, `sales_orders_select_policy`, `bookings_select`) dropped. New ones suffixed `_v2`. NULL `branch_id` is a lenient fallback so pre-branch-era records remain visible to branch-scoped users (no breakage).
+
+### Code (this commit)
+- Bumped `lib/version.ts` to 3.66.0.
+- No application-code changes needed — DB now enforces the same rule that `applyDataVisibilityFilter` was applying client-side. Both layers continue to work (defense in depth).
+
+### What this fixes vs. doesn't fix
+**Fixed:** A staff/employee/sales/booking_officer hitting the Supabase API directly with their JWT can no longer enumerate every customer, sales order, estimate, or booking in the company. They see only their own records. Manager/accountant see only their branch's records. Owner/admin still see everything.
+
+**NOT fixed yet (next versions):**
+- v3.67.0 — `can_write` flag on `company_role_permissions` so `manager` becomes read-only on sub-role pages per spec.
+- v3.68.0 — Branch-scoped RLS on the remaining 15+ financial tables (payments, expenses, invoices, bills, journal_entries, etc.).
+- v3.69.0 — Auto-create invoice on `sales_orders` approval + block accountant from creating sales invoices manually.
+
+### Verify after deploy
+1. Login as `owner` → /customers shows all 3 customers. /sales-orders shows all 4.
+2. Login as a `staff` user → /customers shows ONLY customers they personally created. /sales-orders shows ONLY their orders. /estimates and /bookings same.
+3. Open browser DevTools → Network tab. Execute a direct Supabase REST call to `/rest/v1/customers?select=*` as a `staff` user. The response now contains only their own customer rows (was: all rows).
+4. Login as `accountant` → /customers shows customers in their branch only (or all if branch_id NULL on those records).
+5. No infinite loops on dashboard for any role.
+
+---
+
+
 ## [3.65.4] - 2026-06-01 — Role permissions cleanup + `hr_officer` role end-to-end
 
 ### Why
