@@ -301,70 +301,78 @@ async function fetchAccessProfile(
         .eq("company_id", companyId)
         .eq("role", role)
 
-      // Default pages per role, matching the UI
+      // 🔐 v3.69.1 — VERBATIM Ahmed spec, mirror of DB seed_default_role_permissions().
+      // Used only as last-resort fallback when DB has zero rows for a role.
+      // For 99% of cases the DB-authoritative branch above is what runs.
       const defaultRolePages: Record<string, string[]> = {
-        manager: [
-          'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'manufacturing_boms', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses'
-        ],
+        // 1. الموظف — 4 pages verbatim
+        staff: ['customers', 'estimates', 'sales_orders', 'inventory'],
+        // 2. المحاسب — 17 pages (dashboard explicit)
         accountant: [
-          'dashboard', 'reports', 'invoices', 'customers', 'sales_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_returns', 'vendor_credits', 'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts', 'banking', 'annual_closing', 'accounting_periods', 'shareholders', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'taxes', 'exchange_rates', 'accounting_maintenance', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt'
+          'dashboard',
+          'invoices', 'sales_returns', 'customer_credits',
+          'bills', 'purchase_returns',
+          'products', 'services',
+          'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+          'dispatch_approvals', 'inventory_goods_receipt',
+          'payments', 'expenses', 'banking',
         ],
-        store_manager: [
-          'dashboard', 'manufacturing_boms', 'products', 'inventory', 'product_availability', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'inventory_goods_receipt', 'purchase_orders', 'sales_orders', 'shipping'
-        ],
-        // ── الأدوار الجديدة (Phase R1) ────────────────────────────
-        manufacturing_officer: [
-          'dashboard', 'manufacturing_boms', 'products', 'inventory', 'product_availability', 'reports'
-        ],
-        booking_officer: [
-          'dashboard', 'bookings', 'services', 'customers', 'payments', 'reports'
-        ],
+        // 3. مسؤول المشتريات — 5 pages verbatim
         purchasing_officer: [
-          'dashboard', 'reports',
-          // المشتريات
-          'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits',
-          // المحاسبة (موروثة من المحاسب)
-          'payments', 'expenses', 'drawings', 'journal_entries', 'chart_of_accounts',
-          'banking', 'annual_closing', 'accounting_periods', 'shareholders',
-          'fixed_assets', 'asset_categories', 'fixed_assets_reports',
-          'taxes', 'exchange_rates', 'accounting_maintenance',
-          // المخزون (مرتبط بالمشتريات)
-          'products', 'inventory', 'inventory_transfers', 'inventory_goods_receipt',
-          'product_availability', 'write_offs', 'third_party_inventory',
+          'suppliers', 'purchase_orders', 'inventory',
+          'dispatch_approvals', 'inventory_goods_receipt',
         ],
-        staff: [
-          'dashboard', 'customers', 'estimates', 'sales_orders', 'invoices', 'inventory', 'product_availability', 'attendance'
+        // 4. مسؤول الحجوزات — 2 pages verbatim
+        booking_officer: ['bookings', 'customers'],
+        // 5. مسؤول التصنيع — 2 entries verbatim (umbrella + approvals)
+        manufacturing_officer: ['manufacturing_boms', 'approvals'],
+        // 6. مسؤول المخزن — 6 pages verbatim
+        store_manager: [
+          'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+          'dispatch_approvals', 'inventory_goods_receipt',
         ],
-        viewer: [
-          'dashboard', 'reports'
+        // 7. المدير (branch manager) — union, READ-ONLY at can_write level
+        manager: [
+          'dashboard',
+          'customers', 'estimates', 'sales_orders',
+          'invoices', 'sales_returns', 'customer_credits',
+          'bills', 'purchase_returns',
+          'products', 'services',
+          'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
+          'dispatch_approvals', 'inventory_goods_receipt',
+          'payments', 'expenses', 'banking',
+          'suppliers', 'purchase_orders',
+          'bookings',
+          'manufacturing_boms', 'approvals',
         ],
+        // HR officer (not redefined in Ahmed spec — kept from v3.65.4)
+        hr_officer: [
+          'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
+          'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
+        ],
+        viewer: ['dashboard', 'reports'],
       }
 
-      // Initialize with default pages for the role
-      allowed_pages = defaultRolePages[role] ? [...defaultRolePages[role]] : []
+      // 🔐 v3.69.1 — DB is authoritative when the role has ANY permission row.
+      // The hardcoded `defaultRolePages` is only a last-resort fallback for
+      // companies whose role has zero rows in `company_role_permissions`
+      // (legacy companies created before v3.68.0 trigger). For every other
+      // case, `allowed_pages` = exactly the resources with can_access=true.
+      const hasDbPermissions = Array.isArray(permissions) && permissions.length > 0
 
-      // بناء allowed_pages من الصلاحيات (الاعتراضات تتخطى الافتراضيات)
-      permissions?.forEach((perm: any) => {
-        // إذا كان can_access = false، نحذف الصفحة من الافتراضيات ولا نضيفها
-        if (perm.can_access === false) {
-          allowed_pages = allowed_pages.filter(p => p !== perm.resource)
-          return
-        }
-        if (perm.can_access === false) {
-          return
-        }
-
-        // إذا كان all_access = true، نضيف الصفحة
-        if (perm.all_access === true) {
-          allowed_pages.push(perm.resource)
-          return
-        }
-
-        // إذا كان لديه أي صلاحية (read, write, update, delete)، نضيف الصفحة
-        if (perm.can_read || perm.can_write || perm.can_update || perm.can_delete || perm.can_access === true) {
-          allowed_pages.push(perm.resource)
-        }
-      })
+      if (hasDbPermissions) {
+        // DB authoritative: only include resources where access is granted
+        allowed_pages = permissions!
+          .filter((perm: any) => {
+            if (perm.can_access === false) return false
+            if (perm.all_access === true) return true
+            return Boolean(perm.can_read || perm.can_write || perm.can_update || perm.can_delete || perm.can_access === true)
+          })
+          .map((perm: any) => perm.resource)
+      } else {
+        // Legacy fallback: no DB rows for this role → use hardcoded defaults
+        allowed_pages = defaultRolePages[role] ? [...defaultRolePages[role]] : []
+      }
 
       // بناء allowed_actions
       permissions?.forEach((perm: any) => {

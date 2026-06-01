@@ -4,6 +4,56 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.69.1] - 2026-06-01 — Hotfix: AccessContext was OR-merging hardcoded defaults with DB
+
+### Why
+After v3.69.0 the DB had the spec exactly (staff = 4 pages, etc.), but a `staff` user still saw 7 sidebar entries on the live site: dashboard, invoices, product_availability extras showing up. The user could enter the sidebar header showing "لوحة التحكم" duplicated.
+
+### Root cause
+`lib/access-context.tsx` was building `allowed_pages` by:
+
+1. Initializing it to `defaultRolePages[role]` (a hardcoded list from v3.55 era with 8 pages for staff including dashboard + invoices + product_availability + attendance).
+2. Then merging in DB rows by ADDING to that list whenever any flag was true. The DB never had a way to tell the old hardcoded list to disappear — it could only ADD, never SUBTRACT (except for explicit `can_access=false` rows, which we don't emit).
+
+So even after I seeded the DB with 4 strict rows, the user's `allowed_pages` array was still the 8-item hardcoded union.
+
+### Fixed
+Re-wrote that block so the DB is **authoritative whenever the role has any rows**:
+```ts
+const hasDbPermissions = Array.isArray(permissions) && permissions.length > 0
+if (hasDbPermissions) {
+  allowed_pages = permissions
+    .filter(p => p.can_access === false ? false :
+                 p.all_access === true ? true :
+                 Boolean(p.can_read || p.can_write || p.can_update || p.can_delete || p.can_access === true))
+    .map(p => p.resource)
+} else {
+  // Only fall back to hardcoded defaults if DB has zero rows for this role
+  allowed_pages = defaultRolePages[role] ? [...defaultRolePages[role]] : []
+}
+```
+
+Also rewrote the `defaultRolePages` map itself to verbatim Ahmed spec, so the fallback (rare case: DB has zero rows for a role) still respects the spec.
+
+### Expected after deploy
+Login as a `staff` user → sidebar shows exactly **4 items**: العملاء، عروض الأسعار، أوامر البيع، المخزون (no dashboard, no invoices, no product_availability, no attendance, no reports). The "Sales" group accordion will appear with the 3 sales items; the "Inventory" group with 1 item; that's it. Plus the unconditional "ملفى الشخصى" + system items at the bottom.
+
+Same logic now applies to all 5 roles where dashboard was incorrectly bleeding in (staff, purchasing_officer, booking_officer, manufacturing_officer, store_manager).
+
+### Files
+- Modified: `lib/access-context.tsx` — DB-authoritative merge + verbatim defaults
+- Modified: `lib/version.ts` (3.69.0 → 3.69.1)
+
+### Verify after deploy
+1. Hard-refresh (Ctrl+Shift+R) the sidebar of خالد عجلان (the staff user).
+2. Sidebar should show only: المبيعات (group containing: العملاء، عروض الأسعار، أوامر البيع) + المخزون (group containing: المخزون).
+3. Dashboard group must NOT appear.
+4. Sales group's "فواتير المبيعات" must NOT appear.
+5. Inventory group's "توفر المنتجات في الفروع" must NOT appear.
+
+---
+
+
 ## [3.69.0] - 2026-06-01 — VERBATIM spec: removed `dashboard` from 5 roles
 
 ### Why
