@@ -33,6 +33,12 @@ export async function POST(
       return NextResponse.json({ error: "transfer id مفقود" }, { status: 400 })
     }
 
+    // v3.73.2 — Mode: 'snapshot' (default, transfer the IDs captured at submit
+    // time) or 'dynamic' (transfer everything the source user currently owns).
+    const body = await request.json().catch(() => ({}))
+    const mode: "snapshot" | "dynamic" =
+      body?.mode === "dynamic" ? "dynamic" : "snapshot"
+
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -96,9 +102,12 @@ export async function POST(
       return NextResponse.json({ error: appErr.message }, { status: 500 })
     }
 
-    // Atomic execute
+    // Atomic execute — v3.73.2 passes the chosen mode
     const { data: execResult, error: execErr } = await supabase
-      .rpc("execute_permission_transfer", { p_transfer_id: transferId })
+      .rpc("execute_permission_transfer", {
+        p_transfer_id: transferId,
+        p_mode: mode,
+      })
 
     if (execErr) {
       // Rollback approval flag
@@ -117,7 +126,7 @@ export async function POST(
       action_type: "permission_transfer_approved",
       resource_type: "permissions",
       resource_id: transferId,
-      description: `اعتُمد نَقل ملكية (${transfer.resource_type}) وتُنفّذ ${(execResult as any)?.records_transferred || 0} سجل`,
+      description: `اعتُمد نَقل ملكية (${transfer.resource_type}) بنَطاق "${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'}" — نُفِّذ ${(execResult as any)?.records_transferred || 0} سجل`,
       new_data: execResult,
     })
 

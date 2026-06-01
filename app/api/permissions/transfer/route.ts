@@ -64,6 +64,41 @@ export async function POST(request: Request) {
     // request as status='pending' and waits for a DIFFERENT owner/admin to
     // call /api/permissions/transfer/[id]/approve. That endpoint runs the
     // atomic execute_permission_transfer() DB function.
+    // v3.73.2 — Capture snapshot of current owned IDs so the approver can
+    // later choose between snapshot mode (only these IDs) and dynamic mode
+    // (whatever the source user owns at approve time).
+    let snapCustomerIds: string[] = []
+    let snapSalesOrderIds: string[] = []
+
+    if (resource_type === "customers" || resource_type === "all") {
+      let q = supabase
+        .from("customers")
+        .select("id")
+        .eq("company_id", company_id)
+        .eq("created_by_user_id", from_user_id)
+      if (branch_id) q = q.eq("branch_id", branch_id)
+      const { data } = await q
+      snapCustomerIds = (data || []).map((r: { id: string }) => r.id)
+    }
+
+    if (resource_type === "sales_orders" || resource_type === "all") {
+      let q = supabase
+        .from("sales_orders")
+        .select("id")
+        .eq("company_id", company_id)
+        .eq("created_by_user_id", from_user_id)
+      if (branch_id) q = q.eq("branch_id", branch_id)
+      const { data } = await q
+      snapSalesOrderIds = (data || []).map((r: { id: string }) => r.id)
+    }
+
+    const transferData: Record<string, any> = {
+      snapshot_customer_ids:     snapCustomerIds,
+      snapshot_sales_order_ids:  snapSalesOrderIds,
+      snapshot_taken_at:         new Date().toISOString(),
+    }
+    if (branch_id) transferData.branch_id = branch_id
+
     const results: any[] = []
 
     for (const toUserId of to_user_ids) {
@@ -78,8 +113,7 @@ export async function POST(request: Request) {
           status: "pending",
           reason,
           notes,
-          // Stash the optional branch narrowing here so the executor can read it
-          transfer_data: branch_id ? { branch_id } : null,
+          transfer_data: transferData,
         })
         .select()
         .single()

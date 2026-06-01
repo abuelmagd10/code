@@ -4,6 +4,57 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.73.2] - 2026-06-01 — Hybrid transfer execution (snapshot vs dynamic)
+
+### Why
+Ahmed noticed that v3.73.0's atomic executor operated on whatever the source user owns **at approve time**, not at **submit time**. So if A submits a transfer with 12 customers at 10:00, then creates 5 more by 14:00, the approver clicking Approve at 15:00 would silently transfer all 17 — different from what A originally requested. This silent drift is a real audit concern.
+
+### Fixed
+Transfer execution now supports two modes, and the approver picks which one fits the situation:
+
+- **`snapshot`** — at submit time we capture the exact list of customer/sales_order IDs the source user owns at that instant into `transfer_data.snapshot_customer_ids` and `.snapshot_sales_order_ids`. At approve time, only those exact IDs are re-owned. Any records the source created during the approval window stay with them.
+- **`dynamic`** — at approve time we re-fetch everything the source user currently owns and transfer all of it. Useful when the source is leaving the company and you want them to keep nothing.
+
+### How the approver chooses
+1. When clicking Approve, the UI calls a new `get_transfer_scope_counts(transfer_id)` RPC.
+2. If the snapshot count equals the current count (`has_drift = false`), a single confirmation appears — the mode doesn't matter.
+3. If counts differ (`has_drift = true`), two confirmation prompts appear in sequence:
+   - First: "OK = use snapshot (12 records frozen at submit time), Cancel = ask about dynamic"
+   - Then if Cancel: "use dynamic (17 records right now, including new ones)?"
+4. The chosen mode is sent to `/api/permissions/transfer/[id]/approve` body as `{ mode: 'snapshot' | 'dynamic' }`.
+
+### Done — DB
+- New RPC `get_transfer_scope_counts(transfer_id)` — returns snapshot_total, current_total, has_drift, plus per-resource breakdowns.
+- Rewrote `execute_permission_transfer(transfer_id, p_mode)` to take a `p_mode text DEFAULT 'snapshot'` parameter. Validates mode is `snapshot` or `dynamic`, dispatches to the matching query path, stamps `transfer_data.execution_mode` so the audit log makes it clear which mode was used.
+- Submit-time snapshot is intersected with `from_user_id` on execute, so if A manually moved a snapshot record to someone else between submit and approve, it isn't silently re-moved back.
+
+### Done — API
+- `POST /api/permissions/transfer` captures the snapshot at submit time (queries customers + sales_orders by `created_by_user_id = from_user_id` + optional branch filter) and stores IDs in `transfer_data.snapshot_*_ids` plus `snapshot_taken_at`.
+- `POST /api/permissions/transfer/[id]/approve` now accepts `body.mode` (`'snapshot'` default, `'dynamic'` opt-in). Forwards to the RPC with `p_mode`. Audit log description includes the mode.
+
+### Done — UI
+- The Approve button on a pending transfer now consults `get_transfer_scope_counts` before showing confirmation, so the operator sees real numbers before committing.
+- When there's no drift, behavior is unchanged (single confirm).
+- When there is drift, two confirms appear so the operator can pick snapshot vs dynamic explicitly.
+- Reject button unchanged.
+
+### Files
+- DB migration: `v3_73_2_hybrid_transfer_snapshot_mode`
+- Modified: `app/api/permissions/transfer/route.ts` — submit-time snapshot capture
+- Modified: `app/api/permissions/transfer/[id]/approve/route.ts` — accept `body.mode`
+- Modified: `app/settings/users/page.tsx` — approve button with drift detection + two-step picker
+- Modified: `lib/version.ts` → 3.73.2
+
+### Verify after deploy
+1. Owner A submits a transfer with 12 customers → row has `transfer_data.snapshot_customer_ids` array of length 12.
+2. Approver B opens النَّقل tab → counts are still 12 vs 12 → clicking Approve shows single confirm.
+3. Mid-way scenario: A creates 5 more customers, then approver clicks Approve → first confirm offers snapshot (12), second offers dynamic (17). Picking snapshot transfers exactly 12. Picking dynamic transfers 17.
+4. `transfer_data.execution_mode` after completion reads `"snapshot"` or `"dynamic"` matching the choice.
+5. `audit_logs` entry includes the mode in the Arabic description.
+
+---
+
+
 ## [3.73.1] - 2026-06-01 — Hotfix: smart resource-type dropdown based on source user's records
 
 ### Why

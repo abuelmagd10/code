@@ -3120,18 +3120,50 @@ export default function UsersSettingsPage() {
                                 <Badge className={`text-[10px] ${statusBadge.cls}`}>{statusBadge.label}</Badge>
                                 {canActOnRequest && (
                                   <>
+                                    {/* v3.73.2 — single Approve button opens a small Hybrid dialog */}
                                     <Button
                                       size="sm"
                                       variant="default"
                                       className="h-7 px-2 bg-green-600 hover:bg-green-700 text-white text-[11px] gap-1"
                                       onClick={async () => {
-                                        const ok = window.confirm(`اعتماد نَقل ${resourceLabel} من ${fromUser?.display_name || 'موظف'} إلى ${toUser?.display_name || 'موظف'}؟`)
-                                        if (!ok) return
+                                        // Fetch current scope counts vs snapshot before showing the chooser
+                                        const { data: counts } = await supabase.rpc("get_transfer_scope_counts", { p_transfer_id: pt.id })
+                                        const c = counts as any
+                                        const snapTotal    = c?.snapshot_total    ?? 0
+                                        const currentTotal = c?.current_total     ?? 0
+                                        const hasDrift     = c?.has_drift         ?? false
+                                        const prompt = hasDrift
+                                          ? `اختر النَطاق:\n` +
+                                            `———————————\n` +
+                                            `OK = نَطاق مُسَجَّل وقت الطَلَب (${snapTotal} سَجل)\n` +
+                                            `Cancel = ثم سَنَسألك عن النَطاق الحالى (${currentTotal} سَجل)`
+                                          : `اعتماد نَقل ${resourceLabel} من ${fromUser?.display_name || 'موظف'} إلى ${toUser?.display_name || 'موظف'}؟\n(${snapTotal} سَجل — لا يوجد تَغيير منذ الطَلَب)`
+
+                                        let mode: 'snapshot' | 'dynamic' = 'snapshot'
+                                        if (hasDrift) {
+                                          const useSnapshot = window.confirm(prompt)
+                                          if (!useSnapshot) {
+                                            const useDynamic = window.confirm(
+                                              `اعتماد بالنَطاق الحالى = نَقل كل سَجلات ${fromUser?.display_name || 'الموظف'} الحالية (${currentTotal} سَجل، بما فيها الجَديدة بعد الطَلَب).\n\nتَأكيد؟`
+                                            )
+                                            if (!useDynamic) return
+                                            mode = 'dynamic'
+                                          }
+                                        } else {
+                                          const ok = window.confirm(prompt)
+                                          if (!ok) return
+                                          // No drift: snapshot == dynamic, doesn't matter which
+                                        }
+
                                         try {
-                                          const res = await fetch(`/api/permissions/transfer/${pt.id}/approve`, { method: 'POST' })
+                                          const res = await fetch(`/api/permissions/transfer/${pt.id}/approve`, {
+                                            method: 'POST',
+                                            headers: { 'content-type': 'application/json' },
+                                            body: JSON.stringify({ mode }),
+                                          })
                                           const data = await res.json()
                                           if (res.ok && data.success) {
-                                            toastActionSuccess(toast, 'اعتماد النَّقل', `${data.result?.records_transferred ?? 0} سجل`)
+                                            toastActionSuccess(toast, `اعتماد النَّقل (${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'})`, `${data.result?.records_transferred ?? 0} سجل`)
                                             loadPermissionData()
                                           } else {
                                             toastActionError(toast, 'اعتماد', 'النَّقل', data.error || 'فَشل')
