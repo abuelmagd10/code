@@ -4,6 +4,50 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.10] - 2026-06-02 — Console noise cleanup on the invoice page
+
+### Why
+After v3.74.9 the payment recording worked, but the browser console showed three separate noises that confused things:
+
+1. `GET .../sales_orders?id=eq.<uuid> 406 (Not Acceptable)` — three repeats.
+2. `[AUTHZ] No permission record found for resource: shipments, role: accountant, ...` — verbose `console.warn` for a perfectly normal denial.
+3. `POST /api/bonuses 403 (Forbidden)` — emitted every time the accountant closed an invoice with a payment, then swallowed by a try/catch.
+
+None of these blocked the payment, but they made the console hard to read and the 403 had a small governance bend: the client should not be calling an endpoint it isn't entitled to.
+
+### Three fixes
+
+**(1) `sales_orders` lookup uses `.maybeSingle()` not `.single()`**
+
+`app/invoices/[id]/page.tsx` was using `.single()` to load the linked sales order, which makes PostgREST return 406 whenever the row is 0 (typical when RLS hides the SO from the current viewer — e.g. accountant viewing an invoice whose linked SO is in another branch). Swapped to `.maybeSingle()` and explicitly clear `linkedSalesOrder` when there's no data. Behavior identical, console clean.
+
+**(2) `[AUTHZ] No permission record found ...` demoted to `console.debug`**
+
+`lib/authz.ts` — three call sites that warned when a (role, resource) combo had no row in `company_role_permissions`. Per Ahmed's strict v3.69.0 spec this denial **is the expected outcome** for many role/resource pairs (e.g. accountant has no `shipments` entry by design). It's not a warning, just an information signal. Switched all three to `console.debug` so they don't show in the default console but remain available when devs enable verbose levels.
+
+**(3) `/api/bonuses` 403 — pre-check the permission client-side**
+
+After a payment closes an invoice (`newStatus === "paid"`), the page used to unconditionally `fetch("/api/bonuses", { POST })`. The endpoint requires `bonuses:write`, which the accountant doesn't have. The 403 reached the console before the `try/catch` could swallow it.
+
+Fix: call `canAction(supabase, "bonuses", "write")` first. If false, skip the fetch entirely. Bonus calculation is non-essential — an owner/manager can recalc it later. Also downgraded the catch from `console.warn` to `console.debug`.
+
+### Files
+- Modified: `app/invoices/[id]/page.tsx` — `.maybeSingle()` + `canAction("bonuses","write")` pre-check
+- Modified: `lib/authz.ts` — three `console.warn` → `console.debug` for expected denials
+- Modified: `lib/version.ts` → 3.74.10
+
+### Verify after deploy
+1. Sign in as **accountant**, open an invoice with `sales_order_id` set, look at the console → no 406 line, no `[AUTHZ]` warn.
+2. Record a payment that fully closes the invoice → no `POST /api/bonuses 403` line.
+3. Sign in as **owner** (who has `bonuses:write`), record a payment that closes an invoice → console shows `✅ تم حساب البونص: ...` exactly like before.
+4. Permission-table audit: every role denial behaves the same (no change in functionality), only the log level changed.
+
+### Not changing
+- The `/api/bonuses` endpoint stays locked behind `requirePermission: bonuses:write` — defense in depth, the client-side pre-check is a UX shortcut not a security control.
+- All RLS policies untouched.
+
+---
+
 ## [3.74.9] - 2026-06-02 — Auto-create accounting periods (no more NO_ACTIVE_FINANCIAL_PERIOD)
 
 ### Why

@@ -137,7 +137,11 @@ export async function canAccessPage(
 
   // ⚠️ Security: Default to deny if no permission record exists
   if (!perm) {
-    console.warn(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}`)
+    // v3.74.10 — denial-by-default is the *expected* outcome here per the
+    // strict role spec (e.g. accountant has no `shipments` row). It is not
+    // a warning. We keep a debug-level log for traceability without
+    // polluting the console.
+    console.debug(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}`)
     return false // Default to deny for security
   }
   if (perm.all_access) return true
@@ -206,7 +210,8 @@ export async function getResourcePermissions(
 
   // 🔐 Enterprise Security: Default to DENY if no permission record exists
   if (!perm) {
-    console.warn(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}`)
+    // v3.74.10 — denial is the expected outcome, not a warning.
+    console.debug(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}`)
     const deniedAccess: ResourcePermissions = {
       can_access: false,
       can_read: false,
@@ -287,7 +292,8 @@ export async function checkPermission(
   // 🔐 Enterprise Security: Default to DENY if no permission record exists
   // Permissions must be explicitly granted in company_role_permissions table
   if (!perm) {
-    console.warn(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}, action: ${action}`)
+    // v3.74.10 — denial is the expected outcome, not a warning. Keep for trace.
+    console.debug(`[AUTHZ] No permission record found for resource: ${resource}, role: ${role}, company: ${cid}, action: ${action}`)
     return { allowed: false, role, reason: "no_permission_record" }
   }
 

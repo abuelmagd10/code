@@ -650,15 +650,20 @@ export default function InvoiceDetailPage() {
           }
         }
 
-        // Load linked sales order if exists
+        // Load linked sales order if exists.
+        // v3.74.10 — use maybeSingle so we don't get a console 406 when the
+        // SO row is hidden by RLS for this user (e.g. accountant viewing an
+        // invoice whose linked SO is in another branch). 0 rows is fine here.
         if (invoiceData.sales_order_id) {
           const { data: soData } = await supabase
             .from("sales_orders")
             .select("id, so_number")
             .eq("id", invoiceData.sales_order_id)
-            .single()
+            .maybeSingle()
           if (soData) {
             setLinkedSalesOrder(soData)
+          } else {
+            setLinkedSalesOrder(null)
           }
         } else {
           setLinkedSalesOrder(null)
@@ -2090,17 +2095,25 @@ export default function InvoiceDetailPage() {
 
       if (atomicResult.newStatus === "paid") {
         try {
-          const bonusRes = await fetch("/api/bonuses", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ invoiceId: invoice.id, companyId: invoice.company_id || null })
-          })
-          const bonusData = await bonusRes.json()
-          if (bonusRes.ok && bonusData.bonus) {
-            console.log("✅ تم حساب البونص:", bonusData.bonus.bonus_amount)
+          // v3.74.10 — only attempt bonus calc when the current user
+          // actually has bonuses:write permission. Without this guard the
+          // accountant (or any role without the bonus permission) hits a 403
+          // every time a payment closes an invoice. The bonus run is
+          // non-essential; an authorized user can recalc it later.
+          const canWriteBonuses = await canAction(supabase, "bonuses", "write")
+          if (canWriteBonuses) {
+            const bonusRes = await fetch("/api/bonuses", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ invoiceId: invoice.id, companyId: invoice.company_id || null })
+            })
+            const bonusData = await bonusRes.json()
+            if (bonusRes.ok && bonusData.bonus) {
+              console.log("✅ تم حساب البونص:", bonusData.bonus.bonus_amount)
+            }
           }
         } catch (bonusErr) {
-          console.warn("تحذير: تعذر حساب البونص (غير حرج):", bonusErr)
+          console.debug("تعذر حساب البونص (غير حرج):", bonusErr)
         }
       }
 
