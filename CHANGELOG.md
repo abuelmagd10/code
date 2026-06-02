@@ -4,6 +4,61 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.6] - 2026-06-02 — Hotfix: customer "—" + column styling matches the rest of the app
+
+### Why
+After v3.74.5 Ahmed saw two issues on the deployed page:
+1. The **Customer column was always "—"** even for invoices that clearly have a customer (verified in DB: e.g., invoice INV-00004 → customer "محمد بسيونى").
+2. The **header/row formatting didn't match** the look of other tables in the project — column alignment, header weight, and spacing all looked off compared to /customers, /sales-orders, etc.
+
+### Root cause of "—" everywhere
+Supabase's `select('customers (name)')` returns the nested relation as **either an object or an array** depending on how the TypeScript types resolved (PostgREST itself returns an object for a single FK target, but Supabase's typed client can wrap it in an array in some inference paths). My row-builder was reading `inv.customers?.name` directly — that returned `undefined` whenever the runtime shape was actually `[{name: "..."}]`, so the column fell back to "—".
+
+This affected customer, warehouse, branch, shipping, AND product name on the items query.
+
+### Fixed
+- Added a tiny defensive helper inside the loader:
+  ```ts
+  const pluck = (rel: any, field: string): string => {
+    if (!rel) return ""
+    if (Array.isArray(rel)) return String(rel[0]?.[field] || "")
+    return String((rel as any)?.[field] || "")
+  }
+  ```
+- Used it for `customers`, `warehouses`, `branches`, `shipping_providers`.
+- Same handling for `invoice_items.products` so the "first product" label is reliable.
+
+### Column styling rewritten to match the project standard
+Replaced my custom `<div>`-based formats with the DataTable's built-in `type` + `align` system that the rest of the app uses:
+
+| Column | Type | Effect |
+|---|---|---|
+| Reference # | text | Left-align in EN / right in AR, with inline icon |
+| Date | date | Right-aligned, formatted by the table |
+| Customer | text | Standard cell |
+| Product | text | Standard cell + 180px truncate with title tooltip |
+| Quantity | number | Right-aligned, monospace-like rendering |
+| Branch | text | Standard cell |
+| Warehouse | text | Standard cell + inline Box icon |
+| Shipping | text | Standard cell |
+| Action | actions | Center-aligned automatically |
+
+`whitespace-nowrap`, `text-gray-600`, `flex items-center` removed from formats — those styles are now applied by the DataTable wrapper itself, which is what gives every other ERP table that consistent look.
+
+### Files
+- Modified: `app/inventory/dispatch-approvals/page.tsx` — defensive plucker for nested Supabase joins + column type/align declarations
+- Modified: `lib/version.ts` → 3.74.6
+
+### Verify after deploy
+1. `/inventory/dispatch-approvals` — customer column now shows actual names (e.g., "محمد بسيونى" instead of "—").
+2. Headers are bold and left/right-aligned to match `/customers`, `/sales-orders`, and the rest of the app.
+3. Number column (الكمية) is right-aligned automatically.
+4. Action buttons center-aligned automatically.
+5. Hover state, header sticky behavior, and dark mode rendering match the other DataTables in the project.
+
+---
+
+
 ## [3.74.5] - 2026-06-02 — Dispatch-approvals: 8-column rich layout
 
 ### Why

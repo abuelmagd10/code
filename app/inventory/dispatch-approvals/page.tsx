@@ -188,7 +188,9 @@ export default function DispatchApprovalsPage() {
           .in('invoice_id', invoiceIds)
         items?.forEach((item: any) => {
           const id = item.invoice_id
-          const productName = item.products?.name || ''
+          // v3.74.6 — products can be array or object via Supabase nested select
+          const productNode = Array.isArray(item.products) ? item.products[0] : item.products
+          const productName = productNode?.name || ''
           const qty = Number(item.quantity) || 0
           if (!itemSummaries[id]) {
             itemSummaries[id] = { count: 0, totalQty: 0, firstProduct: productName }
@@ -215,10 +217,19 @@ export default function DispatchApprovalsPage() {
           warehouse_status: inv.warehouse_status,
           items_count: itemsCounts[inv.id] || 0,
         }
-        // v3.74.5 — split fields for richer 8-column table
-        const warehouseName = (inv.warehouses as any)?.name || "—"
-        const branchName = (inv.branches as any)?.name || "—"
-        const shippingName = inv.shipping_providers?.provider_name || "—"
+        // v3.74.6 — Supabase nested selects can return either an object or
+        // an array depending on TS inference. Read both shapes defensively
+        // so customer name actually shows up instead of em-dash.
+        const pluck = (rel: any, field: string): string => {
+          if (!rel) return ""
+          if (Array.isArray(rel)) return String(rel[0]?.[field] || "")
+          return String((rel as any)?.[field] || "")
+        }
+        const customerName = pluck(inv.customers, "name") || "—"
+        const warehouseName = pluck(inv.warehouses, "name") || "—"
+        const branchName = pluck(inv.branches, "name") || "—"
+        const shippingName = pluck(inv.shipping_providers, "provider_name") || "—"
+
         const itemSummary = itemSummaries[inv.id]
         const productLabel = itemSummary && itemSummary.count > 0
           ? (itemSummary.count > 1
@@ -231,7 +242,7 @@ export default function DispatchApprovalsPage() {
           id: inv.id,
           reference: inv.invoice_number,
           date: inv.invoice_date,
-          customer: inv.customers?.name || "—",
+          customer: customerName,
           product: productLabel,
           quantity: itemSummary?.totalQty || 0,
           uom: '',
@@ -430,82 +441,78 @@ export default function DispatchApprovalsPage() {
     }
   }
 
-  // v3.74.5 — Eight-column rich layout. The Type badge moved inline next to
-  // the reference so we save a whole column for actual data.
+  // v3.74.6 — Standard column definitions: use the DataTable's built-in
+  // `type` + `align` so styling matches every other table in the project.
+  // Type icon (📄/🏭) inlined into the Reference cell so we don't burn a
+  // whole column on the type.
   const columns: DataTableColumn<UnifiedRow>[] = [
     {
       header: appLang === 'en' ? "Reference #" : "الرقم المرجعي",
       key: "reference",
+      type: "text",
       format: (_: any, row: UnifiedRow) => (
-        <div className="flex items-center gap-2">
-          {row._type === "sales" ? (
-            <FileText className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-          ) : (
-            <Factory className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" />
-          )}
-          <span className="font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">{row.reference}</span>
-        </div>
-      )
+        <span className="inline-flex items-center gap-1.5 font-medium text-blue-600 dark:text-blue-400">
+          {row._type === "sales"
+            ? <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+            : <Factory className="w-3.5 h-3.5 flex-shrink-0 text-orange-600" />}
+          {row.reference}
+        </span>
+      ),
     },
     {
       header: appLang === 'en' ? "Date" : "التاريخ",
       key: "date",
-      format: (_: any, row: UnifiedRow) => (
-        <div className="whitespace-nowrap">{new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</div>
-      )
+      type: "date",
+      format: (_: any, row: UnifiedRow) =>
+        new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG'),
     },
     {
       header: appLang === 'en' ? "Customer" : "العميل",
       key: "customer",
-      format: (_: any, row: UnifiedRow) => (
-        <div className="text-gray-700 dark:text-gray-300">{row.customer}</div>
-      )
+      type: "text",
     },
     {
       header: appLang === 'en' ? "Product" : "المنتج",
       key: "product",
+      type: "text",
       format: (_: any, row: UnifiedRow) => (
-        <div className="text-gray-700 dark:text-gray-300 max-w-[180px] truncate" title={row.product}>{row.product}</div>
-      )
+        <span className="block max-w-[180px] truncate" title={row.product}>{row.product}</span>
+      ),
     },
     {
       header: appLang === 'en' ? "Qty" : "الكمية",
       key: "quantity",
-      format: (_: any, row: UnifiedRow) => (
-        <div className="whitespace-nowrap font-medium text-gray-800 dark:text-gray-200">
-          {row.quantity > 0
-            ? `${Number(row.quantity).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')}${row.uom ? ` ${row.uom}` : ''}`
-            : '—'}
-        </div>
-      )
+      type: "number",
+      format: (_: any, row: UnifiedRow) =>
+        row.quantity > 0
+          ? `${Number(row.quantity).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')}${row.uom ? ` ${row.uom}` : ''}`
+          : '—',
     },
     {
       header: appLang === 'en' ? "Branch" : "الفرع",
       key: "branch",
-      format: (_: any, row: UnifiedRow) => (
-        <div className="text-gray-600 dark:text-gray-400 whitespace-nowrap">{row.branch}</div>
-      )
+      type: "text",
     },
     {
       header: appLang === 'en' ? "Warehouse" : "المخزن",
       key: "warehouse",
+      type: "text",
       format: (_: any, row: UnifiedRow) => (
-        <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-          <Box className="w-3.5 h-3.5 flex-shrink-0" />
-          <span>{row.warehouse}</span>
-        </div>
-      )
+        <span className="inline-flex items-center gap-1.5">
+          <Box className="w-3.5 h-3.5 flex-shrink-0 text-gray-500" />
+          {row.warehouse}
+        </span>
+      ),
     },
     {
       header: appLang === 'en' ? "Shipping" : "شركة الشحن",
       key: "shipping",
-      format: (_: any, row: UnifiedRow) => (
-        <div className="text-gray-600 dark:text-gray-400 whitespace-nowrap">{row.shipping}</div>
-      )
+      type: "text",
     },
     {
       header: appLang === 'en' ? "Action" : "إجراء",
       key: "action",
+      type: "actions",
       format: (_: any, row: UnifiedRow) => {
         const mfgStatus = row._type === "manufacturing" ? (row.raw as any)?.status : null
         const isRejected = mfgStatus === "rejected"
