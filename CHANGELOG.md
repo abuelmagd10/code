@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.4] - 2026-06-02 — Hotfix: dispatch-approvals pending list missing warehouse + branch
+
+### Why
+Ahmed reported that the table at `/inventory/dispatch-approvals` (طلبات الاعتماد section) was showing headers "النوع / الرقم المرجعي / التاريخ / العميل / المنتج / المستودع / شركة الشحن / الفرع" but the rows underneath were sparse — the warehouse cell was always "-" and the shipping/branch cell only carried the shipping provider, never the branch.
+
+### Root cause
+Two related bugs in the **pending** load (the history load was already correct):
+
+1. The Supabase SELECT on `invoices` didn't include the joined `warehouses (name)` or `branches (name)` tables — only `customers (name)` and `shipping_providers (provider_name)` were pulled.
+2. The row builder hardcoded `warehouse: "-"` and only ever filled `extra` from the shipping provider, so if the invoice had no shipping provider yet (which is the common case for new invoices), the column was just blank dashes.
+
+The DB schema is fine — `invoices.warehouse_id` and `invoices.branch_id` are both `NOT NULL` columns since the v3.66.0 governance work, so the data exists; the page just wasn't reading it.
+
+### Fixed
+- **SELECT** on `invoices` now also pulls `warehouse_id, branch_id, warehouses (name), branches (name)`.
+- **Row builder** now reads:
+  - `warehouse: inv.warehouses?.name || "-"`
+  - `extra: shipping?.provider_name || branches?.name || "-"` — prefer shipping provider when set (it's more specific), fall back to the branch the invoice was issued from. So the column always has something useful instead of just "-".
+
+### Files
+- Modified: `app/inventory/dispatch-approvals/page.tsx` — SELECT enlarged, row builder reads real values
+- Modified: `lib/version.ts` → 3.74.4
+
+### Why this didn't show up earlier
+The history section of the same page (approved/rejected approvals) already pulled the right joins. Only the pending section had the regression. Manual tests had been running against approved items, not pending ones, so the gap stayed hidden until Ahmed opened a pending invoice in the live site.
+
+### Verify after deploy
+1. Open `/inventory/dispatch-approvals` → table shows real warehouse names under the المستودع column (was `-`).
+2. The شركة الشحن / الفرع column shows shipping provider name when the invoice has one, otherwise shows the branch name (was either provider or just `-`).
+3. History tab unchanged — already worked.
+
+---
+
+
 ## [3.74.3] - 2026-06-02 — Critical hotfix: dividend distribution RPC ambiguity (PGRST203)
 
 ### Why

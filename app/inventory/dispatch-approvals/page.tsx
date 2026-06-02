@@ -153,12 +153,17 @@ export default function DispatchApprovalsPage() {
       if (!companyId) return
 
       // ── 1. فواتير المبيعات ──────────────────────────────────────────────────
+      // v3.74.4 — pull warehouse + branch joins so the row shows real data,
+      // not the previous hardcoded "-"
       const { data: invData, error: invError } = await supabase
         .from('invoices')
         .select(`
           id, invoice_number, invoice_date, total_amount, warehouse_status,
+          warehouse_id, branch_id,
           customers (name),
-          shipping_providers (provider_name)
+          shipping_providers (provider_name),
+          warehouses (name),
+          branches (name)
         `)
         .eq('company_id', companyId)
         .eq('warehouse_status', 'pending')
@@ -190,14 +195,22 @@ export default function DispatchApprovalsPage() {
           warehouse_status: inv.warehouse_status,
           items_count: itemsCounts[inv.id] || 0,
         }
+        // v3.74.4 — read real warehouse/branch from joined rows
+        const warehouseName = (inv.warehouses as any)?.name || "-"
+        const shippingName = inv.shipping_providers?.provider_name
+        const branchName = (inv.branches as any)?.name
+        // "Shipping / Branch" column: prefer shipping provider if assigned,
+        // otherwise show the branch the invoice was issued from.
+        const extraValue = shippingName || branchName || "-"
+
         return {
           _type: "sales",
           id: inv.id,
           reference: inv.invoice_number,
           date: inv.invoice_date,
           party: inv.customers?.name || "-",
-          warehouse: "-",
-          extra: inv.shipping_providers?.provider_name || "-",
+          warehouse: warehouseName,
+          extra: extraValue,
           raw,
         }
       })
