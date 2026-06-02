@@ -24,10 +24,12 @@ export async function PATCH(
   try {
     const { id } = await params
     const authSupabase = await createServerClient()
+    // v3.74.13 — workflow endpoint; the SALES_RETURN_WAREHOUSE_ROLES allowlist
+    // is the correct authorization gate. store_manager lacks invoices in the
+    // strict v3.69.0 spec.
     const { user, companyId, member, error: authErr } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "invoices", action: "write" },
       supabase: authSupabase
     })
     if (authErr) return authErr

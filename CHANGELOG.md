@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.13] - 2026-06-02 — store_manager 403 on sales-return-requests workflow
+
+### Why
+Ahmed reported: after the level-1 approver okays a sales return, the notification reaches the store manager. Clicking "فتح المرجع" lands them on `/sales-return-requests` but the page shows "فشل تحميل الطلبات".
+
+Root cause: three workflow endpoints under `/api/sales-return-requests/*` had a generic `requirePermission: { resource: "invoices", action: "read"|"write" }` check on top of the role-allowlist that actually authorizes the workflow:
+
+| Endpoint | Generic check | Role allowlist (the real gate) |
+|---|---|---|
+| `GET /api/sales-return-requests` | `invoices:read` | `SALES_RETURN_LEVEL1_APPROVER_ROLES ∪ SALES_RETURN_WAREHOUSE_ROLES` |
+| `PATCH /[id]/warehouse-approve` | `invoices:write` | `SALES_RETURN_WAREHOUSE_ROLES` |
+| `PATCH /[id]/warehouse-reject` | `invoices:write` | `SALES_RETURN_WAREHOUSE_ROLES` |
+
+The `store_manager` role in Ahmed's strict v3.69.0 spec is `['inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs', 'dispatch_approvals', 'inventory_goods_receipt']` — no `invoices`. The generic check therefore 403'd every store_manager hitting these endpoints, blocking the very role those endpoints exist to serve.
+
+Same pattern as the v3.74.7 hotfix (where the store_manager couldn't see customer names on dispatch approvals because resource-aware RLS denied them `customers`): a workflow boundary requires resource access the strict role spec doesn't grant.
+
+### Fix
+Removed the `requirePermission` from those three endpoints. The role-allowlist check (`if (!member || !allowedRoles.has(member.role))`) was already present and is the correct workflow-scoped gate. `secureApiRequest` still enforces auth + company membership; only the misplaced generic resource check was dropped.
+
+The other workflow endpoints (`POST /api/sales-return-requests` to create a request, `PATCH /[id]/approve` and `/[id]/reject` for level-1 review) were NOT touched — those are reached only by roles that legitimately have `invoices` access (owner / admin / general_manager / manager / accountant), so the generic check is harmless there.
+
+### Files
+- Modified: `app/api/sales-return-requests/route.ts` — GET removed `invoices:read`
+- Modified: `app/api/sales-return-requests/[id]/warehouse-approve/route.ts` — removed `invoices:write`
+- Modified: `app/api/sales-return-requests/[id]/warehouse-reject/route.ts` — removed `invoices:write`
+- Modified: `lib/version.ts` → 3.74.13
+
+### Verify after deploy
+1. Sign in as `store_manager` belonging to the branch/warehouse on the invoice. Click the "طلب مرتجع مبيعات بانتظار اعتماد المخزن" notification → `/sales-return-requests` opens and **shows the request** instead of the error toast.
+2. Click "اعتماد المخزن" → returns committed, the v3.74.12 pro-rata bonus clawback fires server-side. No 403.
+3. Click "رفض المخزن" with a reason → returns rejected. No 403.
+4. As a different store_manager from another warehouse, hit the same notification → page loads but the list is empty (the role-allowlist + warehouse_id filter still scopes the rows correctly). No leakage.
+5. Owner / accountant flows on the same page unchanged — still see all the requests they should, still can do level-1 review.
+
+### Not changing
+- The strict v3.69.0 role spec — `store_manager` still doesn't get `invoices` access (which is correct; they don't need to manage invoices generally).
+- The `POST` create endpoint or the two level-1 review endpoints — they require `invoices` because the actor is supposed to be management.
+- RLS on `sales_return_requests` table — already correct.
+
+---
+
 ## [3.74.12] - 2026-06-02 — Pro-rata bonus clawback on sales returns
 
 ### Why this exists

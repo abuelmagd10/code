@@ -188,10 +188,16 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const authSupabase = await createServerClient()
+    // v3.74.13 — removed `requirePermission: invoices:read`. This is a
+    // workflow endpoint that warehouse-staff (store_manager / warehouse_manager)
+    // legitimately need to call to see returns awaiting their approval, but
+    // per Ahmed's strict v3.69.0 role spec they have no `invoices` resource
+    // entry — so the generic permission check 403'd them. The real
+    // authorization is the SALES_RETURN_WAREHOUSE_ROLES / LEVEL1 allowlist
+    // below (line ~204), which is workflow-scoped and correct.
     const { companyId, member, error: authErr } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "invoices", action: "read" },
       supabase: authSupabase
     })
     if (authErr) return authErr
