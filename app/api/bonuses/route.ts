@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { calculateBonusForPaidInvoice } from "@/lib/services/bonus-calculator.service"
 
 // Get admin client with service role key
 async function getAdmin() {
@@ -142,227 +143,47 @@ export async function POST(req: NextRequest) {
       return badRequestError("معرف الفاتورة مطلوب", ["invoiceId"])
     }
 
-    const dbClient = admin
+    // v3.74.11 — The bonus logic now lives in
+    // lib/services/bonus-calculator.service.ts. This endpoint stays for
+    // MANUAL recalculation (e.g. an owner retroactively running it on an
+    // imported historical invoice). The AUTOMATIC trigger happens inside
+    // the record-payment service the moment an invoice transitions to paid,
+    // so most invoices won't need this endpoint at all.
+    const result = await calculateBonusForPaidInvoice({
+      admin,
+      invoiceId,
+      companyId,
+      actorUserId: user.id,
+    })
 
-    // Get company bonus settings
-    const { data: company, error: companyErr } = await dbClient
-      .from("companies")
-      .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, base_currency, currency")
-      .eq("id", companyId)
-      .single()
-
-    if (companyErr || !company) {
-      return apiError(HTTP_STATUS.NOT_FOUND, "الشركة غير موجودة", "Company not found")
+    if (result.ok) {
+      return apiSuccess({ ok: true, bonus: result.bonus }, HTTP_STATUS.CREATED)
     }
 
-    // Check if bonus is enabled
-    if (!company.bonus_enabled) {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "نظام البونص معطل لهذه الشركة", "Bonus system is disabled for this company", { disabled: true })
-    }
-
-    // Get invoice details
-    const { data: invoice, error: invErr } = await dbClient
-      .from("invoices")
-      .select("id, company_id, total_amount, status, currency, sales_order_id, created_by_user_id")
-      .eq("id", invoiceId)
-      .single()
-
-    if (invErr || !invoice) {
-      return apiError(HTTP_STATUS.NOT_FOUND, "الفاتورة غير موجودة", "Invoice not found")
-    }
-
-    // Check if invoice is paid
-    if (invoice.status !== "paid") {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "الفاتورة غير مدفوعة بعد", "Invoice is not paid yet", { status: invoice.status })
-    }
-
-    // Bonus attribution — ERP rule:
-    // The bonus belongs to whoever originated the deal (the salesperson on the sales order),
-    // NOT to the accounting/AR clerk who later processed the invoice. Resolution order:
-    //   1. sales_orders.created_by_user_id  (the salesperson)         ← PRIMARY
-    //   2. invoices.created_by_user_id      (fallback for invoices    ← FALLBACK ONLY
-    //                                        with no sales order — e.g. POS / walk-in sales)
-    //
-    // Previous behavior had the priority inverted (invoice creator first), so bonuses were
-    // going to the accountant who issued the invoice instead of the salesperson who closed
-    // the deal. The comment "check sales order first" has always been here — the code now
-    // matches that intent.
-    let creatorUserId: string | null = null
-    let creatorSource: 'sales_order' | 'invoice' | null = null
-
-    if (invoice.sales_order_id) {
-      const { data: so } = await dbClient
-        .from("sales_orders")
-        .select("created_by_user_id")
-        .eq("id", invoice.sales_order_id)
-        .single()
-      if (so?.created_by_user_id) {
-        creatorUserId = so.created_by_user_id
-        creatorSource = 'sales_order'
+    if (result.skipped) {
+      // Translate the machine-readable reason into a user-facing message,
+      // preserving prior HTTP semantics so existing callers don't break.
+      switch (result.reason) {
+        case "bonus_disabled_for_company":
+          return apiError(HTTP_STATUS.BAD_REQUEST, "نظام البونص معطل لهذه الشركة", "Bonus system is disabled for this company", { disabled: true })
+        case "bonus_disabled_for_employee":
+          return apiError(HTTP_STATUS.BAD_REQUEST, "البونص معطل لهذا الموظف", "Bonus is disabled for this employee", { disabled: true })
+        case "no_creator_found":
+          return apiError(HTTP_STATUS.BAD_REQUEST, "لم يتم العثور على منشئ الفاتورة", "No creator found for this invoice")
+        case "already_calculated":
+          return apiError(HTTP_STATUS.CONFLICT, "تم حساب البونص لهذه الفاتورة مسبقاً", "Bonus already calculated for this invoice")
+        case "monthly_cap_reached":
+          return apiError(HTTP_STATUS.BAD_REQUEST, "تم الوصول للحد الأقصى الشهري للبونص", "Monthly bonus cap reached")
+        default:
+          if (result.reason.startsWith("invoice_status_is_")) {
+            const status = result.reason.replace("invoice_status_is_", "")
+            return apiError(HTTP_STATUS.BAD_REQUEST, "الفاتورة غير مدفوعة بعد", "Invoice is not paid yet", { status })
+          }
+          return apiError(HTTP_STATUS.BAD_REQUEST, "تخطى حساب البونص", `Bonus calculation skipped: ${result.reason}`)
       }
     }
 
-    if (!creatorUserId) {
-      creatorUserId = invoice.created_by_user_id
-      if (creatorUserId) creatorSource = 'invoice'
-    }
-
-    if (!creatorUserId) {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "لم يتم العثور على منشئ الفاتورة", "No creator found for this invoice")
-    }
-
-    console.log(`[Bonus] Attributing invoice ${invoiceId} to user ${creatorUserId} (source: ${creatorSource})`)
-
-    // ============================================================================
-    // Per-Employee Bonus Configuration (Phase 4-B)
-    // ============================================================================
-    // Resolution order:
-    //   1. employee_bonus_config row for creatorUserId (must have is_active=true)
-    //   2. NULL fields in that row → fall back to companies.bonus_*
-    //   3. No active row → use company defaults entirely
-    //
-    // Note: company.bonus_enabled (checked above) is the MASTER GATE.
-    // Per-employee bonus_enabled=false can ADDITIONALLY exclude a specific
-    // salesperson (e.g. owners who don't take commissions).
-    const { data: empConfig } = await dbClient
-      .from("employee_bonus_config")
-      .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, is_active")
-      .eq("company_id", companyId)
-      .eq("user_id", creatorUserId)
-      .eq("is_active", true)
-      .maybeSingle()
-
-    // Per-employee opt-out check
-    if (empConfig && empConfig.bonus_enabled === false) {
-      return apiError(
-        HTTP_STATUS.BAD_REQUEST,
-        "البونص معطل لهذا الموظف",
-        "Bonus is disabled for this employee",
-        { disabled: true, source: 'employee_override', userId: creatorUserId }
-      )
-    }
-
-    // Build effective config — empConfig fields override company defaults when not NULL
-    const effective = {
-      bonus_type: empConfig?.bonus_type ?? company.bonus_type,
-      bonus_percentage: empConfig?.bonus_percentage ?? company.bonus_percentage,
-      bonus_fixed_amount: empConfig?.bonus_fixed_amount ?? company.bonus_fixed_amount,
-      bonus_points_per_value: empConfig?.bonus_points_per_value ?? company.bonus_points_per_value,
-      bonus_daily_cap: empConfig?.bonus_daily_cap ?? company.bonus_daily_cap,
-      bonus_monthly_cap: empConfig?.bonus_monthly_cap ?? company.bonus_monthly_cap,
-      bonus_payout_mode: empConfig?.bonus_payout_mode ?? company.bonus_payout_mode,
-    }
-
-    const configSource = empConfig ? 'employee_override' : 'company_default'
-    console.log(`[Bonus] Using config source: ${configSource} for user ${creatorUserId}`)
-
-    // Check if bonus already exists for this invoice
-    const { data: existingBonus } = await dbClient
-      .from("user_bonuses")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("invoice_id", invoiceId)
-      .not("status", "in", '("reversed","cancelled")')
-      .maybeSingle()
-
-    if (existingBonus) {
-      return apiError(HTTP_STATUS.CONFLICT, "تم حساب البونص لهذه الفاتورة مسبقاً", "Bonus already calculated for this invoice", { bonusId: existingBonus.id })
-    }
-
-    // Calculate bonus amount
-    const invoiceTotal = Number(invoice.total_amount || 0)
-    let bonusAmount = 0
-    let calculationRate = 0
-
-    switch (effective.bonus_type) {
-      case "percentage":
-        calculationRate = Number(effective.bonus_percentage || 0)
-        bonusAmount = Math.round(invoiceTotal * (calculationRate / 100) * 100) / 100
-        break
-      case "fixed":
-        bonusAmount = Number(effective.bonus_fixed_amount || 0)
-        break
-      case "points":
-        const pointsPerValue = Number(effective.bonus_points_per_value || 100)
-        bonusAmount = Math.floor(invoiceTotal / pointsPerValue)
-        calculationRate = pointsPerValue
-        break
-    }
-
-    // Apply monthly cap if set (uses effective per-employee or company value)
-    if (effective.bonus_monthly_cap && effective.bonus_monthly_cap > 0) {
-      const now = new Date()
-      const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-      const { data: monthlyBonuses } = await dbClient
-        .from("user_bonuses")
-        .select("bonus_amount")
-        .eq("company_id", companyId)
-        .eq("user_id", creatorUserId)
-        .gte("calculated_at", startOfMonth)
-        .not("status", "in", '("reversed","cancelled")')
-
-      const currentMonthTotal = (monthlyBonuses || []).reduce((sum, b) => sum + Number(b.bonus_amount || 0), 0)
-      const remaining = Number(effective.bonus_monthly_cap) - currentMonthTotal
-      if (remaining <= 0) {
-        return apiError(HTTP_STATUS.BAD_REQUEST, "تم الوصول للحد الأقصى الشهري للبونص", "Monthly bonus cap reached", { cap: effective.bonus_monthly_cap, current: currentMonthTotal, source: configSource })
-      }
-      bonusAmount = Math.min(bonusAmount, remaining)
-    }
-
-    // Get employee_id if user is linked to an employee
-    const { data: employee } = await dbClient
-      .from("employees")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("user_id", creatorUserId)
-      .maybeSingle()
-
-    // Create bonus record
-    const { data: bonus, error: insertErr } = await dbClient
-      .from("user_bonuses")
-      .insert({
-        company_id: companyId,
-        user_id: creatorUserId,
-        employee_id: employee?.id || null,
-        invoice_id: invoiceId,
-        sales_order_id: invoice.sales_order_id || null,
-        bonus_amount: bonusAmount,
-        bonus_currency: invoice.currency || (company as any).base_currency || (company as any).currency || "EGP",
-        bonus_type: effective.bonus_type,
-        calculation_base: invoiceTotal,
-        calculation_rate: calculationRate,
-        status: effective.bonus_payout_mode === "immediate" ? "scheduled" : "pending",
-        created_by: user.id,
-        note: `Bonus for invoice ${invoiceId} (config: ${configSource})`
-      })
-      .select()
-      .single()
-
-    if (insertErr) {
-      return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إنشاء البونص", insertErr.message)
-    }
-
-    // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
-    try {
-      await dbClient.from("audit_logs").insert({
-        company_id: companyId,
-        user_id: user.id,
-        action: "INSERT",
-        target_table: "user_bonuses",
-        record_id: bonus?.id,
-        reason: "bonus_calculated",
-        metadata: {
-          invoice_id: invoiceId,
-          sales_order_id: invoice.sales_order_id,
-          bonus_amount: bonusAmount,
-          beneficiary_user_id: creatorUserId,
-          creator_source: creatorSource,
-          config_source: configSource
-        }
-      })
-    } catch {}
-
-    return apiSuccess({ ok: true, bonus }, HTTP_STATUS.CREATED)
+    return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حساب البونص", result.error)
   } catch (e: any) {
     return internalError("حدث خطأ أثناء حساب البونص", e?.message)
   }

@@ -2093,29 +2093,14 @@ export default function InvoiceDetailPage() {
         throw new Error(errMsg)
       }
 
-      if (atomicResult.newStatus === "paid") {
-        try {
-          // v3.74.10 — only attempt bonus calc when the current user
-          // actually has bonuses:write permission. Without this guard the
-          // accountant (or any role without the bonus permission) hits a 403
-          // every time a payment closes an invoice. The bonus run is
-          // non-essential; an authorized user can recalc it later.
-          const canWriteBonuses = await canAction(supabase, "bonuses", "write")
-          if (canWriteBonuses) {
-            const bonusRes = await fetch("/api/bonuses", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ invoiceId: invoice.id, companyId: invoice.company_id || null })
-            })
-            const bonusData = await bonusRes.json()
-            if (bonusRes.ok && bonusData.bonus) {
-              console.log("✅ تم حساب البونص:", bonusData.bonus.bonus_amount)
-            }
-          }
-        } catch (bonusErr) {
-          console.debug("تعذر حساب البونص (غير حرج):", bonusErr)
-        }
-      }
+      // v3.74.11 — bonus calculation moved to the server side.
+      // SalesInvoicePaymentCommandService now triggers the shared
+      // bonus-calculator service automatically the moment the invoice
+      // transitions to "paid", using the admin client. This means the
+      // bonus is correctly attributed to the salesperson on the sales
+      // order regardless of which user (accountant, store manager, etc.)
+      // pressed "Record Payment". The /api/bonuses endpoint still exists
+      // for manual recalculation from the bonuses page.
 
       await loadInvoice()
       setShowPayment(false)

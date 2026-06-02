@@ -321,6 +321,47 @@ export class SalesInvoicePaymentCommandService {
       })
     }
 
+    // ===== v3.74.11 — Server-side bonus trigger =====
+    // When this payment closes the invoice (status → "paid"), the bonus must
+    // be calculated for the SALESPERSON (sales_orders.created_by_user_id),
+    // not for the user who pressed "Record Payment". Previously this lived
+    // in the client and required the actor to have bonuses:write — which
+    // failed every time an accountant or warehouse clerk closed a sale,
+    // silently denying the salesperson their commission.
+    //
+    // Calling the shared service from here, using the admin (service-role)
+    // client, makes the calculation INDEPENDENT of the actor's role. Bonus
+    // attribution stays in the service. Failures are logged but never
+    // bubble up — the payment is already committed.
+    if (result.new_status === "paid") {
+      try {
+        const { calculateBonusForPaidInvoice } = await import("./bonus-calculator.service")
+        const bonusResult = await calculateBonusForPaidInvoice({
+          admin: this.adminSupabase as any,
+          invoiceId: command.invoiceId,
+          companyId: resolvedCompanyId,
+          actorUserId: actor.userId,
+        })
+        if (bonusResult.ok) {
+          console.log(
+            `[Bonus] Calculated for invoice ${command.invoiceId} -> user ${bonusResult.beneficiaryUserId} (creator: ${bonusResult.creatorSource}, config: ${bonusResult.configSource})`
+          )
+        } else if (bonusResult.skipped) {
+          console.log(`[Bonus] Skipped for invoice ${command.invoiceId}: ${bonusResult.reason}`)
+        } else {
+          console.warn(`[Bonus] Failed for invoice ${command.invoiceId}: ${bonusResult.error}`)
+        }
+      } catch (err: any) {
+        // Non-fatal: payment already recorded; bonus can be recalculated
+        // manually by an owner/admin from the bonuses page.
+        console.error("[Bonus] Unexpected error after payment:", {
+          invoiceId: command.invoiceId,
+          paymentId: result.payment_id,
+          error: err?.message || err,
+        })
+      }
+    }
+
     return {
       success: true,
       paymentId: result.payment_id || null,

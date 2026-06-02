@@ -4,6 +4,57 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.11] - 2026-06-02 — Server-side bonus trigger (the salesperson always gets paid)
+
+### Why this exists
+Ahmed asked a sharp question after v3.74.10: "Is the bonus now being calculated correctly for the sales-order creator?" The honest answer was **no**. v3.74.10 fixed the console noise from the `/api/bonuses 403` by skipping the call entirely when the current user (e.g. accountant) lacks `bonuses:write`. But the bonus is supposed to go to **the salesperson who created the sales order**, not to whoever pressed "Record Payment". Skipping the call meant the salesperson silently lost their commission every time an accountant or warehouse manager closed the invoice for them.
+
+This was the same kind of governance gap that existed before v3.74.10 (403 from the API), just dressed up nicer in the console.
+
+### The fix
+Bonus calculation is now triggered **server-side, automatically, with the admin client**, the instant the payment service transitions an invoice to `paid`. The attribution stays identical to the previous logic (SO creator first, invoice creator as fallback), but the calculation no longer depends on the requesting user's role.
+
+### Architecture
+**New file: `lib/services/bonus-calculator.service.ts`** — `calculateBonusForPaidInvoice({ admin, invoiceId, companyId, actorUserId })` returns a typed result envelope:
+- `{ ok: true, bonus, configSource, creatorSource, beneficiaryUserId }` on success
+- `{ ok: false, skipped: true, reason }` for intentional short-circuits (company opt-out, employee opt-out, already calculated, monthly cap, no creator, invoice-not-paid)
+- `{ ok: false, skipped: false, error }` for unexpected errors
+
+All the original rules preserved verbatim: salesperson-first attribution, per-employee config override on top of company defaults, monthly cap enforcement, idempotency via existing-bonus check.
+
+**Caller 1: `SalesInvoicePaymentCommandService.recordPayment`** — after the atomic payment RPC succeeds and `result.new_status === "paid"`, dynamically imports the service and calls it. Failures are logged but never bubble up — the payment is already committed and the bonus can be recalculated manually.
+
+**Caller 2: `POST /api/bonuses`** — refactored to use the same service for manual recalculation (owner triggering a retroactive bonus run on an imported historical invoice, etc.). Same translated Arabic error messages for the user-facing skip reasons.
+
+**Client side: `app/invoices/[id]/page.tsx`** — removed the `canAction("bonuses","write")` pre-check + the `fetch("/api/bonuses", ...)` call entirely. Now there's only a comment pointing at the server-side trigger. Less code, less to go wrong.
+
+### Why the server-side trigger is the correct architecture (not just a workaround)
+- The bonus is **not the requesting user's bonus**. There's no business rule that says "you can only generate a commission if you have bonuses:write." The actor is incidental; the beneficiary is on the sales order.
+- The previous client-side design conflated two distinct permissions: "can record a payment" (every cashier/AR clerk needs this) and "can read/manage the bonuses dashboard" (manager-level only). The atomic payment workflow shouldn't require the second to perform the first.
+- Defense in depth is preserved: `POST /api/bonuses` is **still** locked behind `requirePermission: bonuses:write` — that gate exists for the manual UI, not for the implicit lifecycle hook.
+
+### Files
+- New: `lib/services/bonus-calculator.service.ts`
+- Modified: `lib/services/sales-invoice-payment-command.service.ts` — server-side trigger after `paid` transition
+- Modified: `app/api/bonuses/route.ts` — POST refactored to delegate to the shared service; same external behavior for manual callers
+- Modified: `app/invoices/[id]/page.tsx` — removed the now-redundant client-side fetch
+- Modified: `lib/version.ts` → 3.74.11
+
+### Verify after deploy
+1. Sign in as **accountant**. Record a payment that closes an invoice whose `sales_order_id` points at a SO created by a different user (the salesperson). Check the Vercel server logs — there should be a `[Bonus] Calculated for invoice ...` line. Query `user_bonuses` — there's a new row with `user_id` = the salesperson's user_id, NOT the accountant.
+2. Sign in as **owner** and record a payment that closes another invoice — same behavior, bonus correctly attributed.
+3. Open `/bonuses` page (as owner) — both new bonus rows appear.
+4. Manually POST `/api/bonuses` for an invoice that already has a bonus — returns 409 `"تم حساب البونص لهذه الفاتورة مسبقاً"` (same as before, via the service's `already_calculated` skip).
+5. Disable bonus for the company (companies.bonus_enabled = false) → record a payment → no bonus row, server log shows `[Bonus] Skipped ... bonus_disabled_for_company`.
+
+### Not changing
+- Bonus attribution rules — identical to v3.74.10 / earlier.
+- All RLS, governance, and role spec — untouched.
+- `/api/bonuses` permission requirements for manual calls — unchanged.
+- The audit log for each bonus — `created_by` still stores the actor (whoever pressed Record Payment) so you can trace who triggered the calc, with the beneficiary captured in `metadata.beneficiary_user_id`.
+
+---
+
 ## [3.74.10] - 2026-06-02 — Console noise cleanup on the invoice page
 
 ### Why
