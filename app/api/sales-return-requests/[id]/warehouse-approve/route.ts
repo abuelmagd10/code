@@ -122,6 +122,64 @@ export async function PATCH(
       return NextResponse.json({ error: atomicResult.error || "فشل تنفيذ المرتجع" }, { status: 400 })
     }
 
+    // ===== v3.74.12 — Pro-rata bonus clawback =====
+    // The sales return is now committed. The salesperson's bonus on the
+    // original invoice must be proportionally reversed so it reflects the
+    // net sale, not the gross one. We use the admin client so the actor's
+    // role doesn't matter (a warehouse manager closing a return shouldn't
+    // need bonuses:write). Failures are logged but never roll back the
+    // return itself — the bonus can be reconciled later by an owner.
+    try {
+      const { data: originalInvoice } = await supabase
+        .from("invoices")
+        .select("total_amount, original_total")
+        .eq("id", request.invoice_id)
+        .maybeSingle()
+
+      // Use original_total when present (the gross amount BEFORE any
+      // earlier partial return reduced total_amount). Falls back to
+      // total_amount for older invoices that don't track this separately.
+      const originalGross = Number(
+        (originalInvoice as any)?.original_total ??
+        (originalInvoice as any)?.total_amount ??
+        0
+      )
+      const returnedThisEvent = Number(request.total_return_amount || 0)
+
+      if (originalGross > 0 && returnedThisEvent > 0) {
+        const { reverseBonusForSalesReturn } = await import(
+          "@/lib/services/bonus-reversal.service"
+        )
+        const reversalResult = await reverseBonusForSalesReturn({
+          admin: supabase as any,
+          invoiceId: request.invoice_id,
+          companyId,
+          returnedAmount: returnedThisEvent,
+          originalInvoiceTotal: originalGross,
+          salesReturnRequestId: id,
+          actorUserId: user?.id || "",
+          reason: request.return_type === 'full' ? 'مرتجع كامل' : 'مرتجع جزئى',
+        })
+        if (reversalResult.ok) {
+          console.log(
+            `[BonusReversal] invoice=${request.invoice_id} returnRatio=${reversalResult.returnRatio.toFixed(4)} ` +
+            `adjustments=${reversalResult.adjustments.length} totalReversed=${reversalResult.totalReversed}`
+          )
+        } else if (reversalResult.skipped) {
+          console.log(`[BonusReversal] skipped: ${reversalResult.reason}`)
+        } else {
+          console.warn(`[BonusReversal] failed: ${reversalResult.error}`)
+        }
+      }
+    } catch (bonusErr: any) {
+      // Non-fatal — the return is already committed; bonus is recoverable.
+      console.error("[BonusReversal] Unexpected error after sales return:", {
+        invoiceId: request.invoice_id,
+        salesReturnRequestId: id,
+        error: bonusErr?.message || bonusErr,
+      })
+    }
+
     if (enterpriseFinanceFlags.observabilityEvents) {
       await emitEvent(authSupabase as any, {
         companyId,

@@ -4,6 +4,81 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.12] - 2026-06-02 — Pro-rata bonus clawback on sales returns
+
+### Why this exists
+Ahmed asked: "what happens to the bonus when there's a partial or full return on the invoice?" Investigation revealed a serious governance hole.
+
+A `/api/bonuses/reverse` endpoint exists and works, but **no live code calls it**. The only caller in `app/invoices/[id]/page.tsx` sits inside a legacy comment block (lines 1486–2008, marked `intentionally disabled after introducing the multi-level approval workflow for sales returns`). The active return path (`sales-return-requests/[id]/warehouse-approve` → `accountingService.postSalesReturnAtomic`) does **zero** bonus reversal.
+
+Practical implication: a salesperson sells 100k EGP → bonus 5k posts. Customer returns the entire shipment a week later → invoice gets `returned_amount = 100,000` and `returned_status = 'full'`, but the bonus row remains untouched. The salesperson collects on a sale that didn't happen. Both partial and full returns leak.
+
+### Pro-rata clawback model
+Standard ERP treatment (SAP / Oracle / NetSuite all do this):
+
+```
+return_ratio  = returned_amount / original_invoice_total
+reverse_each  = bonus_amount × return_ratio
+```
+
+The original bonus row is **never modified** — instead, we INSERT an adjustment row with negative `bonus_amount`, linked to the parent via `parent_bonus_id`. The bonuses dashboard sums positive + negative rows to show effective amounts; auditors can trace any row back to the return event that produced it.
+
+Adjustment status mirrors the original's lifecycle so payroll arithmetic stays correct:
+
+| Original status | Adjustment status | Reason |
+|---|---|---|
+| `pending` | `pending` | Nets to less before payroll touches it |
+| `scheduled` | `scheduled` | Same payroll run pays original + offset |
+| `paid` | `scheduled` | Clawback in NEXT payroll — never retroactively deduct from a salary already disbursed (Egyptian labor law) |
+
+### Architecture
+
+**DB migration `v3_74_12_bonus_reversal_columns`**:
+- Added `parent_bonus_id uuid REFERENCES user_bonuses(id) ON DELETE SET NULL` — links a clawback row to the original bonus row.
+- Added `sales_return_request_id uuid` — records which return triggered the clawback.
+- Indexes on both columns.
+- Partial unique index `(parent_bonus_id, sales_return_request_id) WHERE both NOT NULL` — guarantees idempotency: the same return cannot clawback the same parent bonus twice, even if the API is retried.
+
+**New service `lib/services/bonus-reversal.service.ts`**:
+- `reverseBonusForSalesReturn({ admin, invoiceId, companyId, returnedAmount, originalInvoiceTotal, salesReturnRequestId, actorUserId, reason })`
+- Finds all active **original** bonus rows for the invoice (positive amount, `parent_bonus_id IS NULL`, status NOT IN `reversed/cancelled`)
+- For each: sums any prior adjustment rows so cumulative clawback can never exceed the original amount even across multiple partial returns
+- Computes `pro-rata = round(originalAmount × ratio, 2)`, clamps at `remaining` and inserts the negative adjustment row
+- Per-row audit log entry with all metadata (parent, beneficiary, ratio, original status, adjustment status, etc.)
+- 23505 (unique-index violation) is treated as "already processed" — safe retry
+
+**Hook in `app/api/sales-return-requests/[id]/warehouse-approve/route.ts`**:
+- After `accountingService.postSalesReturnAtomic` succeeds (so the return is committed) and before observability/notifications:
+  - Fetches the invoice's `original_total` (falls back to `total_amount` for legacy rows)
+  - Calls `reverseBonusForSalesReturn` with `total_return_amount` from the approval request
+  - Logs the result (`adjustments`, `returnRatio`, `totalReversed`) or skipped reason
+  - Errors are caught and logged — never roll back the return (the return is already committed; bonus can be reconciled manually if needed)
+
+### Files
+- DB migration: `v3_74_12_bonus_reversal_columns` (two columns + 3 indexes including partial unique)
+- New: `lib/services/bonus-reversal.service.ts`
+- Modified: `app/api/sales-return-requests/[id]/warehouse-approve/route.ts` — server-side hook after `postSalesReturnAtomic`
+- Modified: `lib/version.ts` → 3.74.12
+
+### Verify after deploy
+1. **Partial return scenario**: Sign in as owner. Create an invoice 1000 EGP linked to a sales order (different salesperson). Record full payment → bonus row should appear in `user_bonuses` (positive). Submit a sales return for 250 EGP → warehouse approve. Open `user_bonuses` — there's now a new row with `bonus_amount ≈ -bonus_original × 0.25`, `parent_bonus_id` pointing at the original, `sales_return_request_id` set, `status` matching the original.
+2. **Full return scenario**: Same setup, return 1000 EGP. New adjustment row has `bonus_amount ≈ -bonus_original` (fully offsetting).
+3. **Already-paid bonus + return**: If the original bonus was `paid` already, the adjustment row has `status='scheduled'` so it offsets the next payroll, not the already-disbursed one.
+4. **Idempotency**: Re-call the warehouse-approve endpoint with the same id (would normally fail at the status check, but the bonus service also short-circuits on the unique index). No duplicate adjustment rows.
+5. **Cumulative partials**: Do two partial returns (300 + 700 EGP on a 1000 EGP invoice). Total clawback equals the original bonus, never more. The cap in the service prevents over-reversal.
+6. **No bonus exists**: For invoices where the bonus was never calculated (company opted out, employee opted out, no SO creator), the reversal service skips with `no_active_bonus_to_reverse` — no errors, no rows.
+
+### Not changing
+- The existing `/api/bonuses/reverse` endpoint stays — still useful for manual reversal (data fix, audit corrections) and the legacy code path. Not refactored to share the service because it has different semantics (full-reverse-or-nothing vs. pro-rata).
+- The original bonus row is never touched. All existing reports and integrations that read `user_bonuses` continue to work — the new adjustment rows are visible alongside the originals, and the sum gives the effective net.
+
+### Governance
+- Service uses the admin (service-role) client — actor's role doesn't matter, exactly like the v3.74.11 bonus trigger. A warehouse manager approving a return doesn't need bonuses:update.
+- All clawback rows carry the actor's `created_by` and full metadata (parent, return, ratio, original status) so an auditor can reconstruct the chain from any side.
+- Egyptian labor law respected: no retroactive deduction from a paid salary; clawback always lands on the next available payroll.
+
+---
+
 ## [3.74.11] - 2026-06-02 — Server-side bonus trigger (the salesperson always gets paid)
 
 ### Why this exists
