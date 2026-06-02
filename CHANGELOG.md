@@ -4,6 +4,66 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.7] - 2026-06-02 — Hotfix: store_manager sees customer name for invoices in their branch
+
+### Why
+After v3.74.6 owners and admins saw customer names correctly on `/inventory/dispatch-approvals`. But store_manager (who actually does the dispatch work) still saw "—" in the customer column. Same issue for accountant, purchasing_officer, manufacturing_officer, manager, hr_officer when reading invoices for their workflow.
+
+### Root cause
+v3.74.0 introduced **resource-aware RLS** on customers — only roles that have `customers` listed in `company_role_permissions` get any access. By Ahmed's strict v3.69.0 spec, store_manager does NOT have customers in its role permissions (their job is inventory, not customer management). So `current_user_resource_visibility(company_id, 'customers')` returned `'none'` and the JOIN to customers returned NULL inside the invoice query — the security fix was working as designed, but it made the dispatch workflow broken because the store_manager couldn't tell *who* they were dispatching to.
+
+### Fix
+Extended the customers SELECT RLS policy with a **fifth OR clause**: customers are visible to a small set of operational roles ONLY when those roles have a workflow reason — i.e., an invoice exists for that customer in the current user's branch.
+
+```sql
+OR (
+  EXISTS (
+    SELECT 1 FROM company_members cm
+    WHERE cm.user_id = auth.uid()
+      AND cm.company_id = customers.company_id
+      AND cm.role IN ('store_manager', 'manufacturing_officer',
+                      'purchasing_officer', 'accountant',
+                      'manager', 'hr_officer')
+  )
+  AND EXISTS (
+    SELECT 1 FROM invoices i
+    WHERE i.customer_id = customers.id
+      AND i.company_id = customers.company_id
+      AND (i.branch_id IS NULL OR i.branch_id = current_user_branch_id(customers.company_id))
+  )
+)
+```
+
+Policy renamed `customers_select_v4 → customers_select_v5`.
+
+### What changes vs stays the same
+- **owner / admin** — still see all customers (clause 1, unchanged).
+- **manager (branch read-only)** — still sees branch customers naturally via clause 2; gets workflow access too via clause 5.
+- **accountant / purchasing_officer / store_manager / manufacturing_officer / hr_officer** — workflow-scoped customer visibility on invoices in their branch. They see the customer name, can JOIN through invoices, but **can't enumerate all customers** because the path requires an invoice link.
+- **staff (sales rep)** — unchanged (clause 3, own only).
+- **viewer** — unchanged (clause 1 for company-wide read).
+- **Permission shares** — unchanged (clause 4).
+
+### Why this isn't a security regression
+The new clause requires the user's role to be in the operational set AND an actual invoice link AND the invoice to be in the user's branch. A staff in branch A still cannot see customers from branch B, and accountant in branch A still cannot enumerate customers without an invoice. The customer name visibility is bounded by **invoice records the user is already responsible for processing**.
+
+### DB verification
+Simulated store_manager `07e580c5...` (branch مدينة نصر) querying customer `3c38d6e1...`:
+- `current_user_resource_visibility()` returns `'none'` (unchanged — direct customers access still denied).
+- `SELECT name FROM customers WHERE id = '...'` returns `'محمد بسيونى'` (workflow clause grants the read).
+
+### Files
+- DB migration: `v3_74_7_customer_visibility_via_invoice_workflow` — drops `customers_select_v4`, creates `customers_select_v5`
+- Modified: `lib/version.ts` → 3.74.7
+
+### Verify after deploy
+1. Login as the store_manager in تست → open `/inventory/dispatch-approvals` → customer column now shows "محمد بسيونى" (was "—").
+2. Other warehouse-related views that JOIN customers via invoice rows now resolve correctly for store_manager / accountant.
+3. Login as staff "خالد عجلان" → opening `/customers` still shows only the customers they personally created (clause 3 unchanged). Other branch customers stay hidden.
+
+---
+
+
 ## [3.74.6] - 2026-06-02 — Hotfix: customer "—" + column styling matches the rest of the app
 
 ### Why
