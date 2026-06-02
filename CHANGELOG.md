@@ -4,6 +4,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.2] - 2026-06-01 — Hotfix: landing page price truth ($10 USD, billed in EGP)
+
+Ahmed flagged: the landing page advertised "500 ج.م / مستخدم / شهر" hardcoded, but the actual production billing in `lib/billing/pricing-engine.ts` uses `BASE_PRICE_USD = $10/seat/month` converted to EGP at the live Paymob exchange rate at checkout. The marketing material was contradicting the system of record.
+
+### Fixed
+- `app/page.tsx` — pricing card on the landing page now shows the truth:
+  - **`$10 / مستخدم / شهر`** as the headline price
+  - A small subtext under the price: *"يُحاسَب بالجنيه المصرى بسعر الصرف اللحظى عند الدفع عبر Paymob"* (Arabic) / *"Billed in EGP at the current exchange rate via Paymob at checkout"* (English)
+  - Free plan now reads "مجانى / للأبد" instead of "0 ج.م"
+- `app/layout.tsx` JSON-LD structured data — both offers updated:
+  - Free: `price: "0", priceCurrency: "USD"`
+  - Paid: `price: "10", priceCurrency: "USD", description: "...billed in EGP via Paymob at the current exchange rate"`
+- Blog posts mentioning the price:
+  - `app/blog/best-arabic-accounting-software-egypt-2026/page.tsx` — replaced "500 ج.م/مستخدم إضافى/شهر" with "10$ لكل مستخدم إضافى/شهر (يُحاسَب بالجنيه عبر Paymob بسعر الصرف اللحظى)" + generalized one other mention
+  - `app/blog/excel-to-erp-migration-guide/page.tsx` — generalized to "اشتراك شَهرى صَغير"
+- `app/api/checkout/route.ts` — added a clear DEPRECATED header. This route was an early Paymob integration with a hardcoded 500 EGP/seat. It's no longer wired to anything in the running app (only `components/UpgradeDialog.tsx`, itself unused, calls it). The real flow is `/api/billing/*` which uses the pricing engine. Kept the file but flagged it so a future refactor doesn't accidentally bring it back.
+
+### Why this matters
+- **Search engine snippets** were showing "EGP 500" from the JSON-LD, which would confuse users coming from Google.
+- **Honest pricing** in the blog matters for the SEO articles that compare 7esab to competitors.
+- The pricing engine remained correct the whole time — actual payments charged the right amount. This was purely a marketing-page truth gap.
+
+### Files
+- Modified: `app/page.tsx` — pricing card
+- Modified: `app/layout.tsx` — JSON-LD offers
+- Modified: `app/blog/best-arabic-accounting-software-egypt-2026/page.tsx`
+- Modified: `app/blog/excel-to-erp-migration-guide/page.tsx`
+- Modified: `app/api/checkout/route.ts` — deprecation header
+- Modified: `lib/version.ts` → 3.74.2
+
+### Verify after deploy
+1. Open `https://7esab.com` — pricing card shows "$10 / مستخدم / شهر" with the EGP-billing subtext underneath.
+2. View page source — JSON-LD offer shows `priceCurrency: "USD", price: "10"`.
+3. Blog comparison article shows the corrected price wording.
+4. Actual checkout flow still works — uses pricing-engine.ts (untouched) so live exchange rate × $10 = EGP charged via Paymob.
+
+---
+
+
 ## [3.74.1] - 2026-06-01 — Hotfix: role labels + expiry + archive history on share rows
 
 Ahmed reviewed the share row "خالد عجلان ← خالد زيتون | الكل | تعديل | نشط" and pointed out two gaps:

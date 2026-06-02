@@ -151,13 +151,17 @@ const ERPWebsite = () => {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {[
-              { badge: isAr ? 'مجانى للأبد' : 'Free forever', title: isAr ? 'النسخة المجانية' : 'Free Plan', price: isAr ? '0 ج.م' : 'EGP 0', period: isAr ? '/شهر' : '/month', features: [isAr ? 'مستخدم واحد للأبد' : '1 user forever', isAr ? 'جميع ميزات المحاسبة' : 'All accounting features', isAr ? 'إدارة المخزون الكاملة' : 'Full inventory', isAr ? 'تقارير شاملة' : 'Reports', isAr ? 'دعم فنى مجانى' : 'Free support', isAr ? 'بدون حدود زمنية' : 'No time limits'], cta: isAr ? 'ابدأ مجاناً' : 'Start Free', highlight: false },
-              { badge: isAr ? 'ادفع عند الحاجة' : 'Pay as you grow', title: isAr ? 'مستخدمين إضافيين' : 'Additional Users', price: isAr ? '500 ج.م' : 'EGP 500', period: isAr ? '/مستخدم/شهر' : '/user/month', features: [isAr ? 'كل مزايا النسخة المجانية' : 'All free features', isAr ? 'صلاحيات متقدمة' : 'Advanced permissions', isAr ? 'إدارة الفرق' : 'Team management', isAr ? 'دعم بأولوية' : 'Priority support', isAr ? 'دفع بـ Paymob' : 'Paymob payments', isAr ? 'فاتورة ضريبية' : 'Tax-compliant invoice'], cta: isAr ? 'أضف مستخدمين' : 'Add Users', highlight: true },
+              { badge: isAr ? 'مجانى للأبد' : 'Free forever', title: isAr ? 'النسخة المجانية' : 'Free Plan', price: isAr ? 'مجانى' : 'Free', period: isAr ? '/للأبد' : '/forever', note: '', features: [isAr ? 'مستخدم واحد للأبد' : '1 user forever', isAr ? 'جميع ميزات المحاسبة' : 'All accounting features', isAr ? 'إدارة المخزون الكاملة' : 'Full inventory', isAr ? 'تقارير شاملة' : 'Reports', isAr ? 'دعم فنى مجانى' : 'Free support', isAr ? 'بدون حدود زمنية' : 'No time limits'], cta: isAr ? 'ابدأ مجاناً' : 'Start Free', highlight: false },
+              { badge: isAr ? 'ادفع عند الحاجة' : 'Pay as you grow', title: isAr ? 'مستخدمين إضافيين' : 'Additional Users', price: '$10', period: isAr ? '/مستخدم/شهر' : '/user/month', note: isAr ? 'يُحاسَب بالجنيه المصرى بسعر الصرف اللحظى عند الدفع عبر Paymob' : 'Billed in EGP at the current exchange rate via Paymob at checkout', features: [isAr ? 'كل مزايا النسخة المجانية' : 'All free features', isAr ? 'صلاحيات متقدمة' : 'Advanced permissions', isAr ? 'إدارة الفرق' : 'Team management', isAr ? 'دعم بأولوية' : 'Priority support', isAr ? 'دفع بالجنيه عبر Paymob' : 'EGP payment via Paymob', isAr ? 'فاتورة ضريبية' : 'Tax-compliant invoice'], cta: isAr ? 'أضف مستخدمين' : 'Add Users', highlight: true },
             ].map((plan, i) => (
               <div key={i} className={`relative p-8 rounded-3xl border-2 ${plan.highlight ? 'border-blue-500 bg-gradient-to-br from-blue-50/50 to-purple-50/50 dark:from-blue-950/30 dark:to-purple-950/30 shadow-xl' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'}`}>
                 <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2">{plan.badge}</div>
                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">{plan.title}</h3>
-                <div className="flex items-baseline mb-6"><span className="text-5xl font-extrabold text-gray-900 dark:text-white">{plan.price}</span><span className="text-gray-500 ms-2">{plan.period}</span></div>
+                <div className="flex items-baseline mb-2"><span className="text-5xl font-extrabold text-gray-900 dark:text-white">{plan.price}</span><span className="text-gray-500 ms-2">{plan.period}</span></div>
+                {plan.note && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">{plan.note}</p>
+                )}
+                {!plan.note && <div className="mb-6" />}
                 <ul className="space-y-3 mb-8">
                   {plan.features.map((f, j) => (<li key={j} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300"><CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" /><span>{f}</span></li>))}
                 </ul>

@@ -1,10 +1,24 @@
+/**
+ * ⚠️ DEPRECATED — DO NOT USE.
+ *
+ * This route was an early Paymob integration with a hardcoded 500 EGP/seat
+ * price. The current production checkout flow lives in /api/billing/* and
+ * uses lib/billing/pricing-engine.ts where BASE_PRICE_USD = $10/seat/month
+ * is converted to EGP at the live exchange rate via Paymob.
+ *
+ * The only remaining caller of this route is components/UpgradeDialog.tsx,
+ * which is no longer imported anywhere in the app. Kept here only to avoid
+ * a build-time 404 if someone re-imports the component during a refactor.
+ *
+ * If you find yourself touching this file: STOP, use /api/billing/* instead.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 
 const PAYMOB_SECRET_KEY = process.env.PAYMOB_SECRET_KEY!;
 const PAYMOB_PUBLIC_KEY = process.env.PAYMOB_PUBLIC_KEY!;
 const PAYMOB_INTEGRATION_ID = process.env.PAYMOB_INTEGRATION_ID!;
 
-// 500 EGP per additional user
+// LEGACY: deprecated 500 EGP price (real price = $10 USD/seat via pricing-engine.ts)
 const PRICE_PER_USER_CENTS = 50000; // in piasters (cents)
 const CURRENCY = 'EGP';
 
