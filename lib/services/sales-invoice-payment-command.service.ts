@@ -67,7 +67,19 @@ type InvoicePaymentRpcExecution = {
 }
 
 export class SalesInvoicePaymentCommandError extends Error {
-  constructor(message: string, public readonly status = 500) {
+  constructor(
+    message: string,
+    public readonly status = 500,
+    /**
+     * Optional machine-readable code so the UI can branch (e.g. show a
+     * "open accounting period" CTA instead of a generic alert). v3.74.9.
+     */
+    public readonly code?: string,
+    /**
+     * Optional structured details (e.g. the date that triggered the lock).
+     */
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message)
     this.name = "SalesInvoicePaymentCommandError"
   }
@@ -170,7 +182,26 @@ export class SalesInvoicePaymentCommandService {
         await requireOpenFinancialPeriod(resolvedCompanyId, lockDate)
       } catch (lockError: any) {
         if (lockError instanceof ERPError && lockError.code === "ERR_PERIOD_CLOSED") {
-          throw new SalesInvoicePaymentCommandError(lockError.message, 400)
+          // v3.74.9 — replace the raw English DB message with a human-readable
+          // Arabic one and attach a machine-readable code so the UI can render
+          // a "open the period" CTA instead of an alert dialog with technical
+          // jargon.
+          const rawMsg = lockError.message || ""
+          const isMissing = rawMsg.includes("NO_ACTIVE_FINANCIAL_PERIOD")
+          const isLocked  = rawMsg.includes("FINANCIAL_PERIOD_LOCKED")
+
+          const friendly = isMissing
+            ? `لا توجد فترة محاسبية مفتوحة تغطى تاريخ ${lockDate}. الرجاء فتح الفترة من صفحة "الفترات المحاسبية" ثم إعادة المحاولة.`
+            : isLocked
+              ? `الفترة المحاسبية المغطية لتاريخ ${lockDate} مغلقة أو مقفولة. الرجاء فتحها من صفحة "الفترات المحاسبية" أو اختيار تاريخ ضمن فترة مفتوحة.`
+              : rawMsg
+
+          throw new SalesInvoicePaymentCommandError(
+            friendly,
+            400,
+            "ERR_PERIOD_CLOSED",
+            { effectiveDate: lockDate, missing: isMissing, locked: isLocked },
+          )
         }
         throw lockError
       }

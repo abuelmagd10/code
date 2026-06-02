@@ -22,6 +22,7 @@ import { DollarSign, CreditCard, Banknote, FileText, CheckCircle, AlertCircle, R
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
+import { ToastAction } from "@/components/ui/toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { ERPPageHeader } from "@/components/erp-page-header"
@@ -2062,6 +2063,27 @@ export default function InvoiceDetailPage() {
       const atomicResult = await atomicRes.json()
 
       if (!atomicRes.ok || !atomicResult.success) {
+        // v3.74.9 — friendly handling for the "closed/missing accounting period"
+        // case: show a toast with a CTA that jumps to /accounting/periods
+        // instead of a generic alert with the raw English DB message.
+        if (atomicResult?.code === "ERR_PERIOD_CLOSED") {
+          toast({
+            title: "الفترة المحاسبية غير مفتوحة",
+            description:
+              atomicResult.error ||
+              "لا توجد فترة محاسبية مفتوحة تغطى تاريخ هذه الدفعة. الرجاء فتحها من صفحة الفترات المحاسبية.",
+            variant: "destructive",
+            action: (
+              <ToastAction
+                altText="فتح صفحة الفترات المحاسبية"
+                onClick={() => router.push("/accounting/periods")}
+              >
+                فتح الفترة
+              </ToastAction>
+            ),
+          })
+          return
+        }
         const errMsg = atomicResult?.error || "فشل تسجيل الدفعة"
         throw new Error(errMsg)
       }

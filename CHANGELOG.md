@@ -4,6 +4,69 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.9] - 2026-06-02 — Auto-create accounting periods (no more NO_ACTIVE_FINANCIAL_PERIOD)
+
+### Why
+On 2026-06-02 a payment-recording attempt failed with:
+
+```
+NO_ACTIVE_FINANCIAL_PERIOD: No accounting period covers date 2026-06-02 for company 8ef6338c-1713-4202-98ac-863633b76526
+```
+
+The company only had April and May 2026 periods seeded. No periods existed for June or beyond. The financial-lock guard correctly refused the payment, but the system had **no mechanism** to ensure the current month's accounting period always exists. Every new month, every financial mutation would break until an admin manually opens the next period — unacceptable for an enterprise ERP.
+
+### Three layers of defense
+
+**Layer 1 — DB trigger seeds 12 months on company creation, plus backfill**
+
+New migration `v3_74_9_auto_seed_accounting_periods_v2`:
+- Adds unique constraint `accounting_periods_company_period_start_uniq (company_id, period_start)` (deduplicates first if needed)
+- `_arabic_month_name(int)` + `_to_arabic_indic_digits(text)` helpers so seeded periods get user-friendly names like "يونيو ٢٠٢٦"
+- `seed_accounting_periods_for_company(company_id, start_date, months)` — idempotent, pre-checks overlap before insert so it cooperates with the existing `check_no_overlapping_periods()` BEFORE trigger
+- `trg_seed_accounting_periods_after_company_insert` — AFTER INSERT trigger on `companies` that seeds 12 months from CURRENT_DATE for any newly created company
+- Backfill block ran once during the migration: every existing company now has a rolling 12-month window starting from today. Verified: «العصرية للنجارة» has 12 periods covering 2026-06-01 → 2027-05-31, «تست» has 14 periods (April + May 2026 already existed, June already manually inserted by Ahmed, plus 11 new ones up to May 2027)
+
+**Layer 2 — Daily cron ensures the next 3 months always exist**
+
+- New RPC `cron_ensure_accounting_periods(p_months_ahead int default 3)` loops every company and seeds the current month + next N months via the idempotent function. Returns `(total_companies, total_inserted)`.
+- New endpoint `GET /api/cron/ensure-accounting-periods` — protected by `Authorization: Bearer $CRON_SECRET`, audit-logged to `audit_logs`, idempotent
+- Added to `vercel.json` cron schedule: `0 1 * * *` (1 AM UTC = 3 AM Cairo daily)
+- Reuses the existing middleware allow-list for `/api/cron/*` so no new auth shim needed
+
+**Layer 3 — User-friendly error in the record-payment form**
+
+- `SalesInvoicePaymentCommandError` extended with optional `code` and `details` fields
+- `sales-invoice-payment-command.service.ts` — when the financial-lock guard throws `ERR_PERIOD_CLOSED`, the service now substitutes a clear Arabic message (different copy for "missing period" vs "locked period") and attaches `code: 'ERR_PERIOD_CLOSED'` + `details: { effectiveDate, missing, locked }`
+- `/api/invoices/[id]/record-payment/route.ts` — surfaces `code` and `details` in the JSON response
+- `app/invoices/[id]/page.tsx` — when `atomicResult.code === 'ERR_PERIOD_CLOSED'`, the form shows a destructive toast with a **"فتح الفترة"** action button that navigates to `/accounting/periods` instead of throwing a generic alert with the raw English DB error
+
+### Files
+- DB migration: `v3_74_9_auto_seed_accounting_periods_v2`, `v3_74_9_ensure_periods_rpc`
+- New: `app/api/cron/ensure-accounting-periods/route.ts`
+- Modified: `vercel.json` — added cron entry
+- Modified: `lib/services/sales-invoice-payment-command.service.ts` — error class + period-lock catch
+- Modified: `app/api/invoices/[id]/record-payment/route.ts` — surface code/details
+- Modified: `app/invoices/[id]/page.tsx` — friendly toast with CTA
+- Modified: `lib/version.ts` → 3.74.9
+
+### Verify after deploy
+1. Open any invoice for June 2026 → record a payment → succeeds (period now exists).
+2. (DB-side) Temporarily delete an accounting period for a date you can pay → attempt payment → toast says "الفترة المحاسبية غير مفتوحة" with a "فتح الفترة" button → click it → navigates to `/accounting/periods`. (Don't forget to recreate the period.)
+3. Hit `GET /api/cron/ensure-accounting-periods` with `Authorization: Bearer $CRON_SECRET` manually → returns `{ ok: true, total_companies, total_inserted, duration_ms }` and writes an `audit_logs` row with `action='accounting_periods_auto_seed'`.
+4. Create a new test company → check `accounting_periods` for that company → 12 monthly rows exist immediately, all status `open`.
+
+### Why not all in DB / why not all in app code?
+The DB trigger covers new companies. The cron covers existing companies plus the natural rollover into future months (the trigger only fires once on INSERT; without the cron, the very first month after the seeded window would break again). The friendly UI is independent — it would still be useful even if the seeding logic were perfect, because there are legitimate scenarios (closed/locked period, manual deletion, audit lock) where the lock guard rejects a payment and the user needs guidance.
+
+### Governance & safety
+- Trigger uses `SECURITY DEFINER` but doesn't bypass any business logic — it only adds periods, never modifies/deletes
+- Seeding function is idempotent and pre-checks overlap → safe to run any number of times
+- Cron is authenticated by `CRON_SECRET` (same pattern as four other crons in this project)
+- The friendly error message exposes only the date the user already entered — no extra information leakage
+- Backfill ran inside the migration transaction; if any company's seeding had failed, the migration would have rolled back
+
+---
+
 ## [3.74.8] - 2026-06-02 — Payment method dropdown on invoice payment form
 
 ### Why

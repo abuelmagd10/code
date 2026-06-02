@@ -73,7 +73,17 @@ export async function POST(
     return NextResponse.json(result)
   } catch (error: any) {
     if (error instanceof SalesInvoicePaymentCommandError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+      // v3.74.9 — surface optional code + details so the UI can branch
+      // (e.g. show a "open the accounting period" CTA for ERR_PERIOD_CLOSED).
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          code: error.code || null,
+          details: error.details || null,
+        },
+        { status: error.status },
+      )
     }
     return serverError(`خطأ غير متوقع في تسجيل الدفعة: ${error?.message || "unknown"}`)
   }
