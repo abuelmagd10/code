@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.5] - 2026-06-02 — Dispatch-approvals: 8-column rich layout
+
+### Why
+v3.74.4 patched the warehouse cell but the layout was still cramped: customer and product were squeezed into one column, branch was glued to shipping, and there was no quantity at all. Ahmed asked for a proper 8-column layout with each field on its own.
+
+### Done — table layout
+The pending table at `/inventory/dispatch-approvals` now renders **8 data columns** plus the actions column. The "Type" column is gone — its icon moved inline before the reference number to save space.
+
+| Column | Sales invoice | Manufacturing material issue |
+|---|---|---|
+| الرقم المرجعى | invoice_number (📄 icon) | order_no (🏭 icon) |
+| التاريخ | invoice_date | requested_at |
+| العميل | customer.name | — |
+| المنتج | first item.product.name (`+N` if more items) | production_order.product.name (truncated 180px with title tooltip) |
+| الكمية | sum of all item.quantity | production_order.planned_quantity + UoM |
+| الفرع | branches.name | apv.branch.name |
+| المخزن | warehouses.name (📦 icon) | apv.warehouse.name |
+| شركة الشحن | shipping_providers.provider_name or "—" | "—" |
+
+### Done — data layer
+- Replaced the existing items-count query with a per-invoice **summary** that builds `{count, totalQty, firstProduct}` from `invoice_items → products(name)`. One round trip, three useful aggregates.
+- The old `itemsCounts` object is kept (derived from the new summary) so any consumer that still reads it doesn't break.
+- `UnifiedRow` interface rewritten: `party` + `extra` (combined fields) replaced with `customer`, `product`, `quantity`, `uom`, `branch`, `shipping` — each explicit.
+- Search filter now matches across **all six** display fields (reference, customer, product, branch, warehouse, shipping) instead of just reference and the old `party`.
+
+### Why I kept HistoryRow separate
+The history tab uses its own `HistoryRow` interface that still has a combined `party` field. I deliberately didn't touch it — that tab's purpose is browsing decisions already taken, where a denser layout is fine and the split is less valuable. If you want the same 8-column treatment on history later, it's a smaller follow-up.
+
+### Files
+- Modified: `app/inventory/dispatch-approvals/page.tsx` — UnifiedRow shape, SELECT query, row builders (sales + manufacturing), columns array (8 columns), search filter
+- Modified: `lib/version.ts` → 3.74.5
+
+### Verify after deploy
+1. Open `/inventory/dispatch-approvals` → header now reads: الرقم المرجعى · التاريخ · العميل · المنتج · الكمية · الفرع · المخزن · شركة الشحن · إجراء.
+2. A sales row shows the customer name, the first product (with `+1` etc. if the invoice has more items), the total quantity, the branch, the warehouse with a box icon, and the shipping company or "—".
+3. A manufacturing row shows "—" for customer, the produced product name, planned quantity with UoM, the issuing warehouse's branch, and "—" for shipping.
+4. The Type column is gone but the icon (📄 sales / 🏭 manufacturing) appears inline at the start of the reference cell — you can still tell rows apart at a glance.
+5. Search by product name now finds rows where that product is in the invoice items (was: had to know the customer or invoice number).
+
+---
+
+
 ## [3.74.4] - 2026-06-02 — Hotfix: dispatch-approvals pending list missing warehouse + branch
 
 ### Why

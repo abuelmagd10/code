@@ -71,9 +71,14 @@ interface UnifiedRow {
   id: string
   reference: string        // invoice_number OR order_no
   date: string
-  party: string            // customer name OR product name
+  // v3.74.5 — split fields for richer table layout
+  customer: string         // sales: customer name | manufacturing: "—"
+  product: string          // sales: first item product (+N) | manufacturing: order's product
+  quantity: number         // sales: sum of item quantities | manufacturing: planned_quantity
+  uom: string              // unit of measure (manufacturing only); sales = ""
   warehouse: string
-  extra: string            // shipping provider OR branch
+  branch: string
+  shipping: string         // sales: shipping provider | manufacturing: "—"
   raw: DispatchInvoice | ManufacturingApproval
 }
 
@@ -153,8 +158,8 @@ export default function DispatchApprovalsPage() {
       if (!companyId) return
 
       // ── 1. فواتير المبيعات ──────────────────────────────────────────────────
-      // v3.74.4 — pull warehouse + branch joins so the row shows real data,
-      // not the previous hardcoded "-"
+      // v3.74.5 — pull invoice items too so the table shows product names + quantities,
+      // not just an item count
       const { data: invData, error: invError } = await supabase
         .from('invoices')
         .select(`
@@ -173,16 +178,31 @@ export default function DispatchApprovalsPage() {
       if (invError) throw invError
 
       const invoiceIds = (invData || []).map((i: any) => i.id)
-      let itemsCounts: Record<string, number> = {}
+      // Aggregate per-invoice: items count + total quantity + first product name
+      type ItemSummary = { count: number; totalQty: number; firstProduct: string }
+      const itemSummaries: Record<string, ItemSummary> = {}
       if (invoiceIds.length > 0) {
         const { data: items } = await supabase
           .from('invoice_items')
-          .select('invoice_id')
+          .select('invoice_id, quantity, products(name)')
           .in('invoice_id', invoiceIds)
         items?.forEach((item: any) => {
-          itemsCounts[item.invoice_id] = (itemsCounts[item.invoice_id] || 0) + 1
+          const id = item.invoice_id
+          const productName = item.products?.name || ''
+          const qty = Number(item.quantity) || 0
+          if (!itemSummaries[id]) {
+            itemSummaries[id] = { count: 0, totalQty: 0, firstProduct: productName }
+          }
+          itemSummaries[id].count += 1
+          itemSummaries[id].totalQty += qty
+          if (!itemSummaries[id].firstProduct && productName) {
+            itemSummaries[id].firstProduct = productName
+          }
         })
       }
+      // Keep the old itemsCounts for any consumer that still reads it
+      const itemsCounts: Record<string, number> = {}
+      Object.entries(itemSummaries).forEach(([id, s]) => { itemsCounts[id] = s.count })
 
       const salesRows: UnifiedRow[] = (invData || []).map((inv: any) => {
         const raw: DispatchInvoice = {
@@ -195,22 +215,29 @@ export default function DispatchApprovalsPage() {
           warehouse_status: inv.warehouse_status,
           items_count: itemsCounts[inv.id] || 0,
         }
-        // v3.74.4 — read real warehouse/branch from joined rows
-        const warehouseName = (inv.warehouses as any)?.name || "-"
-        const shippingName = inv.shipping_providers?.provider_name
-        const branchName = (inv.branches as any)?.name
-        // "Shipping / Branch" column: prefer shipping provider if assigned,
-        // otherwise show the branch the invoice was issued from.
-        const extraValue = shippingName || branchName || "-"
+        // v3.74.5 — split fields for richer 8-column table
+        const warehouseName = (inv.warehouses as any)?.name || "—"
+        const branchName = (inv.branches as any)?.name || "—"
+        const shippingName = inv.shipping_providers?.provider_name || "—"
+        const itemSummary = itemSummaries[inv.id]
+        const productLabel = itemSummary && itemSummary.count > 0
+          ? (itemSummary.count > 1
+              ? `${itemSummary.firstProduct || ''}${itemSummary.firstProduct ? ' ' : ''}+${itemSummary.count - 1}`
+              : itemSummary.firstProduct || '—')
+          : '—'
 
         return {
           _type: "sales",
           id: inv.id,
           reference: inv.invoice_number,
           date: inv.invoice_date,
-          party: inv.customers?.name || "-",
+          customer: inv.customers?.name || "—",
+          product: productLabel,
+          quantity: itemSummary?.totalQty || 0,
+          uom: '',
           warehouse: warehouseName,
-          extra: extraValue,
+          branch: branchName,
+          shipping: shippingName,
           raw,
         }
       })
@@ -226,9 +253,13 @@ export default function DispatchApprovalsPage() {
           id: apv.id,
           reference: apv.production_order?.order_no || apv.id,
           date: apv.requested_at,
-          party: apv.production_order?.product?.name || "-",
-          warehouse: apv.warehouse?.name || "-",
-          extra: apv.branch?.name || "-",
+          customer: "—",
+          product: apv.production_order?.product?.name || "—",
+          quantity: apv.production_order?.planned_quantity || 0,
+          uom: apv.production_order?.order_uom || '',
+          warehouse: apv.warehouse?.name || "—",
+          branch: apv.branch?.name || "—",
+          shipping: "—",
           raw: apv,
         }))
       }
@@ -399,55 +430,78 @@ export default function DispatchApprovalsPage() {
     }
   }
 
+  // v3.74.5 — Eight-column rich layout. The Type badge moved inline next to
+  // the reference so we save a whole column for actual data.
   const columns: DataTableColumn<UnifiedRow>[] = [
-    {
-      header: appLang === 'en' ? "Type" : "النوع",
-      key: "_type",
-      format: (_: any, row: UnifiedRow) => (
-        row._type === "sales" ? (
-          <Badge variant="outline" className="gap-1 text-blue-700 border-blue-300 bg-blue-50 whitespace-nowrap">
-            <FileText className="w-3 h-3" />{appLang === 'en' ? "Sales Invoice" : "فاتورة مبيعات"}
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="gap-1 text-orange-700 border-orange-300 bg-orange-50 whitespace-nowrap">
-            <Factory className="w-3 h-3" />{appLang === 'en' ? "Mfg. Issue" : "صرف تصنيع"}
-          </Badge>
-        )
-      )
-    },
     {
       header: appLang === 'en' ? "Reference #" : "الرقم المرجعي",
       key: "reference",
       format: (_: any, row: UnifiedRow) => (
-        <div className="font-medium text-blue-600 dark:text-blue-400">{row.reference}</div>
+        <div className="flex items-center gap-2">
+          {row._type === "sales" ? (
+            <FileText className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+          ) : (
+            <Factory className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" />
+          )}
+          <span className="font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">{row.reference}</span>
+        </div>
       )
     },
     {
       header: appLang === 'en' ? "Date" : "التاريخ",
       key: "date",
       format: (_: any, row: UnifiedRow) => (
-        <div>{new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</div>
+        <div className="whitespace-nowrap">{new Date(row.date).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}</div>
       )
     },
     {
-      header: appLang === 'en' ? "Customer / Product" : "العميل / المنتج",
-      key: "party",
-      format: (_: any, row: UnifiedRow) => <div>{row.party}</div>
+      header: appLang === 'en' ? "Customer" : "العميل",
+      key: "customer",
+      format: (_: any, row: UnifiedRow) => (
+        <div className="text-gray-700 dark:text-gray-300">{row.customer}</div>
+      )
     },
     {
-      header: appLang === 'en' ? "Warehouse" : "المستودع",
-      key: "warehouse",
+      header: appLang === 'en' ? "Product" : "المنتج",
+      key: "product",
       format: (_: any, row: UnifiedRow) => (
-        <div className="flex items-center text-gray-500">
-          <Box className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
-          {row.warehouse}
+        <div className="text-gray-700 dark:text-gray-300 max-w-[180px] truncate" title={row.product}>{row.product}</div>
+      )
+    },
+    {
+      header: appLang === 'en' ? "Qty" : "الكمية",
+      key: "quantity",
+      format: (_: any, row: UnifiedRow) => (
+        <div className="whitespace-nowrap font-medium text-gray-800 dark:text-gray-200">
+          {row.quantity > 0
+            ? `${Number(row.quantity).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG')}${row.uom ? ` ${row.uom}` : ''}`
+            : '—'}
         </div>
       )
     },
     {
-      header: appLang === 'en' ? "Shipping / Branch" : "شركة الشحن / الفرع",
-      key: "extra",
-      format: (_: any, row: UnifiedRow) => <div>{row.extra}</div>
+      header: appLang === 'en' ? "Branch" : "الفرع",
+      key: "branch",
+      format: (_: any, row: UnifiedRow) => (
+        <div className="text-gray-600 dark:text-gray-400 whitespace-nowrap">{row.branch}</div>
+      )
+    },
+    {
+      header: appLang === 'en' ? "Warehouse" : "المخزن",
+      key: "warehouse",
+      format: (_: any, row: UnifiedRow) => (
+        <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+          <Box className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>{row.warehouse}</span>
+        </div>
+      )
+    },
+    {
+      header: appLang === 'en' ? "Shipping" : "شركة الشحن",
+      key: "shipping",
+      format: (_: any, row: UnifiedRow) => (
+        <div className="text-gray-600 dark:text-gray-400 whitespace-nowrap">{row.shipping}</div>
+      )
     },
     {
       header: appLang === 'en' ? "Action" : "إجراء",
@@ -528,7 +582,15 @@ export default function DispatchApprovalsPage() {
 
   const filteredRows = rows.filter(row => {
     if (typeFilter !== "all" && row._type !== typeFilter) return false
-    if (searchQuery && !row.reference.toLowerCase().includes(searchQuery.toLowerCase()) && !row.party.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (searchQuery) {
+      // v3.74.5 — search across reference, customer, product, branch, warehouse, shipping
+      const q = searchQuery.toLowerCase()
+      const hay = [row.reference, row.customer, row.product, row.branch, row.warehouse, row.shipping]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      if (!hay.includes(q)) return false
+    }
     return true
   })
 
@@ -773,7 +835,7 @@ export default function DispatchApprovalsPage() {
                     <tr>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Type" : "النوع"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Reference #" : "الرقم المرجعي"}</th>
-                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Customer / Product" : "العميل / المنتج"}</th>
+                      <th className="px-3 py-2 text-right">{appLang === 'en' ? "Customer" : "العميل"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Product" : "المنتج"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Qty" : "الكمية"}</th>
                       <th className="px-3 py-2 text-right">{appLang === 'en' ? "Branch" : "الفرع"}</th>
