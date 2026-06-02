@@ -158,17 +158,19 @@ export default function DispatchApprovalsPage() {
       if (!companyId) return
 
       // ── 1. فواتير المبيعات ──────────────────────────────────────────────────
-      // v3.74.5 — pull invoice items too so the table shows product names + quantities,
-      // not just an item count
+      // v3.74.6 — explicit FK columns + explicit FK-named joins so PostgREST
+      // can't get confused about which relationship to use. Without the FK
+      // hint, the customers JOIN was returning an array PostgREST didn't
+      // serialize as an object, leaving the customer cell blank.
       const { data: invData, error: invError } = await supabase
         .from('invoices')
         .select(`
           id, invoice_number, invoice_date, total_amount, warehouse_status,
-          warehouse_id, branch_id,
-          customers (name),
-          shipping_providers (provider_name),
-          warehouses (name),
-          branches (name)
+          customer_id, warehouse_id, branch_id, shipping_provider_id,
+          customers:customer_id (name),
+          shipping_providers:shipping_provider_id (provider_name),
+          warehouses:warehouse_id (name),
+          branches:branch_id (name)
         `)
         .eq('company_id', companyId)
         .eq('warehouse_status', 'pending')

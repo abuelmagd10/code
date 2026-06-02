@@ -8,8 +8,14 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ### Why
 After v3.74.5 Ahmed saw two issues on the deployed page:
-1. The **Customer column was always "—"** even for invoices that clearly have a customer (verified in DB: e.g., invoice INV-00004 → customer "محمد بسيونى").
+1. The **Customer column was always "—"** even for invoices that clearly have a customer (verified in DB: e.g., invoice INV-00004 → customer "محمد بسيونى"). Warehouse / Branch / Shipping all worked, customer alone didn't — the inconsistency pointed to PostgREST not serializing that one specific relationship properly.
 2. The **header/row formatting didn't match** the look of other tables in the project — column alignment, header weight, and spacing all looked off compared to /customers, /sales-orders, etc.
+
+### Belt-and-suspenders fix on customer "—"
+Two complementary changes:
+
+1. **Explicit FK column aliasing in the SELECT.** Replaced the bare `customers (name)` syntax with `customers:customer_id (name)` (and the same for warehouses/branches/shipping_providers). The `alias:column` form forces PostgREST to pick the named FK rather than guessing, which was the root cause of customer specifically coming back in a shape the client couldn't read. Also added `customer_id, shipping_provider_id` to the explicit column list so they're guaranteed to be present in the response.
+2. **Defensive plucker** (kept as safety net):
 
 ### Root cause of "—" everywhere
 Supabase's `select('customers (name)')` returns the nested relation as **either an object or an array** depending on how the TypeScript types resolved (PostgREST itself returns an object for a single FK target, but Supabase's typed client can wrap it in an array in some inference paths). My row-builder was reading `inv.customers?.name` directly — that returned `undefined` whenever the runtime shape was actually `[{name: "..."}]`, so the column fell back to "—".
@@ -17,7 +23,7 @@ Supabase's `select('customers (name)')` returns the nested relation as **either 
 This affected customer, warehouse, branch, shipping, AND product name on the items query.
 
 ### Fixed
-- Added a tiny defensive helper inside the loader:
+- Defensive plucker still handles both object and array shapes:
   ```ts
   const pluck = (rel: any, field: string): string => {
     if (!rel) return ""
@@ -25,8 +31,8 @@ This affected customer, warehouse, branch, shipping, AND product name on the ite
     return String((rel as any)?.[field] || "")
   }
   ```
-- Used it for `customers`, `warehouses`, `branches`, `shipping_providers`.
-- Same handling for `invoice_items.products` so the "first product" label is reliable.
+- Used for all four joined relations + `invoice_items.products`.
+- Together with the explicit FK syntax, the customer column now reliably displays the real name (verified in DB the data was always there).
 
 ### Column styling rewritten to match the project standard
 Replaced my custom `<div>`-based formats with the DataTable's built-in `type` + `align` system that the rest of the app uses:
