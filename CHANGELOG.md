@@ -4,6 +4,41 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.3] - 2026-06-02 — Critical hotfix: dividend distribution RPC ambiguity (PGRST203)
+
+### Why
+Ahmed tested dividend distribution on the shareholders page and the request returned HTTP 300 with `PGRST203 — Could not choose the best candidate function between p_fiscal_period => text and p_fiscal_period => uuid`. Two overloaded versions of `distribute_dividends_atomic()` existed in the DB:
+
+1. `..., p_fiscal_period text, p_user_id uuid` — the original version, matching `lib/equity-transaction-service.ts` which sends `fiscalPeriod?: string`.
+2. `..., p_fiscal_period uuid, p_user_id uuid` — an orphan enterprise upgrade that was added to DB but never wired into the TypeScript layer.
+
+When the client sent `p_fiscal_period: null` (or any string that could be cast to either type), PostgREST refused to pick a side and returned 300. Result: distribution never executed — silent for the user, the page just sat there.
+
+### Fixed
+- DB migration `v3_74_3_drop_duplicate_distribute_dividends_uuid_variant` drops the uuid-variant. The migration ends with a `DO $$ ... RAISE EXCEPTION` guard that fails the migration if more than one signature remains afterwards, so this stays single-overload going forward.
+
+### Why drop the uuid variant?
+- The TypeScript service (`distributeDividends()`) types `fiscalPeriod` as `string?`.
+- The shareholders page passes a year-quarter label or null — never a UUID.
+- Keeping the text variant is the lower-risk choice and the only one any caller actually uses.
+- If the enterprise upgrade (linking to `fiscal_periods.id`) is needed in the future, it should rename the column to `p_fiscal_period_id` to avoid ambiguity.
+
+### Files
+- DB migration: `v3_74_3_drop_duplicate_distribute_dividends_uuid_variant`
+- Modified: `lib/version.ts` → 3.74.3
+- No code changes — the TypeScript side was already calling the correct signature; the DB was the only thing broken.
+
+### Verify after deploy
+1. Go to `/shareholders` → click "توزيع أرباح" with a valid amount and at least one shareholder selected → distribution succeeds and journal entry posts (was: HTTP 300 PGRST203).
+2. Browser console no longer prints "Dividend distribution RPC error".
+3. `permission_transfers`-style audit row appears in `profit_distributions` table with status `approved` and lines per shareholder.
+
+### Note on the unrelated console warning
+The `InvalidNodeTypeError: Failed to execute 'selectNode' on 'Range'` line in the logs is from Sentry's instrumentation trying to wrap a detached DOM node (likely from a tooltip mount/unmount race). Not blocking, not data-related. Will track separately if it appears in production user sessions.
+
+---
+
+
 ## [3.74.2] - 2026-06-01 — Hotfix: landing page price truth ($10 USD, billed in EGP)
 
 Ahmed flagged: the landing page advertised "500 ج.م / مستخدم / شهر" hardcoded, but the actual production billing in `lib/billing/pricing-engine.ts` uses `BASE_PRICE_USD = $10/seat/month` converted to EGP at the live Paymob exchange rate at checkout. The marketing material was contradicting the system of record.
