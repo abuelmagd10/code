@@ -3358,7 +3358,19 @@ export default function InvoiceDetailPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
-                  <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
+                  {/* v3.74.8 — dropdown of the four payment methods the display
+                      side already recognizes (cash / bank_transfer / card /
+                      cheque). Was a free-text Input that let typos slip through. */}
+                  <select
+                    className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                    value={paymentMethod || 'cash'}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                  >
+                    <option value="cash">{appLang === 'en' ? 'Cash' : 'نقدى'}</option>
+                    <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكى'}</option>
+                    <option value="card">{appLang === 'en' ? 'Card' : 'بطاقة ائتمان'}</option>
+                    <option value="cheque">{appLang === 'en' ? 'Cheque' : 'شيك'}</option>
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>

@@ -4,6 +4,43 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.8] - 2026-06-02 — Payment method dropdown on invoice payment form
+
+### Why
+Ahmed pointed out the "طريقة الدفع" field in the record-payment form on an invoice was a free-text `Input` with a placeholder of `"cash"`. The display side already had a finite vocabulary it understood — `cash` / `bank_transfer` / `card` / `cheque` — and rendered a colored badge with an icon for each. Anything else fell through as raw text. So:
+- A typo like `"caash"` or `"Cash"` got stored as-is and rendered as plain unrecognized text on the payment history table.
+- Users in Arabic-only sessions had no idea what values were valid.
+- The existing display logic had four explicit branches but no matching input control.
+
+### Fixed
+Replaced the free-text `<Input>` at line 3361 of `app/invoices/[id]/page.tsx` with a native `<select>` dropdown matching the existing four options the display logic already supports:
+
+| value | Arabic label | English label |
+|---|---|---|
+| `cash` | نقدى | Cash |
+| `bank_transfer` | تحويل بنكى | Bank Transfer |
+| `card` | بطاقة ائتمان | Card |
+| `cheque` | شيك | Cheque |
+
+The default selection is `cash` (matching the prior placeholder behavior). Same styling as the existing "Account (Cash/Bank)" `<select>` two rows below — `w-full border rounded px-3 py-2 bg-white dark:bg-slate-900` — so the two dropdowns are visually consistent.
+
+### Why not the same fix on `/bills/[id]`?
+Checked — the bills (purchase invoice) page doesn't use the same `paymentMethod` state pattern. Its payment dialog is separate. If Ahmed wants the same dropdown there, it's a follow-up to find and convert.
+
+### Files
+- Modified: `app/invoices/[id]/page.tsx` — line 3360 area, `Input` → `select` with four options
+- Modified: `lib/version.ts` → 3.74.8
+
+### Verify after deploy
+1. Open any invoice → "تَسجيل دَفعة" — "طريقة الدفع" is now a dropdown, not a text box.
+2. Pick "تحويل بنكى" → save → payment row in the history table shows the blue "تحويل" badge with the card icon, matching what the existing display logic does.
+3. Pick "بطاقة ائتمان" → saves as `card` → renders the purple badge.
+4. Pick "شيك" → saves as `cheque` → renders the right label.
+5. No more "caash" or random capitalization sneaking through to storage.
+
+---
+
+
 ## [3.74.7] - 2026-06-02 — Hotfix: store_manager sees customer name for invoices in their branch
 
 ### Why
