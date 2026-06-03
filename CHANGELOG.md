@@ -4,6 +4,175 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.25] - 2026-06-03 — LOW: branch accountants added as approval recipients on banking vouchers and expenses
+
+### Why
+With CRITICAL, HIGH, and MEDIUM out of the way (v3.74.22-24), the remaining audit findings were a handful of LOW-priority consistency gaps: workflows where the *approval-permission* logic was correct but the *recipient list* didn't yet include the branch accountant. The accountant isn't an approver — they reconcile the booked cash/inventory effects — but in every other corner of the system the convention is that they get inbox visibility on pending approvals so they can pre-stage their books.
+
+The audit flagged this on banking vouchers and expenses. Sales-return-requests, purchase-returns, payment-approvals, and bills already included the accountant via `resolveBranchAccountantRecipients`. This release brings the two outliers into line with the rest of the project.
+
+### What changed
+
+**(1) `BankVoucherNotificationService.notifyApprovalRequested`** in `lib/services/bank-voucher-notification.service.ts:58`
+
+Added a third recipient block: `resolver.resolveBranchAccountantRecipients(params.branchId, params.costCenterId)`. The role recipient list was `["manager"]` plus the leadership set (owner + admin + GM). With this addition, the accountant on the originating branch also gets the pending notification when a voucher is filed.
+
+**(2) `BankVoucherNotificationService.archiveApprovalRequestNotifications`** in `lib/services/bank-voucher-notification.service.ts:179`
+
+Mirrored the change above so the archive sweep that runs on decision removes the accountant's pending row too. Without this the new notification from (1) would linger in the accountant's inbox until the time-window safety net (v3.74.17) caught it.
+
+**(3) Expenses submit-for-approval handler** in `app/expenses/[id]/page.tsx:212`
+
+The page does a direct `company_members` query because expenses aren't routed through the resolver service. v3.74.22 widened the role filter from owner/admin/GM to also include `manager`. v3.74.25 adds a second query for branch accountants scoped to the expense's branch and merges the two lists before the per-user notification loop. Event_keys remain keyed on `user_id` so the per-user idempotency the existing code relies on still holds. The accountant query is guarded behind `expense.branch_id` because expenses without a branch (rare but possible for company-wide overhead) have no branch accountant to notify.
+
+### What was audited and left alone
+
+The audit's other LOW items:
+
+- **Invoices warehouse using `resolveExecutiveRecipients`** — already migrated to `resolveLevel1ApproverRecipients` in v3.74.22 across all three call sites.
+- **Purchase-orders branch manager only attached when `branchId` is present** — already fixed in v3.74.22; the v3.74.22 PO patch passes `params.branchId || null` directly into `resolveLevel1ApproverRecipients` which emits a company-wide manager recipient when branchId is null.
+- **Misleading comments asserting "RPC propagates admin → owner/GM"** — corrected in-place wherever the surrounding code was modified (visible in the comment churn for v3.74.20, v3.74.22, v3.74.24). Remaining comments that still carry the old assumption don't drive behaviour anywhere; they're documentation-only and can be cleaned up in a future style pass without affecting end users.
+- **Write-offs cancellation notification missing upstream-management visibility** — write-offs are single-stage; `notifyCancelled` correctly targets the creator (the only relevant audience for a self-cancellation). No upstream-tier to notify.
+
+### Files
+
+- `lib/services/bank-voucher-notification.service.ts` — accountant added to two recipient lists.
+- `app/expenses/[id]/page.tsx` — accountant query + merge before notification loop.
+- `lib/version.ts` — bump to 3.74.25.
+- `CHANGELOG.md` — this entry.
+
+### Series wrap-up
+
+v3.74.21 through v3.74.25 brought every approval workflow in the project into compliance with the canonical rule the owner articulated:
+
+1. Every Level-1 approval request reaches the full senior tier including the owner.
+2. Every decision (positive or negative) reaches the originator.
+3. Every later-stage rejection reaches the upstream approvers who already acted.
+4. Branch accountants are notified by convention across every approval helper.
+
+The audit also produced sales-returns realtime auto-refresh (v3.74.21) and the canonical `resolveLevel1ApproverRecipients` helper (v3.74.20) that the rest of the series leans on. With this release the audit is closed.
+
+---
+
+## [3.74.24] - 2026-06-03 — MEDIUM: widen upstream notifications on later-stage rejections
+
+### Why
+The v3.74.21 audit catalogued five workflows where a later workflow stage's rejection failed to notify *every* role that had already approved an earlier stage. The general rule is: when a multi-stage workflow goes stage-1-approve → stage-2-reject, the stage-1 approvers need to know their decision was undone so they can stop tracking the request and prepare for the inevitable resubmission. Where the previous code had partial coverage, it usually missed `owner` and `branch manager`.
+
+In practice this severity is a refinement of v3.74.22's CRITICAL fix — same root cause (hardcoded subsets of the senior tier), narrower trigger (the rejection-cascade scenario specifically). For workflows that are genuinely single-stage (purchase-orders, mfg bom/production/routing), the "upstream approvers" set is empty and the originator notification (covered in HIGH / v3.74.23) is the only one needed. So three of the five audit candidates resolved to "no change needed" once examined.
+
+### What changed
+
+**(1) `notifyManagementPRWarehouseRejected`** in `lib/notification-helpers.ts:2247`
+
+This helper fires when the warehouse rejects a purchase return that management already approved. The privileged-managers RPC path was correct; the fallback role-list was the bug. Previous list: `['admin', 'general_manager']`. New list: `['owner', 'admin', 'general_manager', 'manager']`. The inline comment was also misleading — it claimed `owner` would receive admin notifications via RPC fan-out, which is the asymmetric assumption v3.74.20 dismantled. Comment rewritten to describe the new behaviour.
+
+**(2) `notifyReceiptRejected`** in `lib/services/bill-receipt-notification.service.ts:258`
+
+This helper fires when the warehouse rejects receipt of goods on a bill that management may already have pre-approved. Previous role list: `["owner", "general_manager"]`. New list: `["owner", "admin", "general_manager", "manager"]`. Same fix pattern.
+
+**(3) Material-issue rejection senior fanout** in `app/api/manufacturing/material-issue-approvals/[id]/reject/route.ts:213`
+
+The reject route had an inline `for (const seniorRole of ["general_manager"])` loop with a comment claiming `owner` and `admin` "see all notifications automatically." That comment was untrue and is the canonical example of the v3.74.20 owner-drop bug pattern. The loop now iterates `["owner", "admin", "general_manager", "manager"]`.
+
+### What was audited and left alone
+
+- **purchase-orders rejection**: single-stage workflow. The only upstream party is the originator, who is already notified by `notifyPORejected`. No additional fan-out needed.
+- **mfg bom-versions / production-orders / routing-versions rejection**: single-stage. Submitter is the only relevant audience and is already notified by each route's existing notification call.
+- **bills admin rejection**: when the admin rejects, the *only* stage above admin is "the requester filed a bill." The existing `notifyBillAdminRejected` already notifies the bill creator (line 295). There's no second-tier upstream approver to inform, because admin IS the upstream.
+
+These three audit candidates were closed as PASS on re-inspection. The corresponding rule is genuinely "notify originator" rather than "notify upstream approvers," and v3.74.23 covered that for workflows where the originator notification was previously missing.
+
+### Files
+
+- `lib/notification-helpers.ts` — recipient list in `notifyManagementPRWarehouseRejected` fallback path.
+- `lib/services/bill-receipt-notification.service.ts` — recipient list in `notifyReceiptRejected` senior fanout.
+- `app/api/manufacturing/material-issue-approvals/[id]/reject/route.ts` — recipient list in the senior fanout loop.
+- `lib/version.ts` — bump to 3.74.24.
+- `CHANGELOG.md` — this entry.
+
+---
+
+## [3.74.23] - 2026-06-03 — HIGH: originator now notified of every decision across customer-refunds and permission transfers
+
+### Why
+The v3.74.21 audit catalogued four workflows where an approver's decision (approve or reject) committed silently as far as the originator was concerned: the next-stage actor or the audit log got a notification, but the requester themselves were left checking the status field manually. v3.74.21 fixed this for sales-return-requests. v3.74.23 fixes the remaining three workflows the audit flagged at HIGH priority.
+
+A fourth audit candidate — **manufacturing material-issue-approvals** — turned out to already be correct on re-inspection: both the approve route (`route.ts:691`, `userId: approval.requested_by`) and the reject route (`route.ts:162`, `p_assigned_to_user: approval.requested_by`) target the requester directly. Marked PASS in the audit and skipped here.
+
+### What changed
+
+**(1) `customer-refund-requests` approve route** — `app/api/customer-refund-requests/[id]/approve/route.ts`
+
+The route already notified the branch accountant of the next stage. Added a second `create_notification` RPC call to the originator with title `"تم اعتماد طلب الاسترداد"`, severity `info`, category `approvals`, event_action `approved_requester`. Self-approval guard: skip if `refundReq.requested_by === user.id`. Same try/catch wrapping as the existing accountant call — failures are swallowed because the status update is already committed.
+
+**(2) `customer-refund-requests` reject route** — `app/api/customer-refund-requests/[id]/reject/route.ts`
+
+Previously rejected silently. Added the recipient resolver import plus a single `create_notification` call to the requester with title `"تم رفض طلب الاسترداد"`, message including the rejection reason, severity `error`, category `approvals`, event_action `rejected_requester`. Same self-rejection guard.
+
+**(3) `permissions/transfer` approve route** — `app/api/permissions/transfer/[id]/approve/route.ts`
+
+The two-eye-principle approval routes had no notification calls at all. Added a direct `notifications` table insert (the route doesn't go through the resolver service, so this is the simplest correct integration) targeting `transfer.transferred_by` — the user who filed the request — with title `"تم اعتماد طلب نقل الصلاحيات"`, severity `info`, category `approvals`. The message includes the resource_type and the count of records actually transferred. Failure swallowed.
+
+**(4) `permissions/transfer` reject route** — `app/api/permissions/transfer/[id]/reject/route.ts`
+
+Same pattern as approve. Notification targets the submitter, includes the rejection reason, severity `error`. Failure swallowed.
+
+### Why direct INSERT into `notifications` for permission-transfer
+
+The two refund routes use the `create_notification` RPC (which applies the v3.74.18 category-aware dedup logic). The permission-transfer routes use a direct `notifications` INSERT instead because they don't import the recipient resolver at all and adding it solely for an originator notification would have meant a much larger refactor with no functional benefit. The direct INSERT bypasses the time-window safety net, but each event_key here is unique-per-decision so dedup isn't needed.
+
+### Files
+- `app/api/customer-refund-requests/[id]/approve/route.ts` — added originator notification after accountant notification.
+- `app/api/customer-refund-requests/[id]/reject/route.ts` — added imports + originator notification.
+- `app/api/permissions/transfer/[id]/approve/route.ts` — added originator notification after execute_permission_transfer succeeds.
+- `app/api/permissions/transfer/[id]/reject/route.ts` — added originator notification.
+- `lib/version.ts` — bump to 3.74.23.
+- `CHANGELOG.md` — this entry.
+
+No new helpers were created — the four touch-points share the same shape but live in self-contained routes with no shared infrastructure that would benefit from extraction yet.
+
+---
+
+## [3.74.22] - 2026-06-03 — CRITICAL: fix owner/manager dropped from approval recipients across ten workflows
+
+### Why
+The v3.74.21 audit found the same hardcoded-recipient bug pattern v3.74.20 fixed for sales-return-requests repeated across nine more workflows. In every case the recipient list was a hand-typed subset of `['admin', 'general_manager']`, `['owner', 'general_manager']`, `[admin]`, etc., silently dropping at least one role from the canonical Level-1 approver tier (owner + admin + general_manager + branch manager). In small companies whose only senior member is the owner, OR whose branch decisions belong to the branch manager rather than head office, the corresponding approval notifications reached nobody and the workflow stalled with no inbox signal.
+
+This is purely a notification-coverage bug — the approval *permission* logic was always correct; only the *recipient list* drifted from it. No new approvers gain access, no governance change. We only widen who hears about pending requests.
+
+### What changed
+
+Ten files updated. Each comment in the diff cites the previous (buggy) recipient list so a future reader can reconstruct the bug from the file alone.
+
+| # | Workflow | File | Fix |
+|---|---|---|---|
+| 1 | mfg bom-versions submit | `app/api/manufacturing/bom-versions/[id]/submit-approval/route.ts` | added `owner` |
+| 2 | mfg production-orders submit | `app/api/manufacturing/production-orders/[id]/submit-approval/route.ts` | added `manager` |
+| 3 | mfg routing-versions submit | `app/api/manufacturing/routing-versions/[id]/submit-approval/route.ts` | added `manager` |
+| 4 | customer-refund-requests creation | `lib/notification-helpers.ts` `notifyRefundRequestCreated` | replaced ad-hoc list with full owner+admin+gm+manager |
+| 5 | write-offs approval-request + modified | `lib/services/write-off-notification.service.ts` | `resolveLeadershipVisibilityRecipients` → `resolveLevel1ApproverRecipients` (2 call sites) |
+| 6 | purchase-orders approval-request | `lib/services/purchase-order-notification.service.ts` | `resolveLeadershipVisibilityRecipients()` → `resolveLevel1ApproverRecipients(branchId, …)`; legacy branch-manager block kept as redundant safety net |
+| 7 | invoices warehouse approve/reject (3 spots) | `lib/services/sales-invoice-warehouse-command.service.ts` | `resolveExecutiveRecipients()` (admin+gm only) → `resolveLevel1ApproverRecipients(invoice.branch_id, invoice.warehouse_id, null)` at lines 319, 369, 419 |
+| 8 | expenses pending-approval | `app/expenses/[id]/page.tsx` | direct DB query — added `manager` to the `.in("role", …)` list alongside owner / admin / general_manager / gm / generalmanager |
+| 9 | bills approval-restart-after-rejection | `lib/services/bill-receipt-notification.service.ts` | `["owner", "general_manager"]` → `["owner", "admin", "general_manager", "manager"]` |
+| 10 | permissions/transfer submission | `app/api/permissions/transfer/route.ts` | NO notification existed at all. Added a per-role insert into the `notifications` table for owner / admin / general_manager. Two-eye rule preserved: the submitter still must NOT be the one who approves (enforced by the approve route, not the notification layer). |
+
+### What didn't change
+- **Branch-scoped helpers** that intentionally target only the branch manager (`bank-voucher`, `booking`) were left as v3.74.20 left them — those are routine operational notifications where adding owner is noise.
+- **Authorization** — every workflow still enforces its existing role check on actual approval. We only widened the notification audience, not who can act.
+- **`resolveExecutiveRecipients` and `resolveLeadershipVisibilityRecipients`** are still exported by the resolver service. They have other callers (out-of-scope reads, executive-only audit notifications) and are correct in those contexts. We didn't delete them — we only stopped using them where the canonical Level-1 list was needed.
+
+### Test plan
+The post-v3.74.22 verification: a single-owner company should now receive an inbox notification on every approval-requiring action across all ten workflows above. The exact mirror-image of the sales-return bug Ahmed reported on 2026-06-03 12:26 should be impossible to reproduce in any of these workflows now.
+
+### Files
+- 10 source files modified (listed above)
+- `lib/version.ts` — bump to 3.74.22
+- `CHANGELOG.md` — this entry
+
+---
+
 ## [3.74.21] - 2026-06-03 — Sales returns: originator notified on every decision + realtime page refresh
 
 ### Why

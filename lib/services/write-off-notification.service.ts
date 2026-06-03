@@ -58,7 +58,13 @@ export class WriteOffNotificationService {
         warehouseId: params.warehouseId || null,
         costCenterId: params.costCenterId || null,
       },
-      resolver.resolveLeadershipVisibilityRecipients(
+      // v3.74.22 — was resolveLeadershipVisibilityRecipients which only
+      // emits a single `admin` recipient and relied on RPC fan-out to
+      // reach owner/general_manager. That fan-out is asymmetric and
+      // leaves the owner out for any company without an admin member.
+      // Switch to the canonical Level-1 approver list so every senior
+      // tier receives the request directly.
+      resolver.resolveLevel1ApproverRecipients(
         params.branchId || null,
         params.warehouseId || null,
         params.costCenterId || null
@@ -91,7 +97,9 @@ export class WriteOffNotificationService {
         warehouseId: params.warehouseId || null,
         costCenterId: params.costCenterId || null,
       },
-      resolver.resolveLeadershipVisibilityRecipients(
+      // v3.74.22 — same fix as approval-requested above. Modified
+      // write-offs need re-approval from the full senior tier.
+      resolver.resolveLevel1ApproverRecipients(
         params.branchId || null,
         params.warehouseId || null,
         params.costCenterId || null

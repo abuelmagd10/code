@@ -255,7 +255,12 @@ export class BillReceiptNotificationService {
       })
     }
 
-    for (const role of ["owner", "general_manager"]) {
+    // v3.74.24 — was ["owner", "general_manager"] which silently dropped
+    // admin and branch manager. When the warehouse rejects the receipt,
+    // every senior tier needs to know: management may have already
+    // pre-approved the bill itself, so the rejection cascades upstream.
+    // Aligned with the canonical Level-1 approver tier.
+    for (const role of ["owner", "admin", "general_manager", "manager"]) {
       await this.createNotification(actor, {
         referenceType: "bill",
         referenceId: bill.id,
@@ -350,7 +355,10 @@ export class BillReceiptNotificationService {
     const title = "تعديل الفاتورة بانتظار الاعتماد"
     const message = `تم تعديل فاتورة المشتريات رقم ${bill.bill_number || bill.id} بعد رفض الاستلام وبانتظار اعتمادكم`
 
-    for (const role of ["owner", "general_manager"]) {
+    // v3.74.22 — was ["owner", "general_manager"] only, dropping admin
+    // and branch manager. Use the full canonical approver tier so the
+    // restart-after-rejection notification reaches everyone who can act.
+    for (const role of ["owner", "admin", "general_manager", "manager"]) {
       await this.createNotification(actor, {
         referenceType: "bill",
         referenceId: bill.id,

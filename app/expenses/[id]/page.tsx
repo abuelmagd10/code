@@ -199,18 +199,48 @@ export default function ExpenseDetailPage() {
 
       if (error) throw error
 
-      // Send notifications to approvers (Owner, Admin, and General Manager)
+      // Send notifications to approvers
       try {
-        // ✅ Get all approvers (Owner, Admin, and General Manager) - synchronized with canApprove and RLS policy
+        // v3.74.22 — was ["owner", "admin", "general_manager", "gm",
+        // "generalmanager"] which silently dropped branch `manager`.
+        // Managers are the branch-level approval authority for
+        // operational expenses raised at their branch. Adding them
+        // here matches the canonical Level-1 approver list. The "gm"/
+        // "generalmanager" legacy aliases are kept for backward
+        // compatibility with rows that may still carry the older
+        // string value.
         const { data: approvers } = await supabase
           .from("company_members")
           .select("user_id, role")
           .eq("company_id", companyId)
-          .in("role", ["owner", "admin", "general_manager", "gm", "generalmanager"])
+          .in("role", ["owner", "admin", "general_manager", "gm", "generalmanager", "manager"])
 
-        if (approvers && approvers.length > 0) {
+        // v3.74.25 — Branch accountants are notification recipients by
+        // convention across the rest of the project even though they
+        // aren't Level-1 approvers. They reconcile the expense once
+        // it's paid, so they need inbox visibility on pending requests
+        // raised at their branch. Fetched separately because the role
+        // filter above is the approver tier; accountants are added
+        // alongside, not merged in (they shouldn't gain approval rights).
+        let branchAccountants: { user_id: string; role: string }[] = []
+        if (expense.branch_id) {
+          const { data: accts } = await supabase
+            .from("company_members")
+            .select("user_id, role")
+            .eq("company_id", companyId)
+            .eq("branch_id", expense.branch_id)
+            .eq("role", "accountant")
+          branchAccountants = accts || []
+        }
+        const allRecipients = [...(approvers || []), ...branchAccountants]
+
+        if (allRecipients.length > 0) {
           // ✅ إرسال إشعار منفصل لكل مستخدم (مرة واحدة لكل معتمد)
-          for (const approver of approvers) {
+          // v3.74.25 — loop over allRecipients (approvers + branch
+          // accountants), not just approvers, so the accountant gets the
+          // pending notification too. Event_key still keyed on user_id
+          // for idempotency.
+          for (const approver of allRecipients) {
             await createNotification({
               companyId,
               referenceType: "expense",

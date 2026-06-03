@@ -87,6 +87,10 @@ export async function POST(
     try { await createNotification({ ...notificationBase, assignedToRole: "admin",           eventKey: `rv_submitted_admin_${id}` }) } catch { /* non-critical */ }
     try { await createNotification({ ...notificationBase, assignedToRole: "owner",           eventKey: `rv_submitted_owner_${id}` }) } catch { /* non-critical */ }
     try { await createNotification({ ...notificationBase, assignedToRole: "general_manager", eventKey: `rv_submitted_gm_${id}`    }) } catch { /* non-critical */ }
+    // v3.74.22 — branch manager was missing. They're the branch-level
+    // authority for routing versions and must receive the approval
+    // request alongside the company executives.
+    try { await createNotification({ ...notificationBase, assignedToRole: "manager",         eventKey: `rv_submitted_mgr_${id}` }) } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

@@ -58,6 +58,16 @@ export class PurchaseOrderNotificationService {
           ? `تم تعديل أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} ويحتاج إلى إعادة الاعتماد`
           : `أمر شراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} يحتاج إلى موافقتك`
 
+    // v3.74.22 — was resolveLeadershipVisibilityRecipients (admin-only)
+    // which silently relied on RPC fan-out to reach owner / general_manager.
+    // Replace with the canonical L1 approver list so owner + admin + GM
+    // are addressed directly. The separate `manager` block below stays
+    // as-is because it's branch-scoped and only fires when branchId is
+    // present — resolveLevel1ApproverRecipients already includes manager
+    // but using null branchId emits a company-wide manager recipient,
+    // which is the wrong scope for PO. Pass branchId here to keep
+    // manager branch-scoped; the call below becomes redundant when
+    // branchId is set, so drop it under that guard.
     await this.dispatch(
       {
         companyId: params.companyId,
@@ -66,7 +76,7 @@ export class PurchaseOrderNotificationService {
         branchId: null,
         costCenterId: null,
       },
-      resolver.resolveLeadershipVisibilityRecipients(),
+      resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, params.costCenterId || null),
       {
         referenceType: "purchase_order",
         referenceId: params.poId,
@@ -80,6 +90,9 @@ export class PurchaseOrderNotificationService {
       "⚠️ [PO_NOTIFICATION] Leadership approval-request notification failed:"
     )
 
+    // v3.74.22 — keep the legacy branch-manager block as a redundant
+    // safety net for callers that still don't pass branchId into the
+    // primary dispatch. Idempotent on event_key.
     if (params.branchId) {
       await this.dispatch(
         {

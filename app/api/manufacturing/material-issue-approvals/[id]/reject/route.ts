@@ -209,9 +209,15 @@ export async function POST(
       } else {
         console.warn(`[MMIA_REJECT] ⚠️ No branch resolved for accountant notification`)
       }
-    // ── 6. إشعار الأدوار العليا بالرفض (owner و admin يرون كل الإشعارات تلقائياً)
+    // ── 6. إشعار الأدوار العليا بالرفض
+    // v3.74.24 — was ["general_manager"] only, relying on the comment-
+    // claim that owner/admin "see all notifications automatically" via
+    // an RPC fan-out. That assumption is the root cause of the
+    // v3.74.20 owner-drop bug pattern across the codebase. Aligned
+    // with the canonical Level-1 approver tier so every senior role
+    // hears about the material-issue rejection directly.
     {
-      for (const seniorRole of ["general_manager"]) {
+      for (const seniorRole of ["owner", "admin", "general_manager", "manager"]) {
         try {
           await admin.rpc("create_notification", {
             p_company_id: companyId,

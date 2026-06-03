@@ -142,6 +142,30 @@ export async function POST(
       new_data: execResult,
     })
 
+    // v3.74.23 — Notify the originator (the submitter who filed this
+    // transfer request) that their request was approved and executed.
+    // Without this the submitter would only learn the outcome by
+    // refreshing the permission-transfers page. Failures swallowed —
+    // the transfer is already committed; the notification is UX-only.
+    try {
+      await supabase.from("notifications").insert({
+        company_id: transfer.company_id,
+        reference_type: "permission_transfer",
+        reference_id: transferId,
+        title: "تم اعتماد طلب نقل الصلاحيات",
+        message: `تم اعتماد وتنفيذ طلب نقل ملكية (${transfer.resource_type}). تم نقل ${(execResult as any)?.records_transferred || 0} سجل بنجاح.`,
+        created_by: user.id,
+        assigned_to_user: transfer.transferred_by,
+        priority: "normal",
+        severity: "info",
+        category: "approvals",
+        event_key: `permission_transfer:${transferId}:approved:user:${transfer.transferred_by}`,
+        status: "unread",
+      })
+    } catch {
+      // non-critical
+    }
+
     return NextResponse.json({
       success: true,
       transfer_id: transferId,

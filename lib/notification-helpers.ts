@@ -82,38 +82,33 @@ export async function notifyRefundRequestCreated(params: {
 
   const eventKey = `refund_request:${refundRequestId}:created`
 
-  // إشعار لمدير الفرع والمالك/المدير
-  await createNotification({
-    companyId,
-    referenceType: 'refund_request',
-    referenceId: refundRequestId,
-    title,
-    message,
-    createdBy,
-    branchId,
-    costCenterId,
-    assignedToRole: 'manager',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:manager`,
-    severity: 'warning',
-    category: 'finance'
-  })
-
-  await createNotification({
-    companyId,
-    referenceType: 'refund_request',
-    referenceId: refundRequestId,
-    title,
-    message,
-    createdBy,
-    branchId,
-    costCenterId,
-    assignedToRole: 'owner',
-    priority: 'high' as NotificationPriority,
-    eventKey: `${eventKey}:owner`,
-    severity: 'warning',
-    category: 'finance'
-  })
+  // v3.74.22 — Previously only `manager` + `owner` received this. That
+  // dropped `admin` and `general_manager` from the recipient set, so a
+  // company whose executive tier is admin/GM (no owner-as-operator)
+  // saw no approval notification. Switch to the canonical Level-1
+  // approver list: owner + admin + general_manager + branch manager.
+  // Category stays `finance` because the customer-refund workflow
+  // historically lived under that bucket; the approval-archive logic
+  // only kicks in for `approvals` so leaving this alone matches
+  // existing behavior.
+  const approverRoles = ['owner', 'admin', 'general_manager', 'manager']
+  for (const role of approverRoles) {
+    await createNotification({
+      companyId,
+      referenceType: 'refund_request',
+      referenceId: refundRequestId,
+      title,
+      message,
+      createdBy,
+      branchId,
+      costCenterId,
+      assignedToRole: role,
+      priority: 'high' as NotificationPriority,
+      eventKey: `${eventKey}:${role}`,
+      severity: 'warning',
+      category: 'finance'
+    })
+  }
 }
 
 // =====================================================================
@@ -2248,8 +2243,13 @@ export async function notifyManagementPRWarehouseRejected(params: {
   }
 
   console.warn('⚠️ notifyManagementPRWarehouseRejected: RPC returned no managers — fallback to role-based')
-  // ⚠️ بدون owner — يرى إشعارات admin تلقائياً عبر RPC
-  for (const role of ['admin', 'general_manager']) {
+  // v3.74.24 — Was ['admin', 'general_manager'] which silently dropped
+  // owner and branch manager when the privileged-managers RPC returned
+  // nothing. Aligned with the canonical Level-1 approver tier so the
+  // fallback path matches v3.74.20+. Particularly important when a
+  // company has no admin/GM member and the owner alone needs to know
+  // the warehouse cancelled a return management had already approved.
+  for (const role of ['owner', 'admin', 'general_manager', 'manager']) {
     try {
       await createNotification({
         companyId,

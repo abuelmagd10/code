@@ -316,7 +316,12 @@ export class SalesInvoiceWarehouseCommandService {
     await this.dispatchWorkflowNotification(
       actor,
       { ...invoice, id: command.invoiceId },
-      resolver.resolveExecutiveRecipients(),
+      // v3.74.22 — was resolveExecutiveRecipients (admin + GM only),
+      // which silently dropped owner and branch manager. Replace with
+      // the canonical Level-1 approver list so management visibility
+      // is symmetric: owner / admin / GM company-wide + branch manager
+      // scoped to the invoice's branch.
+      resolver.resolveLevel1ApproverRecipients(invoice.branch_id || null, invoice.warehouse_id || null, null),
       {
         title: "تم اعتماد إخراج فاتورة بيع",
         message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن لفرع الفاتورة.`,
@@ -366,7 +371,12 @@ export class SalesInvoiceWarehouseCommandService {
     await this.dispatchWorkflowNotification(
       actor,
       { ...invoice, id: command.invoiceId },
-      resolver.resolveExecutiveRecipients(),
+      // v3.74.22 — was resolveExecutiveRecipients (admin + GM only),
+      // which silently dropped owner and branch manager. Replace with
+      // the canonical Level-1 approver list so management visibility
+      // is symmetric: owner / admin / GM company-wide + branch manager
+      // scoped to the invoice's branch.
+      resolver.resolveLevel1ApproverRecipients(invoice.branch_id || null, invoice.warehouse_id || null, null),
       {
         title: "رفض تسليم فاتورة — إرجاع إلى مسودة",
         message: `تم رفض تسليم الفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن. الفاتورة لم تكن مدفوعة وتم إرجاعها إلى مسودة تلقائياً بدون تأثير محاسبي. سبب الرفض: ${command.notes || "لم يتم تحديد سبب"}`,
@@ -416,7 +426,12 @@ export class SalesInvoiceWarehouseCommandService {
     await this.dispatchWorkflowNotification(
       actor,
       { ...invoice, id: command.invoiceId },
-      resolver.resolveExecutiveRecipients(),
+      // v3.74.22 — was resolveExecutiveRecipients (admin + GM only),
+      // which silently dropped owner and branch manager. Replace with
+      // the canonical Level-1 approver list so management visibility
+      // is symmetric: owner / admin / GM company-wide + branch manager
+      // scoped to the invoice's branch.
+      resolver.resolveLevel1ApproverRecipients(invoice.branch_id || null, invoice.warehouse_id || null, null),
       {
         title: "رفض تسليم فاتورة مدفوعة",
         message: `الفاتورة رقم (${invoice.invoice_number}) كانت مدفوعة جزئياً (${creditAmount}) وتم رفض تسليمها من المخزن. تم تحويل مبلغ الدفعة إلى رصيد دائن للعميل تلقائياً. سبب الرفض: ${command.notes || "لم يتم تحديد سبب"}`,

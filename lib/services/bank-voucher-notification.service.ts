@@ -58,6 +58,13 @@ export class BankVoucherNotificationService {
     const roleRecipients = [
       ...resolver.resolveRoleRecipients(["manager"], params.branchId || null, null, params.costCenterId || null),
       ...resolver.resolveLeadershipRecipients(),
+      // v3.74.25 — Add the branch accountant as an approval-notification
+      // recipient by convention (other approval helpers already do this
+      // via resolveBranchAccountantRecipients). The accountant isn't a
+      // Level-1 approver but cash vouchers go through their books and
+      // they need inbox visibility on pending requests for reconciliation
+      // and audit purposes.
+      ...resolver.resolveBranchAccountantRecipients(params.branchId || null, params.costCenterId || null),
     ]
 
     await this.dispatch(
@@ -173,6 +180,11 @@ export class BankVoucherNotificationService {
     const recipients = [
       ...resolver.resolveRoleRecipients(["manager"], params.branchId || null, null, params.costCenterId || null),
       ...resolver.resolveLeadershipRecipients(),
+      // v3.74.25 — Mirror the recipient list used by notifyApprovalRequested
+      // so the archive sweep also clears the accountant's pending row when
+      // the request is decided. Without this their inbox would keep showing
+      // the stale notification until the time-window safety net catches it.
+      ...resolver.resolveBranchAccountantRecipients(params.branchId || null, params.costCenterId || null),
     ]
 
     const compatibleEventKeys = [

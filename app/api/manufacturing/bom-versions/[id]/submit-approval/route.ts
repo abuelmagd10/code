@@ -91,6 +91,12 @@ export async function POST(
     try {
       await createNotification({ ...notificationBase, assignedToRole: "general_manager", eventKey: `bom_v_submitted_gm_${id}` })
     } catch { /* non-critical */ }
+    // v3.74.22 — owner was missing from the recipient set, so in a
+    // company whose only senior member is the owner the approval
+    // notification reached nobody. Same fix pattern as v3.74.20.
+    try {
+      await createNotification({ ...notificationBase, assignedToRole: "owner", eventKey: `bom_v_submitted_owner_${id}` })
+    } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

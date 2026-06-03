@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
+import { NotificationRecipientResolverService } from "@/lib/services/notification-recipient-resolver.service"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export async function POST(
@@ -56,6 +58,49 @@ export async function POST(
       referenceType: "customer_refund_request",
       referenceId: id,
     })
+
+    // v3.74.23 — Notify the requester that their refund was rejected
+    // with the reason. The route previously rejected silently which left
+    // the originator chasing the status field manually. Self-rejection
+    // guard skips the case where the requester is also the rejecter.
+    try {
+      const requesterId = refundReq.requested_by || refundReq.created_by
+      if (requesterId && requesterId !== user.id) {
+        const resolver = new NotificationRecipientResolverService(supabase)
+        const requesterRecipient = resolver.resolveUserRecipient(
+          requesterId,
+          null,
+          refundReq.branch_id || null,
+          null,
+          refundReq.cost_center_id || null
+        )
+        await supabase.rpc("create_notification", {
+          p_company_id: companyId,
+          p_reference_type: "customer_refund_request",
+          p_reference_id: id,
+          p_title: "تم رفض طلب الاسترداد",
+          p_message: `تم رفض طلب استرداد بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. السبب: ${notes}`,
+          p_created_by: user.id,
+          p_branch_id: requesterRecipient.branchId ?? null,
+          p_cost_center_id: requesterRecipient.costCenterId ?? null,
+          p_warehouse_id: null,
+          p_assigned_to_role: null,
+          p_assigned_to_user: requesterId,
+          p_priority: "high",
+          p_event_key: buildNotificationEventKey(
+            "payments",
+            "customer_refund_request",
+            id,
+            "rejected_requester",
+            ...resolver.buildRecipientScopeSegments(requesterRecipient)
+          ),
+          p_severity: normalizeNotificationSeverity("error"),
+          p_category: "approvals"
+        })
+      }
+    } catch (notifErr: any) {
+      console.warn("⚠️ Requester rejection notification failed:", notifErr.message)
+    }
 
     return NextResponse.json({
       success: true,

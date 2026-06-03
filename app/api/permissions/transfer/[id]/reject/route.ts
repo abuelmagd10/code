@@ -120,6 +120,29 @@ export async function POST(
       new_data: { reason },
     })
 
+    // v3.74.23 — Notify the submitter their transfer request was rejected
+    // along with the reason. Without this they'd only see the status flip
+    // by refreshing the permission-transfers page. Failures swallowed —
+    // the rejection is committed; the notification is UX-only.
+    try {
+      await supabase.from("notifications").insert({
+        company_id: transfer.company_id,
+        reference_type: "permission_transfer",
+        reference_id: transferId,
+        title: "تم رفض طلب نقل الصلاحيات",
+        message: `تم رفض طلب نقل ملكية (${transfer.resource_type}). السبب: ${reason}`,
+        created_by: user.id,
+        assigned_to_user: transfer.transferred_by,
+        priority: "high",
+        severity: "error",
+        category: "approvals",
+        event_key: `permission_transfer:${transferId}:rejected:user:${transfer.transferred_by}`,
+        status: "unread",
+      })
+    } catch {
+      // non-critical
+    }
+
     return NextResponse.json({ success: true, transfer_id: transferId })
   } catch (e: any) {
     console.error("[permissions/transfer/reject]", e)

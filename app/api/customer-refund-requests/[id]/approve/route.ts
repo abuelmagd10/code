@@ -62,7 +62,7 @@ export async function POST(
       referenceId: id,
     })
 
-    // Notify accountant to execute
+    // Notify accountant to execute + originator of the decision.
     try {
       const resolver = new NotificationRecipientResolverService(supabase)
       const recipients = resolver.resolveBranchAccountantRecipients(refundReq.branch_id || null, refundReq.cost_center_id || null)
@@ -90,6 +90,45 @@ export async function POST(
           ),
           p_severity: normalizeNotificationSeverity("info"),
           p_category: "finance"
+        })
+      }
+
+      // v3.74.23 — Tell the originator the management decision. The
+      // workflow previously only notified the next-stage actor (the
+      // accountant) and left the requester guessing. Self-approval
+      // guard: skip if requester is the approver. Failures swallowed
+      // (UX cleanup, not correctness).
+      const requesterId = refundReq.requested_by || refundReq.created_by
+      if (requesterId && requesterId !== user.id) {
+        const requesterRecipient = resolver.resolveUserRecipient(
+          requesterId,
+          null,
+          refundReq.branch_id || null,
+          null,
+          refundReq.cost_center_id || null
+        )
+        await supabase.rpc("create_notification", {
+          p_company_id: companyId,
+          p_reference_type: "customer_refund_request",
+          p_reference_id: id,
+          p_title: "تم اعتماد طلب الاسترداد",
+          p_message: `تم اعتماد طلب استرداد بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. الطلب الآن قيد التنفيذ من المحاسبة.`,
+          p_created_by: user.id,
+          p_branch_id: requesterRecipient.branchId ?? null,
+          p_cost_center_id: requesterRecipient.costCenterId ?? null,
+          p_warehouse_id: null,
+          p_assigned_to_role: null,
+          p_assigned_to_user: requesterId,
+          p_priority: "normal",
+          p_event_key: buildNotificationEventKey(
+            "payments",
+            "customer_refund_request",
+            id,
+            "approved_requester",
+            ...resolver.buildRecipientScopeSegments(requesterRecipient)
+          ),
+          p_severity: normalizeNotificationSeverity("info"),
+          p_category: "approvals"
         })
       }
     } catch (notifErr: any) {
