@@ -4,6 +4,54 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.27] - 2026-06-03 — Hotfix: audit_logs CHECK constraint blocked sales-return warehouse approval (400)
+
+### Why
+Ahmed tried to approve sales-return request `6ea99fca-ecc2-4b57-a7bb-dbbc67657df6` (INV-00004, 10 EGP, محمد بسيونى) as the warehouse manager. The page POSTed `/api/sales-return-requests/:id/warehouse-approve` and got back HTTP 400. No sales_returns row was created. Postgres logs at the same timestamp recorded:
+
+> `new row for relation "audit_logs" violates check constraint "audit_logs_action_check"`
+
+The CHECK constraint was a hand-curated allowlist of `action` strings. Every time a feature added a new audit verb (`subscription_renew`, `seat_swap`, `WAREHOUSE_REJECT`, …) the constraint got an `ALTER TABLE` extension. v3.74.12 added pro-rata bonus reversal that writes audit rows with `action='REVERSE'` — but no migration ever added `'REVERSE'` to the allow-list. The bonus-reversal helper's own try/catch swallowed the constraint failure, but the surrounding atomic transaction that called it was rolled back, the calling RPC reported failure, and the warehouse-approve route returned 400 to the client.
+
+Several other DB functions also write actions that aren't on the list (`purchase_request_converted` from `convert_purchase_request_to_po`, `goods_receipt_processed` from `process_goods_receipt_atomic`, `customer_branch_changed_by_trigger` from the customer branch protection trigger, etc.). Same failure mode, different button — they just haven't been triggered against this constraint yet in this codebase.
+
+### What changed
+
+A single DB migration `v3_74_27_audit_logs_action_check_expand` that drops the old `audit_logs_action_check` and re-creates it with the union of:
+
+- Every value the old constraint already allowed (no regressions).
+- `REVERSE` — bonus-reversal.service.ts.
+- `WAREHOUSE_APPROVE` — symmetric counterpart of `WAREHOUSE_REJECT` for any future explicit verb on this path.
+- `SALES_RETURN_APPROVE`, `SALES_RETURN_WAREHOUSE_APPROVE` — defensive entries for forthcoming explicit verbs.
+- `purchase_request_converted`, `goods_receipt_processed`, `customer_branch_changed_by_trigger`, `subscription_past_due`, `subscription_reactivated` — already used by existing RPCs and triggers, just never listed.
+
+The constraint stays in place rather than being removed entirely because it does catch typos (e.g., `action='UPDAT'` won't sneak through), but it is no longer a brittle gate that fails newer audit verbs.
+
+### Why this surfaced now
+The exact failure required:
+- the v3.74.12 bonus reversal to actually find a bonus on the invoice (most test invoices don't have one),
+- the original invoice total to be > 0 (it is — 10 EGP), and
+- the warehouse-approve atomic path to run the bonus reversal in the same transaction as the sales-return write.
+
+Earlier sales returns in testing didn't have an associated salesperson bonus, so the audit_logs INSERT with `REVERSE` was never attempted and the constraint mismatch stayed invisible. This is the first time a test return matched all three conditions.
+
+### No application code change
+The bonus-reversal helper still emits `action='REVERSE'` exactly as it did. The DB now accepts that value. No TypeScript change, no version-bumped service. The only repo edit is the version-string bump for traceability.
+
+### Test plan
+- Retry the warehouse-approve on request `6ea99fca-ecc2-4b57-a7bb-dbbc67657df6` from the page.
+- Expected: the route returns 200, a row appears in `sales_returns`, the source `sales_return_requests` row transitions to `approved_completed`, the bonus reversal logs `[BonusReversal] returnRatio=… adjustments=…` in Vercel logs, and the audit_logs trail records the corresponding `REVERSE` row(s).
+
+### Files
+- DB migration: `v3_74_27_audit_logs_action_check_expand`
+- `lib/version.ts` — bump to 3.74.27
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+This release bundles alongside the unpushed v3.74.22-26 changes. The consolidated push script `push_v3.74.22-26.ps1` is being replaced with `push_v3.74.22-27.ps1` that includes the v3.74.27 verification.
+
+---
+
 ## [3.74.26] - 2026-06-03 — SECURITY: accountant removed from sales-return Level-1 approver tier (separation of duties)
 
 ### Why
