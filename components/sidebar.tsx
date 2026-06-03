@@ -44,6 +44,7 @@ import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getCachedPermissions, clearPermissionsCache, getResourceFromPath } from "@/lib/permissions-context"
 import { useAccess, getFirstAllowedRoute } from "@/lib/access-context"
+import { useApprovalBadges, sumBadges } from "@/hooks/use-approval-badges"
 import { NotificationCenter } from "@/components/NotificationCenter"
 import { getUnreadNotificationCount } from "@/lib/governance-layer"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -131,9 +132,12 @@ export function Sidebar() {
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string; logo_url?: string }>>([])
   const [activeCompanyId, setActiveCompanyId] = useState<string>("")
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false)
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
-  const [pendingDispatchCount, setPendingDispatchCount] = useState(0)
-  const [pendingSalesReturnRequestsCount, setPendingSalesReturnRequestsCount] = useState(0)
+  // v3.74.15 — unified approval badges (replaces the three separate
+  // states/callbacks/endpoints that used to live here).
+  // The hook polls /api/sidebar/approval-badges every 30s and returns
+  // a map keyed by workflow identifier (sales_return_request_l1,
+  // expense, dispatch_approval, ...). Each menu item below picks its
+  // own count from this map via badges[<key>] or sumBadges(badges, [...]).
   const pathname = usePathname()
   const router = useRouter()
   const supabaseHook = useSupabase()
@@ -144,94 +148,33 @@ export function Sidebar() {
   // 🔐 استخدام role من AccessContext
   const myRole = profile?.role || ""
 
-  // ── R8: Pending Approvals Badge ─────────────────────────────
-  const APPROVALS_BADGE_ROLES = ["admin", "owner", "general_manager", "manager"]
+  // ── v3.74.15 — Unified Approval Badges ───────────────────────
+  // One hook, one endpoint, one poll cycle. All 17+ approval
+  // workflows scoped to the user's role + branch + warehouse
+  // server-side in get_user_approval_badges() RPC.
+  const { badges: approvalBadges, refresh: refreshBadges } = useApprovalBadges({
+    enabled: !!hydrated && !!activeCompanyId && !!myRole,
+  })
 
-  const refreshApprovalsCount = useCallback(async () => {
-    if (!APPROVALS_BADGE_ROLES.includes(myRole)) {
-      setPendingApprovalsCount(0)
-      return
-    }
-    try {
-      const res = await fetch("/api/notifications/pending-approvals-count", { cache: "no-store" })
-      if (res.ok) {
-        const json = await res.json()
-        setPendingApprovalsCount(Number(json.count ?? 0))
-      }
-    } catch { /* non-critical */ }
-  }, [myRole])
-
-  // ── R8+: Pending Dispatch Badge (store_manager / warehouse_manager) ──────────
-  const DISPATCH_BADGE_ROLES = ["store_manager", "warehouse_manager", "admin", "owner", "general_manager", "manager"]
-
-  const refreshDispatchCount = useCallback(async () => {
-    if (!DISPATCH_BADGE_ROLES.includes(myRole)) {
-      setPendingDispatchCount(0)
-      return
-    }
-    try {
-      const res = await fetch("/api/notifications/pending-dispatch-count", { cache: "no-store" })
-      if (res.ok) {
-        const json = await res.json()
-        setPendingDispatchCount(Number(json.count ?? 0))
-      }
-    } catch { /* non-critical */ }
-  }, [myRole])
-
-  // ── v3.74.14 — Pending Sales Return Requests Badge ──────────
-  // Level-1 approvers see pending_level_1; warehouse staff see pending_warehouse.
-  const SRR_BADGE_ROLES = [
-    "owner", "admin", "general_manager", "manager", "accountant",
-    "store_manager", "warehouse_manager",
-  ]
-  const refreshSalesReturnRequestsCount = useCallback(async () => {
-    if (!SRR_BADGE_ROLES.includes(myRole)) {
-      setPendingSalesReturnRequestsCount(0)
-      return
-    }
-    try {
-      const res = await fetch("/api/sales-return-requests/pending-count", { cache: "no-store" })
-      if (res.ok) {
-        const json = await res.json()
-        setPendingSalesReturnRequestsCount(Number(json.count ?? 0))
-      }
-    } catch { /* non-critical */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myRole])
-
-  // polling + refresh on navigation للـ approvals badge
-  useEffect(() => {
-    if (!hydrated || !activeCompanyId || !myRole) return
-    refreshApprovalsCount()
-    const interval = setInterval(refreshApprovalsCount, 30_000)
-    return () => clearInterval(interval)
-  }, [hydrated, activeCompanyId, myRole, refreshApprovalsCount])
-
-  // polling + refresh on navigation للـ dispatch badge
-  useEffect(() => {
-    if (!hydrated || !activeCompanyId || !myRole) return
-    refreshDispatchCount()
-    const interval = setInterval(refreshDispatchCount, 30_000)
-    return () => clearInterval(interval)
-  }, [hydrated, activeCompanyId, myRole, refreshDispatchCount])
-
-  // polling + refresh on navigation للـ sales-return-requests badge (v3.74.14)
-  useEffect(() => {
-    if (!hydrated || !activeCompanyId || !myRole) return
-    refreshSalesReturnRequestsCount()
-    const interval = setInterval(refreshSalesReturnRequestsCount, 30_000)
-    return () => clearInterval(interval)
-  }, [hydrated, activeCompanyId, myRole, refreshSalesReturnRequestsCount])
-
-  // refresh all badges when navigating (user likely acted)
+  // Re-fetch when navigating (the user likely just took an action)
   useEffect(() => {
     if (hydrated && activeCompanyId && myRole) {
-      refreshApprovalsCount()
-      refreshDispatchCount()
-      refreshSalesReturnRequestsCount()
+      void refreshBadges()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
+
+  // Legacy aliases — keep them mapped to the new map so any references
+  // elsewhere in the file keep working without a sweeping rename.
+  const pendingApprovalsCount =
+    sumBadges(approvalBadges, ["mfg_material_issue", "mfg_product_receive"])
+  const pendingDispatchCount =
+    sumBadges(approvalBadges, ["dispatch_approval"])
+  const pendingSalesReturnRequestsCount =
+    sumBadges(approvalBadges, [
+      "sales_return_request_l1",
+      "sales_return_request_warehouse",
+    ])
 
   // الحفاظ على التوافق مع النظام القديم (fallback)
   const [permissionsReady, setPermissionsReady] = useState<boolean>(false)
@@ -1143,9 +1086,9 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Sales Orders' : 'أوامر البيع'), href: `/sales-orders${q}`, icon: ShoppingCart },
                     { label: (lang === 'en' ? 'Sales Invoices' : 'فواتير المبيعات'), href: `/invoices${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'), href: `/sales-returns${q}`, icon: FileText },
-                    { label: (lang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Customer Debit Notes' : 'إشعارات مدين العملاء'), href: `/customer-debit-notes${q}`, icon: FileText, badge: approvalBadges['customer_debit_note'] || 0 },
                     { label: (lang === 'en' ? 'Customer Credit Balances' : 'الأرصدة الدائنة للعملاء'), href: `/customer-credits${q}`, icon: DollarSign },
-                    { label: (lang === 'en' ? 'Customer Refund Requests' : 'طلبات استرداد العملاء'), href: `/customer-refund-requests${q}`, icon: RefreshCw },
+                    { label: (lang === 'en' ? 'Customer Refund Requests' : 'طلبات استرداد العملاء'), href: `/customer-refund-requests${q}`, icon: RefreshCw, badge: approvalBadges['customer_refund_request'] || 0 },
                   ]
                 },
                 {
@@ -1157,10 +1100,10 @@ export function Sidebar() {
                 {
                   key: 'purchases', icon: ShoppingCart, label: (lang === 'en' ? 'Purchases' : 'المشتريات'), items: [
                     { label: (lang === 'en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
-                    { label: (lang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
-                    { label: (lang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText },
-                    { label: (lang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText },
-                    { label: (lang === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText },
+                    { label: (lang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart, badge: approvalBadges['purchase_request'] || 0 },
+                    { label: (lang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText, badge: approvalBadges['bill_receipt'] || 0 },
+                    { label: (lang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText, badge: sumBadges(approvalBadges, ['purchase_return_admin','purchase_return_warehouse']) },
+                    { label: (lang === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText, badge: approvalBadges['vendor_refund_request'] || 0 },
                   ]
                 },
                 {
@@ -1168,9 +1111,9 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Products & Services' : 'المنتجات والخدمات'), href: `/products${q}`, icon: Package },
                     { label: (lang === 'en' ? 'Inventory' : 'المخزون'), href: `/inventory${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Product Availability' : 'توفر المنتجات في الفروع'), href: `/inventory/product-availability${q}`, icon: Search },
-                    { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight },
+                    { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight, badge: approvalBadges['inventory_transfer'] || 0 },
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
-                    { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
+                    { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle, badge: approvalBadges['inventory_write_off'] || 0 },
                     { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle, badge: pendingDispatchCount },
                     // v3.74.14 — Sales Return Requests workflow page
                     { label: (lang === 'en' ? 'Sales Return Approvals' : 'موافقات مرتجعات المبيعات'), href: `/sales-return-requests${q}`, icon: CheckCircle, badge: pendingSalesReturnRequestsCount },
@@ -1196,11 +1139,11 @@ export function Sidebar() {
                 },
                 {
                   key: 'accounting', icon: BookOpen, label: (lang === 'en' ? 'Accounting' : 'الحسابات'), items: [
-                    { label: (lang === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Payments' : 'المدفوعات'), href: `/payments${q}`, icon: DollarSign, badge: approvalBadges['payment_approval'] || 0 },
                     { label: (lang === 'en' ? 'Drawings' : 'المسحوبات الشخصية'), href: `/drawings${q}`, icon: DollarSign },
-                    { label: (lang === 'en' ? 'Expenses' : 'المصروفات'), href: `/expenses${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Expenses' : 'المصروفات'), href: `/expenses${q}`, icon: DollarSign, badge: approvalBadges['expense'] || 0 },
                     { label: (lang === 'en' ? 'Journal Entries' : 'القيود اليومية'), href: `/journal-entries${q}`, icon: FileText },
-                    { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Banking' : 'الأعمال المصرفية'), href: `/banking${q}`, icon: DollarSign, badge: approvalBadges['bank_voucher_request'] || 0 },
                     { label: (lang === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
                     { label: (lang === 'en' ? 'Accounting Periods' : 'الفترات المحاسبية'), href: `/accounting/periods${q}`, icon: Calendar },
                     { label: (lang === 'en' ? 'Period Closing' : 'إقفال الفترة'), href: `/accounting/period-closing${q}`, icon: Calendar },

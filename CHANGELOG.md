@@ -4,6 +4,115 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.15] - 2026-06-03 — Unified approval badges across all workflow pages
+
+### Why
+Ahmed loved the v3.74.14 red badge on "موافقات مرتجعات المبيعات" — only the store_manager whose warehouse had a pending return saw "1" next to the entry, everyone else saw nothing. He asked to apply the same pattern to every approval page so any user whose action is required sees a red counter on the sidebar, scoped only to items they need to act on.
+
+His critical clarification: the badge must NOT depend on whether the notification was opened/read. It must reflect the underlying workflow record — if the user opens the notification and views the page but doesn't actually click "Approve" or "Reject", the badge stays. Only the real action decrements it.
+
+### Coverage
+A scan of every CHECK constraint in the DB containing `pending` or `pending_approval` revealed 17+ user-facing approval workflows:
+
+| Group | Workflow | Approver roles | Scope |
+|---|---|---|---|
+| Sales | sales_return_request_l1 | owner/admin/general_manager/manager/accountant | branch (mgr/acc) |
+| Sales | sales_return_request_warehouse | owner/admin/general_manager/store_manager/warehouse_manager | warehouse → branch |
+| Sales | customer_debit_note | owner/admin/general_manager/manager/accountant | branch |
+| Sales | customer_refund_request | owner/admin/general_manager/accountant | company-wide |
+| Purchases | purchase_request | owner/admin/general_manager/manager/purchasing_officer | branch |
+| Purchases | purchase_return_admin | owner/admin/general_manager/manager/accountant | branch |
+| Purchases | purchase_return_warehouse | owner/admin/general_manager/store_manager/warehouse_manager | warehouse |
+| Purchases | vendor_refund_request | owner/admin/general_manager/accountant | branch |
+| Purchases | bill_receipt | owner/admin/general_manager/store_manager/warehouse_manager | warehouse |
+| Warehouse | dispatch_approval (invoices.warehouse_status) | owner/admin/general_manager/store_manager/warehouse_manager | warehouse |
+| Warehouse | inventory_transfer | owner/admin/general_manager/store_manager/warehouse_manager | source_warehouse |
+| Warehouse | inventory_write_off | owner/admin/general_manager/manager/store_manager/warehouse_manager | branch (mgr) / warehouse (store_mgr) |
+| Finance | expense | owner/admin/general_manager/manager/accountant | branch |
+| Finance | payment_approval | owner/admin/general_manager/manager/accountant | branch |
+| Finance | bank_voucher_request | owner/admin/general_manager/accountant | branch |
+| Manufacturing | mfg_material_issue | owner/admin/general_manager/manager/manufacturing_officer | — |
+| Manufacturing | mfg_product_receive | owner/admin/general_manager/manager/manufacturing_officer | — |
+| Permissions | permission_transfer (two-eye) | owner/admin/general_manager/manager | not own transfer |
+
+### Architecture
+
+**Unified DB RPC** `get_user_approval_badges(p_user_id uuid, p_company_id uuid) → jsonb`:
+- SECURITY DEFINER — bypasses RLS because every count below is hand-scoped to the requesting user already.
+- Reads the user's role + branch_id + warehouse_id once at the top.
+- For each workflow, gates the count by role membership AND scope (branch / warehouse / company-wide depending on the workflow).
+- Returns a single JSONB object: `{ "sales_return_request_l1": 0, "expense": 2, "dispatch_approval": 3, ... }`. Missing keys mean "not an approver for that workflow".
+- Verified for owner of company `8ef6338c-…`: returns `expense=1, inventory_transfer=1, sales_return_request_warehouse=1` — all other counts 0.
+
+**Unified endpoint** `GET /api/sidebar/approval-badges`:
+- Calls the RPC with the requesting user + company.
+- No `requirePermission` — the RPC's scoping IS the authorization. workflow-scoped, like the other v3.74.13/14 endpoints.
+- Returns `{ badges: { … } }`.
+
+**Unified hook** `useApprovalBadges()` in `hooks/use-approval-badges.ts`:
+- Fetches on mount, polls every 30 s, exposes `{ badges, refresh, isLoading }`.
+- The Sidebar also calls `refresh()` on every pathname change so the badge updates the moment a user takes an action and navigates back.
+- Plus a `sumBadges(badges, keys[])` helper for menu items that map to multiple workflow keys (e.g. purchase-returns covers both admin and warehouse stages).
+
+**Sidebar refactor**:
+- Removed the three separate `pendingApprovalsCount` / `pendingDispatchCount` / `pendingSalesReturnRequestsCount` states.
+- Removed three separate `useCallback`s and three separate `useEffect`s that each polled their own endpoint every 30 s.
+- Replaced with one `useApprovalBadges()` call.
+- For each menu item that maps to an approval workflow, added `badge: approvalBadges['<key>'] || 0` (or `sumBadges(approvalBadges, [...])` for multi-stage items).
+
+**Legacy aliases kept** so existing references in the file keep working:
+```ts
+const pendingApprovalsCount = sumBadges(approvalBadges, ['mfg_material_issue', 'mfg_product_receive'])
+const pendingDispatchCount = approvalBadges['dispatch_approval'] || 0
+const pendingSalesReturnRequestsCount = sumBadges(approvalBadges, ['sales_return_request_l1', 'sales_return_request_warehouse'])
+```
+
+### Menu items with new badges (sidebar)
+- Customer Debit Notes → `customer_debit_note`
+- Customer Refund Requests → `customer_refund_request`
+- Purchase Orders → `purchase_request`
+- Purchase Bills → `bill_receipt`
+- Purchase Returns → `purchase_return_admin + purchase_return_warehouse`
+- Vendor Credits → `vendor_refund_request`
+- Inventory Transfers → `inventory_transfer`
+- Write-offs → `inventory_write_off`
+- Payments → `payment_approval`
+- Expenses → `expense`
+- Banking → `bank_voucher_request`
+
+Existing entries preserved (now sourced from the unified RPC):
+- 🔔 Approvals (manufacturing) → `mfg_material_issue + mfg_product_receive`
+- Dispatch Approvals → `dispatch_approval`
+- Sales Return Approvals → `sales_return_request_l1 + sales_return_request_warehouse`
+
+### Performance
+Previous state: 3 polled endpoints × 1 fetch / 30 s = 360 fetches / hour per active user.
+After v3.74.15: 1 endpoint × 1 fetch / 30 s = 120 fetches / hour per active user, and adding new workflows is free.
+
+### Files
+- DB migration: `v3_74_15_unified_approval_badges_rpc` (single RPC, 17+ counts)
+- New: `app/api/sidebar/approval-badges/route.ts`
+- New: `hooks/use-approval-badges.ts`
+- Modified: `components/sidebar.tsx` — removed 3 separate badge implementations, added unified hook + badges on 11 new menu items
+- Modified: `lib/version.ts` → 3.74.15
+
+### Verify after deploy
+1. Sign in as **owner** of "تست" company → opens the sidebar:
+   - Inventory group: "نقل المخزون" shows "1", "موافقات مرتجعات المبيعات" shows "1".
+   - Finance group: "المصروفات" shows "1".
+   - All other entries show no badge.
+2. Sign in as **store_manager** of branch "مدينة نصر" warehouse → only "موافقات مرتجعات المبيعات" badge appears (the level-1 ones are filtered out by role).
+3. Sign in as **accountant** in a different branch → no sales-return badge if no pending L1 in their branch.
+4. Open a notification "بانتظار اعتماد المخزن" → store_manager goes to `/sales-return-requests` → does NOT click approve/reject → badge stays at 1 (this was the key behavior Ahmed asked for).
+5. store_manager clicks "اعتماد المخزن" → notification → sidebar refreshes on navigation → badge drops to 0.
+
+### Not changing
+- The three legacy count endpoints stay live (no caller break) but the sidebar no longer polls them.
+- RLS, role spec, page permissions — all untouched.
+- The `permission_transfer` count is in the RPC payload for completeness, but no sidebar entry maps to it yet (there's no `/permission-transfers` page on the top sidebar — only inside settings). When a sidebar entry is added later, no DB or endpoint change needed.
+
+---
+
 ## [3.74.14] - 2026-06-02 — sales_return_requests sidebar entry under Warehouse group
 
 ### Why
