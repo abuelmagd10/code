@@ -4,6 +4,64 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.29] - 2026-06-03 — Root cause: new-company CoA seed now reads from chart_of_accounts_template
+
+### Why
+Ahmed asked the right question after v3.74.28: "will the missing-account bug recur for new companies, or have we solved it at the root?"
+
+Audit answer: **no, it would have recurred.** v3.74.28 added 2155 to the `chart_of_accounts_template` DB table and backfilled existing companies. But the trigger that seeds a new company's chart of accounts (`trg_company_after_insert_seed_accounts` → `trg_seed_company_accounts` → `seed_default_chart_of_accounts`) runs an **entirely separate hardcoded list of ~31 accounts** and never reads from the template. So the next new company created today would have shipped without 2155 (and a dozen other accounts the application expects) and the warehouse-approve flow would have hit the same wall again.
+
+The codebase had three parallel sources of truth:
+
+| Source | Where | Account count | Has 2155? |
+|---|---|---|---|
+| `lib/default-chart-of-accounts.ts` | App constant | ~70 | ✓ |
+| `chart_of_accounts_template` | DB table | 49 after v3.74.28 | ✓ (since v3.74.28) |
+| `seed_default_chart_of_accounts` | DB function | 31 hardcoded | ✗ |
+
+Three sources guarantee drift. We need one.
+
+### What changed
+
+DB migration `v3_74_29_seed_company_accounts_use_template` does two things:
+
+**(1) Rewrite `trg_seed_company_accounts`** to call BOTH the existing skeleton seeder AND the template-sync function:
+
+```sql
+BEGIN
+  PERFORM public.seed_default_chart_of_accounts(NEW.id, 'ar');   -- skeleton
+  PERFORM public.sync_company_chart_of_accounts(NEW.id);          -- template fill-in
+  RETURN NEW;
+END;
+```
+
+The skeleton call stays so the parent_id hierarchy gets bootstrapped reliably (sync uses `parent_code` lookups that depend on the parents already existing). After the skeleton, `sync_company_chart_of_accounts` loops `chart_of_accounts_template` and INSERTs anything the skeleton didn't create. The sync is idempotent (matched on `(company_id, account_code)`) so calling it right after the skeleton can't duplicate rows.
+
+**(2) Backfill all existing companies** by running `sync_company_chart_of_accounts` on every row in `companies`. Per-company errors are caught with `RAISE NOTICE` so one bad company doesn't abort the loop. Each company's account list grows by whatever the template contains that the company doesn't already have.
+
+After the backfill, the test company "تست" went from 49 → **57** accounts, and "العصرية للنجارة" from 41 → **50** accounts. They now match the template (the gap to the application's ~70-account constant is for accounts the template itself doesn't yet carry — separate technical debt that we can pay down by inserting them into the template; this migration didn't widen scope).
+
+### From now on
+Adding a default account to every company — existing and future — reduces to a single INSERT into `chart_of_accounts_template`. The trigger picks it up on new-company creation, and running `sync_company_chart_of_accounts(p_company_id)` (or our DO-loop backfill pattern) propagates it to every existing company. No application code change, no second source of truth to remember.
+
+### What this does NOT do
+- It does not refill `chart_of_accounts_template` with the full ~70-account application list. The template carries 49 accounts today and after v3.74.29 the trigger correctly picks them up; expanding the template is a separate exercise that can be done incrementally as workflows discover missing accounts.
+- It does not delete `seed_default_chart_of_accounts`. That function is still useful as a "minimum viable skeleton" and is called first. We just stopped relying on it as the single source.
+- It does not modify `lib/default-chart-of-accounts.ts`. That constant is still used by the application's `createDefaultChartOfAccounts` callback path, which only runs when the DB trigger didn't seed accounts at all. That path is a fallback for edge cases (e.g., companies created via direct INSERT bypassing the trigger) and is correct as-is.
+
+### Verification
+Trigger function `prosrc` now contains both `seed_default_chart_of_accounts` AND `sync_company_chart_of_accounts` calls — confirmed by reading `pg_proc`. Both existing companies now have 50+ accounts including 2155.
+
+### Files
+- DB migration: `v3_74_29_seed_company_accounts_use_template`
+- `lib/version.ts` — bump to 3.74.29
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+This release rolls into the same forthcoming push as v3.74.22-28. The consolidated push script becomes `push_v3.74.22-29.ps1`.
+
+---
+
 ## [3.74.28] - 2026-06-03 — Hotfix: customer credit balance account (2155) missing from CoA template and every company
 
 ### Why
