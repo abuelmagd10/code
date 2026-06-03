@@ -4,6 +4,83 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.30] - 2026-06-03 — Template is the single source of truth: 87-account canonical list, hardcoded seed removed, contra-account validation widened
+
+### Why
+Ahmed flagged two latent risks the v3.74.29 fix didn't close:
+
+1. **Coverage gap.** The DB template carried 49 accounts; the application's `DEFAULT_ACCOUNTS` constant carried ~70. Any workflow that needed one of the missing 21+ accounts (e.g., `5350 Bad Debt Expense` for AR write-offs, `1131 Allowance for Doubtful Accounts` for receivables provisioning, `3400 Legal Reserve` for distributable-profits calc, `5295 Amortization` for intangibles, `5340 Loss on Asset Disposal`, etc.) would have failed on every freshly-created company the moment it tried to find that account. We were one workflow away from the same "Required accounts not found" 400 we just fixed for `customer_credit`.
+
+2. **Drift-prone source.** `seed_default_chart_of_accounts` carried its own hardcoded list of ~31 accounts in PL/pgSQL. v3.74.29 made the trigger call seed then sync, so missing template rows would propagate — but the hardcoded list was still present, still authoritative for the accounts it covered, and still divergent from the template on name/sub_type for several rows. A future contributor adding an account to the application constant could update only one of the three places.
+
+This release closes both at once.
+
+### What changed
+
+DB migration `v3_74_30_template_single_source_of_truth` (with parts B and C applied immediately after):
+
+**(1) UPSERT the canonical 87-account list into `chart_of_accounts_template`.** The list is the verbatim contents of `DEFAULT_ACCOUNTS` from `lib/default-chart-of-accounts.ts`, expanded into one row per account with `account_code`, `account_name` (Arabic), `account_name_en`, `account_type`, `normal_balance`, `sub_type`, `parent_code`, `level`, `is_active`. `ON CONFLICT (account_code) DO UPDATE` re-writes every column so existing template rows are corrected to match the canon (1290 becomes Accumulated Depreciation, 1270 becomes Capital Work in Progress, sub_types align with the application). Template count: 49 → **87**.
+
+**(2) Strip the hardcoded list out of `seed_default_chart_of_accounts`.** The function body is now a six-line wrapper that returns 0 if accounts already exist, otherwise defers to `sync_company_chart_of_accounts` and returns the row count. There is no longer a hand-maintained skeleton; the template is the only place an account lives. The trigger `trg_seed_company_accounts` stays as-is because v3.74.29 already made it call both seed and sync — they now collapse to a single template read (no double-insert because sync is idempotent on `(company_id, account_code)`).
+
+**(3) Re-sync every existing company.** The first pass failed on contra accounts (see part B), but after the validator was widened the sync succeeded for every company. Outcome:
+
+| Company | Before v3.74.30 | After |
+|---|---|---|
+| تست | 57 accounts | **93** (87 template + 6 user-added kept) |
+| العصرية للنجارة | 50 accounts | **87** (full template) |
+
+**(4) Drift detection** — new function `public.check_chart_of_accounts_drift(p_company_id UUID)` returns one row per (account_code, drift_reason) where the company is either missing a template account or has a sub_type that diverged from the template. Use for ongoing audits and as the basis for periodic monitoring. Drift count after the full migration: **0 across every company.**
+
+#### Part B — contra-account validator widened
+
+The IFRS-compliant chart of accounts has contra rows whose `normal_balance` is opposite to their parent type:
+
+| Code | Name | account_type | normal_balance |
+|---|---|---|---|
+| 1131 | Allowance for Doubtful Accounts | asset | credit |
+| 1290 | Accumulated Depreciation | asset | credit |
+| 1390 | Accumulated Amortization | asset | credit |
+| 4110 | Sales Returns | income | debit |
+| 4120 | Sales Discounts | income | debit |
+| 5120 | Purchase Returns | expense | credit |
+| 5130 | Purchase Discounts | expense | credit |
+
+The validator trigger `fn_validate_normal_balance` previously rejected anything except `asset/expense=debit` and `liability/equity/income=credit`, with two narrow escapes (codes starting `125` or names containing `إهلاك/depreciation`). That blocked five of the seven contra accounts above and aborted the entire sync transaction. The trigger now identifies contras by `sub_type` (the stable semantic field), keeps the legacy name/code escapes as backward-compatibility paths, and only enforces the strict natural-balance rule for non-contra rows.
+
+#### Part C — heal account 1270 drift
+
+Existing companies had account 1270 with the *old* canonical purpose (`accumulated_depreciation`, credit) but the *new* user-visible name (Capital Work in Progress, written by an earlier sync pass that updated names only). The sync function avoids touching `sub_type` because that field affects how reports group historical journal entries. Part C performs the cleanup only on companies that have **never posted a journal entry to 1270** — a strict safety check — and updates both `sub_type` to `fixed_assets` and `normal_balance` to `debit` so the row reflects its actual purpose. Companies that did post historical entries are left untouched and surface in `check_chart_of_accounts_drift()` for manual review.
+
+### Verification
+Final state, measured directly from the database:
+
+| Check | Result |
+|---|---|
+| Template row count | **87** |
+| Companies with 0 drift | **all** (every company in the system) |
+| `seed_default_chart_of_accounts` body length | ~10 lines (was ~140) |
+| `fn_validate_normal_balance` accepts all 7 IFRS contras | yes |
+
+### The contract going forward
+Adding or modifying a default account is now a **single INSERT/UPDATE on `chart_of_accounts_template`**. The next time a company is created the trigger picks it up. To propagate to every existing company, run `sync_company_chart_of_accounts(p_company_id)` per company or `PERFORM` it in a `DO` loop over `companies`. No application code change, no second source of truth, no fallback paths to remember.
+
+### Risk audit
+- The user-added accounts on company "تست" (6 of them) were preserved — sync only INSERTs missing rows, never deletes existing ones.
+- No journal entry was modified; only chart_of_accounts metadata. Part C explicitly skipped any row with journal history.
+- The wider `fn_validate_normal_balance` is strictly more permissive than the previous version (it still rejects everything the old one did *plus* now allows IFRS contras), so no previously-valid CoA row becomes invalid.
+- `seed_default_chart_of_accounts` keeps its signature `(UUID, TEXT) → INTEGER`, so callers that import it (none found in the application, only the trigger) continue to work.
+
+### Files
+- DB migration parts: `v3_74_30_template_single_source_of_truth`, `v3_74_30b_contra_accounts_validation`, `v3_74_30c_fix_account_1270_subtype_v2`
+- `lib/version.ts` — bump to 3.74.30
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+Bundled with v3.74.22-29 into `push_v3.74.22-30.ps1`.
+
+---
+
 ## [3.74.29] - 2026-06-03 — Root cause: new-company CoA seed now reads from chart_of_accounts_template
 
 ### Why
