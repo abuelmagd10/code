@@ -16,6 +16,7 @@ import Link from "next/link"
 import { toast } from "@/hooks/use-toast"
 import {
   SALES_RETURN_LEVEL1_APPROVER_ROLES,
+  SALES_RETURN_VIEWER_ROLES,
   SALES_RETURN_WAREHOUSE_ROLES,
   getSalesReturnRequestStatusLabel,
   normalizeSalesReturnRequestStatus,
@@ -125,9 +126,13 @@ export default function SalesReturnRequestsPage() {
 
   const canLevel1Act = (req: ReturnRequest) => {
     const phase = normalizeSalesReturnRequestStatus(req.status)
+    // v3.74.26 — accountant intentionally removed from the approver
+    // tier (separation of duties). Page-level guard mirrors the API
+    // gate; the UI also drops the action column for viewer-only roles
+    // further down.
     if (!SALES_RETURN_LEVEL1_APPROVER_ROLES.includes(userRole as any)) return false
     if (phase !== "pending_level_1") return false
-    if ((userRole === "manager" || userRole === "accountant") && currentBranchId && req.branch_id && req.branch_id !== currentBranchId) {
+    if (userRole === "manager" && currentBranchId && req.branch_id && req.branch_id !== currentBranchId) {
       return false
     }
     return true
@@ -165,6 +170,10 @@ export default function SalesReturnRequestsPage() {
 
       const allowedRoles = new Set<string>([
         ...SALES_RETURN_LEVEL1_APPROVER_ROLES,
+        // v3.74.26 — viewer tier (accountant) can see the page but
+        // not act on requests. Action buttons are gated separately
+        // by canLevel1Act and canWarehouseAct.
+        ...SALES_RETURN_VIEWER_ROLES,
         ...SALES_RETURN_WAREHOUSE_ROLES,
       ])
 
@@ -269,6 +278,9 @@ export default function SalesReturnRequestsPage() {
 
   const isAllowedUser = new Set<string>([
     ...SALES_RETURN_LEVEL1_APPROVER_ROLES,
+    // v3.74.26 — viewer tier included so the accountant still lands
+    // on the page (read-only). Mirrors the allowedRoles set above.
+    ...SALES_RETURN_VIEWER_ROLES,
     ...SALES_RETURN_WAREHOUSE_ROLES,
   ]).has(userRole)
 

@@ -72,7 +72,9 @@ export async function PATCH(
 
     const requestInvoice = Array.isArray(request.invoices) ? request.invoices[0] : request.invoices
     const requestBranchId = request.branch_id || requestInvoice?.branch_id || null
-    if ((member.role === "manager" || member.role === "accountant") && member.branch_id && requestBranchId && member.branch_id !== requestBranchId) {
+    // v3.74.26 — see note in approve route. Accountant 403s upstream
+    // at the SALES_RETURN_LEVEL1_APPROVER_ROLES check now.
+    if (member.role === "manager" && member.branch_id && requestBranchId && member.branch_id !== requestBranchId) {
       return NextResponse.json({ error: "غير مصرح لك برفض طلبات فروع أخرى" }, { status: 403 })
     }
 

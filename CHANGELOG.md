@@ -4,6 +4,71 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.26] - 2026-06-03 — SECURITY: accountant removed from sales-return Level-1 approver tier (separation of duties)
+
+### Why
+Ahmed found the accountant role on his test company seeing "اعتماد الإدارة" (Management Approval) and "رفض" (Reject) buttons on the sales-return-requests page for invoice INV-00004 (محمد بسيونى, 10 EGP, status بانتظار الإدارة). The accountant should not have approval power on sales returns — they reconcile the resulting cash + inventory effects after the workflow commits, so granting them approval at Level-1 means a single role can both authorize the return and post its financial impact. That violates the segregation-of-duties principle every ERP needs.
+
+The leak came from the `SALES_RETURN_LEVEL1_APPROVER_ROLES` constant, which historically listed:
+
+```ts
+['owner', 'admin', 'general_manager', 'manager', 'accountant']
+```
+
+The `accountant` entry was never sound — the strict v3.69.0 role spec keeps management decisions with owner / admin / GM (company-wide) and the branch manager (branch-scoped). The constant drifted from the spec before v3.69.0 and never got corrected.
+
+The fix preserves the accountant's read visibility on the page (they still need to see what's pending so they can pre-stage their books) and their inbox notifications (still delivered via the v3.74.20 helper). It only removes the action capability.
+
+### What changed
+
+**(1) Role lists** in `lib/sales-return-requests.ts`
+
+- `SALES_RETURN_LEVEL1_APPROVER_ROLES` now `['owner', 'admin', 'general_manager', 'manager']` — `accountant` removed.
+- New `SALES_RETURN_VIEWER_ROLES = ['accountant']` introduced as a separate tier. Anyone in this list can navigate to the page and see the listing but the Approve / Reject UI is hidden and the action API endpoints 403 them. Adding a future read-only stakeholder is now a one-line edit to this constant without touching the approver list.
+
+**(2) Page** `app/sales-return-requests/page.tsx`
+
+- Imports `SALES_RETURN_VIEWER_ROLES` and includes it in both the `allowedRoles` set (used for the data fetch) and the `isAllowedUser` set (used for the access gate).
+- `canLevel1Act` still checks `SALES_RETURN_LEVEL1_APPROVER_ROLES.includes(userRole)`, which now excludes accountant — so the button column doesn't render for them.
+- Branch-scoping for `canLevel1Act` simplified: previously checked `userRole === "manager" || userRole === "accountant"`; now just `manager`.
+
+**(3) Listing endpoint** `app/api/sales-return-requests/route.ts` GET
+
+- Adds a `viewerRoles` set in the allowedRoles construction so the accountant still receives the rows on fetch. The endpoint deliberately does NOT enforce approver-tier gating on this read.
+
+**(4) Action endpoints** `approve/route.ts`, `reject/route.ts`
+
+- Authorization gate is `SALES_RETURN_LEVEL1_APPROVER_ROLES.includes(member.role as any)` — which now 403s accountant before any business logic runs. Defense-in-depth complement to the UI hiding.
+- Inline branch-scope check `member.role === "manager" || member.role === "accountant"` simplified to `member.role === "manager"` because the accountant short-circuits at the role gate above.
+
+**(5) Badge endpoint** `app/api/sales-return-requests/pending-count/route.ts`
+
+- The badge represents "things you need to act on." Since accountant doesn't act, their count short-circuits to 0 at the existing `isLevel1` check (which now returns false for them). No sidebar badge will show. The inline branch-scope check is also simplified to `manager` only, matching the action endpoints.
+- File doc-comment updated to record the v3.74.26 change.
+
+### Test plan
+The accountant Ahmed tested with (`foodcana1976@gmail.com` on the test company) should now:
+- Still see the /sales-return-requests page populated with pending requests.
+- Not see the "اعتماد الإدارة" or "رفض" buttons on any row.
+- Get HTTP 403 if they POST directly to `/api/sales-return-requests/:id/approve` or `/reject`.
+- Have no sidebar badge on the Sales Return Requests entry.
+- Still receive the existing "طلب مرتجع مبيعات جديد" notification (delivered as the *branch* accountant, conventionally — that pathway is independent of the approver tier and stays intact).
+
+### Files
+- `lib/sales-return-requests.ts` — role list updates + new viewer tier.
+- `app/sales-return-requests/page.tsx` — viewer-role inclusion in 2 sets, accountant removed from branch scope check.
+- `app/api/sales-return-requests/route.ts` — viewer roles in listing allowlist.
+- `app/api/sales-return-requests/[id]/approve/route.ts` — branch scope simplified.
+- `app/api/sales-return-requests/[id]/reject/route.ts` — branch scope simplified.
+- `app/api/sales-return-requests/pending-count/route.ts` — doc comment + branch scope.
+- `lib/version.ts` — bump to 3.74.26.
+- `CHANGELOG.md` — this entry.
+
+### Note on the bundled v3.74.22-25 push
+This release bundles into the same forthcoming push as v3.74.22-25 (notification-coverage audit closure) because none of those four had been committed yet at the time this finding came in. The combined push script `push_v3.74.22-25.ps1` will be superseded by `push_v3.74.22-26.ps1` which adds the v3.74.26 spot-checks.
+
+---
+
 ## [3.74.25] - 2026-06-03 — LOW: branch accountants added as approval recipients on banking vouchers and expenses
 
 ### Why

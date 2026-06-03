@@ -35,11 +35,30 @@ export type SalesReturnRequestItemPayload = {
   line_total: number
 }
 
+// v3.74.26 — Removed 'accountant' from the Level-1 approver tier.
+// Accountants reconcile cash and inventory effects after the workflow
+// commits; granting them approval power on sales returns violates
+// separation-of-duties (the same role would both authorize the return
+// and post the financial impact). They retain read visibility on the
+// page and inbox notifications on pending approvals; they just don't
+// see the Approve / Reject buttons or get past the API role gate.
+//
+// Strict v3.69.0 spec: management decisions stay with owner / admin /
+// general_manager (company-wide) and the branch manager (branch-scoped).
 export const SALES_RETURN_LEVEL1_APPROVER_ROLES = [
   'owner',
   'admin',
   'general_manager',
   'manager',
+] as const
+
+// v3.74.26 — New viewer tier. These roles can navigate to
+// /sales-return-requests and call the GET listing endpoint, but
+// the Approve / Reject UI is hidden for them and the action API
+// endpoints reject their role at the gate. Today this is the
+// accountant; other read-only stakeholders can be added here
+// without touching the approver list.
+export const SALES_RETURN_VIEWER_ROLES = [
   'accountant',
 ] as const
 

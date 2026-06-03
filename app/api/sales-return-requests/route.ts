@@ -7,6 +7,7 @@ import {
   SALES_RETURN_ACTIVE_REQUEST_STATUSES,
   SALES_RETURN_LEVEL1_APPROVER_ROLES,
   SALES_RETURN_REQUEST_STATUSES,
+  SALES_RETURN_VIEWER_ROLES,
   SALES_RETURN_WAREHOUSE_ROLES,
   buildSalesReturnItemsForExecution,
 } from "@/lib/sales-return-requests"
@@ -205,7 +206,13 @@ export async function GET(req: NextRequest) {
 
     const level1ApproverRoles = [...SALES_RETURN_LEVEL1_APPROVER_ROLES]
     const warehouseRoles = [...SALES_RETURN_WAREHOUSE_ROLES]
-    const allowedRoles = new Set<string>([...level1ApproverRoles, ...warehouseRoles])
+    // v3.74.26 — viewer tier (accountant) added so the listing endpoint
+    // returns rows for read-only stakeholders. The approve/reject API
+    // endpoints still enforce the strict approver-only allowlist
+    // separately, so widening this GET filter doesn't grant approval
+    // power.
+    const viewerRoles = [...SALES_RETURN_VIEWER_ROLES]
+    const allowedRoles = new Set<string>([...level1ApproverRoles, ...viewerRoles, ...warehouseRoles])
 
     if (!member || !allowedRoles.has(member.role)) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 })

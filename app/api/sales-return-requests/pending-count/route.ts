@@ -1,10 +1,11 @@
 /**
- * GET /api/sales-return-requests/pending-count — v3.74.14
+ * GET /api/sales-return-requests/pending-count — v3.74.14, v3.74.26
  *
  * Returns the number of sales return requests that this user needs to act on:
- *   - Level-1 approvers (owner / admin / general_manager / manager / accountant)
+ *   - Level-1 approvers (owner / admin / general_manager / manager)
  *     → count where status = 'pending_level_1', scoped to user's branch when
- *       applicable.
+ *       applicable. v3.74.26 removed 'accountant' from this tier — they get
+ *       count=0 here, which suppresses the sidebar badge for them.
  *   - Warehouse approvers (store_manager / warehouse_manager)
  *     → count where status = 'pending_warehouse', scoped to user's
  *       warehouse_id first, branch_id as fallback.
@@ -70,9 +71,11 @@ export async function GET(req: NextRequest) {
       }
     } else {
       // Level-1 approvers see pending-level-1, branch-scoped for branch
-      // managers / accountants; owner/admin see all.
+      // managers; owner / admin / general_manager see all. v3.74.26
+      // removed accountant from this tier — they short-circuit to 0
+      // at the isLevel1 gate above.
       query = query.eq("status", SALES_RETURN_REQUEST_STATUSES.pendingLevel1)
-      if ((role === "manager" || role === "accountant") && member?.branch_id) {
+      if (role === "manager" && member?.branch_id) {
         query = query.eq("branch_id", member.branch_id)
       }
     }
