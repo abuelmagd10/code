@@ -4,6 +4,64 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.19] - 2026-06-03 — DB-level invariant: journal entry exists ⇒ expense is paid
+
+### Why
+While testing, Ahmed opened **EXP-0001** (18 May 2026, Madinet Nasr rent, 3 EGP, status "approved") and saw a "Record Payment" button — even though a freshly created expense in the same state (EXP-0002) had no such button. The discrepancy looked like a UI bug but the root cause was a data inconsistency carried over from before v3.26.1:
+
+| Expense | status | journal_entry_id | paid_at |
+|---|---|---|---|
+| EXP-0001 | `approved` | f0761896… (exists) | NULL |
+| EXP-0002 | `paid` | 5f5bf406… (exists) | 2026-06-03 |
+
+Since v3.26.1, `handleApprove` posts the cash-outflow journal (Dr Expense / Cr Cash) and immediately flips `status='paid'` because the cash has already left the books. EXP-0001 was approved before that logic existed, so the journal was posted but the status flag never followed. The "Record Payment" button on the detail page is gated by `status === 'approved' && !paid_at`, which is true for the stale row — hence the spurious button.
+
+A targeted code patch (hide the button when `journal_entry_id` is set) would mask the symptom but leave the data inconsistent and would not survive any future code path that writes `journal_entry_id` from somewhere other than `handleApprove`. Ahmed asked whether a one-row DB backfill would be enough or whether the bug could recur. The honest answer is: under normal v3.26.1 operation it would not recur, but a transient failure between the journal insert and the follow-up `expenses.update` (network blip, function timeout, RLS hiccup, future restore from a pre-v3.26.1 backup, future code branch that posts a journal without flipping status) would reproduce exactly this state. So instead of a code patch we promoted the rule **"expense has a journal ⇒ expense is paid"** to a hard invariant the database enforces itself.
+
+### What changed
+
+**(1) BEFORE INSERT/UPDATE trigger on `expenses`** — `expenses_mark_paid_when_journal_added()`
+
+Fires on `INSERT` or on `UPDATE OF journal_entry_id, status`. When it observes the transition that would otherwise create the inconsistency — `journal_entry_id` going from NULL to NOT NULL (or already set on an INSERT) **while** `status='approved'` — it rewrites the row in place inside the same statement:
+
+- `status` → `paid`
+- `paid_at` → `COALESCE(paid_at, approved_at, now())` (prefer the approval timestamp so historical reports stay consistent)
+- `paid_by` → `COALESCE(paid_by, approved_by)`
+- `last_status_changed_at` → `now()`
+
+`COALESCE` everywhere means the trigger never overwrites data that was set deliberately; it only fills in what's missing. The trigger is a no-op for rows already in the correct state, no-op for rows the user intentionally moved back to `approved` with the journal stripped, and a no-op for any path that already routes through `handleApprove`'s v3.26.1 logic — that code keeps doing the same thing as before, and the trigger just happens to agree with it. The invariant becomes the database's responsibility, not any client's.
+
+**(2) One-shot backfill** for existing rows. The trigger only catches future writes; rows already in the inconsistent state (status='approved' + journal_entry_id NOT NULL + paid_at NULL) needed an explicit heal. The migration ran a single `UPDATE` against every such row across every company, populating `status='paid'`, `paid_at=COALESCE(paid_at, approved_at, now())`, `paid_by=COALESCE(paid_by, approved_by)`, and inserted one `audit_logs` row per heal under reason `"v3.74.19 backfill: journal exists → status=paid invariant"` so the change is traceable.
+
+In Ahmed's database exactly one row matched: **EXP-0001**. It is now `status='paid'` with `paid_at=2026-05-18 15:25:19` (matching its original `approved_at`). The "Record Payment" button is gone, the listing badge is gone, and the row is consistent with EXP-0002 and every other expense.
+
+### Verification
+Post-migration sanity check:
+- `SELECT COUNT(*) FROM expenses WHERE status='approved' AND journal_entry_id IS NOT NULL AND paid_at IS NULL` → **0** (was 1).
+- `SELECT COUNT(*) FROM pg_trigger WHERE tgname='trg_expenses_auto_paid_on_journal'` → **1** (the new trigger).
+- EXP-0001 status='paid', paid_at populated, paid_by populated.
+- EXP-0002 unchanged (already correct).
+
+### Why a trigger and not a CHECK constraint
+A `CHECK` could express the invariant, but it would `ERROR` on any future write that violated it — including the inconsistent legacy state we wanted to *heal*, and including the brief intermediate state inside `handleApprove` between the journal insert and the status flip. A `BEFORE` trigger instead silently fixes the row so the invariant always holds at COMMIT time, without forcing every caller to handle a constraint violation.
+
+### Why this is the right scope
+Three smaller alternatives were considered and rejected:
+- **Backfill EXP-0001 only.** Heals the visible bug but leaves the door open for any future write path that recreates the inconsistency.
+- **UI defensive code (hide the button when `journal_entry_id` is set).** Hides the symptom but the underlying data is still wrong, and every other view that reads `status` (reports, badges, listings) would need the same patch.
+- **Race-condition retry in `handleApprove`.** Helps with the specific transient-failure case but adds complexity to a hot path and still doesn't cover backups, manual edits, or new code paths.
+
+The trigger covers all three with one rule, in one place, and is cheap (fires only on writes that touch `journal_entry_id` or `status`).
+
+### Files
+- DB migration: `v3_74_19_expense_auto_paid_invariant` (function + trigger + backfill + audit log inserts)
+- `lib/version.ts` — bump to 3.74.19
+- `CHANGELOG.md` — this entry
+
+No application code was modified.
+
+---
+
 ## [3.74.18] - 2026-06-03 — Action-triggered archive across every approval workflow
 
 ### Why (Ahmed's design)
