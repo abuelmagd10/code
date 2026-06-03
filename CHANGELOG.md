@@ -4,6 +4,66 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.31] - 2026-06-03 — Hotfix: warehouse-approve crash on the journal-entry write (scalar UUID assigned to a UUID-array variable)
+
+### Why
+After v3.74.30 unblocked every account-related precondition for warehouse-approving a sales return, Ahmed tried again on `6ea99fca-…` (INV-00004, 10 EGP, customer paid the full amount → a customer credit must be issued). The route returned `Transaction Failed: malformed array literal: "9a43df75-07d9-4ad0-b982-1c67dbe3ac5c"`, and a Postgres warning appeared just before it: `مرتجع مكتمل بدون قيد محاسبي: SR-99682101` — meaning the sales-return row was written but the journal entry never landed and everything rolled back.
+
+### Root cause
+`post_accounting_event()` (the orchestrator the warehouse-approve flow calls) declares accumulator variables for the IDs of inserted rows:
+
+```sql
+v_payment_ids UUID[]
+v_return_ids  UUID[]
+v_credit_ids  UUID[]
+```
+
+The journal-entries block uses the correct pattern (scratch scalar + `array_append`). The three other blocks did **not**:
+
+```sql
+INSERT INTO payments        ... RETURNING id INTO v_payment_ids;
+INSERT INTO sales_returns   ... RETURNING id INTO v_return_ids;
+INSERT INTO customer_credits... RETURNING id INTO v_credit_ids;
+```
+
+`RETURNING id INTO variable` always assigns a *scalar* UUID. PostgreSQL then tries to cast that scalar to the variable's declared type (`UUID[]`), which fails with `malformed array literal: "<the UUID>"` because a bare UUID string isn't a valid PostgreSQL array literal (which would look like `{u1,u2,…}`).
+
+The bug only surfaced on this exact path because it required all three of: a real payment, a real customer-credit, and a sales return in one call. Earlier returns in testing didn't issue a customer credit (the customer hadn't paid, or the credit wasn't needed), so the broken `INTO v_credit_ids` line never executed and the bug stayed silent. INV-00004's flow exercised every branch and tripped immediately.
+
+### What changed
+Replaced `post_accounting_event` with a version that:
+
+1. Introduces a scratch scalar `v_inserted_id UUID` at the top of the function.
+2. Rewrites the three offending blocks to use the correct pattern:
+   ```sql
+   ) RETURNING id INTO v_inserted_id;
+   v_payment_ids := array_append(v_payment_ids, v_inserted_id);
+   ```
+   (and the equivalents for `v_return_ids` and `v_credit_ids`).
+3. Preserves every other line verbatim, including the journal-entries block (which was already correct), all parameter defaults (`jsonb DEFAULT NULL::jsonb`), and the exception-handler wording so the v2 wrapper's idempotency-replay logic still works.
+
+### Behavioural impact (deliberate)
+Where the previous code accidentally wrote scalars into array variables before crashing, the new code correctly accumulates every inserted row's id and returns the full arrays in the result:
+
+```jsonb
+{ "payment_ids": [...], "return_ids": [...], "credit_ids": [...], "journal_entry_ids": [...] }
+```
+
+The v2 wrapper (`post_accounting_event_v2`) already iterates these arrays to create financial-operation trace links, so this restores intended behaviour for callers that handle multiple sales returns in one atomic write.
+
+### Verification
+Function is replaced; the next warehouse-approve on the same request should succeed and write all four rows (`sales_returns`, `sales_return_items`, `customer_credits`, `journal_entries` with its lines). No application code change. The existing CHANGELOG entries above carry the wider audit.
+
+### Files
+- DB migration: `v3_74_31_post_accounting_event_fix_v2`
+- `lib/version.ts` — bump to 3.74.31
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+Rolls into the same forthcoming push as v3.74.22-30. The consolidated push script becomes `push_v3.74.22-31.ps1`.
+
+---
+
 ## [3.74.30] - 2026-06-03 — Template is the single source of truth: 87-account canonical list, hardcoded seed removed, contra-account validation widened
 
 ### Why
