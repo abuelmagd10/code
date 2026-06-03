@@ -4,6 +4,88 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.14] - 2026-06-02 — sales_return_requests sidebar entry under Warehouse group
+
+### Why
+After v3.74.13 fixed the 403 on the workflow API, Ahmed pointed out the deeper UX gap: `/sales-return-requests` is not in the sidebar for any role. Approvers could only reach the page via a notification deep-link or by being told the URL. They had no way to proactively check pending returns.
+
+The complete-returns list (`/sales-returns`) IS in the sidebar under "المبيعات", but that's the historical record — not the workflow page.
+
+### Where it goes
+Ahmed chose option (ب): under the "Inventory" group, right next to "موافقات الإرسال". Rationale:
+- Both `dispatch_approvals` and the new entry are warehouse-workflow pages
+- store_manager already sees the Inventory group (it's their primary group), so the entry appears naturally for them
+- Same pattern for `pendingDispatchCount` badge — pre-warns approvers about pending work
+
+Accountants and managers don't see the Inventory group in the same way (they see fewer items), but they DO have the entry inside it because of the resource permission. Sidebar groups are rendered if ANY child item is accessible, so accountants will see "المخزون" with just the items they have access to, including the new "موافقات مرتجعات المبيعات".
+
+### Three layers
+
+**Layer 1 — DB: extend `seed_default_role_permissions`**
+
+Added `sales_return_requests` resource to the seed function and re-seeded every existing company:
+
+| Role | Access | Why |
+|---|---|---|
+| accountant | read + write (no delete) | Level-1 approver |
+| store_manager | read + write (no delete) | Warehouse approver |
+| manager | read only | Branch monitoring per Ahmed's spec |
+| owner / admin | implicit all_access | — |
+
+Verified post-migration: accountant has 18 resources (was 17), store_manager has 7 (was 6), manager has 26 (was 25), each including `sales_return_requests`.
+
+**Layer 2 — `lib/access-context.tsx` fallback list**
+
+Added `'sales_return_requests'` to the hardcoded `defaultRolePages` for accountant, store_manager, and manager. This only matters for the last-resort fallback (legacy companies whose role has zero rows in `company_role_permissions`); for new companies the DB-authoritative branch wins. Kept for parity with the DB seed.
+
+**Layer 3 — `components/Sidebar.tsx`**
+- New state `pendingSalesReturnRequestsCount`
+- `refreshSalesReturnRequestsCount` callback gated by a 7-role allowlist
+- Same polling pattern as `pendingDispatchCount`: every 30s, on navigation, on hydration
+- Menu item under the Inventory group, immediately after Dispatch Approvals:
+  ```
+  { label: 'موافقات مرتجعات المبيعات',
+    href: '/sales-return-requests',
+    icon: CheckCircle,
+    badge: pendingSalesReturnRequestsCount }
+  ```
+- Resource matcher entry added BEFORE the existing `/sales-returns` check so the more specific path wins:
+  ```ts
+  if (href.includes('/sales-return-requests')) return 'sales_return_requests'
+  ```
+
+**Layer 4 — `GET /api/sales-return-requests/pending-count`**
+
+New endpoint that returns a role-appropriate count:
+- Level-1 approvers (owner/admin/general_manager/manager/accountant) → `pending_level_1` count, branch-scoped for manager/accountant, unscoped for owner/admin
+- Warehouse approvers (store_manager/warehouse_manager) → `pending_warehouse` count, scoped first to `warehouse_id`, falling back to `branch_id`
+- Anyone outside the workflow → `{ count: 0 }` (no leakage)
+
+No `requirePermission` — same workflow-scoped authorization pattern as the list endpoint.
+
+### Files
+- DB migration: `v3_74_14_sales_return_requests_resource` (extends seed + backfills existing companies)
+- Modified: `lib/access-context.tsx` — added resource to accountant, store_manager, manager fallback lists
+- Modified: `components/Sidebar.tsx` — new state, refresh callback, useEffect, menu item, resource matcher
+- New: `app/api/sales-return-requests/pending-count/route.ts`
+- Modified: `lib/version.ts` → 3.74.14
+
+### Verify after deploy
+1. Sign in as **store_manager** → sidebar "المخزون" group now contains "موافقات مرتجعات المبيعات" right under "موافقات الإرسال". If there's a pending warehouse-approval request for their warehouse, the badge shows the count.
+2. Sign in as **accountant** → same group, same entry. Badge shows count of `pending_level_1` returns in their branch.
+3. Sign in as **owner** → entry visible; badge counts ALL `pending_level_1` requests company-wide.
+4. Sign in as **staff (sales rep)** → entry hidden (no resource permission).
+5. Sign in as **booking_officer** → entry hidden.
+6. Click the entry → page loads (the v3.74.13 fix), table shows the user's scoped requests. Badge refreshes when navigating.
+
+### Not changing
+- `/sales-returns` page (historical list) stays as it was, under "المبيعات".
+- All API endpoints for the workflow (`approve`, `warehouse-approve`, etc.) — same authorization shape after v3.74.13.
+- RLS on `sales_return_requests` — unchanged.
+- Per-row branch/warehouse scoping in the GET list — unchanged; the badge simply uses the same scope.
+
+---
+
 ## [3.74.13] - 2026-06-02 — store_manager 403 on sales-return-requests workflow
 
 ### Why

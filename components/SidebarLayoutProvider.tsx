@@ -1,7 +1,8 @@
 "use client"
 
 import { usePathname } from "next/navigation"
-import { Sidebar } from "@/components/sidebar"
+// v3.74.14: import path must match Sidebar.tsx casing (TS1261 otherwise)
+import { Sidebar } from "@/components/Sidebar"
 
 const EXACT_HIDE_PATHS = ["/"]
 const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog"]

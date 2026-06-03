@@ -310,7 +310,7 @@ async function fetchAccessProfile(
         // 2. المحاسب — 17 pages (dashboard explicit)
         accountant: [
           'dashboard',
-          'invoices', 'sales_returns', 'customer_credits',
+          'invoices', 'sales_returns', 'sales_return_requests', 'customer_credits',
           'bills', 'purchase_returns',
           'products', 'services',
           'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
@@ -330,12 +330,13 @@ async function fetchAccessProfile(
         store_manager: [
           'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
           'dispatch_approvals', 'inventory_goods_receipt',
+          'sales_return_requests', // v3.74.14 — warehouse approver
         ],
         // 7. المدير (branch manager) — union, READ-ONLY at can_write level
         manager: [
           'dashboard',
           'customers', 'estimates', 'sales_orders',
-          'invoices', 'sales_returns', 'customer_credits',
+          'invoices', 'sales_returns', 'sales_return_requests', 'customer_credits',
           'bills', 'purchase_returns',
           'products', 'services',
           'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
