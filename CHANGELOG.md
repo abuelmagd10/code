@@ -4,6 +4,58 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.28] - 2026-06-03 — Hotfix: customer credit balance account (2155) missing from CoA template and every company
+
+### Why
+After v3.74.27 unblocked the audit_logs constraint, Ahmed retried `warehouse-approve` on the same sales-return request and received a new error message:
+
+> خطأ الحسابات المطلوبة غير موجودة: رصيد العملاء الدائن.
+
+`lib/sales-returns.ts` searches the company's chart of accounts for an account with `sub_type='customer_credit'` (or a matching name) whenever the return creates a customer credit — i.e., when the customer paid for the invoice and the return generates an amount the company now owes them. Without that account the preparation step throws and the atomic RPC rolls back.
+
+A census of the system uncovered the underlying bug:
+
+| Where | Has account 2155? |
+|---|---|
+| `lib/default-chart-of-accounts.ts` (application constant) | ✓ |
+| `chart_of_accounts_template` table (DB seed source for new companies) | ✗ |
+| Existing companies (2 of 2) | ✗ |
+
+The DB template was the source of truth used by `sync_company_chart_of_accounts` to seed new companies, and 2155 was never added to it even though the application-side default list had it. So every company in the system was created without the account, and the sales-return workflow could never complete its customer-credit branch.
+
+### What changed
+
+Single DB migration `v3_74_28_customer_credit_account_2155`:
+
+**(1) Template addition.** Inserts the 2155 row into `chart_of_accounts_template` (account_code `2155`, name `رصيد العملاء الدائن` / `Customer Credit Balance`, account_type `liability`, normal_balance `credit`, sub_type `customer_credit`, parent_code `2100`, level 3). Idempotent via `NOT EXISTS` so re-running the migration is safe.
+
+**(2) Company backfill.** Inserts 2155 into `chart_of_accounts` for every company in `companies` that doesn't already have a `customer_credit`-typed account or code 2155. `parent_id` is resolved from the same company's own 2100 row when present so the hierarchy survives. Idempotent via `NOT EXISTS`.
+
+**(3) Audit trail.** Each backfilled row gets a corresponding `audit_logs` entry with action `INSERT` (already permitted by the v3.74.27 expanded constraint), reason `"v3.74.28 backfill: account 2155 رصيد العملاء الدائن"`, and metadata recording the migration name.
+
+### Verification
+Post-migration counts:
+
+- `chart_of_accounts_template` rows with `account_code='2155'`: **1** (was 0).
+- `chart_of_accounts` rows with `account_code='2155'` across all companies: **2** (was 0; matches the 2 companies in the system).
+- Companies still missing a `customer_credit` account: **0** (was 2).
+
+### No application code change
+`lib/default-chart-of-accounts.ts` already lists 2155 — the application constant was correct. The bug was in the DB template / company seed paths. No TypeScript change is needed; the existing `findAccount(a => a.sub_type === 'customer_credit')` lookup in `lib/sales-returns.ts` will now succeed.
+
+### Test plan
+Retry the warehouse-approve action on request `6ea99fca-ecc2-4b57-a7bb-dbbc67657df6` (INV-00004, 10 EGP). Expected: the route returns 200, a `sales_returns` row is created, the journal entry posts (Dr ذمم العملاء / Cr رصيد العملاء الدائن / Cr الإيرادات depending on the customer's prior balance), the source `sales_return_requests` row transitions to `approved_completed`, and the completion notifications fire.
+
+### Files
+- DB migration: `v3_74_28_customer_credit_account_2155`
+- `lib/version.ts` — bump to 3.74.28
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+This release rolls into the same forthcoming push as v3.74.22-27. The consolidated push script is updated to `push_v3.74.22-28.ps1` which adds the v3.74.28 verification.
+
+---
+
 ## [3.74.27] - 2026-06-03 — Hotfix: audit_logs CHECK constraint blocked sales-return warehouse approval (400)
 
 ### Why
