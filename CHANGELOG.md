@@ -4,6 +4,71 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.17] - 2026-06-03 — Time-window dedup (covers admin acting via sidebar)
+
+### Why
+Ahmed reported that after v3.74.16 deployed and he repeated the test:
+1. Employee creates expense → admin gets notification (status='unread')
+2. Admin sees badge "1" on the Expenses entry and clicks it (sidebar navigation)
+3. Admin rejects the expense on the page → notification stays `status='unread'` because admin never clicked the notification itself
+4. Employee resubmits → admin still doesn't get a fresh notification
+
+v3.74.16 assumed the recipient would always OPEN the notification (status→'read') before acting. In real workflows, the badge IS the recipient's "I have something to do" cue — they navigate via the badge straight to the workflow page and act there. The notification stays unread the entire time.
+
+His second point: where do archived notifications go? He wants to be able to review them.
+
+### Fix part 1 — Time-window dedup
+Rewrote `create_notification()` to detect "fresh event" by **age**, not by status:
+
+```
+IF a prior notification with this event_key exists:
+  IF it is UNREAD AND created within the last 30 seconds
+    → return existing (genuine race-condition dedup)
+  ELSE
+    → archive it (any status), insert fresh notification
+```
+
+The 30-second window is generous for race conditions (typical resolution: milliseconds) and far below any human "re-action" interval. This covers all four real-world cases:
+
+| Scenario | Behavior |
+|---|---|
+| Quick double-click / retry within 30s | Dedup (race) |
+| Admin opened notification, then rejected, employee resubmits | Archive old, new fires |
+| Admin acted via sidebar badge (notification untouched), employee resubmits | **Archive old, new fires** ← v3.74.16 gap, NOW fixed |
+| Re-submission after any delay | Archive old, new fires |
+
+### Verified end-to-end
+DB-level smoke test with 4 steps + verification, all PASS — including the silent-admin-action scenario where the notification stayed unread but the workflow record changed:
+
+```
+1) First submit                          → id A
+2) Race retry (<30s, unread)             → id A   (dedup)
+3) Backdate id A by 5 min (still unread)
+4) Resubmit                              → id B   (NEW — was the bug)
+5) Race retry on new                     → id B   (dedup)
+verify id A status                       = 'archived'
+```
+
+### Fix part 2 — Where archived notifications live (no change, just documentation)
+Open Notification Center → "الحالة" filter → choose "مؤرشف" to review every archived notification. They are NEVER deleted — only their status is updated. The list shows them in newest-first order, the deep-link to the underlying workflow record still works, and audit_logs still record their original creation. To see ALL notifications regardless of status, set the filter to "الكل".
+
+If a more prominent "Archive" tab is wanted later, that's a follow-up UI tweak — for now the filter is the canonical path.
+
+### Files
+- DB migration: `v3_74_17_time_window_notification_dedup` — rewrites `create_notification()` to use the time-window approach
+- Modified: `lib/version.ts` → 3.74.17
+- No application code changes
+- No UI changes — the archive filter has been present in NotificationCenter all along; this release just makes it actually useful by routing stale predecessors there
+
+### Verify after deploy
+1. Employee submits expense → admin sees badge "1" on Expenses → clicks sidebar entry (NOT the notification) → rejects on page.
+2. Employee edits, clicks Submit again.
+3. **Admin now receives a fresh notification** (NEW behavior in v3.74.17 vs v3.74.16).
+4. Admin opens Notification Center → sets filter "الحالة" → "مؤرشف" → sees the original "اعتماد مصروف" notification archived after the resubmission cycle. Click → still deep-links to the expense.
+5. Race-condition spam protection still works: rapidly clicking "Submit for approval" multiple times produces ONE notification, not many.
+
+---
+
 ## [3.74.16] - 2026-06-03 — Notification re-fire on workflow resubmission (silent dropout fix)
 
 ### Why
