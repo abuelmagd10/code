@@ -496,7 +496,9 @@ export class PurchaseReturnNotificationService {
           actorUserId: params.actorUserId,
           purchaseReturnId: purchaseReturn.id,
         },
-        resolver.resolveRoleRecipients(["admin", "general_manager"], null, null, null),
+        // v3.74.20 — canonical Level-1 approver list (includes owner + manager).
+        // See resolveLevel1ApproverRecipients docs.
+        resolver.resolveLevel1ApproverRecipients(null, null, null),
         {
           referenceType: "purchase_return",
           referenceId: purchaseReturn.id,

@@ -60,7 +60,10 @@ export class PaymentApprovalNotificationService {
         branchId: params.branchId || null,
         costCenterId: params.costCenterId || null,
       },
-      resolver.resolveRoleRecipients(["admin", "general_manager"], params.branchId || null, null, params.costCenterId || null),
+      // v3.74.20 — canonical Level-1 approver list (includes owner + manager).
+      // The previous ["admin", "general_manager"] hard-coded list silently
+      // dropped owner — see resolveLevel1ApproverRecipients docs.
+      resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, params.costCenterId || null),
       {
         referenceType: "payment_approval",
         referenceId: params.paymentId,

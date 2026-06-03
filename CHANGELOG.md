@@ -4,6 +4,79 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.20] - 2026-06-03 — Owner included in Level-1 approval notification recipients
+
+### Why
+Ahmed reported that after a warehouse manager rejected a sales-return request and the originator edited and resubmitted it, the senior approvers received no notification — so the workflow stalled with no inbox signal.
+
+Diagnosis from the database for his test case (request `063d486c-19b6-482b-b796-9f394eb90ac8`, resubmitted 2026-06-03 12:26):
+
+| Notification fired | Assigned role | Exists in company? |
+|---|---|---|
+| `40365d02…` | `admin` | no admin member |
+| `74aafbd2…` | `general_manager` | no general_manager member |
+| `63e1c1c6…` | `manager` | no manager member |
+| `059e10ad…` | branch `accountant` | yes — but that's the originator |
+| (none) | `owner` | **the only senior member, never targeted** |
+
+Looking at the helper, every "Level-1 approval" notification across the project used a hard-coded recipient list of `['admin', 'general_manager', 'manager']`, silently excluding the owner. In a small company whose only senior member is the owner, the notification went to nobody. The same pattern was duplicated in `payment-approval` and `purchase-return` services.
+
+The `SALES_RETURN_LEVEL1_APPROVER_ROLES` constant in `lib/sales-return-requests.ts` already lists `owner` as a valid Level-1 approver — the page UI honors that, the API allowlist honors that, only the notification layer was out of sync. So this is the notification layer drifting from the rest of the system, not a deliberate exclusion.
+
+### What changed
+
+**(1) New canonical helper** `NotificationRecipientResolverService.resolveLevel1ApproverRecipients(branchId, warehouseId, costCenterId)`
+
+Returns the four-role recipient list every Level-1 workflow should use:
+
+- `owner` — company-wide (the owner is not branch-bound, so `branchId` is intentionally null on this entry)
+- `admin` — company-wide
+- `general_manager` — company-wide
+- `manager` — scoped to the originating branch (managers are branch-bound; the caller's `branchId` flows through)
+
+Branch accountants remain a separate call (`resolveBranchAccountantRecipients`) because they are *recipients* of approval notifications by convention but are not Level-1 approvers — keeping them separate preserves that semantic.
+
+**(2) Wired into the three affected services**
+
+- `lib/sales-return-request-notifications.ts` — three call sites:
+  - `notifySalesReturnLevel1Requested` (sent when a new return request enters Level-1)
+  - `notifySalesReturnManagementCompleted` (sent when the warehouse finishes execution)
+  - `notifySalesReturnManagementRejectedByWarehouse` (sent when warehouse rejects after Level-1 approval)
+- `lib/services/payment-approval-notification.service.ts` — `notifyApprovalRequested`
+- `lib/services/purchase-return-notification.service.ts` — warehouse-confirmation branch
+
+Each replaces `resolver.resolveRoleRecipients(['admin', 'general_manager', 'manager'], …)` with `resolver.resolveLevel1ApproverRecipients(branchId, …)`. The `event_key` automatically grows an additional `:role:owner:…` segment per recipient, so dedup and time-window logic continue to work without change.
+
+**(3) Backfill of the in-flight test case**
+
+Ahmed's outstanding request `063d486c-19b6-482b-b796-9f394eb90ac8` was created on the old code path, so its `owner` notification was never inserted. A one-shot SQL `INSERT … SELECT … WHERE NOT EXISTS` filled in the missing row using the same shape the new code would have produced (event_key `sales:sales_return_request:<id>:level_1_requested:role:owner:company:all_warehouses:all_cost_centers`, category=`approvals`, status=`unread`). Ahmed will see the notification on his next page load.
+
+The corresponding warehouse-rejection notification on the earlier (now archived) request `503c229b…` was not backfilled — that request is closed and a "your request was rejected" message about it would be noise. Only forward-actionable notifications were healed.
+
+### What didn't change
+
+Branch-scoped helpers that intentionally target only the branch manager — `bank-voucher-notification`, `booking-notification`, `purchase-order-notification` — were left untouched. Those are routine operational notifications where adding owner would create owner-inbox noise without buying any safety, and in every case the branch manager is the correct approver.
+
+### Verification
+
+Post-change sanity check against Ahmed's test case:
+
+- Owner-targeted unread notification for request `063d486c…`: **1** (was 0).
+- Sales-return requests in `pending_approval_level_1` visible to owner: **1** (unchanged — request was already in the right status).
+- The other helpers fire `level_1_requested` notifications for `owner` on every future Level-1 request — verified by code inspection of all three updated call sites.
+
+### Files
+
+- `lib/services/notification-recipient-resolver.service.ts` — new `resolveLevel1ApproverRecipients` method (no removals).
+- `lib/sales-return-request-notifications.ts` — three call-site updates.
+- `lib/services/payment-approval-notification.service.ts` — one call-site update.
+- `lib/services/purchase-return-notification.service.ts` — one call-site update.
+- One SQL backfill row in `notifications`.
+- `lib/version.ts` — bump to 3.74.20.
+- `CHANGELOG.md` — this entry.
+
+---
+
 ## [3.74.19] - 2026-06-03 — DB-level invariant: journal entry exists ⇒ expense is paid
 
 ### Why

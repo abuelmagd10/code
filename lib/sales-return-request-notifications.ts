@@ -66,7 +66,11 @@ export async function notifySalesReturnLevel1Requested(
   await dispatchNotifications(supabase, {
     ...params,
     recipients: [
-      ...resolver.resolveRoleRecipients(['admin', 'general_manager', 'manager'], null, null, null),
+      // v3.74.20 — use the canonical Level-1 approver list (includes owner).
+      // The old hard-coded ['admin', 'general_manager', 'manager'] silently
+      // dropped the owner, which broke approvals in companies whose only
+      // executive is the owner. See resolveLevel1ApproverRecipients docs.
+      ...resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, null),
       ...resolver.resolveBranchAccountantRecipients(params.branchId || null, null)
     ],
     title,
@@ -172,7 +176,8 @@ export async function notifySalesReturnManagementCompleted(
   await dispatchNotifications(supabase, {
     ...params,
     recipients: [
-      ...resolver.resolveRoleRecipients(['admin', 'general_manager', 'manager'], null, null, null),
+      // v3.74.20 — canonical Level-1 approver list (see above).
+      ...resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, null),
       ...resolver.resolveBranchAccountantRecipients(params.branchId || null, null)
     ],
     title,
@@ -195,7 +200,8 @@ export async function notifySalesReturnManagementRejectedByWarehouse(
   await dispatchNotifications(supabase, {
     ...params,
     recipients: [
-      ...resolver.resolveRoleRecipients(['admin', 'general_manager', 'manager'], null, null, null),
+      // v3.74.20 — canonical Level-1 approver list (see above).
+      ...resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, null),
       ...resolver.resolveBranchAccountantRecipients(params.branchId || null, null)
     ],
     title,
