@@ -4,6 +4,41 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.32] - 2026-06-03 — Hotfix: post_accounting_event INSERT columns aligned with real table schemas
+
+### Why
+After v3.74.31 unblocked the scalar-to-array crash, the next warehouse-approve attempt surfaced the next latent bug in the same function:
+
+> `Transaction Failed: column "transaction_date" of relation "inventory_transactions" does not exist`
+
+The `post_accounting_event` function was written against a slightly out-of-sync mental model of three table schemas. Once v3.74.31 let execution actually reach those INSERTs, the mismatches threw.
+
+### Three mismatches found and fixed
+
+| Table | What the function said | What the table actually has | Fix |
+|---|---|---|---|
+| `inventory_transactions` | `transaction_date` | column doesn't exist (only `created_at`) | dropped from INSERT; `created_at` defaults to `NOW()` |
+| `payments` | `reference` | `reference_number` | renamed; tolerates both keys in payload via `COALESCE` |
+| `fifo_lot_consumptions` | (missing) | requires `product_id` + `consumption_type` (both NOT NULL) | added; reads `product_id` and `consumption_type` (defaulting to `'sale'`) from the payload; also added `consumption_date` defaulting to `CURRENT_DATE` |
+
+Re-checked every other INSERT in the function (cogs_transactions, sales_returns, customer_credits, sales_return_items, journal_entries, journal_entry_lines) against `information_schema.columns` — they all align. No further changes.
+
+### Why it took until v3.74.31 to discover this
+The same code path was the only one that touched these particular tables in production. Earlier sales-return tests never reached the inventory_transactions / fifo_lot_consumptions writes because the v3.74.31 scalar-to-array bug fired before them. Once that was unblocked, this batch of schema mismatches became reachable for the first time.
+
+### Verification
+The function is replaced. The next warehouse-approve on the test request should write all rows successfully. No application code change.
+
+### Files
+- DB migration: `v3_74_32_post_accounting_event_align_columns`
+- `lib/version.ts` — bump to 3.74.32
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+Rolls into the same forthcoming push as v3.74.22-31. The push script becomes `push_v3.74.22-32.ps1`.
+
+---
+
 ## [3.74.31] - 2026-06-03 — Hotfix: warehouse-approve crash on the journal-entry write (scalar UUID assigned to a UUID-array variable)
 
 ### Why
