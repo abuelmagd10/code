@@ -133,6 +133,7 @@ export function Sidebar() {
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false)
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
   const [pendingDispatchCount, setPendingDispatchCount] = useState(0)
+  const [pendingSalesReturnRequestsCount, setPendingSalesReturnRequestsCount] = useState(0)
   const pathname = usePathname()
   const router = useRouter()
   const supabaseHook = useSupabase()
@@ -177,6 +178,27 @@ export function Sidebar() {
     } catch { /* non-critical */ }
   }, [myRole])
 
+  // ── v3.74.14 — Pending Sales Return Requests Badge ──────────
+  // Level-1 approvers see pending_level_1; warehouse staff see pending_warehouse.
+  const SRR_BADGE_ROLES = [
+    "owner", "admin", "general_manager", "manager", "accountant",
+    "store_manager", "warehouse_manager",
+  ]
+  const refreshSalesReturnRequestsCount = useCallback(async () => {
+    if (!SRR_BADGE_ROLES.includes(myRole)) {
+      setPendingSalesReturnRequestsCount(0)
+      return
+    }
+    try {
+      const res = await fetch("/api/sales-return-requests/pending-count", { cache: "no-store" })
+      if (res.ok) {
+        const json = await res.json()
+        setPendingSalesReturnRequestsCount(Number(json.count ?? 0))
+      }
+    } catch { /* non-critical */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRole])
+
   // polling + refresh on navigation للـ approvals badge
   useEffect(() => {
     if (!hydrated || !activeCompanyId || !myRole) return
@@ -193,11 +215,20 @@ export function Sidebar() {
     return () => clearInterval(interval)
   }, [hydrated, activeCompanyId, myRole, refreshDispatchCount])
 
-  // refresh both badges when navigating (user likely acted)
+  // polling + refresh on navigation للـ sales-return-requests badge (v3.74.14)
+  useEffect(() => {
+    if (!hydrated || !activeCompanyId || !myRole) return
+    refreshSalesReturnRequestsCount()
+    const interval = setInterval(refreshSalesReturnRequestsCount, 30_000)
+    return () => clearInterval(interval)
+  }, [hydrated, activeCompanyId, myRole, refreshSalesReturnRequestsCount])
+
+  // refresh all badges when navigating (user likely acted)
   useEffect(() => {
     if (hydrated && activeCompanyId && myRole) {
       refreshApprovalsCount()
       refreshDispatchCount()
+      refreshSalesReturnRequestsCount()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
@@ -281,7 +312,9 @@ export function Sidebar() {
     if (href.includes('/branches')) return 'branches'
     if (href.includes('/cost-centers')) return 'cost_centers'
     if (href.includes('/warehouses')) return 'warehouses'
-    // المبيعات
+    // المبيعات — note: sales-return-requests check MUST come before
+    // sales-returns to ensure the more specific path wins (v3.74.14).
+    if (href.includes('/sales-return-requests')) return 'sales_return_requests'
     if (href.includes('/sales-orders')) return 'sales_orders'
     if (href.includes('/sales-returns')) return 'sales_returns'
     if (href.includes('/sent-invoice-returns')) return 'sent_invoice_returns'
@@ -1139,6 +1172,8 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle },
                     { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle, badge: pendingDispatchCount },
+                    // v3.74.14 — Sales Return Requests workflow page
+                    { label: (lang === 'en' ? 'Sales Return Approvals' : 'موافقات مرتجعات المبيعات'), href: `/sales-return-requests${q}`, icon: CheckCircle, badge: pendingSalesReturnRequestsCount },
                     { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
                   ]
                 },
