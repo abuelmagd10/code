@@ -4,6 +4,81 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.16] - 2026-06-03 — Notification re-fire on workflow resubmission (silent dropout fix)
+
+### Why
+Ahmed reported: an employee creates an expense → admin receives the "اعتماد مصروف" notification → admin rejects → employee gets the rejection notification → employee edits the expense and **resubmits** for approval → no notification reaches the admin the second time. The badge on the sidebar still works (it counts by workflow status), but the admin's notification inbox is silent. They have to remember to go look at the page on their own.
+
+Same flaw affects all 17+ workflows in the system (sales_return_request, customer_debit_note, purchase_request, payment_approval, …), not just expenses.
+
+### Root cause
+`create_notification(p_event_key)` deduplicates by `event_key`. The application code in each workflow generates a deterministic event_key like:
+
+```ts
+eventKey: `expense:${expense.id}:pending_approval:${approver.user_id}`
+```
+
+This event_key is constant for a given (workflow record, approver) pair. The function's deduplication logic returns the existing notification ID whenever it finds any notification with the same event_key and `status != 'archived'`. After step 2 (admin reads the notification), its status becomes `'read'` — not `'archived'`. So on resubmission, the lookup finds the old read row, returns its ID, and no fresh notification is inserted. The function silently swallowed the event.
+
+This was compounded by a hard UNIQUE INDEX on `(company_id, event_key)` that would have blocked any second insert anyway.
+
+### Fix
+Two coordinated changes:
+
+**(1) Partial unique index** — only enforce uniqueness while the notification is still actionable:
+
+```sql
+DROP INDEX uniq_notifications_company_event_key;
+DROP INDEX idx_notifications_event_key_unique;
+
+CREATE UNIQUE INDEX uniq_notifications_active_event_key
+ON notifications (company_id, event_key)
+WHERE event_key IS NOT NULL AND status = 'unread';
+```
+
+This preserves the original guarantee that two unread notifications can't share an event_key (idempotency against retries / double-clicks / race conditions) while letting a `'read'` or `'actioned'` row coexist with a NEW `'unread'` row for the same event_key — which is the resubmission case.
+
+**(2) Rewrite `create_notification()`** to:
+- Look up only against `status = 'unread'` (genuine dedup).
+- If found, return existing ID (race condition protection preserved).
+- If not found, **first ARCHIVE any prior `read` / `actioned` siblings** with the same event_key, then insert the fresh row. The archive step keeps the user's inbox clean — only the latest instance of each workflow stage is visible.
+- The race-condition `EXCEPTION WHEN unique_violation` handler still catches concurrent inserts and returns the winning row.
+
+### Verification (DB-level smoke test)
+Five-step scenario, all PASS:
+
+| Step | Behavior | Result |
+|---|---|---|
+| First submit | Insert new notification | `id = A` |
+| Immediate retry (race) | Dedup against unread | `id = A` (same) |
+| Mark as read | (simulates admin opening it) | — |
+| Resubmit after read | Old archived, fresh insert | `id = B` (different) |
+| Retry after resubmit | Dedup against unread | `id = B` (same) |
+| Verify #1 status | (auto-archived during step 4) | `'archived'` |
+
+### Why this is the right shape of fix (and not per-workflow)
+17+ workflows in the system follow the same pattern. Fixing each call site one by one would be 17+ edits, 17+ chances to miss one, and 17+ chances for future workflows to introduce the same bug. Fixing it at the `create_notification` level catches the existing 17 AND every workflow added in the future, with zero application-code changes. The behavior change is semantically clean: read/actioned notifications no longer block fresh ones with the same event_key.
+
+### Files
+- DB migration: `v3_74_16_notification_resubmit_fix` + `v3_74_16_notification_resubmit_fix_v2` (corrected column reference for the auto-archive update)
+- Modified: `lib/version.ts` → 3.74.16
+- No application code changes — every workflow that calls `create_notification()` immediately benefits.
+
+### Verify after deploy
+1. Sign in as employee → submit a new expense → admin's notification arrives ✓ (regression check — first submission still works).
+2. Same employee, same expense → admin opens the notification (status → `'read'`) → admin rejects on the expense page → employee receives the rejection notification.
+3. Employee edits the expense and clicks "Submit for approval" again.
+4. **Admin receives a fresh notification** (NEW behavior). The old `'read'` notification is auto-archived so the inbox shows only the latest one.
+5. Sidebar badge on "المصروفات" reflects the count of items still pending the admin's action (unchanged from v3.74.15).
+
+### Not changing
+- Application code — every workflow that uses `create_notification` benefits automatically.
+- The `event_key` format used by each workflow — keep your existing patterns.
+- The notification dispatch path (`lib/notifications/dispatcher.ts`) — still calls the same RPC.
+- The approval badges RPC (`get_user_approval_badges` from v3.74.15) — unchanged.
+
+---
+
 ## [3.74.15] - 2026-06-03 — Unified approval badges across all workflow pages
 
 ### Why
