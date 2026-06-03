@@ -1,9 +1,10 @@
 "use client"
 
 import { usePathname } from "next/navigation"
-// v3.74.14: filename in git is `sidebar.tsx` (lowercase) — Linux/Vercel is
-// case-sensitive so the import must match exactly. Windows hides this.
-import { Sidebar } from "@/components/sidebar"
+// v3.74.14: filename in git is now `Sidebar.tsx` (capital S) after the
+// fix_sidebar_casing rename. The import must match exactly because
+// Linux/Vercel is case-sensitive.
+import { Sidebar } from "@/components/Sidebar"
 
 const EXACT_HIDE_PATHS = ["/"]
 const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog"]
