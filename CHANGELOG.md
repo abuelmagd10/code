@@ -4,6 +4,75 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.18] - 2026-06-03 — Action-triggered archive across every approval workflow
+
+### Why (Ahmed's design)
+v3.74.17 used a 30-second time window inside `create_notification` to decide when to archive a stale approval notification. That worked, but the trigger was a side effect (the time elapsed) rather than the user's actual action. Ahmed proposed a cleaner semantic: **archive when the user actually performs the approval/rejection** — and only for approval notifications. Other notifications stay exactly as they are.
+
+His exact words: "ان يتم هذا فى حالة قيام المستخدم بتنفيذ الاعتماد المطلوب منة سواء الاعتماد او الرفض وذلك يطبق على اشعارات الاعتمادات فقط اما باقى الاشعارات كما هى"
+
+This release implements that.
+
+### Architecture
+**(1) Helper RPC** `archive_approval_notifications_for_record(company_id, reference_type, reference_id)` — archives every `category='approvals'` notification (status IN unread/read) for the given workflow record. SECURITY DEFINER, returns the count. Safe to call multiple times. Idempotent.
+
+**(2) Category-aware `create_notification()`**:
+- `category = 'approvals'` → keep the v3.74.17 time-window safety net (30 s race window, archive stale predecessor with same event_key on insert).
+- All other categories → revert to v3.74.16 simple dedup (return existing non-archived row matching event_key; do not auto-archive). This honors Ahmed's "اما باقى الاشعارات كما هى" requirement — informational, billing, subscription, etc. notifications are not touched.
+
+**(3) Application helper** `lib/notifications/archive-on-action.ts` — a typed wrapper around the RPC every approve/reject handler calls one line after committing the workflow status change. Failures are swallowed (UX cleanup, not correctness).
+
+**(4) Wired into every approve/reject handler** across all the workflows in the project. The agent that did the bulk patch reported 25 endpoint files modified plus the inline expense page handlers:
+
+- `app/expenses/[id]/page.tsx` — both handleApprove and handleReject (Ahmed's tested case)
+- `app/api/sales-return-requests/[id]/approve|reject|warehouse-approve|warehouse-reject/route.ts` (4 files)
+- `app/api/customer-refund-requests/[id]/approve|reject/route.ts` (2 files)
+- `app/api/bills/[id]/approve|reject/route.ts` (2 files)
+- `app/api/invoices/[id]/warehouse-approve|warehouse-reject/route.ts` (2 files)
+- `app/api/write-offs/approve/route.ts` (1 file)
+- `app/api/supplier-payments/[id]/approve/route.ts` (1 file, handles both actions)
+- `app/api/banking/vouchers/[id]/workflow/route.ts` (1 file, both branches)
+- `app/api/manufacturing/material-issue-approvals/[id]/approve|reject/route.ts` (2 files)
+- `app/api/manufacturing/product-receive-approvals/[id]/approve|reject/route.ts` (2 files)
+- `app/api/permissions/transfer/[id]/approve|reject/route.ts` (2 files)
+- `app/api/manufacturing/bom-versions/[id]/approve|reject/route.ts` (2 files)
+- `app/api/manufacturing/production-orders/[id]/approve|reject/route.ts` (2 files)
+- `app/api/manufacturing/routing-versions/[id]/approve|reject/route.ts` (2 files)
+- `app/api/purchase-returns/[id]/approve/route.ts` (1 file, handles both actions)
+
+Total: 26 handler files now call the archive helper after a successful action.
+
+### Placement rule used everywhere
+The helper call is placed **after** the workflow status update commits successfully and **before** any "result" notification we send to the creator. Order matters — sending the result notification first would archive that fresh notification too.
+
+### Behavior
+| Scenario | What happens |
+|---|---|
+| Employee submits expense | Approvers' inbox: "اعتماد مصروف" (unread) |
+| Admin opens expenses page via sidebar badge and rejects | Helper called → admin's "اعتماد مصروف" notification archived. Creator gets "تم رفض المصروف" (fresh) |
+| Creator edits & resubmits | `create_notification` finds no active (non-archived) notification with the same event_key → fresh notification fires to admin ✓ |
+| Other notifications (info, billing, renewal) | Untouched. v3.74.16 simple dedup. |
+
+### Where archived notifications live (unchanged)
+NotificationCenter → "الحالة" filter → "مؤرشف". They're never deleted. Deep-link to the workflow record still works. To see the full history including archives, set the filter to "الكل".
+
+### Files
+- DB migration: `v3_74_18_category_aware_notification_archive` — adds the helper RPC and makes `create_notification` category-aware.
+- New: `lib/notifications/archive-on-action.ts` — typed wrapper.
+- Modified: 26 approve/reject handler files (see list above).
+- Modified: `lib/version.ts` → 3.74.18.
+
+### Verify after deploy
+1. Sign in as employee → submit expense → admin's sidebar Expenses badge: 1, inbox: 1 "اعتماد مصروف" (unread).
+2. Sign in as admin → click the Expenses sidebar entry (NOT the notification) → reject the expense.
+3. Admin's NotificationCenter → "اعتماد مصروف" is no longer in unread/read; switch filter to "مؤرشف" — it's there.
+4. Employee resubmits.
+5. Admin's NotificationCenter (unread) → **fresh "اعتماد مصروف" notification** ✓ — this is the behavior Ahmed wanted.
+6. Race-condition check: rapidly click "Submit" twice within 30 seconds → one notification, not two.
+7. Other categories (subscription renewal, billing notice) → behave exactly as before, no change.
+
+---
+
 ## [3.74.17] - 2026-06-03 — Time-window dedup (covers admin acting via sidebar)
 
 ### Why

@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { ArrowLeft, ArrowRight, Pencil, Send, CheckCircle, XCircle, Receipt, DollarSign, Calendar, FileText, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createNotification } from "@/lib/governance-layer"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 import { checkDuplicateJournalEntry, createExpenseJournalEntry } from "@/lib/journal-entry-governance"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 
@@ -274,6 +275,17 @@ export default function ExpenseDetailPage() {
 
       if (error) throw error
 
+      // v3.74.18 — Archive every pending approval-category notification for
+      // this expense (the "اعتماد المصروف" notifications that were sitting
+      // in the approvers' inboxes). MUST run before sending the result
+      // notification to the creator below so the new one isn't archived too.
+      await archiveApprovalNotificationsForRecord({
+        supabase,
+        companyId,
+        referenceType: "expense",
+        referenceId: expense.id,
+      })
+
       // ✅ إنشاء القيد المحاسبي تلقائياً عند الاعتماد
       try {
         const duplicateCheck = await checkDuplicateJournalEntry(
@@ -424,6 +436,18 @@ export default function ExpenseDetailPage() {
         .eq("company_id", companyId)
 
       if (error) throw error
+
+      // v3.74.18 — Archive pending approval-category notifications for this
+      // expense BEFORE sending the rejection notification to the creator.
+      // This is the explicit "user took action → mark as done" trigger
+      // Ahmed asked for. The creator's new "rejection" notification below
+      // is fresh and won't be archived because it's inserted after this.
+      await archiveApprovalNotificationsForRecord({
+        supabase,
+        companyId,
+        referenceType: "expense",
+        referenceId: expense.id,
+      })
 
       // Send notification to creator
       try {

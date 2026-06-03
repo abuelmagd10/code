@@ -9,6 +9,7 @@ import {
   getProductReceiveApprovalApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/product-receive-approval-api"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export async function POST(
   request: NextRequest,
@@ -64,6 +65,17 @@ export async function POST(
       .eq("id", id)
       .eq("company_id", companyId)
     if (approvalUpdateError) throw approvalUpdateError
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase: admin,
+      companyId,
+      referenceType: "manufacturing_product_receive_approval",
+      referenceId: id,
+    })
 
     // تحديث حالة الاعتماد في أمر الإنتاج
     const { error: orderStatusError } = await admin

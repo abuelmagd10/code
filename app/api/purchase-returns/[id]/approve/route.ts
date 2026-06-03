@@ -4,6 +4,7 @@ import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { PurchaseReturnCommandService, type PurchaseReturnDecisionAction } from "@/lib/services/purchase-return-command.service"
 import { PurchaseReturnNotificationService } from "@/lib/services/purchase-return-notification.service"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export async function POST(
   request: NextRequest,
@@ -60,6 +61,17 @@ export async function POST(
       rejectionReason,
       { idempotencyKey, requestHash, uiSurface }
     )
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase: adminSupabase,
+      companyId: context.companyId,
+      referenceType: "purchase_return",
+      referenceId: id,
+    })
 
     if (!result.cached) {
       const notificationService = new PurchaseReturnNotificationService(adminSupabase)

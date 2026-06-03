@@ -13,6 +13,7 @@ import {
   getNextCycleNo,
   buildApprovalSnapshot,
 } from "@/lib/manufacturing/approval-history"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 const rejectSchema = z.object({
   rejection_reason: z.string().min(1, "سبب الرفض مطلوب"),
@@ -35,6 +36,17 @@ export async function POST(
       p_rejection_reason:     payload.rejection_reason,
     })
     if (error) throw error
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase: admin,
+      companyId,
+      referenceType: "manufacturing_production_order",
+      referenceId: id,
+    })
 
     const cycleNo = await getNextCycleNo(supabase, companyId, "production_order", id)
     await recordApprovalAction({

@@ -16,6 +16,7 @@ import {
   notifySalesReturnCompleted,
   notifySalesReturnManagementCompleted,
 } from "@/lib/sales-return-request-notifications"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 /**
  * PATCH /api/sales-return-requests/[id]/warehouse-approve
@@ -125,6 +126,17 @@ export async function PATCH(
     if (!atomicResult.success) {
       return NextResponse.json({ error: atomicResult.error || "فشل تنفيذ المرتجع" }, { status: 400 })
     }
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase,
+      companyId,
+      referenceType: "sales_return_request",
+      referenceId: id,
+    })
 
     // ===== v3.74.12 — Pro-rata bonus clawback =====
     // The sales return is now committed. The salesperson's bonus on the

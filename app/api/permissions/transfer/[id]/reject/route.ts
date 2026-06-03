@@ -13,6 +13,7 @@
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -97,6 +98,17 @@ export async function POST(
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 500 })
     }
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase,
+      companyId: transfer.company_id,
+      referenceType: "permission_transfer",
+      referenceId: transferId,
+    })
 
     await supabase.from("audit_logs").insert({
       company_id: transfer.company_id,

@@ -9,6 +9,7 @@ import {
   isSalesReturnPendingLevel1,
 } from "@/lib/sales-return-requests"
 import { notifySalesReturnWarehouseRequested } from "@/lib/sales-return-request-notifications"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 /**
  * PATCH /api/sales-return-requests/[id]/approve
@@ -92,6 +93,16 @@ export async function PATCH(
     if (updateErr) {
       return serverError(`فشل في تحديث الطلب: ${updateErr.message}`)
     }
+
+    // v3.74.18 — Archive prior approval-category notifications for this
+    // return request. The L1 approvers' "بانتظار اعتماد الإدارة" notifications
+    // are done; the warehouse will get a fresh one below.
+    await archiveApprovalNotificationsForRecord({
+      supabase,
+      companyId,
+      referenceType: "sales_return_request",
+      referenceId: id,
+    })
 
     try {
       await notifySalesReturnWarehouseRequested(supabase as any, {

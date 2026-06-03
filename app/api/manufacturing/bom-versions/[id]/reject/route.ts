@@ -13,6 +13,7 @@ import {
   getNextCycleNo,
   buildApprovalSnapshot,
 } from "@/lib/manufacturing/approval-history"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export async function POST(
   request: NextRequest,
@@ -32,6 +33,17 @@ export async function POST(
     })
 
     if (error) throw error
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase: admin,
+      companyId,
+      referenceType: "manufacturing_bom_version",
+      referenceId: id,
+    })
 
     // ── approval_history ─────────────────────────────────────
     const cycleNo = await getNextCycleNo(supabase, companyId, "bom_version", id)

@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { PaymentApprovalNotificationService } from "@/lib/services/payment-approval-notification.service"
 import { SupplierPaymentCommandService, type SupplierPaymentDecisionAction } from "@/lib/services/supplier-payment-command.service"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export async function POST(
   request: NextRequest,
@@ -71,6 +72,17 @@ export async function POST(
       rejectionReason ? String(rejectionReason).trim() : null,
       { idempotencyKey, requestHash, uiSurface }
     )
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase: adminSupabase,
+      companyId: context.companyId,
+      referenceType: "supplier_payment",
+      referenceId: id,
+    })
 
     if (payment?.created_by && payment?.supplier_id) {
       const { data: supplier } = await adminSupabase

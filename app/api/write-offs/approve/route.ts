@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createWriteOffJournal } from '@/lib/accrual-accounting-engine'
 import { consumeFIFOLotsWithCOGS } from '@/lib/fifo-engine'
 import { WriteOffNotificationService } from '@/lib/services/write-off-notification.service'
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 export async function POST(request: NextRequest) {
   try {
@@ -266,14 +267,25 @@ export async function POST(request: NextRequest) {
     if (statusUpdateError) {
       console.error('Error updating write-off status:', statusUpdateError)
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: `فشل في تحديث حالة الإهلاك: ${statusUpdateError.message}`,
           error_en: `Failed to update write-off status: ${statusUpdateError.message}`
         },
         { status: 500 }
       )
     }
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase,
+      companyId,
+      referenceType: "write_off",
+      referenceId: writeOffId,
+    })
 
     // ✅ استخدام محرك الاعتماد لتسجيل القيد المحاسبي
     const journalEntryId = await createWriteOffJournal(

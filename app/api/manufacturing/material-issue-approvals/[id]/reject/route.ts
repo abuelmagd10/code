@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 const ALLOWED_APPROVER_ROLES = [
   "store_manager", "manager", "owner", "admin",
@@ -124,6 +125,17 @@ export async function POST(
       .eq("id", id)
 
     if (updateApprovalError) throw updateApprovalError
+
+    // v3.74.18 — Archive pending approval-category notifications for this
+    // workflow record now that the action is committed. Runs BEFORE any
+    // follow-up "result" notification we send to the creator below, so the
+    // new one isn't archived too.
+    await archiveApprovalNotificationsForRecord({
+      supabase: admin,
+      companyId,
+      referenceType: "manufacturing_material_issue_approval",
+      referenceId: id,
+    })
 
     // ── 2. تحديث حالة أمر الإنتاج
     await admin
