@@ -8,7 +8,10 @@ import {
   SALES_RETURN_REQUEST_STATUSES,
   isSalesReturnPendingLevel1,
 } from "@/lib/sales-return-requests"
-import { notifySalesReturnWarehouseRequested } from "@/lib/sales-return-request-notifications"
+import {
+  notifySalesReturnRequesterLevel1Approved,
+  notifySalesReturnWarehouseRequested,
+} from "@/lib/sales-return-request-notifications"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 /**
@@ -105,6 +108,7 @@ export async function PATCH(
     })
 
     try {
+      // v3.74.21 — tell the warehouse staff the request is now theirs.
       await notifySalesReturnWarehouseRequested(supabase as any, {
         companyId,
         requestId: id,
@@ -113,8 +117,23 @@ export async function PATCH(
         branchId: requestBranchId,
         warehouseId: requestWarehouseId,
       })
+      // v3.74.21 — and tell the originator their request just cleared
+      // management. Required by the canonical rule: every decision must
+      // surface to the requester, not just the negative ones. Skip if the
+      // originator was the approver (self-approval edge case).
+      if (request.requested_by && request.requested_by !== user?.id) {
+        await notifySalesReturnRequesterLevel1Approved(supabase as any, {
+          companyId,
+          requestId: id,
+          invoiceNumber: requestInvoice?.invoice_number || request.invoice_id,
+          requesterUserId: request.requested_by,
+          createdBy: user?.id || "",
+          branchId: requestBranchId,
+          warehouseId: requestWarehouseId,
+        })
+      }
     } catch (notifErr: any) {
-      console.error("⚠️ [SRR] Warehouse notification failed:", notifErr.message)
+      console.error("⚠️ [SRR] L1 approval notification failed:", notifErr.message)
     }
 
     asyncAuditLog({

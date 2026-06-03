@@ -4,6 +4,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.21] - 2026-06-03 — Sales returns: originator notified on every decision + realtime page refresh
+
+### Why
+After v3.74.20 fixed the owner-missing-from-recipients bug, Ahmed tested the full sales-return cycle and reported two remaining gaps:
+
+1. **Asymmetric originator feedback.** When management *rejected* a return, the originator got a "rejected, reason: …" notification — but when management *approved* the return, the originator was told nothing. The workflow silently moved to the warehouse stage, leaving the originator unsure whether their resubmission cleared. The general project rule is that every decision (positive or negative) must reach the originator, not just the negative ones.
+
+2. **Stale page.** The `/sales-return-requests` page only refetched when the user changed the status filter. An admin approving from another tab, a warehouse manager rejecting from a phone, or an employee resubmitting from the invoice page left the open listing showing old data until a manual refresh.
+
+### What changed
+
+**(1) New helper `notifySalesReturnRequesterLevel1Approved`**
+
+Lives in `lib/sales-return-request-notifications.ts`. Mirrors the existing `notifySalesReturnRequesterRejected` for the positive case: title `"تم اعتماد طلب المرتجع من الإدارة"`, message `"تم اعتماد طلب المرتجع للفاتورة <invoice>. الطلب الآن بانتظار اعتماد المخزن."`, category `approvals`, severity `info`, event_action `level_1_approved_requester`. Targets `requested_by` only — a single recipient.
+
+**(2) Wired into `/api/sales-return-requests/[id]/approve`**
+
+After the existing `notifySalesReturnWarehouseRequested` call, the route now also fires the new originator-notification — guarded by `request.requested_by && request.requested_by !== user?.id` so the same person approving their own request doesn't get pinged. Both notifications live inside the same `try / catch` so a transient send failure doesn't fail the workflow action itself; the status update was already committed before this block.
+
+**(3) Realtime subscription on `/sales-return-requests/page.tsx`**
+
+A second `useEffect` opens a Supabase channel `sales_return_requests:<companyId>` and listens for `event: "*"` on `public.sales_return_requests` filtered by `company_id=eq.<companyId>`. On any change, it calls the existing `loadData()` — which re-fetches the list via the API endpoint so the JOINed invoice + customer fields stay populated. The channel is torn down on unmount. The tenant filter is applied in Postgres, not the client, so other companies never reach the client at all.
+
+Why call `loadData()` instead of merging the raw row from the event: the Realtime payload is the raw `sales_return_requests` row without the JOINed `invoices` and `customers` data the page renders. The cheapest correct path is to re-fetch through the same API the initial load uses.
+
+### What this does NOT cover (deferred to the broader audit)
+The same shape of gap exists across most other approval workflows in the project — owner missing from recipients, originator not notified on positive decisions, upstream approvers not informed when a later stage rejects, no realtime refresh on the listing pages. v3.74.21 fixes only the sales-return workflow because that's the one Ahmed was actively testing. The remaining audit (17 workflows × 4 rules = 68 checkpoints) was completed during this release and will drive subsequent fixes (planned as v3.74.22 onward, batched by severity).
+
+### Verification
+- New helper exists in `lib/sales-return-request-notifications.ts` and is exported.
+- The approve route imports and calls it after a successful status update.
+- The page subscribes to `public.sales_return_requests` filtered by `company_id`.
+- Self-approval guard prevents the originator from receiving their own approval as if it were someone else's decision.
+
+### Files
+- `lib/sales-return-request-notifications.ts` — new helper `notifySalesReturnRequesterLevel1Approved`.
+- `app/api/sales-return-requests/[id]/approve/route.ts` — imports the helper, calls it after warehouse notification.
+- `app/sales-return-requests/page.tsx` — added Realtime channel subscription.
+- `lib/version.ts` — bump to 3.74.21.
+- `CHANGELOG.md` — this entry.
+
+---
+
 ## [3.74.20] - 2026-06-03 — Owner included in Level-1 approval notification recipients
 
 ### Why

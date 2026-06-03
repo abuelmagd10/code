@@ -71,6 +71,58 @@ export default function SalesReturnRequestsPage() {
     loadData()
   }, [filterStatus])
 
+  // v3.74.21 — Realtime auto-refresh. Subscribe to every change on the
+  // sales_return_requests table for the active company and re-fetch the
+  // list when a row is inserted, updated, or deleted. Keeps the page in
+  // sync with workflow actions happening elsewhere (an admin approving
+  // from another tab, a warehouse manager rejecting from their device,
+  // an employee resubmitting after a fix) without forcing the user to
+  // hit refresh.
+  //
+  // Filter at the Postgres level by company_id so we don't react to
+  // other tenants. The channel is torn down on unmount or when the
+  // company context changes. We re-run loadData() (not setRequests
+  // directly) because the row from Realtime is the raw DB row — the
+  // listing here needs the JOINed invoice + customer data assembled by
+  // the API.
+  useEffect(() => {
+    let cancelled = false
+    let cleanup: (() => void) | undefined
+
+    ;(async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId || cancelled) return
+
+      const channel = supabase
+        .channel(`sales_return_requests:${companyId}`)
+        .on(
+          "postgres_changes" as any,
+          {
+            event: "*",
+            schema: "public",
+            table: "sales_return_requests",
+            filter: `company_id=eq.${companyId}`,
+          },
+          () => {
+            // Debounce isn't needed here — Supabase coalesces events and
+            // loadData is itself cheap and idempotent.
+            loadData()
+          }
+        )
+        .subscribe()
+
+      cleanup = () => {
+        supabase.removeChannel(channel)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const canLevel1Act = (req: ReturnRequest) => {
     const phase = normalizeSalesReturnRequestStatus(req.status)
     if (!SALES_RETURN_LEVEL1_APPROVER_ROLES.includes(userRole as any)) return false

@@ -107,6 +107,40 @@ export async function notifySalesReturnWarehouseRequested(
   })
 }
 
+/**
+ * v3.74.21 — Tell the requester their return request was approved at
+ * Level-1 and is now waiting on warehouse confirmation. Mirrors the
+ * stage-1-rejected message so the originator sees both decisions, not
+ * just the negative one. Required by the project's canonical approval
+ * rule: every decision must inform the originator.
+ */
+export async function notifySalesReturnRequesterLevel1Approved(
+  supabase: SupabaseClient<any, 'public', any>,
+  params: NotifyParams & { requesterUserId: string }
+) {
+  const title = 'تم اعتماد طلب المرتجع من الإدارة'
+  const message =
+    `تم اعتماد طلب المرتجع للفاتورة ${params.invoiceNumber} من الإدارة. ` +
+    `الطلب الآن بانتظار اعتماد المخزن.`
+
+  await dispatchNotifications(supabase, {
+    ...params,
+    recipients: [new NotificationRecipientResolverService(supabase).resolveUserRecipient(
+      params.requesterUserId,
+      null,
+      params.branchId || null,
+      params.warehouseId || null,
+      null
+    )],
+    title,
+    message,
+    priority: 'normal',
+    severity: 'info',
+    category: 'approvals',
+    eventAction: 'level_1_approved_requester'
+  })
+}
+
 export async function notifySalesReturnRequesterRejected(
   supabase: SupabaseClient<any, 'public', any>,
   params: NotifyParams & {
