@@ -25,6 +25,9 @@ if ($cust -match 'accountsPrivilegedRoles\s*=\s*\[''owner'',\s*''admin'',\s*''ge
 if ($cust -match '\.in\("sub_type",\s*\["cash",\s*"bank"\]\)') {
     Write-Host "+ cash/bank sub_type narrowing applied" -ForegroundColor Green
 } else { Write-Host "X cash/bank narrowing missing" -ForegroundColor Red; exit 1 }
+if ($cust -match 'Strict branch scope') {
+    Write-Host "+ strict branch scope (no central fallback)" -ForegroundColor Green
+} else { Write-Host "X strict branch marker missing" -ForegroundColor Red; exit 1 }
 
 Write-Host "`n=== TypeScript check ===" -ForegroundColor Cyan
 $tsc = & npx tsc --noEmit -p tsconfig.json 2>&1

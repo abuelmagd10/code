@@ -422,11 +422,14 @@ export default function CustomersPage() {
       //      cashing out a customer credit, so showing receivables,
       //      inventory, or fixed-asset accounts in the dropdown is
       //      both confusing and wrong.
-      //   2. For non-privileged roles (accountant, store_manager,
-      //      staff, ...) filter by branch — they see company-level
-      //      accounts (branch_id NULL) + their own branch's accounts.
-      //      Privileged roles (owner / admin / general_manager) see
+      //   2. Privileged roles (owner / admin / general_manager) see
       //      every cash + bank account in the company.
+      //      Non-privileged roles (accountant, store_manager, staff,
+      //      ...) see ONLY their own branch's cash + bank accounts.
+      //      Central / company-level (branch_id NULL) accounts are
+      //      visible only to privileged roles. A branch accountant
+      //      may not disburse from the central treasury — they have
+      //      to use their branch's accounts.
       const accountsPrivilegedRoles = ['owner', 'admin', 'general_manager']
       const isAccountsPrivileged = accountsPrivilegedRoles.includes(
         (currentUserRole || '').toLowerCase()
@@ -438,9 +441,9 @@ export default function CustomersPage() {
         .in("sub_type", ["cash", "bank"])
         .eq("is_active", true)
       if (!isAccountsPrivileged && userContext?.branch_id) {
-        accountsQuery = accountsQuery.or(
-          `branch_id.eq.${userContext.branch_id},branch_id.is.null`
-        )
+        // Strict branch scope — no company-level fallback for branch
+        // users.
+        accountsQuery = accountsQuery.eq("branch_id", userContext.branch_id)
       }
       const { data: accs } = await accountsQuery
       setAccounts(accs || [])

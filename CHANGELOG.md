@@ -15,7 +15,7 @@ v3.74.35 fixed the `/api/customer-refund-requests/accounts` endpoint to be branc
 The page already knew the user's role and branch (`currentUserRole`, `userContext.branch_id`), but those were used for governing the *customer list* — not extended to the chart-of-accounts list. Two governance scopes living side-by-side, only one being enforced. Now both are.
 
 - Privileged roles (owner / admin / general_manager): see every cash + bank account in the company.
-- Branch-scoped roles (accountant, store_manager, staff, …): see company-level accounts (`branch_id IS NULL`) plus only their own branch's accounts.
+- Branch-scoped roles (accountant, store_manager, staff, …): see ONLY their own branch's cash + bank accounts. Central / company-level (`branch_id IS NULL`) accounts are NOT included — a branch accountant must disburse from their branch's treasury, not from the central one.
 
 **2. Narrow to cash + bank sub-types only**
 The dialog is for cashing out a customer credit, so receivables / inventory / fixed-asset accounts were never valid choices anyway. Filter at the query level (`sub_type IN ('cash','bank')` + `is_active`) — cleaner UX, smaller payload, and the rendering layer no longer needs ad-hoc exclusions.
