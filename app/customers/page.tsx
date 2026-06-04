@@ -417,12 +417,16 @@ export default function CustomersPage() {
       setCustomers(allCustomers)
 
       // تم نقل setCustomers إلى بعد دمج العملاء المشتركين
-      // v3.74.41: filter accounts by branch for non-privileged roles
-      // (accountant, store_manager, staff, ...). Owner / admin /
-      // general_manager still see every asset account in the company.
-      // The disbursement-account picker uses this list, so the filter
-      // here is what makes "branch accountant sees only branch accounts"
-      // actually true on the customer-refund dialog.
+      // v3.74.41: scope the disbursement-account picker correctly.
+      //   1. Narrow to cash + bank sub-types only. The dialog is for
+      //      cashing out a customer credit, so showing receivables,
+      //      inventory, or fixed-asset accounts in the dropdown is
+      //      both confusing and wrong.
+      //   2. For non-privileged roles (accountant, store_manager,
+      //      staff, ...) filter by branch — they see company-level
+      //      accounts (branch_id NULL) + their own branch's accounts.
+      //      Privileged roles (owner / admin / general_manager) see
+      //      every cash + bank account in the company.
       const accountsPrivilegedRoles = ['owner', 'admin', 'general_manager']
       const isAccountsPrivileged = accountsPrivilegedRoles.includes(
         (currentUserRole || '').toLowerCase()
@@ -431,15 +435,15 @@ export default function CustomersPage() {
         .from("chart_of_accounts")
         .select("id, account_code, account_name, account_type, sub_type, branch_id")
         .eq("company_id", activeCompanyId)
+        .in("sub_type", ["cash", "bank"])
+        .eq("is_active", true)
       if (!isAccountsPrivileged && userContext?.branch_id) {
-        // Branch-scoped users see company-level accounts (branch_id NULL)
-        // + their own branch's accounts. Other branches stay hidden.
         accountsQuery = accountsQuery.or(
           `branch_id.eq.${userContext.branch_id},branch_id.is.null`
         )
       }
       const { data: accs } = await accountsQuery
-      setAccounts((accs || []).filter((a: any) => (a.account_type || "").toLowerCase() === "asset"))
+      setAccounts(accs || [])
 
       const { data: pays } = await supabase
         .from("payments")
