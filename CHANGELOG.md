@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.41] - 2026-06-04 — Hotfix: actually scope the customer-refund account dropdown by branch
+
+### Why
+v3.74.35 fixed the `/api/customer-refund-requests/accounts` endpoint to be branch-scoped for accountants. But the form the owner was actually seeing wasn't fed by that endpoint at all — it was the `CustomerRefundDialog` opened from `/customers`, and that dialog gets its `accounts` prop from a query in `app/customers/page.tsx` that didn't apply any branch filter. So the branch accountant kept seeing every asset account in the company.
+
+### Root cause
+The customers page had this query without any branch filter:
+```ts
+const { data: accs } = await supabase
+  .from("chart_of_accounts")
+  .select("id, account_code, account_name, account_type")
+  .eq("company_id", activeCompanyId)
+setAccounts((accs || []).filter(a => a.account_type === "asset"))
+```
+
+The page already knew the user's role and branch (`currentUserRole`, `userContext.branch_id`), but those were used for governing the *customer list* — not extended to the chart-of-accounts list. Two governance scopes living side-by-side, only one being enforced.
+
+### Fix
+Same pattern v3.74.35 used on the API route: privileged roles (owner / admin / general_manager) see every company account; everyone else gets `branch_id IS NULL OR branch_id = user's branch_id`. The accountant on branch A now sees company-level accounts plus only branch A's accounts in the refund dialog.
+
+Query was also widened to include `sub_type` + `branch_id` so the dialog's existing `customer_credit` / `customer_advance` sub-type filter keeps working.
+
+### Files
+- `app/customers/page.tsx` — branch-scoped chart_of_accounts query
+- `lib/version.ts` — bump to 3.74.41
+- `CHANGELOG.md` — this entry
+
+---
+
 ## [3.74.40] - 2026-06-04 — Extended audit: UPDATE statements verified, one launch-safe fix applied
 
 ### Why
