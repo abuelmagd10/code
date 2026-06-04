@@ -4,6 +4,225 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.40] - 2026-06-04 — Extended audit: UPDATE statements verified, one launch-safe fix applied
+
+### Why
+The v3.74.36 → v3.74.39 audit cycle covered `INSERT` statements only. To close the column-parity gap, I ran a follow-up audit on `UPDATE` statements across all 200+ PL/pgSQL functions and a dedicated agent verified each finding against the actual table schema.
+
+### What I found
+**Agent-verified results**:
+- **0 critical bugs** in any launch-blocking feature (invoicing, sales orders, payments, inventory, accounting periods, journal entries).
+- **0 high-priority bugs** in returns / refunds / customer credits.
+- **9 regex false positives** — the regex over-attributed columns from secondary UPDATE statements to the wrong table.
+- **2 real bugs**, both in the post-launch payroll feature.
+
+### The two payroll bugs
+
+**`post_payroll_atomic`** (fixed in this release)
+- Was doing `UPDATE payroll_runs SET status='paid', updated_at=NOW()` but `payroll_runs` is a thin stub table — only 6 columns, no `status` or `updated_at`. The UPDATE has always failed at this step.
+- Fix: removed the broken UPDATE. The journal-entry write remains the source-of-truth for the payment. If status tracking on payroll_runs becomes required, the table schema needs to be expanded first.
+
+**`post_payroll_run_atomic`** (documented, not fixed)
+- Both the UPDATE (`status, journal_entry_id, posted_by`) and the SELECT (`pay_date, period_start, period_end, status, total_net`) reference columns that don't exist on `payroll_runs`.
+- The function needs a full rewrite against the actual payslips-based payroll model before the payroll feature ships publicly. Out of scope for the pre-launch column audit.
+- **Known issue** — payroll is not on the launch checklist; this is a post-launch milestone task.
+
+### What the 9 false positives looked like (for the record)
+The regex captured columns from a SECONDARY UPDATE in the same function and attributed them to the WRONG table. Example: `dispose_asset` has two UPDATEs — one on `journal_entries` (sets `status, posted_by, posted_at`) and one on `fixed_assets` (sets `book_value, updated_by`). The regex stripped the table-boundary and reported `journal_entries.book_value` as a missing column, which it isn't a mismatch at all — `book_value` exists on `fixed_assets`, just like the code intended. The same pattern explains the other eight false positives.
+
+### Preserved
+- `SECURITY DEFINER` ✓ on `post_payroll_atomic`.
+- `search_path` ✓.
+- Idempotency-key handling, period-lock check, duplicate-prevention via reference_id, advisory-locking semantics — all untouched.
+
+### Files
+- DB migration: `v3_74_40a_post_payroll_atomic_drop_broken_update`
+- `lib/version.ts` — bump to 3.74.40
+- `CHANGELOG.md` — this entry
+
+### Known issues (documented for post-launch)
+1. `post_payroll_run_atomic` — needs schema-aligned rewrite before payroll ships.
+2. 6 dead functions still carry stale column references (documented in v3.74.39). Safe to leave; will be cleaned up in a future maintenance release.
+
+### Audit closure (v3.74.36 → v3.74.40)
+- **11 active functions** column-name-corrected (INSERT audit).
+- **1 legacy overload** redirected to canonical.
+- **1 dead overload** dropped.
+- **1 active function** UPDATE-audit-corrected (`post_payroll_atomic`).
+- **0 SECURITY DEFINER attributes lost** end-to-end (v3.74.33 lesson held).
+- **9 regex false positives** verified clean.
+- **2 known-issues** documented (`post_payroll_run_atomic`, 6 dead functions).
+
+---
+
+## [3.74.39] - 2026-06-04 — Column audit batch 4 (final): purchase-return atomic + bank vouchers + legacy wrapper
+
+### Why
+Final batch of the comprehensive column-name parity audit. Three functions fixed; the active-function side of the audit is now complete (every PL/pgSQL function that production code reaches references only real columns).
+
+### Three function fixes
+
+**`process_purchase_return_atomic`** (called by `lib/services/purchase-return-command.service.ts`)
+- `vendor_credits`: dropped `warehouse_id`, `original_currency`, `exchange_rate_used`, `exchange_rate_id` — none of these exist on `vendor_credits` (FX info is carried on the linked `purchase_returns` row, which the function already populates correctly).
+- `inventory_transactions`: dropped `transaction_date` — column doesn't exist (`created_at TIMESTAMPTZ` defaults to `NOW()`; same fix already applied to `post_accounting_event` in v3.74.32).
+
+**`post_bank_voucher`** (called by `app/api/banking/vouchers/[id]/workflow`)
+- `journal_entry_lines`: dropped `rate_source` from both deposit and withdrawal INSERTs — column lives on `payments` + `bank_voucher_requests`, not on JE lines. The rate identifier (`exchange_rate_id`) is still written; the source can be recovered by joining via `exchange_rate_id`.
+
+**`post_accounting_event` — legacy 11-param overload** (fallback when `enterpriseFinanceFlags.returnsV2` is false)
+- Was a verbatim copy of the original buggy function (stale `payments.reference`, `inventory_transactions.transaction_date`, RETURNING-into-array scalar-to-array crash, missing `fifo_lot_consumptions.product_id` + `consumption_type`).
+- Converted to a **thin wrapper** that delegates to the canonical 12-param overload with `p_customer_credits = NULL`. The canonical overload is already correct (made so in v3.74.31 → v3.74.33). The signature is preserved so the TS fallback path keeps working; the buggy body is gone.
+
+### Preserved on all three
+- `SECURITY DEFINER` ✓
+- `search_path` ✓ where it existed (kept the original setting, didn't promote)
+- All other logic, advisory locks, validation, exception paths.
+
+### Verification
+The cross-table audit query for stale-column INSERTs now returns zero matches against active functions. Remaining matches (22 rows) are all in 6 dead functions: `apply_customer_debit_note`, `confirm_purchase_return_delivery`, `confirm_purchase_return_delivery_v3`, `convert_purchase_request_to_po`, `post_purchase_transaction`, `process_goods_receipt_atomic`. None of these are referenced by application code (verified by the v3.74.36 audit agent). They're safe to leave for a future cleanup release.
+
+### Files
+- DB migration: `v3_74_39a_process_purchase_return_atomic_columns`
+- DB migration: `v3_74_39b_post_bank_voucher_drop_rate_source`
+- DB migration: `v3_74_39c_post_accounting_event_legacy_to_wrapper`
+- `lib/version.ts` — bump to 3.74.39
+- `CHANGELOG.md` — this entry
+
+### Audit closure summary (v3.74.36 → v3.74.39)
+- **11 active functions fixed** across 4 batches.
+- **1 legacy overload** redirected to canonical.
+- **1 dead overload** dropped (`dispose_asset` 5-param).
+- **0 `SECURITY DEFINER` attributes lost** (v3.74.33 lesson held throughout).
+- **6 dead functions** left untouched, documented for future cleanup.
+- **Total DB migrations**: 11 (v3.74.36a/b, v3.74.37a/b/c, v3.74.38a/b/c/d, v3.74.39a/b/c).
+
+---
+
+## [3.74.38] - 2026-06-04 — Column audit batch 3: journal_entries.posted_by + line column rename
+
+### Why
+Four accounting functions were still writing to `journal_entries.created_by`, but the real column is `posted_by` (paired with `posted_at` + `status='posted'`). Two of them were also writing to `journal_entry_lines.debit/credit` instead of the real `debit_amount/credit_amount`. One was additionally trying to set `fiscal_year_id` and a boolean `posted` column that don't exist.
+
+### Four function fixes
+
+**`perform_annual_closing_atomic`** (annual closing)
+- `created_by → posted_by`; added `posted_at = NOW()`.
+
+**`post_payroll_atomic`** (payroll payment)
+- `created_by → posted_by`; added `posted_at = NOW()`. Idempotency-key handling preserved verbatim.
+
+**`pay_commission_advance`** (commission advance)
+- `journal_entries.created_by → posted_by`; added `posted_at`.
+- Dropped `journal_entries.fiscal_year_id` (column doesn't exist; fiscal year is derived from `entry_date` everywhere else in the system). The fiscal-year lookup + "no active fiscal year" guard is preserved as a business rule.
+- Dropped `journal_entries.posted` (redundant boolean; `status='posted'` carries the same information).
+- `journal_entry_lines.debit/credit → debit_amount/credit_amount` on both lines.
+
+**`dispose_asset`** — two overloads existed:
+- The 6-parameter `SECURITY DEFINER` overload (with `p_deposit_account_id`) is the one the UI actually calls — already on the new columns, no change.
+- The 5-parameter overload was dead code carrying the stale column names. **Dropped** via `DROP FUNCTION` so there's only one live signature.
+
+### Preserved
+- `SECURITY DEFINER` ✓ on all 4 surviving functions.
+- `search_path` ✓ on all 4 (`public, pg_catalog` for closing/payroll/dispose; `public, pg_temp` for commission advance — its original setting).
+- Business rules, advisory locks, idempotency handling, balance checks, exception paths — all untouched.
+
+### Verification
+- `pg_proc.prosecdef = true` on all 4.
+- Audit query for residual stale-column INSERTs in these 4 returns zero rows.
+
+### Files
+- DB migration: `v3_74_38a_perform_annual_closing_atomic_posted_by`
+- DB migration: `v3_74_38b_post_payroll_atomic_posted_by`
+- DB migration: `v3_74_38c_pay_commission_advance_columns`
+- DB migration: `v3_74_38d_drop_dead_dispose_asset_overload`
+- `lib/version.ts` — bump to 3.74.38
+- `CHANGELOG.md` — this entry
+
+### Remaining batch
+- v3.74.39 — domain-specific (`process_purchase_return_atomic` vendor_credits columns; `post_bank_voucher` line columns). After that, the active-function column audit is complete.
+
+---
+
+## [3.74.37] - 2026-06-04 — Column audit batch 2: company/branch/FX-account creation
+
+### Why
+Three signup-path PL/pgSQL functions were each writing to one or more table columns that don't exist. These bugs were latent because (a) the existing 2 test companies were created some time ago, (b) the functions re-raise on failure (so the user would see a generic error, not the column mismatch), and (c) no new public signups had been attempted recently. They would break the moment a new company tried to register or a new branch was added.
+
+### Three function fixes
+
+**`create_company_atomic`** (signup RPC, called by `/api/subscription/create`)
+- `companies.subscription_plan` — doesn't exist. Removed from INSERT. (Plan/tier is managed by the company_seats system, not by a column on companies.)
+- `companies.max_users` — doesn't exist. Removed. (Same reason.)
+- `company_members.full_name` — doesn't exist. Removed. (Display name lives in auth.users metadata.)
+- `warehouses.type` — doesn't exist. Replaced `type='main'` with `is_main=true`.
+
+**`create_branch_atomic`** (called by `/api/branches` when adding a non-main branch)
+- `warehouses.type` — same fix: `type='branch'` was passing a non-existent column. Replaced with `is_main=false`.
+
+**`get_or_create_fx_account`** (called internally to lazily provision the FX gain/loss account)
+- `chart_of_accounts.account_name_en` — doesn't exist. Moved the "FX Gain/Loss" English label into the existing `description` column.
+- `chart_of_accounts.allow_journal_entries` — doesn't exist. Removed.
+- Added the required `normal_balance` column with `'debit'` (per IFRS, expense accounts have a debit normal balance). The v3.74.30 validator `fn_validate_normal_balance` would have rejected the INSERT without this anyway.
+
+### Preserved on all three
+- `SECURITY DEFINER` ✓
+- `search_path = public` ✓
+- Every other logic path (trigger fan-out, exception handling, return-value structure) untouched.
+
+### Verification
+- `pg_proc.prosecdef = true` on all three post-migration.
+- Audit query for residual stale-column INSERTs in these three functions returns zero rows.
+
+### Files
+- DB migration: `v3_74_37a_create_company_atomic_columns`
+- DB migration: `v3_74_37b_create_branch_atomic_columns`
+- DB migration: `v3_74_37c_get_or_create_fx_account_columns`
+- `lib/version.ts` — bump to 3.74.37
+- `CHANGELOG.md` — this entry
+
+### Next batches (still pending)
+- v3.74.38 — `journal_entries.created_by → posted_by` across 4 functions (annual closing, payroll, asset disposal, commission advance) + `journal_entry_lines.credit/debit → credit_amount/debit_amount` on the latter two
+- v3.74.39 — domain-specific (`process_purchase_return_atomic` vendor_credits columns; `post_bank_voucher` line columns)
+
+---
+
+## [3.74.36] - 2026-06-04 — Column audit batch 1: silent triggers (audit_logs + notifications)
+
+### Why
+Comprehensive column-name audit of every PL/pgSQL function uncovered 23 stale references across 11 active functions. This release fixes the two trigger functions — the safest batch to start with because they swallow errors silently (so the bugs have been latent rather than user-visible).
+
+### Two trigger fixes
+
+**`protect_customer_branch_id`** (governance trigger on `customers.branch_id` UPDATE)
+- Was writing to `audit_logs.entity_type`, `old_values`, `new_values` — none of which exist.
+- Real columns: `entity`, `old_data`, `new_data`.
+- The governance check (only owner / admin / GM can change branch) was already working correctly; the audit-trail write was the only thing failing. Authorized branch changes now produce a proper audit row.
+
+**`route_system_events_to_notifications`** (trigger on `system_events` INSERT)
+- Was writing to `notifications.user_id` — column doesn't exist.
+- Mapped per-INSERT intent: role-targeted notifications got `created_by` (the event originator); user-targeted notifications got `assigned_to_user` (the recipient).
+- The trigger has a blanket `EXCEPTION WHEN OTHERS THEN NEW.status='failed'`, which is why this bug has been silent: every system_event triggering a purchase-return notification was getting marked `failed` and the notifications never landed.
+
+### Preserved
+- `protect_customer_branch_id`: `SECURITY DEFINER` + `search_path=public, pg_catalog` (verified via `pg_proc.prosecdef` and `proconfig` post-migration).
+- `route_system_events_to_notifications`: `prosecdef = false` and no `search_path` — matches the pre-migration state. I did not promote it to `SECURITY DEFINER` because that would be a behaviour change beyond the bug fix.
+
+### Verification
+Re-ran the cross-table audit query against both functions: zero remaining bad-column references.
+
+### Files
+- DB migration: `v3_74_36a_protect_customer_branch_id_columns`
+- DB migration: `v3_74_36b_route_system_events_to_notifications_columns`
+- `lib/version.ts` — bump to 3.74.36
+- `CHANGELOG.md` — this entry
+
+### Next batches (still pending)
+- v3.74.37 — company / branch creation (`create_company_atomic`, `create_branch_atomic`, `get_or_create_fx_account`)
+- v3.74.38 — `journal_entries.created_by → posted_by` across 4 functions (annual closing, payroll, asset disposal, commission advance)
+- v3.74.39 — domain-specific (`process_purchase_return_atomic` vendor_credits columns; `post_bank_voucher` line columns)
+
+---
+
 ## [3.74.35] - 2026-06-04 — Accountant scope: customers visibility + branch-scoped disbursement accounts
 
 ### Why
