@@ -4,6 +4,57 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.42] - 2026-06-04 — Pre-launch sweep: branch-scope 9 more account-picker forms
+
+### Why
+v3.74.41 fixed one cash/bank account dropdown (the customer-refund dialog on /customers). A deliberate pre-launch audit by a sub-agent searched every file in `app/` and `components/` for `chart_of_accounts` queries that feed UI pickers, and verified each one against the v3.74.41 governance pattern. The audit found **9 more forms with the same gap** plus two with a related (and worse) bug — the wrong-column-name issue described below. Every reachable cash-disbursement picker is now branch-scoped consistently.
+
+### Files fixed in this release
+
+**Same gap as v3.74.41 (7 files)** — query returned all cash/bank accounts company-wide; non-privileged users could pick from another branch's treasury:
+
+1. `app/bills/page.tsx` — purchase-return refund picker
+2. `app/bills/[id]/page.tsx` — purchase-return refund picker (single bill)
+3. `app/purchase-returns/new/page.tsx` — refund-source picker on the new purchase return form
+4. `app/drawings/new/page.tsx` — shareholder-drawing payment picker (also dropped wrong `account_type='asset'` and switched to `sub_type IN ('cash','bank')`)
+5. `app/hr/payroll/page.tsx` — payroll cash/bank picker
+6. `app/hr/instant-payouts/page.tsx` — instant-payout picker
+7. `components/commissions/run-payment-dialog.tsx` — commission-run payment source
+
+**Worse bug — wrong column name (2 files)** — the picker was filtering on `account_type` for values that only ever appear in `sub_type`, so the dropdown was either non-functional or showed unintended account types:
+
+8. `components/fixed-assets/dispose-asset-dialog.tsx` — was using `account_type IN ('asset','cash','bank')`. The `cash` and `bank` literals never matched (those are sub-types, not account types), so the dialog was effectively listing every asset account. Fixed: switched to `sub_type IN ('cash','bank')` and added branch filter.
+9. `components/fixed-assets/add-capital-dialog.tsx` — was using `account_type IN ('cash','bank','liability')`. None of those literals are valid `account_type` values, so the dropdown was **empty** in production. Bonus fix: the dropdown now actually populates. Switched to `sub_type IN ('cash','bank')` + branch filter.
+
+### Pattern applied everywhere
+```ts
+const PRIVILEGED = ['owner', 'admin', 'general_manager']
+const isPrivileged = PRIVILEGED.includes(String(role || '').toLowerCase())
+let q = supabase
+  .from('chart_of_accounts')
+  .select('id, account_code, account_name, sub_type, branch_id')
+  .eq('company_id', companyId)
+  .in('sub_type', ['cash', 'bank'])
+  .eq('is_active', true)
+if (!isPrivileged && userBranchId) q = q.eq('branch_id', userBranchId)
+```
+
+Privileged roles (owner / admin / general_manager) keep seeing every company cash + bank account. Branch users see ONLY their branch's accounts — no central treasury fallback. Each fix is marked with a `// v3.74.42` comment for grepability.
+
+### Audit closure
+Branch-scope governance on cash-disbursement pickers is now consistent across every reachable form:
+- ✅ Invoices / Expenses / Payments / Suppliers / Banking — already correct
+- ✅ Customer refund (v3.74.35 + v3.74.41)
+- ✅ Bill / Purchase-return / Drawings / Payroll / Instant-payouts / Commissions / Asset disposal / Add capital — fixed in this release
+- BENIGN admin/setup screens (chart-of-accounts editor, journal-entry editor, fixed-asset configuration, shareholders, FX settings, annual closing) intentionally show company-wide accounts
+
+### Files
+- 9 form/component files (one-line comment markers on each)
+- `lib/version.ts` — bump to 3.74.42
+- `CHANGELOG.md` — this entry
+
+---
+
 ## [3.74.41] - 2026-06-04 — Hotfix: scope + narrow the customer-refund account dropdown
 
 ### Why

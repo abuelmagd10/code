@@ -45,12 +45,35 @@ export function AddCapitalDialog({ open, onOpenChange, assetId, onSuccess, lang 
                 const companyId = await getActiveCompanyId(supabase)
                 if (!companyId) return
 
-                const { data } = await supabase
+                // v3.74.42: fix wrong column (account_type IN cash,bank,liability — invalid values made dropdown empty) → sub_type IN (cash,bank) + branch-scope + is_active
+                const PRIVILEGED = ['owner', 'admin', 'general_manager']
+                let _userRoleForAccts = ''
+                let _userBranchForAccts: string | null = null
+                try {
+                    const { data: { user } } = await supabase.auth.getUser()
+                    if (user) {
+                        const { data: m } = await supabase
+                            .from('company_members')
+                            .select('role, branch_id')
+                            .eq('company_id', companyId)
+                            .eq('user_id', user.id)
+                            .maybeSingle()
+                        _userRoleForAccts = String(m?.role || '').toLowerCase()
+                        _userBranchForAccts = (m?.branch_id as string | undefined) || null
+                    }
+                } catch {}
+                const _isPrivilegedForAccts = PRIVILEGED.includes(_userRoleForAccts)
+
+                let accQuery = supabase
                     .from('chart_of_accounts')
-                    .select('id, account_name, code')
+                    .select('id, account_name, code, sub_type, branch_id')
                     .eq('company_id', companyId)
                     .eq('is_active', true)
-                    .in('account_type', ['cash', 'bank', 'liability']) // allow liability (credit card/payable)
+                    .in('sub_type', ['cash', 'bank'])
+                if (!_isPrivilegedForAccts && _userBranchForAccts) {
+                    accQuery = accQuery.eq('branch_id', _userBranchForAccts)
+                }
+                const { data } = await accQuery
 
                 if (data) setAccounts(data)
             }

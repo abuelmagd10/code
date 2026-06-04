@@ -507,14 +507,39 @@ export default function BillViewPage() {
             .limit(1)
           setPrevBillId((prevByNumber && prevByNumber[0]?.id) || null)
 
-          // Load accounts for returns - استخدام filterCashBankAccounts لضمان التوافق مع صفحة الأعمال المصرفية
-          const { data: accs } = await supabase
+          // Load accounts for returns
+          // v3.74.42: branch-scope the cash/bank picker. Privileged
+          // roles (owner / admin / general_manager) see all company
+          // cash + bank accounts; everyone else sees ONLY their
+          // branch's accounts. The user's branch is fetched inline
+          // here because this page only carried the role in state
+          // previously.
+          const refundPrivilegedRoles2 = ['owner', 'admin', 'general_manager']
+          const isRefundPrivileged2 = refundPrivilegedRoles2.includes(
+            String(currentUserRole || '').toLowerCase()
+          )
+          let userBranchForRefund: string | null = null
+          if (!isRefundPrivileged2) {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+              const { data: m } = await supabase
+                .from("company_members")
+                .select("branch_id")
+                .eq("company_id", companyId)
+                .eq("user_id", user.id)
+                .maybeSingle()
+              userBranchForRefund = (m?.branch_id as string | undefined) || null
+            }
+          }
+          let refundAccsQuery = supabase
             .from("chart_of_accounts")
-            .select("id, account_code, account_name, account_type, sub_type, parent_id")
+            .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id")
             .eq("company_id", companyId)
             .eq("is_active", true)
-          // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك (نفس المنطق في صفحة الأعمال المصرفية)
-          // ✅ إضافة حسابات الذمم الدائنة (accounts_payable) للمرتجعات - مع فلترة leaf accounts فقط للاتساق
+          if (!isRefundPrivileged2 && userBranchForRefund) {
+            refundAccsQuery = refundAccsQuery.eq("branch_id", userBranchForRefund)
+          }
+          const { data: accs } = await refundAccsQuery
           const cashBankAccounts = filterCashBankAccounts(accs || [], true)
           const leafIds = getLeafAccountIds(accs || [])
           const apAccounts = (accs || []).filter((a: any) =>

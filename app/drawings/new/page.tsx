@@ -88,13 +88,36 @@ export default function NewDrawingPage() {
             setShareholders(shareholdersData || [])
 
             // Load payment accounts (cash/bank)
-            const { data: payAccounts } = await supabase
+            // v3.74.42: filter by sub_type IN (cash,bank) + branch-scope for non-privileged users + is_active
+            const PRIVILEGED = ['owner', 'admin', 'general_manager']
+            let userRoleForAccts = ''
+            let userBranchForAccts: string | null = null
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (user) {
+                    const { data: m } = await supabase
+                        .from("company_members")
+                        .select("role, branch_id")
+                        .eq("company_id", cid)
+                        .eq("user_id", user.id)
+                        .maybeSingle()
+                    userRoleForAccts = String(m?.role || '').toLowerCase()
+                    userBranchForAccts = (m?.branch_id as string | undefined) || null
+                }
+            } catch {}
+            const isPrivilegedForAccts = PRIVILEGED.includes(userRoleForAccts)
+
+            let payAcctQuery = supabase
                 .from("chart_of_accounts")
-                .select("id, account_code, account_name")
+                .select("id, account_code, account_name, branch_id")
                 .eq("company_id", cid)
-                .in("account_type", ["asset"]) // Should be more specific usually (Cash/Bank), but strict types might vary
+                .in("sub_type", ["cash", "bank"])
                 .eq("is_active", true)
                 .order("account_code")
+            if (!isPrivilegedForAccts && userBranchForAccts) {
+                payAcctQuery = payAcctQuery.eq("branch_id", userBranchForAccts)
+            }
+            const { data: payAccounts } = await payAcctQuery
 
             setPaymentAccounts(payAccounts || [])
 

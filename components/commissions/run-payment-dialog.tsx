@@ -84,13 +84,36 @@ export function RunPaymentDialog({
             const activeCompanyId = await getActiveCompanyId(supabase)
             if (!activeCompanyId) return
 
-            const { data, error } = await supabase
+            // v3.74.42: filter by sub_type IN (cash,bank) + branch-scope for non-privileged users + is_active
+            const PRIVILEGED = ['owner', 'admin', 'general_manager']
+            let _userRoleForAccts = ''
+            let _userBranchForAccts: string | null = null
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (user) {
+                    const { data: m } = await supabase
+                        .from('company_members')
+                        .select('role, branch_id')
+                        .eq('company_id', activeCompanyId)
+                        .eq('user_id', user.id)
+                        .maybeSingle()
+                    _userRoleForAccts = String(m?.role || '').toLowerCase()
+                    _userBranchForAccts = (m?.branch_id as string | undefined) || null
+                }
+            } catch {}
+            const _isPrivilegedForAccts = PRIVILEGED.includes(_userRoleForAccts)
+
+            let accQuery = supabase
                 .from('chart_of_accounts')
-                .select('id, account_code, account_name, account_type')
+                .select('id, account_code, account_name, account_type, sub_type, branch_id')
                 .eq('company_id', activeCompanyId)
-                .eq('account_type', 'asset')
+                .in('sub_type', ['cash', 'bank'])
                 .eq('is_active', true)
                 .order('account_code')
+            if (!_isPrivilegedForAccts && _userBranchForAccts) {
+                accQuery = accQuery.eq('branch_id', _userBranchForAccts)
+            }
+            const { data, error } = await accQuery
 
             if (error) throw error
 

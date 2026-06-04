@@ -240,11 +240,17 @@ export default function NewPurchaseReturnPage() {
       setForm(f => ({ ...f, currency: baseCurrency }))
 
       // جلب حسابات النقدية والبنوك لاختيار حساب الاسترداد
-      const { data: acctData } = await supabase
+      // v3.74.42: branch-scope filter for non-privileged users + is_active filter
+      let acctQuery = supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, sub_type")
+        .select("id, account_code, account_name, sub_type, branch_id")
         .eq("company_id", loadedCompanyId)
         .in("sub_type", ["cash", "bank"])
+        .eq("is_active", true)
+      if (!isPrivilegedRole && userBranchId) {
+        acctQuery = acctQuery.eq("branch_id", userBranchId)
+      }
+      const { data: acctData } = await acctQuery
       setCashBankAccounts((acctData || []) as AccountOption[])
     })()
   }, [supabase])

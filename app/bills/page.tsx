@@ -1097,14 +1097,23 @@ export default function BillsPage() {
       }).filter((r: any) => r.maxQty > 0)
       setReturnItems(rows)
 
-      // Load accounts for refund selection - استخدام filterCashBankAccounts لضمان التوافق مع صفحة الأعمال المصرفية
-      const { data: accs } = await supabase
+      // Load accounts for refund selection
+      // v3.74.42: branch-scope the cash/bank picker. Privileged roles
+      // (owner / admin / general_manager) see all company cash + bank
+      // accounts; everyone else sees ONLY their branch's accounts.
+      const refundPrivilegedRoles = ['owner', 'admin', 'general_manager']
+      const isRefundPrivileged = refundPrivilegedRoles.includes(
+        (userContext?.role || '').toLowerCase()
+      )
+      let refundAccountsQuery = supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type, parent_id")
+        .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id")
         .eq("company_id", companyId)
         .eq("is_active", true)
-      // ✅ استخدام filterCashBankAccounts للحصول على حسابات النقد والبنك (نفس المنطق في صفحة الأعمال المصرفية)
-      // ✅ إضافة حسابات الذمم الدائنة (accounts_payable) للمرتجعات - مع فلترة leaf accounts فقط للاتساق
+      if (!isRefundPrivileged && userContext?.branch_id) {
+        refundAccountsQuery = refundAccountsQuery.eq("branch_id", userContext.branch_id)
+      }
+      const { data: accs } = await refundAccountsQuery
       const cashBankAccounts = filterCashBankAccounts(accs || [], true)
       const leafIds = getLeafAccountIds(accs || [])
       const apAccounts = (accs || []).filter((a: any) =>

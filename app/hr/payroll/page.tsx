@@ -70,7 +70,31 @@ export default function PayrollPage() {
   useEffect(() => {
     (async () => {
       const cid = await getActiveCompanyId(supabase); if (cid) {
-        setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []); const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type').eq('company_id', cid).order('account_code'); const pays = (accs || []).filter((a: any) => String(a.account_type || '') === 'asset' && ['cash', 'bank'].includes(String((a as any).sub_type || ''))); setPaymentAccounts(pays); const map: Record<string, { code: string; name: string }> = {}; (accs || []).forEach((a: any) => { map[String(a.id)] = { code: String(a.account_code || ''), name: String(a.account_name || '') } }); setAccountMap(map); const settingsRes = await fetch(`/api/bonuses/settings?companyId=${encodeURIComponent(cid)}`); if (settingsRes.ok) { const settings = await settingsRes.json(); setBonusSettings(settings) }
+        setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []);
+        // v3.74.42: branch-scope filter for non-privileged users + is_active filter
+        const PRIVILEGED = ['owner', 'admin', 'general_manager']
+        let _userRoleForAccts = ''
+        let _userBranchForAccts: string | null = null
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const { data: m } = await supabase
+              .from('company_members')
+              .select('role, branch_id')
+              .eq('company_id', cid)
+              .eq('user_id', user.id)
+              .maybeSingle()
+            _userRoleForAccts = String(m?.role || '').toLowerCase()
+            _userBranchForAccts = (m?.branch_id as string | undefined) || null
+          }
+        } catch {}
+        const _isPrivilegedForAccts = PRIVILEGED.includes(_userRoleForAccts)
+        const { data: accs } = await supabase.from('chart_of_accounts').select('id, account_code, account_name, account_type, sub_type, branch_id, is_active').eq('company_id', cid).eq('is_active', true).order('account_code'); const pays = (accs || []).filter((a: any) => {
+          if (String(a.account_type || '') !== 'asset') return false
+          if (!['cash', 'bank'].includes(String((a as any).sub_type || ''))) return false
+          if (!_isPrivilegedForAccts && _userBranchForAccts && (a as any).branch_id !== _userBranchForAccts) return false
+          return true
+        }); setPaymentAccounts(pays); const map: Record<string, { code: string; name: string }> = {}; (accs || []).forEach((a: any) => { map[String(a.id)] = { code: String(a.account_code || ''), name: String(a.account_name || '') } }); setAccountMap(map); const settingsRes = await fetch(`/api/bonuses/settings?companyId=${encodeURIComponent(cid)}`); if (settingsRes.ok) { const settings = await settingsRes.json(); setBonusSettings(settings) }
         // Fetch company details for print
         const { data: comp } = await supabase.from('companies').select('*').eq('id', cid).single();
         if (comp) setCompanyDetails(comp);
