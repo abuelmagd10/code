@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.43] - 2026-06-04 — Pre-launch: RLS coverage + CHECK constraint sanity
+
+### Why
+Pre-launch audit Phase 3 — verify every table in `public` has row-level security and that CHECK constraints align with code.
+
+### RLS audit (213 tables)
+**204 tables already had RLS correctly configured.** Found **9 tables completely unprotected** (RLS disabled, no policies). Fixed each by category:
+
+**CRITICAL (HR salary data)**
+- `employee_contracts` — policies join through `employees` to enforce `is_company_member` / `can_modify_data` / `can_delete_data`. Without this, any authenticated user could read every employee's salary contract.
+
+**Workflow data (FK chain)**
+- `commission_rules` — policies join through `commission_plans` to reach `company_id`.
+- `restore_batches` — joins through `restore_queue` to enforce owner/admin-only access.
+- `restore_queue` — direct `company_id` + role check (owner/admin only).
+
+**Global template tables (consolidation, elimination)**
+- `consolidation_statement_templates`, `consolidation_statement_mappings`, `elimination_rule_sets`, `elimination_rules` — SELECT allowed for any authenticated user (read-only system templates); writes only via `service_role` bypass.
+
+**Test stub dropped**
+- `erp_test_2026` — appeared to be a forgotten test stub. `DROP TABLE`.
+
+### CHECK constraint audit
+Spot-checked launch-critical tables (`invoices`, `bills`, `journal_entries`, `payments`, `sales_returns`, `purchase_returns`, `sales_return_requests`, `expenses`, `bookings`, `bank_voucher_requests`, etc.) against code-side writes. Each CHECK aligned with the values the code actually writes.
+
+**One real issue found and fixed**: `inventory_transfers` had **two overlapping CHECK constraints** on `status` — `inventory_transfers_status_check` and `valid_status` — with non-identical allowed sets. The intersection still covered every status the code actively writes (`pending`, `pending_approval`, `received`), so this was a latent issue, not a live bug. But any future code writing the orphan values `sent` or `approved` would silently fail. Consolidated into a single CHECK that covers every used status.
+
+### Files
+- DB migration: `v3_74_43a_rls_for_unprotected_tables` (9 tables + drop test stub)
+- DB migration: `v3_74_43b_consolidate_inventory_transfers_status_check`
+- `lib/version.ts` — bump to 3.74.43
+- `CHANGELOG.md` — this entry
+
+### Verification
+Post-migration sweep confirmed:
+- Zero public tables with RLS disabled.
+- Zero tables with RLS enabled but no policies.
+- `inventory_transfers` has exactly one CHECK on `status`.
+
+---
+
 ## [3.74.42] - 2026-06-04 — Pre-launch sweep: branch-scope 9 more account-picker forms
 
 ### Why
