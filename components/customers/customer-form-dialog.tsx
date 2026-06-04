@@ -79,6 +79,16 @@ export function CustomerFormDialog({
   const [activeInvoicesCount, setActiveInvoicesCount] = useState(0)
   const [isCheckingInvoices, setIsCheckingInvoices] = useState(false)
 
+  // v3.74.44 — أيضاً نتبع رصيد العميل الدائن (من المرتجعات/الدفعات الزائدة)
+  // وذمم مدينة (من فواتير غير مدفوعة). أي من الاثنين يُغلق التعديل.
+  const [hasCreditBalance, setHasCreditBalance] = useState(false)
+  const [creditBalanceAmount, setCreditBalanceAmount] = useState(0)
+  const [hasReceivable, setHasReceivable] = useState(false)
+  const [receivableAmount, setReceivableAmount] = useState(0)
+
+  // أي حالة من الثلاث تقفل التعديل
+  const isCustomerLocked = hasActiveInvoices || hasCreditBalance || hasReceivable
+
   // حقول العنوان المسموح بتعديلها دائماً
   const ADDRESS_FIELDS = ['address', 'governorate', 'city', 'country', 'detailed_address']
 
@@ -200,17 +210,26 @@ export function CustomerFormDialog({
       setAvailableCities([])
     }
     setFormErrors({})
-    // إعادة تعيين حالة الفواتير النشطة
+    // إعادة تعيين حالة القفل (v3.74.44)
     setHasActiveInvoices(false)
     setActiveInvoicesCount(0)
+    setHasCreditBalance(false)
+    setCreditBalanceAmount(0)
+    setHasReceivable(false)
+    setReceivableAmount(0)
   }, [open, editingCustomer])
 
-  // التحقق من الفواتير النشطة عند فتح Dialog للتعديل
+  // v3.74.44 — التحقق من حالات قفل تعديل العميل عند فتح Dialog للتعديل
+  // ثلاث حالات تُلزم القفل: فواتير نشطة، رصيد دائن، ذمم مدينة.
   useEffect(() => {
-    const checkActiveInvoices = async () => {
+    const checkLockingConditions = async () => {
       if (!open || !editingCustomer) {
         setHasActiveInvoices(false)
         setActiveInvoicesCount(0)
+        setHasCreditBalance(false)
+        setCreditBalanceAmount(0)
+        setHasReceivable(false)
+        setReceivableAmount(0)
         return
       }
 
@@ -219,29 +238,54 @@ export function CustomerFormDialog({
         const activeCompanyId = await getActiveCompanyId(supabase)
         if (!activeCompanyId) return
 
-        // جلب الفواتير النشطة للعميل
-        const { data: invoices, error } = await supabase
+        // 1) الفواتير النشطة (sent/partially_paid/paid)
+        const { data: invoices } = await supabase
           .from("invoices")
-          .select("id, status")
+          .select("id, status, total_amount, paid_amount")
           .eq("company_id", activeCompanyId)
           .eq("customer_id", editingCustomer.id)
           .in("status", ["sent", "partially_paid", "paid"])
 
-        if (!error && invoices && invoices.length > 0) {
-          setHasActiveInvoices(true)
-          setActiveInvoicesCount(invoices.length)
-        } else {
-          setHasActiveInvoices(false)
-          setActiveInvoicesCount(0)
-        }
+        const activeInvList = invoices || []
+        setHasActiveInvoices(activeInvList.length > 0)
+        setActiveInvoicesCount(activeInvList.length)
+
+        // 2) الرصيد الدائن — مجموع customer_credits غير المستخدمة
+        //    (active فقط؛ amount - used_amount > 0)
+        const { data: credits } = await supabase
+          .from("customer_credits")
+          .select("amount, used_amount, status")
+          .eq("company_id", activeCompanyId)
+          .eq("customer_id", editingCustomer.id)
+          .eq("status", "active")
+
+        const totalCredit = (credits || []).reduce(
+          (sum: number, c: any) =>
+            sum + Math.max(0, Number(c.amount || 0) - Number(c.used_amount || 0)),
+          0
+        )
+        setHasCreditBalance(totalCredit > 0)
+        setCreditBalanceAmount(totalCredit)
+
+        // 3) الذمم المدينة — مجموع المتبقي من الفواتير غير المدفوعة بالكامل
+        //    (sent + partially_paid فقط؛ paid لا تُساهم)
+        const totalReceivable = activeInvList
+          .filter((inv: any) => inv.status === "sent" || inv.status === "partially_paid")
+          .reduce(
+            (sum: number, inv: any) =>
+              sum + Math.max(0, Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)),
+            0
+          )
+        setHasReceivable(totalReceivable > 0)
+        setReceivableAmount(totalReceivable)
       } catch (error) {
-        console.error("Error checking active invoices:", error)
+        console.error("Error checking customer lock conditions:", error)
       } finally {
         setIsCheckingInvoices(false)
       }
     }
 
-    checkActiveInvoices()
+    checkLockingConditions()
   }, [open, editingCustomer, supabase])
 
   const validateForm = (): boolean => {
@@ -458,8 +502,8 @@ export function CustomerFormDialog({
 
       if (editingCustomer) {
         // تحديد البيانات المراد إرسالها
-        // إذا كان هناك فواتير نشطة، أرسل حقول العنوان فقط
-        const dataForUpdate = hasActiveInvoices
+        // v3.74.44: إذا كان العميل مقفلاً (فواتير/رصيد/ذمم)، أرسل حقول العنوان فقط
+        const dataForUpdate = isCustomerLocked
           ? {
               address: formData.address,
               governorate: formData.governorate,
@@ -567,21 +611,44 @@ export function CustomerFormDialog({
           <DialogTitle>{editingCustomer ? (appLang==='en' ? 'Edit Customer' : 'تعديل عميل') : (appLang==='en' ? 'Add New Customer' : 'إضافة عميل جديد')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* تحذير الفواتير النشطة */}
-          {editingCustomer && hasActiveInvoices && (
+          {/* v3.74.44 — تحذير شامل: فواتير + رصيد دائن + ذمم مدينة */}
+          {editingCustomer && isCustomerLocked && (
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded-lg p-3">
               <div className="flex items-start gap-2">
                 <span className="text-yellow-600 text-lg">⚠️</span>
-                <div className="text-sm">
+                <div className="text-sm space-y-1">
                   <p className="font-semibold text-yellow-800 dark:text-yellow-200">
                     {appLang === 'en'
-                      ? `This customer has ${activeInvoicesCount} active invoice(s)`
-                      : `هذا العميل لديه ${activeInvoicesCount} فاتورة نشطة`}
+                      ? 'This customer is linked to financial records:'
+                      : 'هذا العميل مرتبط بتعاملات مالية:'}
                   </p>
-                  <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                  <ul className="text-yellow-700 dark:text-yellow-300 list-disc pr-5 space-y-0.5">
+                    {hasActiveInvoices && (
+                      <li>
+                        {appLang === 'en'
+                          ? `${activeInvoicesCount} active invoice(s)`
+                          : `${activeInvoicesCount} فاتورة نشطة`}
+                      </li>
+                    )}
+                    {hasReceivable && (
+                      <li>
+                        {appLang === 'en'
+                          ? `Receivable balance: ${receivableAmount.toFixed(2)} EGP`
+                          : `ذمم مدينة بقيمة: ${receivableAmount.toFixed(2)} ج.م`}
+                      </li>
+                    )}
+                    {hasCreditBalance && (
+                      <li>
+                        {appLang === 'en'
+                          ? `Credit balance: ${creditBalanceAmount.toFixed(2)} EGP`
+                          : `رصيد دائن بقيمة: ${creditBalanceAmount.toFixed(2)} ج.م`}
+                      </li>
+                    )}
+                  </ul>
+                  <p className="text-yellow-700 dark:text-yellow-300 mt-2 pt-2 border-t border-yellow-300 dark:border-yellow-700">
                     {appLang === 'en'
-                      ? 'Only address fields can be edited. Other fields are locked.'
-                      : 'يمكن تعديل حقول العنوان فقط. الحقول الأخرى مقفلة.'}
+                      ? '🔒 Only address fields can be edited. Other fields are locked.'
+                      : '🔒 يمكن تعديل حقول العنوان فقط. الحقول الأخرى مقفلة.'}
                   </p>
                 </div>
               </div>
@@ -598,7 +665,7 @@ export function CustomerFormDialog({
           <div className="space-y-2">
             <Label htmlFor="name" className="flex items-center gap-1">
               {appLang==='en' ? 'Customer Name' : 'اسم العميل'} <span className="text-red-500">*</span>
-              {editingCustomer && hasActiveInvoices && <span className="text-xs text-yellow-600 mr-2">🔒</span>}
+              {editingCustomer && isCustomerLocked && <span className="text-xs text-yellow-600 mr-2">🔒</span>}
             </Label>
             <Input
               id="name"
@@ -608,8 +675,8 @@ export function CustomerFormDialog({
                 if (formErrors.name) setFormErrors(prev => ({ ...prev, name: '' }))
               }}
               placeholder={appLang==='en' ? 'First name and family name' : 'الاسم الأول + اسم العائلة'}
-              className={`${formErrors.name ? 'border-red-500' : ''} ${editingCustomer && hasActiveInvoices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
-              disabled={!!editingCustomer && hasActiveInvoices}
+              className={`${formErrors.name ? 'border-red-500' : ''} ${editingCustomer && isCustomerLocked ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
+              disabled={!!editingCustomer && isCustomerLocked}
             />
             {formErrors.name && <p className="text-red-500 text-xs">{formErrors.name}</p>}
           </div>
@@ -619,7 +686,7 @@ export function CustomerFormDialog({
             <Label htmlFor="phone" className="flex items-center gap-1">
               {appLang==='en' ? 'Phone' : 'رقم الهاتف'} <span className="text-red-500">*</span>
               {isCheckingPhone && <span className="text-xs text-gray-400 mr-2">({appLang==='en' ? 'checking...' : 'جاري التحقق...'})</span>}
-              {editingCustomer && hasActiveInvoices && <span className="text-xs text-yellow-600 mr-2">🔒</span>}
+              {editingCustomer && isCustomerLocked && <span className="text-xs text-yellow-600 mr-2">🔒</span>}
             </Label>
             <Input
               id="phone"
@@ -632,8 +699,8 @@ export function CustomerFormDialog({
               onBlur={(e) => checkPhoneDuplicate(e.target.value)}
               placeholder={appLang==='en' ? '01XXXXXXXXX (11 digits)' : '01XXXXXXXXX (11 رقم)'}
               maxLength={13}
-              className={`${formErrors.phone ? 'border-red-500' : ''} ${editingCustomer && hasActiveInvoices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
-              disabled={!!editingCustomer && hasActiveInvoices}
+              className={`${formErrors.phone ? 'border-red-500' : ''} ${editingCustomer && isCustomerLocked ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
+              disabled={!!editingCustomer && isCustomerLocked}
             />
             {formErrors.phone && <p className="text-red-500 text-xs">{formErrors.phone}</p>}
           </div>
@@ -642,7 +709,7 @@ export function CustomerFormDialog({
           <div className="space-y-2">
             <Label htmlFor="email" className="flex items-center gap-1">
               {appLang==='en' ? 'Email' : 'البريد الإلكتروني'}
-              {editingCustomer && hasActiveInvoices && <span className="text-xs text-yellow-600 mr-2">🔒</span>}
+              {editingCustomer && isCustomerLocked && <span className="text-xs text-yellow-600 mr-2">🔒</span>}
             </Label>
             <Input
               id="email"
@@ -650,8 +717,8 @@ export function CustomerFormDialog({
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               placeholder={appLang==='en' ? 'email@example.com' : 'email@example.com'}
-              className={editingCustomer && hasActiveInvoices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}
-              disabled={!!editingCustomer && hasActiveInvoices}
+              className={editingCustomer && isCustomerLocked ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}
+              disabled={!!editingCustomer && isCustomerLocked}
             />
             {formErrors.email && <p className="text-red-500 text-xs">{formErrors.email}</p>}
           </div>
@@ -660,7 +727,7 @@ export function CustomerFormDialog({
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-3 text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
               {appLang==='en' ? 'Address Details' : 'تفاصيل العنوان'}
-              {editingCustomer && hasActiveInvoices && (
+              {editingCustomer && isCustomerLocked && (
                 <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded">
                   ✅ {appLang === 'en' ? 'Editable' : 'قابل للتعديل'}
                 </span>
@@ -782,13 +849,13 @@ export function CustomerFormDialog({
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-3 text-sm text-gray-700 dark:text-gray-300">
               {appLang==='en' ? 'Additional Information' : 'معلومات إضافية'}
-              {editingCustomer && hasActiveInvoices && <span className="text-xs text-yellow-600 mr-2"> 🔒</span>}
+              {editingCustomer && isCustomerLocked && <span className="text-xs text-yellow-600 mr-2"> 🔒</span>}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="tax_id" className="flex items-center gap-1">
                   {appLang==='en' ? 'Tax ID' : 'الرقم الضريبي'}
-                  {editingCustomer && hasActiveInvoices && <span className="text-xs text-yellow-600">🔒</span>}
+                  {editingCustomer && isCustomerLocked && <span className="text-xs text-yellow-600">🔒</span>}
                 </Label>
                 <Input
                   id="tax_id"
@@ -797,15 +864,15 @@ export function CustomerFormDialog({
                     setFormData({ ...formData, tax_id: e.target.value })
                     if (formErrors.tax_id) setFormErrors(prev => ({ ...prev, tax_id: '' }))
                   }}
-                  className={`${formErrors.tax_id ? 'border-red-500' : ''} ${editingCustomer && hasActiveInvoices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
-                  disabled={!!editingCustomer && hasActiveInvoices}
+                  className={`${formErrors.tax_id ? 'border-red-500' : ''} ${editingCustomer && isCustomerLocked ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
+                  disabled={!!editingCustomer && isCustomerLocked}
                 />
                 {formErrors.tax_id && <p className="text-red-500 text-xs">{formErrors.tax_id}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="credit_limit" className="flex items-center gap-1">
                   {appLang==='en' ? 'Credit Limit' : 'حد الائتمان'}
-                  {editingCustomer && hasActiveInvoices && <span className="text-xs text-yellow-600">🔒</span>}
+                  {editingCustomer && isCustomerLocked && <span className="text-xs text-yellow-600">🔒</span>}
                 </Label>
                 <Input
                   id="credit_limit"
@@ -815,8 +882,8 @@ export function CustomerFormDialog({
                     setFormData({ ...formData, credit_limit: Number.parseFloat(e.target.value) || 0 })
                     if (formErrors.credit_limit) setFormErrors(prev => ({ ...prev, credit_limit: '' }))
                   }}
-                  className={`${formErrors.credit_limit ? 'border-red-500' : ''} ${editingCustomer && hasActiveInvoices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
-                  disabled={!!editingCustomer && hasActiveInvoices}
+                  className={`${formErrors.credit_limit ? 'border-red-500' : ''} ${editingCustomer && isCustomerLocked ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : ''}`}
+                  disabled={!!editingCustomer && isCustomerLocked}
                 />
                 {formErrors.credit_limit && <p className="text-red-500 text-xs">{formErrors.credit_limit}</p>}
               </div>

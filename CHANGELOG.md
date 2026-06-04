@@ -4,6 +4,46 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.44] - 2026-06-04 — Customer edit lock extended + clearer visual indicator
+
+### Why
+Previously the customer edit dialog only locked the name/phone/email/tax_id fields when the customer had **active invoices**. Owner requested two changes:
+
+1. **Extend the lock** — also disable identity field edits when the customer has an **unused credit balance** (from sales returns) OR an **outstanding receivable** (unpaid invoice amount). Identity changes on a customer with any open financial position are an audit-trail hazard.
+2. **Clearer visual reason** — the warning box should spell out *which* of the three conditions applies, with the actual figures, so the user understands exactly why fields are locked.
+
+### What changed in `components/customers/customer-form-dialog.tsx`
+
+**New state:**
+- `hasCreditBalance` + `creditBalanceAmount` — sum of `customer_credits.(amount − used_amount)` for active rows.
+- `hasReceivable` + `receivableAmount` — sum of `(total_amount − paid_amount)` for `sent`/`partially_paid` invoices.
+- `isCustomerLocked` — derived: `hasActiveInvoices || hasCreditBalance || hasReceivable`.
+
+**Effect lookup widened**: the existing invoice query was kept and two new queries added in the same `useEffect`. Selects only the columns needed for the totals.
+
+**Field disable conditions** — every `disabled` / `className` / submit-strip check that used `hasActiveInvoices` now uses `isCustomerLocked`:
+- name, phone, email, tax_id, credit_limit — all locked when any of the three conditions is true.
+- Address fields (address, governorate, city, country, detailed_address) remain editable regardless — they're not part of customer identity.
+
+**Visual indicator** — the yellow warning box now lists each active reason:
+- "X active invoice(s)"
+- "Receivable balance: N EGP"
+- "Credit balance: N EGP"
+
+So the user knows exactly what's preventing the edit.
+
+### Files
+- `components/customers/customer-form-dialog.tsx`
+- `lib/version.ts` — bump to 3.74.44
+- `CHANGELOG.md` — this entry
+
+### Verification
+- TypeScript clean.
+- Audit-trail safety: a customer with any financial footprint can't have their identity silently changed.
+- UX: the reason for the lock is now visible at-a-glance.
+
+---
+
 ## [3.74.43] - 2026-06-04 — Pre-launch: RLS coverage + CHECK constraint sanity
 
 ### Why
