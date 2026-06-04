@@ -8,6 +8,7 @@ import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib
 import { emitEvent } from "@/lib/event-bus"
 import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import {
+  SALES_RETURN_REQUEST_STATUSES,
   SALES_RETURN_WAREHOUSE_ROLES,
   buildSalesReturnItemsForExecution,
   isSalesReturnPendingWarehouse,
@@ -125,6 +126,37 @@ export async function PATCH(
 
     if (!atomicResult.success) {
       return NextResponse.json({ error: atomicResult.error || "فشل تنفيذ المرتجع" }, { status: 400 })
+    }
+
+    // v3.74.34 — Persist the final workflow status. Earlier revisions of
+    // this route relied on the atomic RPC's p_update_source path to flip
+    // sales_return_requests.status to 'approved_completed', but the
+    // process_sales_return_atomic_v2 function only updates the underlying
+    // invoice/sales_order — not the workflow row. The result was a
+    // consistent atomic posting (sales_return + items + JE + inventory
+    // + customer credit) followed by a workflow record stuck at
+    // 'pending_warehouse_approval'. Mirror the pattern from warehouse-reject:
+    // a single UPDATE pinned to the (id, company_id) tuple, run with the
+    // service-role client so the actor's row-level scope can't block it.
+    const warehouseReviewedAt = new Date().toISOString()
+    const { error: statusUpdateErr } = await supabase
+      .from("sales_return_requests")
+      .update({
+        status: SALES_RETURN_REQUEST_STATUSES.approvedCompleted,
+        warehouse_reviewed_by: user?.id,
+        warehouse_reviewed_at: warehouseReviewedAt,
+        warehouse_rejection_reason: null,
+      })
+      .eq("id", id)
+      .eq("company_id", companyId)
+    if (statusUpdateErr) {
+      // The atomic accounting effect has already committed. Don't fail
+      // the request here — log and let the caller see the success — but
+      // surface a server-side breadcrumb so we can reconcile.
+      console.error(
+        "[warehouse-approve] Status update failed after successful atomic posting:",
+        { requestId: id, error: statusUpdateErr.message }
+      )
     }
 
     // v3.74.18 — Archive pending approval-category notifications for this

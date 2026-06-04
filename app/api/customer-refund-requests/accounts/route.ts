@@ -5,8 +5,14 @@ import { getActiveCompanyId } from "@/lib/company"
 /**
  * GET /api/customer-refund-requests/accounts
  * Returns cash/bank accounts for refund execution.
- * - Privileged roles (owner, admin, gm, accountant): all company cash/bank accounts
- * - Regular roles: only accounts belonging to the invoice's branch
+ * - Privileged roles (owner, admin, general_manager): all company cash/bank accounts
+ * - Regular roles (incl. accountant): only accounts belonging to the invoice's branch
+ *
+ * v3.74.35: accountant removed from the privileged list. The accountant
+ * operates inside one branch — they should disburse from that branch's
+ * cash/bank accounts only, not from any company-wide treasury. The form
+ * already passes the invoice's branch_id, so the existing branch-filter
+ * branch below kicks in for accountant.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +35,8 @@ export async function GET(request: NextRequest) {
       .eq("user_id", user.id)
       .single()
 
-    const isPrivileged = ["owner", "admin", "general_manager", "accountant"].includes(member?.role || "")
+    // v3.74.35: 'accountant' removed — accountants are now branch-scoped here.
+    const isPrivileged = ["owner", "admin", "general_manager"].includes(member?.role || "")
 
     // Fetch cash/bank accounts
     let query = supabase

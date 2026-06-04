@@ -4,6 +4,124 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.35] - 2026-06-04 — Accountant scope: customers visibility + branch-scoped disbursement accounts
+
+### Why
+Two scope adjustments for the accountant role, both reported by the owner during pre-launch testing:
+
+1. **Customers list invisible.** The accountant disburses customer credit balances but couldn't see the customer list (no customer record visible meant they couldn't pick a customer or verify identity before disbursing). They should see customers, but not be able to add/edit/delete them — that's the sales staff's job.
+
+2. **Disbursement account dropdown was company-wide.** When executing a customer refund, the cash/bank account picker was returning every active treasury and bank account across the whole company. The accountant operates within one branch — they should only ever disburse from their own branch's accounts, not from any other branch's treasury.
+
+### Fix #1 — Add accountant + customers (read-only) to every company
+- Backfilled `company_role_permissions` with `(accountant, customers, can_read=true, can_write=false)` for every existing company. Idempotent (`NOT EXISTS` guard).
+- Patched `seed_default_role_permissions` so new companies pick this up automatically. Verbatim preservation of the v3.74.14 spec plus the one new row, slotted right after `dashboard`, before `invoices`. `SECURITY DEFINER` + `search_path` preserved.
+- `all_access = false` means the existing branch governance still applies row-side: an accountant on branch A sees only branch A's customers (via existing customer RLS).
+
+### Fix #2 — Remove accountant from the privileged list in /api/customer-refund-requests/accounts
+- The route already had a branch-filter branch (`branch_id.eq.{X},branch_id.is.null`) that kicked in for non-privileged roles. Accountant was incorrectly in the privileged set, so the filter was being skipped for them.
+- One-line change: `["owner", "admin", "general_manager", "accountant"]` → `["owner", "admin", "general_manager"]`.
+- The form already passes the invoice's `branch_id` in the query string, so the existing branch-filter now applies to accountants as intended.
+
+### Files
+- DB migration: `v3_74_35a_accountant_customers_backfill` (live data)
+- DB migration: `v3_74_35b_seed_function_add_accountant_customers` (seed function)
+- `app/api/customer-refund-requests/accounts/route.ts` — removed accountant from privileged list
+- `lib/version.ts` — bump to 3.74.35
+- `CHANGELOG.md` — this entry
+
+### Verification
+- DB: every company has the read-only customers row (`COUNT FILTER (can_read AND NOT can_write) = total = 2`).
+- Code: privileged list comment updated; behavioural test pending (the accountant test user opens the disbursement dialog on an invoice — should see only the cash/bank accounts whose `branch_id` matches the invoice's branch).
+
+### Bundling note
+Rolls into the same forthcoming push as v3.74.22-34. Script becomes `push_v3.74.22-35.ps1`.
+
+---
+
+## [3.74.34] - 2026-06-04 — Hotfix: persist final workflow status on warehouse-approve
+
+### Why
+After v3.74.33 unblocked the `SECURITY DEFINER` issue, the atomic posting actually committed for the very first time. The console showed all six completion notifications fanning out, the sales_return row was inserted, the journal entry posted, inventory transactions wrote — every accounting effect landed. But the user reported the approvals page didn't change. The request was still showing as "pending warehouse approval".
+
+### Root cause
+The warehouse-approve route had a status-transition gap. It wrote `status: 'approved_completed'` into the audit log payload (for traceability), but never actually issued the corresponding `UPDATE sales_return_requests SET status = 'approved_completed'`. The mirror route, `warehouse-reject`, does have an explicit `.update({ status: rejectedWarehouse, ... })`. Approve was missing it.
+
+The atomic RPC `process_sales_return_atomic_v2` accepts a `p_update_source` parameter, which is used to flip the underlying invoice / sales-order status — but it does not touch the workflow row itself. So the chain was: accounting ✓, notifications ✓, audit log ✓, but the visible workflow status frozen at the previous step.
+
+### Fix
+Added an UPDATE in the warehouse-approve route, right after the atomic posting succeeds and before the notification archive step. Pattern mirrors warehouse-reject:
+
+```ts
+const { error: statusUpdateErr } = await supabase
+  .from("sales_return_requests")
+  .update({
+    status: SALES_RETURN_REQUEST_STATUSES.approvedCompleted,
+    warehouse_reviewed_by: user?.id,
+    warehouse_reviewed_at: warehouseReviewedAt,
+    warehouse_rejection_reason: null,
+  })
+  .eq("id", id)
+  .eq("company_id", companyId)
+```
+
+The error from this UPDATE is non-fatal — the accounting has already committed and we don't want to fail the response after the side effects are durable. Instead it logs a server-side breadcrumb so any divergence can be reconciled.
+
+Imported `SALES_RETURN_REQUEST_STATUSES` from `@/lib/sales-return-requests` (the canonical constant set; `.approvedCompleted = 'approved_completed'`).
+
+### Reconciliation for the stuck record
+One-time SQL update was applied to flip the existing stuck request (`6ea99fca-ecc2-4b57-a7bb-dbbc67657df6`) from `pending_warehouse_approval` to `approved_completed`, matching the already-committed accounting state. Guarded with `WHERE status = 'pending_warehouse_approval'` so it can't accidentally touch any other row.
+
+### Files
+- `app/api/sales-return-requests/[id]/warehouse-approve/route.ts` — added the missing UPDATE + import
+- `lib/version.ts` — bump to 3.74.34
+- `CHANGELOG.md` — this entry
+
+### Bundling note
+Rolls into the same forthcoming push as v3.74.22-33. Script becomes `push_v3.74.22-34.ps1`.
+
+---
+
+## [3.74.33] - 2026-06-04 — Hotfix: restore SECURITY DEFINER on post_accounting_event
+
+### Why
+Warehouse-approve of the sales-return surfaced the next blocker:
+
+> `Transaction Failed: DIRECT_POST_BLOCKED: Use create_journal_entry_atomic(). [caller=service_role, flag=true]`
+
+The error message itself tells the story: `flag=true` — our function correctly sets `app.allow_direct_post = 'true'`. So why was it still blocked?
+
+### Root cause
+`enforce_je_integrity` (the trigger that guards journal_entries against ad-hoc `status = 'posted'` INSERTs) requires TWO conditions for trusted callers:
+
+1. `app.allow_direct_post = 'true'` ✓
+2. `current_user IN (postgres, superuser)` ✗ — we were `service_role`
+
+`current_user` inside a function is `'service_role'` (the API JWT role) unless the function is `SECURITY DEFINER`, in which case it becomes the function's owner (postgres).
+
+The function HAD `SECURITY DEFINER` originally. But the v3.74.31 and v3.74.32 hotfixes used `CREATE OR REPLACE FUNCTION` without explicitly stating `SECURITY DEFINER`, which Postgres treats as "reset to default" (= `SECURITY INVOKER`). The attribute was silently stripped — a classic CREATE OR REPLACE footgun.
+
+We confirmed via `pg_proc`: the old overload (no `p_customer_credits`) still had `prosecdef = true`. The newer overload (with `p_customer_credits`, the one actually called by `process_sales_return_atomic_v2`) had `prosecdef = false`. Identical column code, different security context.
+
+### Fix
+Used `ALTER FUNCTION ... SECURITY DEFINER` and `ALTER FUNCTION ... SET search_path = public, pg_catalog` on the affected overload. This is safer than a full `CREATE OR REPLACE` because it touches only the two attributes that need restoring and cannot accidentally introduce other regressions.
+
+### Lesson for future
+Any `CREATE OR REPLACE FUNCTION` that omits `SECURITY DEFINER` strips it. The audit checklist needs: "before any CREATE OR REPLACE of a `prosecdef = true` function, confirm `SECURITY DEFINER` is present in the new definition." Going forward I'll prefer `ALTER FUNCTION` for surgical changes that don't need to rewrite the body.
+
+### Files
+- DB migration: `v3_74_33_restore_security_definer_on_post_accounting_event`
+- `lib/version.ts` — bump to 3.74.33
+- `CHANGELOG.md` — this entry
+
+### Verification
+`pg_proc.prosecdef = true` confirmed post-migration; `proconfig` includes `search_path=public, pg_catalog`.
+
+### Bundling note
+Rolls into the same forthcoming push as v3.74.22-32. Script becomes `push_v3.74.22-33.ps1`.
+
+---
+
 ## [3.74.32] - 2026-06-03 — Hotfix: post_accounting_event INSERT columns aligned with real table schemas
 
 ### Why
