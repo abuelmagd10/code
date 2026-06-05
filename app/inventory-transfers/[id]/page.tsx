@@ -260,6 +260,14 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   // بدء النقل: Owner/Admin/Manager فقط
   const canManage = ["owner", "admin", "manager", "general_manager", "gm"].includes(userRole)
 
+  // v3.74.51 — مَسؤول مَخزَن المَصدَر يَستَطيع بَدء الإِرسال بَعد اعتماد الإِدارة (status='pending')
+  const isSourceWarehouseManager =
+    userRole === 'store_manager' &&
+    transfer?.source_warehouse_id === userWarehouseId &&
+    userWarehouseId !== null &&
+    transfer?.source_branch_id === userBranchId
+  const canStartDispatch = (canManage || isSourceWarehouseManager) && transfer?.status === 'pending'
+
   // 🔒 صلاحية الاعتماد/الرفض: Owner/Admin/General Manager فقط
   // ✅ فقط للطلبات في حالة pending_approval
   const canApproveOrReject = ["owner", "admin", "general_manager", "gm"].includes(userRole) && transfer?.status === 'pending_approval'
@@ -1138,8 +1146,8 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
                   </Button>
                 )}
 
-                {/* بدء النقل - فقط في حالة pending */}
-                {transfer.status === 'pending' && canManage && (
+                {/* v3.74.51: بدء النقل - مَسموح أَيضاً لمَسؤول مَخزَن المَصدَر بَعد اعتماد الإِدارة */}
+                {canStartDispatch && (
                   <Button onClick={handleStartTransfer} disabled={isProcessing} className="gap-2 bg-blue-600 hover:bg-blue-700" data-ai-help="inventory_transfers.start_button">
                     <Send className="w-4 h-4" />
                     {appLang === 'en' ? 'Start Transfer' : 'بدء النقل'}

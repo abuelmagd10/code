@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { CompanyHeader } from "@/components/company-header"
-import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle, Loader2, Eye } from "lucide-react"
+import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle, Loader2, Eye, ArrowLeftRight, Send } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
   Dialog,
@@ -65,7 +65,9 @@ interface ManufacturingApproval {
 }
 
 // ─── Unified row (discriminated union) ───────────────────────────────────────
-type ApprovalType = "sales" | "manufacturing"
+// v3.74.51 — added "transfer" so warehouse managers see approved transfer
+// requests in the same place they handle invoice & manufacturing dispatches.
+type ApprovalType = "sales" | "manufacturing" | "transfer"
 interface UnifiedRow {
   _type: ApprovalType
   id: string
@@ -99,7 +101,7 @@ interface HistoryRow {
   items?: Array<{ product_name: string; quantity: number; product_type?: string }>
 }
 
-type TypeFilter = "all" | "sales" | "manufacturing"
+type TypeFilter = "all" | "sales" | "manufacturing" | "transfer"
 type HistoryStatusFilter = "all" | "approved" | "rejected"
 
 export default function DispatchApprovalsPage() {
@@ -277,7 +279,71 @@ export default function DispatchApprovalsPage() {
         }))
       }
 
-      setRows([...salesRows, ...mfgRows])
+      // v3.74.51 ── 3. طَلَبات نَقل المَخزون المُعتَمَدَة (status='pending' = اعتُمِدَت وتَنتَظِر بَدء الإِرسال)
+      // فِلتَر حَوكَمَة: store_manager يَرى فَقَط طَلَبات مَخزَنِه؛ Owner/Admin/Manager/GM يَرى الكُل
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      let transferRows: UnifiedRow[] = []
+      if (currentUser) {
+        const { data: member } = await supabase
+          .from("company_members")
+          .select("role, warehouse_id, branch_id")
+          .eq("company_id", companyId)
+          .eq("user_id", currentUser.id)
+          .single()
+        const role = String((member as any)?.role || "").toLowerCase()
+        const myWarehouseId = (member as any)?.warehouse_id || null
+        const myBranchId = (member as any)?.branch_id || null
+
+        let trQuery = supabase
+          .from("inventory_transfers")
+          .select(`
+            id, transfer_number, transfer_date, status,
+            source_warehouse_id, source_branch_id,
+            destination_warehouse_id, destination_branch_id,
+            source_warehouses:warehouses!inventory_transfers_source_warehouse_id_fkey(id, name),
+            destination_warehouses:warehouses!inventory_transfers_destination_warehouse_id_fkey(id, name),
+            source_branches:branches!inventory_transfers_source_branch_id_fkey(id, name),
+            destination_branches:branches!inventory_transfers_destination_branch_id_fkey(id, name),
+            items:inventory_transfer_items(quantity_requested, products(name))
+          `)
+          .eq("company_id", companyId)
+          .eq("status", "pending")
+          .is("deleted_at", null)
+
+        // store_manager يَرى فَقَط طَلَبات مَخزَنِه (المَصدَر)
+        if (role === "store_manager" && myWarehouseId && myBranchId) {
+          trQuery = trQuery.eq("source_warehouse_id", myWarehouseId).eq("source_branch_id", myBranchId)
+        }
+
+        const { data: trData } = await trQuery.order("transfer_date", { ascending: false })
+        transferRows = ((trData as any[]) || []).map((t: any): UnifiedRow => {
+          const items: any[] = t.items || []
+          const totalQty = items.reduce((s: number, it: any) => s + Number(it.quantity_requested || 0), 0)
+          const firstProductName = items[0]?.products?.name || ""
+          const productLabel = items.length > 1
+            ? `${firstProductName}${firstProductName ? ' ' : ''}+${items.length - 1}`
+            : (firstProductName || "—")
+          const srcWh = Array.isArray(t.source_warehouses) ? t.source_warehouses[0] : t.source_warehouses
+          const srcBr = Array.isArray(t.source_branches) ? t.source_branches[0] : t.source_branches
+          const dstBr = Array.isArray(t.destination_branches) ? t.destination_branches[0] : t.destination_branches
+          return {
+            _type: "transfer",
+            id: t.id,
+            reference: t.transfer_number,
+            date: t.transfer_date,
+            customer: dstBr?.name ? `${appLang === 'en' ? 'To: ' : 'إِلى: '}${dstBr.name}` : "—",
+            product: productLabel,
+            quantity: totalQty,
+            uom: '',
+            warehouse: srcWh?.name || "—",
+            branch: srcBr?.name || "—",
+            shipping: "—",
+            raw: t,
+          }
+        })
+      }
+
+      setRows([...salesRows, ...mfgRows, ...transferRows])
     } catch (error: any) {
       console.error("Error loading approvals:", error)
       toast({ title: appLang === 'en' ? "Error" : "خطأ", description: appLang === 'en' ? "Could not load approvals." : "تعذر تحميل طلبات الاعتماد.", variant: "destructive" })
@@ -456,7 +522,9 @@ export default function DispatchApprovalsPage() {
         <span className="inline-flex items-center gap-1.5 font-medium text-blue-600 dark:text-blue-400">
           {row._type === "sales"
             ? <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-            : <Factory className="w-3.5 h-3.5 flex-shrink-0 text-orange-600" />}
+            : row._type === "manufacturing"
+              ? <Factory className="w-3.5 h-3.5 flex-shrink-0 text-orange-600" />
+              : <ArrowLeftRight className="w-3.5 h-3.5 flex-shrink-0 text-purple-600" /> /* v3.74.51 transfer icon */}
           {row.reference}
         </span>
       ),
@@ -519,7 +587,25 @@ export default function DispatchApprovalsPage() {
         const mfgStatus = row._type === "manufacturing" ? (row.raw as any)?.status : null
         const isRejected = mfgStatus === "rejected"
         const isPartial = mfgStatus === "partially_approved"
-        
+
+        // v3.74.51 — طَلَب نَقل مَخزون: زِر واحِد يَفتَح صَفحَة تَفاصيل النَّقل
+        // حَيث يَستَطيع مَسؤول المَخزَن (أَو الأَدوار العُليا) ضَغط "بَدء النَّقل"
+        if (row._type === "transfer") {
+          return (
+            <div className="flex gap-2 items-center">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                onClick={() => router.push(`/inventory-transfers/${row.id}`)}
+              >
+                <Send className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} />
+                {appLang === 'en' ? 'Start Dispatch' : 'بدء الإِرسال'}
+              </Button>
+            </div>
+          )
+        }
+
         return (
           <div className="flex gap-2 items-center">
             {row._type === "manufacturing" ? (
@@ -605,6 +691,8 @@ export default function DispatchApprovalsPage() {
 
   const salesCount = rows.filter(r => r._type === "sales").length
   const mfgCount = rows.filter(r => r._type === "manufacturing").length
+  // v3.74.51 — عَدّ طَلَبات النَّقل المُعتَمَدَة (status='pending' فى inventory_transfers)
+  const transferCount = rows.filter(r => r._type === "transfer").length
 
   // ✅ فلترة سجل الإرسال
   const filteredHistoryRows = historyRows.filter(row => {
@@ -677,11 +765,13 @@ export default function DispatchApprovalsPage() {
               </div>
               {/* ── فلتر النوع ── */}
               <div className="flex items-center gap-2 flex-wrap">
-                {(["all", "sales", "manufacturing"] as TypeFilter[]).map((t) => {
+                {/* v3.74.51 — أَضَفنا "transfer" لفِلتَر النَّوع */}
+                {(["all", "sales", "manufacturing", "transfer"] as TypeFilter[]).map((t) => {
                   const label = {
                     all: appLang === 'en' ? `All (${rows.length})` : `الكل (${rows.length})`,
                     sales: appLang === 'en' ? `Sales (${salesCount})` : `مبيعات (${salesCount})`,
                     manufacturing: appLang === 'en' ? `Mfg. Issue (${mfgCount})` : `صرف تصنيع (${mfgCount})`,
+                    transfer: appLang === 'en' ? `Transfers (${transferCount})` : `نقل مَخزون (${transferCount})`,
                   }[t]
                   return (
                     <Button
@@ -693,6 +783,7 @@ export default function DispatchApprovalsPage() {
                     >
                       {t === "sales" && <FileText className="w-3 h-3 mr-1 rtl:mr-0 rtl:ml-1" />}
                       {t === "manufacturing" && <Factory className="w-3 h-3 mr-1 rtl:mr-0 rtl:ml-1" />}
+                      {t === "transfer" && <ArrowLeftRight className="w-3 h-3 mr-1 rtl:mr-0 rtl:ml-1" />}
                       {label}
                     </Button>
                   )

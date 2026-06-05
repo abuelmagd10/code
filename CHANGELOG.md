@@ -4,6 +4,72 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.51] - 2026-06-05 — After-approval handoff to source warehouse manager (notification + dispatch-approvals + Start button)
+
+### Why
+When management approved a stock transfer request, the workflow handed off invisibly. The source-warehouse manager — the person who actually has to pull the goods and start the dispatch — received no notification, and the approved transfer didn't show up on their `/inventory/dispatch-approvals` queue. They also couldn't press "Start Transfer" on the detail page because that button was gated to owner/admin/manager only. Result: requests sat idle in `pending` until someone with elevated permission noticed.
+
+This fixes the entire handoff in one release.
+
+### Fix 1 — Notification for source warehouse on approval
+
+`InventoryTransferNotificationService.notifyApproved` now sends **two** notifications instead of one:
+
+1. The existing notification to the **accountant who created the request** ("Transfer Request Approved").
+2. **NEW** — notification to **store_managers in the source warehouse** ("Transfer Approved — Dispatch Required") so they know the request is now their responsibility.
+
+Implementation:
+- Added `sourceWarehouseId?: string | null` to `InventoryTransferNotificationBaseParams`.
+- New private helper `dispatchSourceWarehouseNotification` mirrors the existing `dispatchDestinationWarehouseNotification` helper, resolving recipients via `resolveWarehouseRecipients(companyId, sourceBranchId, sourceWarehouseId)`.
+- `notifyApproved` wraps the new call in `try/catch` so a notification failure on the source side never blocks the accountant's notification.
+- `app/api/inventory-transfers/[id]/notifications/route.ts` now selects `source_warehouse_id` from the transfer row and passes it through to `notifyApproved`.
+
+### Fix 2 — Approved transfers appear on `/inventory/dispatch-approvals`
+
+The unified row union grew from `"sales" | "manufacturing"` to `"sales" | "manufacturing" | "transfer"`. `loadAll()` now:
+
+- Fetches `inventory_transfers` where `status='pending'` and `deleted_at IS NULL`.
+- Pulls `source/destination` warehouses + branches via the FK-disambiguated joins and `inventory_transfer_items` for product/qty rollups.
+- For `store_manager` users, filters to `source_warehouse_id = my warehouse AND source_branch_id = my branch`. Owner/admin/manager/GM see every approved transfer in the company (same governance pattern used elsewhere on the page).
+- Renders each row with a single **"Start Dispatch"** / **"بدء الإِرسال"** action button that routes to `/inventory-transfers/[id]` where the dispatch flow already lives.
+- New type icon: a purple `ArrowLeftRight` so transfer rows are visually distinct from invoices (📄) and manufacturing (🏭).
+
+The TypeFilter pills gained a fourth chip ("نقل مَخزون / Transfers") with a count.
+
+### Fix 3 — Source-warehouse manager can press "Start Transfer"
+
+`app/inventory-transfers/[id]/page.tsx`: the gate on the **Start Transfer** button was `transfer.status === 'pending' && canManage` — i.e. only owner/admin/manager/gm. That excluded the very person the notification was now telling to act.
+
+Added:
+
+```ts
+const isSourceWarehouseManager =
+  userRole === 'store_manager' &&
+  transfer?.source_warehouse_id === userWarehouseId &&
+  userWarehouseId !== null &&
+  transfer?.source_branch_id === userBranchId
+const canStartDispatch =
+  (canManage || isSourceWarehouseManager) && transfer?.status === 'pending'
+```
+
+The button now renders for any store_manager whose own warehouse matches the transfer's source, in addition to all the management roles that already saw it.
+
+### Files changed
+
+- `lib/services/inventory-transfer-notification.service.ts` — `sourceWarehouseId` on base params, new `dispatchSourceWarehouseNotification` helper, extended `notifyApproved`.
+- `app/api/inventory-transfers/[id]/notifications/route.ts` — select + pass `source_warehouse_id` on the `approved` action.
+- `app/inventory/dispatch-approvals/page.tsx` — `ApprovalType` and `TypeFilter` widened to include `"transfer"`; new fetch block for approved transfers with role-scoped filtering; `transferCount`; fourth filter chip; Start Dispatch button.
+- `app/inventory-transfers/[id]/page.tsx` — `canStartDispatch` derivation, Start Transfer button gated on it.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.51.
+
+### Testing checklist (post-deploy)
+
+1. As a manager, create + approve a transfer request whose source is branch X / warehouse Y.
+2. As the store_manager of X/Y, refresh: you should see (a) a notification "Transfer Approved — Dispatch Required" and (b) the transfer in `/inventory/dispatch-approvals` under the new "نقل مَخزون" chip.
+3. Click **بدء الإِرسال** on the row → land on transfer details → press **بدء النقل** → the transfer flips to `in_transit` and the destination warehouse gets the existing "Transfer in transit to your warehouse" notification (the rest of the workflow was already wired and stays untouched).
+
+---
+
 ## [3.74.50] - 2026-06-05 — Inventory transfer edit: lock destination warehouse for regular roles
 
 ### Why

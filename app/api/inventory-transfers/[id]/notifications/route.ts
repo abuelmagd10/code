@@ -75,7 +75,8 @@ export async function POST(
     const { data: transfer, error: transferError } = await supabase
       .from("inventory_transfers")
       .select(
-        "id, transfer_number, status, source_branch_id, destination_branch_id, destination_warehouse_id, created_by"
+        // v3.74.51 — أَضَفنا source_warehouse_id لِتَوجيه إِشعار "اعتُمِد لِلإِرسال" إِلى مَسؤول مَخزَن المَصدَر
+        "id, transfer_number, status, source_branch_id, source_warehouse_id, destination_branch_id, destination_warehouse_id, created_by"
       )
       .eq("id", id)
       .eq("company_id", companyId)
@@ -174,6 +175,8 @@ export async function POST(
           transferId: transfer.id,
           transferNumber: transfer.transfer_number,
           sourceBranchId: transfer.source_branch_id,
+          // v3.74.51 — تَمرير source_warehouse_id ليَستَخدِم الخِدمَة dispatchSourceWarehouseNotification
+          sourceWarehouseId: (transfer as any).source_warehouse_id ?? null,
           destinationBranchId: transfer.destination_branch_id,
           destinationWarehouseId: transfer.destination_warehouse_id,
           createdBy: transfer.created_by || user.id,

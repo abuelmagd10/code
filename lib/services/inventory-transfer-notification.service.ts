@@ -11,6 +11,7 @@ type InventoryTransferNotificationBaseParams = {
   transferId: string
   transferNumber: string
   sourceBranchId?: string | null
+  sourceWarehouseId?: string | null // v3.74.51 — لِتَوجيه إِشعار لمَسؤول مَخزَن المَصدَر بَعد الاعتماد
   destinationBranchId?: string | null
   destinationWarehouseId?: string | null
   appLang?: "ar" | "en"
@@ -152,6 +153,7 @@ export class InventoryTransferNotificationService {
       sourceBranchId: params.sourceBranchId || null,
     })
 
+    // إِشعار المُحاسِب المُنشئ بنَتيجَة قَرار الإِدارة
     await this.createNotification(
       {
         companyId: params.companyId,
@@ -176,6 +178,35 @@ export class InventoryTransferNotificationService {
         eventAction: "approved_creator_notified",
       }
     )
+
+    // v3.74.51 — إِشعار مَسؤول مَخزَن المَصدَر بأَنَّ الطَّلَب اعتُمِد ويَحتاج بَدء إِرسال
+    try {
+      await this.dispatchSourceWarehouseNotification(
+        {
+          companyId: params.companyId,
+          transferId: params.transferId,
+          transferNumber: params.transferNumber,
+          sourceBranchId: params.sourceBranchId || null,
+          sourceWarehouseId: params.sourceWarehouseId || null,
+          destinationBranchId: params.destinationBranchId || null,
+          actorUserId: params.approvedBy,
+        },
+        {
+          title:
+            params.appLang === "en"
+              ? "Transfer Approved — Dispatch Required"
+              : "اعتُمِد طَلَب النَّقل — يَحتاج بَدء إِرسال",
+          message:
+            params.appLang === "en"
+              ? `Transfer ${params.transferNumber} has been approved by ${params.approvedByName || "Management"} and is awaiting dispatch from your warehouse.`
+              : `تَمَّ اعتماد طَلَب النَّقل ${params.transferNumber} من قِبَل ${params.approvedByName || "الإدارة"} ويَنتَظِر بَدء الإِرسال من مَخزَنك.`,
+          eventAction: "approved_source_warehouse_notified",
+        },
+        "⚠️ [TRANSFER_NOTIFICATION] Source warehouse approval notification failed:"
+      )
+    } catch (err) {
+      console.error("Error notifying source warehouse on approval:", err)
+    }
   }
 
   async notifyRejected(params: InventoryTransferRejectedNotificationParams) {
@@ -419,6 +450,60 @@ export class InventoryTransferNotificationService {
         sourceBranchId: params.sourceBranchId || null,
         destinationBranchId: params.destinationBranchId || null,
         destinationWarehouseId: params.destinationWarehouseId || null,
+      },
+      recipients,
+      {
+        referenceType: "stock_transfer",
+        referenceId: params.transferId,
+        title: payload.title,
+        message: payload.message,
+        priority: "high",
+        severity: "info",
+        category: "inventory",
+        eventAction: payload.eventAction,
+      },
+      warningLabel
+    )
+  }
+
+  // v3.74.51 — إِشعار مَوازى لِمَسؤول مَخزَن المَصدَر بَعد اعتماد الإِدارة لطَلَب النَّقل،
+  // لِيَعرِف أَنَّ عَلَيه تَجهيز البَضاعَة وبَدء الإِرسال.
+  private async dispatchSourceWarehouseNotification(
+    params: {
+      companyId: string
+      transferId: string
+      transferNumber: string
+      sourceBranchId?: string | null
+      sourceWarehouseId?: string | null
+      destinationBranchId?: string | null
+      actorUserId: string
+    },
+    payload: {
+      title: string
+      message: string
+      eventAction: string
+    },
+    warningLabel: string
+  ) {
+    if (!params.sourceWarehouseId || !params.sourceBranchId) {
+      // لَو لَم يَكُن المَصدَر مُحَدَّداً، لا نُرسِل (نَتَجَنَّب البَث لكُل الشَّركَة)
+      return
+    }
+    const resolver = new NotificationRecipientResolverService(this.supabase)
+    const recipients = await resolver.resolveWarehouseRecipients(
+      params.companyId,
+      params.sourceBranchId,
+      params.sourceWarehouseId
+    )
+
+    await this.dispatch(
+      {
+        companyId: params.companyId,
+        actorUserId: params.actorUserId,
+        transferId: params.transferId,
+        sourceBranchId: params.sourceBranchId,
+        destinationBranchId: params.destinationBranchId || null,
+        destinationWarehouseId: null,
       },
       recipients,
       {
