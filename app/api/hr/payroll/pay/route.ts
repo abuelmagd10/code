@@ -98,6 +98,39 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "حساب المصروفات 6110 غير موجود", "Expense account 6110 missing")
     }
 
+    // v3.74.45 — Enterprise rule: prevent cash overdraft on payroll payment.
+    // Sum the net_salary across payslips for this run; validate against payment account.
+    try {
+      let payslipsQuery = await admin.from('payslips').select('net_salary').eq('company_id', companyId).eq('payroll_run_id', run.id)
+      if (useHr && payslipsQuery.error && ((payslipsQuery.error as any).code === 'PGRST205' || String(payslipsQuery.error.message || '').toUpperCase().includes('PGRST205'))) {
+        const clientHr = (admin as any).schema ? (admin as any).schema('hr') : admin
+        payslipsQuery = await clientHr.from('payslips').select('net_salary').eq('company_id', companyId).eq('payroll_run_id', run.id)
+      }
+      const totalNet = (payslipsQuery.data || []).reduce((s: number, r: any) => s + Number(r.net_salary || 0), 0)
+      if (totalNet > 0) {
+        const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+        try {
+          await assertCashOutflowAllowed(admin, {
+            accountId: paymentAccountId,
+            amount: totalNet,
+            companyId,
+            description: `Payroll ${year}-${String(month).padStart(2, '0')}`,
+          })
+        } catch (e: any) {
+          if (e instanceof CashOverdraftError) {
+            return apiError(HTTP_STATUS.BAD_REQUEST, e.message, e.message)
+          }
+          throw e
+        }
+      }
+    } catch (ovErr: any) {
+      if (ovErr?.name === "CashOverdraftError") {
+        return apiError(HTTP_STATUS.BAD_REQUEST, ovErr.message, ovErr.message)
+      }
+      // Non-overdraft errors: log and continue (don't block payroll on a balance-read glitch)
+      console.warn("[PAYROLL_PAY] overdraft check warning:", ovErr?.message)
+    }
+
     // ── استدعاء RPC الذري (يحتوي على Period Lock + Idempotency Guard داخلياً في Postgres)
     const { data: rpcResult, error: rpcErr } = await admin.rpc('post_payroll_atomic', {
       p_company_id: companyId,

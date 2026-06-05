@@ -4,6 +4,51 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.45] - 2026-06-04 — Critical: wire cash-overdraft guard into 6 silent-failure disbursement paths
+
+### Why
+A pre-launch audit asked the question "what happens in every disbursement flow if the user picks an account whose balance is insufficient?" The answer was uncomfortable: **7 of 10 flows posted the journal entry anyway**, leaving cash/bank accounts silently negative. Three flows were protected (`supplier payment`, `bank transfer`, the direct `customer refund` simple path), and they all used the same centralized validator — `lib/accounting/cash-balance-validator.ts` — introduced way back in v3.26.0. Six other reachable flows simply weren't wired into it.
+
+This release wires every silent-overdraft flow into that existing validator.
+
+### Six flows now protected
+
+1. **Bank voucher posting** (`app/api/banking/vouchers/[id]/workflow/route.ts`) — validator runs before `post_bank_voucher` RPC. Picks the correct credited account based on `voucher_type` (`account_id` on withdraw, `counter_id` on deposit, per the SQL). Validates against `base_amount` with `nativeAmount = amount` for FX accounts.
+
+2. **Expense approval** (`app/expenses/[id]/page.tsx` — `handleApprove`) — validator runs before `createExpenseJournalEntry`. Amount = `base_currency_amount ?? amount`, account = resolved `paymentAccountId`. The validator no-ops on non-cash accounts so AR/credit-paid expenses still pass through cleanly.
+
+3. **Payroll payment** (`app/api/hr/payroll/pay/route.ts`) — validator runs before `post_payroll_atomic` RPC. Amount = `SUM(payslips.net_salary)` for the run, account = body's `paymentAccountId`.
+
+4. **Shareholder drawing approval** (`app/actions/drawings.ts` — `approveDrawing`) — validator runs before `approve_shareholder_drawing` RPC. Amount = `base_amount ?? amount`, account = drawing's `payment_account_id`.
+
+5. **Customer refund execute** (`app/api/customer-refund-requests/[id]/execute/route.ts`) — validator runs before `execute_customer_refund` RPC. The simple `/api/customers/refunds` path was already protected; this is the workflow path that approvers use, which previously bypassed the guard.
+
+6a. **Commission advance pay** (`app/api/commissions/advance-payments/pay/route.ts`) — validator runs before `pay_commission_advance` RPC. The RPC already checks the employee's available commission balance; now it also checks the cash account.
+
+6b. **Instant commission payout** (`app/api/commissions/instant-payouts/pay/route.ts`) — validator runs before `pay_instant_commissions` RPC. Amount computed as `SUM(commission_ledger.commission_amount)` matching the RPC's internal selection.
+
+### Pattern
+Every fix uses the same try/catch wrapper and bubbles `CashOverdraftError.message` to the caller. Message is already bilingual Arabic/English, so the UI gets a clear "❌ لا يمكن السحب: رصيد الحساب 'X' غير كافٍ. الرصيد الحالى: N ج.م, المطلوب سحبه: M. Cannot withdraw — insufficient funds…".
+
+Each change is marked with a `// v3.74.45` comment for grepability.
+
+### Still pending (documented for later releases)
+- **DB-level safety net**: a constraint trigger on `journal_entries` that recomputes cash/bank balance on post and rejects if it would go below zero (unless an explicit `allow_overdraft` flag is set). This is the only true backstop because RPCs and future flows could still bypass the JS validator. Left for a dedicated release after this batch is verified in production.
+- **UI inline warnings**: the gold-standard pattern lives in `app/payments/page.tsx` (lines 2153-2170) — shows "available balance: X" + "⚠️ الرصيد غير كافٍ" inline before submit. The same pattern should be added to the bank-voucher, expense, drawing, payroll, commission, and customer-refund forms. Server-side enforcement (this release) is the critical fix; UI warnings are UX polish.
+- **Customer payment receipt destination account**: enforce the destination must be sub_type IN ('cash','bank') at the API level. Low risk — branch-scoped picker already does this in the UI.
+
+### Files
+- 6 disbursement files patched (listed above)
+- `lib/version.ts` — bump to 3.74.45
+- `CHANGELOG.md` — this entry
+
+### Verification
+- TypeScript: clean.
+- Behaviour: each flow now returns HTTP 400 (or fails the server action / shows a toast for client pages) with the validator's bilingual error message instead of silently posting and leaving the cash account negative.
+- The protected flows from v3.26.0 (supplier payment, bank transfer, customer refund simple) remain unchanged.
+
+---
+
 ## [3.74.44] - 2026-06-04 — Customer edit lock extended + clearer visual indicator
 
 ### Why

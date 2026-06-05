@@ -158,10 +158,31 @@ export async function approveDrawing(drawingId: string): Promise<{ success: bool
 
     const { data: row, error: fetchErr } = await supabase
         .from('shareholder_drawings')
-        .select('company_id, created_by')
+        .select('company_id, created_by, payment_account_id, amount, base_amount') // v3.74.45
         .eq('id', drawingId)
         .single()
     if (fetchErr || !row) return { success: false, message: "Drawing not found" }
+
+    // v3.74.45 — Enterprise rule: prevent cash overdraft on shareholder drawing approval.
+    // The drawing credits payment_account_id (cash going out to the shareholder).
+    if ((row as any).payment_account_id) {
+        try {
+            const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+            const baseAmt = Number((row as any).base_amount ?? (row as any).amount ?? 0)
+            await assertCashOutflowAllowed(supabase, {
+                accountId: (row as any).payment_account_id,
+                amount: baseAmt,
+                nativeAmount: Number((row as any).amount ?? 0),
+                companyId: (row as any).company_id,
+                description: `Shareholder drawing ${drawingId}`,
+            })
+        } catch (e: any) {
+            if (e?.name === "CashOverdraftError") {
+                return { success: false, message: e.message }
+            }
+            throw e
+        }
+    }
 
     const { data, error } = await supabase.rpc('approve_shareholder_drawing', {
         p_drawing_id: drawingId,

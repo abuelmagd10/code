@@ -36,7 +36,7 @@ export async function POST(
 
     const { data: requestRow, error: requestError } = await adminSupabase
       .from("bank_voucher_requests")
-      .select("id, company_id, branch_id, cost_center_id, voucher_type, amount, currency, created_by, status")
+      .select("id, company_id, branch_id, cost_center_id, voucher_type, amount, currency, account_id, counter_id, base_amount, created_by, status") // v3.74.45
       .eq("id", id)
       .eq("company_id", context.companyId)
       .maybeSingle()
@@ -119,6 +119,31 @@ export async function POST(
       }
 
       return NextResponse.json({ success: true, action: "REJECT" })
+    }
+
+    // v3.74.45 — Enterprise rule: prevent cash overdraft on bank voucher posting.
+    // For withdraw: account_id is credited (cash outflow). For deposit: counter_id
+    // is credited (the source paying for the deposit, usually cash). Validate the
+    // credited side; validator returns early for non-cash accounts.
+    const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+    const creditedAccountId = requestRow.voucher_type === "withdraw"
+      ? (requestRow as any).account_id
+      : (requestRow as any).counter_id
+    if (creditedAccountId) {
+      try {
+        await assertCashOutflowAllowed(adminSupabase, {
+          accountId: creditedAccountId,
+          amount: Number((requestRow as any).base_amount ?? requestRow.amount ?? 0),
+          nativeAmount: Number(requestRow.amount ?? 0),
+          companyId: context.companyId,
+          description: `Bank voucher ${requestRow.voucher_type} ${id}`,
+        })
+      } catch (e: any) {
+        if (e instanceof CashOverdraftError) {
+          return NextResponse.json({ success: false, error: e.message }, { status: 400 })
+        }
+        throw e
+      }
     }
 
     const { error } = await authSupabase.rpc("post_bank_voucher", {

@@ -65,6 +65,23 @@ export async function POST(req: NextRequest) {
             return apiError(HTTP_STATUS.BAD_REQUEST, "حساب الدفع غير صالح", "Invalid payment account")
         }
 
+        // v3.74.45 — Enterprise rule: prevent cash overdraft on commission advance payment.
+        // The advance credits paymentAccountId (cash going out to the employee).
+        try {
+            const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+            await assertCashOutflowAllowed(client, {
+                accountId: paymentAccountId,
+                amount: Number(amount),
+                companyId,
+                description: `Commission advance for employee ${employeeId}`,
+            })
+        } catch (e: any) {
+            if (e?.name === "CashOverdraftError") {
+                return apiError(HTTP_STATUS.BAD_REQUEST, e.message, e.message)
+            }
+            throw e
+        }
+
         // Call the RPC function to pay advance
         const { data, error: rpcError } = await client.rpc('pay_commission_advance', {
             p_company_id: companyId,

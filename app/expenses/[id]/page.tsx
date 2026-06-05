@@ -354,6 +354,28 @@ export default function ExpenseDetailPage() {
           }
 
           if (expenseAccountId && paymentAccountId) {
+            // v3.74.45 — Enterprise rule: prevent cash overdraft on expense approval.
+            // The validator is a no-op for non-cash payment accounts (e.g., AP/credit),
+            // so it's safe to call unconditionally. Only cash/bank accounts trigger overdraft.
+            try {
+              const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+              const baseAmt = Number((expense as any).base_currency_amount ?? expense.amount ?? 0)
+              await assertCashOutflowAllowed(supabase, {
+                accountId: paymentAccountId,
+                amount: baseAmt,
+                nativeAmount: Number(expense.amount ?? 0),
+                companyId,
+                description: `Expense ${expense.expense_number}`,
+              })
+            } catch (e: any) {
+              if (e?.name === "CashOverdraftError") {
+                toast({ title: "رصيد غير كافٍ", description: e.message, variant: "destructive" })
+                setPosting(false)
+                return
+              }
+              throw e
+            }
+
             const journalResult = await createExpenseJournalEntry(
               supabase,
               {

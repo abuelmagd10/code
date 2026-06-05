@@ -86,6 +86,42 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // v3.74.45 — Enterprise rule: prevent cash overdraft on instant commission payout.
+        // Sum scheduled commissions for selected employees in the period, then validate
+        // against the cash/bank payment account.
+        try {
+            const { data: ledgerRows } = await supabase
+                .from('commission_ledger')
+                .select('commission_amount')
+                .eq('company_id', companyId)
+                .in('employee_id', employeeIds)
+                .eq('payment_status', 'scheduled')
+                .gte('created_at', startDate)
+                .lte('created_at', `${endDate}T23:59:59`)
+            const totalAmount = (ledgerRows || []).reduce((s: number, r: any) => s + Number(r.commission_amount || 0), 0)
+            if (totalAmount > 0) {
+                const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+                try {
+                    await assertCashOutflowAllowed(supabase, {
+                        accountId: paymentAccountId,
+                        amount: totalAmount,
+                        companyId,
+                        description: `Instant commission payout for ${employeeIds.length} employee(s)`,
+                    })
+                } catch (e: any) {
+                    if (e instanceof CashOverdraftError) {
+                        return NextResponse.json({ error: e.message }, { status: 400 })
+                    }
+                    throw e
+                }
+            }
+        } catch (ovErr: any) {
+            if (ovErr?.name === "CashOverdraftError") {
+                return NextResponse.json({ error: ovErr.message }, { status: 400 })
+            }
+            console.warn("[INSTANT_PAYOUTS] overdraft check warning:", ovErr?.message)
+        }
+
         // Call RPC function to pay commissions
         const { data: paymentResults, error: payError } = await supabase
             .rpc('pay_instant_commissions', {

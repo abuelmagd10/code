@@ -41,6 +41,23 @@ export async function POST(
       return NextResponse.json({ error: "Request must be approved before execution" }, { status: 400 })
     }
 
+    // v3.74.45 — Enterprise rule: prevent cash overdraft on customer refund execution.
+    // The refund credits body.account_id (cash going out to the customer).
+    try {
+      const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
+      await assertCashOutflowAllowed(supabase, {
+        accountId: body.account_id,
+        amount: Number(refundReq.amount ?? 0),
+        companyId,
+        description: `Customer refund request ${id}`,
+      })
+    } catch (e: any) {
+      if (e?.name === "CashOverdraftError") {
+        return NextResponse.json({ error: e.message }, { status: 400 })
+      }
+      throw e
+    }
+
     // Execute via atomic GL RPC
     const { data: rpcData, error: rpcError } = await supabase.rpc("execute_customer_refund", {
       p_refund_request_id: id,
