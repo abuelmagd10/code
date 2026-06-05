@@ -4,6 +4,67 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.48] - 2026-06-05 — DB-level guard against negative per-branch inventory + correction transfer
+
+### Why
+
+Right after enabling V2 in v3.74.47, the VitaSlims audit re-ran and found per-branch holdings were skewed:
+
+- مدينة نصر: **-3 units** (negative)
+- الرئيسي: +5 units
+- Company total: +2 (correct in aggregate, wrong per branch)
+
+Tracing the history: the user transferred 5 units from "مدينة نصر" to "الرئيسي" on 2026-05-18, then sold 4 units **from "مدينة نصر"** afterwards. Branch مدينة نصر had a running balance of zero at that point, but the invoice flow accepted the sales anyway. There was no DB-level check guarding per-branch inventory.
+
+This is a real governance gap, not specific to VitaSlims — any tracked product could be over-sold from a branch that had been drained by a prior transfer.
+
+### Fix — BEFORE INSERT trigger on `inventory_transactions`
+
+New function `prevent_negative_branch_inventory()` wired to `trg_prevent_negative_branch_inventory`. Behavior:
+
+- **Skips** when `quantity_change >= 0` (incoming movements never reduce stock).
+- **Skips** when `branch_id IS NULL` (legacy/global rows).
+- **Skips** non-tracked products (`products.track_inventory = false`) — services, kits-without-stock, etc.
+- For everything else, takes a row-level lock on `products.id` (serializes concurrent oversell attempts on the same SKU), sums all live `inventory_transactions` for `(company, product, branch, warehouse)`, and raises `check_violation` if the new movement would push the per-branch balance below zero.
+- Error message is bilingual AR/EN with the product name, branch name, current balance, and the amount being deducted, plus a hint telling the user to transfer from another branch first.
+
+Three outgoing transaction types are now covered automatically: `sale_dispatch`, `transfer_out`, `production_issue`.
+
+### Data correction — VitaSlims rebalance
+
+Created a one-shot manual transfer `TRF-CORR-001` to repair the existing skew without touching the historical invoices:
+
+- 3 units `transfer_out` from الرئيسي / المخزن الرئيسي
+- 3 units `transfer_in` into مدينة نصر / مخزن مدينة نصر
+
+Result:
+- مدينة نصر: -3 + 3 = **0**
+- الرئيسي: +5 - 3 = **+2**
+- Total: still +2
+
+### Migrations
+
+1. `v3_74_47_fix_a_correction_transfer_vitaslims` — the rebalance.
+2. `v3_74_48_prevent_negative_branch_inventory` — initial trigger.
+3. `v3_74_48_1_fix_product_name_column` — fix products column reference (`name`, not `name_ar`).
+4. `v3_74_48_2_use_product_row_lock` — lock the product row instead of `FOR UPDATE` on the SUM aggregate (PG doesn't allow the latter).
+
+### Testing
+
+DB test injected an oversell attempt (-10 from مدينة نصر while balance = 0). The trigger raised `check_violation` with the localized AR/EN message, and no row was added. A normal -1 deduction from الرئيسي (where balance = 2) passes through cleanly.
+
+### Code changes
+
+- `lib/version.ts` — APP_VERSION bumped to 3.74.48.
+
+(No application code changes — the entire fix is in the DB. The trigger sits at the lowest possible layer, so it catches all current and future entry points: invoice posting, warehouse approval V2 dispatch, manual transfers, production issues.)
+
+### Knock-on for the legacy 4 sales
+
+Those four `sale_dispatch` rows that originally drove مدينة نصر negative are still in the table (with the correction transfer making the branch balance zero now). They remain without COGS — backfilling them needs a separate small migration that picks a FIFO cost from the surviving lot and posts the journal entries. This is intentionally not in this release; v3.74.47 already verified that all **future** sales will record COGS correctly via V2.
+
+---
+
 ## [3.74.47] - 2026-06-05 — Critical: enable warehouse approval V2 (fixes silently-skipped COGS + FIFO consumption)
 
 ### Root cause
