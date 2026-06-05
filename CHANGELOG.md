@@ -4,6 +4,59 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.47] - 2026-06-05 — Critical: enable warehouse approval V2 (fixes silently-skipped COGS + FIFO consumption)
+
+### Root cause
+
+A pre-launch audit of VitaSlims in company تست found that **none of the 4 sales of a tracked product had ever posted COGS**, and the FIFO lot for the only live purchase had never been consumed. The `inventory` GL account stayed at the purchase total, the `cost of goods sold` account never moved, and gross profit was being overstated by the full sale value.
+
+Tracing the path: every sales invoice with a `shipping_provider_id` defers inventory deduction and COGS to the warehouse-approval step (this part is correct — the goods haven't physically left yet). At approval time, `lib/accounting-transaction-service.ts::approveSalesDelivery` checks the `enterpriseFinanceFlags.warehouseApprovalV2` flag and picks one of two RPCs:
+
+- **V1** (`approve_sales_delivery`) — only inserts `inventory_transactions` (sale_dispatch) + `third_party_inventory`. Does **not** post COGS journal, does **not** create `fifo_lot_consumptions`, does **not** decrement the inventory account.
+- **V2** (`approve_sales_delivery_v2`) — thin wrapper that delegates to `post_accounting_event_v2`, passing pre-prepared `inventory_transactions`, `cogs_transactions`, `fifo_consumptions`, and `journal_entries` arrays. The TypeScript caller correctly prepares all four arrays before invoking the RPC.
+
+The flag was defaulting to `false` since v3.27 (the partial V2 rollout window), so every production warehouse approval has been routing to the broken V1 path. The bug is system-wide — it would affect any tracked product that gets sold; VitaSlims is just the first one the testing surfaced.
+
+### Fix
+
+- **Flipped `warehouseApprovalV2` default to `true`** in `lib/enterprise-finance-flags.ts`. The env var override still works for emergency rollback, but the bare default now points to the correct (V2) path.
+- **V2 was verified safe before flipping**: column audit on `post_accounting_event_v2` returned zero bad column references; `prepareCOGSJournalOnDelivery` is present in `lib/accrual-accounting-engine.ts`; the inventory (sub_type='inventory') and cogs (sub_type='cogs') accounts both exist in the company; the TypeScript caller path was traced end-to-end at lines 560-660 of accounting-transaction-service.ts.
+
+### Bonus: DB trigger bug discovered during cleanup
+
+While cleaning up the orphan rows that surfaced this issue, the cleanup `DELETE` mysteriously didn't delete anything despite reporting success. Investigation found `prevent_linked_inventory_modification()` — a BEFORE-DELETE/UPDATE trigger on `inventory_transactions` — was returning `NEW` from a DELETE trigger. In PostgreSQL, `NEW` is `NULL` during DELETE, and returning `NULL` from a BEFORE row trigger **cancels the operation**. The trigger was therefore blocking **every** delete on `inventory_transactions`, even ones that had no posted-journal linkage. Fixed by returning `OLD` on DELETE and `NEW` on UPDATE (canonical pattern). Side benefit: the original RAISE EXCEPTION branch now actually fires only when intended.
+
+### Data cleanup (VitaSlims orphans, company تست only)
+
+- Removed 23 orphan `inventory_transactions` whose referenced purchase bill had been hard-deleted in a prior test cleanup.
+- Removed 25 orphan `fifo_cost_lots` for the same deleted bills (these were removed in the first migration pass before the trigger bug was found).
+- Recomputed `products.quantity_on_hand` for VitaSlims from the surviving movements: now sits at 2 (5 received + 1 returned-in − 4 dispatched).
+- The 4 existing sales remain without COGS — backfilling them is left as a separate task because it requires picking historical FIFO cost; the new V2 path will handle all future sales correctly.
+
+### Migrations
+
+1. `v3_74_47a_cleanup_vitaslims_orphan_records` — initial DELETE on inventory_transactions + fifo_cost_lots (only FIFO half succeeded due to the trigger bug).
+2. `v3_74_47b_fix_prevent_linked_inventory_modification_return` — trigger function fix (RETURN OLD on DELETE).
+3. `v3_74_47c_cleanup_vitaslims_orphan_inventory_redo` — re-ran the inventory_transactions DELETE; succeeded this time.
+
+### Files changed
+
+- `lib/enterprise-finance-flags.ts` — default for `warehouseApprovalV2` flipped to `true` with explanation comment.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.47.
+
+### Testing checklist (post-deploy)
+
+1. Create a new VitaSlims sale on company تست (any branch). Confirm it posts the AR + revenue journal as before.
+2. Approve from warehouse (dispatch-approvals or sales-return-requests UI).
+3. Verify in the DB:
+   - `inventory_transactions` row created with `transaction_type='sale_dispatch'`
+   - `cogs_transactions` row created (this is the V2 addition)
+   - `fifo_lot_consumptions` row(s) created consuming from the live lot
+   - A journal entry with DR `cost of goods sold` / CR `inventory`
+4. Re-pull the product report — inventory account balance should drop, COGS should rise, gross profit should be correct.
+
+---
+
 ## [3.74.45] - 2026-06-04 — Critical: wire cash-overdraft guard into 6 silent-failure disbursement paths
 
 ### Why

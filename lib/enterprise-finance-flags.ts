@@ -6,7 +6,11 @@ function readFlag(name: string, defaultValue = false): boolean {
 
 export const enterpriseFinanceFlags = {
   invoicePostV2: readFlag("ERP_PHASE1_V2_INVOICE_POST", false),
-  warehouseApprovalV2: readFlag("ERP_PHASE1_V2_WAREHOUSE_APPROVAL", false),
+  // v3.74.47: default flipped to true so warehouse approvals route to
+  // approve_sales_delivery_v2 (which posts COGS + consumes FIFO) instead
+  // of the V1 RPC that only wrote inventory_transactions. The V1 path
+  // left COGS unposted and inventory account untouched.
+  warehouseApprovalV2: readFlag("ERP_PHASE1_V2_WAREHOUSE_APPROVAL", true),
   paymentV2: readFlag("ERP_PHASE1_V2_PAYMENT", false),
   returnsV2: readFlag("ERP_PHASE1_V2_RETURNS", false),
   observabilityEvents: readFlag("ERP_PHASE1_FINANCIAL_EVENTS", false),
