@@ -4,6 +4,24 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.49] - 2026-06-05 — Show "Created By" column on the inventory transfers list
+
+### Why
+The `/inventory-transfers` list showed transfer number, source/destination, items, branch, status, and date — but not who opened the request. For approvers reviewing a queue of pending transfers, that's an obvious accountability gap (and the user asked for it after spotting the missing column).
+
+### What changed
+- Added a new "مُنشئ الطلب" / "Created By" column to the table in `app/inventory-transfers/page.tsx`.
+- `loadData()` now pulls the `created_by` UUID from each transfer row, collects the distinct set, and fetches the matching `user_profiles.display_name`/`username` in one extra round-trip. The result is merged into each Transfer object as `created_by_name` and rendered as a purple chip (`—` if unresolved).
+- Updated the loading skeleton's `cols` count to match the new total (11 columns).
+
+The existing per-role row filter on the page (store_manager / manager / accountant scoping) already constrains which transfers a user sees, so this column inherits the same governance — no extra checks needed.
+
+### Files changed
+- `app/inventory-transfers/page.tsx` — Transfer interface extended, `loadData` fetches creator names, new `<th>` + `<td>`, skeleton cols bumped to 11.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.49.
+
+---
+
 ## [3.74.48] - 2026-06-05 — DB-level guard against negative per-branch inventory + correction transfer
 
 ### Why

@@ -31,6 +31,8 @@ interface Transfer {
   destination_warehouses?: { id: string; name: string }
   source_branches?: { id: string; name: string }
   destination_branches?: { id: string; name: string }
+  created_by?: string                       // v3.74.49: user id raw
+  created_by_name?: string                  // v3.74.49: resolved display name
   created_by_user?: { email: string }
   received_by_user?: { email: string }
   items_count?: number
@@ -205,11 +207,29 @@ export default function InventoryTransfersPage() {
           }
         })
 
+        // v3.74.49: جَلب أَسماء مُنشئى الطَّلَبات من user_profiles
+        const creatorIds = Array.from(new Set(
+          (transfersData || [])
+            .map((t: any) => t.created_by)
+            .filter((id: any): id is string => typeof id === 'string' && id.length > 0)
+        ))
+        const creatorNamesMap: Record<string, string> = {}
+        if (creatorIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('user_id, display_name, username')
+            .in('user_id', creatorIds)
+          ;(profiles || []).forEach((p: any) => {
+            creatorNamesMap[p.user_id] = p.display_name || p.username || ''
+          })
+        }
+
         const transfersWithData = (transfersData || []).map((t: any) => ({
           ...t,
           items_count: countsMap[t.id] || 0,
           total_quantity: quantitiesMap[t.id] || 0,
-          product_names: (productsMap[t.id] || []).join(', ')
+          product_names: (productsMap[t.id] || []).join(', '),
+          created_by_name: t.created_by ? (creatorNamesMap[t.created_by] || '—') : '—',
         }))
         setTransfers(transfersWithData)
       } else {
@@ -436,7 +456,7 @@ export default function InventoryTransfersPage() {
             </CardHeader>
             <CardContent className="p-0">
               {isLoading ? (
-                <TableSkeleton cols={8} rows={5} className="m-4" />
+                <TableSkeleton cols={11} rows={5} className="m-4" />
               ) : filteredTransfers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                   <Package className="w-12 h-12 mb-3 text-gray-300" />
@@ -462,6 +482,7 @@ export default function InventoryTransfersPage() {
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Quantity' : 'الكمية المنقولة'}</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Products' : 'أسماء الأصناف'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
+                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Created By' : 'مُنشئ الطلب'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
@@ -507,6 +528,15 @@ export default function InventoryTransfersPage() {
                               </span>
                             ) : (
                               <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {transfer.created_by_name && transfer.created_by_name !== '—' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                                {transfer.created_by_name}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">
