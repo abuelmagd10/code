@@ -155,10 +155,11 @@ export default function InventoryTransfersPage() {
 
       // 🔒 فلترة حسب الدور والفرع
       if (role === "store_manager" && userWarehouseId && userBranchId) {
-        // ❌ مسؤول المخزن: يرى فقط الطلبات الموجهة لمخزنه في فرعه
-        transfersQuery = transfersQuery
-          .eq("destination_warehouse_id", userWarehouseId)
-          .eq("destination_branch_id", userBranchId)
+        // v3.74.52 — مَسؤول المَخزَن: يَرى الطَّلَبات التى يَكون مَخزَنُه فيها مَصدَراً أَو وِجهَة
+        // (مَصدَر لِبَدء الإِرسال بَعد v3.74.51، وِجهَة لِلاستِلام)
+        transfersQuery = transfersQuery.or(
+          `and(destination_warehouse_id.eq.${userWarehouseId},destination_branch_id.eq.${userBranchId}),and(source_warehouse_id.eq.${userWarehouseId},source_branch_id.eq.${userBranchId})`
+        )
       } else if ((role === "manager" || role === "accountant") && userBranchId) {
         // ❌ المدير/المحاسب: يرى فقط طلبات النقل الخاصة بفرعه (المصدر أو الوجهة)
         transfersQuery = transfersQuery.or(`source_branch_id.eq.${userBranchId},destination_branch_id.eq.${userBranchId}`)

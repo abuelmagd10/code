@@ -143,13 +143,19 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       // 🔒 التحقق من الصلاحيات حسب الفرع والمخزن
       if (role === "store_manager" && warehouseId && branchId) {
-        // ❌ مسؤول المخزن: يرى فقط الطلبات الموجهة لمخزنه في فرعه
-        if (transferData.destination_warehouse_id !== warehouseId || transferData.destination_branch_id !== branchId) {
+        // v3.74.52 — مَسؤول المَخزَن يَرى الطَّلَبات الَّتى يَكون مَخزَنُه فيها مَصدَراً أَو وِجهَة:
+        //   - وِجهَة: لِيَستَطيع استلام الشَّحنَة
+        //   - مَصدَر: لِيَستَطيع بَدء الإِرسال بَعد اعتماد الإِدارة (v3.74.51)
+        const isDestMatch = transferData.destination_warehouse_id === warehouseId
+          && transferData.destination_branch_id === branchId
+        const isSourceMatch = transferData.source_warehouse_id === warehouseId
+          && transferData.source_branch_id === branchId
+        if (!isDestMatch && !isSourceMatch) {
           toast({
             title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
             description: appLang === 'en'
-              ? 'You can only view transfers to your warehouse in your branch'
-              : 'يمكنك فقط رؤية الطلبات الموجهة لمخزنك في فرعك',
+              ? 'You can only view transfers where your warehouse is the source or destination'
+              : 'يمكنك فقط رؤية الطلبات التى يكون مخزنك فيها مصدراً أو وجهة',
             variant: 'destructive'
           })
           router.push("/inventory-transfers")

@@ -4,6 +4,31 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.52] - 2026-06-05 — hotfix: source warehouse manager can actually open the transfer they were notified about
+
+### Why
+After v3.74.51, store_managers in the source warehouse correctly got a notification ("Transfer Approved — Dispatch Required") and the transfer showed up on their `/inventory/dispatch-approvals` queue. But when they clicked through to `/inventory-transfers/[id]`, the page rejected them with "You can only view transfers to your warehouse in your branch" and redirected back to the list. The detail page's role check still only allowed store_managers whose warehouse matched the **destination**, never the source — the exact gap v3.74.51 was supposed to close.
+
+Same issue, lighter form, on the `/inventory-transfers` list: the row filter only matched on `destination_warehouse_id`, so an approved transfer that just left the source manager's warehouse wouldn't appear in their list (even though the dispatch-approvals page showed it).
+
+### Fix
+- `app/inventory-transfers/[id]/page.tsx` — replaced the destination-only check with an OR: a store_manager is allowed in if their warehouse is either the source OR the destination. Both roles are legitimate: destination to receive, source to start dispatch (v3.74.51).
+- `app/inventory-transfers/page.tsx` — the row filter is now an OR'd PostgREST `and(...)` clause that matches transfers where the user's warehouse+branch is either the source or the destination pair. Same governance as the detail page.
+- The error message text was also rewritten to reflect the new rule.
+
+### Files changed
+- `app/inventory-transfers/[id]/page.tsx`
+- `app/inventory-transfers/page.tsx`
+- `lib/version.ts` — APP_VERSION bumped to 3.74.52.
+
+### Testing
+1. As a store_manager in the source warehouse, click the v3.74.51 "Transfer Approved — Dispatch Required" notification → the detail page now opens.
+2. From `/inventory-transfers`, the same transfer is now visible in the list.
+3. Pressing "Start Transfer" still works (the v3.74.51 button gate is unchanged).
+4. Destination store_manager continues to see transfers heading to their warehouse — no regression.
+
+---
+
 ## [3.74.51] - 2026-06-05 — After-approval handoff to source warehouse manager (notification + dispatch-approvals + Start button)
 
 ### Why
