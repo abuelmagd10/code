@@ -4,6 +4,46 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.53] - 2026-06-05 — Fallback governance: management can dispatch/receive only when the warehouse has no store_manager
+
+### Why
+After v3.74.51 closed the dispatch handoff to the source warehouse manager, the **Start Transfer** button still showed for every owner/admin/manager/GM — which meant the moment management approved the request, they could keep clicking and start the dispatch themselves, racing past the store_manager who had just been notified to do exactly that job.
+
+Same shape on the receiving end: **Approve Receipt** was gated to the destination store_manager only, but if a warehouse had no store_manager assigned at all (which is realistic for small operations), goods that landed there could never be marked received. There was no fallback.
+
+The user requested the cleanest enterprise pattern: management acts on dispatch/receipt **only when there's no store_manager to do it**. That preserves separation of duties for staffed warehouses, and lets the org keep functioning when a warehouse is unstaffed.
+
+### Fix
+
+In `app/inventory-transfers/[id]/page.tsx`:
+
+- New state pair `sourceWarehouseHasManager` / `destinationWarehouseHasManager` (`boolean | null`). `null` means "still loading" — buttons stay hidden for safety.
+- New effect that runs when `transfer` and `companyId` are ready: it counts `company_members` rows where `role='store_manager'` AND `warehouse_id` AND `branch_id` match each side of the transfer, then sets each flag.
+- `canStartDispatch` is now `(isSourceWarehouseManager || canManageStartFallback) && status === 'pending'`, where `canManageStartFallback = canManage && sourceWarehouseHasManager === false`. The OR no longer gives management automatic access.
+- `canReceive` is now `isDestinationWarehouseManager || canManageReceiveFallback`. Same fallback shape on the destination side. (Previously the destination side had no management path at all — staffless destination warehouses were unreceivable. Fixed by the fallback.)
+- If the lookup fails we fall back to `true` on both flags (safer default — hides the management button).
+
+### What this means in practice
+
+| Scenario | Who sees "Start Dispatch" | Who sees "Approve Receipt" |
+|---|---|---|
+| Source has store_manager, destination has store_manager (normal) | Source store_manager only | Destination store_manager only |
+| Source has NO store_manager | Source store_manager (none exists) + management | Destination store_manager only |
+| Destination has NO store_manager | Source store_manager only | Destination store_manager (none exists) + management |
+| Neither has a store_manager | Management | Management |
+
+### Files changed
+- `app/inventory-transfers/[id]/page.tsx` — new state, new effect, rewritten `canStartDispatch` and `canReceive`.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.53.
+
+### Testing
+1. With a store_manager assigned to the source warehouse, approve a transfer as owner → the **Start Transfer** button no longer appears for the owner; only the source store_manager sees it. ✓
+2. Re-test after removing the store_manager assignment from the source warehouse — the **Start Transfer** button reappears for the owner. ✓
+3. After the source store_manager starts dispatch (in_transit), the destination store_manager sees **Approve Receipt**; the owner doesn't (if a destination store_manager exists). ✓
+4. Remove the store_manager from the destination warehouse → the owner sees **Approve Receipt** as the fallback. ✓
+
+---
+
 ## [3.74.52] - 2026-06-05 — hotfix: source warehouse manager can actually open the transfer they were notified about
 
 ### Why

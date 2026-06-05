@@ -69,6 +69,10 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const [companyId, setCompanyId] = useState<string>("")
   const [userWarehouseId, setUserWarehouseId] = useState<string | null>(null)
   const [userBranchId, setUserBranchId] = useState<string | null>(null)
+  // v3.74.53 — fallback governance: الإِدارة تَتَدَخَّل فَقَط إِذا كان المَخزَن المَعنى
+  // غَير مُعَيَّن لَه مَسؤول مَخزَن (store_manager). null = لا يَزال يُحَمَّل.
+  const [sourceWarehouseHasManager, setSourceWarehouseHasManager] = useState<boolean | null>(null)
+  const [destinationWarehouseHasManager, setDestinationWarehouseHasManager] = useState<boolean | null>(null)
 
   // للاستلام
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({})
@@ -202,6 +206,57 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  // v3.74.53 — فَحص هَل المَخزَن المَصدَر / الوِجهَة لَه مَسؤول مَخزَن مُعَيَّن.
+  // إِذا لا، يُسمَح للأَدوار العُليا بِبَدء/استلام النَّقل كحَلّ احتياطى.
+  useEffect(() => {
+    if (!transfer || !companyId) return
+    const checkWarehouseManagers = async () => {
+      try {
+        const checks: Promise<void>[] = []
+
+        if (transfer.source_warehouse_id) {
+          const srcBr = (transfer as any).source_branch_id
+          checks.push(
+            supabase
+              .from("company_members")
+              .select("user_id", { count: "exact", head: true })
+              .eq("company_id", companyId)
+              .eq("role", "store_manager")
+              .eq("warehouse_id", transfer.source_warehouse_id)
+              .eq("branch_id", srcBr)
+              .then(({ count }: { count: number | null }) => {
+                setSourceWarehouseHasManager((count || 0) > 0)
+              })
+          )
+        }
+
+        if (transfer.destination_warehouse_id) {
+          const dstBr = (transfer as any).destination_branch_id
+          checks.push(
+            supabase
+              .from("company_members")
+              .select("user_id", { count: "exact", head: true })
+              .eq("company_id", companyId)
+              .eq("role", "store_manager")
+              .eq("warehouse_id", transfer.destination_warehouse_id)
+              .eq("branch_id", dstBr)
+              .then(({ count }: { count: number | null }) => {
+                setDestinationWarehouseHasManager((count || 0) > 0)
+              })
+          )
+        }
+
+        await Promise.all(checks)
+      } catch (err) {
+        console.error("Error checking warehouse store_manager assignment:", err)
+        // فى حالَة خَطَأ، نَفتَرِض أَنَّ المَخزَن لَه مَسؤول (آمَن أَكثَر)
+        setSourceWarehouseHasManager(true)
+        setDestinationWarehouseHasManager(true)
+      }
+    }
+    checkWarehouseManagers()
+  }, [transfer?.source_warehouse_id, transfer?.destination_warehouse_id, companyId, supabase])
+
   const dispatchTransferNotificationEvent = useCallback(
     async (
       action:
@@ -272,7 +327,11 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
     transfer?.source_warehouse_id === userWarehouseId &&
     userWarehouseId !== null &&
     transfer?.source_branch_id === userBranchId
-  const canStartDispatch = (canManage || isSourceWarehouseManager) && transfer?.status === 'pending'
+  // v3.74.53 — حَوكَمَة fallback: الإِدارة (canManage) لا تَستَطيع بَدء النَّقل
+  // إِلَّا إِذا كان مَخزَن المَصدَر بِدون مَسؤول مَخزَن مُعَيَّن.
+  // sourceWarehouseHasManager = null أَثناء التَّحميل (نَمنَع الزِر لِلسَّلامَة)
+  const canManageStartFallback = canManage && sourceWarehouseHasManager === false
+  const canStartDispatch = (isSourceWarehouseManager || canManageStartFallback) && transfer?.status === 'pending'
 
   // 🔒 صلاحية الاعتماد/الرفض: Owner/Admin/General Manager فقط
   // ✅ فقط للطلبات في حالة pending_approval
@@ -284,16 +343,18 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
   const canAccountantEdit = isAccountant && isCreator && ['draft', 'rejected'].includes(transfer?.status || '')
   const canAccountantResubmit = isAccountant && isCreator && ['draft', 'rejected'].includes(transfer?.status || '')
 
-  // 🔒 صلاحية الاستلام: فقط مسؤول المخزن الوجهة
-  // ❌ Owner/Admin/Manager لا يمكنهم الاستلام (فقط الإرسال)
-  // ✅ فقط مسؤول المخزن الوجهة يمكنه الاستلام
+  // 🔒 صلاحية الاستلام
+  // ✅ مسؤول المخزن الوجهة دائماً
+  // v3.74.53 — الأَدوار العُليا يَستَطيعون الاستلام فَقَط إِذا كان مَخزَن الوِجهَة
+  //          بِدون مَسؤول مَخزَن (حَلّ احتياطى)
   const isDestinationWarehouseManager =
     userRole === 'store_manager' &&
     transfer?.destination_warehouse_id === userWarehouseId &&
     userWarehouseId !== null &&
     transfer?.source_warehouse_id !== userWarehouseId && // ❌ ليس المخزن المصدر
     transfer?.destination_branch_id === userBranchId // ✅ نفس الفرع
-  const canReceive = isDestinationWarehouseManager
+  const canManageReceiveFallback = canManage && destinationWarehouseHasManager === false
+  const canReceive = isDestinationWarehouseManager || canManageReceiveFallback
 
   // 🔒 صلاحية تعديل الكمية المستلمة: Owner/Admin فقط
   // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
