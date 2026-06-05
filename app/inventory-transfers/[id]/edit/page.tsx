@@ -73,6 +73,12 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
   const [notes, setNotes] = useState<string>("")
   const [items, setItems] = useState<TransferItem[]>([])
 
+  // v3.74.50: نَفس حَوكَمَة /new — تَقييد الوِجهَة بفَرع المُستَخدِم لِلأَدوار العادية
+  const [userRole, setUserRole] = useState<string>("")
+  const [userBranchId, setUserBranchId] = useState<string | null>(null)
+  const [userWarehouseId, setUserWarehouseId] = useState<string | null>(null)
+  const [canChooseDestination, setCanChooseDestination] = useState<boolean>(true)
+
   useEffect(() => {
     setHydrated(true)
     const handler = () => {
@@ -90,6 +96,20 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
     if (!hydrated) return
     loadData()
   }, [hydrated, resolvedParams.id])
+
+  // v3.74.50: لِلأَدوار العادية، أَجبِر الوِجهَة على مَخزَن فَرع المُستَخدِم — نَفس مَنطِق /new
+  useEffect(() => {
+    if (!canChooseDestination && userBranchId && warehouses.length > 0) {
+      const branchWarehouses = warehouses.filter((w: WarehouseData) => w.branch_id === userBranchId)
+      const otherThanSource = branchWarehouses.filter((w: WarehouseData) => w.id !== sourceWarehouseId)
+      const preferred = userWarehouseId && otherThanSource.some((w: WarehouseData) => w.id === userWarehouseId)
+        ? otherThanSource.find((w: WarehouseData) => w.id === userWarehouseId)
+        : otherThanSource[0]
+      if (preferred && preferred.id !== destinationWarehouseId) {
+        setDestinationWarehouseId(preferred.id)
+      }
+    }
+  }, [canChooseDestination, userBranchId, userWarehouseId, warehouses, sourceWarehouseId])
 
   const loadData = async () => {
     try {
@@ -109,13 +129,18 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       // التحقق من الصلاحيات
       const { data: member } = await supabase
         .from("company_members")
-        .select("role")
+        .select("role, branch_id, warehouse_id")
         .eq("company_id", cid)
         .eq("user_id", user.id)
         .single()
 
       const role = String(member?.role || "staff").trim().toLowerCase()
-      
+      // v3.74.50: تَخزين الدَّور والفَرع لِفَرض حَوكَمَة الوِجهَة لاحِقاً
+      setUserRole(role)
+      setUserBranchId(member?.branch_id || null)
+      setUserWarehouseId(member?.warehouse_id || null)
+      setCanChooseDestination(["owner", "admin", "manager", "general_manager", "gm"].includes(role))
+
       // فقط المحاسب المنشئ يمكنه التعديل
       if (role !== 'accountant') {
         toast({
@@ -307,6 +332,20 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
     if (sourceWarehouseId === destinationWarehouseId) {
       toast({ title: appLang === 'en' ? 'Source and destination must be different' : 'المخزن المصدر والوجهة يجب أن يكونا مختلفين', variant: 'destructive' })
       return false
+    }
+    // v3.74.50: حاجِز ثانٍ — لِلأَدوار العادية، الوِجهَة لازِم تَكون فى فَرع المُستَخدِم
+    if (!canChooseDestination && userBranchId) {
+      const destWh = warehouses.find(w => w.id === destinationWarehouseId)
+      if (destWh && destWh.branch_id !== userBranchId) {
+        toast({
+          title: appLang === 'en' ? 'Destination outside your branch' : 'الوجهة خارج فَرعك',
+          description: appLang === 'en'
+            ? 'You can only transfer to a warehouse in your own branch.'
+            : 'لا يُمكِنك النَّقل إِلَّا إِلى مَخزَن داخِل فَرعك.',
+          variant: 'destructive'
+        })
+        return false
+      }
     }
     if (items.length === 0) {
       toast({ title: appLang === 'en' ? 'Add at least one product' : 'أضف منتج واحد على الأقل', variant: 'destructive' })
@@ -564,8 +603,13 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
               </div>
               <div className="space-y-2">
                 <Label>{appLang === 'en' ? 'Destination Warehouse' : 'المخزن الوجهة'}</Label>
-                <Select value={destinationWarehouseId} onValueChange={setDestinationWarehouseId}>
-                  <SelectTrigger>
+                {/* v3.74.50: الأَدوار العادية لا تُغَيِّر الوِجهَة — تَأتى من فَرعهم */}
+                <Select
+                  value={destinationWarehouseId}
+                  onValueChange={canChooseDestination ? setDestinationWarehouseId : undefined}
+                  disabled={!canChooseDestination}
+                >
+                  <SelectTrigger className={!canChooseDestination ? 'bg-gray-100 dark:bg-slate-800 cursor-not-allowed' : ''}>
                     <SelectValue placeholder={appLang === 'en' ? 'Select destination' : 'اختر الوجهة'} />
                   </SelectTrigger>
                   <SelectContent>
@@ -576,6 +620,13 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
                     ))}
                   </SelectContent>
                 </Select>
+                {!canChooseDestination && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {appLang === 'en'
+                      ? 'Destination is set automatically to your branch warehouse and cannot be changed.'
+                      : 'الوجهة تُحدد تلقائياً لمخزن فرعك ولا يمكن تغييرها.'}
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>

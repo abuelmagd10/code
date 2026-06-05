@@ -4,6 +4,34 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.50] - 2026-06-05 — Inventory transfer edit: lock destination warehouse for regular roles
+
+### Why
+On `/inventory-transfers/new` the destination warehouse is correctly locked to the user's branch warehouse for non-managerial roles — that's the standard Pull-model governance the app already enforces. But on `/inventory-transfers/[id]/edit` (the page used to fix a rejected request) the destination dropdown was fully editable, which let a regular role redirect goods to any warehouse in the company.
+
+Practically the only role that can reach this page is `accountant` (the access check at the top of the page restricts it), and accountants are explicitly excluded from `canChooseDestination` in `/new`. So the bug let an accountant resubmit a rejected transfer with a destination outside their own branch — a quiet way to bypass the new-page rule.
+
+### Fix — mirror the /new governance in /edit
+
+In `app/inventory-transfers/[id]/edit/page.tsx`:
+
+- Now read `role`, `branch_id`, and `warehouse_id` from `company_members` and store them as state (`userRole`, `userBranchId`, `userWarehouseId`).
+- New `canChooseDestination` flag uses the same allowlist as `/new`: `owner`, `admin`, `manager`, `general_manager`, `gm`. Accountants and everyone else fall outside.
+- A new `useEffect` (copied from `/new`) forces `destinationWarehouseId` to the user's branch warehouse — preferring `userWarehouseId` if it sits in the branch, otherwise the first non-source warehouse in the branch.
+- The destination `<Select>` is now `disabled={!canChooseDestination}` with `onValueChange` short-circuited to `undefined` when locked. A small hint line appears under it ("Destination is set automatically to your branch warehouse and cannot be changed").
+- `validateForm` gained a second-layer guard: even if someone bypasses the UI (e.g. by injecting a value via devtools), the save handler refuses to write a `destination_warehouse_id` whose `branch_id` doesn't match the user's branch, with a clear AR/EN toast.
+
+### What stays the same
+
+- `/new` is untouched — it already had this logic; this commit only brings `/edit` up to the same standard.
+- The DB-side governance from v3.74.48 (`prevent_negative_branch_inventory`) still fires at the row level; this is the UI/UX-side companion fix.
+
+### Files changed
+- `app/inventory-transfers/[id]/edit/page.tsx` — new state, lock logic, Select disabling, validateForm guard.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.50.
+
+---
+
 ## [3.74.49] - 2026-06-05 — Show "Created By" column on the inventory transfers list
 
 ### Why
