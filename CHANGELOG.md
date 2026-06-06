@@ -4,6 +4,34 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.64] - 2026-06-06 — Hotfix: restore truncated users page + reapply v3.74.63 cleanly
+
+### What broke
+v3.74.63 was pushed with `app/settings/users/page.tsx` truncated from 3,843 lines to 3,795 — about 50 closing JSX tags were chopped off. The file ended mid-token (`cons` instead of `const`), and Turbopack rejected the build with `Expected '}', got '<eof>'`. The Edit tool likely lost the tail when applying the large multi-select UI block; the corruption made it through commit/push because tsc had cascade errors elsewhere and didn't flag the truncation as new.
+
+### The fix
+1. Restored `app/settings/users/page.tsx` from commit `6f287c57` (v3.74.62 baseline — 3,843 lines, ends with closing `}`).
+2. Re-applied the v3.74.63 wiring via a small Python script doing surgical anchor-based replacements (no JSX UI block this round — that's deferred):
+   - **State block** for `sourceCustomers / sourceCustomersLoading / selectedCustomerIds / customerSearchQuery`.
+   - **Fetch effect** that loads the source employee's owned customers when the operator is in transfer/customers mode (honors the branch filter).
+   - **Submit body** now sends `customer_ids` when the operator hand-picked some.
+   - **Reset form** clears the new state.
+3. The server-side intersection in `app/api/permissions/transfer/route.ts` (added in v3.74.63 and **unaffected by the truncation**) still narrows the snapshot to the operator's picks.
+
+### What's deferred to v3.74.65
+The customer multi-select UI panel (search box + checkbox list + "select shown") is not in this hotfix. Operators currently have the wiring in place but no UI control to drive it — they'll keep getting the legacy "move ALL" behaviour until the panel ships. Splitting this off keeps the hotfix small enough to land safely.
+
+### Verification
+- TypeScript: `tsc --noEmit` reports **0 errors** in `app/settings/users/page.tsx` (down from the 11 cascade errors HEAD had after truncation).
+- File ends with closing `}` and balanced braces.
+- Final line count: 3,897 (3,843 baseline + 54 lines added).
+
+### Files changed
+- `app/settings/users/page.tsx` — restored + re-wired.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.64.
+
+---
+
 ## [3.74.63] - 2026-06-06 — Cherry-pick customers when transferring ownership
 
 ### Why

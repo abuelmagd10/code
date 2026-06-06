@@ -171,11 +171,8 @@ export default function UsersSettingsPage() {
   } | null>(null)
   const [sourceCountsLoading, setSourceCountsLoading] = useState(false)
 
-  // v3.74.63 — multi-select for transferring specific customer records owned
-  // by the source employee. When the user picks resource_type="customers"
-  // in transfer mode, we load the source's owned customers and let the
-  // operator cherry-pick which ones to move. Empty selection = move ALL
-  // (legacy behaviour) to preserve backward compatibility.
+  // v3.74.63 — multi-select to cherry-pick which customers to transfer.
+  // Empty selection = legacy move-ALL behaviour.
   const [sourceCustomers, setSourceCustomers] = useState<
     { id: string; name: string; phone: string | null; branch_id: string | null }[]
   >([])
@@ -795,9 +792,7 @@ export default function UsersSettingsPage() {
     }
   }, [companyId, canManage])
 
-  // v3.74.63 — fetch the source employee's owned customers whenever the
-  // operator is in transfer mode AND has picked resource_type=customers.
-  // Honors the optional branch filter (transferBranchId).
+  // v3.74.63 — fetch source's owned customers when in transfer/customers mode
   useEffect(() => {
     if (
       permissionAction !== "transfer" ||
@@ -823,13 +818,8 @@ export default function UsersSettingsPage() {
         if (transferBranchId) q = q.eq("branch_id", transferBranchId)
         const { data, error } = await q
         if (cancelled) return
-        if (error) {
-          console.error("Failed to load source customers:", error)
-          setSourceCustomers([])
-          return
-        }
+        if (error) { setSourceCustomers([]); return }
         setSourceCustomers((data as any) || [])
-        // Reset any previous selection when the source / branch changes.
         setSelectedCustomerIds([])
       } finally {
         if (!cancelled) setSourceCustomersLoading(false)
@@ -856,9 +846,7 @@ export default function UsersSettingsPage() {
           to_user_ids: selectedTargetUsers,
           resource_type: selectedResourceType,
           ...(transferBranchId ? { branch_id: transferBranchId } : {}),
-          // v3.74.63 — narrow the snapshot to specific customer IDs the
-          // operator hand-picked. Omitted = move ALL the source's customers
-          // (legacy behaviour preserved).
+          // v3.74.63 — hand-picked customer IDs (empty = move ALL legacy)
           ...(selectedResourceType === "customers" && selectedCustomerIds.length > 0
             ? { customer_ids: selectedCustomerIds }
             : {})
@@ -3793,4 +3781,117 @@ export default function UsersSettingsPage() {
                     <SelectContent>
                       {(() => {
                         const c = sourceUserCounts
-                        cons
+                        const total = c ? (c.customers + c.estimates + c.sales_orders + c.bookings) : 0
+                        const allDisabled = !!c && total === 0
+                        return (
+                          <>
+                            <SelectItem value="all" disabled={allDisabled}>
+                              الكل {c ? `(${total} سجل)` : ''}
+                            </SelectItem>
+                            <SelectItem value="customers" disabled={!!c && c.customers === 0}>
+                              العملاء {c ? `(${c.customers})` : ''}
+                            </SelectItem>
+                            <SelectItem value="estimates" disabled={!!c && c.estimates === 0}>
+                              عروض الأسعار {c ? `(${c.estimates})` : ''}
+                            </SelectItem>
+                            <SelectItem value="sales_orders" disabled={!!c && c.sales_orders === 0}>
+                              أوامر البيع {c ? `(${c.sales_orders})` : ''}
+                            </SelectItem>
+                            <SelectItem value="bookings" disabled={!!c && c.bookings === 0}>
+                              الحجوزات {c ? `(${c.bookings})` : ''}
+                            </SelectItem>
+                          </>
+                        )
+                      })()}
+                    </SelectContent>
+                  </Select>
+                  {sourceUserCounts &&
+                   (sourceUserCounts.customers + sourceUserCounts.estimates + sourceUserCounts.sales_orders + sourceUserCounts.bookings) === 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+                      ⚠ هذا الموظف لا يَمتلك أى سَجلات قابلة للنَقل أو المُشاركة.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* الفرع (للنقل فقط): نقل عملاء/أوامر فرع معين للموظف الجديد */}
+              {permissionAction === 'transfer' && (
+                <div className="space-y-2">
+                  <Label>الفرع (اختياري)</Label>
+                  <Select value={transferBranchId || "all_branches"} onValueChange={(v) => setTransferBranchId(v === "all_branches" ? "" : v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="الكل — نقل كل البيانات" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all_branches">الكل — نقل كل البيانات</SelectItem>
+                      {branches.map(b => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name}
+                          {b.is_main && ' (رئيسي)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    عند نقل موظف لفرع آخر: اختر فرع الموظف السابق لنقل عملائه وأوامره فيه إلى الموظف الذي يحل محله.
+                  </p>
+                </div>
+              )}
+
+              {/* صلاحيات إضافية للمشاركة */}
+              {permissionAction === 'share' && (
+                <div className="space-y-2 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                  <Label className="text-sm font-medium">صلاحيات إضافية</Label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox checked={shareCanEdit} onCheckedChange={(c) => setShareCanEdit(!!c)} />
+                      <span className="text-sm">تعديل</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox checked={shareCanDelete} onCheckedChange={(c) => setShareCanDelete(!!c)} />
+                      <span className="text-sm">حذف</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* تحذير للنقل */}
+              {permissionAction === 'transfer' && (
+                <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>⚠️ النقل سيغير ملكية البيانات نهائياً. الموظف المصدر سيفقد الوصول.</span>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setShowPermissionDialog(false); resetPermissionForm() }}>
+                إلغاء
+              </Button>
+              <Button
+                onClick={() => {
+                  if (permissionAction === 'transfer') handleTransferPermissions()
+                  else if (permissionAction === 'share') handleSharePermissions()
+                  else handleAddBranchAccess()
+                }}
+                disabled={permissionLoading}
+                className={`gap-2 ${permissionAction === 'transfer' ? 'bg-blue-500 hover:bg-blue-600' :
+                  permissionAction === 'share' ? 'bg-green-500 hover:bg-green-600' :
+                    'bg-purple-500 hover:bg-purple-600'
+                  }`}
+              >
+                {permissionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                  permissionAction === 'transfer' ? <ArrowRightLeft className="w-4 h-4" /> :
+                    permissionAction === 'share' ? <Share2 className="w-4 h-4" /> :
+                      <GitBranch className="w-4 h-4" />}
+                {permissionAction === 'transfer' ? 'نقل الصلاحيات' :
+                  permissionAction === 'share' ? 'فتح الصلاحيات' :
+                    'إضافة الفروع'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </main>
+    </div>
+  )
+}
