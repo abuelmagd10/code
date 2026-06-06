@@ -32,6 +32,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterContainer } from "@/components/ui/filter-container";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { getCachedPage, setCachedPage, invalidateCache, prefetchPage } from "@/lib/page-cache";
 // 🏷️ Canonical shared types — Single Source of Truth
 import type {
@@ -227,6 +228,9 @@ export default function PurchaseOrdersPage() {
   }, [loadSupportingData]);
 
   // ⚡ دالة جلب أوامر الشراء من /api/v2/purchase-orders (Server-Side Pagination)
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => fetchOrders(currentPage, pageSize) })
+
   const fetchOrders = useCallback(async (page: number, size: number) => {
     // إلغاء الطلب السابق
     if (fetchAbortRef.current) fetchAbortRef.current.abort();

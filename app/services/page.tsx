@@ -17,6 +17,7 @@ import { ServiceArchiveDialog } from "@/components/services/ServiceArchiveDialog
 import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { Plus, Search, ClipboardList, Info, X } from "lucide-react"
 import type { Service } from "@/types/services"
@@ -96,6 +97,9 @@ export default function ServicesPage() {
     }
     checkPermissions()
   }, [supabase])
+
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadServices() })
 
   const loadServices = useCallback(async () => {
     setIsLoading(true)

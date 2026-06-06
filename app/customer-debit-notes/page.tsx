@@ -23,6 +23,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -118,6 +119,9 @@ export default function CustomerDebitNotesPage() {
 
     checkAccess()
   }, [isReady, permsLoading, canAccess, supabase, router])
+
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   async function loadData() {
     setLoading(true)

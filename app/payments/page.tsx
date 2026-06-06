@@ -43,6 +43,7 @@ import { validateBankAccountAccess, type UserContext, getAccessFilter } from "@/
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { SupplierPaymentAllocationUI } from "@/components/payments/SupplierPaymentAllocationUI"
 import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPaymentAllocationUI"
 import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
@@ -699,6 +700,9 @@ export default function PaymentsPage() {
   const reloadPaymentsRef = useRef<() => void>(() => {})
 
   // 🔄 دالة مشتركة لإعادة تحميل المدفوعات مع تطبيق الفلترة الصحيحة
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => reloadPaymentsWithFilters() })
+
   const reloadPaymentsWithFilters = useCallback(async () => {
     if (!companyId || !userContext) return
     try {

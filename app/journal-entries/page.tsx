@@ -26,6 +26,7 @@ import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BranchFilter } from "@/components/BranchFilter"
 import { ERPPageHeader } from "@/components/erp-page-header"
 
@@ -158,6 +159,9 @@ export default function JournalEntriesPage() {
     const ts = Array.from(new Set(entries.map((e) => String(e.reference_type || "")).filter((s) => s.length > 0)))
     setTypeOptions(ts)
   }, [entries])
+
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadEntries() })
 
   const loadEntries = async () => {
     try {

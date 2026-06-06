@@ -21,6 +21,7 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type SalesReturnEntry = {
   id: string
@@ -91,6 +92,9 @@ export default function SalesReturnsPage() {
   }, [supabase])
 
   // دالة تحميل البيانات - يمكن استدعاؤها من useEffect أو من realtime
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadReturnsData() })
+
   const loadReturnsData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()

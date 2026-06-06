@@ -20,6 +20,7 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { validateInventoryTransaction, type UserContext } from "@/lib/validation"
 import { validateWriteOffItems, type WriteOffItemValidation } from "@/lib/write-off-governance"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { usePagination } from "@/lib/pagination"
@@ -164,6 +165,9 @@ export default function WriteOffsPage() {
   const [cancellationReason, setCancellationReason] = useState("")
 
   // Load data
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -152,6 +153,9 @@ export default function DispatchApprovalsPage() {
     window.addEventListener('app_language_changed', handler)
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
+
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadAll() })
 
   const loadAll = useCallback(async () => {
     try {

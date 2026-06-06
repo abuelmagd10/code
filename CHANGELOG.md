@@ -4,6 +4,43 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.57] - 2026-06-05 — Auto-refresh rollout Wave 2: +11 pages
+
+### Why
+v3.74.56 introduced `useAutoRefresh` and applied it to the 15 highest-traffic pages. This wave extends coverage to the next tier — daily-use accounting, purchasing, and operations pages — bringing the pilot total to **26 pages**.
+
+### Pages added
+| Page | Load fn | Notes |
+|---|---|---|
+| `/journal-entries` | `loadEntries` | |
+| `/payments` | `reloadPaymentsWithFilters` | useCallback reload |
+| `/drawings` | `loadDrawings` | |
+| `/purchase-orders` | `fetchOrders` | wrapped as `() => fetchOrders(currentPage, pageSize)` so pagination state stays consistent |
+| `/sales-returns` | `loadReturnsData` | |
+| `/purchase-returns` | `loadReturns` | |
+| `/inventory/write-offs` | `loadData` | |
+| `/inventory/dispatch-approvals` | `loadAll` | already uses realtime; auto-refresh is harmless second layer because of the throttle |
+| `/services` | `loadServices` | |
+| `/bookings` | `loadBookings` | |
+| `/customer-debit-notes` | `loadData` | `async function` declaration form supported by the Python migrator |
+
+### Implementation notes
+The migration script grew to handle three function-definition shapes:
+- `const X = async (...) => {...}`
+- `const X = useCallback(async (...) => {...})`
+- `async function X(...) {...}` (function declaration)
+
+Each page now has the same two-line addition: one extra import + one hook call before the load-function definition. The arrow-wrap (`() => loadFn(...)`) means the closure resolves on actual focus events, well after mount — so it works even when the hook line sits above the const declaration (no TDZ problem).
+
+### Coverage so far
+26 of ~200 pages — still a small minority by count, but these 26 cover the lion's share of daily user traffic. Remaining waves target the rest of the operational pages (HR, manufacturing, the reports family, settings, banking sub-pages).
+
+### Files changed
+- 11 page files (each: one import + one hook call).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.57.
+
+---
+
 ## [3.74.56] - 2026-06-05 — Auto-refresh on tab/window focus: useAutoRefresh hook + 15-page pilot
 
 ### Why

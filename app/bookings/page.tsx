@@ -16,6 +16,7 @@ import { BookingsView, type BookingViewMode } from "@/components/bookings/Bookin
 import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { toastActionError } from "@/lib/notifications"
 import { Plus, CalendarDays } from "lucide-react"
 import type { BookingFull } from "@/types/bookings"
@@ -53,6 +54,9 @@ export default function BookingsPage() {
   }, [supabase])
 
   // ── Load bookings ────────────────────────────────────────────────────────────
+  // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadBookings() })
+
   const loadBookings = useCallback(async () => {
     setIsLoading(true)
     try {
