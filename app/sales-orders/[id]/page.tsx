@@ -13,6 +13,7 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface SalesOrder {
   id: string
@@ -161,6 +162,9 @@ export default function SalesOrderDetailPage() {
       console.error('Failed to load company details', e)
     }
   }
+
+  // v3.74.62 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadOrder() })
 
   const loadOrder = useCallback(async () => {
     if (!orderId) return

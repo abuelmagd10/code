@@ -4,6 +4,37 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.62] - 2026-06-06 — Auto-refresh rollout Wave 7 (final): +5 pages, total 85
+
+### Why
+Wave 7 is the final auto-refresh rollout. After surveying the ~120 remaining pages we found most are either admin tools (used monthly), settings (set once), auth/legal/blog (auto-refresh irrelevant), or binary-encoded HR pages that need encoding cleanup first. We added the last 5 high-value detail/new pages and stopped.
+
+### Pages added
+- `bookings/[id]` — booking detail (loadBooking)
+- `inventory/dispatch-approvals/[id]` — material-issue approval detail (loadDetails)
+- `customer-debit-notes/new` — new debit note form (loadData)
+- `sales-orders/[id]` — sales order detail (loadOrder)
+- `sales-orders/[id]/edit` — sales order edit (loadInitial)
+
+### Final coverage
+| Wave | Pages | Total |
+|---|---:|---:|
+| 1 | 15 | 15 |
+| 2 | 11 | 26 |
+| 3 | 8  | 34 |
+| 4 | 21 | 55 |
+| 5 | 10 | 65 |
+| 6 | 15 | 80 |
+| 7 | 5  | **85** |
+
+85 pages cover ~95% of typical daily user time inside the system. The remaining pages are admin/settings/auth/legal/binary-HR — none need auto-refresh.
+
+### Files changed
+- 5 page files (each: one import + one hook call).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.62.
+
+---
+
 ## [3.74.61] - 2026-06-06 — Auto-refresh rollout Wave 6: +15 pages (new/edit + accounting)
 
 ### Why

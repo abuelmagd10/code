@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { canAction } from "@/lib/authz"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Customer = {
   id: string
@@ -89,6 +90,9 @@ export default function NewCustomerDebitNotePage() {
     }
     checkPerms()
   }, [supabase])
+
+  // v3.74.62 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   async function loadData() {
     try {

@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { useOrderPermissions } from "@/hooks/use-order-permissions"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Customer {
   id: string
@@ -249,6 +250,9 @@ export default function EditSalesOrderPage() {
       loadBranchStock(branchId, products)
     }
   }, [branchId, products, isLoading, loadBranchStock])
+
+  // v3.74.62 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadInitial() })
 
   const loadInitial = async () => {
     try {

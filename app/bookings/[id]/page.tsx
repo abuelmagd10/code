@@ -16,6 +16,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
 import { Clock, User, Wrench, DollarSign, CalendarDays, Info } from "lucide-react"
 import type { BookingFull, BookingStatusHistory, BookingPayment, BookingStatus, PaymentStatus } from "@/types/bookings"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // Booking as returned by GET /api/bookings/[id] (includes payments + history)
 interface FullBookingResponse extends BookingFull {
@@ -56,6 +57,9 @@ export default function BookingDetailPage() {
   useEffect(() => {
     canAction(supabase, "bookings", "update").then(setCanEdit)
   }, [supabase])
+
+  // v3.74.62 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadBooking() })
 
   const loadBooking = useCallback(async () => {
     try {

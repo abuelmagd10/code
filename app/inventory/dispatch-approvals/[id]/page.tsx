@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { CompanyHeader } from "@/components/company-header"
 import { LoadingState } from "@/components/ui/loading-state"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   ArrowRight, ArrowLeft, Factory, Check, X, AlertTriangle,
   Package, Info, ShoppingCart, Clock, User, MapPin, Warehouse as WarehouseIcon
@@ -66,6 +67,9 @@ export default function MaterialIssueApprovalDetailPage() {
       setAppLang((c || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
     } catch {}
   }, [])
+
+  // v3.74.62 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadDetails() })
 
   const loadDetails = useCallback(async () => {
     try {
