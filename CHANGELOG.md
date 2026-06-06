@@ -4,6 +4,37 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.65] - 2026-06-06 — Customer multi-select UI in transfer dialog (using shared MultiSelect)
+
+### Why
+v3.74.64 landed the wiring (state + fetch + submit) for cherry-picking customers in a transfer, but no UI to drive it — operators still saw the legacy move-ALL behaviour. This release adds the actual control.
+
+### What's new
+The Transfer Permissions dialog now shows a customer picker when the operator chooses **resource type = customers** with a source employee selected. Behaviour:
+
+- Uses the project's shared `<MultiSelect>` component (`components/ui/multi-select.tsx`) — same look and behaviour as everywhere else in the app, so operators don't learn a new control.
+- Built-in search box (matches name OR phone).
+- Multiple-pick with Badge chips and individual remove (X), plus a clear-all button.
+- Honours the optional branch filter — if the operator picks a branch first, only that branch's customers appear.
+- Empty selection = move ALL the source's customers (preserves the v3.74.63 legacy default).
+- Live counter below the picker: "سَيَتم نَقل N عَميل فَقَط من إِجمالى M".
+
+The server-side intersection in `/api/permissions/transfer/route.ts` (from v3.74.63) already validates the IDs against what the source actually owns — defence-in-depth, the UI is just a convenience layer.
+
+### Why MultiSelect instead of a custom panel
+The user asked to reuse what's already in the project for visual consistency. `components/ui/multi-select.tsx` exists and is the right primitive: Popover + Command + CommandInput + CommandItem, with `selected: string[]` semantics, search, badges, and clear-all built in. No need to invent a parallel UI.
+
+### Files changed
+- `app/settings/users/page.tsx` — `MultiSelect` import + ~30-line UI block in the transfer dialog (inserted via Python anchor script to avoid the truncation bug from v3.74.63).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.65.
+
+### Verification
+- TypeScript: 0 errors in `users/page.tsx`.
+- File size: 3,931 lines (was 3,898 in v3.74.64; +33 lines).
+- File ends with closing `}`.
+
+---
+
 ## [3.74.64] - 2026-06-06 — Hotfix: restore truncated users page + reapply v3.74.63 cleanly
 
 ### What broke

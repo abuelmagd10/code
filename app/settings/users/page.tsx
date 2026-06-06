@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -3809,6 +3810,39 @@ export default function UsersSettingsPage() {
                    (sourceUserCounts.customers + sourceUserCounts.estimates + sourceUserCounts.sales_orders + sourceUserCounts.bookings) === 0 && (
                     <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
                       ⚠ هذا الموظف لا يَمتلك أى سَجلات قابلة للنَقل أو المُشاركة.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* v3.74.65 - cherry-pick which customers to transfer (uses the project's shared MultiSelect for visual consistency with the rest of the app) */}
+              {permissionAction === 'transfer' && selectedResourceType === 'customers' && selectedSourceUser && (
+                <div className="space-y-2">
+                  <Label className="flex items-center justify-between">
+                    <span>اختر العُملاء (اتركه فارغاً لنَقل الكُل)</span>
+                    {sourceCustomersLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                  </Label>
+                  {sourceCustomers.length === 0 && !sourceCustomersLoading ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+                      لا يَملِك المُوظَّف المَصدَر أَى عُملاء{transferBranchId ? ' فى الفَرع المُحَدَّد' : ''}.
+                    </p>
+                  ) : (
+                    <MultiSelect
+                      options={sourceCustomers.map((c) => ({
+                        value: c.id,
+                        label: c.phone ? `${c.name} — ${c.phone}` : c.name,
+                      }))}
+                      selected={selectedCustomerIds}
+                      onChange={setSelectedCustomerIds}
+                      placeholder={`جَميع العُملاء (${sourceCustomers.length}) — اتركه فارغاً للنَقل الكامِل`}
+                      searchPlaceholder="ابحث بالاسم أو الهاتف..."
+                      emptyMessage="لا تُوجَد نَتائج"
+                      maxDisplay={3}
+                    />
+                  )}
+                  {selectedCustomerIds.length > 0 && (
+                    <p className="text-xs text-blue-700 dark:text-blue-400 px-1">
+                      سَيَتم نَقل {selectedCustomerIds.length} عَميل فَقَط من إِجمالى {sourceCustomers.length}.
                     </p>
                   )}
                 </div>
