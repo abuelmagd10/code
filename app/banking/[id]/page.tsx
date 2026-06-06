@@ -16,6 +16,7 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { Filter, X, Search, Calendar, Check, Ban } from "lucide-react"
 import { usePermissions } from "@/lib/permissions-context"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 type Account = {
   id: string;
@@ -153,6 +154,9 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   }, [])
 
 
+
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

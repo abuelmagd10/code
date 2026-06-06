@@ -11,6 +11,7 @@ import { Download, ArrowRight, Package, TrendingUp } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface ProductSales {
   product_id: string
@@ -91,6 +92,9 @@ export default function SalesByProductPage() {
    * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices و invoice_items مباشرة)
    * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
+
   const loadData = async () => {
     try {
       setIsLoading(true)

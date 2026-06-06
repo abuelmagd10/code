@@ -8,6 +8,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Building2, MapPin, DollarSign, Package, TrendingUp, TrendingDown, FileText, Download, ArrowLeft, ArrowRight, Warehouse } from "lucide-react"
 import Link from "next/link"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Branch = { id: string; name: string; code: string }
 type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
@@ -99,6 +100,9 @@ export default function BranchCostCenterReportPage() {
    * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices, bills, sales_returns مباشرة)
    * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadReport() })
+
   const loadReport = async () => {
     if (!companyId) return
     setLoading(true)

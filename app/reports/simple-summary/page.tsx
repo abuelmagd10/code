@@ -12,6 +12,7 @@ import { CompanyHeader } from "@/components/company-header"
 import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ERPPageHeader } from "@/components/erp-page-header"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface ReportData {
   capital: { total: number }
@@ -49,6 +50,9 @@ export default function SimpleSummaryReport() {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   })
+
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

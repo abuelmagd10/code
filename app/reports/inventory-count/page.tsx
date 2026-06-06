@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface CountItem {
   product_id: string
@@ -102,6 +103,9 @@ export default function InventoryCountPage() {
    * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من products و inventory_transactions مباشرة)
    * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadCountData() })
+
   const loadCountData = async () => {
     try {
       setIsLoading(true)

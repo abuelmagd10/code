@@ -7,6 +7,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Building2, TrendingUp, TrendingDown, FileText, Download, ArrowLeft, ArrowRight, BarChart3 } from "lucide-react"
 import Link from "next/link"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Branch = { id: string; name: string; code: string }
 
@@ -75,6 +76,9 @@ export default function BranchComparisonReportPage() {
    * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من invoices, bills, sales_returns مباشرة)
    * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadComparison() })
+
   const loadComparison = async () => {
     if (!companyId || branches.length === 0) return
     setLoading(true)

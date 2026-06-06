@@ -9,6 +9,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, Wallet, ArrowLeft, ArrowRight } from "lucide-react"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Branch = { id: string; name: string; code: string }
 type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
@@ -57,6 +58,9 @@ export default function BankAccountsByBranchReport() {
    * ✅ يستخدم journal_entry_lines لحسابات cash/bank
    * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
+
   const loadData = async () => {
     try {
       setLoading(true)

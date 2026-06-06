@@ -9,6 +9,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter } from "@/lib/authz"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Customer { id: string; name: string; phone?: string | null }
 interface InvoiceRow { id: string; invoice_number: string; customer_id: string; customer_name?: string; invoice_date: string; status: string; total_amount: number; paid_amount: number }
@@ -124,6 +125,9 @@ export default function SalesInvoicesDetailReportPage() {
     }
     loadCustomers()
   }, [supabase])
+
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setLoading(true)

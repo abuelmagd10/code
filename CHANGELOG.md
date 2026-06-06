@@ -4,6 +4,37 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.59] - 2026-06-06 — Auto-refresh rollout Wave 4: +21 pages (reports + bookings + banking)
+
+### Why
+Biggest single-wave so far. Coverage now stands at **55 of ~200 pages** — past the point of diminishing returns for daily-use workflow pages.
+
+### Pages added
+**Financial reports (8):** `branch-comparison`, `branch-cost-center`, `daily-payments-receipts`, `fx-gains-losses`, `top-products`, `sales-by-product`, `sales-invoices-detail`, `bank-transactions`
+
+**Other reports (6):** `bank-accounts-by-branch`, `simple-summary`, `ar-by-currency`, `product-expiry`, `inventory-count`, `login-activity`
+
+**Bookings reports (6):** `bookings-by-branch`, `bookings-by-staff`, `cancelled-bookings`, `occupancy-rate`, `revenue-by-service`, `top-services`
+
+**Banking (1):** `banking/[id]`
+
+### Implementation
+Continued the Edit-tool approach from v3.74.58 (per-page, preserves CRLF + UTF-8). 42 Edit operations total (21 imports + 21 hook calls).
+
+### Coverage so far
+| Wave | Pages | Total |
+|---|---:|---:|
+| 1 (v3.74.56) | 15 | 15 |
+| 2 (v3.74.57) | 11 | 26 |
+| 3 (v3.74.58) | 8 | 34 |
+| 4 (v3.74.59) | 21 | **55** |
+
+### Files changed
+- 21 page files (each: one import + one hook call).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.59.
+
+---
+
 ## [3.74.58] - 2026-06-06 — Auto-refresh rollout Wave 3: +8 pages (detail + reports)
 
 ### Why

@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TrendingUp, TrendingDown, AlertCircle, Download, RefreshCw, DollarSign } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
 import Link from "next/link"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface OpenInvoice {
   id: string
@@ -69,6 +70,9 @@ export default function ARByCurrencyReportPage() {
   useEffect(() => {
     try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch {}
   }, [])
+
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setLoading(true)

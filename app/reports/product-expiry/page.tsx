@@ -11,6 +11,7 @@ import { Download, ArrowRight, AlertTriangle, Calendar, Package } from "lucide-r
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface ExpiryItem {
   product_id: string
@@ -112,6 +113,9 @@ export default function ProductExpiryPage() {
    * ⚠️ OPERATIONAL REPORT - تقرير تشغيلي (من fifo_cost_lots و inventory_write_off_items مباشرة)
    * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
+
   const loadData = async () => {
     try {
       setIsLoading(true)

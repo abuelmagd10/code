@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowRight, Download, Activity, BarChart3, CalendarDays } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   BarChart, Bar,
@@ -48,6 +49,9 @@ export default function OccupancyRatePage() {
   }, [])
 
   const t = (en: string, ar: string) => appLang === "en" ? en : ar
+
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setIsLoading(true)

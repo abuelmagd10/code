@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ArrowRight, Download, Users, TrendingUp, DollarSign, Star } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts"
@@ -39,6 +40,9 @@ export default function BookingsByStaffPage() {
 
   const t   = (en: string, ar: string) => appLang === "en" ? en : ar
   const fmt = new Intl.NumberFormat(appLang === "en" ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setIsLoading(true)

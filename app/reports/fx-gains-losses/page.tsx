@@ -10,6 +10,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { getFXAccounts } from "@/lib/currency-service"
 import { ArrowLeft, TrendingUp, TrendingDown, Download, RefreshCw } from "lucide-react"
 import Link from "next/link"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface FXEntry {
   id: string
@@ -51,6 +52,9 @@ export default function FXGainsLossesReportPage() {
    * ✅ يستخدم journal_entry_lines لحسابات FX Gain/Loss
    * راجع: docs/ACCOUNTING_REPORTS_ARCHITECTURE.md
    */
+  // v3.74.59 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
+
   const loadData = async () => {
     setLoading(true)
     try {
