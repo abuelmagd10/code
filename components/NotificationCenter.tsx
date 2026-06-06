@@ -62,6 +62,8 @@ export function NotificationCenter({
 
   // 🔹 Advanced Filters
   const [filterStatus, setFilterStatus] = useState<NotificationStatus | "all">("all")
+  // v3.74.73 - filters collapsed by default on mobile to save vertical space
+  const [showFiltersOnMobile, setShowFiltersOnMobile] = useState(false)
   const [filterPriority, setFilterPriority] = useState<NotificationPriority | "all">("all")
   const [filterSeverity, setFilterSeverity] = useState<NotificationSeverity | "all">("all")
   const [filterCategory, setFilterCategory] = useState<NotificationCategory | "all">("all")
@@ -870,8 +872,8 @@ export function NotificationCenter({
                 disabled={stats.unread === 0}
                 title={appLang === 'en' ? 'Mark all as read' : 'تحديد الكل كمقروء'}
               >
-                <CheckCircle2 className="w-4 h-4 ml-2" />
-                {appLang === 'en' ? 'Mark All Read' : 'تحديد الكل'}
+                <CheckCircle2 className="w-4 h-4 sm:ml-2" />
+                <span className="hidden sm:inline">{appLang === 'en' ? 'Mark All Read' : 'تحديد الكل'}</span>
               </Button>
               <Button
                 variant="outline"
@@ -915,8 +917,21 @@ export function NotificationCenter({
             />
           </div>
 
+          {/* v3.74.73 - mobile filter toggle */}
+          <button
+            type="button"
+            onClick={() => setShowFiltersOnMobile(s => !s)}
+            className="md:hidden flex items-center justify-between w-full mb-2 px-3 py-2 bg-white dark:bg-slate-800 rounded-lg text-sm font-medium border border-gray-200 dark:border-slate-700"
+          >
+            <span className="flex items-center gap-2">
+              <Filter className="w-4 h-4" />
+              {appLang === 'en' ? 'Filters' : 'الفلاتر'}
+            </span>
+            <span className="text-xs text-gray-500">{showFiltersOnMobile ? (appLang === 'en' ? 'Hide' : 'إخفاء') : (appLang === 'en' ? 'Show' : 'إظهار')}</span>
+          </button>
+
           {/* Filter Row 1 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <div className={`grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 ${showFiltersOnMobile ? '' : 'hidden md:grid'}`}>
             <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={appLang === 'en' ? 'Status' : 'الحالة'} />

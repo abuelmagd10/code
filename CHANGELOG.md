@@ -4,6 +4,39 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.73] - 2026-06-07 — NotificationCenter mobile: trim header + collapsible filters
+
+### Why
+The bottom sheet from v3.74.71/72 finally opened cleanly on mobile, but the screenshot showed two cosmetic problems eating real estate:
+
+1. The "تحديد الكل" (Mark All Read) button overflowed and rendered as "تَحديد ال..." on a 5-inch phone — the icon already conveys the action.
+2. The six filter dropdowns rendered as a `grid-cols-2` block taking ~3 rows × ~60 px = roughly 22% of the viewport, on top of the 22% the header already takes. Together that pushed the first notification below the fold, every single time.
+
+### What changed
+| Item | Before | After |
+|---|---|---|
+| Mark-All-Read label | shown on all sizes | `hidden sm:inline` (icon-only on mobile) |
+| Mark-All-Read margin | `ml-2` always | `sm:ml-2` (no gap when label hidden) |
+| Filter grid on mobile | always rendered, 3 rows tall | collapsed by default, toggled by a "الفلاتر / Filters" button |
+| Filter grid on `md:+` | unchanged | unchanged (always visible) |
+
+Added one new state at the top of the component:
+
+```tsx
+const [showFiltersOnMobile, setShowFiltersOnMobile] = useState(false)
+```
+
+A small toggle button shows up only on `< md` (`md:hidden`) and flips the grid class between `hidden md:grid` and visible. The desktop layout is byte-for-byte unchanged.
+
+### Files changed
+- `components/NotificationCenter.tsx` — 1 state addition + 2 anchor replaces (mark-all button, filter grid wrapper). Applied via bash heredoc Python — the same pattern that worked in v3.74.71/72. File grew 1,259 → 1,274 lines, ends with the closing brace.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.73.
+
+### Verification
+- TypeScript: 0 errors on `NotificationCenter.tsx`.
+
+---
+
 ## [3.74.72] - 2026-06-07 — Bell click closes the sidebar before opening the notification sheet
 
 ### Why
