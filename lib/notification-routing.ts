@@ -118,6 +118,9 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'user_warehouse_change': (id) => `/settings/users?highlight=${id}`,
   'user_role_change': (id) => `/settings/users?highlight=${id}`,
   'permission_change': (id) => `/settings/users?highlight=${id}`,
+  // v3.74.66 — routes the approver to the users settings page;
+  // the row is highlighted in the Permission transfers section.
+  'permission_transfer': (id) => `/settings/users?highlight=transfer-${id}`,
 
   // الحجوزات
   'booking': (id) => `/bookings/${id}`,

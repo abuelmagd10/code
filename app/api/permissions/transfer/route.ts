@@ -147,34 +147,45 @@ export async function POST(request: Request) {
         new_data: { from_user_id, to_user_id: toUserId, resource_type, branch_id: branch_id || null }
       })
 
-      // v3.74.22 — Notify the Level-1 approver tier that a pending
-      // permission transfer needs their second-pair-of-eyes review.
-      // Two-eye rule means the submitter themselves must NOT receive
-      // the notification (they already know — they filed it). Insert
-      // one notification per approver role so any senior role can act
-      // from their inbox.
+      // v3.74.66 — Two-eye rule. Previously we inserted one notification
+      // per *role* (assigned_to_role), which meant the submitter (if a
+      // senior themselves) got back their own request. Now we look up
+      // each individual approver from company_members, EXCLUDE the
+      // submitter, and insert a per-user notification (assigned_to_user).
       const approverRoles = ["owner", "admin", "general_manager"]
-      for (const role of approverRoles) {
-        try {
-          await supabase.from("notifications").insert({
-            company_id,
-            reference_type: "permission_transfer",
-            reference_id: transfer.id,
-            title: "طلب نقل صلاحيات بانتظار الاعتماد",
-            message: `يوجد طلب نقل ملكية (${resource_type}) بانتظار اعتمادك من مَسؤول آخر — قاعدة العَين الاثنتين.`,
-            created_by: user.id,
-            assigned_to_role: role,
-            priority: "high",
-            severity: "warning",
-            category: "approvals",
-            event_key: `permission_transfer:${transfer.id}:pending:role:${role}`,
-            status: "unread",
-          })
-        } catch {
-          // non-critical — the transfer request is recorded; the
-          // notification is a UX nicety. Swallow per-role failures so
-          // the API still returns success to the caller.
+      try {
+        const { data: approvers } = await supabase
+          .from("company_members")
+          .select("user_id, role")
+          .eq("company_id", company_id)
+          .in("role", approverRoles)
+
+        const approverIds = (approvers || [])
+          .map((m: { user_id: string }) => m.user_id)
+          .filter((uid: string) => uid && uid !== user.id)
+
+        for (const approverId of approverIds) {
+          try {
+            await supabase.from("notifications").insert({
+              company_id,
+              reference_type: "permission_transfer",
+              reference_id: transfer.id,
+              title: "طلب نقل صلاحيات بانتظار الاعتماد",
+              message: `يوجد طلب نقل ملكية (${resource_type}) بانتظار اعتمادك من مَسؤول آخر — قاعدة العَين الاثنتين.`,
+              created_by: user.id,
+              assigned_to_user: approverId,
+              priority: "high",
+              severity: "warning",
+              category: "approvals",
+              event_key: `permission_transfer:${transfer.id}:pending:user:${approverId}`,
+              status: "unread",
+            })
+          } catch {
+            // per-approver failure is non-critical; keep notifying others.
+          }
         }
+      } catch {
+        // approver lookup failed entirely; transfer is still recorded.
       }
 
       results.push({

@@ -4,6 +4,28 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.66] - 2026-06-06 — Fix two bugs in permission-transfer notifications
+
+### Two-eye rule was sending the submitter their own request
+When an owner filed a permission-transfer request, the system inserted one notification per *role* (`assigned_to_role: 'owner' | 'admin' | 'general_manager'`). That meant every owner — including the submitter — saw the request in their inbox, even though the two-eye rule explicitly requires a **different** senior to approve.
+
+Fix: the API now fetches each individual approver from `company_members`, **excludes the submitter by user_id**, and inserts one per-user notification (`assigned_to_user`) for the rest. Failures looking up approvers are non-fatal — the transfer is still recorded, and approvers can still see it in `/settings/users`.
+
+Side note: `company_members` doesn't carry a `status` column in this schema (membership presence = active), so the initial query that tried `.eq("status", "active")` would have returned zero rows. Removed.
+
+### Clicking the notification said "cannot navigate"
+`permission_transfer` was missing from the `REFERENCE_TYPE_TO_ROUTE` table in `lib/notification-routing.ts`, so `getNotificationRoute(...)` returned `null` and NotificationCenter showed the fallback toast. Added the entry — it now routes to `/settings/users?highlight=transfer-<id>` so the approver lands directly on the users settings page.
+
+### Files changed
+- `app/api/permissions/transfer/route.ts` — per-user notifications, exclude submitter.
+- `lib/notification-routing.ts` — add `permission_transfer` route.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.66.
+
+### Backwards-compatible
+Existing pending transfers from earlier versions still resolve correctly — they had `assigned_to_role` set, the NotificationCenter reads either field. New transfers use the per-user form going forward.
+
+---
+
 ## [3.74.65] - 2026-06-06 — Customer multi-select UI in transfer dialog (using shared MultiSelect)
 
 ### Why
