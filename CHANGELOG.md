@@ -4,6 +4,30 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.67] - 2026-06-06 — Single-owner exemption for the two-eye rule on permission transfers
+
+### Why
+A small company with only one owner (no admin / general_manager) couldn't finish a permission transfer through the workflow at all. The strict two-eye rule blocks the submitter from approving or rejecting their own request — sensible when there's someone else who could, but a pure deadlock when there isn't. Companies in the pilot run kept ending up with stuck `pending` rows nobody could resolve.
+
+### What changed
+Both `/api/permissions/transfer/[id]/approve` and `.../reject` now run a quick count after the same-user check: how many members hold one of the approver roles (`owner`, `admin`, `general_manager`)? If the answer is **exactly 1** — i.e. the submitter is the only senior — we let them self-approve or self-reject and flag the exemption on the audit trail and on `new_data.single_owner_exemption = true`.
+
+When there are two or more seniors, the original strict rule still applies — no change. This exemption is narrowly scoped: it only fires when blocking would cause an unresolvable deadlock.
+
+### Audit visibility
+- `audit_logs.description` gets the suffix `— اعتماد ذاتى (المالك الوَحيد)` or `— رَفض ذاتى (المالك الوَحيد)` so the exemption is visible to anyone reviewing the log later.
+- `audit_logs.new_data.single_owner_exemption` is `true` on the approve path for programmatic queries.
+
+### Data fix
+Cleared the stuck pending transfer `4d7797ed-d008-...` (خالد عجلان → abuelmagd41) by setting it to `rejected` with reason `"single-owner deadlock — handled in v3.74.67"`. Also marked the 3 stale `assigned_to_role`-style notifications for that transfer as `read` so they don't sit in the inbox forever.
+
+### Files changed
+- `app/api/permissions/transfer/[id]/approve/route.ts` — single-owner check + audit annotation.
+- `app/api/permissions/transfer/[id]/reject/route.ts` — same check + annotation.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.67.
+
+---
+
 ## [3.74.66] - 2026-06-06 — Fix two bugs in permission-transfer notifications
 
 ### Two-eye rule was sending the submitter their own request

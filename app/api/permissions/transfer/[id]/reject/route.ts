@@ -77,11 +77,24 @@ export async function POST(
       return NextResponse.json({ error: "غير مصرح بالرفض" }, { status: 403 })
     }
 
+    // v3.74.67 — same single-owner exemption as approve: if the submitter
+    // is also the only senior in the company, allow them to reject (cancel)
+    // their own request — otherwise the request is unresolvable.
+    let singleOwnerExemption = false
     if (transfer.transferred_by === user.id) {
-      return NextResponse.json(
-        { error: "لا يُمكنك رفض طَلَب قَدّمته بنفسك" },
-        { status: 403 }
-      )
+      const { count: seniorCount } = await supabase
+        .from("company_members")
+        .select("user_id", { count: "exact", head: true })
+        .eq("company_id", transfer.company_id)
+        .in("role", ALLOWED_ROLES)
+
+      if ((seniorCount ?? 0) > 1) {
+        return NextResponse.json(
+          { error: "لا يُمكنك رفض طَلَب قَدّمته بنفسك" },
+          { status: 403 }
+        )
+      }
+      singleOwnerExemption = true
     }
 
     const { error: updErr } = await supabase
@@ -116,7 +129,7 @@ export async function POST(
       action_type: "permission_transfer_rejected",
       resource_type: "permissions",
       resource_id: transferId,
-      description: `رُفض نَقل ملكية (${transfer.resource_type}) — السَّبَب: ${reason}`,
+      description: `رُفض نَقل ملكية (${transfer.resource_type}) — السَّبَب: ${reason}${singleOwnerExemption ? ' — رَفض ذاتى (المالك الوَحيد)' : ''}`,
       new_data: { reason },
     })
 

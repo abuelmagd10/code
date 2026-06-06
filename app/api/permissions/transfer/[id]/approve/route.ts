@@ -80,12 +80,27 @@ export async function POST(
       return NextResponse.json({ error: "غير مصرح بالاعتماد" }, { status: 403 })
     }
 
-    // Two-eye principle
+    // Two-eye principle — with single-owner exemption (v3.74.67).
+    // If the submitter is also the *only* senior in the company, blocking
+    // them creates an unresolvable deadlock (nobody else has the right
+    // role to act). In that case we let them self-approve but log it so
+    // the audit trail makes the exemption visible.
+    let singleOwnerExemption = false
     if (transfer.transferred_by === user.id) {
-      return NextResponse.json(
-        { error: "لا يُمكنك اعتماد طَلَب قَدّمته بنفسك. يَحتاج مُعتَمِد آخر." },
-        { status: 403 }
-      )
+      const { count: seniorCount } = await supabase
+        .from("company_members")
+        .select("user_id", { count: "exact", head: true })
+        .eq("company_id", transfer.company_id)
+        .in("role", ALLOWED_ROLES)
+
+      if ((seniorCount ?? 0) > 1) {
+        return NextResponse.json(
+          { error: "لا يُمكنك اعتماد طَلَب قَدّمته بنفسك. يَحتاج مُعتَمِد آخر." },
+          { status: 403 }
+        )
+      }
+      // Otherwise: single senior in the whole company — exemption applies.
+      singleOwnerExemption = true
     }
 
     // Mark approved
@@ -138,8 +153,8 @@ export async function POST(
       action_type: "permission_transfer_approved",
       resource_type: "permissions",
       resource_id: transferId,
-      description: `اعتُمد نَقل ملكية (${transfer.resource_type}) بنَطاق "${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'}" — نُفِّذ ${(execResult as any)?.records_transferred || 0} سجل`,
-      new_data: execResult,
+      description: `اعتُمد نَقل ملكية (${transfer.resource_type}) بنَطاق "${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'}" — نُفِّذ ${(execResult as any)?.records_transferred || 0} سجل${singleOwnerExemption ? ' — اعتماد ذاتى (المالك الوَحيد)' : ''}`,
+      new_data: { ...(execResult as any), single_owner_exemption: singleOwnerExemption },
     })
 
     // v3.74.23 — Notify the originator (the submitter who filed this
