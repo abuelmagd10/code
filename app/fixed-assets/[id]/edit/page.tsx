@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ArrowLeft, Save } from "lucide-react"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface AssetCategory {
   id: string
@@ -136,6 +137,9 @@ export default function EditFixedAssetPage() {
     }
     loadData()
   }, [params.id])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

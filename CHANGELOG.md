@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.61] - 2026-06-06 — Auto-refresh rollout Wave 6: +15 pages (new/edit + accounting)
+
+### Why
+Coverage now stands at **80 of ~200 pages**. This wave focuses on `new` and `edit` forms — pages where users typically tab away to look up info (a customer, product, exchange rate) and come back expecting their just-opened form context plus any fresh dropdown data.
+
+### Pages added
+- **Invoices/Bills (3):** `invoices/new`, `invoices/[id]/edit`, `bills/[id]/edit`
+- **Orders (3):** `sales-orders/new`, `purchase-orders/new`, `purchase-orders/[id]/edit`
+- **Journal & Expenses (3):** `journal-entries/new`, `expenses/new`, `expenses/[id]/edit`
+- **Inventory transfers (2):** `inventory-transfers/new`, `inventory-transfers/[id]/edit`
+- **Period / returns (2):** `accounting/period-closing`, `purchase-returns/[id]`
+- **Fixed assets (2):** `fixed-assets/new`, `fixed-assets/[id]/edit`
+
+### Coverage so far
+| Wave | Pages | Total |
+|---|---:|---:|
+| 1 | 15 | 15 |
+| 2 | 11 | 26 |
+| 3 | 8 | 34 |
+| 4 | 21 | 55 |
+| 5 | 10 | 65 |
+| 6 | 15 | **80** |
+
+### Files changed
+- 15 page files (each: one import + one hook call).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.61.
+
+---
+
 ## [3.74.60] - 2026-06-06 — Auto-refresh rollout Wave 5: +10 pages (manufacturing + fixed-assets + credits)
 
 ### Why

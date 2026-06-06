@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { ArrowLeft, Save } from "lucide-react"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface AssetCategory {
   id: string
@@ -109,6 +110,9 @@ export default function NewFixedAssetPage() {
     }
     loadData()
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

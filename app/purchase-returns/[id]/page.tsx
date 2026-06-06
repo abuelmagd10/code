@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { formatSupabaseError } from "@/lib/error-messages"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 const PRIVILEGED_ROLES  = ['owner', 'admin', 'general_manager']
 const STORE_MANAGER_ROLES = ['store_manager']
@@ -117,6 +118,9 @@ export default function PurchaseReturnDetailPage() {
       setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
     } catch {}
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadPR() })
 
   const loadPR = async () => {
     const cId = await getActiveCompanyId(supabase)

@@ -21,6 +21,7 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { BranchCostCenterSelectorEnhanced } from "@/components/branch-cost-center-selector-enhanced"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Account = {
   id: string
@@ -84,6 +85,9 @@ export default function NewExpensePage() {
   useEffect(() => {
     loadInitialData()
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadInitialData() })
 
   const loadInitialData = async () => {
     try {

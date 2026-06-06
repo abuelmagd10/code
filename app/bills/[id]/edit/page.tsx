@@ -21,6 +21,7 @@ import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { getActiveCompanyId } from "@/lib/company"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
@@ -242,6 +243,9 @@ export default function EditBillPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

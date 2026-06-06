@@ -20,6 +20,7 @@ import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { transferToThirdParty, validateShippingProvider } from "@/lib/third-party-inventory"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Customer {
   id: string
@@ -144,6 +145,9 @@ export default function EditInvoicePage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadInitial() })
 
   const loadInitial = async () => {
     try {

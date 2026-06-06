@@ -29,6 +29,7 @@ import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/l
 import { Textarea } from "@/components/ui/textarea"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -303,6 +304,9 @@ export default function NewSalesOrderPage() {
     }
     checkPerms()
   }, [supabase])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

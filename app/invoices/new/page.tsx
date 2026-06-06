@@ -33,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { canAction, getAccessFilter } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
 import { validateEmail, validatePhone, getValidationError, validateField, validateFinancialTransaction, type UserContext } from "@/lib/validation"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
 const normalizePhone = (phone: string): string => {
@@ -259,6 +260,9 @@ export default function NewInvoicePage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

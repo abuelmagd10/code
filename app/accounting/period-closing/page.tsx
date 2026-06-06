@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface AccountingPeriod {
   id: string
@@ -88,6 +89,9 @@ export default function PeriodClosingPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadUserRole() })
 
   const loadUserRole = async () => {
     try {

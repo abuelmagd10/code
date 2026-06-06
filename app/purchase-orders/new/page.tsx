@@ -21,6 +21,7 @@ import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string; phone?: string | null }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service'; quantity_on_hand?: number }
@@ -197,6 +198,9 @@ export default function NewPurchaseOrderPage() {
       if (warehouseParam) setWarehouseId(warehouseParam)
     } catch (e) { console.error('Failed to parse shortage params:', e) }
   }, [searchParamsHook])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

@@ -17,6 +17,7 @@ import { filterLeafAccounts } from "@/lib/accounts"
 import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Account {
   id: string
@@ -104,6 +105,9 @@ export default function NewJournalEntryPage() {
     loadAccounts()
     loadBranchesAndCostCenters()
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadBranchesAndCostCenters() })
 
   const loadBranchesAndCostCenters = async () => {
     try {

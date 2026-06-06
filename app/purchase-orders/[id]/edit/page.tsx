@@ -19,6 +19,7 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { useOrderPermissions } from "@/hooks/use-order-permissions"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier {
   id: string
@@ -156,6 +157,9 @@ export default function EditPurchaseOrderPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadInitial() })
 
   const loadInitial = async () => {
     try {

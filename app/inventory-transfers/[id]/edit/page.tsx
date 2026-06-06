@@ -13,6 +13,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { useRouter } from "next/navigation"
 import { ArrowLeftRight, Plus, Trash2, Warehouse, Package, Save, ArrowLeft, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Product {
   id: string
@@ -110,6 +111,9 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       }
     }
   }, [canChooseDestination, userBranchId, userWarehouseId, warehouses, sourceWarehouseId])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

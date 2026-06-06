@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { BranchCostCenterSelectorEnhanced } from "@/components/branch-cost-center-selector-enhanced"
 import { filterCashBankAccounts } from "@/lib/accounts"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Account = {
   id: string
@@ -94,6 +95,9 @@ export default function EditExpensePage() {
   useEffect(() => {
     loadExpense()
   }, [params.id])
+
+  // v3.74.61 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadExpense() })
 
   const loadExpense = async () => {
     try {
