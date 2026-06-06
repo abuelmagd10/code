@@ -4,6 +4,42 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.69] - 2026-06-06 — AI assistant knowledge injection (DB-only)
+
+### Why
+A long working session this day surfaced operational knowledge — architecture patterns, anti-patterns, troubleshooting playbooks, compliance constraints, workflow lifecycles — that the in-app AI assistant had no way to learn from. Rather than wait for the next round of guide-writing, we injected the learnings directly into the knowledge base so the assistant can answer future questions about them via the existing FTS path.
+
+### What's new
+Two DB migrations applied **without touching any application code, schema, or RPC**:
+
+1. **25 new rows in `ai_knowledge_chunks`** under five new `source_type` values:
+   - `knowledge_pattern` (5) — atomic RPC, two-eye approval, hybrid snapshot/dynamic, creator-filter, fine-grained gates.
+   - `knowledge_antipattern` (5) — `RETURNING INTO uuid[]`, `RETURN NEW` on `BEFORE DELETE`, missing RLS UPDATE silent fail, role-fan-out self-notify, Edit-tool on > 2000-line files.
+   - `knowledge_troubleshoot` (5) — notification routing, transfer failed-status, duplicate phone, NOT NULL violation, JSX truncation.
+   - `knowledge_compliance` (5) — Egypt withholding tax 10%, legal reserve 5%, VAT 14%, FRA joint-stock requirements, EGAS 1 four statements.
+   - `knowledge_workflow` (5) — permission transfer lifecycle, inventory transfer states, single-owner exemption, unified approval badges, two-eye notification routing.
+2. **4 `page_guides` updated** with new tips reflecting recent releases:
+   - `settings_users` (+4 tips) — single-owner exemption, multi-branch deprecation, owner+general-manager-only gate, notification routing.
+   - `shareholders` (+3) — withholding tax workaround, legal reserve note, roadmap pointer.
+   - `inventory_transfers` (+3) — sidebar badges per state, fallback governance, per-branch stock enforcement.
+   - `customers` (+3) — unique phone trigger, lock-after-use, accountant read-only.
+
+All content is bilingual (AR + EN). FTS verified — `websearch_to_tsquery('simple', ai_normalize_for_fts('المالك الوَحيد'))` returns both the chunk and the page guide tip.
+
+### Why DB-only
+- Risk is zero on the live app — no deploy needed, the assistant picks up the rows the next time it queries them.
+- Reversible — `DELETE FROM ai_knowledge_chunks WHERE source_type LIKE 'knowledge_%'` + revert the `page_guides` `UPDATE` would undo everything.
+- The pattern matches how `page_guides` was seeded historically (v3.58.1, v3.58.4, v3.59.0).
+
+### Files changed
+- None in the repo. Two Supabase migrations were applied:
+  - `v3_74_69_ai_knowledge_part1_patterns_antipatterns`
+  - `v3_74_69_ai_knowledge_part2_troubleshoot_compliance_workflow`
+  - `v3_74_69_page_guides_session_updates`
+- `lib/version.ts` stays at 3.74.68 — there's no code shipping, so the app version doesn't move.
+
+---
+
 ## [3.74.68] - 2026-06-06 — Temporarily disable "Multi-branch access" UI + API
 
 ### Why
