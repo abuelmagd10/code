@@ -4,6 +4,43 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.71] - 2026-06-07 — NotificationCenter renders as a Sheet on mobile
+
+### Why
+v3.74.70 tried to fix the cramped notification center on phones by only adjusting padding and width. The dialog stayed centered with `w-[95vw]`, which on a 375-px viewport meant a tiny floating modal — still cramped, still wrong proportions, still not a phone-grade experience. The user reported it as "very bad."
+
+### What changed
+Below 768 px the notification center now renders as a `Sheet` sliding from the bottom of the screen at 95vh — the pattern Stripe / Linear / Slack use on their mobile apps. At ≥ 768 px the existing centered `Dialog` is unchanged.
+
+Implementation: alias the primitives at runtime instead of duplicating the JSX. One body, two shells.
+
+```ts
+const isMobile = useIsMobile()
+const M  = isMobile ? Sheet : Dialog
+const MC = isMobile ? SheetContent : DialogContent
+const MH = isMobile ? SheetHeader : DialogHeader
+const MT = isMobile ? SheetTitle : DialogTitle
+const MD = isMobile ? SheetDescription : DialogDescription
+const sheetSide = isMobile ? { side: "bottom" as const } : {}
+```
+
+The whole component body keeps using `M / MC / MH / MT / MD` — no copy-pasted markup, no `if (isMobile)` branches scattered through 1200 lines of JSX.
+
+`SheetContent` gets `h-[95vh] w-full` and `side="bottom"` on mobile; `DialogContent` keeps its `w-[95vw] max-w-4xl max-h-[90vh]` on desktop.
+
+### Files changed
+- `components/NotificationCenter.tsx` — imports + alias block + 2 `DialogContent` open tags rewritten with the conditional className, all other Dialog* tags renamed to M*. Applied via a bash-heredoc Python script (the Write tool silently truncated two attempts at the helper script before this approach worked).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.71.
+
+### Verification
+- TypeScript: 0 errors on `NotificationCenter.tsx`.
+- 2 `<M open=...>` tags (skeleton + main); 2 `<MC ...>` opens. File grew from 1,247 to 1,259 lines and ends with the closing module brace.
+
+### Tooling note worth remembering
+The Edit / Write tools truncated the helper Python script twice while writing 80+-line files in this session. The fix that worked was `cat > file << 'PYEOF' ... PYEOF` in a single bash call. Same lesson as the JSX truncation from earlier in v3.74.63/64 — for any file > ~80 lines that ships in this session, prefer heredoc or `git show HEAD:path` + targeted anchor replaces.
+
+---
+
 ## [3.74.70] - 2026-06-06 — Mobile-responsive polish on NotificationCenter
 
 ### Why

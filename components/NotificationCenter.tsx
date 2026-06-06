@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getUserNotifications, markNotificationAsRead, updateNotificationStatus, batchMarkNotificationsAsRead, batchUpdateNotificationStatus, type Notification, type NotificationStatus, type NotificationPriority, type NotificationSeverity, type NotificationCategory } from "@/lib/governance-layer"
@@ -789,45 +791,55 @@ export function NotificationCenter({
     return Array.from(types).sort()
   }, [displayNotifications])
 
+  const isMobile = useIsMobile()
+  const M  = isMobile ? Sheet : Dialog
+  const MC = (isMobile ? SheetContent : DialogContent) as any
+  const MH = isMobile ? SheetHeader : DialogHeader
+  const MT = isMobile ? SheetTitle : DialogTitle
+  const MD = isMobile ? SheetDescription : DialogDescription
+  const sheetSide = isMobile ? { side: "bottom" as const } : {}
+
   if (!mounted) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="w-[95vw] max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col p-0 overflow-hidden"
+      <M open={open} onOpenChange={onOpenChange}>
+        <MC
+          {...sheetSide}
+          className={isMobile ? "h-[95vh] max-h-[95vh] w-full flex flex-col p-0 overflow-hidden gap-0" : "w-[95vw] max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"}
         >
-          <DialogDescription className="sr-only">
+          <MD className="sr-only">
             {appLang === 'en' ? 'Loading notification center' : 'جاري تحميل مركز الإشعارات'}
-          </DialogDescription>
-          <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
-            <DialogTitle className="text-xl font-bold">
+          </MD>
+          <MH className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+            <MT className="text-xl font-bold">
               {appLang === 'en' ? 'Notifications' : 'مركز الإشعارات'}
-            </DialogTitle>
-          </DialogHeader>
+            </MT>
+          </MH>
           <div className="flex items-center justify-center min-h-[200px] flex-1">
             <p className="text-gray-500 dark:text-gray-400">
               {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
             </p>
           </div>
-        </DialogContent>
-      </Dialog>
+        </MC>
+      </M>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="w-[95vw] max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col p-0 overflow-hidden"
+    <M open={open} onOpenChange={onOpenChange}>
+      <MC
+        {...sheetSide}
+        className={isMobile ? "h-[95vh] max-h-[95vh] w-full flex flex-col p-0 overflow-hidden gap-0" : "w-[95vw] max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"}
       >
-        <DialogDescription className="sr-only">
+        <MD className="sr-only">
           {appLang === 'en' ? 'Notification center with filters and actions' : 'مركز الإشعارات مع الفلاتر والإجراءات'}
-        </DialogDescription>
+        </MD>
         {/* 🔹 A. Header Bar */}
-        <DialogHeader className="px-3 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
+        <MH className="px-3 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <DialogTitle className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-2">
+              <MT className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-2">
                 {appLang === 'en' ? 'Notification Center' : 'مركز الإشعارات'}
-              </DialogTitle>
+              </MT>
               <div className="flex items-center gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="text-gray-600 dark:text-gray-400">
@@ -888,7 +900,7 @@ export function NotificationCenter({
               </Button>
             </div>
           </div>
-        </DialogHeader>
+        </MH>
 
         {/* 🔹 B. Advanced Filters */}
         <div className="px-6 py-4 border-b space-y-3 bg-gray-50 dark:bg-slate-900 flex-shrink-0">
@@ -1240,7 +1252,7 @@ export function NotificationCenter({
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </MC>
+    </M>
   )
 }
