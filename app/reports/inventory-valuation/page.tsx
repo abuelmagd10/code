@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from "recharts"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface FIFOLot {
   lot_date: string
@@ -63,6 +64,9 @@ export default function InventoryValuationPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setLoading(true)

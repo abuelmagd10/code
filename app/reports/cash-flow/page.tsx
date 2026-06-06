@@ -8,6 +8,7 @@ import { Download, ArrowRight, Printer } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface CashFlowItem {
   id: string
@@ -90,6 +91,9 @@ export default function CashFlowReportPage() {
     window.addEventListener('storage', (e: any) => { if (e?.key === 'app_language') handler() })
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setLoading(true)

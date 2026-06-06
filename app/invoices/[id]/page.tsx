@@ -30,6 +30,7 @@ import {
   validateShippingProvider
 } from "@/lib/third-party-inventory"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
 import { getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 import { useAccess } from "@/lib/access-context"
@@ -607,6 +608,9 @@ export default function InvoiceDetailPage() {
       }
     })()
   }, [showCustomerRefund, invoice?.company_id, isPrivilegedUser, supabase, appCurrency])
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadInvoice() })
 
   const loadInvoice = async () => {
     try {

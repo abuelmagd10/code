@@ -49,6 +49,7 @@ import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inven
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { getActiveCompanyId } from "@/lib/company"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
 import { validateBillMatching } from "@/lib/three-way-matching"
 
@@ -345,6 +346,9 @@ export default function BillViewPage() {
       setMatchingLoading(false)
     }
   }
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

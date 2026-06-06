@@ -4,6 +4,38 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.58] - 2026-06-06 — Auto-refresh rollout Wave 3: +8 pages (detail + reports)
+
+### Why
+Continuing the rollout from v3.74.56/57 — extending coverage into per-record detail pages and the most-checked report pages. Total coverage now stands at **34 of ~200 pages**, but the additions in this wave are pages users return to most after taking an action (open an invoice → tab away → come back → see latest payment status).
+
+### Pages added
+- `/accounting/periods` — `loadPeriods`
+- `/invoices/[id]` — `loadInvoice` (the detail page; users frequently come back after recording a payment elsewhere)
+- `/bills/[id]` — `loadData`
+- `/expenses/[id]` — `loadExpense`
+- `/reports/cash-flow` — `loadData`
+- `/reports/aging-ap` — `loadData`
+- `/reports/aging-ar` — `loadData`
+- `/reports/inventory-valuation` — `loadData`
+
+### Implementation note
+This wave was applied via the Edit tool one page at a time — a deliberate change from the bulk Python script used in earlier waves. Reason: the bulk approach corrupted line-endings/encoding on roughly half the project's TypeScript files in a previous attempt, which we had to revert. Per-page Edit operations preserve original encoding (CRLF + UTF-8) exactly, at the cost of a slower rollout.
+
+### Files changed
+- 8 page files (each: one import + one hook call).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.58.
+
+### Rollout coverage so far
+| Wave | Pages | Total |
+|---|---|---|
+| 1 (v3.74.56) | 15 | 15 |
+| 2 (v3.74.57) | 11 | 26 |
+| 3 (v3.74.58) | 8 | 34 |
+| Remaining | ~70-80 client pages | — |
+
+---
+
 ## [3.74.57] - 2026-06-05 — Auto-refresh rollout Wave 2: +11 pages
 
 ### Why

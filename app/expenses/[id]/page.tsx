@@ -18,6 +18,7 @@ import { createNotification } from "@/lib/governance-layer"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 import { checkDuplicateJournalEntry, createExpenseJournalEntry } from "@/lib/journal-entry-governance"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Expense = {
   id: string
@@ -99,6 +100,9 @@ export default function ExpenseDetailPage() {
     window.addEventListener('app_language_changed', handler)
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadExpense() })
 
   const loadExpense = async () => {
     try {

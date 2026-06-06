@@ -10,6 +10,7 @@ import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter } from "@/lib/authz"
 import { useRouter } from "next/navigation"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 /**
  * ✅ GL-Driven Aging AR Report
@@ -135,6 +136,9 @@ export default function AgingARPage() {
     }
     loadCustomers()
   }, [supabase])
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

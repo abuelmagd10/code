@@ -18,6 +18,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +64,9 @@ export default function AccountingPeriodsPage() {
     useEffect(() => {
         loadPeriods()
     }, [])
+
+    // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+    useAutoRefresh({ onRefresh: () => loadPeriods() })
 
     const loadPeriods = async () => {
         try {

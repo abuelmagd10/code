@@ -9,6 +9,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter } from "@/lib/authz"
 import { useRouter } from "next/navigation"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 // Create a generic SearchSelect or reuse CustomerSearchSelect but labeled for Suppliers if needed.
 // For simplicity, we fallback to a native select or similar if SupplierSearchSelect doesn't exist, 
 // but assuming there is a SupplierSearchSelect or we can just use a simple dropdown/combobox.
@@ -108,6 +109,9 @@ export default function AgingAPPage() {
     }
     loadSuppliers()
   }, [supabase])
+
+  // v3.74.58 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {
