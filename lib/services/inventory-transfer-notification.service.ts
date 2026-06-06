@@ -250,6 +250,7 @@ export class InventoryTransferNotificationService {
   }
 
   async notifyDestinationRequestCreated(params: InventoryTransferDestinationRequestNotificationParams) {
+    // إِشعار لمَخزَن الوِجهَة (شَحنَة قادِمَة)
     await this.dispatchDestinationWarehouseNotification(
       params,
       {
@@ -262,6 +263,37 @@ export class InventoryTransferNotificationService {
       },
       "⚠️ [TRANSFER_NOTIFICATION] Destination request notification failed:"
     )
+
+    // v3.74.54 — إِشعار لمَخزَن المَصدَر (يَنتَظِر بَدء إِرسال). عِندَ إِنشاء النَّقل
+    // مُباشَرَةً من قِبَل Owner/Admin/Manager، الـstatus يَكون 'pending' فَوراً
+    // (مُعتَمَد) فلا تَمُرّ بمَرحَلَة الاعتماد، ومُسؤول مَخزَن المَصدَر كان يُنسى.
+    try {
+      await this.dispatchSourceWarehouseNotification(
+        {
+          companyId: params.companyId,
+          transferId: params.transferId,
+          transferNumber: params.transferNumber,
+          sourceBranchId: params.sourceBranchId || null,
+          sourceWarehouseId: params.sourceWarehouseId || null,
+          destinationBranchId: params.destinationBranchId || null,
+          actorUserId: params.createdBy,
+        },
+        {
+          title:
+            params.appLang === "en"
+              ? "Transfer Awaiting Dispatch"
+              : "طَلَب نَقل يَنتَظِر بَدء إِرسال",
+          message:
+            params.appLang === "en"
+              ? `Transfer ${params.transferNumber} has been created and is awaiting dispatch from your warehouse.`
+              : `تَمَّ إِنشاء طَلَب النَّقل ${params.transferNumber} ويَنتَظِر بَدء الإِرسال من مَخزَنك.`,
+          eventAction: "created_source_warehouse_notified",
+        },
+        "⚠️ [TRANSFER_NOTIFICATION] Source warehouse on-create notification failed:"
+      )
+    } catch (err) {
+      console.error("Error notifying source warehouse on create:", err)
+    }
   }
 
   async notifyDestinationTransferStarted(params: InventoryTransferDestinationRequestNotificationParams) {

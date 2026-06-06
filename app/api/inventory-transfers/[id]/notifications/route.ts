@@ -208,6 +208,9 @@ export async function POST(
           transferId: transfer.id,
           transferNumber: transfer.transfer_number,
           sourceBranchId: transfer.source_branch_id,
+          // v3.74.54 — تَمرير source_warehouse_id لِيَستَطيع المَسار إِرسال
+          // إِشعار لمَسؤول مَخزَن المَصدَر (يَنتَظِر بَدء الإِرسال)
+          sourceWarehouseId: (transfer as any).source_warehouse_id ?? null,
           destinationBranchId: transfer.destination_branch_id,
           destinationWarehouseId: transfer.destination_warehouse_id,
           createdBy: user.id,

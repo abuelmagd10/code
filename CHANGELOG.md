@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.54] - 2026-06-05 — Notify source warehouse on direct transfer creation too (not only on approval)
+
+### Why
+v3.74.51 added a "Transfer Approved — Dispatch Required" notification to the source store_manager when management **approves** an accountant-submitted transfer request. But that only covered one of the two creation paths. When **Owner/Admin/Manager creates a transfer directly**, the request skips the approval cycle entirely — the row is inserted with `status='pending'` (already-approved) and the page fires the `destination_request_created` action, which until now only notified the destination warehouse. The source store_manager — the person who actually has to pull the goods — was never told. Same blind spot as v3.74.51, different entry point.
+
+### Fix
+`InventoryTransferNotificationService.notifyDestinationRequestCreated` now sends **two** notifications instead of one:
+
+1. The existing notification to the **destination warehouse** ("New Stock Transfer Request" — they'll be receiving).
+2. **NEW** — notification to the **source warehouse** ("طَلَب نَقل يَنتَظِر بَدء إِرسال" / "Transfer Awaiting Dispatch") via the same `dispatchSourceWarehouseNotification` helper introduced in v3.74.51. The source call is wrapped in `try/catch` so a failure there can never break the destination notification.
+
+`app/api/inventory-transfers/[id]/notifications/route.ts` now passes `source_warehouse_id` through on the `destination_request_created` case so the service has what it needs to resolve recipients.
+
+A new `event_action` discriminator `created_source_warehouse_notified` is used (parallel to the existing `approved_source_warehouse_notified` from v3.74.51) so the two scenarios stay traceable in `notifications.event_key`.
+
+### Files changed
+- `lib/services/inventory-transfer-notification.service.ts` — `notifyDestinationRequestCreated` extended with the source-side dispatch.
+- `app/api/inventory-transfers/[id]/notifications/route.ts` — pass `source_warehouse_id` on the `destination_request_created` case.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.54.
+
+### Testing
+1. Sign in as Admin/Owner/Manager. Create a new transfer request (skips approval).
+2. Verify destination store_manager gets "New Stock Transfer Request" (unchanged behaviour).
+3. **NEW** — verify source store_manager gets "طَلَب نَقل يَنتَظِر بَدء إِرسال". They should now also see the row on `/inventory/dispatch-approvals` (the page was already reading `status='pending'`).
+4. Sign in as the source store_manager → click the notification → detail page opens (v3.74.52 governance) → press **Start Transfer** (v3.74.53 fallback rules still apply).
+5. Accountant-submitted flow continues to work as before (`approved_source_warehouse_notified` fires on management approval).
+
+---
+
 ## [3.74.53] - 2026-06-05 — Fallback governance: management can dispatch/receive only when the warehouse has no store_manager
 
 ### Why
