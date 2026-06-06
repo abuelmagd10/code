@@ -4,6 +4,30 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.63] - 2026-06-06 — Cherry-pick customers when transferring ownership
+
+### Why
+Until now, transferring ownership of "customers" from one employee to another was an all-or-nothing operation: every customer the source owned (optionally filtered by branch) moved to the new owner. Real life is messier — sometimes you want to move just three specific accounts to a new salesperson, not their entire book.
+
+### What's new
+In Settings → Users → "Transfer Permissions" dialog, when the operator picks **resource type = customers**, a new searchable multi-select panel appears listing only the customers that the source employee actually owns (scoped to the branch filter if set). The operator can:
+
+- Type to search by name or phone.
+- Tick specific customers — or click "Select shown" to grab the entire filtered list.
+- Leave the selection empty to keep the legacy "move ALL" behaviour.
+
+The submit body now optionally includes `customer_ids: string[]`. The API intersects them server-side with what the source actually owns (defence-in-depth — never trust a client-supplied ID), then writes that narrowed list as the snapshot. The existing approval workflow + `execute_permission_transfer(snapshot)` handle the rest.
+
+### Files changed
+- `app/settings/users/page.tsx` — new state, fetch effect, multi-select UI block, reset & submit wiring.
+- `app/api/permissions/transfer/route.ts` — accept and intersect `customer_ids` before snapshotting.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.63.
+
+### Backwards-compatible
+Existing transfers that don't send `customer_ids` keep moving every customer the source owns (legacy behaviour).
+
+---
+
 ## [3.74.62] - 2026-06-06 — Auto-refresh rollout Wave 7 (final): +5 pages, total 85
 
 ### Why

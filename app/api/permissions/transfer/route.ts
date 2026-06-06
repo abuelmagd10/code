@@ -36,6 +36,10 @@ export async function POST(request: Request) {
       to_user_ids, // مصفوفة للدعم المتعدد
       resource_type, // "customers" | "sales_orders" | "all"
       branch_id, // اختياري: نقل عملاء/أوامر هذا الفرع فقط (للموظف المنقول عنه)
+      // v3.74.63 — operator can hand-pick specific customer IDs to transfer.
+      // When omitted/empty, we fall back to "all customers owned by the source"
+      // (legacy behaviour). Only honoured when resource_type === "customers".
+      customer_ids,
       reason,
       notes
     } = body
@@ -71,12 +75,21 @@ export async function POST(request: Request) {
     let snapSalesOrderIds: string[] = []
 
     if (resource_type === "customers" || resource_type === "all") {
+      // v3.74.63 — if the operator hand-picked specific customer IDs, intersect
+      // them with what the source ACTUALLY owns (server-side safety check —
+      // never trust the client to send IDs the source doesn't own).
+      const handPicked = Array.isArray(customer_ids)
+        ? customer_ids.filter((id: any) => typeof id === "string" && id.length > 0)
+        : []
       let q = supabase
         .from("customers")
         .select("id")
         .eq("company_id", company_id)
         .eq("created_by_user_id", from_user_id)
       if (branch_id) q = q.eq("branch_id", branch_id)
+      if (handPicked.length > 0 && resource_type === "customers") {
+        q = q.in("id", handPicked)
+      }
       const { data } = await q
       snapCustomerIds = (data || []).map((r: { id: string }) => r.id)
     }
