@@ -21,9 +21,13 @@ When there are two or more seniors, the original strict rule still applies — n
 ### Data fix
 Cleared the stuck pending transfer `4d7797ed-d008-...` (خالد عجلان → abuelmagd41) by setting it to `rejected` with reason `"single-owner deadlock — handled in v3.74.67"`. Also marked the 3 stale `assigned_to_role`-style notifications for that transfer as `read` so they don't sit in the inbox forever.
 
+### UI follow-through
+Backend tolerance alone wasn't enough — the transfers tab in `/settings/users` was hiding the Approve/Reject buttons from the submitter (`canActOnRequest = isPending && !isInitiator && canManage`). Now the row computes `isSoloSenior` (initiator + only senior in company + own role is approver) and shows the buttons in that case. The amber "needs another approver" hint is replaced with a clear blue "أَنت المالك الوَحيد — يُمكِنك اعتماد طَلَبك بنَفسك" notice.
+
 ### Files changed
 - `app/api/permissions/transfer/[id]/approve/route.ts` — single-owner check + audit annotation.
 - `app/api/permissions/transfer/[id]/reject/route.ts` — same check + annotation.
+- `app/settings/users/page.tsx` — UI shows buttons + helpful notice for solo seniors.
 - `lib/version.ts` — APP_VERSION bumped to 3.74.67.
 
 ---

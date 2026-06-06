@@ -3282,7 +3282,14 @@ export default function UsersSettingsPage() {
                         const toUser = members.find(m => m.user_id === pt.to_user_id)
                         const isPending = pt.status === 'pending'
                         const isInitiator = pt.transferred_by === currentUserId
-                        const canActOnRequest = isPending && !isInitiator && canManage
+                        // v3.74.67 — single-owner exemption: if I'm the only senior
+                        // in the company, allow self-approve/reject (backend enforces too).
+                        const seniorCount = members.filter(m =>
+                          ['owner','admin','general_manager'].includes(String(m.role || ''))
+                        ).length
+                        const isSoloSenior = isInitiator && seniorCount === 1 &&
+                          ['owner','admin','general_manager'].includes(String(currentRole || ''))
+                        const canActOnRequest = isPending && canManage && (!isInitiator || isSoloSenior)
                         const resourceLabel =
                           pt.resource_type === 'all' ? 'الكل' :
                           pt.resource_type === 'customers' ? 'العملاء' :
@@ -3318,8 +3325,11 @@ export default function UsersSettingsPage() {
                                   {pt.status === 'rejected' && pt.rejected_reason && (
                                     <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">سَبَب الرَّفض: {pt.rejected_reason}</p>
                                   )}
-                                  {isPending && isInitiator && (
+                                  {isPending && isInitiator && !isSoloSenior && (
                                     <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">طَلَبت هذا النَّقل بنفسك — يَحتاج اعتماد مَسؤول آخر.</p>
+                                  )}
+                                  {isPending && isInitiator && isSoloSenior && (
+                                    <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-1">أَنت المالك الوَحيد — يُمكِنك اعتماد طَلَبك بنَفسك (اعتماد ذاتى).</p>
                                   )}
                                 </div>
                               </div>
