@@ -1197,7 +1197,7 @@ export function Sidebar() {
               <Button
                 variant="ghost"
                 className="w-full justify-start text-gray-300 hover:text-white hover:bg-slate-800 py-3 relative"
-                onClick={() => setNotificationCenterOpen(true)}
+                onClick={() => { setIsOpen(false); setNotificationCenterOpen(true) }}
               >
                 <Bell className="w-5 h-5 ml-2" />
                 <span suppressHydrationWarning>

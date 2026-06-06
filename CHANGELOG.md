@@ -4,6 +4,30 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.72] - 2026-06-07 — Bell click closes the sidebar before opening the notification sheet
+
+### Why
+v3.74.71 made the notification center render as a bottom `Sheet` on mobile — but tapping the bell from inside the mobile sidebar left both panels visible at the same time. The sidebar sits at `z-[9998]` and stays on screen; the new sheet opens behind it. The user sees only the sidebar (the screenshot shared confirmed exactly this).
+
+### What changed
+The bell button now closes the sidebar drawer before triggering the notification sheet:
+
+```tsx
+// before
+onClick={() => setNotificationCenterOpen(true)}
+
+// after
+onClick={() => { setIsOpen(false); setNotificationCenterOpen(true) }}
+```
+
+`setIsOpen(false)` collapses the mobile sidebar (the `translate-x` rail), then the bottom sheet appears with nothing covering it. On desktop the sidebar has no overlay state to begin with, so the same handler just opens the sheet — no behaviour change.
+
+### Files changed
+- `components/sidebar.tsx` — single-line onClick handler change at line 1200. Applied via Python anchor for the same reason as v3.74.71: this 1,289-line file is one Edit-tool truncation away from the day's pattern.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.72.
+
+---
+
 ## [3.74.71] - 2026-06-07 — NotificationCenter renders as a Sheet on mobile
 
 ### Why
