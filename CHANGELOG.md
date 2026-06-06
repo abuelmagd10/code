@@ -4,6 +4,66 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.56] - 2026-06-05 — Auto-refresh on tab/window focus: useAutoRefresh hook + 15-page pilot
+
+### Why
+Several pages don't reflect new database state until the user manually presses F5 — a recurring complaint. We need a universal, cheap-to-run mechanism that brings pages back in sync the moment the user returns to them, without overloading Supabase with permanent subscriptions on every page.
+
+### Decision — hybrid model
+- **Realtime subscriptions** stay reserved for the small set of pages with multi-user workflows where seconds matter (already used by `/inventory-transfers`, notifications, approvals).
+- **Window focus / visibilitychange** is now the universal baseline: refresh on tab return.
+- No polling — wasted on idle tabs and hammers the DB.
+
+### New hook — `hooks/use-auto-refresh.ts`
+```ts
+useAutoRefresh({ onRefresh: loadData })
+```
+Listens for `window.focus` and `document.visibilitychange === "visible"`. Re-runs the consumer's load function with a 5-second min-interval throttle (configurable via `minIntervalMs`). SSR-safe (no listeners attached on the server). The callback is held in a ref so a fresh closure is always called without re-attaching listeners every render. Failures are caught and only logged in dev.
+
+### Pilot — 15 high-traffic pages
+| Page | Load fn |
+|---|---|
+| `/invoices` | `loadData` |
+| `/bills` | `loadData` |
+| `/customers` | `loadCustomers` |
+| `/suppliers` | `loadSuppliers` |
+| `/products` | `loadProducts` |
+| `/sales-orders` | `loadOrders` |
+| `/expenses` | `loadExpenses` |
+| `/inventory` | `loadData` |
+| `/banking` | `loadData` |
+| `/customer-credits` | `loadData` |
+| `/vendor-credits` | `loadData` |
+| `/warehouses` | `loadData` |
+| `/shareholders` | `loadShareholders` |
+| `/sales-return-requests` | `loadData` |
+| `/fixed-assets` | `loadData` |
+
+Each page now has the same shape:
+```ts
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+// ...
+useAutoRefresh({ onRefresh: () => loadData() })
+```
+The arrow-wrap protects against const-TDZ since the hook can be placed before the function definition; the closure only resolves on actual focus/visibility events, well after mount.
+
+### Rollout plan
+- This release covers ~7% of pages but the heaviest 15. Wave migration starts next release: bills/invoices have already been done, next batches target `/journal-entries`, `/payments`, the `/reports/*` family, and the inventory sub-pages.
+- Pages that already use `useRealtimeTable` will keep it as the higher-precedence source; adding `useAutoRefresh` next to it is harmless because the throttle prevents back-to-back fetches.
+
+### Files changed
+- New: `hooks/use-auto-refresh.ts`.
+- Touched: the 15 pilot pages above (1 `import` + 1 hook call each).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.56.
+
+### Testing
+1. Open `/customers`, tab away to another app, edit a customer in another tab/window (or wait for someone else to), come back → list refreshes.
+2. Open `/invoices`, blur the window, blur and refocus rapidly: only one fetch fires per 5-second window (throttle works).
+3. Open any pilot page in two tabs, modify in tab A, switch to tab B → tab B refreshes automatically when it gains focus.
+4. No realtime subscriptions are opened by this hook — Supabase realtime usage panel shouldn't grow.
+
+---
+
 ## [3.74.55] - 2026-06-05 — Sidebar "Inventory Transfer" badge survives until receipt
 
 ### Why

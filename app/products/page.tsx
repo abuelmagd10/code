@@ -27,6 +27,7 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { validatePrice, getValidationError, validateField } from "@/lib/validation"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   getDefaultProductAccountingAccounts,
   isCompatibleProductExpenseAccount,
@@ -373,6 +374,9 @@ export default function ProductsPage() {
     isCompatibleProductExpenseAccount(account, formData.product_type as ProductType, formData.item_type)
   )
   const isStockAccountingProduct = isStockProductType(formData.product_type as ProductType, formData.item_type)
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadProducts() })
 
   const loadProducts = async () => {
     try {

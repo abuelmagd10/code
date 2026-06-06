@@ -18,6 +18,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
@@ -102,6 +103,9 @@ export default function ExpensesPage() {
     window.addEventListener('app_language_changed', handler)
     return () => { window.removeEventListener('app_language_changed', handler) }
   }, [])
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadExpenses() })
 
   const loadExpenses = useCallback(async () => {
     try {

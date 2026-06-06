@@ -25,6 +25,7 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRouter } from "next/navigation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BranchFilter } from "@/components/BranchFilter"
 
 interface Supplier {
@@ -211,6 +212,9 @@ export default function SuppliersPage() {
 
   // ❌ No periodic polling — Enterprise pattern:
   // Balances update via: visibilitychange + Realtime subscriptions + user navigation
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadSuppliers() })
 
   const loadSuppliers = async () => {
     try {

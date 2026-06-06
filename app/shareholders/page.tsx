@@ -15,6 +15,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { Plus, Edit2, Trash2, DollarSign, Users, AlertCircle, CheckCircle, Banknote } from "lucide-react"
 import { filterLeafAccounts, filterCashBankAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
@@ -205,6 +206,9 @@ export default function ShareholdersPage() {
     return () => { window.removeEventListener('app_language_changed', handler) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => { if (companyId) loadShareholders(companyId) } })
 
   const loadShareholders = async (company_id: string) => {
     const { data: shData } = await supabase

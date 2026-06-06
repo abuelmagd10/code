@@ -18,6 +18,7 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type VendorCredit = {
   id: string
@@ -101,6 +102,9 @@ export default function VendorCreditsPage() {
   ], [appLang])
 
   useEffect(() => { loadData() }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     setLoading(true)

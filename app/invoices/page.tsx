@@ -27,6 +27,7 @@ import { ERPPageHeader } from "@/components/erp-page-header"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -383,6 +384,10 @@ export default function InvoicesPage() {
   useEffect(() => {
     loadData()
   }, [branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
+
+  // v3.74.56 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  // arrow-wrap لِتَجَنُّب TDZ — loadData مُعَرَّفَة لاحِقاً فى الجِسم
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {

@@ -31,6 +31,7 @@ import { BranchFilter } from "@/components/BranchFilter"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { CurrencyCell, StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -319,6 +320,9 @@ export default function CustomersPage() {
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadCustomers() })
 
   const loadCustomers = async () => {
     try {

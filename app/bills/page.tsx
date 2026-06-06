@@ -43,6 +43,7 @@ import { StatusBadge } from "@/components/DataTableFormatters"
 import { processPurchaseReturnFIFOReversal } from "@/lib/purchase-return-fifo-reversal"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
 import { getCachedPage, setCachedPage, invalidateCache, prefetchPage } from "@/lib/page-cache"
 // 🏷️ Canonical shared types — Single Source of Truth
@@ -321,6 +322,9 @@ export default function BillsPage() {
     window.addEventListener('company_updated', handleCompanyChange);
     return () => window.removeEventListener('company_updated', handleCompanyChange);
   }, []);
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

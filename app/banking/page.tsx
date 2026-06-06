@@ -16,6 +16,7 @@ import {
 import { useSupabase } from "@/lib/supabase/hooks";
 import { filterCashBankAccounts } from "@/lib/accounts";
 import { useToast } from "@/hooks/use-toast";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications";
 import { getActiveCompanyId } from "@/lib/company";
 import { canAction } from "@/lib/authz";
@@ -252,6 +253,9 @@ export default function BankingPage() {
     };
     updateRate();
   }, [transfer.currency, transfer.amount, companyId]);
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

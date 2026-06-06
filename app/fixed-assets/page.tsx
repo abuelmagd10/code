@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { getActiveCompanyId } from "@/lib/company"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -153,6 +154,9 @@ export default function FixedAssetsPage() {
       setCurrency(localStorage.getItem('company_currency') || 'SAR')
     }
   }, [])
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     try {

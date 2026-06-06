@@ -12,6 +12,7 @@ import { DataPagination } from "@/components/data-pagination"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type CustomerCredit = {
   customerId: string
@@ -48,6 +49,9 @@ export default function CustomerCreditsPage() {
     window.addEventListener('storage', read)
     return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }
   }, [])
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     setLoading(true)

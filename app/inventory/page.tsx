@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useUserContext } from "@/hooks/use-user-context"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { getCachedPage, setCachedPage, invalidateCache } from "@/lib/page-cache"
 
 interface InventoryTransaction {
@@ -278,6 +279,9 @@ export default function InventoryPage() {
     setWarehouses(finalWarehouses as any[])
     return defaults
   }, [supabase, appLang])
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => { if (userContext) loadData(userContext) } })
 
   const loadData = async (context: UserContext) => {
     try {

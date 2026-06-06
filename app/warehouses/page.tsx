@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { useUserContext } from "@/hooks/use-user-context"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { Plus, Pencil, Trash2, Warehouse, Building2, MapPin, Phone, User } from "lucide-react"
 import {
   Dialog,
@@ -97,6 +98,9 @@ export default function WarehousesPage() {
     window.addEventListener('app_language_changed', handler)
     return () => window.removeEventListener('app_language_changed', handler)
   }, [])
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     if (!userContext) return

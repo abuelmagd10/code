@@ -14,6 +14,7 @@ import { CheckCircle, XCircle, Clock, Loader2, ArrowLeft, RotateCcw, FileText, W
 import { ERPPageHeader } from "@/components/erp-page-header"
 import Link from "next/link"
 import { toast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   SALES_RETURN_LEVEL1_APPROVER_ROLES,
   SALES_RETURN_VIEWER_ROLES,
@@ -146,6 +147,9 @@ export default function SalesReturnRequestsPage() {
     if (!currentWarehouseId && currentBranchId && req.branch_id && req.branch_id !== currentBranchId) return false
     return true
   }
+
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

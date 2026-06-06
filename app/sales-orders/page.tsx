@@ -34,6 +34,7 @@ import { CompanyHeader } from "@/components/company-header";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -771,6 +772,9 @@ function SalesOrdersContent() {
   }, [supabase, appLang]);
 
   // تحميل الأوامر - إصدار مبسط جداً
+  // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadOrders() })
+
   const loadOrders = async () => {
     try {
       setLoading(true);
