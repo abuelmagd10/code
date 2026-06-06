@@ -20,6 +20,7 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import { X } from "lucide-react"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // Utility function for number formatting
 const formatNumber = (num: number) => {
@@ -102,6 +103,9 @@ export default function AssetCategoriesPage() {
     }
     loadData()
   }, [])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     try {

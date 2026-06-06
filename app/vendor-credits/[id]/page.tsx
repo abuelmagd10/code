@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { ArrowRight, FileCheck } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useCallback } from "react"
 
 type VendorCredit = {
@@ -73,6 +74,9 @@ export default function VendorCreditViewPage() {
   const [sourceBill, setSourceBill] = useState<any>(null)
   const [branch, setBranch] = useState<any>(null)
   const [costCenter, setCostCenter] = useState<any>(null)
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     if (!id) return

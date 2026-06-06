@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAccessPage } from "@/lib/authz"
 import { formatNumber } from "@/lib/utils"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   FileText, Download, Building2, Calculator, TrendingDown,
   Package, DollarSign, Calendar, BarChart3
@@ -85,6 +86,9 @@ export default function FixedAssetsReportsPage() {
       setAppLang((localStorage.getItem('app_language') as 'ar' | 'en') || 'ar')
     }
   }, [])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadEnhancedReport() })
 
   const loadEnhancedReport = useCallback(async () => {
     try {

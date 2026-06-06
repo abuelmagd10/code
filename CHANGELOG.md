@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.60] - 2026-06-06 — Auto-refresh rollout Wave 5: +10 pages (manufacturing + fixed-assets + credits)
+
+### Why
+Continuing the rollout. Coverage now stands at **65 of ~200 pages**. This wave focuses on manufacturing, fixed assets, and per-record credit/refund pages.
+
+### Pages added
+- **Manufacturing (3):** `material-issue`, `product-receive`, `work-centers`
+- **Inventory (1):** `third-party`
+- **Customer / Vendor credits (3):** `customer-refund-requests`, `customer-credits/[customerId]`, `vendor-credits/[id]`
+- **Fixed assets (3):** `categories`, `reports`, `[id]`
+
+### Skipped (need future attention)
+Several HR pages have binary file encoding issues that block the Edit/grep tools (`hr/employees`, `hr/attendance/{anomalies,devices,settings}`). They'll need a different approach — likely Read+Edit with explicit lines, or a one-off encoding fix.
+
+### Coverage so far
+| Wave | Pages | Total |
+|---|---:|---:|
+| 1 (v3.74.56) | 15 | 15 |
+| 2 (v3.74.57) | 11 | 26 |
+| 3 (v3.74.58) | 8 | 34 |
+| 4 (v3.74.59) | 21 | 55 |
+| 5 (v3.74.60) | 10 | **65** |
+
+### Files changed
+- 10 page files (each: one import + one hook call).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.60.
+
+---
+
 ## [3.74.59] - 2026-06-06 — Auto-refresh rollout Wave 4: +21 pages (reports + bookings + banking)
 
 ### Why

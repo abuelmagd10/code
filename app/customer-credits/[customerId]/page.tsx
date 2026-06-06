@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   Wallet, ChevronRight, ArrowUpCircle, ArrowDownCircle,
   FileText, RotateCcw, CheckCircle, AlertCircle, Loader2
@@ -65,6 +66,9 @@ export default function CustomerCreditDetailPage() {
       setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
     } catch {}
   }, [])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     setLoading(true)

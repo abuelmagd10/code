@@ -34,6 +34,7 @@ import {
 import { AddCapitalDialog } from "@/components/fixed-assets/add-capital-dialog"
 import { DisposeAssetDialog } from "@/components/fixed-assets/dispose-asset-dialog"
 import { AssetHistory } from "@/components/fixed-assets/asset-history"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface FixedAsset {
   id: string
@@ -179,6 +180,9 @@ export default function FixedAssetDetailsPage() {
     }
     loadData()
   }, [params.id])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

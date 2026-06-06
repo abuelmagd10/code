@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useAccess } from "@/lib/access-context"
 import { getActiveCompanyId } from "@/lib/company"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import {
   type AppLang,
   type ProductionOrderListItem,
@@ -77,6 +78,9 @@ export default function MaterialIssuePage() {
     window.addEventListener("storage", (e) => { if (e.key === "app_language") handler() })
     return () => window.removeEventListener("app_language_changed", handler)
   }, [])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadOrders() })
 
   const loadOrders = useCallback(async () => {
     if (!canRead) return

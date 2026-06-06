@@ -28,6 +28,7 @@ import {
   DollarSign, Search, AlertCircle, Banknote, Building2
 } from "lucide-react"
 import Link from "next/link"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface RefundRequest {
   id: string
@@ -128,6 +129,9 @@ export default function CustomerRefundRequestsPage() {
   useEffect(() => {
     if (hydrated) loadData()
   }, [hydrated, filterStatus])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {

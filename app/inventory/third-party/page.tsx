@@ -16,6 +16,7 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { type UserContext, getRoleAccessLevel } from "@/lib/validation"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { usePermissions } from "@/lib/permissions-context"
+import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface ThirdPartyItem {
   id: string
@@ -187,6 +188,9 @@ export default function ThirdPartyInventoryPage() {
       window.removeEventListener('invoice_status_changed', handleInvoiceUpdate)
     }
   }, [])
+
+  // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
+  useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = async () => {
     try {
