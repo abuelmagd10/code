@@ -793,7 +793,7 @@ export function NotificationCenter({
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
+          className="w-[95vw] max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col p-0 overflow-hidden"
         >
           <DialogDescription className="sr-only">
             {appLang === 'en' ? 'Loading notification center' : 'جاري تحميل مركز الإشعارات'}
@@ -816,16 +816,16 @@ export function NotificationCenter({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden"
+        className="w-[95vw] max-w-4xl max-h-[95vh] sm:max-h-[90vh] flex flex-col p-0 overflow-hidden"
       >
         <DialogDescription className="sr-only">
           {appLang === 'en' ? 'Notification center with filters and actions' : 'مركز الإشعارات مع الفلاتر والإجراءات'}
         </DialogDescription>
         {/* 🔹 A. Header Bar */}
-        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
+        <DialogHeader className="px-3 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              <DialogTitle className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-2">
                 {appLang === 'en' ? 'Notification Center' : 'مركز الإشعارات'}
               </DialogTitle>
               <div className="flex items-center gap-4 text-sm">
@@ -998,7 +998,7 @@ export function NotificationCenter({
         </div>
 
         {/* 🔹 C. Notifications List */}
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-6 sm:py-4">
           {loading ? (
             // 🔹 Skeleton Loader
             <div className="space-y-3">
@@ -1048,7 +1048,7 @@ export function NotificationCenter({
                 return (
                   <div
                     key={notification.id}
-                    className={`p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${statusStyles} ${priorityStyles.border}`}
+                    className={`p-3 sm:p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${statusStyles} ${priorityStyles.border}`}
                     onClick={() => handleNotificationClick(notification)}
                   >
                     {/* 🔹 Row 1: Icon, Title, Badges */}

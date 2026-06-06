@@ -4,6 +4,34 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.70] - 2026-06-06 — Mobile-responsive polish on NotificationCenter
+
+### Why
+On phones the notification center opened with the desktop layout proportions: 24-pixel horizontal padding, a `text-2xl` title, and `max-w-4xl` (896 px) on a 375-pixel screen. The result was a dialog that visually fit but felt cramped — long titles wrapped awkwardly, filter chips squeezed, notification cards lost breathing room.
+
+### What changed
+Five surgical Tailwind tweaks — adaptive sizing only, no logic changes:
+
+| Element | Before | After |
+|---|---|---|
+| `DialogContent` width | `max-w-4xl max-h-[90vh]` | `w-[95vw] max-w-4xl max-h-[95vh] sm:max-h-[90vh]` |
+| Header padding | `px-6 pt-6 pb-4` | `px-3 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4` |
+| Title size | `text-2xl mb-2` | `text-lg sm:text-2xl mb-1 sm:mb-2` |
+| List wrapper padding | `px-6 py-4` | `px-3 py-3 sm:px-6 sm:py-4` |
+| Notification card | `p-4` | `p-3 sm:p-4` |
+
+Desktop layout is untouched at the `sm:` breakpoint (≥ 640 px). The filter grid (`grid-cols-2 md:grid-cols-4 lg:grid-cols-6`) was already responsive and didn't need changing.
+
+### Files changed
+- `components/NotificationCenter.tsx` — 5 anchor replaces via Python script (the file is 1,246 lines; Edit tool truncation risk avoided).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.70.
+
+### Notes
+- v3.74.69 was a documentation-only release (AI knowledge injection at DB level — `lib/version.ts` stayed at 3.74.68). This bump jumps directly to 3.74.70 because **code** is shipping for the first time since v3.74.68.
+- TypeScript: 0 errors on `NotificationCenter.tsx`.
+
+---
+
 ## [3.74.69] - 2026-06-06 — AI assistant knowledge injection (DB-only)
 
 ### Why
