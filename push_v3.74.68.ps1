@@ -38,6 +38,11 @@ if ($users -match 'فروع متعددة 🚧' -and $users -match 'v3\.74\.68') 
     Write-Host "+ multi-branch button disabled + marker present" -ForegroundColor Green
 } else { Write-Host "X multi-branch disable wiring missing" -ForegroundColor Red; exit 1 }
 
+# Shareholders roadmap doc shipped with this release
+if (Test-Path 'docs/SHAREHOLDERS_ROADMAP.md') {
+    Write-Host "+ SHAREHOLDERS_ROADMAP.md present" -ForegroundColor Green
+} else { Write-Host "X SHAREHOLDERS_ROADMAP.md missing" -ForegroundColor Red; exit 1 }
+
 Write-Host "`n=== TypeScript check on touched files ===" -ForegroundColor Cyan
 $tsc = & npx tsc --noEmit -p tsconfig.json 2>&1
 $touched = $tsc | Select-String "(settings/users/page.tsx|branch-access/route.ts)"

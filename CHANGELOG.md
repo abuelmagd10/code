@@ -31,6 +31,9 @@ That's ~1-2 person-days of work plus a full E2E governance test pass. Not safe t
 - `app/settings/users/page.tsx` — multi-branch button disabled + tooltip.
 - `lib/version.ts` — APP_VERSION bumped to 3.74.68.
 
+### Documentation added
+- `docs/SHAREHOLDERS_ROADMAP.md` — 20-gap audit of the shareholders module vs Oracle Fusion / SAP / NetSuite baselines, scored 4.2/10 today. Release plan v3.75.x → v3.79.x with severity, compliance impact, and blast radius per gap. **No code or schema changes ship with this audit** — the live `shareholders`, `capital_contributions`, `dividend_payments`, `shareholder_drawings`, `shareholder_percentage_history` tables and the `distribute_dividends_atomic` RPC are intentionally untouched. The first release that will modify any of them is v3.75.0 (withholding tax on dividends).
+
 ### How to restore in v3.75.0
 1. In `route.ts`: replace the new short-circuit `POST` body with `return _legacyPOST(request)` once the filter layer is unified.
 2. In `users/page.tsx`: re-enable the button (`disabled` off, `onClick` back to `setPermissionAction('branch_access')`).
