@@ -4,6 +4,39 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.68] - 2026-06-06 — Temporarily disable "Multi-branch access" UI + API
+
+### Why
+Auditing the "Add branch access" flow turned up a functional gap: the operator picks an employee and 3 branches, the request succeeds, a row lands in `user_branch_access`, but the data-filtering layer used by every list page (`customers`, `sales-orders`, `invoices`, `bills`, etc.) still computes the branch filter from `company_members.branch_id` — a single column. The newly granted branches have no effect on what the user actually sees.
+
+This is **not** a security hole (the feature doesn't widen anything that was previously hidden), but it's a misleading UX bug: managers think governance was updated and it wasn't.
+
+### What's needed for a real fix (deferred to v3.75.0)
+A clean rewrite would touch:
+- `lib/role-based-access.ts` — `buildAccessFilter` returning `branchIds[]` not `branchId`.
+- `lib/access-context.tsx` — already computes `allowed_branches[]`; just need consumers.
+- **16 page files** that switch from `.eq("branch_id", X)` to `.in("branch_id", allowed_branches)`.
+- **155 RLS policies** that hard-code `branch_id = my_branch` — each one needs an audit and many need a rewrite to `branch_id = ANY(my_branches)`.
+- INSERT forms — currently the user has no UI to pick which of their N branches a new record belongs to.
+
+That's ~1-2 person-days of work plus a full E2E governance test pass. Not safe to land as a quick hotfix.
+
+### What ships in this version
+- The "Multi branches" button in the Transfer/Share permissions dialog renders disabled with a 🚧 marker and tooltip "ميزَة قَيد التَّطوير — تَتَطَلَّب تَوحيد طَبَقَة الفَلتَرَة (v3.75.0)".
+- `POST /api/permissions/branch-access` short-circuits to **HTTP 503** with `{disabled: true}` so a hand-crafted request can't write rows either. The legacy implementation is preserved as a private `_legacyPOST` function for easy restoration in v3.75.0.
+- `GET` and `PATCH` on the same endpoint remain functional — existing rows are still readable / editable (no data loss).
+
+### Files changed
+- `app/api/permissions/branch-access/route.ts` — POST returns 503; old body kept as `_legacyPOST`.
+- `app/settings/users/page.tsx` — multi-branch button disabled + tooltip.
+- `lib/version.ts` — APP_VERSION bumped to 3.74.68.
+
+### How to restore in v3.75.0
+1. In `route.ts`: replace the new short-circuit `POST` body with `return _legacyPOST(request)` once the filter layer is unified.
+2. In `users/page.tsx`: re-enable the button (`disabled` off, `onClick` back to `setPermissionAction('branch_access')`).
+
+---
+
 ## [3.74.67] - 2026-06-06 — Single-owner exemption for the two-eye rule on permission transfers
 
 ### Why
@@ -24,10 +57,21 @@ Cleared the stuck pending transfer `4d7797ed-d008-...` (خالد عجلان → 
 ### UI follow-through
 Backend tolerance alone wasn't enough — the transfers tab in `/settings/users` was hiding the Approve/Reject buttons from the submitter (`canActOnRequest = isPending && !isInitiator && canManage`). Now the row computes `isSoloSenior` (initiator + only senior in company + own role is approver) and shows the buttons in that case. The amber "needs another approver" hint is replaced with a clear blue "أَنت المالك الوَحيد — يُمكِنك اعتماد طَلَبك بنَفسك" notice.
 
+### Tightened role gate (user request)
+The permission transfer/share surface is now restricted to **Owner + General Manager only**. Admin was removed at the user's explicit request — keep this surface narrow because the operations are high-impact (changing record ownership across employees, granting cross-employee data access). Other admin abilities (user invites, role changes, member removal) are untouched and still available to admin / manager.
+
+| Surface | Roles before | Roles after |
+|---|---|---|
+| Create transfer / share request | owner, admin, general_manager | **owner, general_manager** |
+| Approve / reject transfer | owner, admin, general_manager | **owner, general_manager** |
+| UI section "Transfer / Share permissions" | canManage (owner/admin/manager) | **canManagePermissions (owner/general_manager)** |
+
 ### Files changed
-- `app/api/permissions/transfer/[id]/approve/route.ts` — single-owner check + audit annotation.
-- `app/api/permissions/transfer/[id]/reject/route.ts` — same check + annotation.
-- `app/settings/users/page.tsx` — UI shows buttons + helpful notice for solo seniors.
+- `app/api/permissions/transfer/[id]/approve/route.ts` — single-owner check + audit annotation + tighter ALLOWED_ROLES.
+- `app/api/permissions/transfer/[id]/reject/route.ts` — same.
+- `app/api/permissions/transfer/route.ts` — tighter allowedRoles on create.
+- `app/api/permissions/route.ts` — tighter allowedRoles on share / vacation cover.
+- `app/settings/users/page.tsx` — new `canManagePermissions` gate, used by the Transfer/Share section + the per-row Approve/Reject buttons. Solo-senior message replaces the "needs another approver" hint when applicable.
 - `lib/version.ts` — APP_VERSION bumped to 3.74.67.
 
 ---

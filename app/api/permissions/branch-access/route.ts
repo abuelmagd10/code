@@ -65,7 +65,24 @@ export async function GET(request: Request) {
 }
 
 // POST: إضافة وصول فرع جديد
-export async function POST(request: Request) {
+// v3.74.68 — temporarily disabled. Data-filtering layer still uses
+// company_members.branch_id (single), not allowed_branches[], so
+// granting extra branches looks effective in UI but doesn't change
+// what the user actually sees. Re-enable in v3.75.0 after unifying
+// the filter layer and auditing 155 branch_id-aware RLS policies.
+export async function POST(_request: Request) {
+  return NextResponse.json(
+    {
+      error: "ميزَة 'وُصول الفُروع المُتَعَدِّدَة' قَيد التَّطوير وَمُعَطَّلَة مُؤَقَّتاً (v3.74.68). يَتم تَوحيد طَبَقَة الفَلتَرَة فى v3.75.0.",
+      disabled: true,
+    },
+    { status: 503 }
+  )
+}
+
+// Legacy implementation kept as private so its scope variables don't
+// leak into the module. Will be restored or replaced in v3.75.0.
+async function _legacyPOST(request: Request) {
   try {
     const cookieStore = await cookies()
     const supabase = createServerClient(

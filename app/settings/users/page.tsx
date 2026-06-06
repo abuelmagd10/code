@@ -3696,14 +3696,17 @@ export default function UsersSettingsPage() {
                   <ArrowRightLeft className="w-4 h-4" />
                   نقل ملكية
                 </Button>
+                {/* v3.74.68 — disabled. Data-filtering layer ignores allowed_branches[].
+                    Re-enable in v3.75.0 after the filter layer is unified. */}
                 <Button
-                  variant={permissionAction === 'branch_access' ? 'default' : 'outline'}
+                  variant="outline"
                   size="sm"
-                  onClick={() => setPermissionAction('branch_access')}
-                  className="flex-1 gap-2"
+                  disabled
+                  className="flex-1 gap-2 cursor-not-allowed opacity-60"
+                  title="ميزَة قَيد التَّطوير — تَتَطَلَّب تَوحيد طَبَقَة الفَلتَرَة (v3.75.0)"
                 >
                   <GitBranch className="w-4 h-4" />
-                  فروع متعددة
+                  فروع متعددة 🚧
                 </Button>
               </div>
 

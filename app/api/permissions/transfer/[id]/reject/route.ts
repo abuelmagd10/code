@@ -18,7 +18,9 @@ import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archi
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const ALLOWED_ROLES = ["owner", "admin", "general_manager"] as const
+// v3.74.67 — tightened: only Owner + General Manager can approve/reject
+// permission transfers. Admin removed at the user's explicit request.
+const ALLOWED_ROLES = ["owner", "general_manager"] as const
 
 export async function POST(
   request: Request,

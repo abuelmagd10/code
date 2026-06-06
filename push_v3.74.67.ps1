@@ -27,6 +27,25 @@ if ($rej -match 'singleOwnerExemption' -and $rej -match 'seniorCount') {
     Write-Host "+ reject route: exemption + senior count" -ForegroundColor Green
 } else { Write-Host "X reject route missing exemption" -ForegroundColor Red; exit 1 }
 
+# v3.74.67 — tightened role gates: owner + general_manager only (no admin)
+$gates = @(
+    'app/api/permissions/transfer/route.ts',
+    'app/api/permissions/transfer/[id]/approve/route.ts',
+    'app/api/permissions/transfer/[id]/reject/route.ts',
+    'app/api/permissions/route.ts'
+)
+foreach ($g in $gates) {
+    $c = Get-Content -LiteralPath $g -Raw
+    if ($c -match '"owner",\s*"general_manager"' -and -not ($c -match '"owner",\s*"admin",\s*"general_manager"')) {
+        Write-Host "+ $g - role gate tightened" -ForegroundColor Green
+    } else { Write-Host "X $g - role gate not tightened correctly" -ForegroundColor Red; exit 1 }
+}
+
+$users = Get-Content -LiteralPath "app/settings/users/page.tsx" -Raw
+if ($users -match 'canManagePermissions' -and $users -match 'isSoloSenior') {
+    Write-Host "+ users page has canManagePermissions + isSoloSenior" -ForegroundColor Green
+} else { Write-Host "X users page missing v3.74.67 wiring" -ForegroundColor Red; exit 1 }
+
 Write-Host "`n=== TypeScript check (touched files) ===" -ForegroundColor Cyan
 $tsc = & npx tsc --noEmit -p tsconfig.json 2>&1
 $relevant = $tsc | Select-String "permissions/transfer/\[id\]/(approve|reject)/route"
