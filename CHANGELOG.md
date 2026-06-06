@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.55] - 2026-06-05 — Sidebar "Inventory Transfer" badge survives until receipt
+
+### Why
+The red number next to **نقل المخزون** in the sidebar disappeared the moment a transfer flipped to `in_transit`, but the destination store_manager still owed an action — pressing **اعتماد الاستلام**. The badge should stay until the transfer is `received`.
+
+Root cause was in the `get_user_approval_badges` DB function:
+
+- It counted only `status IN ('pending','pending_approval')` — `in_transit` was simply missing.
+- The scope filter was hard-coded to `source_warehouse_id = my_warehouse`, so destination-side workload was never visible at all.
+- Manager/accountant approvers weren't included in the SQL even though they're the approvers on `pending_approval`.
+
+### Fix
+Recreated the function with a per-status counting rule that mirrors who can actually act on each state:
+
+| Transfer status | Counted for |
+|---|---|
+| `pending_approval` | owner / admin / general_manager (company-wide), and manager / accountant scoped to the source-or-destination branch |
+| `pending` | owner / admin / general_manager, plus store_manager / warehouse_manager whose warehouse equals `source_warehouse_id` |
+| `in_transit` | owner / admin / general_manager, plus store_manager / warehouse_manager whose warehouse equals `destination_warehouse_id` |
+
+The rest of `get_user_approval_badges` is preserved byte-for-byte — only the `inventory_transfer` block changed.
+
+### Files changed
+- DB function `public.get_user_approval_badges` (migration `v3_74_55_badge_transfer_per_status`).
+- `lib/version.ts` — APP_VERSION bumped to 3.74.55.
+
+### Testing
+1. As source store_manager, before approval the badge is 0; after approval the badge becomes 1.
+2. Press **Start Transfer** → status goes to `in_transit`. Source manager's badge drops to 0; destination manager's badge becomes 1.
+3. Destination manager presses **Approve Receipt** → status goes to `received`. Destination manager's badge drops to 0.
+4. As owner/admin you continue to see the company-wide total across all three statuses, exactly as before.
+
+---
+
 ## [3.74.54] - 2026-06-05 — Notify source warehouse on direct transfer creation too (not only on approval)
 
 ### Why
