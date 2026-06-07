@@ -36,6 +36,10 @@ const SOURCE_TYPE_ICON: Record<string, React.ReactNode> = {
   sales_return: <RotateCcw className="h-4 w-4 text-emerald-500" />,
   credit_applied: <ArrowDownCircle className="h-4 w-4 text-red-500" />,
   manual: <ArrowUpCircle className="h-4 w-4 text-blue-500" />,
+  // v3.74.78 — أَنواع كانَت مَفقودَة من المَصفوفَة
+  overpayment: <ArrowUpCircle className="h-4 w-4 text-amber-500" />,
+  manual_credit: <ArrowUpCircle className="h-4 w-4 text-blue-500" />,
+  credit_expired: <ArrowDownCircle className="h-4 w-4 text-gray-500" />,
 }
 
 export default function CustomerCreditDetailPage() {
@@ -145,6 +149,10 @@ export default function CustomerCreditDetailPage() {
       sales_return: { ar: 'مرتجع مبيعات', en: 'Sales Return' },
       credit_applied: { ar: 'رصيد مطبّق على فاتورة', en: 'Credit Applied' },
       manual: { ar: 'إدخال يدوي', en: 'Manual Entry' },
+      // v3.74.78 — تَسميات كانَت مَفقودَة
+      overpayment: { ar: 'فائض دفعة', en: 'Overpayment' },
+      manual_credit: { ar: 'رصيد يدوي', en: 'Manual Credit' },
+      credit_expired: { ar: 'رصيد منتهي', en: 'Credit Expired' },
     }
     return labels[type]?.[appLang] || type
   }

@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.78] - 2026-06-07 — Credit source clarity in 3 places: list, ledger, payments
+
+### Why
+After v3.74.77 the invoice list shows the customer's overall credit, but post-deploy testing surfaced three follow-ups:
+
+1. **Invoice list "رصيد دائن" column** shows the amount but not the source. Looking at INV-00005 next to INV-00004 (both showing 10.00 for the same customer), the accountant can't tell whether each amount comes from a return on this row's invoice or from somewhere else.
+2. **`/customer-credits/[customerId]` ledger detail page** doesn't have labels for `overpayment`, `manual_credit`, `credit_expired` — only `sales_return`, `credit_applied`, `manual`. So those source types fall through to the raw text. Now that v3.74.77's overpayment trigger emits these source types, they need proper labels.
+3. **`/payments` page** still doesn't surface available customer credit when a customer is selected — the deferred Part 2 from v3.74.77.
+
+### What changed
+
+**Invoice list (`app/invoices/page.tsx`):**
+- New state `customerCreditSources: Map<customer_id, string>` loaded from active `customer_credits` rows.
+- For each customer, picks the most recent active credit (ordered by `created_at DESC`) and resolves a human-readable source label:
+  - `overpayment` → "فائض دفعة" / "overpayment"
+  - `invoice_return` with a matching invoice → "مرتجع INV-XXXX" / "return on INV-XXXX"
+  - `sales_return` → "مرتجع مبيعات" / "sales return"
+  - `manual_credit` → "يدوى" / "manual"
+- The Credit column now renders the amount with a small italic subtitle showing the source (truncates with `title` tooltip when long).
+
+**Ledger detail (`app/customer-credits/[customerId]/page.tsx`):**
+- `SOURCE_TYPE_ICON` extended with icons for `overpayment` (amber up-arrow), `manual_credit` (blue up-arrow), `credit_expired` (gray down-arrow).
+- `getSourceLabel` extended with Arabic + English labels for the same three types.
+
+**Payments page (`app/payments/page.tsx`):**
+- New tiny component `CustomerCreditBalanceHint` that mounts under the customer selector in the new customer-payment form.
+- Fetches `/api/customer-credits/[customerId]` when a customer is picked; if balance > 0, shows a green hint:
+  > 💰 رصيد دائن متاح: £10.00 — [تطبيق على فاتورة]
+- Self-contained (state inside the component), uses `useEffect` with cancel guard. Hidden when no balance or no selection.
+
+### Result
+- Invoice list shows where the credit came from at a glance, distinguishing "مرتجع INV-00004" from "فائض دفعة" or others.
+- `/customer-credits/[customerId]` covers every source type emitted by v3.74.77.
+- `/payments` surfaces the credit before the cashier records a cash payment, with a one-click link to apply it.
+
+### Verified
+- TypeScript: 0 errors across all 3 modified files.
+- All anchors patched cleanly via bash heredoc Python (no Edit-tool truncation).
+- Files end with closing braces, line counts match expected deltas.
+
+---
+
 ## [3.74.77] - 2026-06-07 — Auto-credit on overpayment + invoice list shows total customer credit
 
 ### Why

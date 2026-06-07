@@ -147,6 +147,8 @@ export default function InvoicesPage() {
   const [customerCredits, setCustomerCredits] = useState<CustomerCredit[]>([])
   // v3.74.77 — اجمالى رَصيد العَميل من كُل المَصادِر (overpayment + returns + manual)
   const [customerCreditBalances, setCustomerCreditBalances] = useState<Map<string, number>>(new Map())
+  // v3.74.78 — مَصدَر الرَّصيد (customer_id → 'مُرتَجَع INV-XXXX' أَو 'فائض دَفعَة INV-XXXX')
+  const [customerCreditSources, setCustomerCreditSources] = useState<Map<string, string>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterCustomers, setFilterCustomers] = useState<string[]>([])
@@ -797,6 +799,51 @@ export default function InvoicesPage() {
       } catch {
         setCustomerCreditBalances(new Map())
       }
+
+      // v3.74.78 — بِناء خَريطَة "مَصدَر الرَّصيد" لِكُل عَميل
+      // (آخِر/أَحدَث صَف نَشِط فى customer_credits مَع invoice_number المَرجَعى)
+      try {
+        const { data: activeCredits } = await supabase
+          .from("customer_credits")
+          .select("customer_id, reference_type, reference_id, amount, used_amount, applied_amount, created_at")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+        const sourcesMap = new Map<string, string>()
+        for (const row of activeCredits || []) {
+          const cid = String((row as any).customer_id)
+          if (sourcesMap.has(cid)) continue  // first (most recent) wins
+          const remaining = Number((row as any).amount || 0)
+            - Number((row as any).used_amount || 0)
+            - Number((row as any).applied_amount || 0)
+          if (remaining <= 0.01) continue
+          const refType = String((row as any).reference_type || "")
+          const refId = (row as any).reference_id
+          // ابحَث عَن invoice_number المُقابِل (لَو reference_id يُشير لفاتورَة أَو payment)
+          // payments لا تَملِك invoice_number مُباشَرَةً، لكِن invoices تَملِكها
+          let label = ""
+          if (refType === "overpayment" && refId) {
+            // refId هُنا = payment.id؛ نُلَوِّن المَصدَر فَقَط
+            label = appLang === 'en' ? 'overpayment' : 'فائض دفعة'
+          } else if (refType === "invoice_return" && refId) {
+            // refId هُنا = invoice.id الأَصلية
+            const sourceInv = ((result?.data as any[]) || []).find((iv: any) => iv.id === refId) as any
+            label = sourceInv
+              ? (appLang === 'en' ? `return on ${sourceInv.invoice_number}` : `مرتجع ${sourceInv.invoice_number}`)
+              : (appLang === 'en' ? 'sales return' : 'مرتجع مبيعات')
+          } else if (refType === "sales_return") {
+            label = appLang === 'en' ? 'sales return' : 'مرتجع مبيعات'
+          } else if (refType === "manual_credit") {
+            label = appLang === 'en' ? 'manual' : 'يدوى'
+          } else {
+            label = refType || (appLang === 'en' ? 'credit' : 'رصيد')
+          }
+          sourcesMap.set(cid, label)
+        }
+        setCustomerCreditSources(sourcesMap)
+      } catch {
+        setCustomerCreditSources(new Map())
+      }
     } catch (error) {
       console.error("Error loading invoices:", error)
       toast({
@@ -1204,12 +1251,19 @@ export default function InvoicesPage() {
         const creditStatus = getCreditStatus(row.id);
 
         if (customerCreditAmount < 0.01) return '-';
+        // v3.74.78 — مَصدَر الرَّصيد (أَحدَث مَصدَر فَعّال للعَميل)
+        const creditSource = row.customer_id ? (customerCreditSources.get(String(row.customer_id)) || '') : ''
 
         return (
           <div className="text-xs">
             <div className="font-medium text-purple-600 dark:text-purple-400">
               {customerCreditAmount.toFixed(2)} {currencySymbol}
             </div>
+            {creditSource && (
+              <div className="text-[10px] text-gray-500 dark:text-gray-400 italic truncate" title={creditSource}>
+                {creditSource}
+              </div>
+            )}
             {creditStatus.status !== 'none' && (
               <div className={`text-[10px] ${creditStatus.status === 'disbursed' ? 'text-gray-500' :
                 creditStatus.status === 'partial' ? 'text-orange-500' :
@@ -3076,4 +3130,3 @@ export default function InvoicesPage() {
     </>
   )
 }
-

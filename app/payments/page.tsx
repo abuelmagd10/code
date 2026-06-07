@@ -50,6 +50,40 @@ import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { Eye } from "lucide-react"
 
+// v3.74.78 — مكون صَغير يَعرِض رَصيد العَميل الدائن عِندَ اختياره فى نَموذَج الدَّفع.
+// يَجلِب الرَّصيد من /api/customer-credits/[customerId] وَيَختَفى لَو لا يوجَد رَصيد.
+function CustomerCreditBalanceHint({ customerId, appLang, currencySymbol }: { customerId: string; appLang: 'ar' | 'en'; currencySymbol: string }) {
+  const [balance, setBalance] = useState(0)
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => {
+    if (!customerId) { setBalance(0); setLoaded(false); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/customer-credits/${customerId}`)
+        const json = await res.json()
+        if (!cancelled && json.success) {
+          setBalance(Number(json.data?.balance || 0))
+          setLoaded(true)
+        }
+      } catch { /* non-critical */ }
+    })()
+    return () => { cancelled = true }
+  }, [customerId])
+  if (!loaded || balance < 0.01) return null
+  return (
+    <div className="text-[11px] mt-1 px-2 py-1.5 rounded bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between gap-2">
+      <span>
+        💰 {appLang === 'en' ? 'Available credit:' : 'رصيد دائن متاح:'}{' '}
+        <span className="font-bold">{currencySymbol}{balance.toFixed(2)}</span>
+      </span>
+      <a href={`/customer-credits/${customerId}`} target="_blank" rel="noreferrer" className="underline hover:no-underline text-[10px]">
+        {appLang === 'en' ? 'Apply to invoice' : 'تطبيق على فاتورة'}
+      </a>
+    </div>
+  )
+}
+
 interface Customer { 
   id: string; 
   name: string; 
@@ -1851,6 +1885,8 @@ export default function PaymentsPage() {
                   placeholder={appLang === 'en' ? 'Select a customer' : 'اختر عميلًا'}
                   searchPlaceholder={appLang === 'en' ? 'Search by name or phone...' : 'ابحث بالاسم أو الهاتف...'}
                 />
+                {/* v3.74.78 — تَنبيه إِذا العَميل لَديه رَصيد دائن مُتاح */}
+                <CustomerCreditBalanceHint customerId={newCustPayment.customer_id} appLang={appLang} currencySymbol={currencySymbol} />
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
