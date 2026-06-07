@@ -4,6 +4,45 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.76] - 2026-06-07 — Unify customer credit source: backfill + sync trigger + FIFO consumption
+
+### Why
+On INV-00005 the user reported the "تطبيق الرصيد" (Apply Credit) green banner was missing despite the customer clearly having a credit balance — the "صرف رصيد العميل" (Refund Credit) button on the same page was visible. Audit found a dual-source split:
+
+- `customer_credits` table: **10.00 EGP** for the customer (active, from INV-00004 sales return)
+- `customer_credit_ledger` table: **0** rows — never received the corresponding entry
+
+Two UI elements, two different sources of truth, no sync between them:
+- "Refund Credit" button reads `customer_credits` (correct)
+- "Apply Credit" banner reads `customer_credit_ledger` (was wrong because ledger never got populated)
+
+Root cause: the sales return flow writes to `customer_credits` but not to `customer_credit_ledger`. One customer with 10 EGP affected in production.
+
+### What changed
+
+**① Backfill** — every active `customer_credits` row with remaining balance and no matching `customer_credit_ledger` row (linked by `source_id = customer_credits.id`) got mirrored into the ledger. INV-00005's customer now sees 10.00 in both tables.
+
+**② Sync trigger** — `trg_sync_customer_credit_to_ledger` (AFTER INSERT OR UPDATE OF status, amount, used_amount, applied_amount ON customer_credits). Whenever a customer credit is created or modified to active with remaining balance, the ledger gets a mirror row automatically. Guarded by an existence check on `source_id` so re-firing on UPDATE doesn't duplicate. Maps `reference_type` to the constrained `source_type` values (`sales_return | overpayment | manual_credit`) to satisfy `customer_credit_ledger_source_type_check`.
+
+**③ FIFO consumption** in `apply_customer_credit_to_invoice` — the v3.74.75 patch fixed the journal entry (Dr 2155 / Cr AR) but didn't decrement `customer_credits.applied_amount`. So after Apply Credit, `customer_credits` would still show the original balance while the ledger would show -amount, drifting them apart again.
+
+Added a FIFO loop after the journal posting: iterates active `customer_credits` for the customer in `ORDER BY credit_date ASC, created_at ASC`, locks each row `FOR UPDATE`, increments `applied_amount`, and flips `status='exhausted'` when fully consumed. Now after Apply Credit:
+- Ledger gets `-amount` row (existing)
+- `customer_credits.applied_amount` increases (new)
+- Both sources continue to agree on the balance
+
+### Result
+- INV-00005 customer: ledger now shows 10.00 → "تطبيق الرصيد" banner will appear after page refresh.
+- New sales returns that generate credit will auto-populate both sources via the trigger.
+- Future "Apply Credit" clicks decrement both sources atomically.
+
+### Verified post-migration
+- `get_customer_credit_balance(...)` returns `10.00` for the INV-00005 customer (was `0`).
+- One ledger row created, linked to the customer_credits row via `source_id`.
+- v3.74.75 journal entry shape preserved.
+
+---
+
 ## [3.74.75] - 2026-06-07 — Fix apply_customer_credit_to_invoice journal entry (Dr 2155 + Cr AR)
 
 ### Why
