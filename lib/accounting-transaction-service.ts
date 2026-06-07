@@ -4,6 +4,16 @@ import { prepareInvoiceRevenueJournal, prepareCOGSJournalOnDelivery } from './ac
 import { prepareFIFOConsumptionData } from './fifo-engine'
 import { enterpriseFinanceFlags } from './enterprise-finance-flags'
 
+// v3.74.74 — pre-check shortages surfaced to UI before atomic commit.
+export interface InventoryShortageItem {
+    product_id: string
+    product_name: string | null
+    uom: string | null
+    requested: number
+    available: number
+    missing: number
+}
+
 export interface AtomicTransactionResult {
     success: boolean
     journalEntryIds?: string[]
@@ -19,6 +29,7 @@ export interface AtomicTransactionResult {
     sourceId?: string
     eventType?: string
     error?: string
+    shortages?: InventoryShortageItem[]
 }
 
 /**
@@ -510,6 +521,51 @@ export class AccountingTransactionService {
                     Number(item.quantity || 0) > 0 &&
                     item.product?.item_type !== 'service'
                 )
+
+            // v3.74.74 — Pre-check رَصيد المَخزون بنَفس المَخزَن المُستَهدَف.
+            // التريقر trg_prevent_negative_branch_inventory يَبقى الحامى الفِعلى،
+            // لكن نَكشِف النَّقص هُنا أَولاً لنَرجِع للواجِهَة قائِمَة مُهَيكَلَة
+            // (shortages[]) تُعرَض فى المودال بَدَلاً من خَطَأ خام.
+            if (productItems.length > 0) {
+                const stockCheckPayload = productItems.map((item: any) => ({
+                    product_id: item.product_id,
+                    quantity: Number(item.quantity || 0),
+                }))
+
+                const { data: stockCheck, error: stockCheckError } = await this.supabase.rpc(
+                    'check_branch_warehouse_stock',
+                    {
+                        p_company_id: params.companyId,
+                        p_branch_id: branchId,
+                        p_warehouse_id: warehouseId,
+                        p_items: stockCheckPayload,
+                    }
+                )
+
+                if (stockCheckError) {
+                    console.warn(
+                        '[approveSalesDeliveryAtomic] stock pre-check failed; relying on DB trigger:',
+                        stockCheckError.message
+                    )
+                } else {
+                    const rawShortages = (stockCheck as any)?.shortages || []
+                    if (Array.isArray(rawShortages) && rawShortages.length > 0) {
+                        const shortages: InventoryShortageItem[] = rawShortages.map((s: any) => ({
+                            product_id: String(s.product_id),
+                            product_name: s.product_name || null,
+                            uom: s.uom || null,
+                            requested: Number(s.requested || 0),
+                            available: Number(s.available || 0),
+                            missing: Number(s.missing || 0),
+                        }))
+                        return {
+                            success: false,
+                            error: 'المَخزون غَير كافٍ بالمَخزَن المُستَهدَف',
+                            shortages,
+                        }
+                    }
+                }
+            }
 
             const inventoryTransactions: any[] = []
             const cogsTransactions: any[] = []

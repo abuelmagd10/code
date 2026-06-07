@@ -4,6 +4,41 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.74] - 2026-06-07 — Dispatch-approvals: structured shortages UX for warehouse approval
+
+### Why
+Audit of `app/inventory/dispatch-approvals` against the user's question "هل يَتم فَحص المَخزَن لِلتَأَكُّد من توافر كَمية الاعتماد فى مَخزَن فَرع الفاتورة؟" found:
+
+- The DB **is** safe: `trg_prevent_negative_branch_inventory` (added v3.74.48) BEFORE-INSERT on `inventory_transactions` enforces `(company_id + product_id + branch_id + warehouse_id)` and aborts the atomic `approve_sales_delivery_v2` RPC if the balance would go below zero. No way to dispatch stock you don't have at the branch warehouse.
+- But the **UX** was raw: the only pre-check in `prepareFIFOConsumptionData` filters `fifo_cost_lots` by `product_id` only — company-wide, not branch-scoped. So a multi-branch shortage slipped past the pre-check, hit the trigger, and surfaced as a raw `error` toast. Meanwhile `dispatch-approvals/page.tsx` already had a beautiful `IsShortageModal` for the manufacturing flow (`/api/manufacturing/material-issue-approvals/[id]/approve`) — it just never received `shortages[]` from the sales-invoice endpoint.
+
+### What changed
+
+**DB** — new RPC `check_branch_warehouse_stock(p_company_id, p_branch_id, p_warehouse_id, p_items jsonb)`:
+- For each `{product_id, quantity}` item, SUMs `inventory_transactions.quantity_change` filtered by `(company_id + product_id + branch_id + warehouse_id)` with `is_deleted=false`.
+- Skips non-tracked products (services).
+- Returns `{shortages: [{product_id, product_name, uom, requested, available, missing}, ...]}`.
+- `STABLE SECURITY DEFINER`, grants to `authenticated` + `service_role`.
+
+**Service** (`lib/accounting-transaction-service.ts`):
+- New exported type `InventoryShortageItem`; `AtomicTransactionResult.shortages?` added.
+- `approveSalesDeliveryAtomic` calls the RPC right after fetching `productItems`, before FIFO consumption planning. If shortages found → early return `{success: false, error: "المَخزون غَير كافٍ بالمَخزَن المُستَهدَف", shortages}`. If the RPC errors, the trigger is still the safety net — we just log and continue.
+
+**Command service** (`lib/services/sales-invoice-warehouse-command.service.ts`):
+- `SalesInvoiceWarehouseCommandError` gets a third constructor arg `details?: { shortages?: InventoryShortageItem[] }`.
+- When `approvalResult.shortages.length > 0`, throw with the structured details attached.
+
+**API route** (`app/api/invoices/[id]/warehouse-approve/route.ts`):
+- When catching `SalesInvoiceWarehouseCommandError`, include `shortages[]` in the response payload, **remapping keys** to match the UI's `ShortageItem` interface: `requested → required_qty`, `available → available_qty`, plus `uom`.
+- `dispatch-approvals/page.tsx` already has `if (!result.success && result.shortages?.length > 0) setShortageItems(result.shortages)` → the existing modal now opens for the sales-invoice flow too.
+
+### Result
+- Approver sees: "الأَصناف التالية غَير مُتوَفِّرَة بالكَميات الكافية ← المَطلوب: 5 وحدة، المُتاح: 2 وحدة" بَدَلاً من خَطَأ خام.
+- DB enforcement unchanged — trigger remains the source of truth.
+- Manufacturing approval flow untouched.
+
+---
+
 ## [3.74.73] - 2026-06-07 — NotificationCenter mobile: trim header + collapsible filters
 
 ### Why

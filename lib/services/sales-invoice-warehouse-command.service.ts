@@ -1,4 +1,4 @@
-import { AccountingTransactionService } from "@/lib/accounting-transaction-service"
+import { AccountingTransactionService, type InventoryShortageItem } from "@/lib/accounting-transaction-service"
 import { emitEvent } from "@/lib/event-bus"
 import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
@@ -32,7 +32,11 @@ export type SalesInvoiceWarehouseResult = {
 }
 
 export class SalesInvoiceWarehouseCommandError extends Error {
-  constructor(message: string, public readonly status = 500) {
+  constructor(
+    message: string,
+    public readonly status = 500,
+    public readonly details?: { shortages?: InventoryShortageItem[] }
+  ) {
     super(message)
     this.name = "SalesInvoiceWarehouseCommandError"
   }
@@ -69,6 +73,16 @@ export class SalesInvoiceWarehouseCommandService {
 
     if (!approvalResult.success) {
       console.error("[WAREHOUSE_APPROVE] Atomic Error:", approvalResult.error)
+      // v3.74.74 — pass structured shortages so the API can return them
+      // and dispatch-approvals opens its rich shortage modal instead
+      // of a raw error toast.
+      if (approvalResult.shortages && approvalResult.shortages.length > 0) {
+        throw new SalesInvoiceWarehouseCommandError(
+          approvalResult.error || "المَخزون غَير كافٍ",
+          400,
+          { shortages: approvalResult.shortages }
+        )
+      }
       throw new SalesInvoiceWarehouseCommandError(approvalResult.error || "Unknown error", 400)
     }
 
