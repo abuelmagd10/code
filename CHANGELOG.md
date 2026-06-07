@@ -4,6 +4,30 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.83] - 2026-06-07 — Unblock warehouse-approve V2: set `app.allow_direct_post` flag
+
+### Why
+After v3.74.82 fixed the FK ambiguity, INV-00005 still failed with a different error:
+> "Transaction Failed: DIRECT_POST_BLOCKED: Use create_journal_entry_atomic. [caller=postgres, flag=null]"
+
+The `enforce_je_integrity` trigger on `journal_entries` blocks direct INSERTs/UPDATEs of `status='posted'` unless **both** conditions are true:
+1. `current_setting('app.allow_direct_post', true) = 'true'`
+2. `current_user` is a superuser or 'postgres'
+
+Condition 2 was met (RPC runs as postgres via SECURITY DEFINER). Condition 1 was not: the V2 path through `approve_sales_delivery_v2 → post_accounting_event_v2` never sets the flag. The legacy V1 `post_accounting_event` does. When v3.74.47 flipped `warehouseApprovalV2` to true by default, the trigger started rejecting every V2 attempt.
+
+### What changed
+Patched `approve_sales_delivery_v2` to call `set_config('app.allow_direct_post', 'true', true)` at the top — transaction-local, so it resets at COMMIT/ROLLBACK and can't leak to other sessions. The flag is in scope for every trigger fired by the chained INSERT/UPDATE inside `post_accounting_event_v2`.
+
+DB-only migration. No TypeScript changes.
+
+### Verified
+- `set_config` is the third argument `true` (LOCAL) → safe scope.
+- Function recreated successfully via `apply_migration`.
+- v3.74.82's FK fix preserved (TS side unchanged).
+
+---
+
 ## [3.74.82] - 2026-06-07 — Fix 400 on warehouse-approve: ambiguous FK to sales_orders
 
 ### Why
