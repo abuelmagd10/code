@@ -4,6 +4,48 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.85] - 2026-06-07 — Fix warehouse-approve V2: stop double-creating the COGS journal entry
+
+### Why
+After v3.74.84 unblocked the FIFO NOT NULL constraint, INV-00005 surfaced the next layer:
+> "Transaction Failed: DUPLICATE_JOURNAL_VIOLATION: A journal entry with reference_type=[invoice_cogs] and reference_id=[ee551ffc-...] already exists for company [...]"
+
+Yet a DB check confirmed **no** `invoice_cogs` journal existed for INV-00005 before the attempt — only the original revenue journal. So who was creating the second one?
+
+### Root cause
+The DB has a BEFORE INSERT trigger on `inventory_transactions` called `trg_auto_cogs_on_sale` → it calls `auto_create_cogs_journal()` which, for every `transaction_type='sale'` insert, writes an `invoice_cogs` journal automatically (using `products.cost_price` × `quantity`).
+
+But `lib/accounting-transaction-service.ts:approveSalesDeliveryAtomic` also built its own `invoice_cogs` journal via `prepareCOGSJournalOnDelivery(...)` and passed it through `p_journal_entries` to `approve_sales_delivery_v2`. The TS code did try to skip itself via this guard:
+```ts
+const { data: existingCOGSJournal } = await supabase
+  .from('journal_entries')
+  .select('id')
+  .eq('reference_id', invoiceId)
+  .eq('reference_type', 'invoice_cogs')
+  .maybeSingle()
+if (!existingCOGSJournal && totalCOGS > 0) { ... }
+```
+That query ran **before** the V2 RPC started its transaction, so it couldn't see the trigger's row — it always returned null and the TS code always pushed a duplicate. Then inside the RPC: the trigger inserted COGS journal #1, then V1's INSERT loop tried to insert COGS journal #2 from `p_journal_entries`, and `prevent_duplicate_journal_entry_v2` fired with the message above.
+
+### What changed
+`lib/accounting-transaction-service.ts` (around line 681 in `approveSalesDeliveryAtomic`):
+```ts
+// Remove the pre-check + push for the TS-side COGS journal.
+// The trg_auto_cogs_on_sale trigger now owns invoice_cogs creation.
+const journalEntries: any[] = []   // ← stays empty; revenue is on the invoice path, not here
+```
+No DB change. The trigger has been doing this work since long before V2; we're just stopping the app from racing it.
+
+### Trade-off
+The trigger uses `products.cost_price` for COGS amount. FIFO unit-cost accuracy is still preserved in `cogs_transactions` (V2 still inserts those — that's where the real per-lot cost lives). If we ever need FIFO-accurate amounts on the journal lines themselves, the fix belongs in the trigger (read `NEW.unit_cost` instead of `products.cost_price`), not in the app code.
+
+### Verified
+- TS: 0 errors.
+- File restored from HEAD (Edit tool truncated tail twice; final write done via heredoc with anchor assertion).
+- Chains with v3.74.74 (pre-check shortages), .82 (FK), .83 (direct-post flag), .84 (FIFO product_id) — full V2 warehouse-approve should now go end-to-end on INV-00005.
+
+---
+
 ## [3.74.84] - 2026-06-07 — Fix warehouse-approve V2: missing product_id on fifo_lot_consumptions
 
 ### Why

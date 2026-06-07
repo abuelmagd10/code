@@ -678,26 +678,18 @@ export class AccountingTransactionService {
                 })
             }
 
-            const { data: existingCOGSJournal } = await this.supabase
-                .from('journal_entries')
-                .select('id')
-                .eq('reference_id', params.invoiceId)
-                .eq('reference_type', 'invoice_cogs')
-                .maybeSingle()
-
+            // v3.74.85 — Skip TS-side COGS journal push. The DB trigger
+            // trg_auto_cogs_on_sale (BEFORE INSERT on inventory_transactions)
+            // auto-creates an invoice_cogs journal. Pushing one from TS
+            // produced two rows with the same (company, reference_type,
+            // reference_id) and prevent_duplicate_journal_entry_v2 rejected
+            // the second one with DUPLICATE_JOURNAL_VIOLATION on every V2
+            // attempt. The existence query above couldn't see the trigger's
+            // row because both run inside the same transaction. FIFO unit-cost
+            // accuracy is still preserved in cogs_transactions (V2 inserts
+            // those); only the journal-line cost falls back to
+            // products.cost_price via the trigger.
             const journalEntries: any[] = []
-            if (!existingCOGSJournal && totalCOGS > 0) {
-                const cogsJournal = await prepareCOGSJournalOnDelivery(
-                    this.supabase,
-                    params.invoiceId,
-                    params.companyId,
-                    totalCOGS
-                )
-
-                if (cogsJournal) {
-                    journalEntries.push(cogsJournal)
-                }
-            }
 
             const { data: rpcResult, error: rpcError } = await this.supabase.rpc('approve_sales_delivery_v2', {
                 p_company_id: params.companyId,
