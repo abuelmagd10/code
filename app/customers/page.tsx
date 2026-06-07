@@ -555,14 +555,15 @@ export default function CustomersPage() {
         const ap = Number(appMap[id] || 0)
         const credits = Number(creditMap[id] || 0)
         const disbursed = Number(disbursedMap[id] || 0)
-        // v3.26.2: invoice surplus is part of available credit
-        const invoiceOverpayment = Number(overpaymentMap[id] || 0)
-        // الرصيد المتاح = السلف المتبقية + أرصدة المرتجعات + فائض المدفوع على الفواتير
+        // v3.74.80: حَذفنا overpaymentMap من المُعادَلَة لأَنَّ trigger v3.74.79
+        // (trg_auto_create_credit_from_invoice_overpay) يُسَجِّل كُل overpayment
+        // تِلقائياً فى customer_credits → يَدخُل credits تِلقائياً. الجَمع المَحَلى
+        // كانَ يُضاعِف الرَّصيد لِكُل فاتورة بـ paid > total.
         out[id] = {
           advance: adv,
           applied: ap,
-          available: Math.max(adv - ap, 0) + credits + invoiceOverpayment,
-          credits: credits + invoiceOverpayment, // include in credits so disbursed/UI labels reflect it
+          available: Math.max(adv - ap, 0) + credits,
+          credits: credits,
           disbursed,
         }
       })

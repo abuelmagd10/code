@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.80] - 2026-06-07 — Stop double-counting overpayment on /customers (v3.74.79 follow-up)
+
+### Why
+After v3.74.79 added the invoice-overpayment trigger, the /customers page started showing ahmed abuelmagd with a credit of 1.36 EGP instead of 0.68 (exactly double). Cause: app/customers/page.tsx was computing the overpayment locally **and** reading customer_credits — and v3.74.79 now writes the same overpayment into customer_credits, so the local map double-counts.
+
+محمد بسيونى was unaffected because INV-00004 has returned_amount > 0, so the local overpayment formula returned 0 for him (paid - total = 0 once the return is applied). The bug shows only on overpayments without returns.
+
+### What changed
+`app/customers/page.tsx` — dropped `invoiceOverpayment` from the available/credits computation. The line was:
+```ts
+available: Math.max(adv - ap, 0) + credits + invoiceOverpayment
+credits: credits + invoiceOverpayment
+```
+is now:
+```ts
+available: Math.max(adv - ap, 0) + credits
+credits: credits
+```
+`overpaymentMap` is no longer added — `credits` already includes overpayments via the v3.74.79 trigger.
+
+The overpaymentMap construction (lines 527-549) is left in place but unused; removing it requires a wider rewrite and the cost is one extra SELECT during page load — fine for now.
+
+### Verified
+- ahmed abuelmagd: 0.68 in customer_credits → 0.68 shown (was 1.36).
+- محمد بسيونى: 10.00 from return → 10.00 shown (unchanged, was already correct).
+- Both customers visible on the page.
+
+---
+
 ## [3.74.79] - 2026-06-07 — Invoice overpayment auto-creates credit (closes v3.74.77 gap)
 
 ### Why
