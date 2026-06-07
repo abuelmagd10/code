@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.82] - 2026-06-07 — Fix 400 on warehouse-approve: ambiguous FK to sales_orders
+
+### Why
+Warehouse manager couldn't approve INV-00005 dispatch. The endpoint returned 400 with:
+> "Could not embed because more than one relationship was found for 'invoices' and 'sales_orders'."
+
+DB inspection found two FKs between the tables:
+- `invoices_sales_order_id_fkey` (invoices.sales_order_id → sales_orders.id) — the original
+- `sales_orders_invoice_id_fkey` (sales_orders.invoice_id → invoices.id) — added later
+
+When `approveSalesDeliveryAtomic` did `sales_orders!left (...)`, PostgREST couldn't tell which FK to embed through and threw 400 — the message gets passed through the service → API → toast in the browser.
+
+Pre-check, inventory, FIFO, account 2155 — all clean. Stock was sufficient. The block was purely a PostgREST embed-disambiguation issue surfacing only after the second FK existed.
+
+### What changed
+`lib/accounting-transaction-service.ts` line 456:
+```ts
+sales_orders!left (...)
+```
+became
+```ts
+sales_orders!invoices_sales_order_id_fkey (...)
+```
+Explicit FK selection. PostgREST now uses the intended forward relationship and the embed succeeds.
+
+### Verified
+- Pre-check `check_branch_warehouse_stock` for INV-00005 returns no shortages.
+- FIFO lots have 5 remaining for the requested 2.
+- Account 2155 active.
+- TypeScript: 0 errors.
+- File rebuilt via heredoc (Edit truncated the tail on first attempt — restored from HEAD then re-applied just the FK rename).
+
+---
+
 ## [3.74.81] - 2026-06-07 — useAutoRefresh: kill double-fetch on mount + 30s throttle + skipIfHidden
 
 ### Why

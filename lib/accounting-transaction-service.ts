@@ -453,7 +453,7 @@ export class AccountingTransactionService {
                     cost_center_id,
                     warehouse_id,
                     shipping_provider_id,
-                    sales_orders!left (
+                    sales_orders!invoices_sales_order_id_fkey (
                         id,
                         branch_id,
                         cost_center_id,
