@@ -145,6 +145,8 @@ export default function InvoicesPage() {
   const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [customerCredits, setCustomerCredits] = useState<CustomerCredit[]>([])
+  // v3.74.77 — اجمالى رَصيد العَميل من كُل المَصادِر (overpayment + returns + manual)
+  const [customerCreditBalances, setCustomerCreditBalances] = useState<Map<string, number>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterCustomers, setFilterCustomers] = useState<string[]>([])
@@ -779,6 +781,22 @@ export default function InvoicesPage() {
       } catch {
         setCustomerCredits([])
       }
+
+      // v3.74.77 — تَجميع رَصيد كُل عَميل من customer_credit_ledger (المَصدَر المُوَحَّد بَعد v3.74.76)
+      try {
+        const { data: ledgerRows } = await supabase
+          .from("customer_credit_ledger")
+          .select("customer_id, amount")
+          .eq("company_id", companyId)
+        const balancesMap = new Map<string, number>()
+        for (const row of ledgerRows || []) {
+          const cid = String((row as any).customer_id)
+          balancesMap.set(cid, (balancesMap.get(cid) || 0) + Number((row as any).amount || 0))
+        }
+        setCustomerCreditBalances(balancesMap)
+      } catch {
+        setCustomerCreditBalances(new Map())
+      }
     } catch (error) {
       console.error("Error loading invoices:", error)
       toast({
@@ -1177,10 +1195,15 @@ export default function InvoicesPage() {
         const netInvoiceAmount = originalTotal - returnedAmount;
         const paidAmount = getDisplayAmount(row, 'paid');
         const isValidForCredit = row.status !== 'cancelled' && row.status !== 'fully_returned' && netInvoiceAmount > 0;
-        const customerCreditAmount = isValidForCredit ? Math.max(0, paidAmount - netInvoiceAmount) : 0;
+        // v3.74.77 — رَصيد الفاتورة المُحَدَّدَة (overpayment على هذه الفاتورة فَقَط)
+        const invoiceCreditAmount = isValidForCredit ? Math.max(0, paidAmount - netInvoiceAmount) : 0;
+        // v3.74.77 — رَصيد العَميل العام (مُرتَجَعات، overpayment أُخرى، manual…)
+        const customerOverallCredit = row.customer_id ? (customerCreditBalances.get(String(row.customer_id)) || 0) : 0;
+        // الأَكبَر من الاثنَين هو الرَّصيد الفِعلى المُتاح
+        const customerCreditAmount = Math.max(invoiceCreditAmount, customerOverallCredit);
         const creditStatus = getCreditStatus(row.id);
 
-        if (customerCreditAmount === 0) return '-';
+        if (customerCreditAmount < 0.01) return '-';
 
         return (
           <div className="text-xs">

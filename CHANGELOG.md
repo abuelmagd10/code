@@ -4,6 +4,52 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.77] - 2026-06-07 — Auto-credit on overpayment + invoice list shows total customer credit
+
+### Why
+User audit of credit handling flagged three gaps after we documented "Apply Credit" in v3.74.75-76:
+
+1. The `/payments` page doesn't surface available customer/supplier credit while recording a payment. Accountants record cash payments while the customer has an unused balance sitting in the system.
+2. Credit sources are wider than just sales returns. Overpayments (customer pays more than outstanding) and FX rate differences that leave a positive balance for the customer aren't being converted into `customer_credits` rows — they linger in `payments.unallocated_amount` invisible to the rest of the system.
+3. The "Credit" column in the invoices list (`/invoices`) computes credit purely as `paid_amount − netInvoiceAmount` per row, so a customer's credit from other sources (returns on a different invoice, manual adjustments, overpayments not yet allocated) doesn't show up next to invoices where it could be applied.
+
+Verified scope: queried `payments` table — currently zero rows have `unallocated_amount > 0`, so no historical backfill is needed; this is forward-looking infrastructure.
+
+### What changed in this release (v3.74.77, parts 1 + 3)
+
+**Part 1 — Auto-credit on overpayment (DB trigger):**
+
+New trigger `trg_auto_create_credit_from_overpayment` on `payments` (AFTER INSERT OR UPDATE OF unallocated_amount). When a payment row has `unallocated_amount > 0` and a `customer_id`, the trigger creates a matching `customer_credits` row with:
+- `reference_type = 'overpayment'`
+- `reference_id = payments.id`
+- `credit_number = 'CR-OP-{epoch}'`
+- `amount = unallocated_amount`, `status = 'active'`
+
+Update behavior: if `unallocated_amount` changes later (e.g., partial allocation), the trigger updates the existing credit row — but only while the credit is still untouched (`used_amount + applied_amount ≤ 0.01`). Already-consumed credits are not retroactively shrunk.
+
+This chains cleanly into the v3.74.76 trigger: `trg_sync_customer_credit_to_ledger` automatically mirrors the new customer_credits row into `customer_credit_ledger`, so the balance is visible to both UI banners ("Refund Credit" and "Apply Credit") immediately.
+
+New helper RPC `get_customer_overall_credit_balance(p_company_id, p_customer_id)` returns the aggregated balance from the ledger. Granted to `authenticated` + `service_role`.
+
+**Part 3 — Invoice list shows total customer credit (UI):**
+
+`app/invoices/page.tsx` previously computed the Credit column purely from per-invoice overpayment (`paid_amount − netInvoiceAmount`). Now it loads aggregated credit balances per customer from `customer_credit_ledger` (one query, grouped client-side into a Map) and shows the **larger** of:
+- Per-invoice overpayment (existing semantic)
+- Customer's overall available credit (new — captures returns, manual credit, overpayments on other invoices)
+
+This means the customer of INV-00005 will now show "10.00 EGP" in the Credit column for every active invoice the customer has, signalling to the accountant that the credit can be applied via the existing "Apply Credit" banner on the invoice detail page.
+
+### Deferred to v3.74.78
+- **Part 2 (banner in `/payments`):** Suggest using available credit before recording cash payment. Requires careful UX — pure UI work, lower risk, planned as next slice.
+- **Supplier (vendor_credits) parity:** `vendor_credits` has a different schema (no `used_amount`, uses `applied_amount` only; uses `bill_id` for source linkage). Worth a separate audit before mirroring the trigger pattern.
+
+### Verified
+- Trigger created on `payments`; helper RPC granted to authenticated + service_role.
+- TypeScript: page intact, ends with closing brace, all anchors patched.
+- No existing payments with `unallocated_amount > 0`, so no backfill needed.
+
+---
+
 ## [3.74.76] - 2026-06-07 — Unify customer credit source: backfill + sync trigger + FIFO consumption
 
 ### Why
