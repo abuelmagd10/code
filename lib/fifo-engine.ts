@@ -205,8 +205,11 @@ export async function prepareFIFOConsumptionData(
     // 3. تحضير بيانات استهلاك FIFO و COGS
     for (const consumption of fifoResult.lots_used) {
       // FIFO Consumption Record
+      // v3.74.84 — add product_id; fifo_lot_consumptions enforces NOT NULL
+      // (the omission silently broke warehouse-approve V2 with a constraint error)
       fifoConsumptions.push({
         company_id: params.companyId,
+        product_id: params.productId,
         lot_id: consumption.lot_id,
         reference_type: params.sourceType,
         reference_id: params.sourceId,

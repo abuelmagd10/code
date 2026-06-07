@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.84] - 2026-06-07 — Fix warehouse-approve V2: missing product_id on fifo_lot_consumptions
+
+### Why
+After v3.74.83 unblocked the DIRECT_POST guard, the next attempt on INV-00005 surfaced the real next failure:
+> "Transaction Failed: null value in column 'product_id' of relation 'fifo_lot_consumptions' violates not-null constraint"
+
+`lib/fifo-engine.ts:prepareFIFOConsumptionData` builds the `fifoConsumptions` array that gets passed straight into `approve_sales_delivery_v2`. The object it pushed had `company_id, lot_id, reference_type, reference_id, quantity_consumed, unit_cost, total_cost, consumed_at` — but **no `product_id`**, which the table declares NOT NULL. The same loop pushed `product_id` correctly into `cogsTransactions` immediately below, so this was a clean omission.
+
+The V1 legacy `consume_fifo_lots` SQL function looks up `product_id` per lot internally, so V1 never tripped on this. V2 takes pre-built JSON arrays from the app and inserts them as-is — no lookup, no defaults — so a missing field is fatal.
+
+### What changed
+`lib/fifo-engine.ts` (around the fifo consumption push):
+```ts
+fifoConsumptions.push({
+  company_id: params.companyId,
+  product_id: params.productId,   // ← added
+  lot_id: consumption.lot_id,
+  ...
+})
+```
+One field added. The COGS push next to it was already correct.
+
+### Verified
+- TS: 0 errors.
+- File rebuilt via heredoc (Edit truncated the tail on first attempt; restored from HEAD then re-applied the one-field add).
+- Chains with v3.74.74 (pre-check), .82 (FK fix), .83 (direct-post flag) — full warehouse-approve V2 path should now go through.
+
+---
+
 ## [3.74.83] - 2026-06-07 — Unblock warehouse-approve V2: set `app.allow_direct_post` flag
 
 ### Why
