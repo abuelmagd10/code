@@ -391,7 +391,7 @@ export default function InvoicesPage() {
 
   // v3.74.56 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   // arrow-wrap لِتَجَنُّب TDZ — loadData مُعَرَّفَة لاحِقاً فى الجِسم
-  useAutoRefresh({ onRefresh: () => loadData() })
+  useAutoRefresh({ onRefresh: () => loadData() , skipIfHidden: true })
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {

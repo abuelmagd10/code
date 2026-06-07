@@ -376,7 +376,7 @@ export default function ProductsPage() {
   const isStockAccountingProduct = isStockProductType(formData.product_type as ProductType, formData.item_type)
 
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
-  useAutoRefresh({ onRefresh: () => loadProducts() })
+  useAutoRefresh({ onRefresh: () => loadProducts() , skipIfHidden: true })
 
   const loadProducts = async () => {
     try {

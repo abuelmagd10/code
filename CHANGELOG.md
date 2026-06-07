@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.81] - 2026-06-07 — useAutoRefresh: kill double-fetch on mount + 30s throttle + skipIfHidden
+
+### Why
+User reported pages feel slow when navigating, and is concerned about large-data pages getting hit harder than necessary by the auto-refresh layer (~85 pages use the hook after waves v3.74.56-v3.74.62).
+
+Three real issues found in `hooks/use-auto-refresh.ts`:
+
+1. **Double-fetch on mount.** `lastRunRef` was initialized to `0`. The page's own `useEffect(loadData)` fires on mount, and a fraction of a second later the browser commonly fires a `focus` event (because the user clicked the link to land on this page). The throttle check was `Date.now() - 0 > 5000` — always true — so the hook immediately re-fetched. Every page navigation effectively ran `loadData()` twice.
+2. **5-second throttle is too aggressive.** A user alt-tabbing to copy a value would trigger a full re-fetch on return. For a /invoices page loading 500 rows, that's wasted I/O.
+3. **No way to skip when the tab is hidden.** A focus event on a background tab still wakes the heavy query, even though the user can't see the result yet.
+
+### What changed
+
+`hooks/use-auto-refresh.ts`:
+
+- `lastRunRef = useRef<number>(Date.now())` (was `useRef<number>(0)`). The throttle window now covers the mount itself — the first focus event in the 30s after mount is silently ignored, so the page-mount fetch is the only initial load.
+- Default `minIntervalMs` raised from `5000` to `30000`. Callers can still override.
+- New `skipIfHidden?: boolean` option. When true, the refresh is skipped if `document.visibilityState !== "visible"`. The listeners still attach, so becoming visible again still triggers a refresh — we just don't waste a query for a tab the user isn't looking at.
+
+5 heaviest pages opted into `skipIfHidden: true`:
+- `/invoices`
+- `/customers`
+- `/products`
+- `/sales-orders`
+- `/bills`
+
+The other ~80 pages keep the old default behavior (no `skipIfHidden`) — only the throttle bump and mount-time fix apply silently.
+
+### Result
+- Navigating between pages: one fetch on mount, no immediate re-fetch.
+- Alt-tabbing briefly: stays quiet until the throttle window passes.
+- Heavy pages in background tabs: don't fire queries on stray focus events.
+- No breaking changes — all ~85 pages keep working with the same call site.
+
+### Verified
+- Hook rewritten via bash heredoc (Write tool truncated mid-line on the first attempt — known issue with files ~100 lines).
+- TypeScript: 0 errors.
+- `customers/page.tsx` end accidentally truncated during heavy-page patching; restored via heredoc.
+
+---
+
 ## [3.74.80] - 2026-06-07 — Stop double-counting overpayment on /customers (v3.74.79 follow-up)
 
 ### Why

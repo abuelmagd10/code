@@ -773,7 +773,7 @@ function SalesOrdersContent() {
 
   // تحميل الأوامر - إصدار مبسط جداً
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
-  useAutoRefresh({ onRefresh: () => loadOrders() })
+  useAutoRefresh({ onRefresh: () => loadOrders() , skipIfHidden: true })
 
   const loadOrders = async () => {
     try {

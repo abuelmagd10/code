@@ -324,7 +324,7 @@ export default function BillsPage() {
   }, []);
 
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
-  useAutoRefresh({ onRefresh: () => loadData() })
+  useAutoRefresh({ onRefresh: () => loadData() , skipIfHidden: true })
 
   const loadData = async () => {
     try {

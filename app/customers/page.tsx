@@ -322,7 +322,7 @@ export default function CustomersPage() {
   }, []);
 
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
-  useAutoRefresh({ onRefresh: () => loadCustomers() })
+  useAutoRefresh({ onRefresh: () => loadCustomers() , skipIfHidden: true })
 
   const loadCustomers = async () => {
     try {
