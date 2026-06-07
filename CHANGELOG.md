@@ -4,6 +4,52 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.75] - 2026-06-07 — Fix apply_customer_credit_to_invoice journal entry (Dr 2155 + Cr AR)
+
+### Why
+Audit of the "تطبيق الرصيد" (Apply Customer Credit to Invoice) button while documenting the credit-refund flow caught a silent accounting bug in the underlying RPC `apply_customer_credit_to_invoice` (called by `POST /api/customer-credits/[customerId]/apply`).
+
+The function was inserting two journal entry lines **on the same account** (Dr AR + Cr AR), which nets to zero. So when a user applied a customer credit to an invoice:
+- `customer_credit_ledger` got a -amount row (the ledger thinks the credit was consumed)
+- `invoices.paid_amount` increased (the invoice looked paid)
+- But **the GL did not move**: the customer credit liability (2155) was NOT reduced, and AR was NOT reduced
+
+Net effect: the ledger view and the trial balance would have drifted apart silently the first time anyone clicked the button. Audited the table before fixing — zero `credit_applied` entries exist in production yet, so no backfill is needed.
+
+### What changed
+
+**DB** — replaced `apply_customer_credit_to_invoice` (SECURITY DEFINER). Same signature, same external behavior on success, but the journal lines now follow standard double-entry:
+
+```
+Dr  2155 رصيد العملاء الدائن   (sub_type='customer_credit')  — liability ↓
+   Cr  AR الذمم المدينة         (sub_type='accounts_receivable') — asset ↓
+```
+
+This is the inverse of the entry that created the credit in the first place (a return or overpayment posted `Dr AR / Cr 2155`).
+
+Resolution rules for the customer credit account, in order of preference:
+1. `sub_type = 'customer_credit'`
+2. `sub_type = 'customer_advance'`
+3. `account_code = '2155'`
+4. Arabic/English name match
+
+If account 2155 cannot be resolved, the function now **raises `CUSTOMER_CREDIT_ACCOUNT_MISSING`** explicitly instead of writing a broken entry. v3.74.28-30 already ensures every company has it seeded.
+
+Also added: `branch_id` is now propagated to both journal lines (was missing → would have broken per-branch reports).
+
+### Result
+- The trial balance reflects the credit application correctly.
+- `customer_credit_ledger` and the GL stay in sync.
+- Existing data unaffected (zero entries in DB pre-fix).
+- Frontend behavior unchanged — same banner, same dialog, same API call.
+
+### Verified
+- SQL function definition reflects the new lines (Dr 2155 / Cr AR).
+- Zero `credit_applied` journal entries existed pre-migration → no historical correction required.
+- Account 2155 confirmed in `chart_of_accounts_template` (`sub_type='customer_credit'`, type='liability').
+
+---
+
 ## [3.74.74] - 2026-06-07 — Dispatch-approvals: structured shortages UX for warehouse approval
 
 ### Why
