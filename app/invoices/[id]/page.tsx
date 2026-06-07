@@ -3044,21 +3044,42 @@ export default function InvoiceDetailPage() {
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {appLang === 'en' ? 'Amount to Apply' : 'المبلغ المراد تطبيقه'}
                     </label>
-                    <div className="relative">
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">{currencySymbol}</span>
-                      <input
-                        data-ai-help="invoices.credit_apply_amount"
-                        type="number" min="0.01" step="0.01"
-                        value={creditApplyAmount}
-                        onChange={e => setCreditApplyAmount(e.target.value)}
-                        className="w-full h-10 px-4 pr-9 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      {appLang === 'en'
-                        ? `Remaining balance: ${currencySymbol}${Math.max(0, invoice.total_amount - invoice.paid_amount).toFixed(2)}`
-                        : `المتبقي في الفاتورة: ${currencySymbol}${Math.max(0, invoice.total_amount - invoice.paid_amount).toFixed(2)}`}
-                    </p>
+                    {/* v3.74.87: cap input to min(credit, invoiceRemaining); warn on overshoot */}
+                    {(() => {
+                      const invoiceRemaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                      const maxApplicable = Math.min(ledgerCreditBalance, invoiceRemaining)
+                      const entered = Number(creditApplyAmount || 0)
+                      const willCap = entered > maxApplicable && maxApplicable > 0
+                      return (
+                        <>
+                          <div className="relative">
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">{currencySymbol}</span>
+                            <input
+                              data-ai-help="invoices.credit_apply_amount"
+                              type="number" min="0.01" step="0.01" max={maxApplicable}
+                              value={creditApplyAmount}
+                              onChange={e => setCreditApplyAmount(e.target.value)}
+                              className="w-full h-10 px-4 pr-9 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                            />
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {appLang === 'en'
+                              ? `Remaining balance: ${currencySymbol}${invoiceRemaining.toFixed(2)} · Max applicable: ${currencySymbol}${maxApplicable.toFixed(2)}`
+                              : `المتبقي في الفاتورة: ${currencySymbol}${invoiceRemaining.toFixed(2)} · الحَدّ الأَقصى للتَّطبيق: ${currencySymbol}${maxApplicable.toFixed(2)}`}
+                          </p>
+                          {willCap && (
+                            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" /></svg>
+                              <span>
+                                {appLang === 'en'
+                                  ? `Only ${currencySymbol}${maxApplicable.toFixed(2)} will be applied (invoice covered). Remaining ${currencySymbol}${(entered - maxApplicable).toFixed(2)} stays in customer credit.`
+                                  : `سيُطبَّق ${currencySymbol}${maxApplicable.toFixed(2)} فَقَط (الفاتورة استَنفَدَت). الفَرق ${currencySymbol}${(entered - maxApplicable).toFixed(2)} يَبقى فى رَصيد العَميل.`}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   <div className="flex gap-2 justify-end">
                     <button onClick={() => setShowApplyCreditDialog(false)} disabled={applyingCredit}
@@ -3079,8 +3100,17 @@ export default function InvoiceDetailPage() {
                           const json = await res.json()
                           if (json.success) {
                             setShowApplyCreditDialog(false)
-                            setLedgerCreditBalance(0)
+                            // v3.74.87: refresh from server truth + tell user exactly what was applied
+                            const remaining = Number(json.data?.remaining_credit ?? 0)
+                            setLedgerCreditBalance(remaining)
+                            const applied = Number(json.data?.applied_amount ?? Number(creditApplyAmount))
+                            const entered = Number(creditApplyAmount)
                             await loadInvoice()
+                            if (applied < entered - 0.01) {
+                              alert(appLang === 'en'
+                                ? `✓ Applied ${currencySymbol}${applied.toFixed(2)} (invoice covered).\nRemaining ${currencySymbol}${(entered - applied).toFixed(2)} stays in your credit.\nCredit balance now: ${currencySymbol}${remaining.toFixed(2)}`
+                                : `✓ تَمَّ تَطبيق ${currencySymbol}${applied.toFixed(2)} (الفاتورة استَنفَدَت).\nالفَرق ${currencySymbol}${(entered - applied).toFixed(2)} يَبقى فى رَصيد العَميل.\nالرَّصيد المُتَبَقّى: ${currencySymbol}${remaining.toFixed(2)}`)
+                            }
                           } else {
                             alert(json.error || (appLang === 'en' ? 'Failed to apply credit' : 'فشل تطبيق الرصيد'))
                           }

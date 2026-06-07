@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.87] - 2026-06-07 — UX: clearer apply-credit dialog (cap, overshoot warning, post-apply feedback)
+
+### Why
+After v3.74.86 the apply flow works correctly, but the dialog had three UX gaps:
+- Input had no `max` — user could type any amount.
+- Label said "Remaining balance: X" but didn't show what would actually be applied.
+- On success, dialog closed silently. If user entered £10 but only £8 was applicable (invoice covered), the £2 cap was invisible — they'd just see the credit "disappear" partially and wonder why.
+
+The DB-side `LEAST(p_amount, v_available_credit, invoice_remaining)` already protects against overpayment, but the UI hid the fact that capping happened.
+
+### What changed (one file: `app/invoices/[id]/page.tsx`)
+**1. Input + helper line:**
+- `<input>` gets `max={Math.min(creditBalance, invoiceRemaining)}`.
+- Helper line now shows both numbers: `Remaining balance: X · Max applicable: Y`.
+
+**2. Live overshoot warning (amber box, only when entered > maxApplicable):**
+> "Only £8.00 will be applied (invoice covered). Remaining £2.00 stays in customer credit."
+
+**3. Post-apply feedback:**
+- Reads `applied_amount` and `remaining_credit` from the RPC response (already returned, was being ignored).
+- Updates `ledgerCreditBalance` from server truth instead of zeroing it.
+- If `applied < entered`, shows a confirmation alert: what was applied, what stayed in credit, and the new credit balance.
+
+### Verified
+- TS: 0 errors.
+- File restored from HEAD (Edit truncated the tail once, again); both edits re-applied via heredoc with anchor-uniqueness assertions. Final 4057 lines, ends with `}`.
+- No DB change. No API change. Pure UI/UX layer.
+
+### Trade-offs
+- `alert()` was used instead of a toast component because the file doesn't import one and the timing is fine for this dialog (right after the close). A proper toast can come with the broader notification refactor.
+- The overshoot warning lives only on this dialog — `/payments`, `/customer-credits/[customerId]` apply flows don't have the same display yet. Will replicate if needed once UX feedback comes in.
+
+---
+
 ## [3.74.86] - 2026-06-07 — Fix apply_customer_credit_to_invoice: uuid::text cast on reference_id
 
 ### Why
