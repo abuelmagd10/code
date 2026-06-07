@@ -4,6 +4,35 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.86] - 2026-06-07 — Fix apply_customer_credit_to_invoice: uuid::text cast on reference_id
+
+### Why
+Applying £10 credit to INV-00005 (£20 remaining) failed with:
+> `column "reference_id" is of type uuid but expression is of type text` (PostgREST error 42804)
+
+### Root cause
+Inside `apply_customer_credit_to_invoice`, the `INSERT INTO journal_entries` had:
+```sql
+'credit_applied', p_invoice_id::text,   -- ← wrong cast
+```
+But `journal_entries.reference_id` is `uuid`. Casting `uuid → text → uuid` makes Postgres reject the insert.
+
+The second occurrence of `p_invoice_id::text` further down (inside string concatenation for the description) is legitimate — that one stays.
+
+### What changed
+DB-only migration `v3_74_86_fix_apply_customer_credit_uuid_cast`. Dropped the `::text` cast on the `reference_id` column. Verified:
+- bug substring `'credit_applied', p_invoice_id::text,` → position 0 (not found)
+- fix substring `'credit_applied', p_invoice_id,` → position 3093 (present)
+
+No TypeScript changes. Function signature unchanged, so callers don't need updates.
+
+### Verified
+- Migration applied via `apply_migration`.
+- `journal_entries.reference_id` confirmed as `uuid` (not text).
+- The customer_credit_ledger insert further down was already using uuid correctly.
+
+---
+
 ## [3.74.85] - 2026-06-07 — Fix warehouse-approve V2: stop double-creating the COGS journal entry
 
 ### Why
