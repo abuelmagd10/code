@@ -4,6 +4,47 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.79] - 2026-06-07 — Invoice overpayment auto-creates credit (closes v3.74.77 gap)
+
+### Why
+User reported the `/customer-credits` page still didn't show all customers with a positive balance after v3.74.77 + v3.74.78. Investigation found the gap:
+
+- **INV-00003** (customer "ahmed abuelmagd"): `total_amount=10.00`, `paid_amount=10.68` → 0.68 overpayment, **no credit row**.
+- **INV-00004** (customer "محمد بسيونى"): credit exists from the return path, correctly shown.
+
+The v3.74.77 trigger fires only on `payments.unallocated_amount > 0`. But this scenario doesn't touch `unallocated_amount` — the full payment amount gets linked to a single invoice, and `invoices.paid_amount` grows past `total_amount`. So the unallocated path never triggers; the overpayment lives silently in `paid_amount`.
+
+### What changed
+
+**New trigger `trg_auto_create_credit_from_invoice_overpay`** on `invoices` (AFTER INSERT OR UPDATE OF paid_amount, total_amount). When the row settles with `paid_amount > total_amount`, the trigger creates a `customer_credits` row:
+
+- `reference_type = 'invoice_overpayment'`
+- `reference_id = invoices.id`
+- `amount = paid_amount − total_amount` (we deliberately **don't** subtract `returned_amount` — the return path has its own credit creation; treating the overpayment as `paid - max(0, total-returned)` would double-count)
+- `branch_id` + `cost_center_id` inherited from the invoice
+- `status = 'active'`
+
+Guards:
+- Skips when `returned_amount > 0` (return path owns that case)
+- Skips when invoice is `cancelled` or `draft`
+- Existence-checked by `(reference_type, reference_id)` — re-firing on UPDATE updates the existing row's amount instead of duplicating, but only while the credit is still untouched.
+
+Chains into the v3.74.76 sync trigger → ledger row appears automatically → both the list and the detail page see the balance.
+
+**Backfill:** `UPDATE invoices SET paid_amount = paid_amount WHERE paid_amount > total_amount + 0.01 AND returned_amount ≤ 0.01 AND status NOT IN ('cancelled','draft') AND customer_id IS NOT NULL` — a no-op update that fires the new trigger on existing rows. INV-00003 → credit row of 0.68 EGP for ahmed abuelmagd created automatically.
+
+### Result
+- `/customer-credits` page now shows both customers (was showing only one).
+- Future invoice overpayments — whether through "record payment" form passing more than outstanding, or any other path that grows `paid_amount` — get a credit row automatically.
+- Return path unchanged.
+
+### Verified post-migration
+- DB query confirms 2 customers in ledger with positive balance (was 1).
+- Trigger created on `invoices`, function definition includes the return guard.
+- No double-credit for INV-00004 (returned_amount > 0 → trigger skips).
+
+---
+
 ## [3.74.78] - 2026-06-07 — Credit source clarity in 3 places: list, ledger, payments
 
 ### Why
