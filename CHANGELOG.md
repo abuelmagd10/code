@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.95] - 2026-06-08 — Fix 3 false positives / errors uncovered by v3.74.94 on production data
+
+### Why
+v3.74.94 was deployed; the owner's dashboard surfaced 3 findings on the test company. On investigation, all 3 were bugs in the check functions themselves, not real divergences:
+
+| Finding | Real cause |
+|---|---|
+| `perm_shares_expired` — "Check function raised an exception. column ps.from_user_id does not exist" | The function used `from_user_id` / `to_user_id`; the actual columns are `grantor_user_id` / `grantee_user_id` |
+| `payment_double_allocation` — flagged INV-00003 | False positive. Having both `payments.invoice_id` AND an `advance_applications` row for the same (payment, invoice) is a legitimate v3.23.1 pattern (the AA row mirrors the link). It is NOT a double-count by itself |
+| `accounting_equation` — Assets £49.68 vs Liab+Equity+PnL £-0.32, diff £50 | The CASE for `equity_plus_pnl` listed `'equity','revenue','expense'`, but the DB uses `'income'` (not `'revenue'`) as the account_type for sales revenue accounts. So the £50 of `account_type='income'` was silently dropped from the equation. The diff = the missed revenue |
+
+### What changed (DB-only, three function bodies replaced)
+
+1. **`ic_perm_shares_expired`** — uses `grantor_user_id` / `grantee_user_id` (correct schema names)
+
+2. **`ic_payment_double_allocation`** — rewritten to detect real double-count, not the mere existence of both rows:
+   ```sql
+   -- Real check: paid_amount exceeds the larger of (sum of payments, sum of advance_applications) by > 0.50
+   WHERE i.paid_amount > GREATEST(payment_sum, aa_sum) + 0.50
+   ```
+   This catches the genuine pathology (paid_amount over-booked beyond what either source justifies) without false-flagging the legitimate mirror pattern.
+
+3. **`ic_accounting_equation`** — `account_type IN ('equity','income','revenue','expense')`. Added `'income'` so revenue-type accounts in this schema are counted toward the equation. Kept `'revenue'` for forward compatibility with any other deployment that uses that label.
+
+### Verified
+- After the 3 fixes, `run_all_integrity_checks` on the VitaSlims company returns **zero rows**
+- The widget on the owner's dashboard now shows nothing (silent-by-design)
+- The cron will continue to log audit_logs entries only when something real is found
+
+### Process lesson
+v3.74.94 was tested against an empty result set on a clean company. The 3 bugs only surfaced when the framework ran against a company with real, varied data (USD payments, advance_applications, real sales revenue in `income` accounts). **Empty-on-test ≠ correct.** Future check functions should be exercised against a fixture that includes at least one row of every reference table they touch, with realistic column types.
+
+---
+
 ## [3.74.94] - 2026-06-08 — Integrity Framework expanded to 28 checks (added 12)
 
 ### Why
