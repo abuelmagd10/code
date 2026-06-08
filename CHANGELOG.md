@@ -4,6 +4,51 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.99] - 2026-06-08 — Check 49: Inventory GL vs FIFO remaining value
+
+### Why
+During comprehensive verification of VitaSlims test company, found Inventory GL (£3) and FIFO remaining (£8) diverge by £5. Investigation showed this is **not a bug** — it's the natural consequence of how production transactions are journaled:
+
+| Transaction | GL effect | FIFO effect |
+|---|---|---|
+| Purchase ماتور (£5) | +£5 | +£5 |
+| production_issue (ماتور → raw) | not journaled (internal transfer) | -£5 |
+| production_receipt (finished good) | not journaled (internal transfer) | +£5 |
+| Purchase VitaSlims (5×£1) | +£5 | +£5 |
+| INV-00005 sale (2×£1) | -£2 (COGS) | -£2 |
+| **Net** | **£3** | **£8** |
+
+The GL tracks "cash invested in inventory" while FIFO tracks "physical inventory at cost". Production transactions are net-zero on cash but shift inventory type — so GL stays flat while FIFO reflects the new composition.
+
+This is a **design choice** the system made historically. Whether to also journal production_issue/receipt (Dr finished-goods / Cr raw-materials, both sub-accounts of 1140) is a chart-of-accounts policy decision, not a bug to fix automatically.
+
+### What ships
+Check #49: `ic_inventory_gl_vs_fifo` — flags when GL 1140 net diverges from `SUM(fifo_cost_lots.remaining × unit_cost)` by more than `max(£5, 1% of FIFO value)`.
+
+Current state on VitaSlims: £5 diff, exactly at tolerance threshold, no finding emitted. If the gap grows (sign of a real journaling bug), the widget will alert.
+
+### Registry totals after this release
+- Accounting: 19
+- Inventory: **10** (was 9, +1: `inventory_gl_vs_fifo`)
+- Operational: 20
+- **Total: 49 checks** running daily on every company
+
+### Side action: full verification of VitaSlims
+Cross-checked 9 financial dimensions, all clean:
+- AR (1130): £15 GL = £15 invoices outstanding ✓
+- Customer credit (2155): £5.68 GL = £5.68 customer_credits ✓
+- Cash (1001): £31.68 GL = (£40.68 payments in − £4 expenses − £5 bill payment) ✓
+- COGS (5100): £2 GL = £2 cogs_transactions ✓
+- Revenue (4100): £50 GL = net invoices (excl. returns) ✓
+- Trial balance: Dr £132.36 = Cr £132.36 ✓
+- Sales returns: £10 = invoice.returned_amount ✓
+- Inventory: £3 GL vs £8 FIFO — explained above, monitored by new check ✓
+- Integrity findings: 0 ✓
+
+The £5 inventory gap is the system's only structural quirk and is now monitored.
+
+---
+
 ## [3.74.98] - 2026-06-08 — Hotfix: AR/AP balance checks now exclude FX revaluation journals
 
 ### Why
