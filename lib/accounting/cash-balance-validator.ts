@@ -13,16 +13,6 @@
  *   For period-end closing, opening-balance adjustments, or explicit owner
  *   approval, the caller may pass `{ allowOverdraft: true }`. This is logged
  *   in the audit trail with the actor's id.
- *
- * @example
- *   import { assertCashOutflowAllowed } from "@/lib/accounting/cash-balance-validator"
- *   await assertCashOutflowAllowed(supabase, {
- *     accountId,
- *     amount: 100,           // amount in account currency
- *     companyId,
- *     description: "Supplier payment to ABC Co.",
- *   })
- *   // throws CashOverdraftError if balance would go negative
  */
 
 export class CashOverdraftError extends Error {
@@ -135,34 +125,47 @@ export async function getCashAccountBalance(
  * cash-outflow journal entry (CR Cash X).
  *
  * If the resulting balance would be negative, throws CashOverdraftError.
- *
  * Pass `allowOverdraft: true` to bypass (must be logged externally).
  */
 export async function assertCashOutflowAllowed(
   supabase: any,
   opts: {
     accountId: string
-    amount: number               // amount being withdrawn (in base currency)
-    nativeAmount?: number | null // if account is FC, amount in account ccy
-    companyId?: string           // for audit-log lookups (caller supplies)
-    description?: string         // for audit trail
-    allowOverdraft?: boolean     // owner/admin override
+    amount: number
+    nativeAmount?: number | null
+    companyId?: string
+    description?: string
+    allowOverdraft?: boolean
   },
 ): Promise<CashBalanceSnapshot> {
   const snap = await getCashAccountBalance(supabase, opts.accountId)
   if (!snap) {
     throw new Error(`Account ${opts.accountId} not found`)
   }
-  // Non-cash accounts: skip (e.g., AR/AP/expense — no overdraft concept here)
   if (snap.subType !== "cash" && snap.subType !== "bank") return snap
-
-  // Overdraft override (explicit caller intent)
   if (opts.allowOverdraft) return snap
 
-  // Pick the right balance to check based on currency context.
-  // If account is FC AND caller passes nativeAmount, validate against
-  // native balance to avoid base-currency rounding masking the issue.
-  const accIsFC = !!snap.originalCurrency
+  // v3.74.100 FIX — FC-ness is determined by comparing account currency to
+  // company base_currency. Previously any account with a non-null
+  // original_currency was treated as FC, which made the validator sum
+  // original_debit/credit across lines recorded in different transaction
+  // currencies (a 0.20 USD invoice payment posted to an EGP cash account
+  // would leave its 0.20 on original_debit, mixing with EGP figures from
+  // other movements). The result was a meaningless native_balance that
+  // could reject withdrawals from a healthy account — observed on
+  // VitaSlims 1001 (GL +31.68 EGP but validator returned -0.80 mixed-ccy).
+  let baseCurrency: string | null = null
+  if (opts.companyId) {
+    const { data: company } = await supabase
+      .from("companies")
+      .select("base_currency")
+      .eq("id", opts.companyId)
+      .maybeSingle()
+    baseCurrency = String(company?.base_currency || "").toUpperCase() || null
+  }
+  const accCcy = String(snap.originalCurrency || "").toUpperCase()
+  const accIsFC = !!accCcy && baseCurrency != null && accCcy !== baseCurrency
+
   const useNative = accIsFC && opts.nativeAmount != null && snap.nativeBalance != null
   const currentBalance = useNative ? (snap.nativeBalance as number) : snap.balance
   const attempted = useNative ? Number(opts.nativeAmount) : Number(opts.amount || 0)

@@ -4,6 +4,40 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.100] - 2026-06-08 — Hotfix: cash overdraft validator mixed currencies on EGP accounts
+
+### Symptom
+عند صَرف رَصيد عَميل (£5) من حِساب "خزينة الشركة مدينة نصر" (1001) فى VitaSlims، رَفَض النِّظام العَمَلية برِسالَة:
+> ❌ لا يمكن السحب: رصيد الحساب "خزينة الشركة مدينة نصر" غير كافٍ. الرصيد الحالى: -0.80 EGP
+
+رَغم أَنَّ رَصيد الحِساب الفِعلى من الـ GL = **+31.68 EGP**.
+
+### Root cause
+فى `lib/accounting/cash-balance-validator.ts`، السَّطر:
+```ts
+const accIsFC = !!snap.originalCurrency
+```
+
+اعتَبَر أَنَّ أَى حِساب لَه `original_currency` (حتى وَلو كانَت = عُملَة الشَّركَة الأَساس EGP) هو حِساب FC. هذا جَعَل الـ validator يَستَخدِم `native_balance` المَحسوب من `original_debit/original_credit` على المَستوى jel.
+
+لَكِن حَركَة دَفعَة فاتورَة INV-00003 (٠٫٢٠ USD = ١٠٫٦٨ EGP) سَجَّلَت `original_debit=0.20, original_currency='USD'` على نَفس حِساب الخَزينَة (EGP). جَمع `native_debit/credit` عَبر سَبعَة حَركات بعُملات مُختَلِفَة (٠٫٢٠ USD مَع ١٫٠٠ EGP مَع ٥ NULL) أَنتَج `native_balance = -0.80` بِلا مَعنى مالى.
+
+### Fix
+- `accIsFC` يُقارِن الآن عُملَة الحِساب الأَصلية بـ `companies.base_currency`:
+  ```ts
+  const accIsFC = !!accCcy && baseCurrency != null && accCcy !== baseCurrency
+  ```
+- للحِسابات بنَفس عُملَة الشَّركَة الأَساس (مَثَل خَزينَة EGP فى شَركَة قاعِدَتها EGP): يَستَخدِم الـ validator `balance` الـ base — الذى هو ٣١٫٦٨ ✓
+- للحِسابات FC الفِعلية (مَثَل بَنك بـ USD فى شَركَة قاعِدَتها EGP): يَستَمِرّ استِخدام `nativeBalance` كما هو
+
+### Files
+- `lib/accounting/cash-balance-validator.ts` (+15 سُطور — مَنطِق مُقارنَة العُملَة + شَرح)
+
+### Impact
+كُل عَمَليات السَّحب (صَرف رَصيد عَميل، دَفع مُورِّد، مَصروف، سَحب شَخصى، تَحويل بَنكى، رواتِب) كانَت قَد تَفشَل بنَفس النَّمَط على حِسابات نَقد/بَنك بنَفس عُملَة الأَساس فى أَى شَركَة لَها حَتى حَركَة واحِدَة بعُملَة مُختَلِفَة. الإصلاح يَحُلّ المُشكِلَة عَبر كُل الـ services بدون لمسها.
+
+---
+
 ## [3.74.99] - 2026-06-08 — Check 49: Inventory GL vs FIFO remaining value
 
 ### Why
