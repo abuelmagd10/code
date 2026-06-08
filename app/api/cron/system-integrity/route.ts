@@ -1,18 +1,11 @@
 /**
- * v3.74.92 — Daily customer credit integrity check
+ * v3.74.93 — Daily system integrity check (replaces v3.74.92 customer-credit-only cron)
  *
- * GET /api/cron/customer-credit-integrity
+ * GET /api/cron/system-integrity
  *
- * Vercel cron (daily, 4 AM Cairo). Runs `check_customer_credit_integrity()`
- * across every company in the system. For each company with findings:
- *   - Logs a structured audit_logs entry
- *   - Inserts an internal notification for the company's owner(s)
- *     with severity=high so it surfaces in the bell + (if escalation is
- *     enabled) is emailed via the subscription-notifications helper.
- *
- * Healthy companies: nothing is written. This is intentional — we don't
- * want to spam audit logs every day with "all green". The presence of an
- * audit entry IS the signal that something went wrong.
+ * Runs run_all_integrity_checks() across every company. For each company with
+ * findings: audit_logs row + notification to each owner (severity=critical
+ * if any finding has severity=high).
  *
  * Auth: Bearer CRON_SECRET.
  */
@@ -41,28 +34,26 @@ export async function GET(request: NextRequest) {
   const admin = getAdminClient()
 
   try {
-    // Run the integrity check for ALL companies (p_company_id IS NULL).
     const { data: findings, error: rpcErr } = await admin.rpc(
-      "check_customer_credit_integrity",
+      "run_all_integrity_checks",
       { p_company_id: null }
     )
 
     if (rpcErr) {
-      console.error("[customer-credit-integrity cron] RPC error:", rpcErr)
-      return NextResponse.json(
-        { success: false, error: rpcErr.message },
-        { status: 500 }
-      )
+      console.error("[system-integrity cron] RPC error:", rpcErr)
+      return NextResponse.json({ success: false, error: rpcErr.message }, { status: 500 })
     }
 
     const rows = (findings || []) as Array<{
       cmp_id: string
+      check_code: string
+      category: string
+      name_ar: string
+      name_en: string
       severity: "high" | "medium" | "low"
-      check_name: string
       detail: Record<string, any>
     }>
 
-    // Group findings by company for cleaner alerts.
     const byCompany = new Map<string, typeof rows>()
     for (const row of rows) {
       const list = byCompany.get(row.cmp_id) || []
@@ -73,7 +64,6 @@ export async function GET(request: NextRequest) {
     let notifiedCount = 0
 
     for (const [companyId, companyFindings] of byCompany.entries()) {
-      // Find owner(s) of this company so we can notify them.
       const { data: owners } = await admin
         .from("company_members")
         .select("user_id")
@@ -82,33 +72,46 @@ export async function GET(request: NextRequest) {
 
       const ownerIds = (owners || []).map((o: any) => o.user_id).filter(Boolean)
 
-      // Audit log — always written, even if no owners (so admins see it).
+      const highCount = companyFindings.filter((f) => f.severity === "high").length
+
       await admin.from("audit_logs").insert({
         company_id: companyId,
         action: "system_integrity_check",
-        entity_type: "customer_credit_integrity",
+        entity_type: "system_integrity",
         entity_id: companyId,
         metadata: {
           findings_count: companyFindings.length,
+          by_severity: {
+            high: highCount,
+            medium: companyFindings.filter((f) => f.severity === "medium").length,
+            low: companyFindings.filter((f) => f.severity === "low").length,
+          },
+          by_category: {
+            accounting: companyFindings.filter((f) => f.category === "accounting").length,
+            inventory: companyFindings.filter((f) => f.category === "inventory").length,
+            operational: companyFindings.filter((f) => f.category === "operational").length,
+          },
           checks: companyFindings.map((f) => ({
+            code: f.check_code,
             severity: f.severity,
-            check: f.check_name,
+            category: f.category,
             detail: f.detail,
           })),
           checked_at: new Date().toISOString(),
         },
       })
 
-      // Notify each owner.
       for (const ownerId of ownerIds) {
-        const highestSev = companyFindings.some((f) => f.severity === "high") ? "high" : "medium"
+        const checkNames = Array.from(new Set(companyFindings.map((f) => f.name_ar))).slice(0, 3).join(" ، ")
         await admin.from("notifications").insert({
           company_id: companyId,
           user_id: ownerId,
           category: "system",
-          priority: highestSev === "high" ? "critical" : "high",
-          title: "⚠️ خَلَل توازُن فى حسابات أَرصِدَة العُملاء",
-          message: `تَمَّ اكتِشاف ${companyFindings.length} انحِراف فى توازُن customer_credits ↔ حساب 2155. راجِع لوحَة التَّحَكُّم أَو /reports.`,
+          priority: highCount > 0 ? "critical" : "high",
+          title: highCount > 0
+            ? `⚠️ ${highCount} انحِراف حَرِج فى سَلامَة النِّظام`
+            : `⚠️ ${companyFindings.length} انحِراف فى سَلامَة النِّظام`,
+          message: `${checkNames}${companyFindings.length > 3 ? " ، وغيرها..." : ""}. راجِع لوحَة التَّحَكُّم.`,
           action_url: "/dashboard",
         })
         notifiedCount++
@@ -119,14 +122,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      companies_checked: byCompany.size === 0 ? "all_healthy" : Array.from(byCompany.keys()).length,
+      companies_with_findings: byCompany.size,
       total_findings: rows.length,
       owners_notified: notifiedCount,
       duration_ms: durationMs,
       checked_at: new Date().toISOString(),
     })
   } catch (e: any) {
-    console.error("[customer-credit-integrity cron] error:", e)
+    console.error("[system-integrity cron] error:", e)
     return NextResponse.json(
       { success: false, error: e?.message || "Unknown error", duration_ms: Date.now() - startedAt },
       { status: 500 }

@@ -1,8 +1,8 @@
-// v3.74.92 — Customer credit integrity check API
-// GET /api/governance/customer-credit-integrity
-//   - Returns findings (empty array = healthy)
-//   - Scoped to the caller's active company
-//   - Auth required; owner/manager/accountant only
+// v3.74.93 — Unified system integrity API
+// GET /api/governance/system-integrity
+//   - Calls the master RPC run_all_integrity_checks(company_id)
+//   - Scoped to caller's active company
+//   - Owner/manager/accountant/chief_accountant only
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
@@ -17,7 +17,6 @@ export async function GET(_request: NextRequest) {
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) return NextResponse.json({ error: "Company context missing" }, { status: 400 })
 
-    // Permission gate — only owner/manager/accountant see governance reports
     const { data: member } = await supabase
       .from("company_members")
       .select("role")
@@ -30,7 +29,7 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const { data, error } = await supabase.rpc("check_customer_credit_integrity", {
+    const { data, error } = await supabase.rpc("run_all_integrity_checks", {
       p_company_id: companyId,
     })
 
@@ -40,15 +39,29 @@ export async function GET(_request: NextRequest) {
 
     const findings = (data || []) as Array<{
       cmp_id: string
+      check_code: string
+      category: "accounting" | "inventory" | "operational"
+      name_ar: string
+      name_en: string
       severity: "high" | "medium" | "low"
-      check_name: string
       detail: Record<string, any>
     }>
+
+    // Aggregate by category for the widget
+    const counts = {
+      total: findings.length,
+      high: findings.filter(f => f.severity === "high").length,
+      medium: findings.filter(f => f.severity === "medium").length,
+      low: findings.filter(f => f.severity === "low").length,
+      accounting: findings.filter(f => f.category === "accounting").length,
+      inventory: findings.filter(f => f.category === "inventory").length,
+      operational: findings.filter(f => f.category === "operational").length,
+    }
 
     return NextResponse.json({
       success: true,
       healthy: findings.length === 0,
-      findings_count: findings.length,
+      counts,
       findings,
       checked_at: new Date().toISOString(),
     })

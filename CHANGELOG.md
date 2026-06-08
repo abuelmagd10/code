@@ -4,6 +4,65 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.93] - 2026-06-08 — System Integrity Framework: 16 daily checks across accounting + inventory + operations
+
+### Why
+v3.74.92 introduced one focused check (customer-credit integrity). The user's correct observation: the same monitoring pattern should cover **every** balance the system maintains, so any class of accounting/inventory bug gets caught within 24 hours of introduction, not weeks later.
+
+### What ships
+A pluggable framework + 16 checks running daily on every company.
+
+**DB layer (4 migrations applied):**
+- `integrity_check_definitions` registry table
+- 16 individual SQL functions (`ic_*`), each returns `(severity, detail jsonb)` rows. Empty = healthy
+- Master `run_all_integrity_checks(company_id)` reads the registry, dispatches dynamically, aggregates findings; per-check error handling so one broken check can't break the run
+
+**The 16 checks:**
+
+| # | code | Category | Compares |
+|---|---|---|---|
+| 1 | `ar_balance` | accounting | invoice outstanding ↔ account 1130 |
+| 2 | `ap_balance` | accounting | bill outstanding ↔ account 2110 |
+| 3 | `customer_credit` | accounting | customer_credits ↔ account 2155 |
+| 4 | `vendor_credit` | accounting | vendor_credits ↔ matching ledger account |
+| 5 | `trial_balance` | accounting | SUM(debits) = SUM(credits) on posted journals |
+| 6 | `orphaned_journals` | accounting | journal references with deleted parents |
+| 7 | `cogs_balance` | accounting | cogs_transactions ↔ account 5000 |
+| 8 | `negative_assets` | accounting | cash / bank / inventory / AR negative balances |
+| 9 | `negative_stock` | inventory | inventory_transactions net ≥ 0 per product/warehouse |
+| 10 | `fifo_lot_integrity` | inventory | lot remaining = original − consumed |
+| 11 | `stale_transfers` | inventory | transfers in transit > 30 days |
+| 12 | `manufacturing_consumption` | inventory | completed production without material consumption |
+| 13 | `return_chain` | inventory | approved sales returns without inventory transaction |
+| 14 | `stale_approvals` | operational | pending approvals > 7 days |
+| 15 | `overpaid_no_credit` | operational | paid > total without customer_credit row |
+| 16 | `credit_without_journal` | operational | customer_credit without credit_from_overpayment journal |
+
+**Application layer (replaces v3.74.92 surfaces):**
+- `app/api/governance/system-integrity` — unified API
+- `app/dashboard/_widgets/SystemIntegrityWidget.tsx` — silent-by-design banner, grouped by category, expand/collapse
+- `app/api/cron/system-integrity` — daily 1:30 AM UTC, audit_logs + critical/high notification per finding
+- `vercel.json` cron registered
+
+**Removed (v3.74.92 was a precursor, never deployed):**
+- `app/api/governance/customer-credit-integrity` (replaced)
+- `app/api/cron/customer-credit-integrity` (replaced)
+- `app/dashboard/_widgets/CreditIntegrityWidget.tsx` (replaced)
+- Old vercel.json entry replaced
+
+### Verified at deploy time
+- `run_all_integrity_checks('<vitaslims>')` returns **zero rows** post-v3.74.91 — clean across all 16 dimensions
+- TS: 0 errors
+- All checks have `EXCEPTION WHEN OTHERS` handlers so a buggy check surfaces as a finding, not a crash
+
+### Design principles
+- **Silent unless wrong** — widget returns `null` when healthy
+- **Pluggable** — adding a future check = one SQL function + one INSERT in the registry; no code changes elsewhere
+- **No auto-fix** — notification + audit_log only. The user reviews + decides
+- **Per-company isolation** — every check is scoped by `company_id`
+
+---
+
 ## [3.74.92] - 2026-06-08 — Customer credit integrity monitoring (defense in depth)
 
 ### Why

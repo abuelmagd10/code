@@ -23,7 +23,7 @@
       "schedule": "0 1 * * *"
     },
     {
-      "path": "/api/cron/customer-credit-integrity",
+      "path": "/api/cron/system-integrity",
       "schedule": "30 1 * * *"
     }
   ]

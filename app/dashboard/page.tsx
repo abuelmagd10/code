@@ -31,7 +31,7 @@ import SecondaryStatsWidget from "./_widgets/SecondaryStatsWidget"
 import ChartsWidget from "./_widgets/ChartsWidget"
 import BankCashWidget from "./_widgets/BankCashWidget"
 import RecentListsWidget from "./_widgets/RecentListsWidget"
-import CreditIntegrityWidget from "./_widgets/CreditIntegrityWidget"
+import SystemIntegrityWidget from "./_widgets/SystemIntegrityWidget"
 
 // Skeleton Components
 import {
@@ -276,7 +276,7 @@ export default async function DashboardPage({
           </div>
 
           {/* v3.74.92: Credit Integrity health banner — owner/manager/accountant only */}
-          {companyId && <CreditIntegrityWidget />}
+          {companyId && <SystemIntegrityWidget />}
 
           {/* ── Widget 1: إحصائيات GL الرئيسية ── */}
           {companyId && (
