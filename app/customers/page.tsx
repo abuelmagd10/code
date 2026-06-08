@@ -464,9 +464,11 @@ export default function CustomersPage() {
         .select("customer_id, amount_applied")
         .eq("company_id", activeCompanyId)
       // ✅ جلب أرصدة العملاء الدائنة من المرتجعات (جميع الحالات لحساب المُصرَف أيضاً)
+      // v3.74.89: نَجلِب applied_amount أَيضاً — RPC apply_customer_credit_to_invoice
+      // يَزيدُه (لا used_amount) عِند تَطبيق الرَّصيد على فاتورة.
       const { data: customerCredits } = await supabase
         .from("customer_credits")
-        .select("customer_id, amount, used_amount, status")
+        .select("customer_id, amount, used_amount, applied_amount, status")
         .eq("company_id", activeCompanyId)
 
       const advMap: Record<string, number> = {}
@@ -496,12 +498,18 @@ export default function CustomersPage() {
           const cid = String(c.customer_id || "")
           if (!cid) return
           // المتاح: فقط من السجلات النشطة
+          // v3.74.89: نَطرَح applied_amount أَيضاً — RPC apply_customer_credit_to_invoice
+          // يَزيدُه عِندَما يَستَخدِم العَميل رَصيدَه لتَسديد فاتورة.
+          // قَبل هذا الإصلاح: عَميل لَدَيه £10 طَبَّق £5 على فاتورة كانَ ما زالَ يَظهَر £10.
           if (String(c.status || '') === 'active') {
-            const available = Math.max(Number(c.amount || 0) - Number(c.used_amount || 0), 0)
+            const available = Math.max(
+              Number(c.amount || 0) - Number(c.used_amount || 0) - Number(c.applied_amount || 0),
+              0
+            )
             creditMap[cid] = (creditMap[cid] || 0) + available
           }
-          // المُصرَف: من جميع السجلات
-          const usedAmt = Number(c.used_amount || 0)
+          // المُصرَف: مَجموع used_amount (صَرف نَقدى) + applied_amount (تَطبيق على فاتورة)
+          const usedAmt = Number(c.used_amount || 0) + Number(c.applied_amount || 0)
           if (usedAmt > 0) disbursedMap[cid] = (disbursedMap[cid] || 0) + usedAmt
         })
 

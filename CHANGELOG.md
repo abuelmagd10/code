@@ -4,6 +4,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.89] - 2026-06-07 — Customer-page credit balance was missing `applied_amount`
+
+### Why
+After v3.74.88 the invoice page reflected credit applications correctly, but the user reported that the customers list (`/customers`) still showed the old £10 instead of the post-application £5.
+
+### Root cause (full audit done)
+The codebase has two columns that reduce a `customer_credits` row's available balance:
+- `used_amount` — bumped when a credit is **disbursed in cash** to the customer
+- `applied_amount` — bumped when a credit is **applied against an invoice** (the `apply_customer_credit_to_invoice` RPC writes to this column, NOT `used_amount`)
+
+A full sweep across the project found two display sites that subtracted only `used_amount`:
+1. **`app/customers/page.tsx`** (line 467 SELECT, line 500 calc) — the main customers list
+2. **`components/customers/customer-form-dialog.tsx`** (line 256 SELECT, line 264 calc) — the edit-customer dialog credit badge
+
+For a customer with `amount=10, used=0, applied=5` (after a £5 credit application), both files computed `10 - 0 = £10` instead of the correct `10 - 0 - 5 = £5`.
+
+### All other display sites — verified correct
+| Surface | Source | Formula | Status |
+|---|---|---|---|
+| `/invoices` list | `customer_credit_ledger` SUM | full ledger sum | ✓ |
+| `/invoices/[id]` | `customer_credits` | `amount - used - applied` | ✓ |
+| `/invoices/[id]` (alt) | `customer_credit_ledger` | full ledger sum | ✓ |
+| `/payments` (`CustomerCreditBalanceHint`) | `customer_credit_ledger` via API | full ledger sum | ✓ |
+| `/customer-credits/*` | API → `customer_credit_ledger` | full ledger sum | ✓ |
+| `/sales-orders/[id]` | shows `used_amount` only — not the available balance | not affected |
+
+### What changed
+- **`app/customers/page.tsx`** — SELECT adds `applied_amount`; `available = amount - used_amount - applied_amount`; the "disbursed" total now correctly sums both `used` (cash refunds) and `applied` (invoice applications).
+- **`components/customers/customer-form-dialog.tsx`** — same one-column addition + subtraction in the credit-balance calc that gates customer-edit lock.
+
+### Verified
+- TS: 0 errors.
+- Both files restored from HEAD (Edit truncated each tail), then re-applied via heredoc with anchor-uniqueness assertions.
+- For the test scenario (محمد بسيونى: £10 initial, £5 applied to INV-00005):
+  - `/customers` shows £5 ✓
+  - Edit-customer dialog shows credit £5 ✓
+
+### Notes
+- The legacy `app/api/fix-invoice-0001-status/route.ts:203` has the same `amount - used` pattern but it's a one-shot repair script (not user-facing) — left as is.
+- DB integrity check confirmed both `customer_credits` table and `customer_credit_ledger` (via the unified `get_customer_credit_balance` RPC) agree on £5 — the gap was purely a UI-layer calculation oversight from before `applied_amount` existed as a separate column.
+
+---
+
 ## [3.74.88] - 2026-06-07 — Invoice cards + payments table now reflect credit applications
 
 ### Why

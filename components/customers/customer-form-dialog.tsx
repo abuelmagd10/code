@@ -251,17 +251,22 @@ export function CustomerFormDialog({
         setActiveInvoicesCount(activeInvList.length)
 
         // 2) الرصيد الدائن — مجموع customer_credits غير المستخدمة
-        //    (active فقط؛ amount - used_amount > 0)
+        //    (active فقط؛ amount - used_amount - applied_amount > 0)
+        // v3.74.89: نَطرَح applied_amount أَيضاً — RPC apply_customer_credit_to_invoice
+        // يَزيدُه (لا used_amount) عِندَما يُستَخدَم الرَّصيد لتَسديد فاتورة.
         const { data: credits } = await supabase
           .from("customer_credits")
-          .select("amount, used_amount, status")
+          .select("amount, used_amount, applied_amount, status")
           .eq("company_id", activeCompanyId)
           .eq("customer_id", editingCustomer.id)
           .eq("status", "active")
 
         const totalCredit = (credits || []).reduce(
           (sum: number, c: any) =>
-            sum + Math.max(0, Number(c.amount || 0) - Number(c.used_amount || 0)),
+            sum + Math.max(
+              0,
+              Number(c.amount || 0) - Number(c.used_amount || 0) - Number(c.applied_amount || 0)
+            ),
           0
         )
         setHasCreditBalance(totalCredit > 0)
