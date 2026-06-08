@@ -4,6 +4,50 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.94] - 2026-06-08 — Integrity Framework expanded to 28 checks (added 12)
+
+### Why
+v3.74.93 shipped the framework with 16 core checks. The user asked for full coverage across every accounting and inventory dimension the system tracks. This release plugs the remaining 12.
+
+### What ships (DB-only — framework already in place)
+12 new SQL functions, each registered in `integrity_check_definitions`. No code changes — the master function, API, widget, and cron pick them up automatically.
+
+**Critical governance (4):**
+- `payment_double_allocation` — payment linked both via `payments.invoice_id` and `advance_applications` (double-count)
+- `closed_period_mutations` — posted journal with entry_date inside a closed/locked accounting period, created after the period was closed
+- `tax_accuracy` — `invoice.tax_amount` vs sum of `invoice_items` line tax (qty × price × rate / 100); flags > 1 EGP diff
+- `branch_isolation` — journal entry referencing a branch from a different company
+
+**Inventory (2):**
+- `inventory_cost_drift` — sale-type `inventory_transactions.unit_cost` vs average FIFO consumption cost; flags > 0.10 diff
+- `linked_so_no_invoice` — `sales_orders.invoice_id` pointing to a deleted invoice
+
+**Operational (6):**
+- `bonus_reversal_pending` — approved sales return on an invoice that earned a bonus, with no reversal row in `user_bonuses`
+- `perm_shares_expired` — `permission_sharing.is_active=true` but `expires_at < now() - 1 day`
+- `sales_return_no_journal` — approved return with no posted `sales_return` journal
+- `accounting_equation` — Assets ≠ Liabilities + (Equity + Revenue − Expenses); the universal sanity check
+- `payment_no_journal` — approved payment with `journal_entry_id IS NULL` (cash/AR not booked)
+- `estimate_orphans` — `sales_orders.source_estimate_id` pointing to a deleted estimate
+
+### Registry totals after this release
+- Accounting: **13** (was 8)
+- Inventory: **7** (was 5)
+- Operational: **8** (was 3)
+- **Total: 28 checks** running daily on every company
+
+### Adjustments to original plan
+The user-approved spec had `manufacturing_yield_variance` and `refund_without_journal`. Those tables (`production_orders`, `customer_refunds`) don't exist in the current schema, so they were replaced by `sales_return_no_journal` and `payment_no_journal` — both addressing the same class of risk (operations completed without their accounting counterpart) on tables that do exist. Documented here so the swap is visible.
+
+### Verified
+- All 28 checks succeed on the VitaSlims test company → **zero findings**
+- Every check has `EXCEPTION WHEN OTHERS / undefined_table / undefined_column` guards so missing tables (manufacturing, bonuses) don't break the master run for deployments that don't have those features installed
+
+### No application changes
+Per the framework's design promise: adding 12 checks required 12 SQL functions + 12 INSERTs. No edits to API / widget / cron / vercel.json / dashboard. Version bump only.
+
+---
+
 ## [3.74.93] - 2026-06-08 — System Integrity Framework: 16 daily checks across accounting + inventory + operations
 
 ### Why
