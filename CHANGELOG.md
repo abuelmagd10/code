@@ -4,6 +4,49 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.96] - 2026-06-08 — 5 high-risk integrity checks (FX, banking, expenses, returns)
+
+### Why
+v3.74.95 closed all the bugs in v3.74.94 — the framework is solid. Time to widen coverage. The user picked "highest risk first": 5 checks that close the biggest gaps in the current 28-check coverage.
+
+### What ships (DB-only)
+5 new check functions + 5 registry rows. Framework picks them up automatically — no application changes.
+
+**The 5 checks:**
+
+| Code | Category | What it detects |
+|---|---|---|
+| `fx_draft_stale` | accounting | `fx_period_end_revaluation` journals stuck in `draft` status > 7 days |
+| `fx_amount_accuracy` | accounting | `payments.base_currency_amount` ≠ `original_amount × exchange_rate` (FX conversion error) |
+| `bank_recon_pending` | accounting | `bank_reconciliations` with unresolved difference > £0.10 older than 30 days |
+| `expense_no_journal` | operational | Approved expense with `journal_entry_id IS NULL` (cash/expense GL not booked) |
+| `return_exceeds_invoice` | operational | Sum of approved sales_returns for an invoice > invoice total (data error or over-refund) |
+
+### Verified on real data
+Immediately after deploy, `run_all_integrity_checks` on the VitaSlims company surfaced **2 real findings** that had been sitting silent for 19 days:
+
+| Journal | Type | Total debit | Created |
+|---|---|---|---|
+| `3f18c4f1-...` | fx_period_end_revaluation (draft) | £304.78 | 2026-05-20 |
+| `1c42c116-...` | fx_period_end_revaluation (draft) | £311.00 | 2026-05-20 |
+
+Both are legitimate FX revaluation drafts from 19 days ago that nobody posted or deleted. This is exactly the class of "small bookkeeping garbage that accumulates" the framework is designed to catch. The owner now has 24-hour visibility on them.
+
+### Registry totals
+- Accounting: **16** (was 13, +3: fx_draft_stale, fx_amount_accuracy, bank_recon_pending)
+- Inventory: **7** (unchanged)
+- Operational: **10** (was 8, +2: expense_no_journal, return_exceeds_invoice)
+- **Total: 33 checks** running daily on every company
+
+### Process improvement (applied)
+Before writing each function, queried `information_schema.columns` for the exact column names — caught that `payroll`/`salaries` tables don't exist in this schema (replaced by `expense_no_journal`), and `bank_reconciliations` does exist with `statement_balance/cleared_total/difference` (not the columns I'd assumed). Result: zero false positives from missing columns this release.
+
+### Tables not present in current schema (deferred to optional future checks)
+- `production_orders` (manufacturing detail) — already had `manufacturing_consumption` check that guards with `EXCEPTION WHEN undefined_table`
+- `customer_refunds` — replaced by `payment_no_journal` (v3.74.94) which addresses the same risk class
+
+---
+
 ## [3.74.95] - 2026-06-08 — Fix 3 false positives / errors uncovered by v3.74.94 on production data
 
 ### Why
