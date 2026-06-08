@@ -4,6 +4,54 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.91] - 2026-06-08 — CRITICAL governance fix: overpayments now post the AR→2155 reclassification journal
+
+### Why (the user caught this — credit said £5.68, reports said £5)
+After v3.74.89 fixed the UI calculations, the customer reported a real discrepancy:
+- `/customers` rightly showed **£5.68** (5.00 محمد + 0.68 أحمد)
+- Trial Balance / GL reports showed **£5.00** on account 2155
+- The £0.68 was nowhere in the chart of accounts
+
+### Root cause — a real bookkeeping gap, not a display issue
+When a customer overpays an invoice (e.g. INV-00003: total £10, paid £10.68), two things should happen accounting-wise:
+1. The £10.68 payment journal correctly credits AR by £10.68 (cash debited, AR credited).
+2. The £0.68 surplus should be **reclassified** with a second journal: Dr AR £0.68 / Cr 2155 £0.68 — moving the surplus from "negative AR" (which is non-sensical) into the customer-credit-liability account.
+
+The system had two triggers that created the `customer_credits` row (so the *internal* balance was correct), but **neither posted the reclassification journal**:
+- `auto_create_credit_from_overpayment` — fires on `payments` (when `unallocated_amount > 0`)
+- `auto_create_credit_from_invoice_overpay` — fires on `invoices` (when `paid > total`) — this is the one INV-00003 hit
+
+So:
+- `customer_credits.amount` carried the £0.68 (right answer at the operational level)
+- AR (1130) stayed credited by the full overpaid amount (effectively went negative by £0.68 for that customer)
+- 2155 got nothing
+- Every accounting report read from journals → reported £5, not £5.68
+
+### Severity
+This is a chart-of-accounts integrity bug. Every report that reads from journal_entry_lines (Trial Balance, Balance Sheet, GL by account, Income Statement, AR by Account, AR Aging GL, dashboard accounting widgets, FX revaluation base) was under-reporting customer credit liability and over-reporting AR-collection-pending. The discrepancy = sum of all overpayments ever made on any company.
+
+### What changed (DB-only — no code changes)
+1. **Migration `v3_74_91_overpayment_journal_correction`** — updates `auto_create_credit_from_overpayment` to also post a journal: Dr AR / Cr 2155 with the same amount. Uses `set_config('app.allow_direct_post','true',true)` so it passes the `enforce_je_integrity` guard.
+2. **Migration `v3_74_91b_invoice_overpay_journal_correction`** — same fix for `auto_create_credit_from_invoice_overpay` (the path INV-00003 took).
+3. **Backfill DO-block** — found every existing overpayment customer_credits row that had no matching `credit_from_overpayment` journal and created one. Posted, balanced, marked.
+
+### Verified (after backfill)
+| Source | Before | After |
+|---|---|---|
+| Account 2155 net (GL reports) | £5.00 ❌ | **£5.68 ✓** |
+| customer_credits net (operational) | £5.68 | £5.68 ✓ |
+| Account 1130 net (AR reports) | £14.32 (negative-leaning) | **£15.00 ✓ (= INV-00005 remaining)** |
+
+All three views now agree. No double-counting (the backfill used a NOT EXISTS guard against `reference_type='credit_from_overpayment'`).
+
+### Process correction (re: user's feedback to be more thorough)
+I had told the user that "all financial reports work automatically" after v3.74.89. That was wrong because I checked one data point (محمد بسيونى's £5) against 2155 and saw them match, then generalized. I missed that the **other** customer's £0.68 overpayment was creating a hidden gap. From now on:
+- I verify across **multiple customers/scenarios** before claiming a system-wide property
+- When the user reports a discrepancy, I treat their number as ground truth and chase the source — never the other way around
+- "DB shows X" is not enough; the question is "do all UIs and reports show the same X"
+
+---
+
 ## [3.74.89] - 2026-06-07 — Customer-page credit balance was missing `applied_amount`
 
 ### Why
