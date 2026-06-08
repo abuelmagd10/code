@@ -21,10 +21,13 @@ Returns zero rows when everything balances. Each finding carries `severity`, `ch
 
 **2. API endpoint `/api/governance/customer-credit-integrity`** — calls the RPC scoped to the caller's active company. Gated to owner/manager/accountant/chief_accountant roles. Returns `{ healthy, findings_count, findings, checked_at }`.
 
-**3. Dashboard widget `CreditIntegrityWidget`** — renders on top of the dashboard, hidden for non-financial roles. Three states:
-- 🟢 Green banner: "حسابات أَرصِدَة العُملاء: مُتَوازِنَة"
-- 🔴 Red banner: lists up to 5 findings with severity badges and hints
-- ⚠️ Amber banner: shown only if the API itself errors
+**3. Dashboard widget `CreditIntegrityWidget`** — **silent-by-design**. Renders absolutely nothing in the DOM when:
+- the user isn't owner/manager/accountant, OR
+- the API is still loading, OR
+- the API errored, OR
+- `data.healthy === true` (the common case)
+
+It only takes screen space when there's something the owner actually needs to act on. The reasoning: a permanent "all good ✓" badge is visual noise that trains the eye to ignore it — exactly the wrong instinct for an integrity monitor. When the red banner appears it should feel different from the dashboard's normal state.
 
 Uses `useAutoRefresh({ minIntervalMs: 60000, skipIfHidden: true })` so it re-checks when the dashboard regains focus, never in the background.
 

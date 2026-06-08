@@ -76,54 +76,18 @@ export default function CreditIntegrityWidget() {
   useEffect(() => { load() /* eslint-disable-next-line */ }, [])
   useAutoRefresh({ onRefresh: load, minIntervalMs: 60000, skipIfHidden: true })
 
-  if (forbidden) return null  // hidden from non-financial roles
-  if (loading) {
-    return (
-      <Card className="p-4 bg-gray-50 dark:bg-slate-900 dark:border-slate-800">
-        <div className="text-xs text-gray-500 dark:text-gray-400 animate-pulse">
-          {appLang === "en" ? "Checking credit integrity..." : "جارٍ فَحص توازُن الأَرصِدَة..."}
-        </div>
-      </Card>
-    )
-  }
-  if (error) {
-    return (
-      <Card className="p-4 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
-        <div className="text-xs text-amber-700 dark:text-amber-300">
-          {appLang === "en" ? "Integrity check failed:" : "تَعَذَّر فَحص توازُن الأَرصِدَة:"} {error}
-        </div>
-      </Card>
-    )
-  }
+  // Quiet-by-design: this widget renders NOTHING when everything is fine.
+  // - Hidden for non-financial roles (forbidden)
+  // - Hidden while loading (no flicker on every focus)
+  // - Hidden on transient errors (no noise; cron will catch real problems)
+  // - Hidden when data.healthy === true
+  // The whole point is to be invisible until there's actually something
+  // the owner needs to act on.
+  if (forbidden) return null
+  if (loading) return null
+  if (error) return null
   if (!data) return null
-
-  if (data.healthy) {
-    return (
-      <Card className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-800">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-emerald-700 dark:text-emerald-300"
-                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-              {appLang === "en"
-                ? "Customer credit accounting: balanced"
-                : "حسابات أَرصِدَة العُملاء: مُتَوازِنَة"}
-            </p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-400">
-              {appLang === "en"
-                ? "customer_credits net = account 2155 net — all overpayments have matching journals."
-                : "صافى customer_credits = صافى حساب 2155 — كُل overpayment لَه قَيد محاسبى."}
-            </p>
-          </div>
-        </div>
-      </Card>
-    )
-  }
+  if (data.healthy) return null
 
   return (
     <Card className="p-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
