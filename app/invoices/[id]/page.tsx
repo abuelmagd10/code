@@ -288,6 +288,10 @@ export default function InvoiceDetailPage() {
 
   // Payments and Returns history
   const [invoicePayments, setInvoicePayments] = useState<any[]>([])
+  // v3.74.88: credit-applied entries from customer_credit_ledger (source_type='credit_applied')
+  // We track them separately so the payments table can show them as a distinct row type,
+  // but they DO count toward totalPaidAmount because invoice.paid_amount already includes them.
+  const [creditApplications, setCreditApplications] = useState<any[]>([])
   const [invoiceReturns, setInvoiceReturns] = useState<any[]>([])
   const [permPayView, setPermPayView] = useState<boolean>(false)
 
@@ -714,6 +718,22 @@ export default function InvoiceDetailPage() {
           .eq("invoice_id", invoiceId)
           .order("payment_date", { ascending: false })
         setInvoicePayments(paymentsData || [])
+
+        // v3.74.88: load credit applications for this invoice so the cards
+        // and payments table reflect them. apply_customer_credit_to_invoice
+        // bumps invoice.paid_amount but doesn't write a row in `payments` —
+        // the credit_applied entry lives in customer_credit_ledger instead.
+        try {
+          const { data: creditAppsData } = await supabase
+            .from("customer_credit_ledger")
+            .select("id, amount, created_at, description, journal_entry_id")
+            .eq("source_id", invoiceId)
+            .eq("source_type", "credit_applied")
+            .order("created_at", { ascending: false })
+          setCreditApplications(creditAppsData || [])
+        } catch {
+          setCreditApplications([])
+        }
 
         // 💰 تحميل رصيد العميل الدائن من جدول customer_credits (المصدر الموثوق)
         if (invoiceData.customer_id && invoiceData.company_id) {
@@ -2200,10 +2220,20 @@ export default function InvoiceDetailPage() {
   // Calculate totals for payments and returns
   // 🔧 الدفعات الموجبة = المدفوع للفاتورة، الدفعات السالبة = الصرف للعميل
   // v3.10.0: استخدم base_currency_amount لو موجود (للدفعات بعملات أجنبية)
-  const totalPaidAmount = invoicePayments.reduce((sum, p) => {
+  // v3.74.88: credit applications are paid-amount too — they post the same
+  // journal entry as a real payment (Dr customer credit / Cr AR) and bump
+  // invoice.paid_amount. So sum them in here.
+  const totalPaymentsFromTable = invoicePayments.reduce((sum, p) => {
     const amt = Number(p.base_currency_amount ?? p.amount ?? 0)
     return sum + (amt > 0 ? amt : 0)
   }, 0)
+  const totalCreditApplied = creditApplications.reduce((sum, c) => {
+    // customer_credit_ledger stores credit_applied with NEGATIVE amount
+    // (customer's credit balance went down). The amount applied to the
+    // invoice is the absolute value.
+    return sum + Math.abs(Number(c.amount || 0))
+  }, 0)
+  const totalPaidAmount = totalPaymentsFromTable + totalCreditApplied
   const totalRefundedToCustomer = invoicePayments.reduce((sum, p) => {
     const amt = Number(p.base_currency_amount ?? p.amount ?? 0)
     return sum + (amt < 0 ? Math.abs(amt) : 0)
@@ -3136,11 +3166,11 @@ export default function InvoiceDetailPage() {
                   <div className="flex items-center gap-2">
                     <DollarSign className="h-5 w-5 text-green-600" />
                     <h3 className="font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Payments' : 'المدفوعات'}</h3>
-                    <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{invoicePayments.length}</span>
+                    <span className="bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 text-xs px-2 py-0.5 rounded-full">{invoicePayments.length + creditApplications.length}</span>
                   </div>
                 </div>
                 <div className="p-4">
-                  {invoicePayments.length === 0 ? (
+                  {invoicePayments.length === 0 && creditApplications.length === 0 ? (
                     <div className="text-center py-8">
                       <DollarSign className="h-10 w-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
                       <p className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'No payments recorded yet' : 'لا توجد مدفوعات بعد'}</p>
@@ -3200,6 +3230,27 @@ export default function InvoiceDetailPage() {
                               </td>
                             </tr>
                           ))}
+                          {/* v3.74.88: credit-applied rows from customer_credit_ledger */}
+                          {creditApplications.map((credit, idx) => {
+                            const amt = Math.abs(Number(credit.amount || 0))
+                            const dateStr = credit.created_at ? String(credit.created_at).slice(0, 10) : '-'
+                            return (
+                              <tr key={`credit-${credit.id}`} className="border-b border-gray-100 dark:border-gray-800 hover:bg-emerald-50/40 dark:hover:bg-emerald-900/10 bg-emerald-50/20 dark:bg-emerald-900/5">
+                                <td className="px-3 py-2 text-gray-500">{invoicePayments.length + idx + 1}</td>
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{dateStr}</td>
+                                <td className="px-3 py-2">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-800 dark:text-emerald-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    {appLang === 'en' ? 'Credit Applied' : 'تطبيق رصيد دائن'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{credit.description || '-'}</td>
+                                <td className="px-3 py-2 font-semibold text-emerald-600 dark:text-emerald-400">
+                                  {currencySymbol}{amt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                         <tfoot className="bg-green-50 dark:bg-green-900/20">
                           <tr>

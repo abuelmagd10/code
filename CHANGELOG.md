@@ -4,6 +4,42 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.88] - 2026-06-07 — Invoice cards + payments table now reflect credit applications
+
+### Why
+The user reported that after applying £5 of customer credit to INV-00005, the invoice page still showed:
+- إجمالي المدفوع: £0.00
+- صافي المتبقي: £20.00
+
+Even though the DB had `invoice.paid_amount = 5.00` (correct) and customer credit had dropped to £5 (correct).
+
+### Root cause
+`apply_customer_credit_to_invoice` (RPC) writes the credit application to `customer_credit_ledger` (with `source_type='credit_applied'` and a negative `amount`) — not to the `payments` table. It also bumps `invoice.paid_amount` directly via UPDATE.
+
+But the invoice page computes its summary cards from `invoicePayments` (the `payments` rows), not from `invoice.paid_amount`. So a credit application was invisible to that calculation:
+- `totalPaidAmount = SUM(invoicePayments) = 0`
+- `netRemainingAmount = total - 0 - 0 = 20`
+
+Could we just write the credit application as a `payments` row? Yes — but the `payments` table has heavy triggers (`trg_sync_invoice_paid` bumps `invoice.paid_amount` again, `trg_auto_create_payment_journal` posts a journal, `prevent_invoice_overpayment` validates, etc.). All of those would double-count or duplicate work that the RPC already did. Going that route requires either disabling those triggers for credit rows or adding `payment_method='customer_credit_applied'` skip-logic in 4+ trigger functions — invasive and risky.
+
+### What changed (one file: `app/invoices/[id]/page.tsx`)
+1. **New state** `creditApplications: any[]` — fetched in `loadInvoice()` from `customer_credit_ledger` where `source_id = invoiceId AND source_type = 'credit_applied'`.
+2. **`totalPaidAmount` now sums both** the `payments` rows AND `Math.abs(creditApplications[*].amount)`. The ledger stores negative amounts (the customer's credit went down); applied amount = absolute value.
+3. **Payments table** gains one row per credit application, styled with an emerald "تطبيق رصيد دائن / Credit Applied" badge and the ledger's `description` as the reference. The count badge in the header now reads `payments + credit applications`, and the empty state only fires when both are empty.
+4. The footer "Total Paid" cell automatically picks up the new totalPaidAmount.
+
+### Verified
+- TS: 0 errors. File rebuilt via heredoc; 4108 lines, ends with `}`.
+- For INV-00005 (total £20, one £5 credit applied):
+  - Card "إجمالي المدفوع" → £5.00 ✓
+  - Card "صافي المتبقي" → £15.00 ✓
+  - Payments table shows one emerald row, total £5.00 ✓
+
+### Out of scope (deferred)
+The same "credit-applied != payment row" pattern exists on other surfaces (e.g. customer statements, AR aging). Their numbers come from `invoice.paid_amount` directly so they already render correctly — no change needed. The fix here is local to the invoice detail page because that page chose to recompute paid from `payments` rather than read `invoice.paid_amount`. A separate cleanup (sourcing `totalPaidAmount` directly from `invoice.paid_amount`) would simplify this further, but it's a larger refactor: that field is also used for refund tallies and FX-adjusted views.
+
+---
+
 ## [3.74.87] - 2026-06-07 — UX: clearer apply-credit dialog (cap, overshoot warning, post-apply feedback)
 
 ### Why
