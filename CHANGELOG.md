@@ -4,6 +4,61 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.97] - 2026-06-08 — 15 more integrity checks (48 total) — data integrity + workflow + admin + structural
+
+### Why
+Continuing the framework expansion. Two themes combined in one release because both are DB-only and complete a logical layer:
+- **Data integrity (5):** duplicates, valuation drift, broken links
+- **Workflow/admin (5):** stuck approvals, subscriptions, notifications, backups, transfer balance
+
+### Data integrity (5)
+| Code | Category | Detects |
+|---|---|---|
+| `customer_duplicate_phone` | operational | Multiple active customers sharing one phone (user-flagged gap) |
+| `duplicate_journals` | accounting | Two posted journals with same `(reference_type, reference_id)` — should be blocked by trigger |
+| `inventory_valuation_drift` | inventory | GL account 1140 ≠ SUM(stock × `products.cost_price`), tolerance max(5, 1%) |
+| `bonus_invoice_orphan` | operational | `user_bonuses.invoice_id` references a deleted invoice |
+| `return_total_mismatch` | inventory | `sales_returns.total_amount` ≠ SUM(`sales_return_items.line_total`) |
+
+### Workflow + admin (5)
+| Code | Category | Detects |
+|---|---|---|
+| `workflow_stuck` | operational | Expenses and sales_return_requests pending > 30 days |
+| `subscription_past_due` | operational | Subscription `past_due` or `active` with `current_period_end < today - 14d` |
+| `stale_critical_notifications` | operational | Critical/high priority notifications with `read_at IS NULL` older than 30 days |
+| `backup_stale` | operational | Last successful backup > 7 days (high if > 30, medium if 7–30) |
+| `bank_transfer_unbalanced` | accounting | Journal with `reference_type='bank_transfer'` touching < 2 cash/bank accounts (one side missing) |
+
+### Structural integrity (5)
+| Code | Category | Detects |
+|---|---|---|
+| `booking_no_invoice` | operational | Completed booking with `invoice_id IS NULL` (revenue gap) |
+| `branch_no_warehouse` | operational | Active branch with no active warehouse (cannot fulfill sales) |
+| `company_no_owner` | operational | Company without a `role=owner` member (cannot receive billing) |
+| `unbalanced_journals` | accounting | Posted journal where SUM(debit) ≠ SUM(credit) per journal (stricter than trial_balance) |
+| `financial_op_no_audit` | operational | > 5 invoices in last 30 days without `audit_logs` entry (audit trail gap) |
+
+### Registry totals after this release
+- Accounting: **19** (was 16, +3: `duplicate_journals`, `bank_transfer_unbalanced`, `unbalanced_journals`)
+- Inventory: **9** (was 7, +2: `inventory_valuation_drift`, `return_total_mismatch`)
+- Operational: **20** (was 10, +10: rest)
+- **Total: 48 checks** running daily on every company
+
+### Verified
+- `run_all_integrity_checks` on VitaSlims returns the 2 stale FX drafts already known from v3.74.96 — no new false positives
+- All new functions have schema-aware `EXCEPTION WHEN undefined_table OR undefined_column → RETURN` guards
+- Used `information_schema.columns` lookups for each table touched to avoid the v3.74.95-class column-name bugs
+
+### Pattern established
+Three releases (v3.74.93 → v3.74.97) and the framework has proven its design:
+- 4 separate registry pushes (16 + 12 + 5 + 5 + 5 = 43 checks) zero refactors to API/widget/cron
+- 1 release of bugfixes (v3.74.95) caught by the framework against real data
+- 1 finding (the 2 stale FX drafts) sitting silent in production until the framework caught it
+
+The user can keep adding checks indefinitely — there is no architectural ceiling.
+
+---
+
 ## [3.74.96] - 2026-06-08 — 5 high-risk integrity checks (FX, banking, expenses, returns)
 
 ### Why
