@@ -21,6 +21,10 @@
     {
       "path": "/api/cron/ensure-accounting-periods",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/customer-credit-integrity",
+      "schedule": "30 1 * * *"
     }
   ]
 }

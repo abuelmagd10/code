@@ -4,6 +4,50 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.92] - 2026-06-08 — Customer credit integrity monitoring (defense in depth)
+
+### Why
+v3.74.91 fixed the immediate bug, but the deeper lesson was that a £0.68 accounting gap stayed invisible for days because no system was watching for it. From now on, the same class of bug will get caught within 24 hours by automated checks.
+
+### What ships in v3.74.92
+A four-piece monitoring system for customer-credit accounting:
+
+**1. DB function `check_customer_credit_integrity(p_company_id)`** — cheap (3 aggregate scans) and runs three verifications:
+- **CHECK 1:** `customer_credits.net` vs `account 2155.net` (per company) — flags any mismatch >£0.01
+- **CHECK 2:** invoices with `paid > total` without a matching `customer_credits` row — flags new overpayments the triggers missed
+- **CHECK 3:** active `customer_credits` rows with `reference_type IN ('overpayment','invoice_overpayment')` that have no posted `credit_from_overpayment` journal
+
+Returns zero rows when everything balances. Each finding carries `severity`, `check_name`, and a structured `detail` JSON.
+
+**2. API endpoint `/api/governance/customer-credit-integrity`** — calls the RPC scoped to the caller's active company. Gated to owner/manager/accountant/chief_accountant roles. Returns `{ healthy, findings_count, findings, checked_at }`.
+
+**3. Dashboard widget `CreditIntegrityWidget`** — renders on top of the dashboard, hidden for non-financial roles. Three states:
+- 🟢 Green banner: "حسابات أَرصِدَة العُملاء: مُتَوازِنَة"
+- 🔴 Red banner: lists up to 5 findings with severity badges and hints
+- ⚠️ Amber banner: shown only if the API itself errors
+
+Uses `useAutoRefresh({ minIntervalMs: 60000, skipIfHidden: true })` so it re-checks when the dashboard regains focus, never in the background.
+
+**4. Cron `/api/cron/customer-credit-integrity`** — runs daily at 1:30 AM UTC (≈ 3:30 AM Cairo). For each company with findings:
+- Writes a structured `audit_logs` row with all findings
+- Inserts a `notifications` row for each owner (priority=critical if any finding has severity=high)
+- Healthy companies write nothing (intentional — the absence of an audit row IS the green signal)
+
+### Verified at deploy time
+- DB function returns empty for the test company (post-v3.74.91 fixes are clean).
+- TS compile passes (added 1 widget, 1 API route, 1 cron route; no existing file edited except dashboard/page.tsx for the widget mount and vercel.json for the cron schedule).
+- Migration applied via `apply_migration` so it lives in supabase/migrations history.
+
+### Design principle
+**Three layers of defense for every accounting concern:**
+1. Triggers do the work correctly (v3.74.91 baseline)
+2. UI consumers read from the canonical source so display can't drift (v3.74.89)
+3. Automated daily check catches anything that slipped (this version)
+
+The user can sleep knowing that if a new code path ever creates a `customer_credit` without its journal, the owner gets a notification by next morning — instead of finding out months later when the trial balance is audited.
+
+---
+
 ## [3.74.91] - 2026-06-08 — CRITICAL governance fix: overpayments now post the AR→2155 reclassification journal
 
 ### Why (the user caught this — credit said £5.68, reports said £5)
