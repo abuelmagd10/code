@@ -4,6 +4,38 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.98] - 2026-06-08 — Hotfix: AR/AP balance checks now exclude FX revaluation journals
+
+### Why
+After v3.74.97 deployed, the user posted one of the stale FX revaluation drafts (£304.78, Dr 1130 / Cr 4320). Immediately a new finding appeared: `ar_balance` flagged a £304.78 mismatch between account 1130 net and `SUM(invoice remaining)`.
+
+That was a false positive — the FX revaluation correctly adjusts the EGP value of an underlying foreign-currency AR balance without changing the outstanding-invoice list. The check was treating the revaluation entry as if it represented a new invoice.
+
+### What changed
+Both `ic_ar_balance` and `ic_ap_balance` now exclude journal entries with `reference_type` in:
+- `fx_period_end_revaluation`
+- `fx_revaluation`
+- `fx_ar_revaluation`
+- `fx_ap_revaluation`
+
+The comparison now reflects the original ledger value (invoices/bills), which is what the check is supposed to verify. FX revaluation is a separate concern (tracked by `fx_draft_stale`).
+
+### Side action (user-directed): resolved the 2 stale FX drafts
+- Deleted `1c42c116...` (£311, older duplicate at 14:14 the same day)
+- Posted `3f18c4f1...` (£304.78, the later run with a more accurate rate)
+
+The two drafts were duplicates of the same daily FX revaluation, run 95 minutes apart with slightly different exchange rates. Standard practice: keep the latest.
+
+### Verified
+- `run_all_integrity_checks` on VitaSlims → **zero findings** after the hotfix + cleanup
+- All 48 checks still active
+- The framework now correctly distinguishes invoice-driven AR from FX-driven AR
+
+### Lesson captured
+The check definitions need to know which journal types represent the underlying ledger (invoices, bills, payments) vs which are valuation adjustments (FX revaluation, period-end reclassifications, depreciation). When we add the next category of valuation entry, the same exclusion list will need it. Recorded as a design note.
+
+---
+
 ## [3.74.97] - 2026-06-08 — 15 more integrity checks (48 total) — data integrity + workflow + admin + structural
 
 ### Why
