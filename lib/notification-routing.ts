@@ -14,6 +14,7 @@ export type ReferenceType =
   | 'inventory_transfer'
   | 'approval_request'
   | 'refund_request'
+  | 'customer_refund_request'
   | 'vendor_refund_request'
   | 'depreciation'
   | 'journal_entry'
@@ -97,6 +98,10 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'vendor_credit': (id) => `/vendor-credits?highlight=${id}`,
   'supplier_debit_receipt': (id) => `/suppliers?highlight=receipt-${id}`,
   'vendor_refund_request': (id) => `/suppliers?tab=refunds&highlight=${id}`, // ✅ طلب استرداد سلفة مورد
+  // v3.74.106 - notifications for the payment-correction workflow + the regular
+  // customer refund workflow both use reference_type='customer_refund_request'.
+  // The destination is the central approvals page.
+  'customer_refund_request': (id) => `/customer-refund-requests?highlight=${id}`,
 
   // المالية
   'payment': (id) => `/payments?highlight=${id}`,
