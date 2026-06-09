@@ -90,6 +90,9 @@ export default function CustomerRefundRequestsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("pending")
   const [searchQuery, setSearchQuery] = useState("")
   const [userRole, setUserRole] = useState<string>("employee")
+  // v3.74.108 - track userId so non-board members can still see the requests
+  // they filed themselves
+  const [userId, setUserId] = useState<string>("")
 
   // General Action Dialog (approve / reject)
   const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null)
@@ -141,6 +144,7 @@ export default function CustomerRefundRequestsPage() {
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      setUserId(user.id)
 
       const { data: member } = await supabase
         .from("company_members")
@@ -287,20 +291,29 @@ export default function CustomerRefundRequestsPage() {
     )
   }
 
-  // v3.74.107 - only owner/general_manager may approve/reject/execute,
-  // matching the API guards from v3.74.105.
-  const isPrivileged = ["owner", "general_manager"].includes(userRole)
+  // v3.74.107 - only owner/general_manager may approve/reject/execute.
+  // v3.74.108 - other members may still see the requests they filed so they
+  // can track status; the action buttons are still hidden for them.
+  const canAct = ["owner", "general_manager"].includes(userRole)
+  const isPrivileged = canAct // alias kept for the action-column gate below
 
-  const filtered = requests.filter(r =>
+  const visibleRequests = canAct
+    ? requests
+    : requests.filter(r => r.requested_by === userId)
+
+  const filtered = visibleRequests.filter(r =>
     !searchQuery ||
     r.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     r.invoices?.invoice_number?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
+  // v3.74.108 - count over the rows the current user can see, not the whole
+  // table; otherwise a requester would see a number they can't reconcile
+  // with what is rendered below.
   const counts = {
-    pending:  requests.filter(r => r.status === "pending").length,
-    approved: requests.filter(r => r.status === "approved").length,
-    executed: requests.filter(r => r.status === "executed").length,
+    pending:  visibleRequests.filter(r => r.status === "pending").length,
+    approved: visibleRequests.filter(r => r.status === "approved").length,
+    executed: visibleRequests.filter(r => r.status === "executed").length,
   }
 
   const columns: DataTableColumn<RefundRequest>[] = [
@@ -492,12 +505,6 @@ export default function CustomerRefundRequestsPage() {
 
             {isLoading ? (
               <LoadingState message={appLang === 'en' ? "Loading refund requests..." : "جاري تحميل طلبات الاسترداد..."} />
-            ) : !isPrivileged ? (
-              <EmptyState
-                icon={AlertCircle}
-                title={appLang === 'en' ? "Access Denied" : "غير مصرح"}
-                description={appLang === 'en' ? "You don't have permission to view refund requests." : "ليس لديك صلاحية عرض طلبات الاسترداد."}
-              />
             ) : filtered.length === 0 ? (
               <EmptyState
                 icon={RefreshCw}
