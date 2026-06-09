@@ -59,7 +59,11 @@ Changes:
         own row to make the SoD rule visible.
   - lib/notification-routing.ts: customer_refund_request route now
     derives the status filter from the event_key suffix
-    (:approved_/:executed:/:rejected:/:requested:)." 2>&1 | ForEach-Object { Write-Host $_ }
+    (:approved_/:executed:/:rejected:/:requested:).
+  - /customer-refund-requests page: subscribes to Supabase Realtime
+    on customer_refund_requests filtered by company_id, so the status
+    cards (pending/approved/executed) refresh the moment anyone in
+    the company touches a request — no manual reload needed." 2>&1 | ForEach-Object { Write-Host $_ }
 }
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }

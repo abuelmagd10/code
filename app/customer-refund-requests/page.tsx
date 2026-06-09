@@ -149,6 +149,49 @@ export default function CustomerRefundRequestsPage() {
   // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadData() })
 
+  // v3.74.115 — Realtime: any INSERT/UPDATE/DELETE on this company's
+  // customer_refund_requests rows refreshes the page so the status
+  // cards (pending/approved/executed) stay accurate the moment someone
+  // else acts on a request. Scoped to the active tenant via the company_id
+  // filter so we don't leak events from other companies. Tear down on
+  // unmount.
+  useEffect(() => {
+    let cancelled = false
+    let cleanup: (() => void) | undefined
+
+    ;(async () => {
+      const companyId = await getActiveCompanyId(supabase)
+      if (!companyId || cancelled) return
+
+      const channel = supabase
+        .channel(`customer_refund_requests:${companyId}`)
+        .on(
+          "postgres_changes" as any,
+          {
+            event: "*",
+            schema: "public",
+            table: "customer_refund_requests",
+            filter: `company_id=eq.${companyId}`,
+          },
+          () => {
+            // Supabase coalesces bursts; loadData is cheap and idempotent.
+            loadData()
+          }
+        )
+        .subscribe()
+
+      cleanup = () => {
+        supabase.removeChannel(channel)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const loadData = async () => {
     try {
       setIsLoading(true)
