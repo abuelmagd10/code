@@ -60,6 +60,38 @@ export async function POST(
       if (rpcErr) {
         return NextResponse.json({ error: rpcErr.message || "Failed to execute correction" }, { status: 500 })
       }
+
+      // v3.74.105 - tell the requester their correction is now applied
+      try {
+        const { data: full } = await supabase
+          .from("customer_refund_requests")
+          .select("requested_by, amount, customers(name)")
+          .eq("id", id)
+          .maybeSingle()
+        const requesterId = (full as any)?.requested_by
+        if (requesterId && requesterId !== user.id) {
+          await supabase.rpc("create_notification", {
+            p_company_id: companyId,
+            p_reference_type: "customer_refund_request",
+            p_reference_id: id,
+            p_title: "تَمَّ تَنفيذ تَصحيح الدَّفعَة",
+            p_message: `تَمَّ تَنفيذ طَلَب تَصحيح الدَّفعَة بمَبلَغ ${Number((full as any)?.amount || 0).toLocaleString()}${(full as any)?.customers?.name ? ` للعَميل ${(full as any).customers.name}` : ""}.`,
+            p_created_by: user.id,
+            p_branch_id: null,
+            p_cost_center_id: null,
+            p_warehouse_id: null,
+            p_assigned_to_role: null,
+            p_assigned_to_user: requesterId,
+            p_priority: "normal",
+            p_event_key: `payments:payment_correction:${id}:executed:requester`,
+            p_severity: "info",
+            p_category: "approvals",
+          })
+        }
+      } catch (e: any) {
+        console.warn("[PAYMENT_CORRECTION_NOTIFY_REQUESTER] failed:", e?.message || e)
+      }
+
       return NextResponse.json({
         success: true,
         message: `تَمَّ تَنفيذ تَصحيح الدَّفعَة بنَجاح`,
@@ -139,6 +171,30 @@ export async function POST(
         })
       }
     } catch (e: any) { console.warn("⚠️ Notification failed:", e.message) }
+
+    // v3.74.105 - notify requester for the regular refund branch too
+    try {
+      const requesterId = (refundReq as any).requested_by
+      if (requesterId && requesterId !== user.id) {
+        await supabase.rpc("create_notification", {
+          p_company_id: companyId,
+          p_reference_type: "customer_refund_request",
+          p_reference_id: id,
+          p_title: "تَمَّ تَنفيذ طَلَب الاسترداد",
+          p_message: `تَمَّ تَنفيذ طَلَبك لاسترداد ${amount.toLocaleString()} للعَميل ${customerName}. رَقم القَيد: ${rpcData.entry_number}`,
+          p_created_by: user.id,
+          p_branch_id: null,
+          p_cost_center_id: null,
+          p_warehouse_id: null,
+          p_assigned_to_role: null,
+          p_assigned_to_user: requesterId,
+          p_priority: "normal",
+          p_event_key: `payments:customer_refund_request:${id}:executed:requester`,
+          p_severity: "info",
+          p_category: "approvals",
+        })
+      }
+    } catch (e: any) { console.warn("[REFUND_NOTIFY_REQUESTER] failed:", e?.message || e) }
 
     // Notify Management
     try {
