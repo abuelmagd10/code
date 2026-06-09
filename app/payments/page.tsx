@@ -2130,9 +2130,82 @@ export default function PaymentsPage() {
                               another invoice, edited, or hard-deleted from this UI - doing
                               so would leave customer_credits/customer_credit_ledger/GL out of sync. */}
                           {Number(p.amount || 0) < 0 ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                              {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد'}
-                            </span>
+                            <>
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد'}
+                              </span>
+                              {/* v3.74.110 - a refund disbursement may also have been recorded
+                                  by mistake. Surface the same governance-managed correction
+                                  flow (Edit notes + Request correction) here so it can be
+                                  reversed via the workflow instead of a direct delete. */}
+                              {permUpdate && (
+                                <Button variant="ghost" disabled={!online} onClick={() => {
+                                  setEditingPayment(p)
+                                  setEditFields({
+                                    payment_date: p.payment_date,
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
+                                    account_id: p.account_id || "",
+                                  })
+                                  setEditOpen(true)
+                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                disabled={!online}
+                                title={appLang === 'en' ? 'Request a reversal of this refund (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذا الصَّرف — يَحتاج اعتماد المالِك/المُدير العام'}
+                                onClick={() => {
+                                  const reason = window.prompt(
+                                    appLang === 'en'
+                                      ? 'Reason for the correction request (min 5 chars):'
+                                      : 'سَبَب طَلَب تَصحيح هذا الصَّرف (٥ أَحرُف على الأَقَل):'
+                                  )
+                                  if (!reason || reason.trim().length < 5) {
+                                    if (reason !== null) {
+                                      toast({
+                                        title: appLang === 'en' ? 'Reason required' : 'السَّبَب مَطلوب',
+                                        description: appLang === 'en' ? 'Please enter at least 5 characters.' : 'يَرجى كَتابَة ٥ أَحرُف على الأَقَل.',
+                                        variant: 'destructive',
+                                      })
+                                    }
+                                    return
+                                  }
+                                  fetch(`/api/payments/${encodeURIComponent(p.id)}/request-correction`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ reason: reason.trim() }),
+                                  })
+                                    .then(r => r.json())
+                                    .then(r => {
+                                      if (!r.success) {
+                                        toast({
+                                          title: appLang === 'en' ? 'Could not create request' : 'تَعَذَّر إِنشاء الطَّلَب',
+                                          description: r.error || '',
+                                          variant: 'destructive',
+                                        })
+                                        return
+                                      }
+                                      toast({
+                                        title: appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب',
+                                        description: appLang === 'en'
+                                          ? 'Waiting for owner/general manager approval.'
+                                          : 'يَنتَظِر اعتماد المالِك/المُدير العام.',
+                                      })
+                                    })
+                                    .catch(e => toast({
+                                      title: appLang === 'en' ? 'Error' : 'خَطَأ',
+                                      description: String(e?.message || e),
+                                      variant: 'destructive',
+                                    }))
+                                }}
+                              >
+                                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
+                              </Button>
+                            </>
                           ) : (
                             <>
                               {!p.invoice_id && permWrite && (
