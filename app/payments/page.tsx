@@ -2138,6 +2138,9 @@ export default function PaymentsPage() {
                               {!p.invoice_id && permWrite && (
                                 <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
                               )}
+                              {/* v3.74.105 - Edit is allowed only for notes/reference_number.
+                                  Sensitive fields (amount/account/invoice/date) must go through
+                                  Request Correction so the change leaves an audit trail. */}
                               {permUpdate && (
                                 <Button variant="ghost" disabled={!online} onClick={() => {
                                   setEditingPayment(p)
@@ -2149,11 +2152,65 @@ export default function PaymentsPage() {
                                     account_id: p.account_id || "",
                                   })
                                   setEditOpen(true)
-                                }}>{appLang === 'en' ? 'Edit' : 'تعديل'}</Button>
+                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                                </Button>
                               )}
-                              {permDelete && (
-                                <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
-                              )}
+                              {/* v3.74.105 - Delete is no longer offered on posted payments.
+                                  Use Request Correction instead so an owner/general_manager can
+                                  review the Reversal before it touches the GL. */}
+                              <Button
+                                variant="outline"
+                                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                disabled={!online}
+                                title={appLang === 'en' ? 'Request a reversal of this payment (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذه الدَّفعَة — يَحتاج اعتماد المالِك/المُدير العام'}
+                                onClick={() => {
+                                  const reason = window.prompt(
+                                    appLang === 'en'
+                                      ? 'Reason for the correction request (min 5 chars):'
+                                      : 'سَبَب طَلَب تَصحيح هذه الدَّفعَة (٥ أَحرُف على الأَقَل):'
+                                  )
+                                  if (!reason || reason.trim().length < 5) {
+                                    if (reason !== null) {
+                                      toast({
+                                        title: appLang === 'en' ? 'Reason required' : 'السَّبَب مَطلوب',
+                                        description: appLang === 'en' ? 'Please enter at least 5 characters.' : 'يَرجى كَتابَة ٥ أَحرُف على الأَقَل.',
+                                        variant: 'destructive',
+                                      })
+                                    }
+                                    return
+                                  }
+                                  fetch(`/api/payments/${encodeURIComponent(p.id)}/request-correction`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ reason: reason.trim() }),
+                                  })
+                                    .then(r => r.json())
+                                    .then(r => {
+                                      if (!r.success) {
+                                        toast({
+                                          title: appLang === 'en' ? 'Could not create request' : 'تَعَذَّر إِنشاء الطَّلَب',
+                                          description: r.error || '',
+                                          variant: 'destructive',
+                                        })
+                                        return
+                                      }
+                                      toast({
+                                        title: appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب',
+                                        description: appLang === 'en'
+                                          ? 'Waiting for owner/general manager approval.'
+                                          : 'يَنتَظِر اعتماد المالِك/المُدير العام.',
+                                      })
+                                    })
+                                    .catch(e => toast({
+                                      title: appLang === 'en' ? 'Error' : 'خَطَأ',
+                                      description: String(e?.message || e),
+                                      variant: 'destructive',
+                                    }))
+                                }}
+                              >
+                                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
+                              </Button>
                             </>
                           )}
                         </div>

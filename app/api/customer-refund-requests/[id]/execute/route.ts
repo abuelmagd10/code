@@ -18,18 +18,27 @@ export async function POST(
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) return NextResponse.json({ error: "Company context missing" }, { status: 400 })
 
+    // v3.74.105 - execute restricted to owner/general_manager (same gate as approve).
+    const { data: member } = await supabase
+      .from("company_members").select("role")
+      .eq("user_id", user.id).eq("company_id", companyId).maybeSingle()
+    const role = String((member as any)?.role || "")
+    if (!["owner", "general_manager"].includes(role)) {
+      return NextResponse.json({
+        error: "Forbidden: only owner/general manager may execute refund requests"
+      }, { status: 403 })
+    }
+
     // Parse body
     let body: { account_id?: string; execution_date?: string; notes?: string | null } = {}
     try { body = await request.json() } catch { }
 
-    if (!body.account_id) {
-      return NextResponse.json({ error: "account_id is required" }, { status: 400 })
-    }
-
-    // Validate the refund request exists and belongs to this company
+    // v3.74.105 - payment_correction requests reverse an existing payment via
+    // RPC and do not need an account_id (the reversal posts to the original
+    // payment's account). Detect the source_type first.
     const { data: refundReq } = await supabase
       .from("customer_refund_requests")
-      .select("id, status, amount, customer_id, branch_id, cost_center_id, customers(name), invoices(invoice_number)")
+      .select("id, status, amount, customer_id, branch_id, cost_center_id, source_type, original_payment_id, customers(name), invoices(invoice_number)")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -39,6 +48,27 @@ export async function POST(
     }
     if (refundReq.status !== "approved") {
       return NextResponse.json({ error: "Request must be approved before execution" }, { status: 400 })
+    }
+
+    // payment_correction: delegate to execute_payment_correction RPC
+    if ((refundReq as any).source_type === 'payment_correction') {
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc("execute_payment_correction", {
+        p_request_id: id,
+        p_company_id: companyId,
+        p_executor_id: user.id,
+      })
+      if (rpcErr) {
+        return NextResponse.json({ error: rpcErr.message || "Failed to execute correction" }, { status: 500 })
+      }
+      return NextResponse.json({
+        success: true,
+        message: `تَمَّ تَنفيذ تَصحيح الدَّفعَة بنَجاح`,
+        ...((rpcResult as any) || {})
+      })
+    }
+
+    if (!body.account_id) {
+      return NextResponse.json({ error: "account_id is required" }, { status: 400 })
     }
 
     // v3.74.45 — Enterprise rule: prevent cash overdraft on customer refund execution.

@@ -19,6 +19,22 @@ export async function POST(
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) return NextResponse.json({ error: "Company context missing" }, { status: 400 })
 
+    // v3.74.105 - approve restricted to owner/general_manager. The board
+    // policy is that only top management can sign off on a refund/correction
+    // before it touches the GL.
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("company_id", companyId)
+      .maybeSingle()
+    const role = String((member as any)?.role || "")
+    if (!["owner", "general_manager"].includes(role)) {
+      return NextResponse.json({
+        error: "Forbidden: only owner/general manager may approve refund requests"
+      }, { status: 403 })
+    }
+
     // Fetch the refund request
     const { data: refundReq } = await supabase
       .from("customer_refund_requests")
