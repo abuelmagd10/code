@@ -2081,15 +2081,29 @@ export default function PaymentsPage() {
                             {invoiceNumbers[p.invoice_id] || p.invoice_id}
                           </Link>
                         ) : Number(p.amount || 0) < 0 ? (() => {
-                          const m = String(p.notes || '').match(/INV-\d+/)
+                          // v3.74.104 - the credit may have come from a sales return
+                          // OR from an overpayment; the refund command writes both
+                          // labels into notes. Detect which one is present.
+                          const notes = String(p.notes || '')
+                          const m = notes.match(/INV-\d+/)
                           const srcInv = m ? m[0] : null
+                          const isOverpay = notes.includes('زيادَة دَفع') || notes.includes('overpayment')
+                          const isReturn = notes.includes('مَرتَجَع') || notes.includes('return')
+                          let srcLabel = ''
+                          if (srcInv) {
+                            if (isOverpay && !isReturn) {
+                              srcLabel = appLang === 'en' ? `(from overpayment on ${srcInv})` : `(من زيادَة دَفع عَلى ${srcInv})`
+                            } else if (isReturn && !isOverpay) {
+                              srcLabel = appLang === 'en' ? `(from return ${srcInv})` : `(من مَرتَجَع ${srcInv})`
+                            } else {
+                              srcLabel = appLang === 'en' ? `(source: ${srcInv})` : `(المَصدَر: ${srcInv})`
+                            }
+                          }
                           return (
-                            <span className="text-purple-600 dark:text-purple-400 text-xs" title={String(p.notes || (appLang === 'en' ? 'Refund of customer credit (originated from a sales return)' : 'صَرف رَصيد دائن نَتيجَة مَرتَجَع سابِق'))}>
+                            <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Refund of customer credit' : 'صَرف رَصيد دائن')}>
                               {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
-                              {srcInv ? (
-                                <span className="text-gray-500 dark:text-gray-400 mx-1">
-                                  {appLang === 'en' ? `(from return ${srcInv})` : `(من مَرتَجَع ${srcInv})`}
-                                </span>
+                              {srcLabel ? (
+                                <span className="text-gray-500 dark:text-gray-400 mx-1">{srcLabel}</span>
                               ) : null}
                             </span>
                           )

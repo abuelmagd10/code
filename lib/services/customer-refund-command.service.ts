@@ -258,25 +258,33 @@ export class CustomerRefundCommandService {
       }
 
       // v3.74.103 - resolve source invoice numbers from consumed credits so the
-      // refund payment notes spell out where the credit originated. This is what
-      // the user sees in /payments to understand "this -£5 came from INV-00004's
-      // return". updatedCredits holds the credit_ids we consumed; pull each
-      // credit's notes (which already mention the source invoice).
+      // refund payment notes spell out where the credit originated. v3.74.104
+      // tightens this: the credit may have been born from a sale-return OR from
+      // an overpayment - both put INV-XXX into customer_credits.notes, but the
+      // reference_type tells us which family to label.
       let sourceInvoiceNote = ""
       try {
         const ids = updatedCredits.map(c => c.id)
         if (ids.length > 0) {
           const { data: srcCredits } = await this.adminSupabase
             .from("customer_credits")
-            .select("notes")
+            .select("notes, reference_type")
             .in("id", ids)
-          const invoiceNumbers = new Set<string>()
+          const returnInvs = new Set<string>()
+          const overpayInvs = new Set<string>()
           for (const c of srcCredits || []) {
-            const m = String((c as any).notes || "").match(/INV-\d+/g)
-            if (m) m.forEach(x => invoiceNumbers.add(x))
+            const refType = String((c as any).reference_type || "")
+            const matches = String((c as any).notes || "").match(/INV-\d+/g) || []
+            for (const inv of matches) {
+              if (refType === "invoice_overpayment") overpayInvs.add(inv)
+              else returnInvs.add(inv) // invoice_return + legacy
+            }
           }
-          if (invoiceNumbers.size > 0) {
-            sourceInvoiceNote = ` (مَصدَر الرَّصيد: مَرتَجَع ${Array.from(invoiceNumbers).join(", ")})`
+          const parts: string[] = []
+          if (returnInvs.size > 0) parts.push(`مَرتَجَع ${Array.from(returnInvs).join(", ")}`)
+          if (overpayInvs.size > 0) parts.push(`زيادَة دَفع عَلى ${Array.from(overpayInvs).join(", ")}`)
+          if (parts.length > 0) {
+            sourceInvoiceNote = ` (مَصدَر الرَّصيد: ${parts.join(" + ")})`
           }
         }
       } catch { /* non-critical enrichment */ }
