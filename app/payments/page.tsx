@@ -2709,18 +2709,21 @@ export default function PaymentsPage() {
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{appLang === 'en' ? 'Edit Payment' : 'تعديل الدفعة'}</DialogTitle>
+              <DialogTitle>{appLang === 'en' ? 'Edit Payment Notes' : 'تَعديل ملاحظات الدَّفعَة'}</DialogTitle>
             </DialogHeader>
             {editingPayment && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>{appLang === 'en' ? 'Payment Date' : 'تاريخ الدفع'}</Label>
-                    <Input type="date" value={editFields.payment_date} onChange={(e) => setEditFields({ ...editFields, payment_date: e.target.value })} />
+                    {/* v3.74.111 - locked: changing the date moves the entry into a different
+                        accounting period and is a hard no for an Edit-notes flow. Use Request
+                        correction (Reversal) instead. */}
+                    <Input type="date" value={editFields.payment_date} disabled readOnly className="bg-gray-50 dark:bg-slate-800 cursor-not-allowed" />
                   </div>
                   <div>
                     <Label>{appLang === 'en' ? 'Payment Method' : 'طريقة الدفع'}</Label>
-                    <select className="w-full border rounded px-2 py-1" value={editFields.payment_method} onChange={(e) => setEditFields({ ...editFields, payment_method: e.target.value })}>
+                    <select className="w-full border rounded px-2 py-1 bg-gray-50 dark:bg-slate-800 cursor-not-allowed" value={editFields.payment_method} disabled>
                       <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
                       {!isCashAccount(editFields.account_id) && (
                         <>
@@ -2738,9 +2741,12 @@ export default function PaymentsPage() {
                   )}
                   <div>
                     <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
+                    {/* v3.74.111 - locked. Moving a payment between cash/bank accounts
+                        rewrites GL and is not a notes-level edit. Use Request correction. */}
                     <select 
-                      className="w-full border rounded px-2 py-1" 
+                      className="w-full border rounded px-2 py-1 bg-gray-50 dark:bg-slate-800 cursor-not-allowed" 
                       value={editFields.account_id} 
+                      disabled
                       onChange={async (e) => {
                         const newAccountId = e.target.value
                         const cashOnly = isCashAccount(newAccountId)
@@ -2784,11 +2790,11 @@ export default function PaymentsPage() {
                   <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
                   <Input value={editFields.notes} onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })} />
                 </div>
-                {(editingPayment.invoice_id || editingPayment.bill_id || editingPayment.purchase_order_id) ? (
-                  <p className="text-sm text-amber-600">{appLang === 'en' ? 'Payment is linked to a document; amount cannot be changed. Edit reference/notes only.' : 'الدفع مرتبط بمستند؛ لا يمكن تعديل المبلغ. عدّل المرجع/الملاحظات فقط عند الحاجة.'}</p>
-                ) : (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Changing amount via edit is not supported. Use delete then create a new payment if needed.' : 'لا ندعم تغيير المبلغ عبر التعديل. استخدم حذف ثم إنشاء دفعة جديدة إذا لزم.'}</p>
-                )}
+                <div className="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-3">
+                  {appLang === 'en'
+                    ? 'Date, payment method and cash/bank account are locked. To change any of them, file a Request correction so the change goes through approval and posts a proper reversal.'
+                    : 'التاريخ وطَريقَة الدَّفع وحِساب النَّقد/البَنك مَقفولَة. لتَغيير أَى منها، استَخدِم "طَلَب تَصحيح" — يَمُرّ بالاعتماد ويُسَجِّل عَكساً محاسبياً مَوثَّقاً.'}
+                </div>
               </div>
             )}
             <DialogFooter>
@@ -2806,9 +2812,12 @@ export default function PaymentsPage() {
                         "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `supplier-payment-update-${editingPayment.id}`,
                       },
                       body: JSON.stringify({
-                        paymentDate: editFields.payment_date || editingPayment.payment_date,
-                        paymentMethod: editFields.payment_method || editingPayment.payment_method || "cash",
-                        accountId: editFields.account_id || null,
+                        // v3.74.111 - locked fields always use the original payment record.
+                        // Only reference_number and notes come from the edit form. This
+                        // protects against tampering even if the UI inputs are bypassed.
+                        paymentDate: editingPayment.payment_date,
+                        paymentMethod: editingPayment.payment_method || "cash",
+                        accountId: editingPayment.account_id || null,
                         referenceNumber: editFields.reference_number || null,
                         notes: editFields.notes || null,
                         uiSurface: "payments_page_edit_dialog",
@@ -2835,9 +2844,12 @@ export default function PaymentsPage() {
                         "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `customer-payment-update-${editingPayment.id}`,
                       },
                       body: JSON.stringify({
-                        paymentDate: editFields.payment_date || editingPayment.payment_date,
-                        paymentMethod: editFields.payment_method || editingPayment.payment_method || "cash",
-                        accountId: editFields.account_id || null,
+                        // v3.74.111 - locked fields always use the original payment record.
+                        // Only reference_number and notes come from the edit form. This
+                        // protects against tampering even if the UI inputs are bypassed.
+                        paymentDate: editingPayment.payment_date,
+                        paymentMethod: editingPayment.payment_method || "cash",
+                        accountId: editingPayment.account_id || null,
                         referenceNumber: editFields.reference_number || null,
                         notes: editFields.notes || null,
                         uiSurface: "payments_page_edit_dialog",
