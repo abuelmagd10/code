@@ -80,16 +80,18 @@ export async function POST(
 
     // Notify accountant to execute + originator of the decision.
     try {
+      // v3.74.113 - execute is restricted to owner/general_manager (v3.74.105),
+      // so notify those roles to act, not the branch accountants.
       const resolver = new NotificationRecipientResolverService(supabase)
-      const recipients = resolver.resolveBranchAccountantRecipients(refundReq.branch_id || null, refundReq.cost_center_id || null)
+      const recipients = resolver.resolveRoleRecipients(["owner", "general_manager"], null, null, null)
 
       for (const recipient of recipients) {
         await supabase.rpc("create_notification", {
           p_company_id: companyId,
           p_reference_type: "customer_refund_request",
           p_reference_id: id,
-          p_title: "تمت الموافقة على طلب استرداد عميل",
-          p_message: `تمت الموافقة على طلب استرداد نقدي بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. يرجى تنفيذ الدفع.`,
+          p_title: "طلب استرداد عميل مُعتَمَد - جاهز للتنفيذ",
+          p_message: `تمت الموافقة على طلب استرداد بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. افتح صفحة الطلبات لتنفيذه.`,
           p_created_by: user.id,
           p_branch_id: recipient.branchId ?? refundReq.branch_id ?? null,
           p_cost_center_id: recipient.costCenterId ?? refundReq.cost_center_id ?? null,

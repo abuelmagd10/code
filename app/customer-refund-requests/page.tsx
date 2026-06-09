@@ -47,6 +47,8 @@ interface RefundRequest {
   created_at: string
   customers?: { name: string }
   invoices?: { invoice_number: string; branch_id?: string }
+  // v3.74.114 - metadata carries proposed changes for payment_correction
+  metadata?: Record<string, any>
 }
 
 interface CashBankAccount {
@@ -159,7 +161,7 @@ export default function CustomerRefundRequestsPage() {
         .select(`
           id, company_id, customer_id, invoice_id, source_type, amount,
           status, notes, requested_by, approved_by, executed_by,
-          approved_at, executed_at, created_at,
+          approved_at, executed_at, created_at, metadata,
           customers(name),
           invoices(invoice_number, branch_id)
         `)
@@ -204,6 +206,37 @@ export default function CustomerRefundRequestsPage() {
   }
 
   const handleExecuteClick = async (req: RefundRequest) => {
+    // v3.74.113 - payment_correction reverses an existing payment on the
+    // ORIGINAL account, so the execute API ignores account_id. Skip the
+    // account-selection dialog and post the reversal in one click. Other
+    // refund kinds still need the dialog to choose where the cash goes.
+    if (req.source_type === 'payment_correction') {
+      if (!window.confirm(appLang === 'en'
+        ? `Execute the correction (reversal) for this payment?`
+        : `هَل تُريد تَنفيذ التَّصحيح (عَكس) لِهذه الدَّفعَة الآن؟`
+      )) return
+      try {
+        setActionLoading(req.id)
+        const res = await fetch(`/api/customer-refund-requests/${req.id}/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        })
+        const result = await res.json()
+        if (!res.ok) throw new Error(result.error || 'فشل في تنفيذ التَّصحيح')
+        toast({
+          title: appLang === 'en' ? '✅ Correction executed' : '✅ تَمَّ تَنفيذ التَّصحيح',
+          description: result.message || ''
+        })
+        await loadData()
+      } catch (err: any) {
+        toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: err.message, variant: 'destructive' })
+      } finally {
+        setActionLoading(null)
+      }
+      return
+    }
+
     setExecuteRequest(req)
     setSelectedAccountId("")
     setExecutionDate(new Date().toISOString().slice(0, 10))
@@ -348,16 +381,33 @@ export default function CustomerRefundRequestsPage() {
       header: appLang === 'en' ? "Reason" : "السبب",
       key: "source_type",
       format: (_, r) => {
-        // v3.74.107 - show a short type tag plus the user-written reason so
-        // the approver doesn't have to guess from the machine slug.
         const typeLabel = r.source_type === 'delivery_rejection'
           ? (appLang === 'en' ? '📦 Delivery rejected' : '📦 رَفض تَسليم')
           : r.source_type === 'payment_correction'
             ? (appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة')
             : r.source_type
         const reason = (r.notes || '').trim()
+        // v3.74.114 - surface proposed changes so the approver sees what
+        // the requester wants the corrected payment to look like.
+        const proposed = r.metadata?.proposed_changes as Record<string, unknown> | undefined
+        const orig = r.metadata as Record<string, unknown> | undefined
+        const lines: string[] = []
+        if (proposed && typeof proposed === 'object') {
+          if (proposed.amount !== undefined)
+            lines.push((appLang === 'en' ? 'Amount: ' : 'المَبلَغ: ') + String(orig?.original_amount ?? '') + ' → ' + String(proposed.amount))
+          if (proposed.payment_date)
+            lines.push((appLang === 'en' ? 'Date: ' : 'التاريخ: ') + String(orig?.original_payment_date ?? '') + ' → ' + String(proposed.payment_date))
+          if (proposed.payment_method)
+            lines.push((appLang === 'en' ? 'Method: ' : 'طَريقَة: ') + String(orig?.original_payment_method ?? '') + ' → ' + String(proposed.payment_method))
+          if (proposed.account_id)
+            lines.push(appLang === 'en' ? 'Account changed' : 'تَغيير الحِساب')
+          if (proposed.reference_number !== undefined)
+            lines.push((appLang === 'en' ? 'Reference: ' : 'مَرجع: ') + String(proposed.reference_number))
+          if (proposed.notes !== undefined)
+            lines.push((appLang === 'en' ? 'Notes updated' : 'تَحديث ملاحظات'))
+        }
         return (
-          <div className="flex flex-col gap-1 max-w-[260px]">
+          <div className="flex flex-col gap-1 max-w-[320px]">
             <Badge variant="outline" className="text-xs self-start">{typeLabel}</Badge>
             {reason ? (
               <span className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2" title={reason}>
@@ -365,6 +415,14 @@ export default function CustomerRefundRequestsPage() {
               </span>
             ) : (
               <span className="text-xs text-gray-400">-</span>
+            )}
+            {lines.length > 0 && (
+              <div className="text-[11px] bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded px-2 py-1 mt-1 space-y-0.5">
+                <div className="font-semibold text-emerald-700 dark:text-emerald-300">
+                  {appLang === 'en' ? 'Proposed changes' : 'التَّعديلات المُقتَرَحَة'}
+                </div>
+                {lines.map((l, i) => (<div key={i} className="text-emerald-800 dark:text-emerald-200">{l}</div>))}
+              </div>
             )}
           </div>
         )

@@ -24,6 +24,7 @@ import { useEffect, useState, useTransition, useCallback, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
@@ -288,6 +289,12 @@ export default function PaymentsPage() {
 
   // Edit/Delete dialogs
   const [editOpen, setEditOpen] = useState(false)
+  // v3.74.114 - Request correction dialog state
+  const [correctionOpen, setCorrectionOpen] = useState(false)
+  const [correctionPayment, setCorrectionPayment] = useState<Payment | null>(null)
+  const [correctionReason, setCorrectionReason] = useState("")
+  const [correctionFields, setCorrectionFields] = useState<{ amount: string; payment_date: string; account_id: string; payment_method: string; reference_number: string; notes: string }>({ amount: "", payment_date: "", account_id: "", payment_method: "", reference_number: "", notes: "" })
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
@@ -2159,48 +2166,18 @@ export default function PaymentsPage() {
                                 disabled={!online}
                                 title={appLang === 'en' ? 'Request a reversal of this refund (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذا الصَّرف — يَحتاج اعتماد المالِك/المُدير العام'}
                                 onClick={() => {
-                                  const reason = window.prompt(
-                                    appLang === 'en'
-                                      ? 'Reason for the correction request (min 5 chars):'
-                                      : 'سَبَب طَلَب تَصحيح هذا الصَّرف (٥ أَحرُف على الأَقَل):'
-                                  )
-                                  if (!reason || reason.trim().length < 5) {
-                                    if (reason !== null) {
-                                      toast({
-                                        title: appLang === 'en' ? 'Reason required' : 'السَّبَب مَطلوب',
-                                        description: appLang === 'en' ? 'Please enter at least 5 characters.' : 'يَرجى كَتابَة ٥ أَحرُف على الأَقَل.',
-                                        variant: 'destructive',
-                                      })
-                                    }
-                                    return
-                                  }
-                                  fetch(`/api/payments/${encodeURIComponent(p.id)}/request-correction`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ reason: reason.trim() }),
+                                  // v3.74.114 - open full dialog instead of prompt
+                                  setCorrectionPayment(p)
+                                  setCorrectionReason("")
+                                  setCorrectionFields({
+                                    amount: String(Math.abs(Number(p.amount || 0))),
+                                    payment_date: p.payment_date || "",
+                                    account_id: p.account_id || "",
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
                                   })
-                                    .then(r => r.json())
-                                    .then(r => {
-                                      if (!r.success) {
-                                        toast({
-                                          title: appLang === 'en' ? 'Could not create request' : 'تَعَذَّر إِنشاء الطَّلَب',
-                                          description: r.error || '',
-                                          variant: 'destructive',
-                                        })
-                                        return
-                                      }
-                                      toast({
-                                        title: appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب',
-                                        description: appLang === 'en'
-                                          ? 'Waiting for owner/general manager approval.'
-                                          : 'يَنتَظِر اعتماد المالِك/المُدير العام.',
-                                      })
-                                    })
-                                    .catch(e => toast({
-                                      title: appLang === 'en' ? 'Error' : 'خَطَأ',
-                                      description: String(e?.message || e),
-                                      variant: 'destructive',
-                                    }))
+                                  setCorrectionOpen(true)
                                 }}
                               >
                                 {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
@@ -2238,48 +2215,18 @@ export default function PaymentsPage() {
                                 disabled={!online}
                                 title={appLang === 'en' ? 'Request a reversal of this payment (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذه الدَّفعَة — يَحتاج اعتماد المالِك/المُدير العام'}
                                 onClick={() => {
-                                  const reason = window.prompt(
-                                    appLang === 'en'
-                                      ? 'Reason for the correction request (min 5 chars):'
-                                      : 'سَبَب طَلَب تَصحيح هذه الدَّفعَة (٥ أَحرُف على الأَقَل):'
-                                  )
-                                  if (!reason || reason.trim().length < 5) {
-                                    if (reason !== null) {
-                                      toast({
-                                        title: appLang === 'en' ? 'Reason required' : 'السَّبَب مَطلوب',
-                                        description: appLang === 'en' ? 'Please enter at least 5 characters.' : 'يَرجى كَتابَة ٥ أَحرُف على الأَقَل.',
-                                        variant: 'destructive',
-                                      })
-                                    }
-                                    return
-                                  }
-                                  fetch(`/api/payments/${encodeURIComponent(p.id)}/request-correction`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ reason: reason.trim() }),
+                                  // v3.74.114 - open full dialog instead of prompt
+                                  setCorrectionPayment(p)
+                                  setCorrectionReason("")
+                                  setCorrectionFields({
+                                    amount: String(Math.abs(Number(p.amount || 0))),
+                                    payment_date: p.payment_date || "",
+                                    account_id: p.account_id || "",
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
                                   })
-                                    .then(r => r.json())
-                                    .then(r => {
-                                      if (!r.success) {
-                                        toast({
-                                          title: appLang === 'en' ? 'Could not create request' : 'تَعَذَّر إِنشاء الطَّلَب',
-                                          description: r.error || '',
-                                          variant: 'destructive',
-                                        })
-                                        return
-                                      }
-                                      toast({
-                                        title: appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب',
-                                        description: appLang === 'en'
-                                          ? 'Waiting for owner/general manager approval.'
-                                          : 'يَنتَظِر اعتماد المالِك/المُدير العام.',
-                                      })
-                                    })
-                                    .catch(e => toast({
-                                      title: appLang === 'en' ? 'Error' : 'خَطَأ',
-                                      description: String(e?.message || e),
-                                      variant: 'destructive',
-                                    }))
+                                  setCorrectionOpen(true)
                                 }}
                               >
                                 {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
@@ -3090,6 +3037,114 @@ export default function PaymentsPage() {
               </Button>
               <Button variant="destructive" disabled={saving || !rejectionReason.trim()} onClick={rejectPayment}>
                 {saving ? (appLang === 'en' ? 'Rejecting...' : 'جاري الرفض...') : (appLang === 'en' ? 'Confirm Rejection' : 'تأكيد الرفض')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* v3.74.114 - Request Correction dialog */}
+        <Dialog open={correctionOpen} onOpenChange={(o) => { if (!o) { setCorrectionOpen(false); setCorrectionPayment(null) } }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{appLang === 'en' ? 'Request Payment Correction' : 'طَلَب تَصحيح دَفعَة'}</DialogTitle>
+            </DialogHeader>
+            {correctionPayment && (
+              <div className="space-y-4">
+                <div className="bg-gray-50 dark:bg-slate-800 rounded p-3 text-xs space-y-1">
+                  <div className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Original payment' : 'الدَّفعَة الأَصلية'}</div>
+                  <div>{appLang === 'en' ? 'Amount' : 'المَبلَغ'}: {Number(correctionPayment.amount).toLocaleString()}</div>
+                  <div>{appLang === 'en' ? 'Date' : 'التاريخ'}: {correctionPayment.payment_date}</div>
+                  <div>{appLang === 'en' ? 'Method' : 'طَريقَة الدَّفع'}: {correctionPayment.payment_method || '-'}</div>
+                  <div>{appLang === 'en' ? 'Reference' : 'المَرجع'}: {correctionPayment.reference_number || '-'}</div>
+                </div>
+
+                <div>
+                  <Label>{appLang === 'en' ? 'Reason (required, min 5 chars)' : 'السَّبَب (إِلزامى، ٥ أَحرُف على الأَقَل)'}</Label>
+                  <Textarea value={correctionReason} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCorrectionReason(e.target.value)} className="mt-1" rows={2} placeholder={appLang === 'en' ? 'Why is the original wrong?' : 'لماذا الدَّفعَة الأَصلية خَاطِئَة؟'} />
+                </div>
+
+                <div className="border-t pt-3">
+                  <div className="text-sm font-semibold mb-2 text-emerald-700 dark:text-emerald-300">
+                    {appLang === 'en' ? 'Proposed changes (leave blank to keep the original)' : 'التَّعديلات المُقتَرَحَة (اترُك فارِغاً للإِبقاء كما هو)'}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>{appLang === 'en' ? 'Amount' : 'المَبلَغ'}</Label>
+                      <Input type="number" step="0.01" value={correctionFields.amount} onChange={(e) => setCorrectionFields({ ...correctionFields, amount: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>{appLang === 'en' ? 'Date' : 'التاريخ'}</Label>
+                      <Input type="date" value={correctionFields.payment_date} onChange={(e) => setCorrectionFields({ ...correctionFields, payment_date: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>{appLang === 'en' ? 'Account' : 'الحِساب'}</Label>
+                      <select className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900" value={correctionFields.account_id} onChange={(e) => setCorrectionFields({ ...correctionFields, account_id: e.target.value })}>
+                        <option value="">{appLang === 'en' ? 'Keep original' : 'إِبقاء الأَصلى'}</option>
+                        {accounts.map(a => (<option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label>{appLang === 'en' ? 'Method' : 'طَريقَة الدَّفع'}</Label>
+                      <select className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900" value={correctionFields.payment_method} onChange={(e) => setCorrectionFields({ ...correctionFields, payment_method: e.target.value })}>
+                        <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
+                        <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                        <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>{appLang === 'en' ? 'Reference' : 'رَقم المَرجع'}</Label>
+                      <Input value={correctionFields.reference_number} onChange={(e) => setCorrectionFields({ ...correctionFields, reference_number: e.target.value })} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>{appLang === 'en' ? 'Notes' : 'مُلاحَظات'}</Label>
+                      <Input value={correctionFields.notes} onChange={(e) => setCorrectionFields({ ...correctionFields, notes: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" disabled={correctionSubmitting} onClick={() => { setCorrectionOpen(false); setCorrectionPayment(null) }}>
+                {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+              </Button>
+              <Button disabled={correctionSubmitting || correctionReason.trim().length < 5} onClick={async () => {
+                if (!correctionPayment) return
+                setCorrectionSubmitting(true)
+                try {
+                  // Send only fields that differ from original
+                  const proposed: Record<string, string | number> = {}
+                  const origAmount = Math.abs(Number(correctionPayment.amount || 0))
+                  const newAmount = Number(correctionFields.amount)
+                  if (Number.isFinite(newAmount) && newAmount > 0 && Math.abs(newAmount - origAmount) > 0.001) proposed.amount = newAmount
+                  if (correctionFields.payment_date && correctionFields.payment_date !== correctionPayment.payment_date) proposed.payment_date = correctionFields.payment_date
+                  if (correctionFields.account_id && correctionFields.account_id !== correctionPayment.account_id) proposed.account_id = correctionFields.account_id
+                  if (correctionFields.payment_method && correctionFields.payment_method !== correctionPayment.payment_method) proposed.payment_method = correctionFields.payment_method
+                  if (correctionFields.reference_number !== (correctionPayment.reference_number || '')) proposed.reference_number = correctionFields.reference_number
+                  if (correctionFields.notes !== (correctionPayment.notes || '')) proposed.notes = correctionFields.notes
+
+                  const res = await fetch(`/api/payments/${encodeURIComponent(correctionPayment.id)}/request-correction`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: correctionReason.trim(), proposedChanges: proposed }),
+                  })
+                  const r = await res.json()
+                  if (!r.success) {
+                    toast({ title: appLang === 'en' ? 'Could not create request' : 'تَعَذَّر إِنشاء الطَّلَب', description: r.error || '', variant: 'destructive' })
+                    return
+                  }
+                  toast({
+                    title: appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب',
+                    description: appLang === 'en' ? 'Waiting for owner/general manager approval.' : 'يَنتَظِر اعتماد المالِك/المُدير العام.',
+                  })
+                  setCorrectionOpen(false)
+                  setCorrectionPayment(null)
+                } catch (e: any) {
+                  toast({ title: appLang === 'en' ? 'Error' : 'خَطَأ', description: String(e?.message || e), variant: 'destructive' })
+                } finally {
+                  setCorrectionSubmitting(false)
+                }
+              }}>
+                {correctionSubmitting ? (appLang === 'en' ? 'Submitting...' : 'جاري الإرسال...') : (appLang === 'en' ? 'Submit request' : 'إِرسال الطَّلَب')}
               </Button>
             </DialogFooter>
           </DialogContent>

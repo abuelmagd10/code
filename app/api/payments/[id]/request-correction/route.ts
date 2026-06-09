@@ -30,7 +30,7 @@ export async function POST(
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) return NextResponse.json({ error: "Company context missing" }, { status: 400 })
 
-    let body: { reason?: string } = {}
+    let body: { reason?: string; proposedChanges?: Record<string, unknown> } = {}
     try { body = await request.json() } catch { }
 
     const reason = String(body?.reason || "").trim()
@@ -40,11 +40,29 @@ export async function POST(
       }, { status: 400 })
     }
 
+    // v3.74.114 - sanitize proposedChanges to a whitelist of editable fields.
+    // amount/payment_date/account_id/payment_method/reference_number/notes
+    const proposed: Record<string, unknown> = {}
+    const src = body?.proposedChanges || {}
+    if (src && typeof src === 'object') {
+      const amt = (src as any).amount
+      if (amt !== undefined && amt !== null && amt !== '') {
+        const n = Number(amt)
+        if (Number.isFinite(n) && n > 0) proposed.amount = n
+      }
+      if ((src as any).payment_date) proposed.payment_date = String((src as any).payment_date)
+      if ((src as any).account_id) proposed.account_id = String((src as any).account_id)
+      if ((src as any).payment_method) proposed.payment_method = String((src as any).payment_method)
+      if ((src as any).reference_number !== undefined) proposed.reference_number = String((src as any).reference_number || '')
+      if ((src as any).notes !== undefined) proposed.notes = String((src as any).notes || '')
+    }
+
     const { data, error } = await supabase.rpc("create_payment_correction_request", {
       p_company_id: companyId,
       p_payment_id: id,
       p_reason: reason,
       p_user_id: user.id,
+      p_proposed_changes: Object.keys(proposed).length > 0 ? proposed : null,
     })
 
     if (error) {
