@@ -2080,11 +2080,20 @@ export default function PaymentsPage() {
                           <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
                             {invoiceNumbers[p.invoice_id] || p.invoice_id}
                           </Link>
-                        ) : Number(p.amount || 0) < 0 ? (
-                          <span className="text-purple-600 dark:text-purple-400 text-xs" title={appLang === 'en' ? 'Refund of customer credit (originated from a sales return)' : 'صَرف رَصيد دائن نَتيجَة مَرتَجَع سابِق'}>
-                            {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
-                          </span>
-                        ) : (
+                        ) : Number(p.amount || 0) < 0 ? (() => {
+                          const m = String(p.notes || '').match(/INV-\d+/)
+                          const srcInv = m ? m[0] : null
+                          return (
+                            <span className="text-purple-600 dark:text-purple-400 text-xs" title={String(p.notes || (appLang === 'en' ? 'Refund of customer credit (originated from a sales return)' : 'صَرف رَصيد دائن نَتيجَة مَرتَجَع سابِق'))}>
+                              {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
+                              {srcInv ? (
+                                <span className="text-gray-500 dark:text-gray-400 mx-1">
+                                  {appLang === 'en' ? `(from return ${srcInv})` : `(من مَرتَجَع ${srcInv})`}
+                                </span>
+                              ) : null}
+                            </span>
+                          )
+                        })() : (
                           <span className="text-gray-400">{appLang === 'en' ? 'Not linked' : 'غير مرتبط'}</span>
                         )}
                       </td>

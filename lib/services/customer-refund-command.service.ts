@@ -257,6 +257,32 @@ export class CustomerRefundCommandService {
         console.error("[CUSTOMER_REFUND_LEDGER] Failed to write ledger row:", err?.message || err)
       }
 
+      // v3.74.103 - resolve source invoice numbers from consumed credits so the
+      // refund payment notes spell out where the credit originated. This is what
+      // the user sees in /payments to understand "this -£5 came from INV-00004's
+      // return". updatedCredits holds the credit_ids we consumed; pull each
+      // credit's notes (which already mention the source invoice).
+      let sourceInvoiceNote = ""
+      try {
+        const ids = updatedCredits.map(c => c.id)
+        if (ids.length > 0) {
+          const { data: srcCredits } = await this.adminSupabase
+            .from("customer_credits")
+            .select("notes")
+            .in("id", ids)
+          const invoiceNumbers = new Set<string>()
+          for (const c of srcCredits || []) {
+            const m = String((c as any).notes || "").match(/INV-\d+/g)
+            if (m) m.forEach(x => invoiceNumbers.add(x))
+          }
+          if (invoiceNumbers.size > 0) {
+            sourceInvoiceNote = ` (مَصدَر الرَّصيد: مَرتَجَع ${Array.from(invoiceNumbers).join(", ")})`
+          }
+        }
+      } catch { /* non-critical enrichment */ }
+
+      const enrichedNotes = `${paymentNotes}${sourceInvoiceNote}`
+
       const { data: payment, error: paymentError } = await this.insertRefundPayment({
         companyId: command.companyId,
         customerId: command.customerId,
@@ -264,7 +290,7 @@ export class CustomerRefundCommandService {
         amount: command.amount,
         refundMethod: command.refundMethod,
         referenceNumber: command.invoiceNumber ? `REF-INV-${command.invoiceNumber}-${Date.now()}` : `REF-${Date.now()}`,
-        notes: paymentNotes,
+        notes: enrichedNotes,
         branchId,
         costCenterId,
         accountId: command.refundAccountId,
