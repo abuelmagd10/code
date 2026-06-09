@@ -18,16 +18,17 @@ export async function POST(
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) return NextResponse.json({ error: "Company context missing" }, { status: 400 })
 
-    // v3.74.105 - execute restricted to owner/general_manager (same gate as approve).
+    // v3.74.115 - execute is allowed for:
+    //   - owner/general_manager (back-office fallback so the workflow never
+    //     stalls if the requester is unavailable), OR
+    //   - the user who FILED the request (the requester) — they understand
+    //     the timing and impact of the correction best.
+    // Segregation of duties: the executor must NOT be the same person who
+    // approved the request. The approver decides, someone else applies.
     const { data: member } = await supabase
       .from("company_members").select("role")
       .eq("user_id", user.id).eq("company_id", companyId).maybeSingle()
     const role = String((member as any)?.role || "")
-    if (!["owner", "general_manager"].includes(role)) {
-      return NextResponse.json({
-        error: "Forbidden: only owner/general manager may execute refund requests"
-      }, { status: 403 })
-    }
 
     // Parse body
     let body: { account_id?: string; execution_date?: string; notes?: string | null } = {}
@@ -38,7 +39,7 @@ export async function POST(
     // payment's account). Detect the source_type first.
     const { data: refundReq } = await supabase
       .from("customer_refund_requests")
-      .select("id, status, amount, customer_id, branch_id, cost_center_id, source_type, original_payment_id, customers(name), invoices(invoice_number)")
+      .select("id, status, amount, customer_id, branch_id, cost_center_id, source_type, original_payment_id, requested_by, approved_by, customers(name), invoices(invoice_number)")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -48,6 +49,21 @@ export async function POST(
     }
     if (refundReq.status !== "approved") {
       return NextResponse.json({ error: "Request must be approved before execution" }, { status: 400 })
+    }
+
+    // v3.74.115 - permission gate (needs the request row to compare ids).
+    const isBoard = ["owner", "general_manager"].includes(role)
+    const isRequester = (refundReq as any).requested_by === user.id
+    if (!isBoard && !isRequester) {
+      return NextResponse.json({
+        error: "Forbidden: only the requester (or owner/general manager) may execute this request"
+      }, { status: 403 })
+    }
+    // SoD: approver cannot also execute.
+    if ((refundReq as any).approved_by === user.id) {
+      return NextResponse.json({
+        error: "فَصل الواجِبات: مَن اعتَمَدَ الطَّلَب لا يَستَطيع تَنفيذَهُ. على مُقَدِّم الطَّلَب أَو دور آخَر تَنفيذ التَّصحيح."
+      }, { status: 403 })
     }
 
     // payment_correction: delegate to execute_payment_correction RPC

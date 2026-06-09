@@ -101,7 +101,21 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   // v3.74.106 - notifications for the payment-correction workflow + the regular
   // customer refund workflow both use reference_type='customer_refund_request'.
   // The destination is the central approvals page.
-  'customer_refund_request': (id) => `/customer-refund-requests?highlight=${id}`,
+  // v3.74.115 - choose the status filter that matches the recipient's job. If
+  // the approver opens a pending-approval ping, the page lands on Pending; if
+  // the requester opens an approved-for-execution ping, the page lands on
+  // Approved so they immediately see the row they need to execute; executed
+  // confirmations land on Executed.
+  'customer_refund_request': (id, eventKey) => {
+    const ek = eventKey || ''
+    let status: 'pending' | 'approved' | 'executed' | 'cancelled' | null = null
+    if (/:approved(_|$)/.test(ek)) status = 'approved'
+    else if (/:executed(:|$)/.test(ek)) status = 'executed'
+    else if (/:rejected(:|$)/.test(ek)) status = 'cancelled'
+    else if (/:requested(:|$)/.test(ek)) status = 'pending'
+    const qs = status ? `status=${status}&` : ''
+    return `/customer-refund-requests?${qs}highlight=${id}`
+  },
 
   // المالية
   'payment': (id) => `/payments?highlight=${id}`,

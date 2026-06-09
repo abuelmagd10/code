@@ -125,19 +125,22 @@ export async function POST(
           null,
           refundReq.cost_center_id || null
         )
+        // v3.74.115 - requester is the executor under our segregation-of-duties
+        // model (approver != executor). The message must point them at the
+        // execute action, not say the work is happening elsewhere.
         await supabase.rpc("create_notification", {
           p_company_id: companyId,
           p_reference_type: "customer_refund_request",
           p_reference_id: id,
-          p_title: "تم اعتماد طلب الاسترداد",
-          p_message: `تم اعتماد طلب استرداد بمبلغ ${Number(refundReq.amount).toLocaleString()} للعميل ${refundReq.customers?.name || ""}. الطلب الآن قيد التنفيذ من المحاسبة.`,
+          p_title: "تَم اعتماد طَلَبَك — اضغط لِتَنفيذه",
+          p_message: `تَم اعتماد طَلَبك بمَبلَغ ${Number(refundReq.amount).toLocaleString()} للعَميل ${refundReq.customers?.name || ""}. افتَح الصَّفحَة واضغط زِر "تَنفيذ" لتَفعيل التَّصحيح.`,
           p_created_by: user.id,
           p_branch_id: requesterRecipient.branchId ?? null,
           p_cost_center_id: requesterRecipient.costCenterId ?? null,
           p_warehouse_id: null,
           p_assigned_to_role: null,
           p_assigned_to_user: requesterId,
-          p_priority: "normal",
+          p_priority: "high",
           p_event_key: buildNotificationEventKey(
             "payments",
             "customer_refund_request",

@@ -121,6 +121,17 @@ export default function CustomerRefundRequestsPage() {
       const fromCookie = document.cookie.split('; ').find(x => x.startsWith('app_language='))?.split('=')[1]
       setAppLang((fromCookie || localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
     } catch { }
+    // v3.74.115 - honor ?status= from the notification deep link. The page
+    // used to default to Pending regardless, so a requester following a
+    // "your request was approved" link landed on the wrong tab and never
+    // saw the row they came for.
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      const s = sp.get('status')
+      if (s && ['pending', 'approved', 'executed', 'cancelled', 'all'].includes(s)) {
+        setFilterStatus(s)
+      }
+    } catch { }
     const handler = () => {
       try {
         const fromCookie = document.cookie.split('; ').find(x => x.startsWith('app_language='))?.split('=')[1]
@@ -324,11 +335,22 @@ export default function CustomerRefundRequestsPage() {
     )
   }
 
-  // v3.74.107 - only owner/general_manager may approve/reject/execute.
-  // v3.74.108 - other members may still see the requests they filed so they
-  // can track status; the action buttons are still hidden for them.
+  // v3.74.107 - only owner/general_manager may approve/reject.
+  // v3.74.108 - other members may still see the requests they filed.
+  // v3.74.115 - execute is now permitted for the requester too, since the
+  // approver should not also execute (segregation of duties). canApprove is
+  // the board-only gate; canExecuteRow is per-row and includes the requester.
   const canAct = ["owner", "general_manager"].includes(userRole)
-  const isPrivileged = canAct // alias kept for the action-column gate below
+  const canApprove = canAct
+  const canExecuteRow = (r: RefundRequest) => {
+    if (r.status !== 'approved') return false
+    // The approver cannot also execute (SoD).
+    if (r.approved_by === userId) return false
+    return canAct || r.requested_by === userId
+  }
+  // Anyone with the row in view should at least see the columns; the action
+  // buttons inside are gated per-row.
+  const isPrivileged = canAct
 
   const visibleRequests = canAct
     ? requests
@@ -446,8 +468,12 @@ export default function CustomerRefundRequestsPage() {
       header: appLang === 'en' ? "Action" : "إجراء",
       key: "action",
       format: (_, r) => {
-        if (!isPrivileged) return <span className="text-xs text-gray-400">—</span>
+        // v3.74.115 - per-button gating instead of a single row-level gate.
+        //   - pending → only board can approve/reject (canApprove)
+        //   - approved → requester can execute, or board as fallback,
+        //                but the approver cannot also execute (SoD)
         if (r.status === "pending") {
+          if (!canApprove) return <span className="text-xs text-gray-400">—</span>
           return (
             <div className="flex gap-1.5">
               <Button size="sm" className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700 text-white"
@@ -464,13 +490,24 @@ export default function CustomerRefundRequestsPage() {
           )
         }
         if (r.status === "approved") {
-          return (
-            <Button size="sm" className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => handleExecuteClick(r)} disabled={actionLoading === r.id}>
-              <Banknote className="w-3 h-3 ml-1" />
-              {appLang === 'en' ? "Execute Refund" : "تنفيذ الاسترداد"}
-            </Button>
-          )
+          if (canExecuteRow(r)) {
+            return (
+              <Button size="sm" className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => handleExecuteClick(r)} disabled={actionLoading === r.id}>
+                <Banknote className="w-3 h-3 ml-1" />
+                {appLang === 'en' ? "Execute" : "تَنفيذ"}
+              </Button>
+            )
+          }
+          // Approver looking at their own approval: SoD blocks self-execution.
+          if (r.approved_by === userId) {
+            return (
+              <span className="text-[11px] text-amber-700 dark:text-amber-400" title={appLang === 'en' ? 'Approver cannot also execute (SoD)' : 'فَصل الواجِبات: مَن اعتَمَدَ لا يُنَفِّذ'}>
+                {appLang === 'en' ? 'Awaiting requester' : 'بانتظار تنفيذ المُقَدِّم'}
+              </span>
+            )
+          }
+          return <span className="text-xs text-gray-400">—</span>
         }
         return (
           <span className="text-xs text-gray-400">
