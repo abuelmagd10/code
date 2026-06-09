@@ -2080,6 +2080,10 @@ export default function PaymentsPage() {
                           <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
                             {invoiceNumbers[p.invoice_id] || p.invoice_id}
                           </Link>
+                        ) : Number(p.amount || 0) < 0 ? (
+                          <span className="text-purple-600 dark:text-purple-400 text-xs" title={appLang === 'en' ? 'Refund of customer credit (originated from a sales return)' : 'صَرف رَصيد دائن نَتيجَة مَرتَجَع سابِق'}>
+                            {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
+                          </span>
                         ) : (
                           <span className="text-gray-400">{appLang === 'en' ? 'Not linked' : 'غير مرتبط'}</span>
                         )}
@@ -2098,24 +2102,36 @@ export default function PaymentsPage() {
                           <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
                             <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           </Button>
-                          {!p.invoice_id && permWrite && (
-                            <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
-                          )}
-                          {permUpdate && (
-                            <Button variant="ghost" disabled={!online} onClick={() => {
-                              setEditingPayment(p)
-                              setEditFields({
-                                payment_date: p.payment_date,
-                                payment_method: p.payment_method || "cash",
-                                reference_number: p.reference_number || "",
-                                notes: p.notes || "",
-                                account_id: p.account_id || "",
-                              })
-                              setEditOpen(true)
-                            }}>{appLang === 'en' ? 'Edit' : 'تعديل'}</Button>
-                          )}
-                          {permDelete && (
-                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
+                          {/* v3.74.101 - Refund payments (amount < 0) are governance-managed
+                              disbursements of customer credit. They MUST NOT be applied to
+                              another invoice, edited, or hard-deleted from this UI - doing
+                              so would leave customer_credits/customer_credit_ledger/GL out of sync. */}
+                          {Number(p.amount || 0) < 0 ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد'}
+                            </span>
+                          ) : (
+                            <>
+                              {!p.invoice_id && permWrite && (
+                                <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
+                              )}
+                              {permUpdate && (
+                                <Button variant="ghost" disabled={!online} onClick={() => {
+                                  setEditingPayment(p)
+                                  setEditFields({
+                                    payment_date: p.payment_date,
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
+                                    account_id: p.account_id || "",
+                                  })
+                                  setEditOpen(true)
+                                }}>{appLang === 'en' ? 'Edit' : 'تعديل'}</Button>
+                              )}
+                              {permDelete && (
+                                <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
