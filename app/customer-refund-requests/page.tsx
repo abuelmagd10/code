@@ -287,7 +287,9 @@ export default function CustomerRefundRequestsPage() {
     )
   }
 
-  const isPrivileged = ["owner", "admin", "general_manager", "manager", "accountant"].includes(userRole)
+  // v3.74.107 - only owner/general_manager may approve/reject/execute,
+  // matching the API guards from v3.74.105.
+  const isPrivileged = ["owner", "general_manager"].includes(userRole)
 
   const filtered = requests.filter(r =>
     !searchQuery ||
@@ -330,15 +332,30 @@ export default function CustomerRefundRequestsPage() {
       )
     },
     {
-      header: appLang === 'en' ? "Source" : "السبب",
+      header: appLang === 'en' ? "Reason" : "السبب",
       key: "source_type",
-      format: (_, r) => (
-        <Badge variant="outline" className="text-xs">
-          {r.source_type === 'delivery_rejection'
-            ? (appLang === 'en' ? '📦 Delivery Rejected' : '📦 رفض تسليم')
-            : r.source_type}
-        </Badge>
-      )
+      format: (_, r) => {
+        // v3.74.107 - show a short type tag plus the user-written reason so
+        // the approver doesn't have to guess from the machine slug.
+        const typeLabel = r.source_type === 'delivery_rejection'
+          ? (appLang === 'en' ? '📦 Delivery rejected' : '📦 رَفض تَسليم')
+          : r.source_type === 'payment_correction'
+            ? (appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة')
+            : r.source_type
+        const reason = (r.notes || '').trim()
+        return (
+          <div className="flex flex-col gap-1 max-w-[260px]">
+            <Badge variant="outline" className="text-xs self-start">{typeLabel}</Badge>
+            {reason ? (
+              <span className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2" title={reason}>
+                {reason}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">-</span>
+            )}
+          </div>
+        )
+      }
     },
     {
       header: appLang === 'en' ? "Status" : "الحالة",
