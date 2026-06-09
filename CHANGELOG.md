@@ -4,6 +4,25 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.100b] - 2026-06-09 — Hotfix: customer refund missing customer_credit_ledger row
+
+### Symptom
+بَعد صَرف رَصيد عَميل من صَفحَة العُملاء، صَفحَة الفاتورة لا تَزال تُظهِر "💰 لدى العميل رصيد دائن متاح! ٥٫٠٠" رَغم أَنَّ العَميل صَرَف كُلّ رَصيده.
+
+### Root cause
+`CustomerRefundCommandService.recordRefund` يُحَدِّث `customer_credits.used_amount` لَكِنَّه **لا يَكتُب سَطر السَّحب فى `customer_credit_ledger`**. صَفحَة الفاتورة تَقرَأ الرَّصيد من `/api/customer-credits/[id]` الذى يَجمَع `customer_credit_ledger.amount`، فيُرَى الرَّصيد القَديم (+10 − 5 applied = +5) دون خَصم الـ refund.
+
+### Fix
+- Migration `v3_74_100_customer_refund_in_ledger` — يُوَسِّع `customer_credit_ledger.source_type` ليَشمَل `'customer_refund'` + backfill السَّطر النَّاقِص لـ VitaSlims (محمد بسيونى).
+- `lib/services/customer-refund-command.service.ts` — يَكتُب سَطر `-amount` فى `customer_credit_ledger` بَعد `applyCustomerCredits()` مُباشَرَةً، ضِمن نَفس عَمَلية الـ refund.
+
+### Verification — VitaSlims customer 3c38d6e1
+- ledger: +10 (sales_return) − 5 (credit_applied) − 5 (customer_refund) = **0** ✓
+- customer_credits: amount=10, used=5, applied=5, available=0, status='used' ✓
+- /invoices/[id] banner لَن يَظهَر لأَنَّ ledgerCreditBalance = 0
+
+---
+
 ## [3.74.100] - 2026-06-08 — Hotfix: cash overdraft validator mixed currencies on EGP accounts
 
 ### Symptom

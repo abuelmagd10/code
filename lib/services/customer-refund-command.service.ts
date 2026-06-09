@@ -235,6 +235,28 @@ export class CustomerRefundCommandService {
 
       await this.applyCustomerCredits(command.companyId, command.customerId, command.amount, updatedCredits)
 
+      // v3.74.100 — write the refund row into customer_credit_ledger so the
+      // ledger-based balance (used by /api/customer-credits and the invoice
+      // detail banner) reflects the disbursement immediately. Without this,
+      // /invoices/[id] still shows the old credit as "available" because the
+      // ledger balance never decreased to match used_amount.
+      try {
+        await this.adminSupabase.from("customer_credit_ledger").insert({
+          company_id: command.companyId,
+          customer_id: command.customerId,
+          source_type: "customer_refund",
+          source_id: operationId,
+          amount: -Math.abs(Number(command.amount || 0)),
+          description: command.invoiceNumber
+            ? `صَرف رَصيد دائن للعَميل — مرتبط بفاتورة ${command.invoiceNumber}`
+            : `صَرف رَصيد دائن للعَميل`,
+        })
+      } catch (err: any) {
+        // Non-fatal: the GL/customer_credits are still consistent. Surface the
+        // error so we notice if the constraint or schema drifts.
+        console.error("[CUSTOMER_REFUND_LEDGER] Failed to write ledger row:", err?.message || err)
+      }
+
       const { data: payment, error: paymentError } = await this.insertRefundPayment({
         companyId: command.companyId,
         customerId: command.customerId,
