@@ -37,12 +37,21 @@ export async function POST(
     // v3.74.105 - payment_correction requests reverse an existing payment via
     // RPC and do not need an account_id (the reversal posts to the original
     // payment's account). Detect the source_type first.
-    const { data: refundReq } = await supabase
+    // v3.74.116 hotfix - customer_refund_requests has NO branch_id / cost_center_id
+    // columns. Listing them in select() makes PostgREST 400 the query and Supabase
+    // returns data=null silently, which we surfaced as "Refund request not found".
+    // Pull the branch via the joined invoice instead.
+    const { data: refundReq, error: selectErr } = await supabase
       .from("customer_refund_requests")
-      .select("id, status, amount, customer_id, branch_id, cost_center_id, source_type, original_payment_id, requested_by, approved_by, customers(name), invoices(invoice_number)")
+      .select("id, status, amount, customer_id, invoice_id, source_type, original_payment_id, requested_by, approved_by, customers(name), invoices(invoice_number, branch_id)")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
+
+    if (selectErr) {
+      console.error("[REFUND_EXECUTE] select error:", selectErr)
+      return NextResponse.json({ error: selectErr.message || "Failed to load refund request" }, { status: 500 })
+    }
 
     if (!refundReq) {
       return NextResponse.json({ error: "Refund request not found" }, { status: 404 })
@@ -160,7 +169,9 @@ export async function POST(
 
     // Notify Accountant
     try {
-      const recipients = resolver.resolveBranchAccountantRecipients(refundReq.branch_id || null, refundReq.cost_center_id || null)
+      // v3.74.116 - branch comes from the invoice (the request row has no branch col).
+      const branchId = ((refundReq as any).invoices?.branch_id as string | undefined) || null
+      const recipients = resolver.resolveBranchAccountantRecipients(branchId, null)
       for (const recipient of recipients) {
         await supabase.rpc("create_notification", {
           p_company_id:       companyId,
@@ -169,8 +180,8 @@ export async function POST(
           p_title:            "تم ترحيل قيد استرداد نقدي",
           p_message:          `تم تنفيذ استرداد نقدي بقيمة ${amount.toLocaleString()} للعميل ${customerName}. رقم القيد: ${rpcData.entry_number}`,
           p_created_by:       user.id,
-          p_branch_id:        recipient.branchId ?? refundReq.branch_id ?? null,
-          p_cost_center_id:   recipient.costCenterId ?? refundReq.cost_center_id ?? null,
+          p_branch_id:        recipient.branchId ?? branchId ?? null,
+          p_cost_center_id:   recipient.costCenterId ?? null,
           p_warehouse_id:     recipient.warehouseId ?? null,
           p_assigned_to_role: recipient.kind === "role" ? recipient.role : null,
           p_assigned_to_user: recipient.kind === "user" ? recipient.userId : null,
