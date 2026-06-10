@@ -497,11 +497,17 @@ export default function CustomersPage() {
         ; (customerCredits || []).forEach((c: any) => {
           const cid = String(c.customer_id || "")
           if (!cid) return
-          // المتاح: فقط من السجلات النشطة
+          // المتاح: السِّجِلّات التى لَم تُستَنفَد بَعد.
           // v3.74.89: نَطرَح applied_amount أَيضاً — RPC apply_customer_credit_to_invoice
           // يَزيدُه عِندَما يَستَخدِم العَميل رَصيدَه لتَسديد فاتورة.
-          // قَبل هذا الإصلاح: عَميل لَدَيه £10 طَبَّق £5 على فاتورة كانَ ما زالَ يَظهَر £10.
-          if (String(c.status || '') === 'active') {
+          // v3.74.121: نَشمَل status='partially_used' كَذَلِك. كانَ الفِلتَر يَقتَصِر
+          // عَلى 'active' فَقَط فيَفقِد رَصيد العَميل بَعد أَى تَطبيق جُزئى (مَثَلاً
+          // عَميل بـ £10 طَبَّق £5 يَبقى لَه £5 لَكِنّ status='partially_used' كانَ يُسقِطُه).
+          //   active           → كامِل المَبلَغ مَوجود
+          //   partially_used   → تَم تَطبيق/صَرف جُزء وَالباقى مَوجود
+          //   used / expired   → لا شَىء مُتاح
+          const statusStr = String(c.status || '')
+          if (statusStr === 'active' || statusStr === 'partially_used') {
             const available = Math.max(
               Number(c.amount || 0) - Number(c.used_amount || 0) - Number(c.applied_amount || 0),
               0
