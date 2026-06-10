@@ -2185,11 +2185,40 @@ export default function PaymentsPage() {
                           <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
                             <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           </Button>
-                          {/* v3.74.101 - Refund payments (amount < 0) are governance-managed
-                              disbursements of customer credit. They MUST NOT be applied to
-                              another invoice, edited, or hard-deleted from this UI - doing
-                              so would leave customer_credits/customer_credit_ledger/GL out of sync. */}
-                          {Number(p.amount || 0) < 0 ? (
+                          {/* v3.74.122 - VOID/correction rows (voids_payment_id is set) are
+                              themselves audit records. They MUST NOT be applied to an invoice
+                              or sent through another correction workflow; either action would
+                              corrupt the audit trail. Show a read-only badge + (optionally)
+                              Edit notes so an auditor can annotate, and stop there. The
+                              "Apply to Invoice" button used to leak in here because amount > 0. */}
+                          {(p as any).voids_payment_id ? (
+                            <>
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                {appLang === 'en' ? 'Correction / Void' : 'تَصحيح / إِلغاء'}
+                              </span>
+                              {permUpdate && (
+                                <Button variant="ghost" disabled={!online} onClick={() => {
+                                  setEditingPayment(p)
+                                  setEditFields({
+                                    payment_date: p.payment_date,
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
+                                    account_id: p.account_id || "",
+                                  })
+                                  setEditOpen(true)
+                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                                </Button>
+                              )}
+                            </>
+                          ) : (p as any).voided_by_payment_id ? (
+                            // The original of a VOID — already reversed. Read-only too, with a
+                            // distinct gray badge so it doesn't get confused with an active row.
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                              {appLang === 'en' ? 'Voided' : 'مُلغاة بتَصحيح'}
+                            </span>
+                          ) : Number(p.amount || 0) < 0 ? (
                             <>
                               <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                                 {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد'}
