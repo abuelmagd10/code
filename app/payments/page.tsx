@@ -2083,40 +2083,93 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{renderPaymentAmount(p, paymentCurrency)}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
-                        {p.invoice_id ? (
-                          <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
-                            {invoiceNumbers[p.invoice_id] || p.invoice_id}
-                          </Link>
-                        ) : Number(p.amount || 0) < 0 ? (() => {
-                          // v3.74.104 - the credit may have come from a sales return
-                          // OR from an overpayment; the refund command writes both
-                          // labels into notes. Detect which one is present.
-                          const notes = String(p.notes || '')
-                          const m = notes.match(/INV-\d+/)
-                          const srcInv = m ? m[0] : null
-                          const isOverpay = notes.includes('زيادَة دَفع') || notes.includes('overpayment')
-                          const isReturn = notes.includes('مَرتَجَع') || notes.includes('return')
-                          let srcLabel = ''
-                          if (srcInv) {
-                            if (isOverpay && !isReturn) {
-                              srcLabel = appLang === 'en' ? `(from overpayment on ${srcInv})` : `(من زيادَة دَفع عَلى ${srcInv})`
-                            } else if (isReturn && !isOverpay) {
-                              srcLabel = appLang === 'en' ? `(from return ${srcInv})` : `(من مَرتَجَع ${srcInv})`
-                            } else {
-                              srcLabel = appLang === 'en' ? `(source: ${srcInv})` : `(المَصدَر: ${srcInv})`
-                            }
+                        {(() => {
+                          // v3.74.122 - customer payments always trace to a source
+                          // (an invoice, a sales return, an overpayment, or a void
+                          // of one of the above). Render the trace so nothing in
+                          // this column ever falls back to a meaningless
+                          // "Not linked" — that was misleading the operator
+                          // looking at correction (void) rows.
+
+                          // Helper: extract the "from return/overpayment INV-N" suffix
+                          // out of a refund payment's notes. Reused for both pure
+                          // refund rows and the void rows that point at them.
+                          const refundSuffix = (rawNotes: string) => {
+                            const m = rawNotes.match(/INV-\d+/)
+                            const srcInv = m ? m[0] : null
+                            if (!srcInv) return ''
+                            const isOverpay = rawNotes.includes('زيادَة دَفع') || rawNotes.includes('overpayment')
+                            const isReturn  = rawNotes.includes('مَرتَجَع') || rawNotes.includes('return')
+                            if (isOverpay && !isReturn) return appLang === 'en' ? `(from overpayment on ${srcInv})` : `(من زيادَة دَفع عَلى ${srcInv})`
+                            if (isReturn  && !isOverpay) return appLang === 'en' ? `(from return ${srcInv})`        : `(من مَرتَجَع ${srcInv})`
+                            return appLang === 'en' ? `(source: ${srcInv})` : `(المَصدَر: ${srcInv})`
                           }
+
+                          // 1) Direct invoice link — the common case.
+                          if (p.invoice_id) {
+                            return (
+                              <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
+                                {invoiceNumbers[p.invoice_id] || p.invoice_id}
+                              </Link>
+                            )
+                          }
+
+                          // 2) Void / correction row (voids_payment_id is set).
+                          // Inherit the label from the payment it voids so the
+                          // operator sees exactly what was undone.
+                          const voidsId = (p as any).voids_payment_id as string | undefined
+                          if (voidsId) {
+                            const orig = customerPayments.find(x => x.id === voidsId) as any
+                            // Case A: original was tied to an invoice.
+                            if (orig?.invoice_id) {
+                              return (
+                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                                  {appLang === 'en' ? 'Correction of payment on' : 'تَصحيح دَفعَة على'}
+                                  <Link href={`/invoices/${orig.invoice_id}`} className="text-blue-600 hover:underline mx-1">
+                                    {invoiceNumbers[orig.invoice_id] || orig.invoice_id}
+                                  </Link>
+                                </span>
+                              )
+                            }
+                            // Case B: original was a credit refund (negative, no invoice).
+                            if (orig && Number(orig.amount || 0) < 0) {
+                              const suffix = refundSuffix(String(orig.notes || ''))
+                              return (
+                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                                  {appLang === 'en' ? 'Correction of credit refund' : 'تَصحيح صَرف رَصيد دائن'}
+                                  {suffix && <span className="text-gray-500 dark:text-gray-400 mx-1">{suffix}</span>}
+                                </span>
+                              )
+                            }
+                            // Case C: original not in the loaded list — generic
+                            // correction label so we still don't say "not linked".
+                            return (
+                              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                                {appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة'}
+                              </span>
+                            )
+                          }
+
+                          // 3) Credit refund row (negative amount, no invoice, not a void).
+                          if (Number(p.amount || 0) < 0) {
+                            const notes = String(p.notes || '')
+                            const suffix = refundSuffix(notes)
+                            return (
+                              <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Refund of customer credit' : 'صَرف رَصيد دائن')}>
+                                {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
+                                {suffix && <span className="text-gray-500 dark:text-gray-400 mx-1">{suffix}</span>}
+                              </span>
+                            )
+                          }
+
+                          // 4) Catch-all (rare): nothing to trace, surface the
+                          // notes as a hint so the row isn't a dead end.
                           return (
-                            <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Refund of customer credit' : 'صَرف رَصيد دائن')}>
-                              {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
-                              {srcLabel ? (
-                                <span className="text-gray-500 dark:text-gray-400 mx-1">{srcLabel}</span>
-                              ) : null}
+                            <span className="text-gray-400 text-xs" title={String(p.notes || '')}>
+                              {appLang === 'en' ? 'Not linked' : 'غير مرتبط'}
                             </span>
                           )
-                        })() : (
-                          <span className="text-gray-400">{appLang === 'en' ? 'Not linked' : 'غير مرتبط'}</span>
-                        )}
+                        })()}
                       </td>
                       <td className="px-2 py-2">
                         {p.invoice_id && invoiceToSalesOrderMap[p.invoice_id] ? (
