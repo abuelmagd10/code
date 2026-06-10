@@ -128,9 +128,16 @@ const fieldLabel = (field: string, lang: 'ar' | 'en') => {
     voided_by_payment_id: ['Voided by',        'مُلغاة بواسطَة'],
     rejection_reason:     ['Rejection reason', 'سَبَب الرَّفض'],
     invoice_id:           ['Invoice',          'الفاتورَة'],
+    bill_id:              ['Supplier bill',    'فاتورَة المُورِّد'],
     customer_id:          ['Customer',         'العَميل'],
     supplier_id:          ['Supplier',         'المُورِّد'],
     branch_id:            ['Branch',           'الفَرع'],
+    cost_center_id:       ['Cost center',      'مَركَز التَّكلِفَة'],
+    company_id:           ['Company',          'الشَّركَة'],
+    created_by:           ['Created by',       'مُنشَأَة بواسطَة'],
+    approved_by:          ['Approved by',      'مُعتَمَدَة بواسطَة'],
+    is_deleted:           ['Deleted',          'مَحذوفَة'],
+    journal_entry_id:     ['Journal entry',    'القَيد المحاسبى'],
     currency_code:        ['Currency',         'العُملَة'],
     exchange_rate:        ['Exchange rate',    'سِعر الصَّرف'],
     base_currency_amount: ['Amount (base)',    'المَبلَغ بالعُملَة الأَساسية'],
@@ -143,11 +150,16 @@ const fieldLabel = (field: string, lang: 'ar' | 'en') => {
 
 // Render a single audit value into something readable. Drops uuid-only values
 // to "—" because surfacing raw uuids to an operator is noise.
-const renderValue = (v: any, lang: 'ar' | 'en') => {
+// v3.74.125 — when we know the field, translate its value too (status,
+// payment_method): an auditor should never see raw tokens like "approved"
+// or "customer_credit" in the diff.
+const renderValue = (v: any, lang: 'ar' | 'en', field?: string) => {
   if (v === null || v === undefined || v === '') return '—'
   if (typeof v === 'string') {
     // raw uuid → drop (the operator can't reason about it)
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return '—'
+    if (field === 'status') return statusLabel(v, lang)
+    if (field === 'payment_method') return paymentMethodLabel(v, lang)
     return v
   }
   if (typeof v === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 4 })
@@ -344,12 +356,22 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+      {/* v3.74.125 — responsive sizing.
+            mobile (default): 96vw wide, 92vh tall — leaves enough breathing
+              room around the edges so the close button is reachable and the
+              page underneath stays a bit visible.
+            sm+ (≥640px): centred at max-w-4xl (896px) so the modal stops
+              feeling oversized on laptops and stops covering the table
+              behind it.
+            The internal Tabs body scrolls vertically so the modal never
+            grows past its bound height regardless of how long the audit
+            log is. */}
+      <DialogContent className="w-[96vw] sm:w-auto max-w-4xl h-[92vh] sm:h-[85vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
         {/* ─── HEADER ─────────────────────────────────────────────────── */}
-        <DialogHeader className="p-6 pb-4 border-b bg-white dark:bg-slate-900 shadow-sm flex-shrink-0">
-          <div className="flex justify-between items-start gap-4">
+        <DialogHeader className="p-4 sm:p-6 pb-3 sm:pb-4 border-b bg-white dark:bg-slate-900 shadow-sm flex-shrink-0">
+          <div className="flex justify-between items-start gap-3 sm:gap-4">
             <div className="min-w-0">
-              <DialogTitle className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+              <DialogTitle className="text-lg sm:text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                 {appLang === 'en' ? 'Payment Details' : 'تَفاصيل الدَّفعَة'}
                 {headerSubtitle && (
                   <span className="text-sm font-normal text-slate-500">{headerSubtitle}</span>
@@ -381,12 +403,12 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
               </DialogDescription>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+              <div className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
                 {fmtAmount(payment?.amount)}
-                <span className="text-base font-normal text-slate-500 ml-1">{currency}</span>
+                <span className="text-sm sm:text-base font-normal text-slate-500 ml-1">{currency}</span>
               </div>
-              <div className="mt-2 flex justify-end">
-                <Badge className={`${statusBadgeClass(payment?.status)} px-2 py-1`}>
+              <div className="mt-1 sm:mt-2 flex justify-end">
+                <Badge className={`${statusBadgeClass(payment?.status)} px-2 py-1 text-xs`}>
                   {statusLabel(payment?.status || '', appLang)}
                 </Badge>
               </div>
@@ -416,8 +438,8 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
             </div>
           ) : (
             <Tabs defaultValue="overview" className="flex-1 flex flex-col w-full h-full">
-              <div className="border-b bg-white dark:bg-slate-900 px-6 flex-shrink-0">
-                <TabsList className="bg-transparent border-0 p-0 h-12 w-full justify-start gap-6">
+              <div className="border-b bg-white dark:bg-slate-900 px-3 sm:px-6 flex-shrink-0 overflow-x-auto">
+                <TabsList className="bg-transparent border-0 p-0 h-12 w-full justify-start gap-3 sm:gap-6">
                   <TabsTrigger value="overview" className="data-[state=active]:border-b-2 data-[state=active]:border-blue-600 data-[state=active]:shadow-none rounded-none py-3 px-1 data-[state=active]:text-blue-700 dark:data-[state=active]:text-blue-400 flex items-center gap-2">
                     <FileText className="w-4 h-4" />
                     {appLang === 'en' ? 'Overview' : 'نَظرَة عامَّة'}
@@ -442,11 +464,11 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
                 </TabsList>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950">
+              <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50 dark:bg-slate-950">
 
                 {/* ─── 1) OVERVIEW ─────────────────────────────────── */}
                 <TabsContent value="overview" className="mt-0 h-full">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 pb-6 sm:pb-8">
 
                     {/* Transaction details */}
                     <div className="bg-white dark:bg-slate-900 border rounded-xl shadow-sm overflow-hidden">
@@ -746,9 +768,9 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                   {diff.map((d, i) => (
                                     <tr key={i}>
-                                      <td className="px-4 py-2 font-medium text-slate-700 dark:text-slate-300">{fieldLabel(d.field, appLang)}</td>
-                                      <td className="px-4 py-2 text-slate-500 line-through">{renderValue(d.before, appLang)}</td>
-                                      <td className="px-4 py-2 text-emerald-700 dark:text-emerald-400 font-medium">{renderValue(d.after, appLang)}</td>
+                                      <td className="px-3 sm:px-4 py-2 font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">{fieldLabel(d.field, appLang)}</td>
+                                      <td className="px-3 sm:px-4 py-2 text-slate-500 line-through break-words">{renderValue(d.before, appLang, d.field)}</td>
+                                      <td className="px-3 sm:px-4 py-2 text-emerald-700 dark:text-emerald-400 font-medium break-words">{renderValue(d.after, appLang, d.field)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
