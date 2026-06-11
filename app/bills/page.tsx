@@ -284,8 +284,11 @@ export default function BillsPage() {
   }
 
   const getStatusLabel = (status: string) => {
-    const labelsAr: Record<string, string> = { draft: "مسودة", received: "مستلمة", sent: "مستلمة", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة", fully_returned: "مرتجعة بالكامل", partially_returned: "مرتجعة جزئياً" }
-    const labelsEn: Record<string, string> = { draft: "Draft", received: "Received", sent: "Received", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled", fully_returned: "Fully Returned", partially_returned: "Partially Returned" }
+    // v3.74.130: 'approved' / 'rejected' added so the financial-approval step
+    // performed by the branch accountant (between draft and confirm-receipt)
+    // shows a translated label instead of the raw English token.
+    const labelsAr: Record<string, string> = { draft: "مسودة", approved: "مُعتَمَدَة", rejected: "مرفوضة", received: "مستلمة", sent: "مرسلة للاستلام", partially_paid: "مدفوعة جزئياً", paid: "مدفوعة", cancelled: "ملغاة", fully_returned: "مرتجعة بالكامل", partially_returned: "مرتجعة جزئياً" }
+    const labelsEn: Record<string, string> = { draft: "Draft", approved: "Approved", rejected: "Rejected", received: "Received", sent: "Sent for Receipt", partially_paid: "Partially Paid", paid: "Paid", cancelled: "Cancelled", fully_returned: "Fully Returned", partially_returned: "Partially Returned" }
     return (appLang === 'en' ? labelsEn : labelsAr)[status] || status
   }
 
