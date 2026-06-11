@@ -2631,11 +2631,75 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">{p.account_id ? (accountNames[p.account_id] || "-") : "-"}</td>
                       <td className="px-2 py-2">
-                        {p.bill_id ? (
-                          <Link href={`/bills/${p.bill_id}`} className="text-blue-600 hover:underline">
-                            {billNumbers[p.bill_id] || p.bill_id}
-                          </Link>
-                        ) : ("غير مرتبط")}
+                        {(() => {
+                          // v3.74.126 — mirror the customer-side logic (v3.74.122):
+                          //   1. Direct bill link → blue link (unchanged)
+                          //   2. VOID/correction row → trace to original supplier
+                          //      payment and label "تَصحيح دَفعَة على BILL-N"
+                          //   3. Negative-amount row (supplier refund) → purple label
+                          //   4. Anything left → "غير مرتبط" with notes as tooltip
+
+                          // 1) Direct bill linkage.
+                          if (p.bill_id) {
+                            return (
+                              <Link href={`/bills/${p.bill_id}`} className="text-blue-600 hover:underline">
+                                {billNumbers[p.bill_id] || p.bill_id}
+                              </Link>
+                            )
+                          }
+
+                          // 2) VOID row — trace to original supplier payment.
+                          const voidsId = (p as any).voids_payment_id as string | undefined
+                          if (voidsId) {
+                            const orig = supplierPayments.find(x => x.id === voidsId) as any
+                            if (orig?.bill_id) {
+                              return (
+                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                                  {appLang === 'en' ? 'Correction of payment on' : 'تَصحيح دَفعَة على'}
+                                  <Link href={`/bills/${orig.bill_id}`} className="text-blue-600 hover:underline mx-1">
+                                    {billNumbers[orig.bill_id] || orig.bill_id}
+                                  </Link>
+                                </span>
+                              )
+                            }
+                            if (orig && Number(orig.amount || 0) < 0) {
+                              return (
+                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                                  {appLang === 'en' ? 'Correction of supplier refund' : 'تَصحيح صَرف لِمُورِّد'}
+                                </span>
+                              )
+                            }
+                            return (
+                              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                                {appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة'}
+                              </span>
+                            )
+                          }
+
+                          // 3) Supplier refund / advance (negative amount, no bill).
+                          if (Number(p.amount || 0) < 0) {
+                            const notes = String(p.notes || '')
+                            const m = notes.match(/BILL-\d+/) // surface source bill if mentioned
+                            const srcBill = m ? m[0] : null
+                            return (
+                              <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Supplier refund' : 'صَرف لِمُورِّد')}>
+                                {appLang === 'en' ? 'Supplier refund' : 'صَرف رَصيد المُورِّد'}
+                                {srcBill && (
+                                  <span className="text-gray-500 dark:text-gray-400 mx-1">
+                                    {appLang === 'en' ? `(from ${srcBill})` : `(من ${srcBill})`}
+                                  </span>
+                                )}
+                              </span>
+                            )
+                          }
+
+                          // 4) Truly unlinked (rare).
+                          return (
+                            <span className="text-gray-400 text-xs" title={String(p.notes || '')}>
+                              {appLang === 'en' ? 'Not linked' : 'غير مرتبط'}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-2 py-2">
                         {(() => {
@@ -2684,33 +2748,70 @@ export default function PaymentsPage() {
                           <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
                             <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           </Button>
-                          {!p.bill_id && permWrite && (
-                            <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
-                          )}
-                          {(() => {
-                            // ✅ إخفاء زر "على أمر شراء" إذا كان هناك أمر شراء مرتبط (مباشر أو عبر الفاتورة)
-                            const hasDirectPO = !!p.purchase_order_id
-                            const hasPOViaBill = !!(p.bill_id && billToPoMap[p.bill_id])
-                            const hasAnyPO = hasDirectPO || hasPOViaBill
-                            return !hasAnyPO && permWrite && (
-                            <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
-                            )
-                          })()}
-                          {permUpdate && (
-                            <Button variant="ghost" disabled={!online} onClick={() => {
-                              setEditingPayment(p)
-                              setEditFields({
-                                payment_date: p.payment_date,
-                                payment_method: p.payment_method || "cash",
-                                reference_number: p.reference_number || "",
-                                notes: p.notes || "",
-                                account_id: p.account_id || "",
-                              })
-                              setEditOpen(true)
-                            }}>{appLang === 'en' ? 'Edit' : 'تعديل'}</Button>
-                          )}
-                          {permDelete && (
-                            <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
+                          {/* v3.74.126 — mirror customer-side v3.74.123 governance:
+                              VOID rows and already-voided originals become read-only.
+                              Apply-to-Bill / Apply-to-PO / Edit / Delete are gated
+                              behind the "is this an active normal payment?" check
+                              so an auditor can't accidentally re-allocate a
+                              correction record or reuse a reversed payment. */}
+                          {(p as any).voids_payment_id ? (
+                            <>
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                {appLang === 'en' ? 'Correction / Void' : 'تَصحيح / إِلغاء'}
+                              </span>
+                              {permUpdate && (
+                                <Button variant="ghost" disabled={!online} onClick={() => {
+                                  setEditingPayment(p)
+                                  setEditFields({
+                                    payment_date: p.payment_date,
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
+                                    account_id: p.account_id || "",
+                                  })
+                                  setEditOpen(true)
+                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                                </Button>
+                              )}
+                            </>
+                          ) : (p as any).voided_by_payment_id ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                              {appLang === 'en' ? 'Voided' : 'مُلغاة بتَصحيح'}
+                            </span>
+                          ) : (
+                            <>
+                              {!p.bill_id && permWrite && (
+                                <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
+                              )}
+                              {(() => {
+                                // ✅ إخفاء زر "على أمر شراء" إذا كان هناك أمر شراء مرتبط (مباشر أو عبر الفاتورة)
+                                const hasDirectPO = !!p.purchase_order_id
+                                const hasPOViaBill = !!(p.bill_id && billToPoMap[p.bill_id])
+                                const hasAnyPO = hasDirectPO || hasPOViaBill
+                                return !hasAnyPO && permWrite && (
+                                <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
+                                )
+                              })()}
+                              {permUpdate && (
+                                <Button variant="ghost" disabled={!online} onClick={() => {
+                                  setEditingPayment(p)
+                                  setEditFields({
+                                    payment_date: p.payment_date,
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
+                                    account_id: p.account_id || "",
+                                  })
+                                  setEditOpen(true)
+                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                                </Button>
+                              )}
+                              {permDelete && (
+                                <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
+                              )}
+                            </>
                           )}
                           {/* ✅ Approve/Reject buttons for privileged roles on pending payments */}
                           {canApprove && isPending && (
