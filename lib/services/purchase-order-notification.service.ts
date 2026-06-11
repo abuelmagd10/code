@@ -169,6 +169,42 @@ export class PurchaseOrderNotificationService {
       },
       "⚠️ [PO_NOTIFICATION] Management approved notification failed:"
     )
+
+    // v3.74.129 — Tell the branch accountant a draft purchase bill is waiting
+    // for them. Until now the PO-approval workflow notified the creator + the
+    // leadership inventory channel and stopped there, so the bill the system
+    // auto-creates from the approved PO sat in draft with nobody flagged to
+    // post it. Scope the recipient by branch so each branch accountant only
+    // sees the bills that came out of their own POs.
+    if (params.linkedBillId) {
+      await this.dispatch(
+        {
+          companyId: params.companyId,
+          actorUserId: params.approvedBy,
+          poId: params.poId,
+          branchId: params.branchId || null,
+          costCenterId: params.costCenterId || null,
+        },
+        resolver.resolveRoleRecipients(["accountant"], params.branchId || null, null, params.costCenterId || null),
+        {
+          referenceType: "bill",
+          referenceId: params.linkedBillId,
+          title:
+            params.appLang === "en"
+              ? "Draft Purchase Bill — Awaiting Your Approval"
+              : "فاتورة مشتريات جديدة — تَنتَظِر اعتمادك",
+          message:
+            params.appLang === "en"
+              ? `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) was approved and a draft purchase bill has been created. Open it to review and approve so the AP entry can be posted.`
+              : `تم اعتماد أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} وتَم إنشاء فاتورة مشتريات بحالة "مسودة". افتَحها لمُراجَعَتها واعتمادها لتَسجيل القَيد المحاسبى.`,
+          priority: "high",
+          severity: "warning",
+          category: "approvals",
+          eventAction: "approved_accountant_bill_waiting",
+        },
+        "⚠️ [PO_NOTIFICATION] Accountant draft-bill notification failed:"
+      )
+    }
   }
 
   async notifyRejected(params: PurchaseOrderRejectedNotificationParams) {
