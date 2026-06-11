@@ -266,6 +266,7 @@ export function Sidebar() {
     if (href.includes('/customers')) return 'customers'
     if (href.includes('/estimates')) return 'estimates'
     // المشتريات
+    if (href.includes('/vendor-payment-correction-requests')) return 'vendor_payment_correction_requests'
     if (href.includes('/vendor-credits')) return 'vendor_credits'
     if (href.includes('/customer-refund-requests')) return 'customer_refund_requests'
     if (href.includes('/customer-credits')) return 'customer_credits'
@@ -1104,6 +1105,11 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText, badge: approvalBadges['bill_receipt'] || 0 },
                     { label: (lang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText, badge: sumBadges(approvalBadges, ['purchase_return_admin','purchase_return_warehouse']) },
                     { label: (lang === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText, badge: approvalBadges['vendor_refund_request'] || 0 },
+                    // v3.74.128 - vendor payment correction workflow entry. Mirrors customer-refund-requests
+                    // placement under Sales. Governance is page-key based: allowed_pages must include
+                    // 'vendor_payment_correction_requests' for the entry to show (owner+general_manager get
+                    // full board view; any company member can also reach the page to see their own requests).
+                    { label: (lang === 'en' ? 'Vendor Payment Corrections' : 'طلبات تصحيح مدفوعات الموردين'), href: `/vendor-payment-correction-requests${q}`, icon: RefreshCw, badge: approvalBadges['vendor_payment_correction_request'] || 0 },
                   ]
                 },
                 {
