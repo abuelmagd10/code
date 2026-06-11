@@ -2808,9 +2808,31 @@ export default function PaymentsPage() {
                                   {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
                                 </Button>
                               )}
-                              {permDelete && (
-                                <Button variant="destructive" disabled={!online} onClick={() => { setDeletingPayment(p); setDeleteOpen(true) }}>{appLang === 'en' ? 'Delete' : 'حذف'}</Button>
-                              )}
+                              {/* v3.74.127 - replace direct Delete with Request Correction on supplier rows.
+                                  Same governance pattern as customer side (v3.74.105): posted vendor
+                                  payments are immutable; the only way to change them is via the
+                                  workflow that produces a documented reversal + audit trail. */}
+                              <Button
+                                variant="outline"
+                                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                disabled={!online}
+                                title={appLang === 'en' ? 'Request correction of this vendor payment (needs owner/general manager approval)' : 'طَلَب تَصحيح هذه الدَّفعَة لِلمُورِّد — يَحتاج اعتماد المالِك/المُدير العام'}
+                                onClick={() => {
+                                  setCorrectionPayment(p)
+                                  setCorrectionReason("")
+                                  setCorrectionFields({
+                                    amount: String(Math.abs(Number(p.amount || 0))),
+                                    payment_date: p.payment_date || "",
+                                    account_id: p.account_id || "",
+                                    payment_method: p.payment_method || "cash",
+                                    reference_number: p.reference_number || "",
+                                    notes: p.notes || "",
+                                  })
+                                  setCorrectionOpen(true)
+                                }}
+                              >
+                                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
+                              </Button>
                             </>
                           )}
                           {/* ✅ Approve/Reject buttons for privileged roles on pending payments */}
@@ -3305,7 +3327,14 @@ export default function PaymentsPage() {
                   if (correctionFields.reference_number !== (correctionPayment.reference_number || '')) proposed.reference_number = correctionFields.reference_number
                   if (correctionFields.notes !== (correctionPayment.notes || '')) proposed.notes = correctionFields.notes
 
-                  const res = await fetch(`/api/payments/${encodeURIComponent(correctionPayment.id)}/request-correction`, {
+                  // v3.74.127 — route to vendor endpoint when the payment is a supplier payment.
+                  // The vendor RPC mirrors create_payment_correction_request but writes to
+                  // vendor_payment_correction_requests and notifies via the matching reference_type.
+                  const isVendorPayment = Boolean((correctionPayment as any).supplier_id)
+                  const correctionEndpoint = isVendorPayment
+                    ? `/api/payments/${encodeURIComponent(correctionPayment.id)}/vendor-request-correction`
+                    : `/api/payments/${encodeURIComponent(correctionPayment.id)}/request-correction`
+                  const res = await fetch(correctionEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ reason: correctionReason.trim(), proposedChanges: proposed }),

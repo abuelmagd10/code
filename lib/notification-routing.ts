@@ -16,6 +16,7 @@ export type ReferenceType =
   | 'refund_request'
   | 'customer_refund_request'
   | 'vendor_refund_request'
+  | 'vendor_payment_correction_request'
   | 'depreciation'
   | 'journal_entry'
   | 'payment'
@@ -115,6 +116,17 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
     else if (/:requested(:|$)/.test(ek)) status = 'pending'
     const qs = status ? `status=${status}&` : ''
     return `/customer-refund-requests?${qs}highlight=${id}`
+  },
+  // v3.74.127 — vendor payment correction workflow mirrors customer side.
+  'vendor_payment_correction_request': (id, eventKey) => {
+    const ek = eventKey || ''
+    let status: 'pending' | 'approved' | 'executed' | 'cancelled' | null = null
+    if (/:approved(_|$)/.test(ek)) status = 'approved'
+    else if (/:executed(:|$)/.test(ek)) status = 'executed'
+    else if (/:rejected(:|$)/.test(ek)) status = 'cancelled'
+    else if (/:requested(:|$)/.test(ek)) status = 'pending'
+    const qs = status ? `status=${status}&` : ''
+    return `/vendor-payment-correction-requests?${qs}highlight=${id}`
   },
 
   // المالية
