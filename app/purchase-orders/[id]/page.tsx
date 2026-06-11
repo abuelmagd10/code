@@ -827,8 +827,12 @@ export default function PurchaseOrderDetailPage() {
                   {appLang === 'en' ? 'Receive Items' : 'استلام البضاعة'}
                 </Button>
               )}
-              {/* 🔐 ERP Access Control: Approval actions */}
-              {po.status === "pending_approval" && (userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') && (
+              {/* 🔐 ERP Access Control: Approval actions
+                  v3.74.131 — restricted to owner + manager only (المالك + المدير العام).
+                  admin and other roles still receive the notification for visibility
+                  but no longer see approve/reject buttons. The DB RPC enforces the
+                  same gate, so a stale UI cannot escape it either. */}
+              {po.status === "pending_approval" && (userContext?.role === 'owner' || userContext?.role === 'manager') && (
                 <>
                   <Button onClick={handleApprovePO} className="bg-green-600 hover:bg-green-700 text-white" disabled={isSending} data-ai-help="purchase_orders.approve_button">
                     <CheckCircle className="h-4 w-4 mr-1" />

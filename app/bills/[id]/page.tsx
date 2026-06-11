@@ -1018,15 +1018,10 @@ export default function BillViewPage() {
         return
       }
 
-      if (newStatus === "sent" && bill.approval_status !== "approved" && bill.status !== "approved") {
-        toastActionError(
-          toast, 
-          "التحديث", 
-          "فاتورة المورد", 
-          appLang === "en" ? "Bill must be approved before sending to warehouse" : "يجب اعتماد الفاتورة إدارياً قبل إرسالها للمخزن للاستلام"
-        )
-        return
-      }
+      // v3.74.131 — the client-side "must be approved first" guard is gone.
+      // submitForReceipt on the server now auto-sets approval_status='approved'
+      // when the accountant sends a still-draft bill, so a single click does
+      // both steps.
 
       // التحقق من توفر المخزون قبل الإلغاء أو الإرجاع للمسودة
       // فقط إذا كان المخزون قد أُضيف فعلاً (receipt_status === 'received')
@@ -1293,11 +1288,15 @@ export default function BillViewPage() {
                 )}
 
                 {/* 📦 إرسال للاستلام المخزني (تحويل إلى مرسلة) */}
-                {(bill.approval_status === "approved" || bill.status === "approved") &&
-                 bill.receipt_status !== 'received' && 
+                {/* v3.74.131 — single-button workflow per user spec:
+                    accountant sees "Send for Receipt" directly on a draft
+                    bill; the server-side submitForReceipt auto-sets
+                    approval_status='approved' in the same transaction.
+                    Once status is 'draft' the 'rejected' check is dead, so
+                    we drop it to keep the TS narrowing happy. */}
+                {bill.status === "draft" &&
+                 bill.receipt_status !== 'received' &&
                  bill.receipt_status !== 'pending' &&
-                 bill.status !== 'rejected' &&
-                 bill.status !== 'pending_approval' &&
                  canSubmitForApproval && (
                   <Button
                     onClick={() => changeStatus("sent")}

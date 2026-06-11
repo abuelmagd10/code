@@ -352,18 +352,31 @@ export class BillReceiptWorkflowService {
         throw new Error("Rejected goods receipt must be corrected and re-approved before resubmission")
       }
 
-      const approved = bill.approval_status === "approved" || bill.status === "approved"
-      if (!approved) {
-        throw new Error("Bill must be approved before sending it for warehouse receipt")
+      // v3.74.131 — per-user spec, the accountant sends a draft bill straight
+      // to "sent for receipt" with a single button. We no longer require a
+      // prior approveBill call; if the bill is still draft+pending we
+      // auto-set approval_status='approved' in the same UPDATE so the
+      // governance fields stay populated and downstream code that reads
+      // approval_status still sees a consistent state. The actor's role is
+      // already gated by SUBMISSION_ROLES at the top of the function.
+      const wasUnapproved = !(bill.approval_status === "approved" || bill.status === "approved")
+      const update: Record<string, any> = {
+        status: "sent",
+        receipt_status: "pending",
+        receipt_rejection_reason: null,
+      }
+      if (wasUnapproved) {
+        update.approval_status = "approved"
+        update.approved_by = actor.actorId
+        update.approved_at = new Date().toISOString()
+        update.rejection_reason = null
+        update.rejected_by = null
+        update.rejected_at = null
       }
 
       const { error } = await this.adminSupabase
         .from("bills")
-        .update({
-          status: "sent",
-          receipt_status: "pending",
-          receipt_rejection_reason: null,
-        })
+        .update(update)
         .eq("company_id", actor.companyId)
         .eq("id", billId)
 
