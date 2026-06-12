@@ -68,6 +68,13 @@ export class PurchaseOrderNotificationService {
     // which is the wrong scope for PO. Pass branchId here to keep
     // manager branch-scoped; the call below becomes redundant when
     // branchId is set, so drop it under that guard.
+    // v3.74.133 — was resolveLevel1ApproverRecipients which fanned out to
+    // owner + admin + general_manager. The Owner inbox surfaced admin and
+    // general_manager notifications via role inheritance, so a single PO
+    // approval request landed as a duplicate in the Owner inbox. Per
+    // v3.74.131 the approver list is owner + manager only, so we tighten
+    // the dispatch list to match. The branch-scoped manager block below
+    // still fires.
     await this.dispatch(
       {
         companyId: params.companyId,
@@ -76,7 +83,7 @@ export class PurchaseOrderNotificationService {
         branchId: null,
         costCenterId: null,
       },
-      resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, params.costCenterId || null),
+      resolver.resolveRoleRecipients(["owner"], null, null, null),
       {
         referenceType: "purchase_order",
         referenceId: params.poId,
@@ -87,12 +94,11 @@ export class PurchaseOrderNotificationService {
         category: "approvals",
         eventAction: isResubmission ? "approval_resubmitted" : "approval_requested",
       },
-      "⚠️ [PO_NOTIFICATION] Leadership approval-request notification failed:"
+      "⚠️ [PO_NOTIFICATION] Owner approval-request notification failed:"
     )
 
-    // v3.74.22 — keep the legacy branch-manager block as a redundant
-    // safety net for callers that still don't pass branchId into the
-    // primary dispatch. Idempotent on event_key.
+    // Branch-scoped manager (the technical name in this schema for what the
+    // user calls المدير العام). Owner already got their copy above.
     if (params.branchId) {
       await this.dispatch(
         {
