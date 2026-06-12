@@ -349,16 +349,25 @@ export class BillReceiptNotificationService {
   async notifyApprovalRestartAfterReceiptRejection(
     actor: BillReceiptNotificationActor,
     bill: BillReceiptNotificationBill,
-    cycleKey: string | null
+    cycleKey: string | null,
+    reasonKind: "receipt_rejection" | "draft_edit" = "receipt_rejection"
   ) {
     const cycle = eventCycle(cycleKey)
-    const title = "تعديل الفاتورة بانتظار الاعتماد"
-    const message = `تم تعديل فاتورة المشتريات رقم ${bill.bill_number || bill.id} بعد رفض الاستلام وبانتظار اعتمادكم`
 
-    // v3.74.22 — was ["owner", "general_manager"] only, dropping admin
-    // and branch manager. Use the full canonical approver tier so the
-    // restart-after-rejection notification reaches everyone who can act.
-    for (const role of ["owner", "admin", "general_manager", "manager"]) {
+    // v3.74.134 — message now matches the actual reason. The user pointed
+    // out that the bill-edit-on-draft scenario was misreported as 'after
+    // receipt rejection' even though no warehouse rejection had occurred.
+    const title = "تعديل الفاتورة بانتظار الاعتماد"
+    const message = reasonKind === "draft_edit"
+      ? `قام مُحاسِب الفَرع بتَعديل فاتورة المشتريات رقم ${bill.bill_number || bill.id} وَهى الآن بانتظار اعتمادكم لإعادة تَشغيل دورة الاستلام`
+      : `تم تعديل فاتورة المشتريات رقم ${bill.bill_number || bill.id} بعد رفض الاستلام وبانتظار اعتمادكم`
+
+    // v3.74.134 — was ["owner", "admin", "general_manager", "manager"].
+    // The Owner inbox surfaced admin and general_manager rows via role
+    // inheritance, so a single edit fired 2-3 duplicates in the owner
+    // mailbox. Per v3.74.131 only owner + manager can act on bill
+    // approval, so we tighten the dispatch list to match that.
+    for (const role of ["owner", "manager"]) {
       await this.createNotification(actor, {
         referenceType: "bill",
         referenceId: bill.id,
@@ -373,7 +382,9 @@ export class BillReceiptNotificationService {
           "procurement",
           "bill",
           bill.id,
-          "approval_restart_after_receipt_rejection",
+          reasonKind === "draft_edit"
+            ? "approval_restart_after_draft_edit"
+            : "approval_restart_after_receipt_rejection",
           "role",
           role,
           cycle

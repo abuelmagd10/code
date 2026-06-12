@@ -141,10 +141,15 @@ export async function POST(
       p_reference_type: "bill_approval_restart_notification",
     })
 
+    // v3.74.134 — pass the actual reason so the notification text matches
+    // what happened. isReceiptRejection (warehouse rejected the goods) keeps
+    // the old wording; isDraftFromPOEdit (accountant edited a PO-linked
+    // draft bill) gets the new 'accountant changed the bill' message.
     await new BillReceiptNotificationService(supabase).notifyApprovalRestartAfterReceiptRejection(
       { companyId: context.companyId, actorId: context.user.id },
       bill,
-      transactionId
+      transactionId,
+      isDraftFromPOEdit ? "draft_edit" : "receipt_rejection"
     )
 
     try {
