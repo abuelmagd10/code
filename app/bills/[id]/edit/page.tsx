@@ -475,9 +475,18 @@ export default function EditBillPage() {
       const receiptStatus = String((existingBill as any).receipt_status || "").toLowerCase()
       const isClosed = ["paid", "partially_paid", "cancelled", "voided", "fully_returned"].includes(billStatus)
       // ✅ أي فاتورة غير مغلقة محاسبيًا وتم بدء دورة اعتماد لها يجب إعادة الدورة عند التعديل
+      // v3.74.132: also force re-approval when a draft bill that came from a PO
+      // gets its totals changed. The DB trigger
+      // bills_force_reapproval_on_edit will flip status to pending_approval
+      // automatically; we mirror that decision here so the client knows it has
+      // to ping the approval-notification endpoint after the update.
+      const linkedToPO = Boolean((existingBill as any).purchase_order_id)
+      const origTotal = Number((existingBill as any).original_total || 0)
+      const newTotal = Number(totals.total || 0)
+      const totalsChangedFromPO = linkedToPO && Math.abs(newTotal - origTotal) > 0.001
       const needsApprovalRestart =
         !isClosed &&
-        (billStatus !== "draft" || receiptStatus === "rejected")
+        (billStatus !== "draft" || receiptStatus === "rejected" || totalsChangedFromPO)
 
       // التحقق من توفر المخزون فقط إذا كانت الفاتورة قد تم استلامها وإضافتها للمخزون بالفعل
       // الفواتير المرفوضة أو المعلقة لم تضف للمخزون، لذا تقليل الكمية لا يخصم من المخزون الفعلي

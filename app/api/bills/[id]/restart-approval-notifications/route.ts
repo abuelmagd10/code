@@ -82,9 +82,19 @@ export async function POST(
       return NextResponse.json({ success: false, error: billError?.message || "Bill not found" }, { status: 404 })
     }
 
-    if (String(bill.receipt_status || "").toLowerCase() !== "rejected") {
+    // v3.74.132: also allow this endpoint to fire when the accountant edited
+    // a draft bill that came from an approved PO (the new force-reapproval
+    // trigger flipped status to pending_approval + approval_status to pending
+    // automatically). In that case receipt_status is NULL/unset, not
+    // 'rejected'. We keep the original 'rejected' path working, and the new
+    // 'bill_edit_on_draft_from_po' reason takes the second branch.
+    const isReceiptRejection = String(bill.receipt_status || "").toLowerCase() === "rejected"
+    const isDraftFromPOEdit = !isReceiptRejection
+      && Boolean(bill.purchase_order_id)
+      && String(bill.approval_status || "").toLowerCase() === "pending"
+    if (!isReceiptRejection && !isDraftFromPOEdit) {
       return NextResponse.json(
-        { success: false, error: "Approval restart notifications are only supported after receipt rejection" },
+        { success: false, error: "Bill is not eligible for an approval-restart notification" },
         { status: 400 }
       )
     }

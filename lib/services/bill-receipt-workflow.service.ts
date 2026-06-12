@@ -10,7 +10,11 @@ const BILL_DRAFT_DELETE_EVENT = "bill_draft_delete"
 
 const SUBMISSION_ROLES = new Set(["owner", "admin", "general_manager", "manager", "accountant"])
 const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manager"])
-const ADMIN_APPROVAL_ROLES = new Set(["owner", "admin", "general_manager"])
+// v3.74.132 — bill edit re-approval is restricted to owner + manager only
+// (المالك + المدير العام) so it mirrors the PO approval gate from v3.74.131.
+// admin used to be in this list; it is no longer trusted to approve a
+// modified bill against the original PO.
+const ADMIN_APPROVAL_ROLES = new Set(["owner", "manager"])
 
 type ActorContext = {
   companyId: string
