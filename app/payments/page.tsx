@@ -269,6 +269,11 @@ export default function PaymentsPage() {
   const [supplierQuery, setSupplierQuery] = useState("")
   // متغيرات اختيارية كانت مستخدمة ضمن ربط تلقائي للدفع بالفواتير
   const [selectedFormBillId, setSelectedFormBillId] = useState<string>("")
+  // v3.74.145 — explicit "save as advance with no bill link" opt-in.
+  // Required when the supplier has outstanding bills, to prevent the
+  // accountant from silently creating a vendor payment that should
+  // have settled an existing bill.
+  const [confirmAdvanceUnlinked, setConfirmAdvanceUnlinked] = useState<boolean>(false)
   const [selectedFormInvoiceId, setSelectedFormInvoiceId] = useState<string>("")
   const [newSuppAccountType] = useState<string>("")
   const [formCustomerInvoices, setFormCustomerInvoices] = useState<InvoiceRow[]>([])
@@ -1219,6 +1224,30 @@ export default function PaymentsPage() {
           description: appLang === 'en'
             ? 'Please select a supplier, enter an amount greater than 0, and ensure you are connected.'
             : 'يرجى اختيار مورد، وإدخال مبلغ أكبر من صفر.',
+          variant: 'destructive'
+        })
+        setSaving(false)
+        return
+      }
+
+      // v3.74.145 — Mandatory bill-link guard. If the supplier has at
+      // least one outstanding bill and the accountant didn't pick one,
+      // make them explicitly confirm "save as advance" via the dedicated
+      // checkbox/button below the bill table. Without this we silently
+      // produced orphan supplier payments with no bill link, which the
+      // user reported in testing ("غير مرتبط" on a payment that should
+      // have settled BILL-0002).
+      const hasOutstandingBills = (formSupplierBills || []).some((b: any) => {
+        const returnedAmt = Number((b as any).returned_amount || 0)
+        const net = Math.max(Number(b.total_amount || 0) - returnedAmt - Number(b.paid_amount || 0), 0)
+        return net > 0
+      })
+      if (hasOutstandingBills && !selectedFormBillId && !confirmAdvanceUnlinked) {
+        toast({
+          title: appLang === 'en' ? 'Pick a bill' : 'اختر فاتورة',
+          description: appLang === 'en'
+            ? 'This supplier has outstanding bills. Pick one from the list above, or tick "Advance payment with no bill link" first.'
+            : 'لهذا المورد فواتير غير مسددة. اختر فاتورة من الجدول أعلاه، أو فعّل "دفعة سُلفة بدون ربط بفاتورة" أولاً.',
           variant: 'destructive'
         })
         setSaving(false)
@@ -2550,6 +2579,29 @@ export default function PaymentsPage() {
                 </table>
                 {selectedFormBillId && (
                   <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Bill selected; amount auto-filled with net outstanding.' : 'تم اختيار الفاتورة، وتم تعبئة خانة المبلغ تلقائيًا بالصافي المستحق.'}</p>
+                )}
+                {/* v3.74.145 — explicit "advance with no bill link" opt-in.
+                    Only shown when there's at least one outstanding bill that
+                    the accountant skipped. Without ticking this, save is
+                    blocked with a "pick a bill" toast. */}
+                {!selectedFormBillId && formSupplierBills.some((b: any) => {
+                  const returnedAmt = Number((b as any).returned_amount || 0)
+                  const net = Math.max(Number(b.total_amount || 0) - returnedAmt - Number(b.paid_amount || 0), 0)
+                  return net > 0
+                }) && (
+                  <label className="mt-3 flex items-start gap-2 text-sm cursor-pointer p-2 border border-amber-300 dark:border-amber-700 rounded bg-amber-50 dark:bg-amber-950/30">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={confirmAdvanceUnlinked}
+                      onChange={(e) => setConfirmAdvanceUnlinked(e.target.checked)}
+                    />
+                    <span className="text-amber-900 dark:text-amber-100">
+                      {appLang === 'en'
+                        ? 'Advance payment with no bill link — I confirm this is a prepayment to the supplier, not a settlement of an existing bill.'
+                        : 'دَفعَة سُلفَة بدون ربط بفاتورَة — أُؤَكِّد أَنَّ هذه دَفعَة مُقَدَّمَة للمورد ولَيست تَسديداً لفاتورَة قائِمَة.'}
+                    </span>
+                  </label>
                 )}
               </div>
             )}
