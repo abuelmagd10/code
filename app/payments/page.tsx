@@ -2808,15 +2808,24 @@ export default function PaymentsPage() {
                                   {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
                                 </Button>
                               )}
-                              {/* v3.74.127 - replace direct Delete with Request Correction on supplier rows.
-                                  Same governance pattern as customer side (v3.74.105): posted vendor
-                                  payments are immutable; the only way to change them is via the
-                                  workflow that produces a documented reversal + audit trail. */}
+                              {/* v3.74.127/v3.74.144 — smart correction button.
+                                  Status-aware behaviour:
+                                  - rejected: fast path. The payment never posted accounting,
+                                    so we open the SAME dialog but submit to a different
+                                    endpoint that directly edits the payment and resets it to
+                                    pending_approval (no need for the full correction workflow).
+                                  - approved/sent/cleared: governance path. Goes through
+                                    vendor_payment_correction_requests with owner approval +
+                                    documented reversal. */}
                               <Button
                                 variant="outline"
                                 className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
                                 disabled={!online}
-                                title={appLang === 'en' ? 'Request correction of this vendor payment (needs owner/general manager approval)' : 'طَلَب تَصحيح هذه الدَّفعَة لِلمُورِّد — يَحتاج اعتماد المالِك/المُدير العام'}
+                                title={
+                                  isRejected
+                                    ? (appLang === 'en' ? 'Edit this rejected payment and resubmit for approval' : 'تَعديل هذِه الدَّفعَة المَرفوضَة وإِعادَة إِرسالها للاعتماد')
+                                    : (appLang === 'en' ? 'Request correction of this vendor payment (needs owner/general manager approval)' : 'طَلَب تَصحيح هذه الدَّفعَة لِلمُورِّد — يَحتاج اعتماد المالِك/المُدير العام')
+                                }
                                 onClick={() => {
                                   setCorrectionPayment(p)
                                   setCorrectionReason("")
@@ -2831,7 +2840,9 @@ export default function PaymentsPage() {
                                   setCorrectionOpen(true)
                                 }}
                               >
-                                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
+                                {isRejected
+                                  ? (appLang === 'en' ? 'Edit & resubmit' : 'تَعديل وإِعادَة الإِرسال')
+                                  : (appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح')}
                               </Button>
                             </>
                           )}
@@ -3327,26 +3338,46 @@ export default function PaymentsPage() {
                   if (correctionFields.reference_number !== (correctionPayment.reference_number || '')) proposed.reference_number = correctionFields.reference_number
                   if (correctionFields.notes !== (correctionPayment.notes || '')) proposed.notes = correctionFields.notes
 
-                  // v3.74.127 — route to vendor endpoint when the payment is a supplier payment.
-                  // The vendor RPC mirrors create_payment_correction_request but writes to
-                  // vendor_payment_correction_requests and notifies via the matching reference_type.
+                  // v3.74.127 / v3.74.144 — route by payment status.
+                  // - If the payment was REJECTED before approval, it never posted
+                  //   accounting. Use the fast resubmit endpoint that edits the row
+                  //   directly and flips it back to pending_approval (no separate
+                  //   correction request needed).
+                  // - Otherwise (approved/sent/cleared), go through the formal
+                  //   correction workflow that produces a documented reversal.
                   const isVendorPayment = Boolean((correctionPayment as any).supplier_id)
-                  const correctionEndpoint = isVendorPayment
-                    ? `/api/payments/${encodeURIComponent(correctionPayment.id)}/vendor-request-correction`
-                    : `/api/payments/${encodeURIComponent(correctionPayment.id)}/request-correction`
+                  const isRejectedPayment = String((correctionPayment as any).status || '').toLowerCase() === 'rejected'
+
+                  let correctionEndpoint: string
+                  let payload: any
+                  if (isVendorPayment && isRejectedPayment) {
+                    correctionEndpoint = `/api/payments/${encodeURIComponent(correctionPayment.id)}/resubmit-after-reject`
+                    payload = { reason: correctionReason.trim(), changes: proposed }
+                  } else if (isVendorPayment) {
+                    correctionEndpoint = `/api/payments/${encodeURIComponent(correctionPayment.id)}/vendor-request-correction`
+                    payload = { reason: correctionReason.trim(), proposedChanges: proposed }
+                  } else {
+                    correctionEndpoint = `/api/payments/${encodeURIComponent(correctionPayment.id)}/request-correction`
+                    payload = { reason: correctionReason.trim(), proposedChanges: proposed }
+                  }
+
                   const res = await fetch(correctionEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ reason: correctionReason.trim(), proposedChanges: proposed }),
+                    body: JSON.stringify(payload),
                   })
                   const r = await res.json()
                   if (!r.success) {
-                    toast({ title: appLang === 'en' ? 'Could not create request' : 'تَعَذَّر إِنشاء الطَّلَب', description: r.error || '', variant: 'destructive' })
+                    toast({ title: appLang === 'en' ? 'Could not submit' : 'تَعَذَّر الإِرسال', description: r.error || '', variant: 'destructive' })
                     return
                   }
                   toast({
-                    title: appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب',
-                    description: appLang === 'en' ? 'Waiting for owner/general manager approval.' : 'يَنتَظِر اعتماد المالِك/المُدير العام.',
+                    title: isRejectedPayment
+                      ? (appLang === 'en' ? 'Payment resubmitted' : 'تَمَّ إِعادَة الإِرسال للاعتماد')
+                      : (appLang === 'en' ? 'Correction request submitted' : 'تَمَّ إِرسال الطَّلَب'),
+                    description: isRejectedPayment
+                      ? (appLang === 'en' ? 'The owner and general manager have been notified.' : 'تَمَّ إِشعار المالِك والمُدير العام.')
+                      : (appLang === 'en' ? 'Waiting for owner/general manager approval.' : 'يَنتَظِر اعتماد المالِك/المُدير العام.'),
                   })
                   setCorrectionOpen(false)
                   setCorrectionPayment(null)

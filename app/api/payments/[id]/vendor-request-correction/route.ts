@@ -88,12 +88,20 @@ export async function POST(
 
         const supplierName = (pay as any)?.suppliers?.name || ""
         const billNum = (pay as any)?.bills?.bill_number || ""
-        const amountStr = Number((pay as any)?.amount || 0).toLocaleString()
+        // v3.74.144 — vendor payments store amount as a NEGATIVE number
+        // (signed amount: -3.00 means "paid 3 to vendor"). The old code
+        // ran Number(amount || 0) which kept the negative; toLocaleString
+        // then printed "-3" or in some locales just "0" once the sign was
+        // lost. Use Math.abs so the message reads the natural magnitude.
+        const amountStr = Math.abs(Number((pay as any)?.amount || 0)).toLocaleString()
 
         const title = "طَلَب تَصحيح دَفعَة مُورِّد — يَنتَظِر اعتمادك"
         const message = `طَلَب جَديد لتَصحيح دَفعَة بقيمَة ${amountStr}${supplierName ? ` للمُورِّد ${supplierName}` : ""}${billNum ? ` (فاتورَة ${billNum})` : ""}. السَّبَب: ${reason.substring(0, 120)}`
 
-        for (const targetRole of ["owner", "general_manager"]) {
+        // v3.74.144 — owner + manager (= "المدير العام" in this schema).
+        // Was owner + general_manager, but general_manager triggers role
+        // inheritance duplicate in the owner inbox (same fix as v3.74.133).
+        for (const targetRole of ["owner", "manager"]) {
           await supabase.rpc("create_notification", {
             p_company_id: companyId,
             p_reference_type: "vendor_payment_correction_request",
