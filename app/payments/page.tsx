@@ -274,6 +274,15 @@ export default function PaymentsPage() {
   // accountant from silently creating a vendor payment that should
   // have settled an existing bill.
   const [confirmAdvanceUnlinked, setConfirmAdvanceUnlinked] = useState<boolean>(false)
+  // v3.74.146 — payment_id → bill_id resolved from payment_allocations.
+  // The display logic on the supplier-payment row only checked
+  // payments.bill_id, which is NULL when the link is stored via the
+  // newer payment_allocations table. As a result a freshly-recorded
+  // payment with an allocation showed "غير مرتبط" / "Not linked"
+  // until the row was manually reapplied. We now read both: if
+  // payments.bill_id is null but an allocation row points to a bill,
+  // we use that bill for display.
+  const [allocBillByPayment, setAllocBillByPayment] = useState<Record<string, string>>({})
   const [selectedFormInvoiceId, setSelectedFormInvoiceId] = useState<string>("")
   const [newSuppAccountType] = useState<string>("")
   const [formCustomerInvoices, setFormCustomerInvoices] = useState<InvoiceRow[]>([])
@@ -920,14 +929,25 @@ export default function PaymentsPage() {
         // 2. bill_ids من payment_allocations (نظام التوزيع الجديد)
         const paymentIds = paymentsToProcess.map((p) => p.id)
         let allocBillIds: string[] = []
+        const newAllocBillByPayment: Record<string, string> = {}
         if (paymentIds.length > 0) {
           const { data: allocs } = await supabase
             .from("payment_allocations")
             .select("payment_id, bill_id")
             .in("payment_id", paymentIds)
             .not("bill_id", "is", null)
-          allocBillIds = Array.from(new Set((allocs || []).map((a: any) => a.bill_id).filter(Boolean))) as string[]
+          ;(allocs || []).forEach((a: any) => {
+            // v3.74.146 — keep the first bill we see per payment for the
+            // display table. Multi-bill allocations still settle every
+            // bill in the allocations row; the table just shows one for
+            // brevity (clicking the link opens that bill).
+            if (a.payment_id && a.bill_id && !newAllocBillByPayment[a.payment_id]) {
+              newAllocBillByPayment[a.payment_id] = a.bill_id
+            }
+          })
+          allocBillIds = Array.from(new Set(Object.values(newAllocBillByPayment))) as string[]
         }
+        setAllocBillByPayment(newAllocBillByPayment)
 
         const ids = Array.from(new Set([...directBillIds, ...allocBillIds]))
         if (!ids.length) {
@@ -2691,11 +2711,14 @@ export default function PaymentsPage() {
                           //   3. Negative-amount row (supplier refund) → purple label
                           //   4. Anything left → "غير مرتبط" with notes as tooltip
 
-                          // 1) Direct bill linkage.
-                          if (p.bill_id) {
+                          // 1) Direct bill linkage on the payment row,
+                          //    OR linkage stored in payment_allocations
+                          //    (v3.74.146 — surface allocation-only links).
+                          const effectiveBillId = p.bill_id || allocBillByPayment[p.id] || null
+                          if (effectiveBillId) {
                             return (
-                              <Link href={`/bills/${p.bill_id}`} className="text-blue-600 hover:underline">
-                                {billNumbers[p.bill_id] || p.bill_id}
+                              <Link href={`/bills/${effectiveBillId}`} className="text-blue-600 hover:underline">
+                                {billNumbers[effectiveBillId] || effectiveBillId}
                               </Link>
                             )
                           }
@@ -2759,8 +2782,11 @@ export default function PaymentsPage() {
                             const poNumber = poNumbers[p.purchase_order_id]
                             return poNumber ? (<Link href={`/purchase-orders/${p.purchase_order_id}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : p.purchase_order_id
                           }
-                          if (p.bill_id && billToPoMap[p.bill_id]) {
-                            const poId = billToPoMap[p.bill_id]
+                          // v3.74.146 — same allocation fallback for the
+                          // linked-PO column.
+                          const billIdForPo = p.bill_id || allocBillByPayment[p.id] || null
+                          if (billIdForPo && billToPoMap[billIdForPo]) {
+                            const poId = billToPoMap[billIdForPo]
                             const poNumber = poNumbers[poId]
                             return poNumber ? (<Link href={`/purchase-orders/${poId}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : poId
                           }
