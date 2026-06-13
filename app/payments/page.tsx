@@ -2655,8 +2655,11 @@ export default function PaymentsPage() {
                     const isRejected = p.status === 'rejected'
 
                     // ✅ Net Bill Amount & Overpayment detection
+                    // v3.74.146 — also look through payment_allocations
+                    // when payments.bill_id is null (allocation-only link).
                     const paidAmt = getDisplayAmount(p)
-                    const billAmtInfo = p.bill_id ? billAmountsMap[p.bill_id] : null
+                    const effectiveBillIdForAmount = p.bill_id || allocBillByPayment[p.id] || null
+                    const billAmtInfo = effectiveBillIdForAmount ? billAmountsMap[effectiveBillIdForAmount] : null
                     const billTotalAmt = billAmtInfo?.total ?? null
                     const billReturnedAmt = billAmtInfo?.returned ?? 0
                     const netBillAmt = billTotalAmt !== null ? Math.max(0, billTotalAmt - billReturnedAmt) : null
@@ -2668,12 +2671,14 @@ export default function PaymentsPage() {
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {/* ✅ priority: bill.branch → PO.branch → billBranchMap → payment.branch */}
+                          {/* ✅ priority: bill.branch → PO.branch → billBranchMap → payment.branch
+                              v3.74.146 — also check allocation-linked bill_id. */}
                           {((p as any).bill?.bill_branches?.name)
                             || ((p as any).bill?.branch_id ? branchNames[(p as any).bill.branch_id] : null)
                             || ((p as any).bill?.purchase_order?.po_branches?.name)
                             || ((p as any).bill?.purchase_order?.branch_id ? branchNames[(p as any).bill.purchase_order.branch_id] : null)
                             || (p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null)
+                            || (allocBillByPayment[p.id] && billBranchMap[allocBillByPayment[p.id]] ? branchNames[billBranchMap[allocBillByPayment[p.id]]] : null)
                             || (p.branch_id ? branchNames[p.branch_id] : null)
                             || p.branches?.name
                             || (appLang === 'en' ? 'Main' : 'رئيسي')}
