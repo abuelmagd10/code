@@ -432,6 +432,29 @@ export default function EditPurchaseOrderPage() {
       return
     }
 
+    // v3.74.139 — Reject empty rows (no product, zero quantity, etc.) like
+    // the create form does. Otherwise an edit can save a PO with rows that
+    // have product_id=null.
+    const invalidEditRows: number[] = []
+    poItems.forEach((item: any, idx: number) => {
+      const hasProduct = Boolean(item.product_id)
+      const qty = Number(item.quantity) || 0
+      const price = Number(item.unit_price) || 0
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidEditRows.push(idx + 1)
+      }
+    })
+    if (invalidEditRows.length > 0) {
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Save' : 'حفظ',
+        appLang === 'en'
+          ? `Please complete the line item(s) at row ${invalidEditRows.join(', ')}.`
+          : `الرجاء إكمال بنود السطر ${invalidEditRows.join('، ')}: كل سطر يحتاج منتج، وكمية أكبر من صفر، وسعر وحدة.`
+      )
+      return
+    }
+
     setIsSaving(true)
     try {
       // Manage status transition: draft or rejected -> pending_approval (if not admin/etc)

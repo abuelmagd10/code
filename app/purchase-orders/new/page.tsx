@@ -485,6 +485,30 @@ export default function NewPurchaseOrderPage() {
       return
     }
 
+    // v3.74.139 — Block empty rows (no product picked, quantity = 0, etc.).
+    // Previously the form let users hit Save with placeholder rows that
+    // arrived at the API as { product_id: null, quantity: 0 } and got
+    // accepted.
+    const invalidRows: number[] = []
+    poItems.forEach((item: any, idx: number) => {
+      const hasProduct = Boolean(item.product_id)
+      const qty = Number(item.quantity) || 0
+      const price = Number(item.unit_price) || 0
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidRows.push(idx + 1)
+      }
+    })
+    if (invalidRows.length > 0) {
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Save' : 'حفظ',
+        appLang === 'en'
+          ? `Please complete the line item(s) at row ${invalidRows.join(', ')}. Each row needs a product, a positive quantity, and a unit price.`
+          : `الرجاء إكمال بنود السطر ${invalidRows.join('، ')}: كل سطر يحتاج منتج، وكمية أكبر من صفر، وسعر وحدة.`
+      )
+      return
+    }
+
     // Validate shipping provider is selected
     if (!shippingProviderId) {
       toast({

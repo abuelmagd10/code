@@ -371,6 +371,41 @@ export async function POST(request: NextRequest) {
     const canCreateLinkedBill = isPrivilegedRole
     const shouldCreateLinkedBill = Boolean(body.createLinkedBill) && canCreateLinkedBill
 
+    // v3.74.139 — Mandatory line-items guard. Was only enforced for material-
+    // shortage POs and for privileged-role linked-bill creates; a normal
+    // purchasing_officer / accountant could POST { items: [] } directly to
+    // the API and end up with an empty purchase order. Now every PO must
+    // have at least one item, regardless of role or source.
+    if (commandItems.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: "Cannot create a purchase order without line items.",
+        error_ar: "لا يمكن إنشاء أمر شراء بدون بنود. الرجاء إضافة منتج واحد على الأقل.",
+      }, { status: 422 })
+    }
+
+    // v3.74.139 — Every line item must have product_id, positive quantity,
+    // and non-negative unit price. Plugged the same back-door: the form
+    // allows adding empty rows (addItem) that posted product_id=null and
+    // quantity=0, which let users save POs full of placeholder rows.
+    const invalidItemIndices: number[] = []
+    commandItems.forEach((item: any, idx: number) => {
+      const hasProduct = Boolean(item.product_id)
+      const qty = normalizeLineNumber(item.quantity, 0)
+      const price = normalizeLineNumber(item.unit_price, 0)
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidItemIndices.push(idx + 1)
+      }
+    })
+    if (invalidItemIndices.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Purchase order has incomplete line items at row(s): ${invalidItemIndices.join(", ")}. Each row must have a product, a positive quantity and a unit price.`,
+        error_ar: `أمر الشراء يحتوى على بنود ناقصة فى السطر/السطور: ${invalidItemIndices.join("، ")}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`,
+        invalid_rows: invalidItemIndices,
+      }, { status: 422 })
+    }
+
     if (fromMaterialShortage && commandItems.length === 0) {
       return NextResponse.json({
         success: false,
