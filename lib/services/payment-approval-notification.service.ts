@@ -52,18 +52,22 @@ export class PaymentApprovalNotificationService {
       costCenterId: params.costCenterId || null,
     })
 
+    // v3.74.143 — Same fix pattern as v3.74.133/138 in the procurement
+    // cycle. The previous call resolveLevel1ApproverRecipients fanned out
+    // to owner + admin + general_manager + manager. The owner inbox
+    // surfaced admin and general_manager rows via role inheritance, so a
+    // single payment approval request landed as 2-4 duplicates in the
+    // owner's inbox. Per spec the approver list is owner + manager only
+    // (manager = "المدير العام" in this schema). Both go company-wide.
     await this.dispatch(
       {
         companyId: params.companyId,
         actorUserId: params.createdBy,
         paymentId: params.paymentId,
-        branchId: params.branchId || null,
-        costCenterId: params.costCenterId || null,
+        branchId: null,
+        costCenterId: null,
       },
-      // v3.74.20 — canonical Level-1 approver list (includes owner + manager).
-      // The previous ["admin", "general_manager"] hard-coded list silently
-      // dropped owner — see resolveLevel1ApproverRecipients docs.
-      resolver.resolveLevel1ApproverRecipients(params.branchId || null, null, params.costCenterId || null),
+      resolver.resolveRoleRecipients(["owner"], null, null, null),
       {
         referenceType: "payment_approval",
         referenceId: params.paymentId,
@@ -74,7 +78,29 @@ export class PaymentApprovalNotificationService {
         category: "approvals",
         eventAction: "approval_requested",
       },
-      "⚠️ [PAYMENT_NOTIFICATION] Approval-request notification failed:"
+      "⚠️ [PAYMENT_NOTIFICATION] Owner approval-request notification failed:"
+    )
+
+    await this.dispatch(
+      {
+        companyId: params.companyId,
+        actorUserId: params.createdBy,
+        paymentId: params.paymentId,
+        branchId: null,
+        costCenterId: null,
+      },
+      resolver.resolveRoleRecipients(["manager"], null, null, null),
+      {
+        referenceType: "payment_approval",
+        referenceId: params.paymentId,
+        title,
+        message,
+        priority: "high",
+        severity: "warning",
+        category: "approvals",
+        eventAction: "approval_requested",
+      },
+      "⚠️ [PAYMENT_NOTIFICATION] Manager approval-request notification failed:"
     )
   }
 
