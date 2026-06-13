@@ -559,6 +559,13 @@ export default function EditBillPage() {
         ? formData.due_date 
         : null
 
+      // v3.74.141 — Track who actually performed this edit so the bill-edit
+      // rejection notification reaches the editor (typically the accountant)
+      // and not the PO creator (purchasing officer). Without this column the
+      // rejection used to fall back to purchase_orders.created_by_user_id.
+      const { data: { user: editorUser } } = await supabase.auth.getUser()
+      const editorUserId = editorUser?.id || null
+
       const { error: billErr } = await supabase
         .from("bills")
         .update({
@@ -580,6 +587,8 @@ export default function EditBillPage() {
           branch_id: finalBranchId || null,
           cost_center_id: finalCostCenterId || null,
           warehouse_id: finalWarehouseId || null,
+          // v3.74.141
+          last_edited_by_user_id: editorUserId,
           // ✅ إذا كانت الفاتورة ضمن دورة اعتماد، نعيد تشغيل دورة الاعتماد فوراً
           ...(needsApprovalRestart
             ? {

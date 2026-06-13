@@ -25,6 +25,11 @@ export type BillReceiptNotificationBill = {
   purchase_order_id: string | null
   created_by?: string | null
   created_by_user_id?: string | null
+  // v3.74.141 — set by /bills/[id]/edit on save. Used as the primary
+  // target for bill-edit rejection notifications so the actual editor
+  // (typically the accountant) gets the rejection rather than the PO
+  // creator.
+  last_edited_by_user_id?: string | null
 }
 
 type NotificationPayload = {
@@ -329,14 +334,19 @@ export class BillReceiptNotificationService {
     const title = "تم رفض فاتورة المشتريات"
     const message = `تم رفض فاتورة المشتريات رقم ${bill.bill_number || bill.id}. السبب: ${rejectionReason}`
 
-    // v3.74.138 — Per spec, Step 6 (bill edit rejected) notifies the PO
-    // creator only. Use the ACTUAL PO creator (purchasing_officer or
-    // accountant who raised the PO), not the bill's created_by_user_id
-    // (which is the owner who approved the PO when the bill was auto-
-    // created). The earlier "accountant role" ping is now ALSO sent only
-    // through the user-level ping if the PO creator is an accountant.
-    let creatorUserId: string | null = null
-    if (bill.purchase_order_id) {
+    // v3.74.141 — Recipient priority for bill-edit rejection:
+    //   1) last_edited_by_user_id   — the person who just edited the bill.
+    //      This is what the spec actually wants: the rejection should
+    //      land on whoever made the change that was rejected.
+    //   2) purchase_orders.created_by_user_id — fall back for legacy
+    //      bills that pre-date the last_edited_by_user_id column and for
+    //      the rare case where the bill has never been edited (rejection
+    //      of an auto-created draft straight after PO approval).
+    //   3) bills.created_by_user_id — last-resort fallback (in the auto-
+    //      created-from-PO flow this is the owner who approved the PO,
+    //      so it is rarely the right target).
+    let creatorUserId: string | null = bill.last_edited_by_user_id || null
+    if (!creatorUserId && bill.purchase_order_id) {
       const info = await this.loadPurchaseOrderInfo(bill.purchase_order_id)
       creatorUserId = info?.createdByUserId || null
     }

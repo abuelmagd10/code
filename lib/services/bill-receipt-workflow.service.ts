@@ -47,6 +47,7 @@ type BillRecord = {
   purchase_order_id: string | null
   created_by?: string | null
   created_by_user_id?: string | null
+  last_edited_by_user_id?: string | null
 }
 
 type TraceRecord = {
@@ -597,7 +598,8 @@ export class BillReceiptWorkflowService {
         supplier_id,
         purchase_order_id,
         created_by,
-        created_by_user_id
+        created_by_user_id,
+        last_edited_by_user_id
       `)
       .eq("id", billId)
 
