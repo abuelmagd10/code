@@ -3,7 +3,8 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createServiceClient } from "@/lib/supabase/server"
 import { BillReceiptWorkflowService } from "@/lib/services/bill-receipt-workflow.service"
-import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
+// v3.74.137 — Archive moved INTO BillReceiptWorkflowService.approveBill so it
+// runs BEFORE the new "تم اعتماد الفاتورة" notification is created.
 
 export async function POST(
   request: NextRequest,
@@ -47,16 +48,7 @@ export async function POST(
       { idempotencyKey, requestHash, uiSurface, appLang }
     )
 
-    // v3.74.18 — Archive pending approval-category notifications for this
-    // workflow record now that the action is committed. Runs BEFORE any
-    // follow-up "result" notification we send to the creator below, so the
-    // new one isn't archived too.
-    await archiveApprovalNotificationsForRecord({
-      supabase: serviceClient,
-      companyId: context.companyId,
-      referenceType: "bill",
-      referenceId: id,
-    })
+    // v3.74.137 — Archive call removed here (moved inside approveBill).
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

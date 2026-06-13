@@ -3,7 +3,11 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createServiceClient } from "@/lib/supabase/server"
 import { BillReceiptWorkflowService } from "@/lib/services/bill-receipt-workflow.service"
-import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
+// v3.74.137 — Archive moved INTO BillReceiptWorkflowService.rejectBill so it
+// runs BEFORE the rejection notification is created. Doing it here at the
+// route layer (i.e. AFTER rejectBill returned) used to auto-archive the new
+// "تم رفض الفاتورة" ping immediately after it was inserted, so the accountant
+// never saw it. Keep the archive call removed from this file.
 
 export async function POST(
   request: NextRequest,
@@ -53,16 +57,9 @@ export async function POST(
       { idempotencyKey, requestHash, uiSurface }
     )
 
-    // v3.74.18 — Archive pending approval-category notifications for this
-    // workflow record now that the action is committed. Runs BEFORE any
-    // follow-up "result" notification we send to the creator below, so the
-    // new one isn't archived too.
-    await archiveApprovalNotificationsForRecord({
-      supabase: serviceClient,
-      companyId: context.companyId,
-      referenceType: "bill",
-      referenceId: id,
-    })
+    // v3.74.137 — Archive call removed here. It now lives inside
+    // BillReceiptWorkflowService.rejectBill, sequenced BEFORE
+    // notifyBillAdminRejected so the new rejection notification survives.
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

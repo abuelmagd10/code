@@ -19,9 +19,19 @@ export async function POST(
     const uiSurface = String(body?.uiSurface || body?.ui_surface || "bill_edit_page")
     const reason = String(body?.reason || body?.trigger_reason || "bill_edit_after_receipt_rejection")
 
+    // v3.74.138 — Add a per-edit nonce to the idempotency key so a second
+    // edit by the accountant (or PO creator) fires a FRESH owner/manager
+    // "بانتظار اعتمادكم" ping instead of being short-circuited by the
+    // cached financial trace from the first edit. Spec: "يَتَكَرَّر مَهما
+    // تَكَرَّر التَّعديل". Client passes editNonce when present; otherwise
+    // we use the request's wall-clock time.
+    const editNonce =
+      String(body?.editNonce || body?.edit_nonce || "").trim() ||
+      `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
     const idempotencyKey = resolveFinancialIdempotencyKey(
       request.headers.get("Idempotency-Key"),
-      ["bill-approval-restart-notification", context.companyId, id, reason]
+      ["bill-approval-restart-notification", context.companyId, id, reason, editNonce]
     )
 
     const requestHash = buildFinancialRequestHash({

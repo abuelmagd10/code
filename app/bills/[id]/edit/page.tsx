@@ -841,15 +841,21 @@ export default function EditBillPage() {
       if (needsApprovalRestart) {
         try {
           if (existingBill) {
+            // v3.74.138 — Add a per-save nonce to the idempotency key so the
+            // owner + manager re-approval ping fires on EVERY accountant edit,
+            // not just the first one. Spec: "مهما تكرر التعديل يجب إعادة
+            // اعتمادها". The trace layer used to short-circuit identical keys.
+            const editNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
             const response = await fetch(`/api/bills/${encodeURIComponent(existingBill.id)}/restart-approval-notifications`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Idempotency-Key": `bill:${existingBill.id}:approval-restart-notifications`,
+                "Idempotency-Key": `bill:${existingBill.id}:approval-restart:${editNonce}`,
               },
               body: JSON.stringify({
                 ui_surface: "bill_edit_page",
                 trigger_reason: "bill_edit_after_receipt_rejection",
+                edit_nonce: editNonce,
               }),
             })
 

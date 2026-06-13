@@ -1,4 +1,5 @@
 import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
+import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
 type SupabaseLike = any
 
@@ -240,6 +241,16 @@ export class BillReceiptWorkflowService {
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_ADMIN_APPROVAL_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_admin_approved", refreshedBill)
     if (!alreadyApproved) {
+      // v3.74.137 — Same fix as rejectBill: archive the previous
+      // "بانتظار اعتمادكم" approval requests BEFORE we send the new
+      // "تم اعتماد الفاتورة" result notification, so the route-layer archive
+      // that runs AFTER this method returns no longer wipes our fresh ping.
+      await archiveApprovalNotificationsForRecord({
+        supabase: this.adminSupabase,
+        companyId: actor.companyId,
+        referenceType: "bill",
+        referenceId: billId,
+      })
       await this.notifications().notifyBillApprovedToPurchaseOrderCreator(
         { companyId: actor.companyId, actorId: actor.actorId },
         refreshedBill,
@@ -318,6 +329,18 @@ export class BillReceiptWorkflowService {
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_ADMIN_REJECTION_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_admin_rejected", refreshedBill, { rejection_reason: rejectionReason })
     if (!alreadyRejected) {
+      // v3.74.137 — Archive the previous "بانتظار اعتمادكم" approval ping FIRST,
+      // then emit the new "تم الرفض" notification. The route-layer archive call
+      // used to run AFTER this service method returned, which meant it wiped the
+      // freshly-created rejection ping (same reference_type='bill' + same
+      // reference_id + category='approvals') before the accountant ever saw it.
+      // Doing the archive before the create here lets the new ping survive.
+      await archiveApprovalNotificationsForRecord({
+        supabase: this.adminSupabase,
+        companyId: actor.companyId,
+        referenceType: "bill",
+        referenceId: billId,
+      })
       await this.notifications().notifyBillAdminRejected(
         { companyId: actor.companyId, actorId: actor.actorId },
         refreshedBill,

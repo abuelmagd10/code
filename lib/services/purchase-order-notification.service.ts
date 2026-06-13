@@ -97,91 +97,97 @@ export class PurchaseOrderNotificationService {
       "⚠️ [PO_NOTIFICATION] Owner approval-request notification failed:"
     )
 
-    // Branch-scoped manager (the technical name in this schema for what the
-    // user calls المدير العام). Owner already got their copy above.
-    if (params.branchId) {
-      await this.dispatch(
-        {
-          companyId: params.companyId,
-          actorUserId: params.createdBy,
-          poId: params.poId,
-          branchId: params.branchId || null,
-          costCenterId: params.costCenterId || null,
-        },
-        resolver.resolveRoleRecipients(["manager"], params.branchId || null, null, params.costCenterId || null),
-        {
-          referenceType: "purchase_order",
-          referenceId: params.poId,
-          title,
-          message,
-          priority: "high",
-          severity: "warning",
-          category: "approvals",
-          eventAction: isResubmission ? "approval_resubmitted" : "approval_requested",
-        },
-        "⚠️ [PO_NOTIFICATION] Branch approval-request notification failed:"
-      )
-    }
+    // v3.74.138 — Per product spec the "المدير العام" sees ALL branches
+    // (not branch-scoped). So manager dispatch goes company-wide with no
+    // branch/cost-center filter — matching the owner dispatch above. The
+    // old branch-scoped block silently dropped the notification for managers
+    // whose company_members.cost_center_id differed from the PO's, which is
+    // the same v3.74.136-class bug fixed for the accountant role.
+    await this.dispatch(
+      {
+        companyId: params.companyId,
+        actorUserId: params.createdBy,
+        poId: params.poId,
+        branchId: null,
+        costCenterId: null,
+      },
+      resolver.resolveRoleRecipients(["manager"], null, null, null),
+      {
+        referenceType: "purchase_order",
+        referenceId: params.poId,
+        title,
+        message,
+        priority: "high",
+        severity: "warning",
+        category: "approvals",
+        eventAction: isResubmission ? "approval_resubmitted" : "approval_requested",
+      },
+      "⚠️ [PO_NOTIFICATION] Manager approval-request notification failed:"
+    )
   }
 
   async notifyApprovedWorkflow(params: PurchaseOrderApprovedNotificationParams) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
 
-    await this.createNotification(
-      {
-        companyId: params.companyId,
-        actorUserId: params.approvedBy,
-        poId: params.poId,
-        branchId: null,
-        costCenterId: null,
-      },
-      resolver.resolveUserRecipient(params.createdBy),
-      {
-        referenceType: params.linkedBillId ? "bill" : "purchase_order",
-        referenceId: params.linkedBillId || params.poId,
-        title: params.appLang === "en" ? "Purchase Order Approved" : "تم اعتماد أمر الشراء",
-        message:
-          params.appLang === "en"
-            ? `Your Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been approved.`
-            : `تمت الموافقة على أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency}.`,
-        priority: "normal",
-        severity: "info",
-        category: "approvals",
-        eventAction: "approved_creator_notified",
-      }
-    )
+    // v3.74.138 — Determine the creator's role so we can dedup the
+    // "creator + accountant" pair into a single notification when the
+    // creator IS the branch accountant. Without this dedup an accountant
+    // who raised a PO would receive two pings on approval (one as user,
+    // one as role).
+    let creatorRole: string | null = null
+    try {
+      const { data: creatorMember } = await this.supabase
+        .from("company_members")
+        .select("role")
+        .eq("company_id", params.companyId)
+        .eq("user_id", params.createdBy)
+        .maybeSingle()
+      creatorRole = (creatorMember?.role as string | null) || null
+    } catch (e) {
+      creatorRole = null
+    }
 
-    await this.dispatch(
-      {
-        companyId: params.companyId,
-        actorUserId: params.approvedBy,
-        poId: params.poId,
-        branchId: null,
-        costCenterId: null,
-      },
-      resolver.resolveLeadershipVisibilityRecipients(),
-      {
-        referenceType: "purchase_order",
-        referenceId: params.poId,
-        title: params.appLang === "en" ? "Incoming Goods — Purchase Order Approved" : "بضاعة قادمة — تم اعتماد أمر الشراء",
-        message:
-          params.appLang === "en"
-            ? `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been approved. Please prepare to receive the goods.`
-            : `تم اعتماد أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency}. يرجى الاستعداد لاستلام البضاعة.`,
-        priority: "normal",
-        severity: "info",
-        category: "inventory",
-        eventAction: "approved_management_visibility",
-      },
-      "⚠️ [PO_NOTIFICATION] Management approved notification failed:"
-    )
+    const creatorIsAccountant = creatorRole === "accountant"
+
+    // Notify the PO creator individually (skip if they will already see
+    // the accountant-role ping below — that's the dedup case).
+    if (!creatorIsAccountant) {
+      await this.createNotification(
+        {
+          companyId: params.companyId,
+          actorUserId: params.approvedBy,
+          poId: params.poId,
+          branchId: null,
+          costCenterId: null,
+        },
+        resolver.resolveUserRecipient(params.createdBy),
+        {
+          referenceType: params.linkedBillId ? "bill" : "purchase_order",
+          referenceId: params.linkedBillId || params.poId,
+          title: params.appLang === "en" ? "Purchase Order Approved" : "تم اعتماد أمر الشراء",
+          message:
+            params.appLang === "en"
+              ? `Your Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been approved.`
+              : `تمت الموافقة على أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency}.`,
+          priority: "normal",
+          severity: "info",
+          category: "approvals",
+          eventAction: "approved_creator_notified",
+        }
+      )
+    }
+
+    // v3.74.138 — Removed the "Incoming Goods — PO Approved" leadership
+    // visibility ping. The product spec for the procurement cycle lists
+    // only 4 recipients at this stage (creator + branch accountant), so
+    // this extra inventory-channel ping to admin role is out of scope and
+    // contributed to inbox duplication for the owner via role inheritance.
 
     // v3.74.129 — Tell the branch accountant a draft purchase bill is waiting
-    // for them. Until now the PO-approval workflow notified the creator + the
-    // leadership inventory channel and stopped there, so the bill the system
-    // auto-creates from the approved PO sat in draft with nobody flagged to
-    // post it. Scope the recipient by branch so each branch accountant only
-    // sees the bills that came out of their own POs.
+    // for them. v3.74.138 — Dropped cost_center_id from the role scope (same
+    // fix as v3.74.136 for the accountant rejection ping). When the PO
+    // creator IS an accountant, this ping doubles as their "approved"
+    // notification (we skipped the user-level ping above to avoid dup).
     if (params.linkedBillId) {
       await this.dispatch(
         {
@@ -189,9 +195,9 @@ export class PurchaseOrderNotificationService {
           actorUserId: params.approvedBy,
           poId: params.poId,
           branchId: params.branchId || null,
-          costCenterId: params.costCenterId || null,
+          costCenterId: null,
         },
-        resolver.resolveRoleRecipients(["accountant"], params.branchId || null, null, params.costCenterId || null),
+        resolver.resolveRoleRecipients(["accountant"], params.branchId || null, null, null),
         {
           referenceType: "bill",
           referenceId: params.linkedBillId,

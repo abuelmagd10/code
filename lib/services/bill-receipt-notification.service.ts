@@ -141,17 +141,23 @@ export function buildBillReceiptConfirmedNotificationIntents(input: {
   const cycle = eventCycle(input.cycleKey)
   const intents: BillReceiptNotificationIntent[] = []
 
+  // v3.74.138 — Per spec the receipt-confirmation recipients are:
+  // owner + manager (company-wide) + accountant (branch-scoped, no cost
+  // center filter) + PO creator. Dropped general_manager (duplication via
+  // role inheritance) and dropped cost_center scope from accountant/manager
+  // (silent filter that hid the row when member.cost_center diverged from
+  // bill.cost_center).
   for (const recipient of input.resolver.resolveRoleRecipients(
-    ["accountant", "manager"],
+    ["accountant"],
     input.bill.branch_id,
     input.bill.warehouse_id,
-    input.bill.cost_center_id
+    null
   )) {
     intents.push(buildConfirmedRoleIntent(input.bill, recipient, cycle))
   }
 
   for (const recipient of input.resolver.resolveRoleRecipients(
-    ["owner", "general_manager"],
+    ["owner", "manager"],
     null,
     null,
     null
@@ -195,6 +201,11 @@ export class BillReceiptNotificationService {
     cycleKey: string | null
   ) {
     const cycle = eventCycle(cycleKey)
+    // v3.74.138 — dropped cost_center_id from the store_manager role scope.
+    // Same v3.74.136 silent-filter bug pattern: branch + warehouse is the
+    // correct governance for store_manager visibility; cost_center on the
+    // member record commonly differs from the bill's and used to hide the
+    // "بانتظار الاستلام" ping from the very person who needs to act.
     await this.createNotification(actor, {
       referenceType: "bill",
       referenceId: bill.id,
@@ -202,7 +213,7 @@ export class BillReceiptNotificationService {
       message: `فاتورة المشتريات رقم ${bill.bill_number || bill.id} بانتظار اعتماد الاستلام في المخزن. يرجى مراجعة واعتماد استلام البضاعة.`,
       branchId: bill.branch_id,
       warehouseId: bill.warehouse_id,
-      costCenterId: bill.cost_center_id,
+      costCenterId: null,
       assignedToRole: "store_manager",
       priority: "high",
       eventKey: buildNotificationEventKey(
@@ -228,9 +239,15 @@ export class BillReceiptNotificationService {
     const cycle = eventCycle(cycleKey)
     const title = "تم رفض استلام البضاعة"
     const message = `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number || bill.id}. السبب: ${rejectionReason}`
-    const targetUserId = await this.resolvePurchaseOrderCreator(bill) || bill.created_by_user_id || bill.created_by || null
+    // v3.74.138 — Resolve the ACTUAL PO creator (not the bill creator).
+    // bills.created_by_user_id is the owner who approved the PO when the
+    // bill was auto-created, so falling back to it pings the wrong person.
+    // Only use the PO creator; if there's no PO link, fall back to the
+    // bill creator.
+    const poCreatorId = await this.resolvePurchaseOrderCreator(bill)
+    const targetUserId = poCreatorId || bill.created_by_user_id || bill.created_by || null
 
-    if (targetUserId) {
+    if (targetUserId && targetUserId !== actor.actorId) {
       await this.createNotification(actor, {
         referenceType: "bill",
         referenceId: bill.id,
@@ -238,7 +255,7 @@ export class BillReceiptNotificationService {
         message,
         branchId: bill.branch_id,
         warehouseId: bill.warehouse_id,
-        costCenterId: bill.cost_center_id,
+        costCenterId: null,
         assignedToUser: targetUserId,
         priority: "high",
         eventKey: buildNotificationEventKey(
@@ -255,21 +272,37 @@ export class BillReceiptNotificationService {
       })
     }
 
-    // v3.74.24 — was ["owner", "general_manager"] which silently dropped
-    // admin and branch manager. When the warehouse rejects the receipt,
-    // every senior tier needs to know: management may have already
-    // pre-approved the bill itself, so the rejection cascades upstream.
-    // Aligned with the canonical Level-1 approver tier.
-    for (const role of ["owner", "admin", "general_manager", "manager"]) {
+    // v3.74.138 — Per the product spec the recipients on receipt rejection
+    // are owner + manager + accountant + PO creator. Dropped admin and
+    // general_manager (caused inbox duplication via role inheritance on the
+    // owner row, same as v3.74.133). Added accountant. Owner + manager are
+    // company-wide (no branch/warehouse scope); accountant is scoped to the
+    // bill's branch + warehouse only, no cost_center filter (same fix as
+    // v3.74.136).
+    const roleRecipients: Array<{
+      role: string
+      branchId: string | null
+      warehouseId: string | null
+    }> = [
+      { role: "owner", branchId: null, warehouseId: null },
+      { role: "manager", branchId: null, warehouseId: null },
+      { role: "accountant", branchId: bill.branch_id, warehouseId: bill.warehouse_id },
+    ]
+
+    for (const recipient of roleRecipients) {
+      // Skip accountant role ping if the PO creator (already pinged above)
+      // is an accountant in the same branch — they'd get two rows otherwise.
+      // We can't easily check role here without an extra query; rely on the
+      // create_notification dedup safety net (event_key is unique per role).
       await this.createNotification(actor, {
         referenceType: "bill",
         referenceId: bill.id,
         title,
         message,
-        branchId: bill.branch_id,
-        warehouseId: bill.warehouse_id,
-        costCenterId: bill.cost_center_id,
-        assignedToRole: role,
+        branchId: recipient.branchId,
+        warehouseId: recipient.warehouseId,
+        costCenterId: null,
+        assignedToRole: recipient.role,
         priority: "high",
         eventKey: buildNotificationEventKey(
           "procurement",
@@ -277,7 +310,7 @@ export class BillReceiptNotificationService {
           bill.id,
           "warehouse_receipt_rejected",
           "role",
-          role,
+          recipient.role,
           cycle
         ),
         severity: "error",
@@ -295,12 +328,22 @@ export class BillReceiptNotificationService {
     const cycle = eventCycle(cycleKey)
     const title = "تم رفض فاتورة المشتريات"
     const message = `تم رفض فاتورة المشتريات رقم ${bill.bill_number || bill.id}. السبب: ${rejectionReason}`
-    const creatorUserId = bill.created_by_user_id || bill.created_by || null
 
-    // v3.74.136 — skip the creator notification when the rejecter IS the
-    // creator. In the auto-created-from-PO flow, created_by_user_id was the
-    // owner (the user who approved the PO), so this used to fire a useless
-    // 'you rejected your own bill' ping back at the owner.
+    // v3.74.138 — Per spec, Step 6 (bill edit rejected) notifies the PO
+    // creator only. Use the ACTUAL PO creator (purchasing_officer or
+    // accountant who raised the PO), not the bill's created_by_user_id
+    // (which is the owner who approved the PO when the bill was auto-
+    // created). The earlier "accountant role" ping is now ALSO sent only
+    // through the user-level ping if the PO creator is an accountant.
+    let creatorUserId: string | null = null
+    if (bill.purchase_order_id) {
+      const info = await this.loadPurchaseOrderInfo(bill.purchase_order_id)
+      creatorUserId = info?.createdByUserId || null
+    }
+    if (!creatorUserId) {
+      creatorUserId = bill.created_by_user_id || bill.created_by || null
+    }
+
     if (creatorUserId && creatorUserId !== actor.actorId) {
       await this.createNotification(actor, {
         referenceType: "bill",
@@ -309,7 +352,7 @@ export class BillReceiptNotificationService {
         message,
         branchId: bill.branch_id,
         warehouseId: bill.warehouse_id,
-        costCenterId: bill.cost_center_id,
+        costCenterId: null,
         assignedToUser: creatorUserId,
         priority: "high",
         eventKey: buildNotificationEventKey(
@@ -326,34 +369,11 @@ export class BillReceiptNotificationService {
       })
     }
 
-    // v3.74.136 — DROP the cost-center filter on the accountant role
-    // notification. Bills inherit cost_center from PO branch, but the
-    // accountant role membership uses their own cost_center; the two
-    // commonly differ and the cost_center filter then silently hid the
-    // rejection notification from the very person who needed to fix it.
-    // Branch + warehouse scope is enough governance for who sees the row.
-    await this.createNotification(actor, {
-      referenceType: "bill",
-      referenceId: bill.id,
-      title,
-      message,
-      branchId: bill.branch_id,
-      warehouseId: bill.warehouse_id,
-      costCenterId: null,
-      assignedToRole: "accountant",
-      priority: "high",
-      eventKey: buildNotificationEventKey(
-        "procurement",
-        "bill",
-        bill.id,
-        "admin_rejected",
-        "role",
-        "accountant",
-        cycle
-      ),
-      severity: "error",
-      category: "approvals",
-    })
+    // v3.74.138 — Removed the role-level accountant notification. Spec
+    // says "creator only" on edit rejection. If the PO creator is the
+    // accountant, the user-level ping above already reaches them. The
+    // restart-of-cycle (re-opening the bill for edit) happens through the
+    // bill detail screen the creator opens from their inbox.
   }
 
   async notifyApprovalRestartAfterReceiptRejection(
@@ -411,40 +431,102 @@ export class BillReceiptNotificationService {
     cycleKey: string | null,
     appLang: "ar" | "en" = "ar"
   ) {
-    if (!bill.purchase_order_id) return
-
-    const purchaseOrderInfo = await this.loadPurchaseOrderInfo(bill.purchase_order_id)
-    if (!purchaseOrderInfo?.createdByUserId) return
-
     const cycle = eventCycle(cycleKey)
-    await this.createNotification(actor, {
-      referenceType: "bill",
-      referenceId: bill.id,
-      title:
-        appLang === "en"
-          ? `Purchase Bill #${bill.bill_number || bill.id} Approved`
-          : `تم اعتماد فاتورة الشراء #${bill.bill_number || bill.id}`,
-      message:
-        appLang === "en"
-          ? `Your purchase bill #${bill.bill_number || bill.id} linked to PO #${purchaseOrderInfo.poNumber || bill.purchase_order_id} has been approved by management and is ready for inventory receipt.`
-          : `تم اعتماد فاتورة الشراء رقم ${bill.bill_number || bill.id} المرتبطة بأمر الشراء ${purchaseOrderInfo.poNumber || bill.purchase_order_id} من قبل الإدارة وأصبحت جاهزة لاستلام المخزون.`,
-      branchId: bill.branch_id,
-      warehouseId: bill.warehouse_id,
-      costCenterId: bill.cost_center_id,
-      assignedToUser: purchaseOrderInfo.createdByUserId,
-      priority: "normal",
-      eventKey: buildNotificationEventKey(
-        "procurement",
-        "bill",
-        bill.id,
-        "admin_approved_po_creator_notified",
-        "user",
-        purchaseOrderInfo.createdByUserId,
-        cycle
-      ),
-      severity: "info",
-      category: "approvals",
-    })
+    const title =
+      appLang === "en"
+        ? `Purchase Bill #${bill.bill_number || bill.id} Approved`
+        : `تم اعتماد فاتورة الشراء #${bill.bill_number || bill.id}`
+
+    // Notify the actual PO creator (purchasing_officer or accountant).
+    // We also need to determine if they are the branch accountant, so the
+    // role-level accountant ping below can dedup against them.
+    let poCreatorId: string | null = null
+    let poNumber: string | null = null
+    let poCreatorRole: string | null = null
+    if (bill.purchase_order_id) {
+      const purchaseOrderInfo = await this.loadPurchaseOrderInfo(bill.purchase_order_id)
+      poCreatorId = purchaseOrderInfo?.createdByUserId || null
+      poNumber = purchaseOrderInfo?.poNumber || null
+
+      if (poCreatorId) {
+        try {
+          const { data: creatorMember } = await this.supabase
+            .from("company_members")
+            .select("role")
+            .eq("company_id", actor.companyId)
+            .eq("user_id", poCreatorId)
+            .maybeSingle()
+          poCreatorRole = (creatorMember?.role as string | null) || null
+        } catch (e) {
+          poCreatorRole = null
+        }
+      }
+    }
+
+    const messageForUser =
+      appLang === "en"
+        ? `Your purchase bill #${bill.bill_number || bill.id} linked to PO #${poNumber || bill.purchase_order_id} has been approved by management and is ready for inventory receipt.`
+        : `تم اعتماد فاتورة الشراء رقم ${bill.bill_number || bill.id} المرتبطة بأمر الشراء ${poNumber || bill.purchase_order_id} من قبل الإدارة وأصبحت جاهزة لاستلام المخزون.`
+
+    const messageForAccountant =
+      appLang === "en"
+        ? `Purchase bill #${bill.bill_number || bill.id} for PO #${poNumber || bill.purchase_order_id || ""} has been approved by management and is ready for inventory receipt.`
+        : `تم اعتماد فاتورة الشراء رقم ${bill.bill_number || bill.id} ${poNumber ? `(أمر الشراء ${poNumber})` : ""} من قبل الإدارة وأصبحت جاهزة لإرسالها للاستلام في المخزن.`
+
+    // v3.74.138 — Spec for Step 2/5: notify PO creator + branch accountant.
+    // If the creator IS an accountant, suppress the role-level accountant
+    // ping (the creator already gets the user-level ping above).
+    if (poCreatorId && poCreatorId !== actor.actorId) {
+      await this.createNotification(actor, {
+        referenceType: "bill",
+        referenceId: bill.id,
+        title,
+        message: messageForUser,
+        branchId: bill.branch_id,
+        warehouseId: bill.warehouse_id,
+        costCenterId: null,
+        assignedToUser: poCreatorId,
+        priority: "normal",
+        eventKey: buildNotificationEventKey(
+          "procurement",
+          "bill",
+          bill.id,
+          "admin_approved_po_creator_notified",
+          "user",
+          poCreatorId,
+          cycle
+        ),
+        severity: "info",
+        category: "approvals",
+      })
+    }
+
+    // Branch accountant role ping — skip if PO creator is themselves an
+    // accountant (the user-level ping above is enough).
+    if (poCreatorRole !== "accountant") {
+      await this.createNotification(actor, {
+        referenceType: "bill",
+        referenceId: bill.id,
+        title,
+        message: messageForAccountant,
+        branchId: bill.branch_id,
+        warehouseId: bill.warehouse_id,
+        costCenterId: null,
+        assignedToRole: "accountant",
+        priority: "normal",
+        eventKey: buildNotificationEventKey(
+          "procurement",
+          "bill",
+          bill.id,
+          "admin_approved_accountant_notified",
+          "role",
+          "accountant",
+          cycle
+        ),
+        severity: "info",
+        category: "approvals",
+      })
+    }
   }
 
   async notifyReceiptConfirmed(
