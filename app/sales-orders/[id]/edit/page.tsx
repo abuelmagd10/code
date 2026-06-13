@@ -484,6 +484,38 @@ export default function EditSalesOrderPage() {
       return
     }
 
+    // v3.74.140 — Mandatory items + per-row check. The edit page writes
+    // directly to Supabase (no API gateway), and previously any empty /
+    // placeholder rows were dropped silently in the insert. Surface a
+    // clear error like the new sales-order form does.
+    if (!soItems || soItems.length === 0) {
+      toast({
+        title: appLang === 'en' ? 'Save' : 'حفظ',
+        description: appLang === 'en' ? 'Please add at least one item.' : 'لا يمكن حفظ أمر البيع بدون بنود. الرجاء إضافة منتج واحد على الأقل.',
+        variant: 'destructive',
+      })
+      return
+    }
+    const invalidSoEditRows: number[] = []
+    soItems.forEach((item: any, idx: number) => {
+      const hasProduct = Boolean(item?.product_id)
+      const qty = Number(item?.quantity) || 0
+      const price = Number(item?.unit_price) || 0
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidSoEditRows.push(idx + 1)
+      }
+    })
+    if (invalidSoEditRows.length > 0) {
+      toast({
+        title: appLang === 'en' ? 'Save' : 'حفظ',
+        description: appLang === 'en'
+          ? `Please complete the line item(s) at row ${invalidSoEditRows.join(', ')}.`
+          : `بنود ناقصة فى السطر/السطور: ${invalidSoEditRows.join('، ')}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`,
+        variant: 'destructive',
+      })
+      return
+    }
+
     // 🔐 Stock Validation (Frontend)
     const outOfStockItem = soItems.find(item => {
       if (!item.product_id || item.item_type === 'service') return false;

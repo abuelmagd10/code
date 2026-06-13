@@ -127,6 +127,40 @@ export async function POST(req: NextRequest) {
     const invoiceItems = invoiceData.items || []
     delete invoiceData.items
 
+    // v3.74.140 — Mandatory line-items guard. Mirrors the PO fix in
+    // v3.74.139. Without this, POST /api/invoices with items:[] (or rows
+    // missing product_id / non-positive quantity) was reaching the
+    // GL-writing RPC and the DB would happily create an invoice with no
+    // line items and a zero-amount accounting entry. This is the most
+    // sensitive write path in the system because it both touches AR and
+    // posts to the general ledger; protecting it at the API layer ensures
+    // no non-UI caller (mobile, scripts, third-party) can bypass the
+    // browser-side checks in /invoices/new.
+    if (!Array.isArray(invoiceItems) || invoiceItems.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: "Cannot create an invoice without line items.",
+        error_ar: "لا يمكن إنشاء فاتورة بدون بنود. الرجاء إضافة منتج واحد على الأقل.",
+      }, { status: 422 })
+    }
+    const invalidInvoiceRows: number[] = []
+    invoiceItems.forEach((item: any, idx: number) => {
+      const hasProduct = Boolean(item?.product_id)
+      const qty = Number(item?.quantity) || 0
+      const price = Number(item?.unit_price) || 0
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidInvoiceRows.push(idx + 1)
+      }
+    })
+    if (invalidInvoiceRows.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Invoice has incomplete line items at row(s): ${invalidInvoiceRows.join(", ")}. Each row must have a product, a positive quantity and a unit price.`,
+        error_ar: `الفاتورة تحتوى على بنود ناقصة فى السطر/السطور: ${invalidInvoiceRows.join("، ")}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`,
+        invalid_rows: invalidInvoiceRows,
+      }, { status: 422 })
+    }
+
     // 2.5️⃣ Defensive bundle-completeness guard (Req 2 / Phase B.4.5)
     //   Refuses an invoice that omits mandatory bundle children for any product
     //   the caller included. This protects the pipeline against non-UI callers

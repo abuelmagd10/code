@@ -407,6 +407,32 @@ export default function EstimatesPage() {
       sonnerToast.error("رقم العرض مطلوب");
       return;
     }
+
+    // v3.74.140 — Mandatory items check. Same fix pattern as PO (v3.74.139)
+    // and Invoices / Sales Orders below. Without this an estimate could
+    // be saved with no products at all, or with placeholder rows that
+    // had product_id=null and quantity=0. Estimates feed directly into
+    // sales orders via convertToSO, so junk lines here propagate forward.
+    if (!items || items.length === 0) {
+      sonnerToast.error("لا يمكن حفظ العرض بدون بنود. الرجاء إضافة منتج واحد على الأقل.");
+      return;
+    }
+    const invalidEstimateRows: number[] = [];
+    items.forEach((it: any, idx: number) => {
+      const hasProduct = Boolean(it?.product_id);
+      const qty = Number(it?.quantity) || 0;
+      const price = Number(it?.unit_price) || 0;
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidEstimateRows.push(idx + 1);
+      }
+    });
+    if (invalidEstimateRows.length > 0) {
+      sonnerToast.error(
+        `بنود ناقصة فى السطر/السطور: ${invalidEstimateRows.join("، ")}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`
+      );
+      return;
+    }
+
     setLoading(true);
 
     // 🔐 Required for RLS: company_id must be in payload (can_modify_data check)

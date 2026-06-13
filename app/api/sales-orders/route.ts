@@ -175,6 +175,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // v3.74.140 — Mandatory line-items guard. Same fix as PO (v3.74.139)
+    // and Invoices (above). Without this, POST with items:[] silently
+    // created a sales-order header with no items, and rows with
+    // product_id=null / quantity=0 were inserted blindly.
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: "Cannot create a sales order without line items.",
+        error_ar: "لا يمكن إنشاء أمر بيع بدون بنود. الرجاء إضافة منتج واحد على الأقل.",
+      }, { status: 422 })
+    }
+    const invalidSoRows: number[] = []
+    body.items.forEach((item: any, idx: number) => {
+      const hasProduct = Boolean(item?.product_id)
+      const qty = Number(item?.quantity) || 0
+      const price = Number(item?.unit_price) || 0
+      if (!hasProduct || qty <= 0 || price < 0) {
+        invalidSoRows.push(idx + 1)
+      }
+    })
+    if (invalidSoRows.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Sales order has incomplete line items at row(s): ${invalidSoRows.join(", ")}.`,
+        error_ar: `أمر البيع يحتوى على بنود ناقصة فى السطر/السطور: ${invalidSoRows.join("، ")}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`,
+        invalid_rows: invalidSoRows,
+      }, { status: 422 })
+    }
+
     // 6c️⃣ التحقق من توفر المخزون (Stock Validation) — مع اسم المنتج في الخطأ
     if (body.items && Array.isArray(body.items) && body.items.length > 0) {
       const productItems = body.items.filter((i: any) => i.item_type !== 'service' && i.product_id);
