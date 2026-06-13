@@ -254,15 +254,23 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
             const { data: custData } = await supabase.from("customers").select("name").eq("id", pData.customer_id).maybeSingle()
             if (custData) pData.customer = custData
           }
-          // creator name
+          // v3.74.147 — creator name. The previous query joined a
+          // public.profiles table that doesn't exist in this schema, so
+          // the full_name was always null and the modal showed
+          // "غَير مُسَجَّل" / "Unknown user". Fall back to:
+          //   1) company_members.email (always present for invited members)
+          //   2) employees.full_name (when the member is linked to an HR
+          //      employee record)
           if (pData.created_by) {
             try {
               const { data: mem } = await supabase
                 .from("company_members")
-                .select("user_id, profile:profiles(full_name)")
+                .select("user_id, email, employee_id, employee:employees(full_name)")
                 .eq("user_id", pData.created_by)
                 .maybeSingle()
-              if ((mem as any)?.profile?.full_name) pData.creator_name = (mem as any).profile.full_name
+              const empName = (mem as any)?.employee?.full_name as string | undefined
+              const email = (mem as any)?.email as string | undefined
+              pData.creator_name = empName || email || null
             } catch { }
           }
           // For VOID rows, fetch the original payment so we can label "Correction of ..."
@@ -307,12 +315,19 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
           const userIds = [...new Set(logsData.map((l: any) => l.changed_by).filter(Boolean))]
           if (userIds.length > 0) {
             try {
+              // v3.74.147 — same fix as the creator-name lookup above:
+              // profiles table doesn't exist; use email + employees fallback.
               const { data: members } = await supabase
                 .from("company_members")
-                .select("user_id, profile:profiles(full_name)")
+                .select("user_id, email, employee_id, employee:employees(full_name)")
                 .in("user_id", userIds)
               const userMap = new Map()
-              members?.forEach((m: any) => { if (m.profile?.full_name) userMap.set(m.user_id, m.profile.full_name) })
+              members?.forEach((m: any) => {
+                const empName = m?.employee?.full_name as string | undefined
+                const email = m?.email as string | undefined
+                const label = empName || email || null
+                if (label) userMap.set(m.user_id, label)
+              })
               logsData.forEach((l: any) => { l.user_name = userMap.get(l.changed_by) || null })
             } catch { /* safe fail */ }
           }
