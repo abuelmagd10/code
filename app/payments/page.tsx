@@ -2864,13 +2864,20 @@ export default function PaymentsPage() {
                             </span>
                           ) : (
                             <>
-                              {!p.bill_id && permWrite && (
+                              {/* v3.74.146 — also treat allocation-linked
+                                  payments as "already on a bill" so the
+                                  Apply-to-Bill button hides for them too. */}
+                              {!p.bill_id && !allocBillByPayment[p.id] && permWrite && (
                                 <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                               )}
                               {(() => {
                                 // ✅ إخفاء زر "على أمر شراء" إذا كان هناك أمر شراء مرتبط (مباشر أو عبر الفاتورة)
+                                // v3.74.146 — also consider the bill_id
+                                // resolved from payment_allocations when
+                                // chaining through billToPoMap.
                                 const hasDirectPO = !!p.purchase_order_id
-                                const hasPOViaBill = !!(p.bill_id && billToPoMap[p.bill_id])
+                                const effectiveBillIdForPo = p.bill_id || allocBillByPayment[p.id] || null
+                                const hasPOViaBill = !!(effectiveBillIdForPo && billToPoMap[effectiveBillIdForPo])
                                 const hasAnyPO = hasDirectPO || hasPOViaBill
                                 return !hasAnyPO && permWrite && (
                                 <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
