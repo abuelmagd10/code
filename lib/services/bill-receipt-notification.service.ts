@@ -297,7 +297,11 @@ export class BillReceiptNotificationService {
     const message = `تم رفض فاتورة المشتريات رقم ${bill.bill_number || bill.id}. السبب: ${rejectionReason}`
     const creatorUserId = bill.created_by_user_id || bill.created_by || null
 
-    if (creatorUserId) {
+    // v3.74.136 — skip the creator notification when the rejecter IS the
+    // creator. In the auto-created-from-PO flow, created_by_user_id was the
+    // owner (the user who approved the PO), so this used to fire a useless
+    // 'you rejected your own bill' ping back at the owner.
+    if (creatorUserId && creatorUserId !== actor.actorId) {
       await this.createNotification(actor, {
         referenceType: "bill",
         referenceId: bill.id,
@@ -322,6 +326,12 @@ export class BillReceiptNotificationService {
       })
     }
 
+    // v3.74.136 — DROP the cost-center filter on the accountant role
+    // notification. Bills inherit cost_center from PO branch, but the
+    // accountant role membership uses their own cost_center; the two
+    // commonly differ and the cost_center filter then silently hid the
+    // rejection notification from the very person who needed to fix it.
+    // Branch + warehouse scope is enough governance for who sees the row.
     await this.createNotification(actor, {
       referenceType: "bill",
       referenceId: bill.id,
@@ -329,7 +339,7 @@ export class BillReceiptNotificationService {
       message,
       branchId: bill.branch_id,
       warehouseId: bill.warehouse_id,
-      costCenterId: bill.cost_center_id,
+      costCenterId: null,
       assignedToRole: "accountant",
       priority: "high",
       eventKey: buildNotificationEventKey(
