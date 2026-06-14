@@ -164,6 +164,25 @@ export async function POST(
       }, { status: 500 })
     }
 
+    // v3.74.152 — the UPDATE above fires audit_payment_changes() which
+    // does `v_changed_by := auth.uid()`. Service client has no JWT, so
+    // auth.uid() is NULL and the audit row lands with changed_by=null,
+    // showing "مُستَخدِم غَير مُحَدَّد" in the modal. Patch the row we
+    // just produced (status went from rejected → pending_approval, so
+    // the trigger labelled it APPROVE_STAGE) and attribute it to the
+    // user who actually clicked "تَعديل وإِعادَة الإِرسال".
+    try {
+      const sinceIso = new Date(Date.now() - 5 * 1000).toISOString()
+      await serviceClient
+        .from("payment_audit_logs")
+        .update({ changed_by: user.id })
+        .eq("payment_id", id)
+        .eq("company_id", companyId)
+        .eq("action", "APPROVE_STAGE")
+        .is("changed_by", null)
+        .gte("created_at", sinceIso)
+    } catch { /* non-fatal */ }
+
     try {
       await serviceClient.from("audit_logs").insert({
         company_id: companyId,
