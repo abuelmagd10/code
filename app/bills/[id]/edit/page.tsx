@@ -566,6 +566,17 @@ export default function EditBillPage() {
       const { data: { user: editorUser } } = await supabase.auth.getUser()
       const editorUserId = editorUser?.id || null
 
+      // v3.74.154 — keep the display_/original_ snapshot columns in sync
+      // with the canonical totals. The bill list page (/bills) reads
+      // display_total when display_currency matches the app's currency,
+      // so leaving them stale after an edit shows the wrong amount on
+      // every screen that reads them (bills list, supplier ledger
+      // mismatch, etc.). For base-currency bills (rate=1) they mirror
+      // total_amount/subtotal 1:1; for FX bills we keep the original
+      // values stable and only refresh the base-currency derivatives.
+      const updatedTotalForFx = Number(totals.total) || 0
+      const updatedSubtotalForFx = Number(totals.subtotal) || 0
+
       const { error: billErr } = await supabase
         .from("bills")
         .update({
@@ -575,6 +586,11 @@ export default function EditBillPage() {
           subtotal: totals.subtotal,
           tax_amount: totals.tax,
           total_amount: totals.total,
+          // v3.74.154 — sync the display/original copies.
+          display_total: updatedTotalForFx,
+          display_subtotal: updatedSubtotalForFx,
+          original_total: updatedTotalForFx,
+          original_subtotal: updatedSubtotalForFx,
           discount_type: discountType,
           discount_value: discountValue,
           discount_position: discountPosition,
