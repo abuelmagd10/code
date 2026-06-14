@@ -272,6 +272,21 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
               const email = (mem as any)?.email as string | undefined
               pData.creator_name = empName || email || null
             } catch { }
+            // v3.74.151 — auth.users.email fallback for legacy rows
+            // where company_members.email is null (e.g. the owner row).
+            if (!pData.creator_name) {
+              try {
+                const res = await fetch("/api/users/display-names", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ userIds: [pData.created_by] }),
+                })
+                if (res.ok) {
+                  const j = await res.json()
+                  pData.creator_name = (j?.names || {})[pData.created_by] || null
+                }
+              } catch { }
+            }
           }
           // For VOID rows, fetch the original payment so we can label "Correction of ..."
           if (pData.voids_payment_id) {
@@ -312,24 +327,49 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
           .order("created_at", { ascending: false })
 
         if (logsData && logsData.length > 0) {
-          const userIds = [...new Set(logsData.map((l: any) => l.changed_by).filter(Boolean))]
+          const rawIds = logsData
+            .map((l: any) => l.changed_by)
+            .filter((v: any) => typeof v === "string" && v.length > 0) as string[]
+          const userIds: string[] = Array.from(new Set<string>(rawIds))
           if (userIds.length > 0) {
+            const userMap = new Map<string, string>()
             try {
-              // v3.74.147 — same fix as the creator-name lookup above:
-              // profiles table doesn't exist; use email + employees fallback.
+              // v3.74.151 — first try the public client/path (employees +
+              // company_members.email). Then for ids we still can't name
+              // (e.g. legacy owner rows where company_members.email is null)
+              // fall back to /api/users/display-names which uses the service
+              // client to reach auth.users.email.
               const { data: members } = await supabase
                 .from("company_members")
                 .select("user_id, email, employee_id, employee:employees(full_name)")
                 .in("user_id", userIds)
-              const userMap = new Map()
               members?.forEach((m: any) => {
                 const empName = m?.employee?.full_name as string | undefined
                 const email = m?.email as string | undefined
                 const label = empName || email || null
                 if (label) userMap.set(m.user_id, label)
               })
-              logsData.forEach((l: any) => { l.user_name = userMap.get(l.changed_by) || null })
             } catch { /* safe fail */ }
+
+            const missing = userIds.filter((id) => !userMap.has(id))
+            if (missing.length > 0) {
+              try {
+                const res = await fetch("/api/users/display-names", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ userIds: missing }),
+                })
+                if (res.ok) {
+                  const j = await res.json()
+                  const names = (j?.names || {}) as Record<string, string>
+                  for (const id of Object.keys(names)) {
+                    if (!userMap.has(id) && names[id]) userMap.set(id, names[id])
+                  }
+                }
+              } catch { /* safe fail */ }
+            }
+
+            logsData.forEach((l: any) => { l.user_name = userMap.get(l.changed_by) || null })
           }
         }
         setAuditLogs(logsData || [])
