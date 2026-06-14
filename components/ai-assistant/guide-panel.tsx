@@ -141,6 +141,10 @@ const L = {
     severityCritical: "عاجِل",
     severityWarning: "تحذير",
     severityInfo: "للعِلم",
+    // v3.74.157 — sample list inside the alert card
+    proactiveDueLabel: "الاستحقاق",
+    proactiveOutstandingLabel: "المتبقّى",
+    proactiveMoreSuffix: " وأكثر",
   },
   en: {
     panelTitle: "Your smart assistant",
@@ -205,6 +209,10 @@ const L = {
     severityCritical: "Urgent",
     severityWarning: "Warning",
     severityInfo: "FYI",
+    // v3.74.157 — sample list inside the alert card
+    proactiveDueLabel: "Due",
+    proactiveOutstandingLabel: "Outstanding",
+    proactiveMoreSuffix: " and more",
   },
 }
 
@@ -1578,6 +1586,57 @@ function ProactiveAlertCard({
       <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200">
         {alert.message}
       </p>
+
+      {/* v3.74.157 — render up to 5 sample items from metadata.samples
+          so the user can see which invoices/bills are overdue without
+          having to open the page. */}
+      {(() => {
+        const samples = Array.isArray((alert.metadata as any)?.samples)
+          ? ((alert.metadata as any).samples as Array<{
+              number?: string | null
+              party?: string | null
+              due_date?: string | null
+              outstanding?: number | null
+            }>)
+          : []
+        if (samples.length === 0) return null
+        const fmtAmount = (n: number | null | undefined) =>
+          n == null ? "" : Number(n).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        const remaining = alert.count - samples.length
+        return (
+          <ul className="mt-2 space-y-1.5 border-t border-current/10 pt-2 text-xs text-gray-700 dark:text-gray-300">
+            {samples.map((s, idx) => (
+              <li
+                key={(s.number || "") + ":" + idx}
+                className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+              >
+                <span className="font-semibold">{s.number || "—"}</span>
+                {s.party && (
+                  <span className="text-gray-500 dark:text-gray-400">· {s.party}</span>
+                )}
+                {s.due_date && (
+                  <span className="text-gray-500 dark:text-gray-400">
+                    · {labels.proactiveDueLabel} {s.due_date}
+                  </span>
+                )}
+                {typeof s.outstanding === "number" && (
+                  <span className="ms-auto font-semibold">
+                    {labels.proactiveOutstandingLabel} {fmtAmount(s.outstanding)}
+                  </span>
+                )}
+              </li>
+            ))}
+            {remaining > 0 && (
+              <li className="text-[11px] text-gray-500 dark:text-gray-400">
+                +{remaining}{labels.proactiveMoreSuffix}
+              </li>
+            )}
+          </ul>
+        )
+      })()}
 
       {alert.actionUrl && (
         <div className="mt-2.5 flex justify-end">
