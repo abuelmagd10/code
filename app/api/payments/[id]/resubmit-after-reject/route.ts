@@ -1,22 +1,20 @@
 /**
  * v3.74.144 — resubmit a rejected vendor payment after editing it.
+ * v3.74.148 — switched initial SELECT to service client.
+ * v3.74.149 — diagnostic logging + extra debug payload to chase a 404.
  *
  * Workflow:
  *   1) Accountant records a supplier payment → status='pending_approval'
  *   2) Owner/manager rejects → status='rejected'
- *   3) Accountant clicks "Request correction" on the rejected row.
- *      Since the payment never posted accounting (it was rejected before
- *      approval), we do NOT need the full vendor_payment_correction_requests
- *      workflow. We just let the editor change the fields, reset status
- *      back to 'pending_approval', and ping owner+manager again with a
- *      "modified-after-reject" message.
+ *   3) Accountant clicks "تَعديل وإِعادَة الإِرسال" → this endpoint patches
+ *      whitelisted fields, flips status back to 'pending_approval', and
+ *      notifies owner+manager again with a "modified-after-reject" title.
  *
  * The full correction workflow (with its own request row + approval +
  * execution) is reserved for already-APPROVED payments — those touched
  * accounting and need a documented reversal trail.
  *
  * Permissions: only the original creator OR owner/manager can resubmit.
- * Branch governance: enforced by the existing RLS on payments.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
@@ -28,17 +26,22 @@ export async function POST(
 ) {
   try {
     const { id } = await params
+    console.log("[RESUBMIT_V149] start id=", id)
     const supabase = await createClient()
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
+      console.log("[RESUBMIT_V149] auth fail", { authError: authError?.message, hasUser: !!user })
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    console.log("[RESUBMIT_V149] user=", user.id)
 
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) {
+      console.log("[RESUBMIT_V149] no company")
       return NextResponse.json({ error: "Company context missing" }, { status: 400 })
     }
+    console.log("[RESUBMIT_V149] companyId=", companyId)
 
     let body: {
       reason?: string
@@ -61,26 +64,33 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // 1) Load the payment and confirm it's a rejected vendor payment.
-    //    v3.74.148 — use service client for this initial SELECT. Some
-    //    deployments have RLS on payments that hides rejected rows from
-    //    branch-scoped accountant roles, which made every call here
-    //    fall through to a misleading 404 "الدَّفعَة غَير مَوجودَة"
-    //    even when the caller was the original creator. Authorization
-    //    is enforced explicitly below (creator OR owner/manager) and
-    //    we still filter by company_id to keep tenant isolation.
-    const serviceClient = createServiceClient()
+    let serviceClient: ReturnType<typeof createServiceClient>
+    try {
+      serviceClient = createServiceClient()
+      console.log("[RESUBMIT_V149] service client ready")
+    } catch (e: any) {
+      console.error("[RESUBMIT_V149] service client failed:", e?.message)
+      return NextResponse.json({ error: "خَطَأ فى إِعداد الخادِم", detail: e?.message }, { status: 500 })
+    }
+
     const { data: pay, error: payErr } = await serviceClient
       .from("payments")
       .select("id, status, amount, supplier_id, branch_id, created_by, suppliers(name)")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
+    console.log("[RESUBMIT_V149] select result:", {
+      hasPay: !!pay,
+      payId: (pay as any)?.id,
+      payStatus: (pay as any)?.status,
+      payErr: payErr?.message,
+    })
 
     if (payErr || !pay) {
       return NextResponse.json({
         success: false,
         error: "الدَّفعَة غَير مَوجودَة",
+        debug: { payErr: payErr?.message, id, companyId },
       }, { status: 404 })
     }
 
@@ -98,9 +108,6 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // 2) Permission check: creator OR owner/manager
-    //    Also via service client because company_members visibility is
-    //    governed by the same RLS family.
     const { data: member } = await serviceClient
       .from("company_members")
       .select("role")
@@ -117,24 +124,22 @@ export async function POST(
       }, { status: 403 })
     }
 
-    // 3) Build the patch (only whitelisted fields). amount is the signed
-    //    value as stored — for vendor payments it's negative.
     const patch: Record<string, any> = {
       status: "pending_approval",
       rejection_reason: null,
-      // v3.74.144 — re-open the cycle. Approval timestamps already null.
     }
     const changes = body?.changes || {}
     const newAmount = Number((changes as any).amount)
     if (Number.isFinite(newAmount) && newAmount > 0) {
-      // Vendor payments store amount as negative
-      patch.amount = -Math.abs(newAmount)
+      // For this schema vendor payments are stored as a positive number
+      // (we observed 3.00, not -3.00, in production), so we don't flip the
+      // sign here. If a future migration changes this, adjust at one place.
+      patch.amount = Math.abs(newAmount)
     }
     if ((changes as any).payment_date) patch.payment_date = String((changes as any).payment_date)
     if ((changes as any).account_id) patch.account_id = String((changes as any).account_id)
     if ((changes as any).payment_method) patch.payment_method = String((changes as any).payment_method)
     if ((changes as any).reference_number !== undefined) patch.reference_number = String((changes as any).reference_number || "")
-    // Append the reason to notes so it stays as an audit trail on the row
     const editStamp = `[تعديل بعد رفض — ${new Date().toISOString().slice(0, 10)}] ${reason}`
     if ((changes as any).notes !== undefined) {
       const newNotes = String((changes as any).notes || "").trim()
@@ -143,21 +148,19 @@ export async function POST(
       patch.notes = editStamp
     }
 
-    // 4) Apply the update via service client to bypass row-level locks that
-    //    block updates on rejected rows. (Same client created at step 1.)
     const { error: updErr } = await serviceClient
       .from("payments")
       .update(patch)
       .eq("id", id)
       .eq("company_id", companyId)
     if (updErr) {
+      console.error("[RESUBMIT_V149] update failed:", updErr.message)
       return NextResponse.json({
         success: false,
         error: updErr.message || "فَشِل تَعديل الدَّفعَة",
       }, { status: 500 })
     }
 
-    // 5) Audit log
     try {
       await serviceClient.from("audit_logs").insert({
         company_id: companyId,
@@ -169,8 +172,6 @@ export async function POST(
       })
     } catch { }
 
-    // 6) Notify owner + manager. Use abs(amount) so the message reads
-    //    "بقيمَة 3" not "بقيمَة -3" or "بقيمَة 0" (v3.74.143 bug context).
     try {
       const finalAmount = Math.abs(Number(patch.amount ?? (pay as any).amount ?? 0))
       const supplierName = (pay as any)?.suppliers?.name || ""
@@ -197,7 +198,7 @@ export async function POST(
         })
       }
     } catch (notifErr: any) {
-      console.warn("[RESUBMIT_AFTER_REJECT_NOTIFY] failed:", notifErr?.message || notifErr)
+      console.warn("[RESUBMIT_V149] notify failed:", notifErr?.message || notifErr)
     }
 
     return NextResponse.json({
@@ -205,7 +206,7 @@ export async function POST(
       message: "تَمَّ تَعديل الدَّفعَة وإِعادَة إِرسالها للاعتماد",
     })
   } catch (error: any) {
-    console.error("[RESUBMIT_AFTER_REJECT]", error)
+    console.error("[RESUBMIT_V149] uncaught:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
