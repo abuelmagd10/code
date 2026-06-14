@@ -20,7 +20,8 @@
 
 "use client"
 
-import { useEffect, useState, useTransition, useCallback, useRef } from "react"
+import { useEffect, useState, useTransition, useCallback, useRef, useMemo } from "react"
+import { FilterContainer } from "@/components/ui/filter-container"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -208,6 +209,19 @@ export default function PaymentsPage() {
   const [billBranchMap, setBillBranchMap] = useState<Record<string, string>>({}) // Map bill_id -> branch_id
   // 🔐 حفظ سياق الفلترة للاستخدام في useEffect لاحقاً
   const [pendingBranchFilter, setPendingBranchFilter] = useState<{ userBranchId: string | null; isPrivileged: boolean } | null>(null)
+
+  // ─── v3.74.160 — unified filter state (mirrors the pattern used on
+  // /invoices, /bills, /customers, /sales-orders). Customer payments and
+  // supplier payments each get their own filter set since the user works
+  // in one section at a time.
+  const [cpSearch, setCpSearch] = useState<string>("")
+  const [cpStatus, setCpStatus] = useState<string[]>([])
+  const [cpDateFrom, setCpDateFrom] = useState<string>("")
+  const [cpDateTo, setCpDateTo] = useState<string>("")
+  const [spSearch, setSpSearch] = useState<string>("")
+  const [spStatus, setSpStatus] = useState<string[]>([])
+  const [spDateFrom, setSpDateFrom] = useState<string>("")
+  const [spDateTo, setSpDateTo] = useState<string>("")
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -1870,6 +1884,152 @@ export default function PaymentsPage() {
     return false;
   };
 
+  // ─── v3.74.160 — filtered customer + supplier payments ─────────────
+  // Mirrors the filter pattern used on /invoices, /bills, /sales-orders.
+  // Search hits payment number, reference number, customer/supplier name
+  // and notes; status uses the same vocabulary the table renders; the
+  // date range uses payment_date (the operator-facing date).
+  const applyPaymentFilters = (
+    rows: Payment[],
+    search: string,
+    status: string[],
+    from: string,
+    to: string,
+    nameFor: (p: Payment) => string,
+  ) => {
+    const q = search.trim().toLowerCase()
+    return rows.filter((p) => {
+      if (status.length > 0 && !status.includes(String((p as any).status || ""))) return false
+      if (from && p.payment_date && p.payment_date < from) return false
+      if (to && p.payment_date && p.payment_date > to) return false
+      if (q) {
+        const hay = [
+          (p as any).payment_number,
+          p.reference_number,
+          p.notes,
+          nameFor(p),
+        ].filter(Boolean).join(" ").toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }
+  const filteredCustomerPayments = useMemo(
+    () => applyPaymentFilters(
+      customerPayments, cpSearch, cpStatus, cpDateFrom, cpDateTo,
+      (p) => String(customers.find((c) => c.id === (p as any).customer_id)?.name || ""),
+    ),
+    [customerPayments, cpSearch, cpStatus, cpDateFrom, cpDateTo, customers],
+  )
+  const filteredSupplierPayments = useMemo(
+    () => applyPaymentFilters(
+      supplierPayments, spSearch, spStatus, spDateFrom, spDateTo,
+      (p) => String(suppliers.find((s) => s.id === (p as any).supplier_id)?.name || ""),
+    ),
+    [supplierPayments, spSearch, spStatus, spDateFrom, spDateTo, suppliers],
+  )
+  const cpActive = (cpSearch ? 1 : 0) + (cpStatus.length > 0 ? 1 : 0) + (cpDateFrom ? 1 : 0) + (cpDateTo ? 1 : 0)
+  const spActive = (spSearch ? 1 : 0) + (spStatus.length > 0 ? 1 : 0) + (spDateFrom ? 1 : 0) + (spDateTo ? 1 : 0)
+  const clearCpFilters = () => { setCpSearch(""); setCpStatus([]); setCpDateFrom(""); setCpDateTo("") }
+  const clearSpFilters = () => { setSpSearch(""); setSpStatus([]); setSpDateFrom(""); setSpDateTo("") }
+
+  const statusOptionsAr: Record<string, string> = {
+    approved: "مُعتَمَدَة",
+    pending_approval: "بانتظار الاعتماد",
+    rejected: "مَرفوضَة",
+    voided: "مُلغاة بتَصحيح",
+    cancelled: "مَلغية",
+  }
+  const statusOptionsEn: Record<string, string> = {
+    approved: "Approved",
+    pending_approval: "Pending approval",
+    rejected: "Rejected",
+    voided: "Voided",
+    cancelled: "Cancelled",
+  }
+
+  // Small render helper for the filter panel so the two sections stay
+  // identical except for which state they bind to.
+  const renderPaymentFilters = (params: {
+    search: string; setSearch: (v: string) => void
+    status: string[]; setStatus: (v: string[]) => void
+    dateFrom: string; setDateFrom: (v: string) => void
+    dateTo: string; setDateTo: (v: string) => void
+    active: number; onClear: () => void
+    searchPlaceholder: string
+  }) => {
+    const statusMap = appLang === 'en' ? statusOptionsEn : statusOptionsAr
+    const toggleStatus = (val: string) => {
+      params.setStatus(params.status.includes(val)
+        ? params.status.filter((s) => s !== val)
+        : [...params.status, val])
+    }
+    return (
+      <FilterContainer
+        title={appLang === 'en' ? 'Filters' : 'الفلاتر'}
+        activeCount={params.active}
+        onClear={params.onClear}
+        defaultOpen={false}
+      >
+        <div className="space-y-4">
+          <Input
+            type="text"
+            placeholder={params.searchPlaceholder}
+            value={params.search}
+            onChange={(e) => params.setSearch(e.target.value)}
+            className="dark:bg-slate-800 dark:border-slate-700"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+                {appLang === 'en' ? 'Status' : 'الحالة'}
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.keys(statusMap).map((val) => {
+                  const selected = params.status.includes(val)
+                  return (
+                    <Button
+                      key={val}
+                      type="button"
+                      variant={selected ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 text-xs px-2"
+                      onClick={() => toggleStatus(val)}
+                    >
+                      {statusMap[val]}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+                {appLang === 'en' ? 'From date' : 'من تاريخ'}
+              </label>
+              <Input
+                type="date"
+                value={params.dateFrom}
+                onChange={(e) => params.setDateFrom(e.target.value)}
+                className="dark:bg-slate-800 dark:border-slate-700"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+                {appLang === 'en' ? 'To date' : 'إلى تاريخ'}
+              </label>
+              <Input
+                type="date"
+                value={params.dateTo}
+                onChange={(e) => params.setDateTo(e.target.value)}
+                className="dark:bg-slate-800 dark:border-slate-700"
+              />
+            </div>
+          </div>
+        </div>
+      </FilterContainer>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -1911,6 +2071,19 @@ export default function PaymentsPage() {
             />
           </CardContent>
         </Card>
+
+        {/* v3.74.160 — unified filter bar above the Customer Payments
+            table, mirroring the pattern on /invoices, /bills, /customers. */}
+        {renderPaymentFilters({
+          search: cpSearch, setSearch: setCpSearch,
+          status: cpStatus, setStatus: setCpStatus,
+          dateFrom: cpDateFrom, setDateFrom: setCpDateFrom,
+          dateTo: cpDateTo, setDateTo: setCpDateTo,
+          active: cpActive, onClear: clearCpFilters,
+          searchPlaceholder: appLang === 'en'
+            ? 'Search by payment #, reference, customer name, notes...'
+            : 'بحث برَقم الدَّفعَة، المَرجع، اسم العَميل، المُلاحَظات...',
+        })}
 
         <Card>
           <CardContent className="pt-6 space-y-6">
@@ -2124,7 +2297,7 @@ export default function PaymentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {customerPayments.map((p) => (
+                  {filteredCustomerPayments.map((p) => (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
                       <td className="px-2 py-2">
@@ -2377,6 +2550,18 @@ export default function PaymentsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* v3.74.160 — same unified filter bar above Supplier Payments. */}
+        {renderPaymentFilters({
+          search: spSearch, setSearch: setSpSearch,
+          status: spStatus, setStatus: setSpStatus,
+          dateFrom: spDateFrom, setDateFrom: setSpDateFrom,
+          dateTo: spDateTo, setDateTo: setSpDateTo,
+          active: spActive, onClear: clearSpFilters,
+          searchPlaceholder: appLang === 'en'
+            ? 'Search by payment #, reference, supplier name, notes...'
+            : 'بحث برَقم الدَّفعَة، المَرجع، اسم المُورِّد، المُلاحَظات...',
+        })}
 
         <Card>
           <CardContent className="pt-6 space-y-6">
@@ -2681,7 +2866,7 @@ export default function PaymentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {supplierPayments.map((p) => {
+                  {filteredSupplierPayments.map((p) => {
                     const userRole = userContext?.role || ''
                     // ✅ Multi-Level Approval check
                     let canApprove = false;
