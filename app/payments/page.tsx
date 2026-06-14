@@ -22,6 +22,7 @@
 
 import { useEffect, useState, useTransition, useCallback, useRef, useMemo } from "react"
 import { FilterContainer } from "@/components/ui/filter-container"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -218,10 +219,16 @@ export default function PaymentsPage() {
   const [cpStatus, setCpStatus] = useState<string[]>([])
   const [cpDateFrom, setCpDateFrom] = useState<string>("")
   const [cpDateTo, setCpDateTo] = useState<string>("")
+  // v3.74.162 — searchable customer multi-select + "unlinked only" toggle
+  const [cpCustomerIds, setCpCustomerIds] = useState<string[]>([])
+  const [cpUnlinkedOnly, setCpUnlinkedOnly] = useState<boolean>(false)
   const [spSearch, setSpSearch] = useState<string>("")
   const [spStatus, setSpStatus] = useState<string[]>([])
   const [spDateFrom, setSpDateFrom] = useState<string>("")
   const [spDateTo, setSpDateTo] = useState<string>("")
+  // v3.74.162 — searchable supplier multi-select + "unlinked only" toggle
+  const [spSupplierIds, setSpSupplierIds] = useState<string[]>([])
+  const [spUnlinkedOnly, setSpUnlinkedOnly] = useState<boolean>(false)
   const [loading, setLoading] = useState(true)
 
   // Currency support - using CurrencyService
@@ -1872,12 +1879,19 @@ export default function PaymentsPage() {
     from: string,
     to: string,
     nameFor: (p: Payment) => string,
+    // v3.74.162 — party multi-select + unlinked filter
+    partyIds: string[],
+    partyIdFor: (p: Payment) => string,
+    unlinkedOnly: boolean,
+    isLinkedFor: (p: Payment) => boolean,
   ) => {
     const q = search.trim().toLowerCase()
     return rows.filter((p) => {
       if (status.length > 0 && !status.includes(String((p as any).status || ""))) return false
       if (from && p.payment_date && p.payment_date < from) return false
       if (to && p.payment_date && p.payment_date > to) return false
+      if (partyIds.length > 0 && !partyIds.includes(partyIdFor(p))) return false
+      if (unlinkedOnly && isLinkedFor(p)) return false
       if (q) {
         const hay = [
           (p as any).payment_number,
@@ -1894,15 +1908,25 @@ export default function PaymentsPage() {
     () => applyPaymentFilters(
       customerPayments, cpSearch, cpStatus, cpDateFrom, cpDateTo,
       (p) => String(customers.find((c) => c.id === (p as any).customer_id)?.name || ""),
+      cpCustomerIds,
+      (p) => String((p as any).customer_id || ""),
+      cpUnlinkedOnly,
+      // Customer payment is "linked" if it points to an invoice directly
+      (p) => Boolean((p as any).invoice_id),
     ),
-    [customerPayments, cpSearch, cpStatus, cpDateFrom, cpDateTo, customers],
+    [customerPayments, cpSearch, cpStatus, cpDateFrom, cpDateTo, customers, cpCustomerIds, cpUnlinkedOnly],
   )
   const filteredSupplierPayments = useMemo(
     () => applyPaymentFilters(
       supplierPayments, spSearch, spStatus, spDateFrom, spDateTo,
       (p) => String(suppliers.find((s) => s.id === (p as any).supplier_id)?.name || ""),
+      spSupplierIds,
+      (p) => String((p as any).supplier_id || ""),
+      spUnlinkedOnly,
+      // Supplier payment is "linked" if it points to a bill directly OR via payment_allocations
+      (p) => Boolean((p as any).bill_id) || Boolean(allocBillByPayment[p.id]),
     ),
-    [supplierPayments, spSearch, spStatus, spDateFrom, spDateTo, suppliers],
+    [supplierPayments, spSearch, spStatus, spDateFrom, spDateTo, suppliers, spSupplierIds, spUnlinkedOnly, allocBillByPayment],
   )
 
   if (loading) {
@@ -1930,9 +1954,11 @@ export default function PaymentsPage() {
 
   // ─── v3.74.160 — filter helpers (memos hoisted above early-return) ──
   const cpActive = (cpSearch ? 1 : 0) + (cpStatus.length > 0 ? 1 : 0) + (cpDateFrom ? 1 : 0) + (cpDateTo ? 1 : 0)
+    + (cpCustomerIds.length > 0 ? 1 : 0) + (cpUnlinkedOnly ? 1 : 0)
   const spActive = (spSearch ? 1 : 0) + (spStatus.length > 0 ? 1 : 0) + (spDateFrom ? 1 : 0) + (spDateTo ? 1 : 0)
-  const clearCpFilters = () => { setCpSearch(""); setCpStatus([]); setCpDateFrom(""); setCpDateTo("") }
-  const clearSpFilters = () => { setSpSearch(""); setSpStatus([]); setSpDateFrom(""); setSpDateTo("") }
+    + (spSupplierIds.length > 0 ? 1 : 0) + (spUnlinkedOnly ? 1 : 0)
+  const clearCpFilters = () => { setCpSearch(""); setCpStatus([]); setCpDateFrom(""); setCpDateTo(""); setCpCustomerIds([]); setCpUnlinkedOnly(false) }
+  const clearSpFilters = () => { setSpSearch(""); setSpStatus([]); setSpDateFrom(""); setSpDateTo(""); setSpSupplierIds([]); setSpUnlinkedOnly(false) }
 
   const statusOptionsAr: Record<string, string> = {
     approved: "مُعتَمَدَة",
@@ -1958,6 +1984,17 @@ export default function PaymentsPage() {
     dateTo: string; setDateTo: (v: string) => void
     active: number; onClear: () => void
     searchPlaceholder: string
+    // v3.74.162 — party multi-select + unlinked toggle
+    partyOptions: { value: string; label: string }[]
+    partyIds: string[]
+    setPartyIds: (ids: string[]) => void
+    partyLabel: string
+    partyPlaceholder: string
+    partySearchPlaceholder: string
+    partyEmptyMessage: string
+    unlinkedOnly: boolean
+    setUnlinkedOnly: (v: boolean) => void
+    unlinkedLabel: string
   }) => {
     const statusMap = appLang === 'en' ? statusOptionsEn : statusOptionsAr
     const toggleStatus = (val: string) => {
@@ -1980,6 +2017,36 @@ export default function PaymentsPage() {
             onChange={(e) => params.setSearch(e.target.value)}
             className="dark:bg-slate-800 dark:border-slate-700"
           />
+          {/* v3.74.162 — party multi-select (searchable dropdown, same
+              pattern as /invoices). Put on its own row above the
+              status/date grid so the long party label has room. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+                {params.partyLabel}
+              </label>
+              <MultiSelect
+                options={params.partyOptions}
+                selected={params.partyIds}
+                onChange={params.setPartyIds}
+                placeholder={params.partyPlaceholder}
+                searchPlaceholder={params.partySearchPlaceholder}
+                emptyMessage={params.partyEmptyMessage}
+                className="h-10 text-sm"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant={params.unlinkedOnly ? "default" : "outline"}
+                size="sm"
+                className="h-10 text-xs"
+                onClick={() => params.setUnlinkedOnly(!params.unlinkedOnly)}
+              >
+                {params.unlinkedOnly ? '✓ ' : ''}{params.unlinkedLabel}
+              </Button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
@@ -2084,6 +2151,16 @@ export default function PaymentsPage() {
           searchPlaceholder: appLang === 'en'
             ? 'Search by payment #, reference, customer name, notes...'
             : 'بحث برَقم الدَّفعَة، المَرجع، اسم العَميل، المُلاحَظات...',
+          partyOptions: customers.map((c) => ({ value: c.id, label: c.name })),
+          partyIds: cpCustomerIds,
+          setPartyIds: setCpCustomerIds,
+          partyLabel: appLang === 'en' ? 'Customer' : 'العَميل',
+          partyPlaceholder: appLang === 'en' ? 'All customers' : 'جَميع العُملاء',
+          partySearchPlaceholder: appLang === 'en' ? 'Search customers...' : 'بَحث فى العُملاء...',
+          partyEmptyMessage: appLang === 'en' ? 'No customers found' : 'لا يُوجَد عُملاء',
+          unlinkedOnly: cpUnlinkedOnly,
+          setUnlinkedOnly: setCpUnlinkedOnly,
+          unlinkedLabel: appLang === 'en' ? 'Unlinked only (no invoice)' : 'غَير المُرتَبِطَة بفاتورَة فَقَط',
         })}
 
         <Card>
@@ -2562,6 +2639,16 @@ export default function PaymentsPage() {
           searchPlaceholder: appLang === 'en'
             ? 'Search by payment #, reference, supplier name, notes...'
             : 'بحث برَقم الدَّفعَة، المَرجع، اسم المُورِّد، المُلاحَظات...',
+          partyOptions: suppliers.map((s) => ({ value: s.id, label: s.name })),
+          partyIds: spSupplierIds,
+          setPartyIds: setSpSupplierIds,
+          partyLabel: appLang === 'en' ? 'Supplier' : 'المُورِّد',
+          partyPlaceholder: appLang === 'en' ? 'All suppliers' : 'جَميع المُورِّدين',
+          partySearchPlaceholder: appLang === 'en' ? 'Search suppliers...' : 'بَحث فى المُورِّدين...',
+          partyEmptyMessage: appLang === 'en' ? 'No suppliers found' : 'لا يُوجَد مُورِّدون',
+          unlinkedOnly: spUnlinkedOnly,
+          setUnlinkedOnly: setSpUnlinkedOnly,
+          unlinkedLabel: appLang === 'en' ? 'Unlinked only (no bill)' : 'غَير المُرتَبِطَة بفاتورَة فَقَط',
         })}
 
         <Card>
