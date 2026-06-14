@@ -1,7 +1,15 @@
 /**
  * v3.74.144 — resubmit a rejected vendor payment after editing it.
  * v3.74.148 — switched initial SELECT to service client.
- * v3.74.149 — diagnostic logging + extra debug payload to chase a 404.
+ * v3.74.149 — diagnostic logging + debug payload in 404 response.
+ * v3.74.150 — drop the suppliers(name) inline JOIN. There is no FK
+ *             between payments.supplier_id and suppliers.id in this
+ *             schema, so PostgREST returned
+ *             "Could not find a relationship between 'payments' and
+ *             'suppliers' in the schema cache" on every call. Our code
+ *             treated that error as 'payment not found' and surfaced
+ *             "الدَّفعَة غَير مَوجودَة" to the user. Fetch the supplier
+ *             name as a separate, optional lookup.
  *
  * Workflow:
  *   1) Accountant records a supplier payment → status='pending_approval'
@@ -9,10 +17,6 @@
  *   3) Accountant clicks "تَعديل وإِعادَة الإِرسال" → this endpoint patches
  *      whitelisted fields, flips status back to 'pending_approval', and
  *      notifies owner+manager again with a "modified-after-reject" title.
- *
- * The full correction workflow (with its own request row + approval +
- * execution) is reserved for already-APPROVED payments — those touched
- * accounting and need a documented reversal trail.
  *
  * Permissions: only the original creator OR owner/manager can resubmit.
  */
@@ -26,22 +30,17 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    console.log("[RESUBMIT_V149] start id=", id)
     const supabase = await createClient()
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      console.log("[RESUBMIT_V149] auth fail", { authError: authError?.message, hasUser: !!user })
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-    console.log("[RESUBMIT_V149] user=", user.id)
 
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) {
-      console.log("[RESUBMIT_V149] no company")
       return NextResponse.json({ error: "Company context missing" }, { status: 400 })
     }
-    console.log("[RESUBMIT_V149] companyId=", companyId)
 
     let body: {
       reason?: string
@@ -67,24 +66,19 @@ export async function POST(
     let serviceClient: ReturnType<typeof createServiceClient>
     try {
       serviceClient = createServiceClient()
-      console.log("[RESUBMIT_V149] service client ready")
     } catch (e: any) {
-      console.error("[RESUBMIT_V149] service client failed:", e?.message)
       return NextResponse.json({ error: "خَطَأ فى إِعداد الخادِم", detail: e?.message }, { status: 500 })
     }
 
+    // No FK between payments.supplier_id and suppliers.id, so do NOT
+    // request suppliers(name) here — PostgREST returns a schema-cache
+    // error and we'd treat the row as missing.
     const { data: pay, error: payErr } = await serviceClient
       .from("payments")
-      .select("id, status, amount, supplier_id, branch_id, created_by, suppliers(name)")
+      .select("id, status, amount, supplier_id, branch_id, created_by")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
-    console.log("[RESUBMIT_V149] select result:", {
-      hasPay: !!pay,
-      payId: (pay as any)?.id,
-      payStatus: (pay as any)?.status,
-      payErr: payErr?.message,
-    })
 
     if (payErr || !pay) {
       return NextResponse.json({
@@ -107,6 +101,17 @@ export async function POST(
         error: "هذِه الدَّفعَة ليسَت مَرفوضَة — استخدِم زِر طَلَب التَّصحيح للدَّفعات المُعتَمَدَة",
       }, { status: 400 })
     }
+
+    // Best-effort supplier name lookup (used only for the notification text)
+    let supplierName = ""
+    try {
+      const { data: sup } = await serviceClient
+        .from("suppliers")
+        .select("name")
+        .eq("id", (pay as any).supplier_id)
+        .maybeSingle()
+      supplierName = (sup as any)?.name || ""
+    } catch { }
 
     const { data: member } = await serviceClient
       .from("company_members")
@@ -131,9 +136,8 @@ export async function POST(
     const changes = body?.changes || {}
     const newAmount = Number((changes as any).amount)
     if (Number.isFinite(newAmount) && newAmount > 0) {
-      // For this schema vendor payments are stored as a positive number
-      // (we observed 3.00, not -3.00, in production), so we don't flip the
-      // sign here. If a future migration changes this, adjust at one place.
+      // Stored value matches the original sign — for this schema vendor
+      // payments are stored as positive (verified directly in DB).
       patch.amount = Math.abs(newAmount)
     }
     if ((changes as any).payment_date) patch.payment_date = String((changes as any).payment_date)
@@ -154,7 +158,6 @@ export async function POST(
       .eq("id", id)
       .eq("company_id", companyId)
     if (updErr) {
-      console.error("[RESUBMIT_V149] update failed:", updErr.message)
       return NextResponse.json({
         success: false,
         error: updErr.message || "فَشِل تَعديل الدَّفعَة",
@@ -174,7 +177,6 @@ export async function POST(
 
     try {
       const finalAmount = Math.abs(Number(patch.amount ?? (pay as any).amount ?? 0))
-      const supplierName = (pay as any)?.suppliers?.name || ""
       const title = "دَفعَة مُعَدَّلَة بَعد رَفض — تَنتَظِر اعتمادكم"
       const message = `تَمَّ تَعديل دَفعَة بقيمَة ${finalAmount.toLocaleString()} EGP${supplierName ? ` للمُورِّد "${supplierName}"` : ""} بَعد رَفضها وَهى الآن بانتظار اعتمادكم. سَبَب التَّعديل: ${reason.substring(0, 120)}`
 
@@ -198,7 +200,7 @@ export async function POST(
         })
       }
     } catch (notifErr: any) {
-      console.warn("[RESUBMIT_V149] notify failed:", notifErr?.message || notifErr)
+      console.warn("[RESUBMIT_V150] notify failed:", notifErr?.message || notifErr)
     }
 
     return NextResponse.json({
@@ -206,7 +208,7 @@ export async function POST(
       message: "تَمَّ تَعديل الدَّفعَة وإِعادَة إِرسالها للاعتماد",
     })
   } catch (error: any) {
-    console.error("[RESUBMIT_V149] uncaught:", error)
+    console.error("[RESUBMIT_V150] uncaught:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
