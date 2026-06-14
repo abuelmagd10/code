@@ -813,6 +813,25 @@ export default function SuppliersPage() {
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         return (
           <div className="flex gap-1 flex-wrap justify-center">
+            {/* v3.74.159 — shortcut to the /payments page so the accountant
+                can open this supplier's advance and apply it to a bill.
+                The Apply-to-Bill flow already lives there; this just
+                saves a navigation step from the supplier ledger. */}
+            {balance.advances > 0.005 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs px-2"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  router.push(`/payments?focus_supplier=${row.id}`)
+                }}
+                disabled={!permWrite}
+                title={appLang === 'en' ? 'Apply advance to an outstanding bill' : 'تَطبيق السُّلفَة على فاتورَة قائِمَة'}
+              >
+                {appLang === 'en' ? 'Apply Advance' : 'تطبيق سُلفَة'}
+              </Button>
+            )}
             {balance.debitCredits > 0 && (
               <Button
                 variant="outline"

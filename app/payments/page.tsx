@@ -266,6 +266,10 @@ export default function PaymentsPage() {
   // New payment form states
   const [newCustPayment, setNewCustPayment] = useState({ customer_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
   const [newSuppPayment, setNewSuppPayment] = useState({ supplier_id: "", amount: 0, date: new Date().toISOString().slice(0, 10), method: "cash", ref: "", notes: "", account_id: "" })
+  // v3.74.159 — when the user picks a supplier we surface any unallocated
+  // advance balance so they don't accidentally pay cash on top of money
+  // we've already advanced to that supplier.
+  const [selectedSupplierAdvance, setSelectedSupplierAdvance] = useState<number>(0)
   const [supplierQuery, setSupplierQuery] = useState("")
   // متغيرات اختيارية كانت مستخدمة ضمن ربط تلقائي للدفع بالفواتير
   const [selectedFormBillId, setSelectedFormBillId] = useState<string>("")
@@ -2380,7 +2384,31 @@ export default function PaymentsPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
               <div>
                 <Label>{appLang === 'en' ? 'Supplier' : 'المورد'}</Label>
-                <Select value={newSuppPayment.supplier_id} onValueChange={(v) => setNewSuppPayment({ ...newSuppPayment, supplier_id: v })}>
+                <Select value={newSuppPayment.supplier_id} onValueChange={async (v) => {
+                  setNewSuppPayment({ ...newSuppPayment, supplier_id: v })
+                  // v3.74.159 — fetch available vendor advance for this supplier
+                  setSelectedSupplierAdvance(0)
+                  if (v) {
+                    try {
+                      const { data: advRows } = await supabase
+                        .from("payments")
+                        .select("amount, unallocated_amount")
+                        .eq("supplier_id", v)
+                        .is("bill_id", null)
+                        .is("invoice_id", null)
+                        .eq("status", "approved")
+                        .neq("is_deleted", true)
+                      let total = 0
+                      ;(advRows || []).forEach((r: any) => {
+                        const avail = r.unallocated_amount != null
+                          ? Number(r.unallocated_amount || 0)
+                          : Math.abs(Number(r.amount || 0))
+                        if (avail > 0.005) total += avail
+                      })
+                      setSelectedSupplierAdvance(total)
+                    } catch { /* non-fatal */ }
+                  }
+                }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={appLang === 'en' ? 'Select a supplier' : 'اختر مورّدًا'} />
                   </SelectTrigger>
@@ -2397,6 +2425,16 @@ export default function PaymentsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {/* v3.74.159 — advance alert. Keeps the accountant from
+                    paying cash to a supplier we've already advanced money
+                    to without first applying the existing balance. */}
+                {newSuppPayment.supplier_id && selectedSupplierAdvance > 0.005 && (
+                  <div className="text-[12px] mt-1 px-2 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    {appLang === 'en'
+                      ? `ℹ️ This supplier has an unapplied advance of ${selectedSupplierAdvance.toFixed(2)} ${baseCurrency}. Apply it to an open bill from the payment row before paying cash.`
+                      : `ℹ️ هذا المورد لَدَيه سُلفَة مُتاحَة بقيمَة ${selectedSupplierAdvance.toFixed(2)} ${baseCurrency}. طَبِّقها على فاتورَة مَفتوحَة من سَطر الدَّفعَة قَبل دَفع نَقد.`}
+                  </div>
+                )}
               </div>
               <div>
                 <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
