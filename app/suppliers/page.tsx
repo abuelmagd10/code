@@ -434,6 +434,17 @@ export default function SuppliersPage() {
     onDelete: handleBalancesRealtimeEvent,
   })
 
+  // v3.74.158 — payments table drives the supplier-advance figure too.
+  // Without this the column stayed stale until the user navigated away
+  // and back.
+  useRealtimeTable({
+    table: 'payments',
+    enabled: true,
+    onInsert: handleBalancesRealtimeEvent,
+    onUpdate: handleBalancesRealtimeEvent,
+    onDelete: handleBalancesRealtimeEvent,
+  })
+
   // دالة تحميل أرصدة الموردين
   const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
     try {
@@ -512,12 +523,46 @@ export default function SuppliersPage() {
           console.error("Error calculating supplier debit credits:", error)
         }
 
+        // v3.74.158 — vendor advance payments (دفعة سلفة بدون ربط بفاتورة)
+        // are recorded in payments with supplier_id set but bill_id and
+        // invoice_id NULL. payments.unallocated_amount tracks how much of
+        // the advance is still available (consumed allocations decrement it).
+        // We sum that across approved advance rows and surface it in the
+        // "مستحقات لنا (سلفة مورد)" column so the supplier balance
+        // reflects what the GL already shows under 1180.
+        let advancesTotal = 0
+        try {
+          const { data: advanceRows, error: advanceErr } = await supabase
+            .from("payments")
+            .select("amount, unallocated_amount")
+            .eq("company_id", companyId)
+            .eq("supplier_id", supplier.id)
+            .is("bill_id", null)
+            .is("invoice_id", null)
+            .eq("status", "approved")
+            .neq("is_deleted", true)
+          if (advanceErr) {
+            console.error("Error loading supplier advance payments:", advanceErr)
+          } else if (advanceRows) {
+            for (const r of advanceRows) {
+              // Prefer unallocated_amount when it's populated; fall back
+              // to amount for legacy rows that pre-date that column.
+              const available = (r as any).unallocated_amount != null
+                ? Number((r as any).unallocated_amount || 0)
+                : Math.abs(Number((r as any).amount || 0))
+              if (available > 0.005) advancesTotal += available
+            }
+          }
+        } catch (error: any) {
+          console.error("Error calculating supplier advances:", error)
+        }
+
         newBalances[supplier.id] = {
-          advances: 0, // يمكن إضافة حساب السلف لاحقاً
+          advances: advancesTotal,
           payables,
           // v3.26.3: مستحقات لنا = vendor credits + فائض الدفع الحقيقى على الفواتير
-          // (v3.26.2 كان يحسب الـ returns مرتين - مرة هنا ومرة فى vendor_credits)
-          debitCredits: debitCreditsTotal + billOverpayments,
+          // v3.74.158: + سلف الموردين (دفعات بدون ربط بفاتورة)
+          debitCredits: debitCreditsTotal + billOverpayments + advancesTotal,
         }
 
         // تسجيل بيانات المورد للتشخيص
