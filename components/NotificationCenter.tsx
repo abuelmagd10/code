@@ -335,12 +335,15 @@ export function NotificationCenter({
         return n
       }))
 
-      // Sort by priority and date
+      // v3.74.153 — sort by date first (newest on top), priority only as
+      // a tiebreaker when two rows share the same timestamp. The old
+      // ordering surfaced 24-hour-old "high" rows above a 1-minute-old
+      // "normal" row, which the user read as a sorting bug.
       enriched.sort((a, b) => {
+        const dateDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        if (dateDiff !== 0) return dateDiff
         const priorityOrder: Record<NotificationPriority, number> = { critical: 0, urgent: 1, high: 2, normal: 3, low: 4 }
-        const priorityDiff = (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
-        if (priorityDiff !== 0) return priorityDiff
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
       })
 
       setNotifications(enriched)
@@ -449,11 +452,12 @@ export function NotificationCenter({
       prev.forEach(n => map.set(n.id, n))
       map.set(notification.id, notification)
       const updated = Array.from(map.values())
+      // v3.74.153 — same date-first ordering as the initial load
       updated.sort((a, b) => {
+        const dateDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        if (dateDiff !== 0) return dateDiff
         const priorityOrder: Record<NotificationPriority, number> = { critical: 0, urgent: 1, high: 2, normal: 3, low: 4 }
-        const priorityDiff = (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
-        if (priorityDiff !== 0) return priorityDiff
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
       })
       return updated
     })
