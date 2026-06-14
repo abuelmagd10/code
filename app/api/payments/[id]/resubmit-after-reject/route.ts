@@ -61,8 +61,16 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // 1) Load the payment and confirm it's a rejected vendor payment
-    const { data: pay, error: payErr } = await supabase
+    // 1) Load the payment and confirm it's a rejected vendor payment.
+    //    v3.74.148 — use service client for this initial SELECT. Some
+    //    deployments have RLS on payments that hides rejected rows from
+    //    branch-scoped accountant roles, which made every call here
+    //    fall through to a misleading 404 "الدَّفعَة غَير مَوجودَة"
+    //    even when the caller was the original creator. Authorization
+    //    is enforced explicitly below (creator OR owner/manager) and
+    //    we still filter by company_id to keep tenant isolation.
+    const serviceClient = createServiceClient()
+    const { data: pay, error: payErr } = await serviceClient
       .from("payments")
       .select("id, status, amount, supplier_id, branch_id, created_by, suppliers(name)")
       .eq("id", id)
@@ -91,7 +99,9 @@ export async function POST(
     }
 
     // 2) Permission check: creator OR owner/manager
-    const { data: member } = await supabase
+    //    Also via service client because company_members visibility is
+    //    governed by the same RLS family.
+    const { data: member } = await serviceClient
       .from("company_members")
       .select("role")
       .eq("company_id", companyId)
@@ -134,8 +144,7 @@ export async function POST(
     }
 
     // 4) Apply the update via service client to bypass row-level locks that
-    //    block updates on rejected rows.
-    const serviceClient = createServiceClient()
+    //    block updates on rejected rows. (Same client created at step 1.)
     const { error: updErr } = await serviceClient
       .from("payments")
       .update(patch)
