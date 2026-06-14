@@ -203,6 +203,16 @@ export class SalesInvoiceUpdateCommandService {
         original_subtotal: command.original_subtotal,
         original_tax_amount: command.original_tax_amount,
         original_total: command.original_total,
+        // v3.74.155 — keep the display snapshot in lockstep with the
+        // canonical totals. The /invoices list reads display_total when
+        // display_currency matches the active currency, so leaving them
+        // stale after an edit shows yesterday's total on the list while
+        // the AR ledger uses today's. We mirror original_* here because
+        // for base-currency invoices (rate=1) those already equal
+        // total_amount/subtotal; for FX invoices they are the localised
+        // copies, which is exactly what display_* represents.
+        display_subtotal: command.original_subtotal,
+        display_total: command.original_total,
         discount_type: command.discount_type || "amount",
         discount_value: Number(command.discount_value || 0),
         discount_position: command.discount_position || "before_tax",
