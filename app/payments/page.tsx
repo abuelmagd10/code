@@ -1861,34 +1861,10 @@ export default function PaymentsPage() {
     } finally { setSaving(false) }
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8">
-          <p className="py-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
-        </main>
-      </div>
-    )
-  }
-
-  // ✅ دالة مساعدة لتحديد ما إذا كان الحساب نقدياً
-  const isCashAccount = (accountId?: string | null) => {
-    if (!accountId) return false;
-    const acc = accounts.find((a: any) => a.id === accountId);
-    if (!acc) return false;
-    const st = String((acc as any).sub_type || '').toLowerCase();
-    if (st === 'cash') return true;
-    if (st === 'bank') return false;
-    const nmLower = String((acc as any).account_name || '').toLowerCase();
-    if (nmLower.includes('cash') || /خزينة|نقد|صندوق|كاش/.test(nmLower)) return true;
-    return false;
-  };
-
-  // ─── v3.74.160 — filtered customer + supplier payments ─────────────
-  // Mirrors the filter pattern used on /invoices, /bills, /sales-orders.
-  // Search hits payment number, reference number, customer/supplier name
-  // and notes; status uses the same vocabulary the table renders; the
-  // date range uses payment_date (the operator-facing date).
+  // ─── v3.74.160 hotfix — these useMemo hooks MUST run before the early
+  // `if (loading) return ...` below, otherwise React sees a different hook
+  // count between the loading and loaded renders and crashes the page.
+  // Helper + memos hoisted above the early-return for that reason.
   const applyPaymentFilters = (
     rows: Payment[],
     search: string,
@@ -1928,6 +1904,31 @@ export default function PaymentsPage() {
     ),
     [supplierPayments, spSearch, spStatus, spDateFrom, spDateTo, suppliers],
   )
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8">
+          <p className="py-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</p>
+        </main>
+      </div>
+    )
+  }
+
+  // ✅ دالة مساعدة لتحديد ما إذا كان الحساب نقدياً
+  const isCashAccount = (accountId?: string | null) => {
+    if (!accountId) return false;
+    const acc = accounts.find((a: any) => a.id === accountId);
+    if (!acc) return false;
+    const st = String((acc as any).sub_type || '').toLowerCase();
+    if (st === 'cash') return true;
+    if (st === 'bank') return false;
+    const nmLower = String((acc as any).account_name || '').toLowerCase();
+    if (nmLower.includes('cash') || /خزينة|نقد|صندوق|كاش/.test(nmLower)) return true;
+    return false;
+  };
+
+  // ─── v3.74.160 — filter helpers (memos hoisted above early-return) ──
   const cpActive = (cpSearch ? 1 : 0) + (cpStatus.length > 0 ? 1 : 0) + (cpDateFrom ? 1 : 0) + (cpDateTo ? 1 : 0)
   const spActive = (spSearch ? 1 : 0) + (spStatus.length > 0 ? 1 : 0) + (spDateFrom ? 1 : 0) + (spDateTo ? 1 : 0)
   const clearCpFilters = () => { setCpSearch(""); setCpStatus([]); setCpDateFrom(""); setCpDateTo("") }
