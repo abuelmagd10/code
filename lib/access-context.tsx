@@ -326,11 +326,12 @@ async function fetchAccessProfile(
         booking_officer: ['bookings', 'customers'],
         // 5. مسؤول التصنيع — 2 entries verbatim (umbrella + approvals)
         manufacturing_officer: ['manufacturing_boms', 'approvals'],
-        // 6. مسؤول المخزن — 6 pages verbatim
+        // 6. مسؤول المخزن — 7 pages
         store_manager: [
           'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
           'dispatch_approvals', 'inventory_goods_receipt',
-          'sales_return_requests', // v3.74.14 — warehouse approver
+          'sales_return_requests', // v3.74.14 — warehouse approver for sales returns
+          'purchase_returns',       // v3.74.166 — warehouse approver for purchase returns
         ],
         // 7. المدير (branch manager) — union, READ-ONLY at can_write level
         manager: [
