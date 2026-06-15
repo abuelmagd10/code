@@ -790,6 +790,12 @@ export default function NewPurchaseReturnPage() {
         tax_amount: filteredGroups.reduce((s, g) => s + (g?.tax_amount || 0), 0),
         total_amount: filteredGroups.reduce((s, g) => s + (g?.total_amount || 0), 0),
         settlement_method: form.settlement_method,
+        // v3.74.173 — persist the cash/bank account the accountant chose so
+        // confirm_purchase_return_delivery_v2 can auto-execute the refund
+        // when warehouse approves. Without this the refund never flows.
+        refund_account_id: (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer')
+          ? (selectedRefundAccountId || null)
+          : null,
         reason: form.reason,
         notes: form.notes,
         original_currency: form.currency,
@@ -824,7 +830,10 @@ export default function NewPurchaseReturnPage() {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "A purchase bill must be selected to create a return" : "يجب تحديد فاتورة شراء لإنشاء المرتجع")
         return
       }
-      if (isBillPaid && (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && !selectedRefundAccountId) {
+      // v3.74.173 — refund account is mandatory for cash/bank settlements
+      // regardless of whether the bill is paid. confirm_v2 auto-executes the
+      // refund only when this account is present.
+      if ((form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer') && !selectedRefundAccountId) {
         toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en' ? "Please select the refund account (cash/bank)" : "يرجى اختيار حساب الاسترداد (نقدية/بنك)")
         return
       }
@@ -1148,6 +1157,10 @@ export default function NewPurchaseReturnPage() {
             reason: form.reason,
             notes: form.notes,
             settlement_method: form.settlement_method,
+            // v3.74.173 — see note above; same rule on resubmit.
+            refund_account_id: (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer')
+              ? (selectedRefundAccountId || null)
+              : null,
             return_date: form.return_date,
             subtotal: finalBaseSubtotal,
             tax_amount: finalBaseTax,
@@ -1186,6 +1199,10 @@ export default function NewPurchaseReturnPage() {
           tax_amount: finalBaseTax,
           total_amount: finalBaseTotal,
           settlement_method: form.settlement_method,
+          // v3.74.173 — see notes above.
+          refund_account_id: (form.settlement_method === 'cash' || form.settlement_method === 'bank_transfer')
+            ? (selectedRefundAccountId || null)
+            : null,
           reason: form.reason,
           notes: form.notes,
           branch_id: billBranchId,

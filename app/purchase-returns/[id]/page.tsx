@@ -141,7 +141,7 @@ export default function PurchaseReturnDetailPage() {
       .from('purchase_returns')
       .select(`
         id, return_number, return_date, status, workflow_status, financial_status,
-        reason, notes, settlement_method,
+        reason, notes, settlement_method, refund_account_id,
         subtotal, tax_amount, total_amount, original_currency,
         is_locked, created_by, confirmed_by, approved_by, approved_at,
         rejected_by, rejected_at, rejection_reason,
@@ -151,6 +151,7 @@ export default function PurchaseReturnDetailPage() {
         bills(id, bill_number),
         branches(name),
         warehouses(name),
+        refund_account:chart_of_accounts!purchase_returns_refund_account_id_fkey(account_code, account_name),
         purchase_return_items(
           id, product_id, bill_item_id, description, quantity,
           unit_price, tax_rate, discount_percent, line_total,
@@ -552,6 +553,16 @@ export default function PurchaseReturnDetailPage() {
                   label={t('طريقة التسوية', 'Settlement')}
                   value={appLang === 'en' ? (SETTLEMENT_LABELS[pr.settlement_method]?.en || pr.settlement_method) : (SETTLEMENT_LABELS[pr.settlement_method]?.ar || pr.settlement_method)}
                 />
+                {/* v3.74.173 — show the cash/bank account when settlement is
+                    cash or bank_transfer, so the accountant can confirm which
+                    treasury received the refund. */}
+                {(pr.settlement_method === 'cash' || pr.settlement_method === 'bank_transfer' || pr.settlement_method === 'bank') && (pr as any).refund_account && (
+                  <DetailRow
+                    icon={<DollarSign className="h-4 w-4" />}
+                    label={t('حساب الاسترداد', 'Refund Account')}
+                    value={`${(pr as any).refund_account.account_code} — ${(pr as any).refund_account.account_name}`}
+                  />
+                )}
               </CardContent>
             </Card>
 

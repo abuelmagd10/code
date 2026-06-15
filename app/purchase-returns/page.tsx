@@ -864,23 +864,9 @@ export default function PurchaseReturnsPage() {
                 </Button>
               )}
 
-              {/* زر تسجيل استلام الاسترداد - للمرتجعات المكتملة بتسوية نقدية/بنكية */}
-              {isPrivileged &&
-                (pr.status === 'returned' || pr.workflow_status === 'confirmed' || pr.status === 'completed' || pr.workflow_status === 'completed') &&
-                pr.status !== 'closed' && pr.workflow_status !== 'closed' &&
-                pr.financial_status !== 'refund_recorded' &&
-                (pr.settlement_method === 'cash' || pr.settlement_method === 'bank_transfer' || pr.settlement_method === 'bank') && (
-                <Button
-                  size="sm"
-                  className="bg-teal-600 hover:bg-teal-700 text-white text-xs h-7 px-2"
-                  onClick={() => { setPrToRefund(pr); setIsRefundDialogOpen(true) }}
-                  title={appLang === 'en' ? 'Record Refund Received' : 'تسجيل استلام الاسترداد'}
-                  data-ai-help="purchase_returns.supplier_refund_button"
-                >
-                  <RotateCcw className="w-3 h-3 mr-1" />
-                  {appLang === 'en' ? 'Refund' : 'استرداد'}
-                </Button>
-              )}
+              {/* v3.74.173 — manual refund button removed. Cash/bank refunds
+                  are now auto-executed inside confirm_purchase_return_delivery_v2
+                  using the refund_account_id captured at creation time. */}
 
               {/* زر تعديل وإعادة إرسال — للمنشئ فقط عند الرفض الإداري أو رفض المخزن */}
               {(pr.workflow_status === 'rejected' || pr.workflow_status === 'warehouse_rejected') &&
