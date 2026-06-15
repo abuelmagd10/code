@@ -118,7 +118,12 @@ export class PurchaseReturnNotificationService {
     const purchaseReturn = await this.loadPurchaseReturnContext(params.companyId, params.purchaseReturnId)
     const resolver = new NotificationRecipientResolverService(this.supabase)
     const recipients = resolver.resolveRoleRecipients(
-      ["admin", "general_manager"],
+      // v3.74.169 — only target 'admin'. NotificationCenter's
+      // shouldShowNotification already lets every upper role
+      // (owner / admin / general_manager) read each other's
+      // notifications, so adding 'general_manager' here just creates a
+      // duplicate row that owners and GMs both see in their inbox.
+      ["admin"],
       purchaseReturn.branch_id || null,
       null,
       purchaseReturn.cost_center_id || null
@@ -394,7 +399,12 @@ export class PurchaseReturnNotificationService {
         costCenterId: purchaseReturn.cost_center_id,
       },
       resolver.resolveRoleRecipients(
-        ["admin", "general_manager"],
+        // v3.74.169 — only target 'admin'. NotificationCenter's
+      // shouldShowNotification already lets every upper role
+      // (owner / admin / general_manager) read each other's
+      // notifications, so adding 'general_manager' here just creates a
+      // duplicate row that owners and GMs both see in their inbox.
+      ["admin"],
         purchaseReturn.branch_id || null,
         null,
         purchaseReturn.cost_center_id || null
@@ -528,7 +538,12 @@ export class PurchaseReturnNotificationService {
   }) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
     const recipients = resolver.resolveRoleRecipients(
-      ["admin", "general_manager"],
+      // v3.74.169 — only target 'admin'. NotificationCenter's
+      // shouldShowNotification already lets every upper role
+      // (owner / admin / general_manager) read each other's
+      // notifications, so adding 'general_manager' here just creates a
+      // duplicate row that owners and GMs both see in their inbox.
+      ["admin"],
       params.branchId || null,
       null,
       params.costCenterId || null
