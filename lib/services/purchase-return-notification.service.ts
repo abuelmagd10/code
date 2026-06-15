@@ -506,9 +506,23 @@ export class PurchaseReturnNotificationService {
           actorUserId: params.actorUserId,
           purchaseReturnId: purchaseReturn.id,
         },
-        // v3.74.20 — canonical Level-1 approver list (includes owner + manager).
-        // See resolveLevel1ApproverRecipients docs.
-        resolver.resolveLevel1ApproverRecipients(null, null, null),
+        // v3.74.170 — was resolveLevel1ApproverRecipients which emits four
+        // role rows (owner, admin, general_manager, manager). Owner inboxes
+        // then surfaced three identical "تم اعتماد مرتجع مشتريات من المخزن"
+        // notifications because shouldShowNotification grants every upper
+        // role (owner/admin/general_manager) cross-visibility into each
+        // other's rows. Use leadership-visibility (single 'admin' row
+        // covers all three upper roles) plus a separate branch-scoped
+        // 'manager' row so the branch manager still sees it.
+        [
+          ...resolver.resolveLeadershipVisibilityRecipients(null, null, null),
+          resolver.resolveBranchRoleRecipient(
+            "manager",
+            purchaseReturn.branch_id || null,
+            null,
+            purchaseReturn.cost_center_id || null
+          ),
+        ],
         {
           referenceType: "purchase_return",
           referenceId: purchaseReturn.id,
