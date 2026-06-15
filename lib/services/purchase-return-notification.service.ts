@@ -609,13 +609,22 @@ export class PurchaseReturnNotificationService {
   }
 
   private async archiveNotifications(companyId: string, purchaseReturnId: string, eventKeys: string[]) {
+    // v3.74.167 — also archive 'actioned' rows. The previous list missed
+    // them, which broke the warehouse-pending notification on the second
+    // cycle: after warehouse rejection the row goes to 'actioned'; on
+    // resubmission + admin approval we re-call notifyWarehousePending,
+    // which then hits create_notification's dedup branch (existing row
+    // with same event_key, status != 'archived') and silently returns
+    // the old id instead of inserting a fresh notification. The warehouse
+    // user gets nothing. Archiving 'actioned' too clears the way for the
+    // fresh insert.
     const { data: notifications, error: selectError } = await this.supabase
       .from("notifications")
       .select("id")
       .eq("company_id", companyId)
       .eq("reference_type", "purchase_return")
       .eq("reference_id", purchaseReturnId)
-      .in("status", ["unread", "read"])
+      .in("status", ["unread", "read", "actioned"])
       .in("event_key", eventKeys)
 
     if (selectError) {
