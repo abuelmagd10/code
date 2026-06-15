@@ -221,6 +221,12 @@ export class PurchaseReturnCommandService {
       }
       result = response.data
     } else {
+      // v3.74.163 — pass p_created_by so the row carries the creator.
+      // Without it, `purchase_returns.created_by` ends up NULL and every
+      // downstream notification that targets the creator (notifyRejected,
+      // notifyApproved, notifyWarehouseRejected) returns early because it
+      // has no recipient. The multi-warehouse path below already passes
+      // p_created_by — this brings the single-warehouse path in line.
       const response = await this.authSupabase.rpc("process_purchase_return_atomic", {
         p_company_id: actor.companyId,
         p_supplier_id: command.supplierId,
@@ -232,6 +238,7 @@ export class PurchaseReturnCommandService {
         p_vendor_credit: null,
         p_vendor_credit_items: null,
         p_bill_update: null,
+        p_created_by: actor.actorId,
       })
 
       if (response.error) {
