@@ -635,10 +635,18 @@ export class PurchaseReturnNotificationService {
     const ids = (notifications || []).map((notification: { id: string }) => notification.id)
     if (ids.length === 0) return
 
+    // v3.74.167 part 2 — write 'archived', not 'actioned'.
+    // create_notification's dedup branch returns the OLD notification id
+    // when it finds any row with the same event_key whose status is NOT
+    // 'archived'. We were writing 'actioned' here, which counted as live,
+    // so the next warehouse_pending call silently returned the old id and
+    // the warehouse user got no fresh row. The contract is: archive ==
+    // status='archived'. actioned_at is reused as the timestamp of the
+    // status change (no archived_at column on this table).
     const { error: updateError } = await this.supabase
       .from("notifications")
       .update({
-        status: "actioned",
+        status: "archived",
         actioned_at: new Date().toISOString(),
       })
       .in("id", ids)
