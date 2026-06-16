@@ -363,11 +363,20 @@ export default function SuppliersPage() {
       setRefundRequestsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const { data, error } = await supabase
+      // v3.74.180 — branch governance:
+      //   owner / admin / general_manager: company-wide
+      //   everyone else: their own branch only.
+      // RLS only scopes to company; we add the branch filter explicitly.
+      const seesAllBranches = PRIVILEGED_ROLES.includes((currentUserRole || '').toLowerCase())
+      let q = supabase
         .from('vendor_refund_requests')
-        .select('*, supplier:suppliers(id, name)')
+        .select('*, supplier:suppliers(id, name), branch:branches(id, name), receipt_account:chart_of_accounts!vendor_refund_requests_receipt_account_id_fkey(account_code, account_name)')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
+      if (!seesAllBranches && currentUserBranchId) {
+        q = q.eq('branch_id', currentUserBranchId)
+      }
+      const { data, error } = await q
       if (error) {
         console.error('Error loading refund requests:', error)
         return
@@ -1094,6 +1103,14 @@ export default function SuppliersPage() {
                   )}
                 </TabsTrigger>
               )}
+              {/* v3.74.180 — full refund history tab, visible to everyone.
+                  loadRefundRequests already branch-scopes for non-privileged
+                  roles, so the accountant sees only their branch's history
+                  while owner/GM see the whole company. */}
+              <TabsTrigger value="refund_history" className="flex-1 min-w-[150px] py-2.5 px-4 data-[state=active]:bg-orange-50 dark:data-[state=active]:bg-orange-900/20 data-[state=active]:text-orange-600 dark:data-[state=active]:text-orange-400 rounded-lg transition-all">
+                <Clock className="w-4 h-4 ml-2 mr-2" />
+                {appLang === 'en' ? 'Refund History' : 'سِجِل الاسترداد'}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="suppliers" className="space-y-4 m-0">
@@ -1315,6 +1332,110 @@ export default function SuppliersPage() {
                 </Card>
               </TabsContent>
             )}
+
+            {/* v3.74.180 — Refund history: all statuses, all time.
+                Branch-scoped at query time (loadRefundRequests adds the
+                branch filter for non-privileged roles), so the table
+                only ever shows rows the user is entitled to see. */}
+            <TabsContent value="refund_history" className="space-y-4 m-0">
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                        {appLang === 'en' ? 'Vendor Refund History' : 'سِجِل اعتمادات الاسترداد'}
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {isPrivilegedRole
+                          ? (appLang === 'en' ? 'Company-wide view' : 'عَرض على مُستَوى الشَّركَة')
+                          : (appLang === 'en' ? 'Your branch only' : 'فَرعُك فَقَط')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {refundRequestsLoading ? (
+                    <p className="text-sm text-gray-500 py-6 text-center">
+                      {appLang === 'en' ? 'Loading...' : 'جارٍ التَّحميل...'}
+                    </p>
+                  ) : refundRequests.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-6 text-center">
+                      {appLang === 'en' ? 'No refund requests yet' : 'لا تُوجَد طَلَبات استِرداد بَعد'}
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-800/50 text-xs text-gray-600 dark:text-gray-300">
+                          <tr>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Supplier' : 'المورد'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Account' : 'الخزنة'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
+                            <th className="px-3 py-2 text-center">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Requested' : 'تاريخ الطَّلَب'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Decided' : 'تاريخ القَرار'}</th>
+                            <th className="px-3 py-2 text-right">{appLang === 'en' ? 'Reason (if rejected)' : 'سَبَب الرَّفض'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                          {refundRequests.map((r: any) => {
+                            const isRejected = r.status === 'rejected'
+                            const isApproved = r.status === 'approved'
+                            const isPending = r.status === 'pending_approval'
+                            const statusLabel = isRejected
+                              ? (appLang === 'en' ? 'Rejected' : 'مَرفوض')
+                              : isApproved
+                                ? (appLang === 'en' ? 'Approved' : 'مُعتَمَد')
+                                : isPending
+                                  ? (appLang === 'en' ? 'Pending' : 'قَيد الاعتماد')
+                                  : (appLang === 'en' ? 'Cancelled' : 'مُلغى')
+                            const statusCls = isRejected
+                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+                              : isApproved
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                : isPending
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                            const decisionDate = r.approved_at || r.rejected_at || null
+                            return (
+                              <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/40">
+                                <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">
+                                  {r.supplier?.name || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                  {Number(r.amount || 0).toFixed(2)} {r.currency || ''}
+                                </td>
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300 text-xs">
+                                  {r.receipt_account?.account_code
+                                    ? `${r.receipt_account.account_code} — ${r.receipt_account.account_name}`
+                                    : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300 text-xs">
+                                  {r.branch?.name || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusCls}`}>
+                                    {statusLabel}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">
+                                  {r.created_at ? new Date(r.created_at).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG') : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">
+                                  {decisionDate ? new Date(decisionDate).toLocaleString(appLang === 'en' ? 'en-US' : 'ar-EG') : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300 text-xs">
+                                  {isRejected ? (r.rejection_reason || '—') : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
         </div>
 
