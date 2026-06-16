@@ -845,11 +845,12 @@ export default function CustomersPage() {
     onDelete: handleCustomersRealtimeEvent,
   })
 
-  // v3.74.183 — load the customer credit refund requests so the row guard
-  // can hide the 'Disburse' button while a request is pending or approved,
-  // and realtime keeps the page in sync without a manual refresh.
-  // Branch governance: owner / admin / general_manager see the whole
-  // company; everyone else sees only their branch's requests.
+  // v3.74.184 — simplified: do not gate on currentUserRole, run on mount
+  // and re-run whenever the role/branch changes. The previous version
+  // could leave refundRequests empty during the brief window between
+  // first render and the userContext fetch completing, and the SELECT
+  // chained 3 cross-table joins that could break under stricter RLS in
+  // some companies. Slimmer query, narrower failure surface.
   const loadRefundRequests = useCallback(async () => {
     try {
       setRefundRequestsLoading(true)
@@ -859,7 +860,7 @@ export default function CustomersPage() {
       const seesAllBranches = ['owner', 'admin', 'general_manager'].includes(role)
       let q = supabase
         .from('customer_refund_requests')
-        .select('*, customer:customers(id, name), branch:branches(id, name), refund_account:chart_of_accounts!customer_refund_requests_refund_account_id_fkey(account_code, account_name)')
+        .select('id, customer_id, status, source_type, amount, currency, branch_id, refund_account_id, rejection_reason, requested_by, approved_by, rejected_by, approved_at, rejected_at, executed_at, created_at, metadata')
         .eq('company_id', activeCompanyId)
         .eq('source_type', 'credit_refund')
         .order('created_at', { ascending: false })
@@ -868,9 +869,10 @@ export default function CustomersPage() {
       }
       const { data, error } = await q
       if (error) {
-        console.error('Error loading customer refund requests:', error)
+        console.error('[customer-refund] loader error:', error)
         return
       }
+      console.log('[customer-refund] loaded', data?.length || 0, 'rows for role', role)
       setRefundRequests(data || [])
     } catch (err) {
       console.error('loadRefundRequests error:', err)
@@ -879,11 +881,12 @@ export default function CustomersPage() {
     }
   }, [supabase, currentUserRole, userContext?.branch_id])
 
+  // Run on mount + every time the loader changes (closure over role/branch).
+  // No currentUserRole gate: the loader is safe to call before the role is
+  // known, it just returns the full company set until the role narrows it.
   useEffect(() => {
-    if (currentUserRole) {
-      loadRefundRequests()
-    }
-  }, [currentUserRole, loadRefundRequests])
+    loadRefundRequests()
+  }, [loadRefundRequests])
 
   const handleRefundRequestsRealtimeEvent = useCallback(() => {
     console.log('🔄 [Customers] refund_requests change — reloading')
