@@ -147,12 +147,18 @@ export class CustomerRefundCommandService {
         },
       })
 
+      // v3.74.182 — reference_id must be unique per refund event. The old
+      // code wrote command.invoiceId || command.customerId, which collided
+      // with prevent_duplicate_journal_entry_v2 on the second refund for
+      // the same customer (or the same invoice). Use the locally-generated
+      // operationId as the JE reference: it's already issued per refund,
+      // matches the trace's sourceId, and never collides.
       const { data: journalEntry, error: journalError } = await this.adminSupabase
         .from("journal_entries")
         .insert({
           company_id: command.companyId,
           reference_type: command.invoiceId ? "invoice_credit_refund" : "customer_credit_refund",
-          reference_id: command.invoiceId || command.customerId,
+          reference_id: operationId,
           entry_date: command.refundDate,
           description,
           branch_id: branchId,
