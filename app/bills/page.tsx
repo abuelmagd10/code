@@ -83,6 +83,11 @@ export default function BillsPage() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [billItems, setBillItems] = useState<BillItemWithProduct[]>([])
   const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([])
+  // v3.74.175 — bill_id → open vendor_credit balance (sum of total - applied
+  // across rows where status='open'). Used to size the "+سُلفَة" badge
+  // accurately instead of trusting paid - net_total, which double-counts
+  // cash refunds that already returned the money to the company.
+  const [billOpenVcMap, setBillOpenVcMap] = useState<Record<string, number>>({})
   const [products, setProducts] = useState<Product[]>([])
   const [filterStatuses, setFilterStatuses] = useState<string[]>([])
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([])
@@ -537,8 +542,24 @@ export default function BillsPage() {
 
         const { data: vendorCredits } = await supabase
           .from("vendor_credits")
-          .select("id, bill_id")
+          .select("id, bill_id, total_amount, applied_amount, status")
           .in("bill_id", billIds)
+
+        // v3.74.175 — accumulate per-bill open vendor-credit balance so the
+        // "+سُلفَة" badge on the Remaining column reflects only the portion
+        // that actually sits as a credit on the supplier ledger. Cash- and
+        // bank-settled returns close the credit immediately and must not
+        // inflate the badge.
+        const vcBalanceMap: Record<string, number> = {}
+        if (vendorCredits) {
+          for (const vc of vendorCredits as Array<{ bill_id: string | null; total_amount: number | string | null; applied_amount: number | string | null; status: string | null }>) {
+            if (!vc.bill_id) continue
+            if (vc.status !== 'open') continue
+            const open = Math.max(0, Number(vc.total_amount || 0) - Number(vc.applied_amount || 0))
+            vcBalanceMap[vc.bill_id] = (vcBalanceMap[vc.bill_id] || 0) + open
+          }
+        }
+        setBillOpenVcMap(vcBalanceMap)
 
         if (vendorCredits && vendorCredits.length > 0) {
           const vcIds = vendorCredits.map((vc: { id: string }) => vc.id)
@@ -893,18 +914,25 @@ export default function BillsPage() {
         const displayTotal = getDisplayAmount(row, 'total');
         const displayPaid = getDisplayAmount(row, 'paid');
         const remaining = Math.max(0, displayTotal - displayPaid);
-        const overpaid = Math.max(0, displayPaid - displayTotal);
+        // v3.74.175 — the "+سُلفَة" badge used to be sized as
+        // max(0, paid - net_total). That over-counts cash refunds: when a
+        // return is settled in cash, paid still equals total but the supplier
+        // already gave the money back, so nothing should remain as a credit.
+        // The correct source is the OPEN portion of vendor_credits for the
+        // bill - rows whose status is still 'open' (cash/bank refunds close
+        // their vendor_credit immediately).
+        const openVcBalance = billOpenVcMap[row.id] || 0
         return (
           <div className="flex flex-col gap-1 items-end justify-center min-h-[44px]">
             <span className={remaining > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-green-600 dark:text-green-400 font-semibold'}>
               {remaining.toFixed(2)} {currencySymbol}
             </span>
-            {overpaid > 0 && (
-              <span 
-                className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800" 
-                title={appLang === 'en' ? 'Transferred to Supplier Balance' : 'تم تحويل الزيادة لرصيد المورد'}
+            {openVcBalance > 0 && (
+              <span
+                className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800"
+                title={appLang === 'en' ? 'Open Vendor Credit (not yet applied)' : 'إِشعار دائن مَفتوح لَم يُطَبَّق بَعد'}
               >
-                +{overpaid.toFixed(2)} {appLang === 'en' ? 'Advance' : 'سلفة'}
+                +{openVcBalance.toFixed(2)} {appLang === 'en' ? 'Advance' : 'سلفة'}
               </span>
             )}
           </div>
@@ -931,12 +959,15 @@ export default function BillsPage() {
       format: (_, row) => (
         <div className="flex flex-col items-center gap-1">
           <StatusBadge status={row.status} lang={appLang} />
-          {row.return_status && row.status !== 'fully_returned' && (
-            <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'full'
+          {/* v3.74.175 — DB stores 'fully_returned' / 'partially_returned', not
+              'full' / 'partial'. The old comparison silently fell through to
+              the 'partial' branch even when the bill was fully returned. */}
+          {row.return_status && row.return_status !== 'none' && (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${row.return_status === 'fully_returned'
               ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
               : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
               }`}>
-              {row.return_status === 'full'
+              {row.return_status === 'fully_returned'
                 ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')
                 : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')}
             </span>
@@ -996,7 +1027,13 @@ export default function BillsPage() {
           )}
           {(() => {
             // ✅ المرتجعات تُسمح فقط للفواتير التي اعتُمد استلام بضاعتها فعلياً
-            if (row.status === 'draft' || row.status === 'voided' || row.status === 'fully_returned' || row.status === 'cancelled') return null;
+            if (row.status === 'draft' || row.status === 'voided' || row.status === 'cancelled') return null;
+            // v3.74.175 — return_status carries the return state; row.status
+            // is the payment state (paid / partially_paid / ...). The old
+            // guard read row.status === 'fully_returned' which is never true,
+            // so the Full Return button kept showing even after the bill was
+            // fully returned.
+            if (row.return_status === 'fully_returned') return null;
             if (row.receipt_status !== 'received') return null;
 
             // Calculate if partial return is allowed for this specific bill row
@@ -1005,6 +1042,12 @@ export default function BillsPage() {
               ...it,
               max_qty: Math.max(0, Number(it.quantity || 0) - Number(it.returned_quantity || 0))
             })).filter(it => it.max_qty > 0);
+
+            // v3.74.175 — when every line is fully returned there is literally
+            // nothing to return, so neither button has any meaning. (Belt-and-
+            // suspenders next to the return_status guard above; covers cases
+            // where return_status lags the items.)
+            if (returnableItems.length === 0) return null;
 
             const canPartialReturn = returnableItems.length > 1 || (returnableItems.length === 1 && returnableItems[0].max_qty > 1);
 
