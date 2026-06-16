@@ -139,7 +139,13 @@ export async function notifyVendorRefundRequestCreated(params: {
     ? `A new vendor refund request of ${amount.toLocaleString()} ${currency} for supplier "${supplierName}" is awaiting your approval.`
     : `تم رفع طلب استرداد نقدي بقيمة ${amount.toLocaleString()} ${currency} للمورد "${supplierName}" ويحتاج إلى اعتمادك.`
 
-  const roles = ['owner', 'admin', 'general_manager']
+  // v3.74.177 — only target 'admin'. NotificationCenter's
+  // shouldShowNotification already lets every upper role
+  // (owner / admin / general_manager) read each other's notifications,
+  // so adding owner + general_manager here just creates duplicate rows
+  // that the same owner inbox surfaces multiple times. Same pattern fix
+  // as v3.74.169 (purchase return) and v3.74.170 (warehouse confirmed).
+  const roles = ['admin']
   for (const role of roles) {
     await createNotification({
       companyId,

@@ -832,22 +832,47 @@ export default function SuppliersPage() {
                 {appLang === 'en' ? 'Apply Advance' : 'تطبيق سُلفَة'}
               </Button>
             )}
-            {balance.debitCredits > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs px-2"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  openReceiptDialog(row)
-                }}
-                disabled={!permWrite}
-                title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : (appLang === 'en' ? 'Create receipt' : 'إنشاء سند')}
-              >
-                <ArrowDownLeft className="w-4 h-4" />
-                {appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}
-              </Button>
-            )}
+            {(() => {
+              // v3.74.177 — the "Cash Refund" button used to stay visible
+              // even after the accountant filed a request, because the
+              // underlying vendor_credit stays open until the workflow
+              // executes. That tempted users to file a second identical
+              // request. Now: if there's any pending refund request for
+              // this supplier, swap the button for a disabled "pending"
+              // pill instead.
+              const hasPendingRefund = refundRequests.some(
+                (r: any) => r.supplier_id === row.id && r.status === 'pending_approval'
+              )
+              if (hasPendingRefund) {
+                return (
+                  <span
+                    className="inline-flex items-center gap-1 h-8 px-2 text-xs rounded border border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300"
+                    title={appLang === 'en' ? 'A refund request is pending management approval' : 'يُوجَد طَلَب استِرداد بانتظار اعتماد الإدارَة'}
+                  >
+                    {appLang === 'en' ? '⏳ Refund pending' : '⏳ استرداد قَيد الاعتماد'}
+                  </span>
+                )
+              }
+              if (balance.debitCredits > 0) {
+                return (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs px-2"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openReceiptDialog(row)
+                    }}
+                    disabled={!permWrite}
+                    title={!permWrite ? (appLang === 'en' ? 'No permission to create receipt' : 'لا توجد صلاحية لإنشاء سند') : (appLang === 'en' ? 'Create receipt' : 'إنشاء سند')}
+                  >
+                    <ArrowDownLeft className="w-4 h-4" />
+                    {appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}
+                  </Button>
+                )
+              }
+              return null
+            })()}
             <Button
               variant="ghost"
               size="icon"
@@ -1288,7 +1313,7 @@ export default function SuppliersPage() {
             receiptNotes={receiptNotes}
             setReceiptNotes={setReceiptNotes}
             receiptExRate={receiptExRate}
-            onReceiptComplete={loadSuppliers}
+            onReceiptComplete={() => { loadSuppliers(); loadRefundRequests(); }}
             userRole={currentUserRole}
             branchId={currentUserBranchId || undefined}
           />
