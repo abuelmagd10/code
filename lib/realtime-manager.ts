@@ -65,6 +65,7 @@ export type RealtimeTable =
   | 'sales_returns' // ✅ مرتجعات المبيعات
   | 'vendor_credits' // ✅ أرصدة الموردين
   | 'vendor_refund_requests' // v3.74.181 — طَلَبات استِرداد سُلَف المُورِّدين
+  | 'customer_refund_requests' // v3.74.183 — طَلَبات صَرف رَصيد العُملاء
   | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
   | 'expenses' // ✅ المصروفات
   | 'shareholder_drawings' // ✅ مسحوبات الشركاء
@@ -318,6 +319,7 @@ class RealtimeManager {
       'sales_returns': 'sales_returns',
       'vendor_credits': 'vendor_credits',
       'vendor_refund_requests': 'vendor_refund_requests', // v3.74.181
+      'customer_refund_requests': 'customer_refund_requests', // v3.74.183
       'customer_debit_notes': 'customer_debit_notes',
       'expenses': 'expenses',
       'shareholder_drawings': 'shareholder_drawings',

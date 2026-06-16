@@ -308,10 +308,20 @@ export default function CustomerRefundRequestsPage() {
 
     try {
       setActionLoading(selectedRequest.id)
-      const res = await fetch(`/api/customer-refund-requests/${selectedRequest.id}/${modalMode}`, {
+      // v3.74.183 — credit_refund requests have their own endpoints that
+      // execute the actual refund as part of the approval. payment_correction
+      // requests continue to use the legacy endpoints below them.
+      const isCreditRefund = (selectedRequest as any).source_type === 'credit_refund'
+      const endpoint = isCreditRefund
+        ? `/api/customers/refund-requests/${selectedRequest.id}/${modalMode}`
+        : `/api/customer-refund-requests/${selectedRequest.id}/${modalMode}`
+      const body = isCreditRefund
+        ? (modalMode === 'reject' ? { rejectionReason: modalNotes || null } : {})
+        : { notes: modalNotes || null }
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: modalNotes || null })
+        body: JSON.stringify(body)
       })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || "فشل في تنفيذ الإجراء")

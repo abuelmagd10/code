@@ -174,6 +174,12 @@ export default function CustomersPage() {
   const [allBranches, setAllBranches] = useState<{ id: string; name: string; defaultCostCenterId?: string | null }[]>([])
   const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
 
+  // v3.74.183 — customer credit refund requests (approval workflow for
+  // non-privileged users). The list is branch-scoped at query time for
+  // accountants and shown company-wide for owner / admin / general_manager.
+  const [refundRequests, setRefundRequests] = useState<any[]>([])
+  const [refundRequestsLoading, setRefundRequestsLoading] = useState(false)
+
   // Pagination state
   const [pageSize, setPageSize] = useState(10)
 
@@ -839,6 +845,59 @@ export default function CustomersPage() {
     onDelete: handleCustomersRealtimeEvent,
   })
 
+  // v3.74.183 — load the customer credit refund requests so the row guard
+  // can hide the 'Disburse' button while a request is pending or approved,
+  // and realtime keeps the page in sync without a manual refresh.
+  // Branch governance: owner / admin / general_manager see the whole
+  // company; everyone else sees only their branch's requests.
+  const loadRefundRequests = useCallback(async () => {
+    try {
+      setRefundRequestsLoading(true)
+      const activeCompanyId = await getActiveCompanyId(supabase)
+      if (!activeCompanyId) return
+      const role = (currentUserRole || '').toLowerCase()
+      const seesAllBranches = ['owner', 'admin', 'general_manager'].includes(role)
+      let q = supabase
+        .from('customer_refund_requests')
+        .select('*, customer:customers(id, name), branch:branches(id, name), refund_account:chart_of_accounts!customer_refund_requests_refund_account_id_fkey(account_code, account_name)')
+        .eq('company_id', activeCompanyId)
+        .eq('source_type', 'credit_refund')
+        .order('created_at', { ascending: false })
+      if (!seesAllBranches && userContext?.branch_id) {
+        q = q.eq('branch_id', userContext.branch_id)
+      }
+      const { data, error } = await q
+      if (error) {
+        console.error('Error loading customer refund requests:', error)
+        return
+      }
+      setRefundRequests(data || [])
+    } catch (err) {
+      console.error('loadRefundRequests error:', err)
+    } finally {
+      setRefundRequestsLoading(false)
+    }
+  }, [supabase, currentUserRole, userContext?.branch_id])
+
+  useEffect(() => {
+    if (currentUserRole) {
+      loadRefundRequests()
+    }
+  }, [currentUserRole, loadRefundRequests])
+
+  const handleRefundRequestsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Customers] refund_requests change — reloading')
+    loadRefundRequests()
+  }, [loadRefundRequests])
+
+  useRealtimeTable({
+    table: 'customer_refund_requests',
+    enabled: true,
+    onInsert: handleRefundRequestsRealtimeEvent,
+    onUpdate: handleRefundRequestsRealtimeEvent,
+    onDelete: handleRefundRequestsRealtimeEvent,
+  })
+
   // Update refund exchange rate when currency changes
   useEffect(() => {
     const updateRefundRate = async () => {
@@ -1146,7 +1205,32 @@ export default function CustomersPage() {
             {(() => {
               const b = balances[row.id] || { advance: 0, applied: 0, available: 0, credits: 0 }
               const available = b.available
-              return available > 0 && permWritePayments ? (
+              if (!(available > 0 && permWritePayments)) return null
+              // v3.74.183 — block the disburse button while the latest refund
+              // request for this customer is non-terminal (pending or approved).
+              // refundRequests is sorted DESC, so first match = latest. Same
+              // pattern as v3.74.179 on the suppliers page.
+              const latestRequest = refundRequests.find((r: any) => r.customer_id === row.id)
+              if (latestRequest && (latestRequest.status === 'pending' || latestRequest.status === 'approved')) {
+                const isApproved = latestRequest.status === 'approved'
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 h-8 px-2 text-xs rounded border ${
+                      isApproved
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-300'
+                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300'
+                    }`}
+                    title={isApproved
+                      ? (appLang === 'en' ? 'Refund approved; awaiting execution' : 'الصَّرف مُعتَمَد — قَيد التَّنفيذ')
+                      : (appLang === 'en' ? 'A refund request is pending management approval' : 'يُوجَد طَلَب صَرف بانتظار اعتماد الإدارَة')}
+                  >
+                    {isApproved
+                      ? (appLang === 'en' ? '✓ Approved' : '✓ مُعتَمَد')
+                      : (appLang === 'en' ? '⏳ Pending' : '⏳ قَيد الاعتماد')}
+                  </span>
+                )
+              }
+              return (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1156,13 +1240,13 @@ export default function CustomersPage() {
                 >
                   💰 {appLang === 'en' ? 'Disburse' : 'صرف'}
                 </Button>
-              ) : null
+              )
             })()}
           </div>
         )
       }
     }
-  ], [appLang, currencySymbol, receivables, balances, customersWithActiveInvoices, permUpdate, permDelete, permWritePayments])
+  ], [appLang, currencySymbol, receivables, balances, customersWithActiveInvoices, permUpdate, permDelete, permWritePayments, refundRequests])
 
   // Pagination logic
   const {

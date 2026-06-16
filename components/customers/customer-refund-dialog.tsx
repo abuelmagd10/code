@@ -222,7 +222,12 @@ export function CustomerRefundDialog({
         : (userCostCenterId || null)
 
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `customer-refund-${Date.now()}`
-      const response = await fetch("/api/customers/refunds", {
+      // v3.74.183 — accountants (and any non-privileged role) file a refund
+      // REQUEST that goes to the approval queue. Owner / admin / general_manager
+      // still cash out immediately via /api/customers/refunds for back-office
+      // convenience. Symmetric with the supplier refund flow.
+      const endpoint = isPrivilegedUser ? "/api/customers/refunds" : "/api/customers/refund-requests"
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -253,7 +258,11 @@ export function CustomerRefundDialog({
         throw new Error(result.error || (appLang === 'en' ? 'Failed to record customer refund' : 'فشل تسجيل صرف رصيد العميل'))
       }
 
-      toastActionSuccess(toast, appLang === 'en' ? 'Refund' : 'الصرف', appLang === 'en' ? 'Customer credit refund completed' : 'تم صرف رصيد العميل بنجاح')
+      if (isPrivilegedUser) {
+        toastActionSuccess(toast, appLang === 'en' ? 'Refund' : 'الصرف', appLang === 'en' ? 'Customer credit refund completed' : 'تم صرف رصيد العميل بنجاح')
+      } else {
+        toastActionSuccess(toast, appLang === 'en' ? 'Refund Request' : 'طلب الصرف', appLang === 'en' ? 'Refund request submitted for management approval' : 'تم رفع طلب الصرف بانتظار اعتماد الإدارة')
+      }
 
       // Reset form
       setRefundAmount(0)
