@@ -28,6 +28,7 @@ import {
 // Widget Server Components (كل منها يجلب بياناته بشكل مستقل)
 import StatsWidget from "./_widgets/StatsWidget"
 import SecondaryStatsWidget from "./_widgets/SecondaryStatsWidget"
+import CustomerSupplierBalancesWidget from "./_widgets/CustomerSupplierBalancesWidget"
 import ChartsWidget from "./_widgets/ChartsWidget"
 import BankCashWidget from "./_widgets/BankCashWidget"
 import RecentListsWidget from "./_widgets/RecentListsWidget"
@@ -289,6 +290,20 @@ export default async function DashboardPage({
           {companyId && (
             <Suspense fallback={<SecondaryStatsSkeleton />}>
               <SecondaryStatsWidget {...widgetCtx} />
+            </Suspense>
+          )}
+
+          {/* ── Widget 2b (v3.74.176): رصيد العملاء + سلفة الموردين ──
+              Operational view sourced from customer_credit_ledger and open
+              vendor_credits, branch-filtered the same way as Widget 2. */}
+          {companyId && (
+            <Suspense fallback={<SecondaryStatsSkeleton />}>
+              <CustomerSupplierBalancesWidget
+                companyId={widgetCtx.companyId}
+                currency={widgetCtx.currency}
+                appLang={widgetCtx.appLang}
+                branchId={widgetCtx.branchId}
+              />
             </Suspense>
           )}
 
