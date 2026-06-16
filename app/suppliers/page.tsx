@@ -839,18 +839,28 @@ export default function SuppliersPage() {
               </Button>
             )}
             {(() => {
-              // v3.74.178 — block the button whenever there is a NON-terminal
-              // refund request for this supplier. "Non-terminal" means
-              // pending_approval (waiting on management) OR approved
-              // (management said yes; execution may not have run yet).
-              // Only 'rejected' or 'cancelled' should reopen the button so
-              // the accountant can resubmit. Same accountant who is no
-              // longer privileged in v3.74.178's load gate now actually
-              // sees their own pending row.
-              const activeRefund = refundRequests.find(
+              // v3.74.179 — look at the *latest* request only, not "any"
+              // matching request. refundRequests is already ordered
+               // created_at DESC, so the first row whose supplier_id matches
+              // is the most recent one. Reasons:
+              //   1. The list keeps historical 'approved' rows from cycles
+              //      that already executed (e.g., a credit was approved
+              //      and paid in April; the request row stays at
+              //      status='approved' forever). The previous .find() with
+              //      a status whitelist surfaced that historical row and
+              //      pinned the supplier into '✓ refund approved' state
+              //      even after the latest request had been rejected.
+              //   2. The accountant's mental model matches the latest
+              //      request - that's the one their inbox just heard
+              //      about. So whatever the latest status is decides
+              //      whether the button can show.
+              const latestRequest = refundRequests.find(
                 (r: any) => r.supplier_id === row.id
-                  && (r.status === 'pending_approval' || r.status === 'approved')
               )
+              const activeRefund =
+                latestRequest && (latestRequest.status === 'pending_approval' || latestRequest.status === 'approved')
+                  ? latestRequest
+                  : null
               if (activeRefund) {
                 const isApproved = activeRefund.status === 'approved'
                 return (
