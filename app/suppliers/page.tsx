@@ -460,6 +460,24 @@ export default function SuppliersPage() {
     onDelete: handleBalancesRealtimeEvent,
   })
 
+  // v3.74.181 — vendor_refund_requests drives the per-row refund pill,
+  // the 'اعتمادات الاسترداد' approver queue, and the 'سِجِل الاسترداد'
+  // history. Without realtime: a manager approving in another tab won't
+  // see the accountant's request appear until refresh, and the
+  // accountant won't see the rejection result without refresh either.
+  const handleRefundRequestsRealtimeEvent = useCallback(() => {
+    console.log('🔄 [Suppliers] refund_requests change — reloading')
+    loadRefundRequests()
+  }, [])
+
+  useRealtimeTable({
+    table: 'vendor_refund_requests',
+    enabled: true,
+    onInsert: handleRefundRequestsRealtimeEvent,
+    onUpdate: handleRefundRequestsRealtimeEvent,
+    onDelete: handleRefundRequestsRealtimeEvent,
+  })
+
   // دالة تحميل أرصدة الموردين
   const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
     try {

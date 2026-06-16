@@ -64,6 +64,7 @@ export type RealtimeTable =
   | 'purchase_return_warehouse_allocations' // ✅ تخصيصات مخازن مرتجعات المشتريات
   | 'sales_returns' // ✅ مرتجعات المبيعات
   | 'vendor_credits' // ✅ أرصدة الموردين
+  | 'vendor_refund_requests' // v3.74.181 — طَلَبات استِرداد سُلَف المُورِّدين
   | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
   | 'expenses' // ✅ المصروفات
   | 'shareholder_drawings' // ✅ مسحوبات الشركاء
@@ -316,6 +317,7 @@ class RealtimeManager {
       'purchase_return_warehouse_allocations': 'purchase_return_warehouse_allocations',
       'sales_returns': 'sales_returns',
       'vendor_credits': 'vendor_credits',
+      'vendor_refund_requests': 'vendor_refund_requests', // v3.74.181
       'customer_debit_notes': 'customer_debit_notes',
       'expenses': 'expenses',
       'shareholder_drawings': 'shareholder_drawings',
