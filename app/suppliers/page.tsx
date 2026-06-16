@@ -381,8 +381,14 @@ export default function SuppliersPage() {
   }
 
   // تشغيل جلب الطلبات عند تحديد الدور (للأدوار المميزة فقط)
+  // v3.74.178 — used to gate this load on PRIVILEGED_ROLES only, which
+  // meant the accountant never had refundRequests populated. The
+  // suppliers row guard then thought no request was in flight and the
+  // 'استرداد نقدى' button kept showing, tempting the accountant to
+  // resubmit the same refund. Accountants need to see their own
+  // outstanding requests too. RLS still scopes what each role can read.
   useEffect(() => {
-    if (currentUserRole && PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())) {
+    if (currentUserRole) {
       loadRefundRequests()
     }
   }, [currentUserRole])
@@ -833,23 +839,36 @@ export default function SuppliersPage() {
               </Button>
             )}
             {(() => {
-              // v3.74.177 — the "Cash Refund" button used to stay visible
-              // even after the accountant filed a request, because the
-              // underlying vendor_credit stays open until the workflow
-              // executes. That tempted users to file a second identical
-              // request. Now: if there's any pending refund request for
-              // this supplier, swap the button for a disabled "pending"
-              // pill instead.
-              const hasPendingRefund = refundRequests.some(
-                (r: any) => r.supplier_id === row.id && r.status === 'pending_approval'
+              // v3.74.178 — block the button whenever there is a NON-terminal
+              // refund request for this supplier. "Non-terminal" means
+              // pending_approval (waiting on management) OR approved
+              // (management said yes; execution may not have run yet).
+              // Only 'rejected' or 'cancelled' should reopen the button so
+              // the accountant can resubmit. Same accountant who is no
+              // longer privileged in v3.74.178's load gate now actually
+              // sees their own pending row.
+              const activeRefund = refundRequests.find(
+                (r: any) => r.supplier_id === row.id
+                  && (r.status === 'pending_approval' || r.status === 'approved')
               )
-              if (hasPendingRefund) {
+              if (activeRefund) {
+                const isApproved = activeRefund.status === 'approved'
                 return (
                   <span
-                    className="inline-flex items-center gap-1 h-8 px-2 text-xs rounded border border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300"
-                    title={appLang === 'en' ? 'A refund request is pending management approval' : 'يُوجَد طَلَب استِرداد بانتظار اعتماد الإدارَة'}
+                    className={`inline-flex items-center gap-1 h-8 px-2 text-xs rounded border ${
+                      isApproved
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-300'
+                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300'
+                    }`}
+                    title={
+                      isApproved
+                        ? (appLang === 'en' ? 'Refund approved; awaiting execution' : 'الاسترداد مُعتَمَد — قَيد التَّنفيذ')
+                        : (appLang === 'en' ? 'A refund request is pending management approval' : 'يُوجَد طَلَب استِرداد بانتظار اعتماد الإدارَة')
+                    }
                   >
-                    {appLang === 'en' ? '⏳ Refund pending' : '⏳ استرداد قَيد الاعتماد'}
+                    {isApproved
+                      ? (appLang === 'en' ? '✓ Refund approved' : '✓ استرداد مُعتَمَد')
+                      : (appLang === 'en' ? '⏳ Refund pending' : '⏳ استرداد قَيد الاعتماد')}
                   </span>
                 )
               }
