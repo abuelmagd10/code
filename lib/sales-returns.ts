@@ -279,9 +279,12 @@ export async function prepareSalesReturnData(
     const { invoiceId, invoiceNumber, returnItems, returnMode, companyId, userId, lang } = params
 
     // 1️⃣ التحقق من الفاتورة
+    // v3.74.187 — also read the invoice's FX columns so the sales_return
+    // can persist original_currency + exchange_rate_used instead of
+    // silently assuming base currency.
     const { data: invoiceCheck } = await supabase
       .from('invoices')
-      .select('status, paid_amount, total_amount, customer_id, sales_order_id, subtotal, tax_amount, returned_amount, branch_id, warehouse_id, cost_center_id')
+      .select('status, paid_amount, total_amount, customer_id, sales_order_id, subtotal, tax_amount, returned_amount, branch_id, warehouse_id, cost_center_id, currency_code, exchange_rate, exchange_rate_used, exchange_rate_id')
       .eq('id', invoiceId)
       .single()
 
@@ -314,6 +317,29 @@ export async function prepareSalesReturnData(
     const remainingUnpaid = Math.max(0, invoiceTotal - paidAmount)
     const creditAmount = Math.max(0, returnTotal - remainingUnpaid)
 
+    // v3.74.187 — propagate the invoice's FX context onto the return.
+    // The amounts above (returnedSubtotal / returnedTax / returnTotal) are
+    // computed from invoice line numbers, which are already in base
+    // currency when the invoice was foreign-currency (display_total flow).
+    // We mirror that and back-compute the "original" amounts so a future
+    // FX revaluation can rebuild the per-currency view.
+    const invoiceCurrency = String((invoiceCheck as any).currency_code || 'EGP')
+    const invoiceRate = Number(
+      (invoiceCheck as any).exchange_rate
+      ?? (invoiceCheck as any).exchange_rate_used
+      ?? 1
+    ) || 1
+    const isBaseCurrency = invoiceCurrency === 'EGP'
+    const originalSubtotal = isBaseCurrency
+      ? returnedSubtotal
+      : Math.round((returnedSubtotal / invoiceRate) * 10000) / 10000
+    const originalTax = isBaseCurrency
+      ? returnedTax
+      : Math.round((returnedTax / invoiceRate) * 10000) / 10000
+    const originalTotal = isBaseCurrency
+      ? returnTotal
+      : Math.round((returnTotal / invoiceRate) * 10000) / 10000
+
     const salesReturn = {
       id: salesReturnId,
       company_id: companyId,
@@ -331,7 +357,16 @@ export async function prepareSalesReturnData(
       refund_method: creditAmount > 0 ? 'credit_note' : 'none',
       status: 'completed',
       reason: returnMode === 'full' ? 'مرتجع كامل' : 'مرتجع جزئي',
-      notes: `مرتجع للفاتورة ${invoiceNumber}`
+      notes: `مرتجع للفاتورة ${invoiceNumber}`,
+      // v3.74.187 — FX snapshot. Without these the return looks like an
+      // EGP movement even when the invoice was, say, USD.
+      original_currency: invoiceCurrency,
+      original_subtotal: originalSubtotal,
+      original_tax_amount: originalTax,
+      original_total_amount: originalTotal,
+      exchange_rate_used: invoiceRate,
+      exchange_rate_at_return: invoiceRate,
+      exchange_rate_id: (invoiceCheck as any).exchange_rate_id || null,
     }
 
     // 5️⃣ تحضير Sales Return Items

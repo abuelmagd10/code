@@ -147,9 +147,12 @@ export default function SalesReturnsPage() {
       const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
+      // v3.74.187 — also pull currency_code + exchange_rate so the amount
+      // column can show the return's native value alongside the base
+      // currency.
       let invoicesQuery = supabase
         .from("invoices")
-        .select("id, invoice_number, invoice_date, customer_id, returned_amount, return_status, branch_id, customers(name), branches(name)")
+        .select("id, invoice_number, invoice_date, customer_id, returned_amount, return_status, branch_id, currency_code, exchange_rate, customers(name), branches(name)")
         .eq("company_id", visibilityRules.companyId)
         .not("return_status", "is", null)
         .gt("returned_amount", 0)
@@ -206,17 +209,32 @@ export default function SalesReturnsPage() {
       setCustomers(allCustomers)
 
       // تنسيق البيانات
-      const formatted: SalesReturnEntry[] = invoices.map((inv: any) => ({
-        id: inv.id,
-        entry_date: inv.invoice_date,
-        description: `${inv.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')} - ${appLang === 'en' ? 'Invoice' : 'فاتورة'} ${inv.invoice_number}`,
-        reference_id: inv.id,
-        reference_type: inv.return_status === 'full' ? 'full_return' : 'partial_return',
-        total_amount: Number(inv.returned_amount || 0),
-        invoice_number: inv.invoice_number || "",
-        customer_name: inv.customers?.name || "",
-        customer_id: inv.customer_id || ""
-      }))
+      const formatted: SalesReturnEntry[] = invoices.map((inv: any) => {
+        // v3.74.187 — derive the original-currency amount when the invoice
+        // is foreign. returned_amount is stored in base currency, so we
+        // divide by the rate that was on the invoice.
+        const code = String(inv.currency_code || 'EGP').toUpperCase()
+        const rate = Number(inv.exchange_rate || 1) || 1
+        const baseReturned = Number(inv.returned_amount || 0)
+        const originalReturned = code === 'EGP'
+          ? baseReturned
+          : Math.round((baseReturned / rate) * 100) / 100
+        return ({
+          id: inv.id,
+          entry_date: inv.invoice_date,
+          description: `${inv.return_status === 'full' ? (appLang === 'en' ? 'Full Return' : 'مرتجع كامل') : (appLang === 'en' ? 'Partial Return' : 'مرتجع جزئي')} - ${appLang === 'en' ? 'Invoice' : 'فاتورة'} ${inv.invoice_number}`,
+          reference_id: inv.id,
+          reference_type: inv.return_status === 'full' ? 'full_return' : 'partial_return',
+          total_amount: baseReturned,
+          invoice_number: inv.invoice_number || "",
+          customer_name: inv.customers?.name || "",
+          customer_id: inv.customer_id || "",
+          // v3.74.187 — used by the Amount cell formatter to show the
+          // original currency under the base amount.
+          original_currency: code,
+          original_total_amount: originalReturned,
+        }) as SalesReturnEntry
+      })
 
       setReturns(formatted)
       setLoading(false)
@@ -367,11 +385,28 @@ export default function SalesReturnsPage() {
       type: 'currency',
       align: 'right',
       width: 'w-32',
-      format: (value) => (
-        <span className="font-semibold text-red-600 dark:text-red-400">
-          {currencySymbol}{Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
-      )
+      format: (value, row) => {
+        // v3.74.187 — show the return's own currency. The total_amount
+        // column is in base currency (EGP) for accounting, but if the
+        // underlying invoice was in another currency we surface the
+        // original value next to it so the user is not misled.
+        const origCurrency = String((row as any)?.original_currency || '').toUpperCase()
+        const origTotal = (row as any)?.original_total_amount
+        const showOriginal = origCurrency && origCurrency !== 'EGP' && origTotal != null
+        const origSymbol = currencySymbols[origCurrency] || origCurrency
+        return (
+          <div className="flex flex-col items-end">
+            <span className="font-semibold text-red-600 dark:text-red-400">
+              {currencySymbol}{Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {showOriginal && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {origSymbol}{Number(origTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
+        )
+      }
     },
     {
       key: 'reference_type',
