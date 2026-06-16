@@ -37,7 +37,11 @@ interface RefundRequest {
   invoice_id: string | null
   source_type: string
   amount: number
-  status: "pending" | "approved" | "executed" | "cancelled"
+  // v3.74.185 — credit_refund rows carry a currency code (column was added
+  // in v3.74.183). payment_correction rows leave it null and we fall back
+  // to the company's base currency.
+  currency?: string | null
+  status: "pending" | "approved" | "executed" | "cancelled" | "rejected"
   notes: string | null
   requested_by: string | null
   approved_by: string | null
@@ -213,7 +217,7 @@ export default function CustomerRefundRequestsPage() {
       let query = supabase
         .from("customer_refund_requests")
         .select(`
-          id, company_id, customer_id, invoice_id, source_type, amount,
+          id, company_id, customer_id, invoice_id, source_type, amount, currency,
           status, notes, requested_by, approved_by, executed_by,
           approved_at, executed_at, created_at, metadata,
           customers(name),
@@ -445,12 +449,25 @@ export default function CustomerRefundRequestsPage() {
     {
       header: appLang === 'en' ? "Amount" : "المبلغ",
       key: "amount",
-      format: (_, r) => (
-        <div className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-          <DollarSign className="w-3.5 h-3.5" />
-          {Number(r.amount).toLocaleString()}
-        </div>
-      )
+      format: (_, r) => {
+        // v3.74.185 — display the row's actual currency instead of a hard-
+        // coded dollar icon. Falls back to EGP for older payment_correction
+        // rows that don't carry a currency.
+        const code = String(r.currency || 'EGP').toUpperCase()
+        const symbol = code === 'EGP' ? '£'
+          : code === 'USD' ? '$'
+          : code === 'EUR' ? '€'
+          : code === 'GBP' ? '£'
+          : code === 'SAR' ? '﷼'
+          : code === 'AED' ? 'د.إ'
+          : code
+        return (
+          <div className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <span className="text-sm">{symbol}</span>
+            {Number(r.amount).toLocaleString()}
+          </div>
+        )
+      }
     },
     {
       header: appLang === 'en' ? "Reason" : "السبب",
