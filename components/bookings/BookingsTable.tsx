@@ -178,12 +178,16 @@ export function BookingsTable({ data, lang = "ar", queryLang }: BookingsTablePro
       header: t("عرض", "View"),
       align: "center" as const,
       type: "actions" as const,
+      // v3.74.216 — Button asChild so the Link becomes the actual clickable
+      // element. The previous shape (<Link><Button>...</Button></Link>)
+      // nests a <button> inside an <a>, which browsers treat as invalid
+      // HTML and swallow the navigation click.
       format: (_, row) => (
-        <Link href={`/bookings/${row.id}${q}`} prefetch={false}>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+        <Button asChild size="sm" variant="ghost" className="h-8 w-8 p-0">
+          <Link href={`/bookings/${row.id}${q}`} prefetch={false}>
             <Eye className="w-4 h-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       ),
     },
   ]
