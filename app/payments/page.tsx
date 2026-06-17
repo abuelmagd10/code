@@ -2969,6 +2969,8 @@ export default function PaymentsPage() {
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    {/* v3.74.212 — supplier name column, mirrors the customer-side change in v3.74.211. */}
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Supplier' : 'اسم المورد'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid Amount' : 'المدفوع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Net Bill' : 'صافي الفاتورة'}</th>
@@ -3004,9 +3006,14 @@ export default function PaymentsPage() {
                     const isOverpayment = netBillAmt !== null && paidAmt > netBillAmt + 0.001
                     const advanceAmt = isOverpayment ? paidAmt - (netBillAmt ?? 0) : 0
 
+                    // v3.74.212 — supplier name lookup, mirrors v3.74.211 on the customer side.
+                    const supplierName = suppliers.find((s: any) => s.id === (p as any).supplier_id)?.name
+                      || (appLang === 'en' ? '-' : '—')
+
                     return (
                     <tr key={p.id} className={`border-b ${isPending ? 'bg-yellow-50 dark:bg-yellow-900/10' : isRejected ? 'bg-red-50 dark:bg-red-900/10 opacity-60' : ''}`}>
                       <td className="px-2 py-2">{p.payment_date}</td>
+                      <td className="px-2 py-2 font-medium text-gray-800 dark:text-gray-200">{supplierName}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
                           {/* ✅ priority: bill.branch → PO.branch → billBranchMap → payment.branch
