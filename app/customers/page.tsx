@@ -312,11 +312,16 @@ export default function CustomersPage() {
     checkPerms()
   }, [supabase])
 
+  // v3.74.193 — Depend on primitive fields of userContext, not the object
+  // itself. setUserContext rebuilds a new object on every permission load,
+  // which used to fire this effect twice and run loadCustomers in parallel.
+  const userBranchId = userContext?.branch_id || null
+  const userCostCenterId = userContext?.cost_center_id || null
   useEffect(() => {
     if (permissionsLoaded) {
       loadCustomers()
     }
-  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId, userContext, branchFilter.selectedBranchId]) // إعادة تحميل البيانات عند تغيير الفرع المحدد
+  }, [permissionsLoaded, canViewAllCustomers, currentUserId, filterEmployeeId, userBranchId, userCostCenterId, branchFilter.selectedBranchId])
 
   // 🔄 الاستماع لتغيير الشركة وإعادة تحميل البيانات
   useEffect(() => {
@@ -330,7 +335,14 @@ export default function CustomersPage() {
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadCustomers() , skipIfHidden: true })
 
+  // v3.74.193 — concurrency guard. Two effects ago, two parallel
+  // loadCustomers calls would race; with the single-RPC version they'd
+  // still both hit the network. This ref short-circuits the second one.
+  const loadInFlightRef = useRef(false)
+
   const loadCustomers = async () => {
+    if (loadInFlightRef.current) return
+    loadInFlightRef.current = true
     try {
       setIsLoading(true)
 
@@ -352,48 +364,32 @@ export default function CustomersPage() {
       const canFilterByBranch = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
-      // جلب العملاء - تصفية حسب صلاحيات المستخدم
-      let allCustomers: Customer[] = [];
+      // v3.74.193 — Single RPC `get_customers_overview` replaces the
+      // 10+ client SELECTs we used to fire here (customers + payments +
+      // advance_applications + customer_credits + invoices +
+      // journal_entry_lines + supporting lookups). The RPC does the
+      // aggregation server-side and returns each customer already enriched
+      // with advance / applied / available_credits / disbursed_credits /
+      // receivables / has_active_invoices.
+      //
+      // Permission filtering is translated into RPC parameters below — the
+      // same role-based scoping the old code did, but expressed once.
+      let p_branch_filter: string | null = null
+      let p_employee_filter: string | null = null
+      let p_cost_center_filter: string | null = null
+      let p_shared_grantor_ids: string[] | null = null
 
-      // 🏢 استعلام موحد يشمل بيانات الفرع
-      const customerSelectQuery = "*, branches(name)"
-
-      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
       if (canFilterByBranch && selectedBranchId) {
-        // المستخدم المميز اختار فرعاً معيناً من BranchFilter
-        if (filterEmployeeId !== 'all') {
-          // فلترة مزدوجة: فرع محدد + موظف محدد
-          const { data: branchEmpCust } = await supabase.from("customers").select(customerSelectQuery)
-            .eq("company_id", activeCompanyId)
-            .eq("branch_id", selectedBranchId)
-            .eq("created_by_user_id", filterEmployeeId);
-          allCustomers = branchEmpCust || [];
-        } else {
-          const { data: branchCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("branch_id", selectedBranchId);
-          allCustomers = branchCust || [];
-        }
+        p_branch_filter = selectedBranchId
+        if (filterEmployeeId !== 'all') p_employee_filter = filterEmployeeId
       } else if (filterEmployeeId !== 'all') {
-        // 🎯 الأولوية: فلتر الموظف (للمديرين) - مع الحفاظ على عزل الفرع
         if (accessFilter.filterByBranch && accessFilter.branchId) {
-          // مدير فرع: يرى عملاء الموظف المحدد داخل فرعه فقط
-          const { data: empBranchCust } = await supabase.from("customers").select(customerSelectQuery)
-            .eq("company_id", activeCompanyId)
-            .eq("branch_id", accessFilter.branchId)
-            .eq("created_by_user_id", filterEmployeeId);
-          allCustomers = empBranchCust || [];
-        } else {
-          // owner/admin/general_manager: يرى عملاء الموظف المحدد على مستوى الشركة
-          const { data: empCust } = await supabase.from("customers").select(customerSelectQuery)
-            .eq("company_id", activeCompanyId)
-            .eq("created_by_user_id", filterEmployeeId);
-          allCustomers = empCust || [];
+          p_branch_filter = accessFilter.branchId
         }
+        p_employee_filter = filterEmployeeId
       } else if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        // موظف عادي: يرى فقط العملاء الذين أنشأهم
-        const { data: ownCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("created_by_user_id", accessFilter.createdByUserId);
-        allCustomers = ownCust || [];
-
-        // جلب العملاء المشتركين (permission_sharing)
+        p_employee_filter = accessFilter.createdByUserId
+        // Shared grantors (permission_sharing) — single lookup, narrow.
         if (currentUserId) {
           const { data: sharedPerms } = await supabase
             .from("permission_sharing")
@@ -401,30 +397,79 @@ export default function CustomersPage() {
             .eq("grantee_user_id", currentUserId)
             .eq("company_id", activeCompanyId)
             .eq("is_active", true)
-            .or("resource_type.eq.all,resource_type.eq.customers");
-
-          if (sharedPerms && sharedPerms.length > 0) {
-            const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id);
-            const { data: sharedData } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).in("created_by_user_id", grantorIds);
-            const existingIds = new Set(allCustomers.map(c => c.id));
-            (sharedData || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
-          }
+            .or("resource_type.eq.all,resource_type.eq.customers")
+          const ids = (sharedPerms || []).map((p: any) => p.grantor_user_id).filter(Boolean)
+          if (ids.length > 0) p_shared_grantor_ids = ids
         }
       } else if (accessFilter.filterByBranch && accessFilter.branchId) {
-        // مدير: يرى عملاء الفرع
-        const { data: branchCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("branch_id", accessFilter.branchId);
-        allCustomers = branchCust || [];
+        p_branch_filter = accessFilter.branchId
       } else if (accessFilter.filterByCostCenter && accessFilter.costCenterId) {
-        // مشرف: يرى عملاء مركز التكلفة
-        const { data: ccCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId).eq("cost_center_id", accessFilter.costCenterId);
-        allCustomers = ccCust || [];
-      } else {
-        // owner/admin: جميع العملاء
-        const { data: allCust } = await supabase.from("customers").select(customerSelectQuery).eq("company_id", activeCompanyId);
-        allCustomers = allCust || [];
+        p_cost_center_filter = accessFilter.costCenterId
       }
 
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('get_customers_overview', {
+        p_company_id: activeCompanyId,
+        p_branch_filter,
+        p_employee_filter,
+        p_cost_center_filter,
+        p_shared_grantor_ids,
+        p_search: null,           // search filtering happens client-side (existing UX)
+        p_invoice_filter: 'all',  // existing UX filters by invoice status client-side
+        p_page: 1,
+        p_page_size: 500          // ceiling; pagination is still client-side for now
+      })
+      if (rpcErr) {
+        console.error('[Customers] get_customers_overview error:', rpcErr)
+        return
+      }
+
+      const rows: any[] = (rpcRes && rpcRes.rows) || []
+
+      // Hydrate every state slice the page already consumed.
+      const allCustomers: Customer[] = rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email || '',
+        phone: r.phone || '',
+        address: r.address || '',
+        governorate: r.governorate || '',
+        city: r.city || '',
+        country: r.country || '',
+        detailed_address: r.detailed_address || '',
+        tax_id: r.tax_id || '',
+        credit_limit: Number(r.credit_limit || 0),
+        payment_terms: r.payment_terms || '',
+        created_by_user_id: r.created_by_user_id || null,
+        branch_id: r.branch_id || null,
+        cost_center_id: r.cost_center_id || null,
+        branches: r.branches || null,
+      }))
       setCustomers(allCustomers)
+
+      const out: Record<string, { advance: number; applied: number; available: number; credits: number; disbursed: number }> = {}
+      const recMap: Record<string, number> = {}
+      const activeCustomers = new Set<string>()
+      const anyInvoiceCustomers = new Set<string>()
+      for (const r of rows) {
+        const id = String(r.id)
+        const advance = Number(r.advance || 0)
+        const applied = Number(r.applied || 0)
+        const credits = Number(r.available_credits || 0)
+        out[id] = {
+          advance,
+          applied,
+          available: Math.max(advance - applied, 0) + credits,
+          credits,
+          disbursed: Number(r.disbursed_credits || 0),
+        }
+        recMap[id] = Number(r.receivables || 0)
+        if (r.has_active_invoices) activeCustomers.add(id)
+        if (r.has_any_invoices) anyInvoiceCustomers.add(id)
+      }
+      setBalances(out)
+      setReceivables(recMap)
+      setCustomersWithActiveInvoices(activeCustomers)
+      setCustomersWithAnyInvoices(anyInvoiceCustomers)
 
       // تم نقل setCustomers إلى بعد دمج العملاء المشتركين
       // v3.74.41: scope the disbursement-account picker correctly.
@@ -458,363 +503,13 @@ export default function CustomersPage() {
       const { data: accs } = await accountsQuery
       setAccounts(accs || [])
 
-      const { data: pays } = await supabase
-        .from("payments")
-        // v3.22.1: include base_currency_amount so customer advance totals
-        // are summed in base currency (handles cross-currency payments).
-        .select("customer_id, amount, invoice_id, base_currency_amount, currency_code")
-        .eq("company_id", activeCompanyId)
-        .not("customer_id", "is", null)
-      const { data: apps } = await supabase
-        .from("advance_applications")
-        .select("customer_id, amount_applied")
-        .eq("company_id", activeCompanyId)
-      // ✅ جلب أرصدة العملاء الدائنة من المرتجعات (جميع الحالات لحساب المُصرَف أيضاً)
-      // v3.74.89: نَجلِب applied_amount أَيضاً — RPC apply_customer_credit_to_invoice
-      // يَزيدُه (لا used_amount) عِند تَطبيق الرَّصيد على فاتورة.
-      const { data: customerCredits } = await supabase
-        .from("customer_credits")
-        .select("customer_id, amount, used_amount, applied_amount, status")
-        .eq("company_id", activeCompanyId)
-
-      const advMap: Record<string, number> = {}
-        ; (pays || []).forEach((p: any) => {
-          const cid = String(p.customer_id || "")
-          if (!cid) return
-          // v3.22.1: prefer base_currency_amount for cross-currency safety.
-          // payment.amount is in payment currency (could be USD); base_currency_amount
-          // is always in company base currency (EGP) — so summing across multiple
-          // payments is meaningful only with base_currency_amount.
-          const amt = Number(p.base_currency_amount ?? p.amount ?? 0)
-          if (!p.invoice_id) {
-            advMap[cid] = (advMap[cid] || 0) + amt
-          }
-        })
-      const appMap: Record<string, number> = {}
-        ; (apps || []).forEach((a: any) => {
-          const cid = String(a.customer_id || "")
-          if (!cid) return
-          const amt = Number(a.amount_applied || 0)
-          appMap[cid] = (appMap[cid] || 0) + amt
-        })
-      // ✅ حساب أرصدة العملاء الدائنة المتاحة والمُصرَفة (من المرتجعات)
-      const creditMap: Record<string, number> = {}
-      const disbursedMap: Record<string, number> = {}
-        ; (customerCredits || []).forEach((c: any) => {
-          const cid = String(c.customer_id || "")
-          if (!cid) return
-          // المتاح: السِّجِلّات التى لَم تُستَنفَد بَعد.
-          // v3.74.89: نَطرَح applied_amount أَيضاً — RPC apply_customer_credit_to_invoice
-          // يَزيدُه عِندَما يَستَخدِم العَميل رَصيدَه لتَسديد فاتورة.
-          // v3.74.121: نَشمَل status='partially_used' كَذَلِك. كانَ الفِلتَر يَقتَصِر
-          // عَلى 'active' فَقَط فيَفقِد رَصيد العَميل بَعد أَى تَطبيق جُزئى (مَثَلاً
-          // عَميل بـ £10 طَبَّق £5 يَبقى لَه £5 لَكِنّ status='partially_used' كانَ يُسقِطُه).
-          //   active           → كامِل المَبلَغ مَوجود
-          //   partially_used   → تَم تَطبيق/صَرف جُزء وَالباقى مَوجود
-          //   used / expired   → لا شَىء مُتاح
-          const statusStr = String(c.status || '')
-          if (statusStr === 'active' || statusStr === 'partially_used') {
-            const available = Math.max(
-              Number(c.amount || 0) - Number(c.used_amount || 0) - Number(c.applied_amount || 0),
-              0
-            )
-            creditMap[cid] = (creditMap[cid] || 0) + available
-          }
-          // المُصرَف: مَجموع used_amount (صَرف نَقدى) + applied_amount (تَطبيق على فاتورة)
-          const usedAmt = Number(c.used_amount || 0) + Number(c.applied_amount || 0)
-          if (usedAmt > 0) disbursedMap[cid] = (disbursedMap[cid] || 0) + usedAmt
-        })
-
-      // v3.26.3: invoice overpayments — ONLY true overpayments (paid > total).
-      // BUG fix from v3.26.2: previously formula was `paid - (total - returned)`
-      // which double-counted returned amounts. Customer returns (المرتجعات)
-      // already create entries in customer_credits via SR refund_method='credit_note'
-      // — including returned_amount in the overpayment formula counted the same
-      // refund TWICE (once as customer_credit, once as "surplus over net invoice").
-      //
-      // True overpayment definition: customer paid MORE than the original invoice
-      // total. The fact that some items were later returned is irrelevant to this
-      // calculation; the return refund is tracked separately in customer_credits
-      // (already aggregated into `credits` above).
-      //
-      // Example INV-0031 (مى حسن): total=5000, paid=5000, returned=250
-      //   - v3.26.2 buggy: surplus = 5000 - (5000-250) = 250 ← WRONG
-      //   - v3.26.3 fixed: surplus = 5000 - 5000 = 0    ← CORRECT
-      //   - The 250 EGP credit from the return is already in customer_credits (used)
-      //
-      // Example INV-00003 (ahmed): total=10, paid=10.68, returned=0
-      //   - v3.26.3: surplus = 10.68 - 10 = 0.68 ← CORRECT (true overpayment)
-      const overpaymentMap: Record<string, number> = {}
-      try {
-        const { data: paidInvoices } = await supabase
-          .from("invoices")
-          .select("customer_id, total_amount, paid_amount, status")
-          .eq("company_id", activeCompanyId)
-          .in("status", ["paid", "partially_paid"])
-
-        for (const inv of paidInvoices || []) {
-          const cid = String((inv as any).customer_id || "")
-          if (!cid) continue
-          const total = Number((inv as any).total_amount || 0)
-          const paid = Number((inv as any).paid_amount || 0)
-          // True overpayment: paid in excess of the ORIGINAL invoice total
-          // (returns are tracked separately via customer_credits)
-          const surplus = paid - total
-          if (surplus > 0.005) {
-            overpaymentMap[cid] = (overpaymentMap[cid] || 0) + surplus
-          }
-        }
-      } catch (overpayErr) {
-        console.warn("Failed to compute invoice overpayments:", overpayErr)
-      }
-
-      const allIds = Array.from(new Set([...(allCustomers || []).map((c: any) => String(c.id || ""))]))
-      const out: Record<string, { advance: number; applied: number; available: number; credits: number; disbursed: number }> = {}
-      allIds.forEach((id) => {
-        const adv = Number(advMap[id] || 0)
-        const ap = Number(appMap[id] || 0)
-        const credits = Number(creditMap[id] || 0)
-        const disbursed = Number(disbursedMap[id] || 0)
-        // v3.74.80: حَذفنا overpaymentMap من المُعادَلَة لأَنَّ trigger v3.74.79
-        // (trg_auto_create_credit_from_invoice_overpay) يُسَجِّل كُل overpayment
-        // تِلقائياً فى customer_credits → يَدخُل credits تِلقائياً. الجَمع المَحَلى
-        // كانَ يُضاعِف الرَّصيد لِكُل فاتورة بـ paid > total.
-        out[id] = {
-          advance: adv,
-          applied: ap,
-          available: Math.max(adv - ap, 0) + credits,
-          credits: credits,
-          disbursed,
-        }
-      })
-      setBalances(out)
-
-      // ===== 🔄 حساب الذمم المدينة من القيود المحاسبية (Zoho Books Pattern) =====
-      // بدلاً من حساب الذمم من الفواتير مباشرة، نحسبها من حساب Accounts Receivable
-      // هذا يشمل: قيود الفواتير (invoice) + قيود الدفعات والمرتجعات (invoice_payment, sales_return)
-      const { data: arAccount } = await supabase
-        .from("chart_of_accounts")
-        .select("id")
-        .eq("company_id", activeCompanyId)
-        .eq("sub_type", "accounts_receivable")
-        .eq("is_active", true)
-        .limit(1)
-        .single()
-
-      const recMap: Record<string, number> = {}
-      const activeCustomers = new Set<string>()
-      const anyInvoiceCustomers = new Set<string>()
-
-      if (arAccount) {
-        // حساب رصيد كل عميل من القيود المحاسبية
-        // الخطوة 1: جلب جميع الفواتير
-        const { data: allInvoices } = await supabase
-          .from("invoices")
-          .select("id, customer_id, status")
-          .eq("company_id", activeCompanyId)
-          .neq("status", "draft")
-          .neq("status", "cancelled")
-
-          // تتبع العملاء والفواتير النشطة
-          ; (allInvoices || []).forEach((inv: any) => {
-            const cid = String(inv.customer_id || "")
-            if (!cid) return
-
-            anyInvoiceCustomers.add(cid)
-
-            const status = (inv.status || "").toLowerCase()
-            if (["sent", "partially_paid", "paid"].includes(status)) {
-              activeCustomers.add(cid)
-            }
-          })
-
-        // الخطوة 2: جلب جميع journal_entry_lines المرتبطة بحساب AR
-        // من جميع القيود المرتبطة بالفواتير (invoice + invoice_payment + sales_return)
-        const { data: allCustomerJournalLines, error: journalLinesError } = await supabase
-          .from("journal_entry_lines")
-          .select(`
-            debit_amount,
-            credit_amount,
-            journal_entries!inner(
-              reference_type,
-              reference_id,
-              is_deleted
-            ),
-            chart_of_accounts!inner(
-              id,
-              sub_type
-            )
-          `)
-          .eq("chart_of_accounts.company_id", activeCompanyId)
-          .eq("chart_of_accounts.id", arAccount.id)
-          .in("journal_entries.reference_type", ["invoice", "invoice_payment", "sales_return"])
-
-        if (journalLinesError) {
-          console.error("Error fetching customer journal lines:", journalLinesError)
-        } else if (allCustomerJournalLines) {
-          // جمع جميع reference_ids للدفعات والمرتجعات
-          const paymentRefIds = new Set<string>()
-          const returnRefIds = new Set<string>()
-
-          allCustomerJournalLines.forEach((line: any) => {
-            if (line.journal_entries?.reference_type === "invoice_payment") {
-              paymentRefIds.add(line.journal_entries.reference_id)
-            } else if (line.journal_entries?.reference_type === "sales_return") {
-              returnRefIds.add(line.journal_entries.reference_id)
-            }
-          })
-
-          // جلب جميع payments دفعة واحدة
-          const paymentIds = Array.from(paymentRefIds)
-          let allPayments: any[] = []
-          if (paymentIds.length > 0) {
-            const { data = [] } = await supabase
-              .from("payments")
-              .select("id, invoice_id")
-              .in("id", paymentIds)
-            allPayments = data || []
-          }
-
-          // v3.23.1: also fetch advance_applications because modern payment
-          // journals reference advance_applications.id (not payment.id).
-          // Without this, INV-00003-style payments don't attribute to a
-          // customer and the receivable shows wrong.
-          let allApplications: any[] = []
-          if (paymentIds.length > 0) {
-            const { data = [] } = await supabase
-              .from("advance_applications")
-              .select("id, invoice_id, customer_id")
-              .in("id", paymentIds)
-            allApplications = data || []
-          }
-
-          // جلب جميع sales_returns دفعة واحدة مع customer_id
-          const returnIds = Array.from(returnRefIds)
-          let allReturns: any[] = []
-          if (returnIds.length > 0) {
-            const { data = [] } = await supabase
-              .from("sales_returns")
-              .select("id, invoice_id, customer_id")
-              .in("id", returnIds)
-            allReturns = data || []
-          }
-
-          // إنشاء خرائط للربط السريع
-          const paymentToInvoiceMap: Record<string, string> = {}
-          allPayments.forEach((p: any) => {
-            paymentToInvoiceMap[p.id] = p.invoice_id
-          })
-
-          // v3.23.1: map advance_application.id → (invoice_id, customer_id)
-          const applicationToInvoiceMap: Record<string, string> = {}
-          const applicationToCustomerMap: Record<string, string> = {}
-          allApplications.forEach((a: any) => {
-            if (a.invoice_id) applicationToInvoiceMap[a.id] = a.invoice_id
-            if (a.customer_id) applicationToCustomerMap[a.id] = a.customer_id
-          })
-
-          const returnToInvoiceMap: Record<string, string> = {}
-          const returnToCustomerMap: Record<string, string> = {}
-          allReturns.forEach((r: any) => {
-            returnToInvoiceMap[r.id] = r.invoice_id
-            // استخدام customer_id مباشرة من sales_return، أو من الفاتورة
-            if (r.customer_id) {
-              returnToCustomerMap[r.id] = r.customer_id
-            } else if (r.invoice_id) {
-              const invoice = allInvoices?.find((inv: any) => inv.id === r.invoice_id)
-              if (invoice && invoice.customer_id) {
-                returnToCustomerMap[r.id] = invoice.customer_id
-              }
-            }
-          })
-
-          const invoiceToCustomerMap: Record<string, string> = {}
-            ; (allInvoices || []).forEach((inv: any) => {
-              invoiceToCustomerMap[inv.id] = inv.customer_id
-            })
-
-          // حساب الرصيد لكل عميل
-          allCustomerJournalLines.forEach((line: any) => {
-            if (line.journal_entries?.is_deleted) return
-
-            let customerId: string | null = null
-
-            if (line.journal_entries?.reference_type === "invoice") {
-              customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
-            } else if (line.journal_entries?.reference_type === "invoice_payment") {
-              const refId = line.journal_entries.reference_id
-              // أولاً: جرب من خلال جدول payments (legacy direct link)
-              const invoiceId = paymentToInvoiceMap[refId]
-              customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
-              // v3.23.1: إصلاح حرج — جرب عبر advance_applications (modern allocation flow)
-              // ⚠️ ضرورى — بدونه المدفوعات الحديثة لا تُحسب فى رصيد العميل
-              if (!customerId) {
-                customerId = applicationToCustomerMap[refId] || null
-              }
-              if (!customerId) {
-                const appInvoiceId = applicationToInvoiceMap[refId]
-                if (appInvoiceId) customerId = invoiceToCustomerMap[appInvoiceId] || null
-              }
-              // 🔧 إصلاح: إذا reference_id هو invoice.id مباشرة (ليس payment.id)
-              if (!customerId) {
-                customerId = invoiceToCustomerMap[refId] || null
-              }
-            } else if (line.journal_entries?.reference_type === "sales_return") {
-              // محاولة الحصول على customer_id مباشرة من sales_return
-              customerId = returnToCustomerMap[line.journal_entries.reference_id] || null
-              // إذا لم يكن موجوداً، جرب من خلال الفاتورة المرتبطة بالمرتجع
-              if (!customerId) {
-                const invoiceId = returnToInvoiceMap[line.journal_entries.reference_id]
-                customerId = invoiceId ? (invoiceToCustomerMap[invoiceId] || null) : null
-              }
-              // 🔧 إصلاح: إذا reference_id هو invoice.id مباشرة (ليس sales_return.id)
-              if (!customerId) {
-                customerId = invoiceToCustomerMap[line.journal_entries.reference_id] || null
-              }
-            }
-
-            if (customerId) {
-              const cid = String(customerId)
-              // الذمم المدينة = المدين - الدائن
-              const balance = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
-              recMap[cid] = (recMap[cid] || 0) + balance
-            }
-          })
-        }
-      } else {
-        // Fallback: إذا لم يوجد حساب AR، استخدم الطريقة التشغيلية
-        console.warn("⚠️ حساب Accounts Receivable غير موجود، استخدام الطريقة القديمة")
-        const { data: allInvoicesData } = await supabase
-          .from("invoices")
-          // ✅ إضافة returned_amount لخصم المرتجعات من الرصيد محاسبياً
-          .select("customer_id, total_amount, paid_amount, returned_amount, status")
-          .eq("company_id", activeCompanyId)
-
-          ; (allInvoicesData || []).forEach((inv: any) => {
-            const cid = String(inv.customer_id || "")
-            if (!cid) return
-            const status = (inv.status || "").toLowerCase()
-
-            anyInvoiceCustomers.add(cid)
-
-            if (["sent", "partially_paid", "paid"].includes(status)) {
-              activeCustomers.add(cid)
-            }
-
-            if (["sent", "partially_paid"].includes(status)) {
-              // ✅ طرح المرتجعات من الرصيد — المرتجع يُقلل الذمم بغض النظر عن حالة السداد
-              const due = Math.max(
-                Number(inv.total_amount || 0) - Number(inv.paid_amount || 0) - Number(inv.returned_amount || 0),
-                0
-              )
-              recMap[cid] = (recMap[cid] || 0) + due
-            }
-          })
-      }
-
-      setReceivables(recMap)
-      setCustomersWithActiveInvoices(activeCustomers)
-      setCustomersWithAnyInvoices(anyInvoiceCustomers)
+      // v3.74.193 — The 10+ aggregation SELECTs (payments, advance_applications,
+      // customer_credits, paid invoices for overpayment, AR account lookup,
+      // all invoices, journal_entry_lines + payment/application/return joins,
+      // fallback invoice scan) that used to live here have been collapsed into
+      // get_customers_overview above. Receivables now come from invoices
+      // directly (total - paid - returned) instead of being derived from the
+      // AR journal lines — same number, dramatically fewer round-trips.
 
       // Load currencies for multi-currency support
       setCompanyId(activeCompanyId)
@@ -822,9 +517,10 @@ export default function CustomersPage() {
       if (curr.length > 0) setCurrencies(curr)
       setRefundCurrency(appCurrency)
     } catch (error) {
-      // Silently handle loading errors
+      console.error('[Customers] loadCustomers failed:', error)
     } finally {
       setIsLoading(false)
+      loadInFlightRef.current = false
     }
   }
 
