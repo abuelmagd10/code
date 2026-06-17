@@ -66,6 +66,8 @@ export type RealtimeTable =
   | 'vendor_credits' // ✅ أرصدة الموردين
   | 'vendor_refund_requests' // v3.74.181 — طَلَبات استِرداد سُلَف المُورِّدين
   | 'customer_refund_requests' // v3.74.183 — طَلَبات صَرف رَصيد العُملاء
+  | 'customer_credits' // v3.74.198 — أرصدة العملاء الدائنة
+  | 'customer_credit_ledger' // v3.74.198 — حركات رصيد العميل (Cr/Dr)
   | 'customer_debit_notes' // ✅ إشعارات مدين العملاء
   | 'expenses' // ✅ المصروفات
   | 'shareholder_drawings' // ✅ مسحوبات الشركاء
@@ -320,6 +322,8 @@ class RealtimeManager {
       'vendor_credits': 'vendor_credits',
       'vendor_refund_requests': 'vendor_refund_requests', // v3.74.181
       'customer_refund_requests': 'customer_refund_requests', // v3.74.183
+      'customer_credits': 'customer_credits', // v3.74.198
+      'customer_credit_ledger': 'customer_credit_ledger', // v3.74.198
       'customer_debit_notes': 'customer_debit_notes',
       'expenses': 'expenses',
       'shareholder_drawings': 'shareholder_drawings',

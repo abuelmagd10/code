@@ -541,6 +541,41 @@ export default function CustomersPage() {
     onDelete: handleCustomersRealtimeEvent,
   })
 
+  // v3.74.198 — credit / payment / invoice tables also feed the balance
+  // and receivables columns. When the accountant submits a credit refund
+  // and the owner approves it, the JE writes to customer_credits +
+  // customer_credit_ledger; without subscribing here, the page kept
+  // showing the pre-refund balance until the user navigated away and
+  // back. Same fix the suppliers page had since v3.74.181.
+  useRealtimeTable({
+    table: 'customer_credits',
+    enabled: true,
+    onInsert: handleCustomersRealtimeEvent,
+    onUpdate: handleCustomersRealtimeEvent,
+    onDelete: handleCustomersRealtimeEvent,
+  })
+  useRealtimeTable({
+    table: 'customer_credit_ledger',
+    enabled: true,
+    onInsert: handleCustomersRealtimeEvent,
+    onUpdate: handleCustomersRealtimeEvent,
+    onDelete: handleCustomersRealtimeEvent,
+  })
+  useRealtimeTable({
+    table: 'payments',
+    enabled: true,
+    onInsert: handleCustomersRealtimeEvent,
+    onUpdate: handleCustomersRealtimeEvent,
+    onDelete: handleCustomersRealtimeEvent,
+  })
+  useRealtimeTable({
+    table: 'invoices',
+    enabled: true,
+    onInsert: handleCustomersRealtimeEvent,
+    onUpdate: handleCustomersRealtimeEvent,
+    onDelete: handleCustomersRealtimeEvent,
+  })
+
   // v3.74.184 — simplified: do not gate on currentUserRole, run on mount
   // and re-run whenever the role/branch changes. The previous version
   // could leave refundRequests empty during the brief window between
