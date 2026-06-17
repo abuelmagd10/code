@@ -43,6 +43,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         .select('*')
         .eq('booking_id', id)
         .eq('company_id', companyId)
+        // v3.74.218 — the column was renamed from created_at to
+        // changed_at to match the BookingStatusHistory type and the
+        // BookingStatusTimeline component. Before the rename the order
+        // call hit PostgREST 42703 (undefined column) and the whole
+        // GET /api/bookings/[id] returned 500.
         .order('changed_at'),
     ])
 

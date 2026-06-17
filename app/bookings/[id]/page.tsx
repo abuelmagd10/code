@@ -61,18 +61,33 @@ export default function BookingDetailPage() {
   // v3.74.62 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadBooking() })
 
+  // v3.74.217 — show the error instead of silently bouncing back to
+  // the list when the API fails. v3.74.218 fixed the underlying cause
+  // (PostgREST 42703 on a missing column), but the diagnostic surface
+  // stays so future failures don't silently dump the user on /bookings.
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   const loadBooking = useCallback(async () => {
+    setLoadError(null)
     try {
-      const res  = await fetch(`/api/bookings/${id}`)
-      if (!res.ok) throw new Error("Not found")
+      const res = await fetch(`/api/bookings/${id}`)
+      if (!res.ok) {
+        let message = `${res.status} ${res.statusText}`
+        try {
+          const errJson = await res.json()
+          if (errJson?.error) message = String(errJson.error)
+        } catch { /* response wasn't JSON */ }
+        setLoadError(message)
+        return
+      }
       const json = await res.json()
       setBooking(json.booking as FullBookingResponse)
-    } catch {
-      router.push(`/bookings${q}`)
+    } catch (err: any) {
+      setLoadError(String(err?.message || err || (isAr ? 'خطأ غير متوقع' : 'Unexpected error')))
     } finally {
       setIsLoading(false)
     }
-  }, [id, q, router])
+  }, [id, isAr])
 
   useEffect(() => { loadBooking() }, [loadBooking])
 
@@ -86,7 +101,28 @@ export default function BookingDetailPage() {
     )
   }
 
-  if (!booking) return null
+  // v3.74.217 — render the error instead of silently redirecting.
+  if (!booking) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <ERPPageHeader
+            title={t("الحجز غير متاح", "Booking unavailable")}
+            description={loadError || t("تعذر تحميل بيانات الحجز", "Could not load booking")}
+            variant="list"
+          />
+          <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-800 dark:text-amber-300 mb-2">
+              {t("تفاصيل الخطأ:", "Error details:")} <span className="font-mono text-xs">{loadError || "—"}</span>
+            </p>
+            <Link href={`/bookings${q}`} className="text-blue-600 hover:underline text-sm">
+              ← {t("العودة للقائمة", "Back to bookings")}
+            </Link>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   const cancelBeforeHours = 24  // default; ideally from service data
   const hasRating         = booking.rating != null
