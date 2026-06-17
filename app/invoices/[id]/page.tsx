@@ -720,9 +720,15 @@ export default function InvoiceDetailPage() {
         setInvoicePayments(paymentsData || [])
 
         // v3.74.88: load credit applications for this invoice so the cards
-        // and payments table reflect them. apply_customer_credit_to_invoice
-        // bumps invoice.paid_amount but doesn't write a row in `payments` —
-        // the credit_applied entry lives in customer_credit_ledger instead.
+        // and payments table reflect them.
+        //
+        // v3.74.206 — since v3.74.102 (RPC apply_customer_credit_to_invoice)
+        // ALSO writes a row in `payments` with payment_method='customer_credit',
+        // so the application appeared twice in the payments table: once as
+        // a payment row and once as a customer_credit_ledger row. Filter the
+        // ledger entries to exclude any whose journal_entry_id already shows
+        // up on a payment row, keeping legacy pre-v3.74.102 entries (ledger
+        // only) but suppressing the new duplicates.
         try {
           const { data: creditAppsData } = await supabase
             .from("customer_credit_ledger")
@@ -730,7 +736,13 @@ export default function InvoiceDetailPage() {
             .eq("source_id", invoiceId)
             .eq("source_type", "credit_applied")
             .order("created_at", { ascending: false })
-          setCreditApplications(creditAppsData || [])
+          const paymentJeIds = new Set(
+            (paymentsData || []).map((p: any) => p.journal_entry_id).filter(Boolean)
+          )
+          const deduped = (creditAppsData || []).filter(
+            (ca: any) => !ca.journal_entry_id || !paymentJeIds.has(ca.journal_entry_id)
+          )
+          setCreditApplications(deduped)
         } catch {
           setCreditApplications([])
         }
