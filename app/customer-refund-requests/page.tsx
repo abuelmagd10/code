@@ -422,10 +422,15 @@ export default function CustomerRefundRequestsPage() {
   // v3.74.108 - count over the rows the current user can see, not the whole
   // table; otherwise a requester would see a number they can't reconcile
   // with what is rendered below.
+  // v3.74.197 — surface ALL five statuses the schema allows. Earlier the
+  // page hid rejected/cancelled, so a rejected refund disappeared from
+  // every card and the user couldn't filter to find it.
   const counts = {
-    pending:  visibleRequests.filter(r => r.status === "pending").length,
-    approved: visibleRequests.filter(r => r.status === "approved").length,
-    executed: visibleRequests.filter(r => r.status === "executed").length,
+    pending:   visibleRequests.filter(r => r.status === "pending").length,
+    approved:  visibleRequests.filter(r => r.status === "approved").length,
+    executed:  visibleRequests.filter(r => r.status === "executed").length,
+    rejected:  visibleRequests.filter(r => r.status === "rejected").length,
+    cancelled: visibleRequests.filter(r => r.status === "cancelled").length,
   }
 
   const columns: DataTableColumn<RefundRequest>[] = [
@@ -607,12 +612,14 @@ export default function CustomerRefundRequestsPage() {
           />
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        {/* Stats Cards — v3.74.197: shows all five schema statuses */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           {([
-            { key: "pending",  ar: "معلقة",  en: "Pending",  color: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20", count: counts.pending },
-            { key: "approved", ar: "معتمدة", en: "Approved", color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20",      count: counts.approved },
-            { key: "executed", ar: "منفّذة", en: "Executed", color: "text-green-600 bg-green-50 dark:bg-green-900/20",   count: counts.executed },
+            { key: "pending",   ar: "معلقة",   en: "Pending",   color: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20", count: counts.pending },
+            { key: "approved",  ar: "معتمدة",  en: "Approved",  color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20",       count: counts.approved },
+            { key: "executed",  ar: "منفّذة",  en: "Executed",  color: "text-green-600 bg-green-50 dark:bg-green-900/20",    count: counts.executed },
+            { key: "rejected",  ar: "مرفوضة",  en: "Rejected",  color: "text-red-600 bg-red-50 dark:bg-red-900/20",          count: counts.rejected },
+            { key: "cancelled", ar: "ملغاة",   en: "Cancelled", color: "text-gray-600 bg-gray-50 dark:bg-gray-900/20",       count: counts.cancelled },
           ] as const).map(s => (
             <Card key={s.key} className={`border-0 shadow-sm ${s.color} cursor-pointer transition-transform hover:scale-[1.02]`}
               onClick={() => setFilterStatus(s.key)}>
@@ -644,6 +651,7 @@ export default function CustomerRefundRequestsPage() {
                   <SelectItem value="pending">⏳ {appLang === 'en' ? 'Pending' : 'المعلقة'}</SelectItem>
                   <SelectItem value="approved">✅ {appLang === 'en' ? 'Approved' : 'المعتمدة'}</SelectItem>
                   <SelectItem value="executed">💸 {appLang === 'en' ? 'Executed' : 'المنفذة'}</SelectItem>
+                  <SelectItem value="rejected">❌ {appLang === 'en' ? 'Rejected' : 'المرفوضة'}</SelectItem>
                   <SelectItem value="cancelled">🚫 {appLang === 'en' ? 'Cancelled' : 'الملغاة'}</SelectItem>
                   <SelectItem value="all">📋 {appLang === 'en' ? 'All' : 'الكل'}</SelectItem>
                 </SelectContent>
