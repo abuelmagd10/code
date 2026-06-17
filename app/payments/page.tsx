@@ -2376,8 +2376,11 @@ export default function PaymentsPage() {
                 <thead>
                   <tr className="border-b bg-gray-50 dark:bg-slate-900">
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
+                    {/* v3.74.211 — Customer name + cash/bank account columns. */}
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Customer' : 'اسم العميل'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
+                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account' : 'الحساب (نقد/بنك)'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Invoice' : 'الفاتورة المرتبطة'}</th>
                     <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Sales Order' : 'أمر البيع'}</th>
@@ -2385,9 +2388,21 @@ export default function PaymentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCustomerPayments.map((p) => (
+                  {filteredCustomerPayments.map((p) => {
+                    // v3.74.211 — look up customer name + account from the
+                    // already-loaded lists. Falls back to a "-" placeholder
+                    // when the row references a customer or account we
+                    // could not resolve (e.g. shared visibility).
+                    const customerName = customers.find((c: any) => c.id === (p as any).customer_id)?.name
+                      || (appLang === 'en' ? '-' : '—')
+                    const accountRow = accounts.find((a: any) => a.id === (p as any).account_id) as any
+                    const accountLabel = accountRow
+                      ? (accountRow.account_code ? `${accountRow.account_code} - ` : '') + (accountRow.account_name || '')
+                      : (appLang === 'en' ? '-' : '—')
+                    return (
                     <tr key={p.id} className="border-b">
                       <td className="px-2 py-2">{p.payment_date}</td>
+                      <td className="px-2 py-2 font-medium text-gray-800 dark:text-gray-200">{customerName}</td>
                       <td className="px-2 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                           {/* ✅ عرض الفرع: من الفاتورة المرتبطة (invoiceBranchMap) → من الدفعة → fallback */}
@@ -2395,6 +2410,7 @@ export default function PaymentsPage() {
                         </span>
                       </td>
                       <td className="px-2 py-2">{renderPaymentAmount(p, paymentCurrency)}</td>
+                      <td className="px-2 py-2 text-xs text-gray-700 dark:text-gray-300">{accountLabel}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
                         {(() => {
@@ -2632,7 +2648,8 @@ export default function PaymentsPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
