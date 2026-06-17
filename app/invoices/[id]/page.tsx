@@ -508,7 +508,10 @@ export default function InvoiceDetailPage() {
 
         const { data: accounts } = await supabase
           .from("chart_of_accounts")
-          .select("id, account_code, account_name, account_type, sub_type, branch_id")
+          // v3.74.214 — pull original_currency so the Record-Payment dialog
+          // can filter accounts by the chosen payment currency (same pattern
+          // as v3.74.200 in the customer-refund dialog).
+          .select("id, account_code, account_name, account_type, sub_type, branch_id, original_currency")
           .eq("company_id", paymentCompanyId)
         const list = (accounts || []).filter((a: any) => {
           const st = String(a.sub_type || "").toLowerCase()
@@ -3557,21 +3560,59 @@ export default function InvoiceDetailPage() {
                     <option value="cheque">{appLang === 'en' ? 'Cheque' : 'شيك'}</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
-                  <select
-                    className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
-                    value={paymentAccountId}
-                    onChange={(e) => setPaymentAccountId(e.target.value)}
-                  >
-                    <option value="">{appLang === 'en' ? 'Select account' : 'اختر الحساب'}</option>
-                    {cashBankAccounts.map((a: any) => (
-                      <option key={a.id} value={a.id}>
-                        {(a.account_code ? `${a.account_code} - ` : "") + a.account_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* v3.74.214 — Currency-aware Account picker.
+                    Effective payment currency = invoice's FC code (if the
+                    invoice itself is foreign-currency), else the payment-
+                    currency selector (if "different currency" is on), else
+                    the app base currency.
+                    Step 1: prefer accounts whose original_currency matches
+                            the effective payment currency.
+                    Step 2: if none in the branch, fall back to all cash/
+                            bank accounts and surface an amber notice that
+                            FX conversion will apply. The existing FX
+                            section below already exposes the live / manual
+                            rate picker for the conversion. */}
+                {(() => {
+                  const baseCcy = String(appCurrency || 'EGP').toUpperCase()
+                  const isFCInvoice = !!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1)
+                  const effectivePayCcy = String(
+                    isFCInvoice ? invoice.currency_code
+                      : payInDifferentCurrency ? paymentCurrency
+                      : baseCcy
+                  ).toUpperCase()
+                  const accCcy = (a: any) => String(a?.original_currency || baseCcy).toUpperCase()
+                  const inPayCcy = cashBankAccounts.filter((a: any) => accCcy(a) === effectivePayCcy)
+                  const displayed = inPayCcy.length > 0 ? inPayCcy : cashBankAccounts
+                  const noMatchInCcy = inPayCcy.length === 0 && cashBankAccounts.length > 0
+                  return (
+                    <div className="space-y-2">
+                      <Label>{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</Label>
+                      <select
+                        className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                        value={paymentAccountId}
+                        onChange={(e) => setPaymentAccountId(e.target.value)}
+                      >
+                        <option value="">{appLang === 'en' ? 'Select account' : 'اختر الحساب'}</option>
+                        {displayed.map((a: any) => {
+                          const ccy = accCcy(a)
+                          const ccyBadge = ccy !== effectivePayCcy ? ` [${ccy}]` : ''
+                          return (
+                            <option key={a.id} value={a.id}>
+                              {(a.account_code ? `${a.account_code} - ` : "") + a.account_name + ccyBadge}
+                            </option>
+                          )
+                        })}
+                      </select>
+                      {noMatchInCcy && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          {appLang === 'en'
+                            ? `No account in ${effectivePayCcy} for this branch — showing all accounts. FX conversion will apply using the rate below.`
+                            : `لا يوجد حساب بِعُملَة ${effectivePayCcy} فى هذا الفَرع — يَتِم عَرض جَميع الحِسابات. سَيَتِم تَحويل العُملَة بِالسِّعر المُحَدَّد بِالأَسفَل.`}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
                 <div className="space-y-2">
                   <Label>{appLang === 'en' ? 'Reference/Receipt No. (optional)' : 'مرجع/رقم إيصال (اختياري)'}</Label>
                   <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
