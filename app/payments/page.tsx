@@ -687,11 +687,14 @@ export default function PaymentsPage() {
         const userBranchId = visibilityRules.branchId || null
 
         // جلب مدفوعات العملاء
+        // v3.74.210 — exclude soft-voided rows so v3.74.209's compensating
+        // cleanup actually hides them from the page.
         let custPaysQuery = supabase
           .from("payments")
           .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("customer_id", "is", null)
+          .or("is_deleted.is.null,is_deleted.eq.false")
 
         // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
         // المستخدم العادي: نجلب كل المدفوعات ونفلترها لاحقاً بناءً على فرع الفاتورة
@@ -718,11 +721,13 @@ export default function PaymentsPage() {
         }
 
         // جلب مدفوعات الموردين
+        // v3.74.210 — same is_deleted filter as the customer query above.
         let suppPaysQuery = supabase
           .from("payments")
           .select("*, branches:branch_id(name)")
           .eq("company_id", activeCompanyId)
           .not("supplier_id", "is", null)
+          .or("is_deleted.is.null,is_deleted.eq.false")
 
         // 🔐 الأدوار المميزة: فلترة اختيارية بالفرع المحدد
         if (isPrivileged && selectedBranchId) {
@@ -795,11 +800,14 @@ export default function PaymentsPage() {
       const userBranchId = visibilityRules.branchId || null
 
       // جلب مدفوعات العملاء
+      // v3.74.210 — exclude soft-voided rows here too (this is the realtime
+      // refresh path).
       let custPaysQuery = supabase
         .from("payments")
         .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("customer_id", "is", null)
+        .or("is_deleted.is.null,is_deleted.eq.false")
 
       // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
       if (isPrivileged && selectedBranchId) {
@@ -819,11 +827,13 @@ export default function PaymentsPage() {
       }
 
       // جلب مدفوعات الموردين مع فرع الفاتورة وأمر الشراء مباشرةً
+      // v3.74.210 — exclude soft-voided rows.
       let suppPaysQuery = supabase
         .from("payments")
         .select("*, branches:branch_id(name)")
         .eq("company_id", companyId)
         .not("supplier_id", "is", null)
+        .or("is_deleted.is.null,is_deleted.eq.false")
 
       // 🔐 المستخدم المميز: يمكنه فلترة بفرع معين (اختياري)
       if (isPrivileged && selectedBranchId) {
