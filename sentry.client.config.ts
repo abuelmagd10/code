@@ -37,11 +37,20 @@ Sentry.init({
     "NetworkError",
     "Failed to fetch",
     "Load failed",
+    // AbortController / fetch cancellation — fires when the user navigates
+    // away mid-request. Our context providers (PermissionsContext,
+    // CurrencySync, useServerPagination) all catch AbortError; the leaks
+    // that hit Sentry are downstream promise chains we can't reach.
     "The user aborted a request",
+    "signal is aborted without reason",
+    "AbortError",
+    // Service worker / PWA update glitches — transient browser-level
+    // failures fetching sw.js. Not a bug in our code.
+    "The operation was aborted",
+    "Failed to update a ServiceWorker",
+    "An unknown error occurred when fetching the script",
     // Vercel's feedback widget (third-party, not our code)
     "InvalidNodeTypeError: Failed to execute 'selectNode' on 'Range'",
-    // Service worker noise
-    "The operation was aborted",
   ],
 
   // Drop events that originate from third-party scripts we do not control
@@ -51,7 +60,34 @@ Sentry.init({
     /^moz-extension:\/\//,
   ],
 
-  beforeSend(event) {
+  beforeSend(event, hint) {
+    // Second-layer noise filter: ignoreErrors works on the message string,
+    // but browsers change those wordings between versions. Match by
+    // exception type/name as well so we're future-proof.
+    const ex = event.exception?.values?.[0]
+    const exType = ex?.type || ""
+    const exValue = ex?.value || ""
+    const orig: any = (hint as any)?.originalException
+    const origName = (orig && typeof orig === "object" && "name" in orig) ? String((orig as any).name) : ""
+
+    // AbortError fires whenever the user navigates away mid-request. It's
+    // benign — caught by our context providers — but the rejection still
+    // bubbles to onunhandledrejection. Drop it.
+    if (
+      exType === "AbortError" ||
+      origName === "AbortError" ||
+      /signal is aborted/i.test(exValue) ||
+      /aborted without reason/i.test(exValue)
+    ) {
+      return null
+    }
+
+    // Service worker update is browser-managed; transient fetch failures
+    // for sw.js are not our bug.
+    if (/Failed to update a ServiceWorker/i.test(exValue)) {
+      return null
+    }
+
     // Strip sensitive headers / cookies that may have leaked into breadcrumbs
     if (event.request?.cookies) delete event.request.cookies
     if (event.request?.headers) {
