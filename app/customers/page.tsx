@@ -491,7 +491,9 @@ export default function CustomersPage() {
       )
       let accountsQuery = supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type, sub_type, branch_id")
+        // v3.74.200 — pull original_currency so the refund dialog can show
+        // only same-currency accounts (and offer FX conversion when none match).
+        .select("id, account_code, account_name, account_type, sub_type, branch_id, original_currency")
         .eq("company_id", activeCompanyId)
         .in("sub_type", ["cash", "bank"])
         .eq("is_active", true)

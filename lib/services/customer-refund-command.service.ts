@@ -24,6 +24,18 @@ export type CustomerRefundCommand = {
   exchangeRateId?: string | null
   rateSource?: string | null
   uiSurface?: string | null
+  // v3.74.200 — Account FX. Lets the caller pre-compute the cash line in
+  // the account's native currency (e.g. refunding 3 EGP from a USD bank
+  // account at the current rate yields 0.06 USD). The service stores those
+  // values directly on the cash JE line so the bank ledger reads correctly
+  // in its own currency. When omitted (same-currency refund or callers
+  // that don't know the account FX), the service falls back to the
+  // pre-v3.74.200 behaviour: cash line in base currency with rate 1.
+  accountCurrency?: string | null
+  accountFxRate?: number | null
+  accountFxRateId?: string | null
+  accountFxSource?: string | null
+  accountNativeAmount?: number | null
 }
 
 export type CustomerRefundActor = {
@@ -189,23 +201,52 @@ export class CustomerRefundCommandService {
       const baseCurrency = String(companyRow?.base_currency || "EGP").toUpperCase()
       const refundCurrency = String(command.currencyCode || baseCurrency).toUpperCase()
 
-      // Read refund account's native currency
-      let refundAccountCurrency: string | null = null
-      try {
-        const { data: refundAcc } = await this.adminSupabase
-          .from("chart_of_accounts")
-          .select("original_currency")
-          .eq("id", refundAccount.id)
-          .maybeSingle()
-        refundAccountCurrency = refundAcc?.original_currency ? String(refundAcc.original_currency).toUpperCase() : null
-      } catch { /* ignore — fall back to refund currency */ }
+      // v3.74.200 — Resolve the account's native currency. Prefer what the
+      // caller passed (the dialog already looked it up and presented an
+      // FX picker to the user), and fall back to the chart_of_accounts
+      // row only when the caller didn't tell us.
+      let refundAccountCurrency: string | null = command.accountCurrency
+        ? String(command.accountCurrency).toUpperCase()
+        : null
+      if (!refundAccountCurrency) {
+        try {
+          const { data: refundAcc } = await this.adminSupabase
+            .from("chart_of_accounts")
+            .select("original_currency")
+            .eq("id", refundAccount.id)
+            .maybeSingle()
+          refundAccountCurrency = refundAcc?.original_currency ? String(refundAcc.original_currency).toUpperCase() : null
+        } catch { /* ignore — fall back below */ }
+      }
 
-      const refundCashNative = (refundAccountCurrency === refundCurrency)
+      // Three cases for the cash line:
+      //   1. Account currency == refund currency  → native = command.amount,
+      //      rate = command.exchangeRate.
+      //   2. Cross-currency AND the caller passed accountNativeAmount /
+      //      accountFxRate (v3.74.200 dialog) → use them. The cash line
+      //      shows the right value in the bank's own currency and the
+      //      bank ledger stays accurate even after the refund.
+      //   3. Cross-currency, no FX provided (legacy callers) → fall back
+      //      to the old behaviour: store the base amount, rate = 1. Not
+      //      ideal for the bank ledger but the GL totals are correct.
+      const sameCcy = refundAccountCurrency === refundCurrency
+      const callerProvidedAccountFx = Number(command.accountFxRate || 0) > 0
+        && command.accountNativeAmount != null
+      const refundCashNative = sameCcy
         ? command.amount
-        : command.baseAmount
-      const refundCashRate = (refundAccountCurrency === refundCurrency)
+        : callerProvidedAccountFx
+          ? Number(command.accountNativeAmount)
+          : command.baseAmount
+      const refundCashRate = sameCcy
         ? command.exchangeRate
-        : 1
+        : callerProvidedAccountFx
+          ? Number(command.accountFxRate)
+          : 1
+      const refundCashRateId = sameCcy
+        ? (command.exchangeRateId || null)
+        : callerProvidedAccountFx
+          ? (command.accountFxRateId || null)
+          : null
 
       const { error: linesError } = await this.adminSupabase.from("journal_entry_lines").insert([
         {
@@ -232,7 +273,7 @@ export class CustomerRefundCommandService {
           original_debit: 0,
           original_credit: refundCashNative,
           exchange_rate_used: refundCashRate,
-          exchange_rate_id: command.exchangeRateId || null,
+          exchange_rate_id: refundCashRateId,
           branch_id: branchId,
           cost_center_id: costCenterId,
         },

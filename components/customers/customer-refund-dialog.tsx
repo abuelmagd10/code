@@ -11,6 +11,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
+import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 
 // 🔐 الأدوار المميزة التي يمكنها اختيار الفرع ومركز التكلفة يدوياً
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -33,7 +34,9 @@ interface CustomerRefundDialogProps {
   customerId: string
   customerName: string
   maxAmount: number
-  accounts: { id: string; account_code: string; account_name: string; account_type: string; sub_type?: string }[]
+  // v3.74.200 — original_currency added so the dialog can filter accounts
+  // by the selected refund currency.
+  accounts: { id: string; account_code: string; account_name: string; account_type: string; sub_type?: string; original_currency?: string | null }[]
   appCurrency: string
   currencies: Currency[]
   refundAmount: number
@@ -119,6 +122,14 @@ export function CustomerRefundDialog({
   // 🏢 أسماء الفرع ومركز التكلفة للمحاسب (للعرض فقط)
   const [lockedBranchName, setLockedBranchName] = useState<string>('')
   const [lockedCostCenterName, setLockedCostCenterName] = useState<string>('')
+
+  // v3.74.200 — Account currency FX state. When the chosen bank/cash
+  // account is denominated in a different currency from the refund, the
+  // dialog needs an exchange rate AccountCurrency → BaseCurrency so the
+  // service can post the cash line in the right amount.
+  const [accountFxRate, setAccountFxRate] = useState<number>(1)
+  const [accountFxRateId, setAccountFxRateId] = useState<string | null>(null)
+  const [accountFxSource, setAccountFxSource] = useState<string | null>(null)
 
   // تحديث القيم الافتراضية عند فتح النافذة
   useEffect(() => {
@@ -213,6 +224,19 @@ export function CustomerRefundDialog({
         ? refundAmount
         : Math.round(refundAmount * refundExRate.rate * 10000) / 10000
 
+      // v3.74.200 — derive account FX so the API can post the cash line
+      // in the account's native currency. If the chosen account matches
+      // the refund currency, nothing changes — accountFxRate stays 1 and
+      // accountNativeAmount equals refundAmount.
+      const selectedAccount = accounts.find(a => a.id === refundAccountId)
+      const selectedAccCcy = String((selectedAccount as any)?.original_currency || appCurrency || 'EGP').toUpperCase()
+      const refundCcyUpper = (refundCurrency || appCurrency || 'EGP').toUpperCase()
+      const crossCurrency = Boolean(selectedAccount) && selectedAccCcy !== refundCcyUpper
+      const effectiveAccountRate = crossCurrency ? (accountFxRate > 0 ? accountFxRate : 1) : 1
+      const accountNativeAmount = crossCurrency
+        ? Math.round((baseRefundAmount / effectiveAccountRate) * 10000) / 10000
+        : (refundCcyUpper === selectedAccCcy ? refundAmount : baseRefundAmount)
+
       // 🔐 تحديد الفرع ومركز التكلفة للقيد (قيمة "none" تعني بدون فرع/مركز تكلفة)
       const finalBranchId = isPrivilegedUser
         ? (selectedBranchId && selectedBranchId !== 'none' ? selectedBranchId : null)
@@ -250,6 +274,13 @@ export function CustomerRefundDialog({
           exchangeRateId: refundExRate.rateId || null,
           rateSource: refundExRate.source || null,
           uiSurface: "customer_refund_dialog",
+          // v3.74.200 — Account FX (only meaningful when the chosen account's
+          // currency differs from the refund currency; harmless otherwise).
+          accountCurrency: selectedAccCcy,
+          accountFxRate: effectiveAccountRate,
+          accountFxRateId: crossCurrency ? accountFxRateId : null,
+          accountFxSource: crossCurrency ? accountFxSource : null,
+          accountNativeAmount,
         }),
       })
 
@@ -345,24 +376,109 @@ export function CustomerRefundDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
-            <Select value={refundAccountId} onValueChange={setRefundAccountId}>
-              <SelectTrigger>
-                <SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts
-                  .filter((acc) => {
-                    const st = String((acc as any).sub_type || '').toLowerCase()
-                    return st !== 'customer_credit' && st !== 'customer_advance'
-                  })
-                  .map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>{acc.account_code} - {acc.account_name}</SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* v3.74.200 — Account picker with currency-aware filtering.
+              Step 1: drop customer_credit / customer_advance sub-types (existing rule).
+              Step 2: prefer accounts whose original_currency matches refundCurrency.
+              Step 3: if none match, fall back to showing all branch accounts so
+                      the accountant can still complete the refund, and warn that
+                      FX conversion will apply.
+              Step 4: when the chosen account differs from refundCurrency, render
+                      an ExchangeRateSelector for AccountCurrency → BaseCurrency
+                      so the cash line gets the right native amount. */}
+          {(() => {
+            const baseCcy = (appCurrency || 'EGP').toUpperCase()
+            const refundCcy = (refundCurrency || baseCcy).toUpperCase()
+            const cashBank = accounts.filter((acc) => {
+              const st = String((acc as any).sub_type || '').toLowerCase()
+              return st !== 'customer_credit' && st !== 'customer_advance'
+            })
+            const accCcy = (acc: any) => String((acc?.original_currency || baseCcy)).toUpperCase()
+            const inRefundCcy = cashBank.filter(a => accCcy(a) === refundCcy)
+            const displayed = inRefundCcy.length > 0 ? inRefundCcy : cashBank
+            const noMatchInCcy = inRefundCcy.length === 0 && cashBank.length > 0
+
+            const selectedAccount = cashBank.find(a => a.id === refundAccountId)
+            const selectedAccCcy = selectedAccount ? accCcy(selectedAccount) : baseCcy
+            const crossCurrency = Boolean(selectedAccount) && selectedAccCcy !== refundCcy
+
+            const baseRefundAmount = refundCcy === baseCcy
+              ? refundAmount
+              : Math.round(refundAmount * refundExRate.rate * 10000) / 10000
+            const accountNativeAmount = crossCurrency && accountFxRate > 0
+              ? Math.round((baseRefundAmount / accountFxRate) * 10000) / 10000
+              : (refundCcy === selectedAccCcy ? refundAmount : baseRefundAmount)
+
+            return (
+              <>
+                <div className="space-y-2">
+                  <Label>{appLang==='en' ? 'Account' : 'الحساب'}</Label>
+                  <Select value={refundAccountId} onValueChange={setRefundAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={appLang==='en' ? 'Select account' : 'اختر الحساب'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {displayed.map((acc) => {
+                        const ccy = accCcy(acc)
+                        const ccyBadge = ccy !== refundCcy ? ` [${ccy}]` : ''
+                        return (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.account_code} - {acc.account_name}{ccyBadge}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {noMatchInCcy && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      {appLang === 'en'
+                        ? `No account in ${refundCcy} for this branch — showing all accounts. FX conversion will apply.`
+                        : `لا يوجد حساب بِعُملَة ${refundCcy} فى هذا الفَرع — يَتِم عَرض جَميع الحِسابات. سَيَتِم تَطبيق تَحويل عُملات.`}
+                    </p>
+                  )}
+                </div>
+
+                {crossCurrency && refundAmount > 0 && (
+                  <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded space-y-2 border border-amber-200 dark:border-amber-800">
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                      {appLang === 'en' ? '💱 Currency conversion' : '💱 تَحويل عُملَة'}
+                    </p>
+                    <ExchangeRateSelector
+                      fromCurrency={selectedAccCcy}
+                      baseCurrency={baseCcy}
+                      value={accountFxRate}
+                      onChange={setAccountFxRate}
+                      onRateMetaChange={(meta) => {
+                        if (meta) {
+                          setAccountFxRateId(meta.rateId)
+                          setAccountFxSource(meta.source)
+                        } else {
+                          setAccountFxRateId(null)
+                          setAccountFxSource(null)
+                        }
+                      }}
+                      labelEn={`Account rate (${selectedAccCcy} → ${baseCcy})`}
+                      labelAr={`سعر صَرف الحِساب (${selectedAccCcy} → ${baseCcy})`}
+                    />
+                    {accountFxRate > 0 && (
+                      <div className="text-xs text-gray-700 dark:text-gray-300">
+                        <div>
+                          {appLang === 'en' ? 'Will withdraw' : 'سَيُسحَب من الحِساب'}{' '}
+                          <strong>{accountNativeAmount.toLocaleString('ar-EG', { maximumFractionDigits: 4 })} {selectedAccCcy}</strong>
+                          {' '}({appLang === 'en' ? 'equivalent to' : 'يُعادِل'}{' '}
+                          <strong>{baseRefundAmount.toFixed(2)} {baseCcy}</strong>)
+                        </div>
+                        {accountFxSource && (
+                          <div className="text-[11px] text-gray-500">
+                            {appLang === 'en' ? 'Rate source' : 'مَصدَر السِّعر'}: {accountFxSource === 'manual' ? (appLang === 'en' ? 'manual' : 'يَدَوى') : (appLang === 'en' ? 'live (API)' : 'لَحظى')}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )
+          })()}
           <div className="space-y-2">
             <Label>{appLang==='en' ? 'Notes' : 'ملاحظات'}</Label>
             <Input value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} placeholder={appLang==='en' ? 'Optional notes' : 'ملاحظات اختيارية'} />

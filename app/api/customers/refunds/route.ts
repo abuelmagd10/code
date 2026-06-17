@@ -29,6 +29,12 @@ export async function POST(request: NextRequest) {
     const exchangeRateId = body?.exchangeRateId || body?.exchange_rate_id || null
     const rateSource = body?.rateSource || body?.rate_source || null
     const uiSurface = body?.uiSurface || body?.ui_surface || "customer_refund_dialog"
+    // v3.74.200 — account FX (omitted by legacy callers; harmless when absent).
+    const accountCurrency = body?.accountCurrency || body?.account_currency || null
+    const accountFxRate = body?.accountFxRate != null ? Number(body.accountFxRate) : null
+    const accountFxRateId = body?.accountFxRateId || body?.account_fx_rate_id || null
+    const accountFxSource = body?.accountFxSource || body?.account_fx_source || null
+    const accountNativeAmount = body?.accountNativeAmount != null ? Number(body.accountNativeAmount) : null
 
     if (!customerId) {
       return NextResponse.json({ success: false, error: "Customer is required" }, { status: 400 })
@@ -61,6 +67,11 @@ export async function POST(request: NextRequest) {
       exchangeRateId,
       rateSource,
       uiSurface,
+      accountCurrency,
+      accountFxRate,
+      accountFxRateId,
+      accountFxSource,
+      accountNativeAmount,
     }
 
     const idempotencyKey = resolveFinancialIdempotencyKey(

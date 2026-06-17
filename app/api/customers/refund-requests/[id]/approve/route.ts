@@ -69,6 +69,10 @@ export async function POST(
     // Execute the refund using the existing service. operationId is minted
     // inside recordRefund and feeds the JE reference_id (v3.74.182), so
     // there is no DUPLICATE_JOURNAL_VIOLATION risk.
+    // v3.74.200 — Restore the account FX snapshot the accountant captured
+    // when filing the request, so the executor posts the cash line in the
+    // bank's native currency with the same rate the accountant saw.
+    const meta = (req.metadata as any) || {}
     const command = {
       companyId: context.companyId,
       customerId: req.customer_id,
@@ -81,12 +85,17 @@ export async function POST(
       refundMethod: req.refund_method || "cash",
       notes: req.notes || null,
       invoiceId: req.invoice_id || null,
-      invoiceNumber: ((req.metadata as any) || {})?.invoice_number || null,
+      invoiceNumber: meta?.invoice_number || null,
       branchId: req.branch_id || null,
       costCenterId: req.cost_center_id || null,
       exchangeRateId: null,
       rateSource: null,
       uiSurface: "customer_refund_approval",
+      accountCurrency: meta?.account_currency || null,
+      accountFxRate: meta?.account_fx_rate != null ? Number(meta.account_fx_rate) : null,
+      accountFxRateId: meta?.account_fx_rate_id || null,
+      accountFxSource: meta?.account_fx_source || null,
+      accountNativeAmount: meta?.account_native_amount != null ? Number(meta.account_native_amount) : null,
     }
 
     const idempotencyKey = resolveFinancialIdempotencyKey(

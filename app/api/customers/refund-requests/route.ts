@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
     const invoiceNumber = body?.invoiceNumber || body?.invoice_number || null
     const branchId = body?.branchId || body?.branch_id || null
     const costCenterId = body?.costCenterId || body?.cost_center_id || null
+    // v3.74.200 — Account FX. Persisted in metadata so the approver can
+    // execute the refund with the same conversion the accountant chose.
+    const accountCurrency = body?.accountCurrency || body?.account_currency || null
+    const accountFxRate = body?.accountFxRate != null ? Number(body.accountFxRate) : null
+    const accountFxRateId = body?.accountFxRateId || body?.account_fx_rate_id || null
+    const accountFxSource = body?.accountFxSource || body?.account_fx_source || null
+    const accountNativeAmount = body?.accountNativeAmount != null ? Number(body.accountNativeAmount) : null
 
     if (!customerId) return NextResponse.json({ success: false, error: "Customer is required" }, { status: 400 })
     if (!refundAccountId) return NextResponse.json({ success: false, error: "Refund account is required" }, { status: 400 })
@@ -63,6 +70,12 @@ export async function POST(request: NextRequest) {
         metadata: {
           customer_name: customer?.name || null,
           invoice_number: invoiceNumber || null,
+          // v3.74.200 — Account FX snapshot for the approver.
+          account_currency: accountCurrency,
+          account_fx_rate: accountFxRate,
+          account_fx_rate_id: accountFxRateId,
+          account_fx_source: accountFxSource,
+          account_native_amount: accountNativeAmount,
         },
         refund_account_id: refundAccountId,
         branch_id: branchId || (customer as any)?.branch_id || null,
