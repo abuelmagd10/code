@@ -506,12 +506,18 @@ export class CustomerRefundCommandService {
   }
 
   private async applyCustomerCredits(companyId: string, customerId: string, amount: number, updatedCredits: Array<{ id: string; used_amount: number; status: string | null }>) {
+    // v3.74.199 — include 'partially_used' rows. The filter used to be
+    // 'active' only, so a customer whose credit had been touched even once
+    // (status flipped to 'partially_used' by the trigger) became invisible
+    // to the refund executor: the JE posted, but used_amount never moved
+    // and the customers page kept showing the old available_credits.
+    // Same fix the customers-page balance calc got in v3.74.121.
     const { data: credits, error } = await this.adminSupabase
       .from("customer_credits")
       .select("id, amount, used_amount, applied_amount, status")
       .eq("company_id", companyId)
       .eq("customer_id", customerId)
-      .eq("status", "active")
+      .in("status", ["active", "partially_used"])
       .order("credit_date", { ascending: true })
     if (error) throw new Error(error.message || "Failed to load customer credits")
 
@@ -520,11 +526,20 @@ export class CustomerRefundCommandService {
       if (remainingToDeduct <= 0) break
       const usedAmount = Number(credit.used_amount || 0)
       const appliedAmount = Number(credit.applied_amount || 0)
-      const available = Number(credit.amount || 0) - usedAmount - appliedAmount
+      const total = Number(credit.amount || 0)
+      const available = total - usedAmount - appliedAmount
       if (available <= 0) continue
       const deductAmount = Math.min(available, remainingToDeduct)
       const newUsedAmount = usedAmount + deductAmount
-      const newStatus = newUsedAmount + appliedAmount >= Number(credit.amount || 0) ? "used" : "active"
+      // v3.74.199 — three terminal states, not two. used / partially_used /
+      // active. Without the partially_used branch, a row that started at
+      // 'partially_used' would flip back to 'active' here even though
+      // a portion of it was already gone.
+      const consumed = newUsedAmount + appliedAmount
+      const newStatus =
+        consumed >= total ? "used"
+        : consumed > 0   ? "partially_used"
+        : "active"
       updatedCredits.push({ id: String(credit.id), used_amount: usedAmount, status: credit.status || null })
       const { error: updateError } = await this.adminSupabase
         .from("customer_credits")
