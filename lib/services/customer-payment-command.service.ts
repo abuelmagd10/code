@@ -213,17 +213,44 @@ export class CustomerPaymentCommandService {
     if (error || !payment?.id) throw new Error(error?.message || "Failed to create customer payment")
 
     const paymentId = String(payment.id)
-    await this.linkTrace(traceId, "payment", paymentId, "payment", CREATE_EVENT)
-    for (const allocation of command.allocations) {
-      await this.applyAllocation(actor, paymentId, allocation.invoiceId, allocation.amount, traceId)
+    // v3.74.209 — wrap the multi-step allocation + post in try/catch so a
+    // failure halfway through (e.g. the v3.74.208 trigger blocking an
+    // invoice update) does not leave the inserted payment row orphaned.
+    // Supabase calls are not transactional across statements; without this
+    // compensating delete the row stayed visible on /payments as a phantom
+    // unallocated payment.
+    try {
+      await this.linkTrace(traceId, "payment", paymentId, "payment", CREATE_EVENT)
+      for (const allocation of command.allocations) {
+        await this.applyAllocation(actor, paymentId, allocation.invoiceId, allocation.amount, traceId)
+      }
+      await this.finalizeApprovedPayment(await this.loadPayment(actor.companyId, paymentId), actor, {
+        idempotencyKey: `${options.idempotencyKey}:posting`,
+        requestHash: options.requestHash,
+        uiSurface: command.uiSurface || null,
+        invoicePaymentSeed: `${options.idempotencyKey}:invoice-payment`,
+      })
+    } catch (err) {
+      // Compensating action: soft-void the just-inserted payment so it
+      // does not survive as a phantom. We do NOT hard-delete because the
+      // audit triggers on the payments table reject FK-violating deletes;
+      // is_deleted=true + status=rejected hides it from every consumer.
+      try {
+        await this.adminSupabase
+          .from("payments")
+          .update({
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
+            status: "rejected",
+            notes: `[VOIDED: createPayment failed after insert — ${String((err as any)?.message || err)}]`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", paymentId)
+      } catch (cleanupErr) {
+        console.error("[CUSTOMER_PAYMENT_CREATE] cleanup after failure also failed:", cleanupErr)
+      }
+      throw err
     }
-
-    await this.finalizeApprovedPayment(await this.loadPayment(actor.companyId, paymentId), actor, {
-      idempotencyKey: `${options.idempotencyKey}:posting`,
-      requestHash: options.requestHash,
-      uiSurface: command.uiSurface || null,
-      invoicePaymentSeed: `${options.idempotencyKey}:invoice-payment`,
-    })
     return this.buildResult(paymentId, traceId, false)
   }
 
