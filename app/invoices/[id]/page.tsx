@@ -3433,6 +3433,65 @@ export default function InvoiceDetailPage() {
                 return null
               })()}
               <div className="space-y-4 py-2">
+                {/* v3.74.202 — Customer credit banners. Mirror the two info
+                    panels rendered on the invoice page itself so the user can
+                    apply a credit straight from the payment form without
+                    closing it to find the outer button. */}
+                {customerCreditDisbursed > 0 && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-800 rounded-lg shrink-0">
+                      <span className="text-lg">💸</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                        {appLang === 'en' ? 'Disbursed Customer Credit (Reference)' : 'رصيد دائن مُصرَف للعميل (مرجع توضيحي)'}
+                      </p>
+                      <p className="text-sm font-bold text-purple-700 dark:text-purple-300">
+                        {currencySymbol}{customerCreditDisbursed.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <span className="text-xs text-purple-500 dark:text-purple-400 shrink-0 italic">
+                      {appLang === 'en' ? 'Already refunded to customer' : 'تم ردّه للعميل مسبقاً'}
+                    </span>
+                  </div>
+                )}
+                {ledgerCreditBalance > 0.009 && ['sent', 'partially_paid'].includes(invoice.status) && canSeeCreditRefundButton && (
+                  <div className="rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-emerald-800 dark:text-emerald-300 text-sm">
+                          {appLang === 'en' ? '💰 Customer has an available credit balance!' : '💰 لدى العميل رصيد دائن متاح!'}
+                        </p>
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                          {appLang === 'en' ? 'Available credit from approved return: ' : 'رصيد متاح من مرتجع معتمد: '}
+                          <span className="font-bold text-sm">{currencySymbol}{ledgerCreditBalance.toFixed(2)}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                          setCreditApplyAmount(String(Math.min(ledgerCreditBalance, remaining).toFixed(2)))
+                          setShowApplyCreditDialog(true)
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        {appLang === 'en' ? 'Apply Credit' : 'تطبيق الرصيد'}
+                      </button>
+                      <a href={`/customer-credits/${invoice.customer_id}`} target="_blank" rel="noreferrer"
+                        className="px-2 py-1.5 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 text-xs rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                        {appLang === 'en' ? 'Ledger' : 'السجل'}
+                      </a>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2" data-ai-help="invoices.payment_amount">
                   <Label>
                     {appLang === 'en' ? 'Amount (in base currency)' : `المبلغ (بالعملة الأساسية ${appCurrency})`}
