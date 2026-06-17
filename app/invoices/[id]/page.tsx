@@ -3062,10 +3062,15 @@ export default function InvoiceDetailPage() {
             {/* v3.74.203 — z-[100] so this opens ABOVE the Record-Payment
                 Radix dialog when launched from the inner banner (v3.74.202).
                 Radix Dialog uses z-50, so the previous z-50 here let the
-                payment dialog sit on top and swallow every click. */}
+                payment dialog sit on top and swallow every click.
+                v3.74.204 — pointer-events-auto on BOTH the overlay and the
+                inner card. Radix Dialog disables pointer events on body
+                while it's open; without this override the apply-credit
+                dialog rendered above (correct z-index) but the Apply Credit
+                button below could not receive clicks. */}
             {showApplyCreditDialog && (
-              <div className="print:hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 p-6 w-full max-w-md mx-4">
+              <div className="print:hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-auto">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 p-6 w-full max-w-md mx-4 pointer-events-auto">
                   <h3 className="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2 mb-4">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     {appLang === 'en' ? 'Apply Credit to Invoice' : 'تطبيق الرصيد على الفاتورة'}
