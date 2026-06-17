@@ -19,6 +19,13 @@ export type BankTransferCommand = {
   exchangeRateId?: string | null
   rateSource?: string | null
   uiSurface?: string | null
+  // v3.74.201 — When the transfer currency is base but one of the accounts
+  // is in a foreign currency, the UI sends the rate the user picked for
+  // that account so the service does not silently substitute the current
+  // API rate. When omitted, the legacy silent-lookup path is used.
+  accountFxRate?: number | null
+  accountFxRateId?: string | null
+  accountFxSource?: string | null
 }
 
 export type BankTransferActor = {
@@ -164,26 +171,36 @@ export class BankTransferCommandService {
       // Compute native amount for each account:
       //   - If account currency matches the transfer currency, native = command.amount
       //   - If account currency is base, native = baseAmount
-      //   - Otherwise, lookup rate from DB or fall back to command.exchangeRate
-      const resolveNativeAmount = async (accountCurrency: string): Promise<{ native: number; rate: number }> => {
+      //   - Otherwise:
+      //       v3.74.201 — prefer the caller-supplied accountFxRate so the user's
+      //       explicit choice (live API vs manual) wins over a silent lookup.
+      //       Only fall back to the silent getExchangeRate path when the caller
+      //       did not provide a rate (legacy callers).
+      const callerAccountFx = Number(command.accountFxRate || 0) > 0
+        ? { rate: Number(command.accountFxRate), id: command.accountFxRateId || null }
+        : null
+      const resolveNativeAmount = async (accountCurrency: string): Promise<{ native: number; rate: number; rateId: string | null }> => {
         if (accountCurrency === transferCurrency) {
-          return { native: command.amount, rate: command.exchangeRate }
+          return { native: command.amount, rate: command.exchangeRate, rateId: command.exchangeRateId || null }
         }
         if (accountCurrency === baseCurrency) {
-          return { native: finalBaseAmount, rate: 1 }
+          return { native: finalBaseAmount, rate: 1, rateId: null }
         }
-        // Cross-currency: native = baseAmount / rate(accountCurrency → base)
+        // Cross-currency: native = baseAmount / rate(accountCurrency → base).
+        if (callerAccountFx) {
+          return { native: Number((finalBaseAmount / callerAccountFx.rate).toFixed(8)), rate: callerAccountFx.rate, rateId: callerAccountFx.id }
+        }
         try {
           const { getExchangeRate } = await import("@/lib/currency-service")
           const _rateResult: any = await getExchangeRate(this.adminSupabase, accountCurrency, baseCurrency, undefined, command.companyId); const rate = Number(_rateResult?.rate || 0)
           if (rate > 0) {
-            return { native: Number((finalBaseAmount / rate).toFixed(8)), rate }
+            return { native: Number((finalBaseAmount / rate).toFixed(8)), rate, rateId: null }
           }
         } catch (err) {
           console.warn("[BANK_TRANSFER] Could not resolve cross-currency rate:", accountCurrency, err)
         }
         // Fallback: assume 1:1 with transfer currency
-        return { native: command.amount, rate: command.exchangeRate }
+        return { native: command.amount, rate: command.exchangeRate, rateId: command.exchangeRateId || null }
       }
 
       const fromResolved = await resolveNativeAmount(fromCurrency)
@@ -200,7 +217,9 @@ export class BankTransferCommandService {
           original_credit: 0,
           original_currency: toCurrency,
           exchange_rate_used: toResolved.rate,
-          exchange_rate_id: command.exchangeRateId || null,
+          // v3.74.201 — each line keeps its own rateId so the GL audit trail
+          // reflects the actual conversion behind that account.
+          exchange_rate_id: toResolved.rateId,
           branch_id: transferBranchId,
           cost_center_id: transferCostCenterId,
         },
@@ -214,7 +233,7 @@ export class BankTransferCommandService {
           original_credit: fromResolved.native,
           original_currency: fromCurrency,
           exchange_rate_used: fromResolved.rate,
-          exchange_rate_id: command.exchangeRateId || null,
+          exchange_rate_id: fromResolved.rateId,
           branch_id: transferBranchId,
           cost_center_id: transferCostCenterId,
         },

@@ -136,6 +136,15 @@ export default function BankingPage() {
   const [exchangeRateId, setExchangeRateId] = useState<string | null>(null);
   const [rateSource, setRateSource] = useState<string>("same_currency");
   const [baseAmount, setBaseAmount] = useState<number>(0);
+  // v3.74.201 — When the transfer currency is the base currency but ONE
+  // of the chosen accounts is in a foreign currency (e.g. EGP transfer
+  // into a USD bank account), the service used to silently look up the
+  // current API rate. Now the user picks between live / manual just like
+  // the foreign-transfer-currency case above. These three pieces of
+  // state hold the account-side FX so we can post it to the API.
+  const [accountFxRate, setAccountFxRate] = useState<number>(1);
+  const [accountFxRateId, setAccountFxRateId] = useState<string | null>(null);
+  const [accountFxSource, setAccountFxSource] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   // User Context
@@ -578,6 +587,13 @@ export default function BankingPage() {
           exchangeRateId,
           rateSource,
           uiSurface: "banking_page",
+          // v3.74.201 — account-side FX. The service picks these up for the
+          // non-base account when the transfer currency is base. Harmless
+          // when the rate is 1 and irrelevant when both accounts are in
+          // base (the service falls back to its existing logic).
+          accountFxRate,
+          accountFxRateId,
+          accountFxSource,
         }),
       })
 
@@ -777,6 +793,64 @@ export default function BankingPage() {
                       />
                     </div>
                   )}
+                  {/* v3.74.201 — Account FX picker. When the transfer is in
+                      base currency but one of the chosen accounts is denominated
+                      in a foreign currency, the user picks the live/manual rate
+                      explicitly instead of letting the service silently use the
+                      live API rate. */}
+                  {(() => {
+                    const fromAcc = accounts.find(a => a.id === transfer.from_id)
+                    const toAcc = accounts.find(a => a.id === transfer.to_id)
+                    const fromCcy = String((fromAcc as any)?.original_currency || appCurrency).toUpperCase()
+                    const toCcy = String((toAcc as any)?.original_currency || appCurrency).toUpperCase()
+                    const base = String(appCurrency || "EGP").toUpperCase()
+                    const transferCcy = String(transfer.currency || base).toUpperCase()
+                    // Find an account whose currency is foreign AND differs from
+                    // the transfer currency — that's the conversion the service
+                    // would otherwise look up silently.
+                    const nonBaseAcc =
+                      fromCcy !== base && fromCcy !== transferCcy ? { acc: fromAcc, ccy: fromCcy } :
+                      toCcy !== base && toCcy !== transferCcy ? { acc: toAcc, ccy: toCcy } :
+                      null
+                    if (!nonBaseAcc) return null
+                    return (
+                      <div className="md:col-span-2 bg-amber-50 dark:bg-amber-900/20 p-3 rounded border border-amber-200 dark:border-amber-800">
+                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium mb-2">
+                          💱 {appLang === "en"
+                            ? `Account conversion: ${nonBaseAcc.ccy} ↔ ${base}`
+                            : `تَحويل عُملَة الحِساب: ${nonBaseAcc.ccy} ↔ ${base}`}
+                        </p>
+                        <ExchangeRateSelector
+                          fromCurrency={nonBaseAcc.ccy}
+                          baseCurrency={base}
+                          value={accountFxRate}
+                          onChange={setAccountFxRate}
+                          onRateMetaChange={(meta) => {
+                            if (meta) {
+                              setAccountFxRateId(meta.rateId)
+                              setAccountFxSource(meta.source)
+                            } else {
+                              setAccountFxRateId(null)
+                              setAccountFxSource(null)
+                            }
+                          }}
+                          hideLabel
+                          showPreview
+                        />
+                        {accountFxRate > 0 && transfer.amount > 0 && (
+                          <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
+                            {appLang === "en" ? "Account will see" : "سَيَظهَر فى الحِساب"}{" "}
+                            <strong>
+                              {(transferCcy === base
+                                ? transfer.amount / accountFxRate
+                                : baseAmount / accountFxRate
+                              ).toFixed(4)} {nonBaseAcc.ccy}
+                            </strong>
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <div className="flex gap-2">
                     {permWrite ? (
                       <Button

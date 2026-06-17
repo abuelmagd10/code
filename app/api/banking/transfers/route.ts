@@ -25,6 +25,12 @@ export async function POST(request: NextRequest) {
     const exchangeRateId = body?.exchangeRateId || body?.exchange_rate_id || null
     const rateSource = body?.rateSource || body?.rate_source || null
     const uiSurface = body?.uiSurface || body?.ui_surface || "banking_page"
+    // v3.74.201 — when the transfer is in base currency but one of the
+    // accounts is foreign, the UI now sends the user-chosen rate for that
+    // account instead of letting the service silently look it up.
+    const accountFxRate = body?.accountFxRate != null ? Number(body.accountFxRate) : null
+    const accountFxRateId = body?.accountFxRateId || body?.account_fx_rate_id || null
+    const accountFxSource = body?.accountFxSource || body?.account_fx_source || null
 
     if (!fromAccountId || !toAccountId) {
       return NextResponse.json({ success: false, error: "Both transfer accounts are required" }, { status: 400 })
@@ -52,6 +58,9 @@ export async function POST(request: NextRequest) {
       exchangeRateId,
       rateSource,
       uiSurface,
+      accountFxRate,
+      accountFxRateId,
+      accountFxSource,
     }
 
     const idempotencyKey = resolveFinancialIdempotencyKey(
