@@ -334,11 +334,18 @@ export default function BillsPage() {
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadData() , skipIfHidden: true })
 
+  // v3.74.196 — concurrency guard. Realtime + filter changes can fire
+  // loadData in parallel; without this, the cache-write race could store
+  // stale data.
+  const loadDataInFlightRef = useRef(false)
+
   const loadData = async () => {
+    if (loadDataInFlightRef.current) return
+    loadDataInFlightRef.current = true
     try {
       setLoading(true)
       const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      if (!companyId) { loadDataInFlightRef.current = false; return }
 
       // 🔐 ERP Access Control - جلب سياق المستخدم
       const { data: { user } } = await supabase.auth.getUser()
@@ -387,17 +394,20 @@ export default function BillsPage() {
         setServerTotal(cached.total)
         setServerTotalPages(cached.totalPages)
         setLoading(false)
-        // تحميل البيانات المرتبطة (payments/items) للصفحة المعروضة
-        const cachedBillIds = cached.bills.map(b => b.id)
+        // v3.74.196 — use the same get_bills_payload RPC so cache-hit path
+        // also gets payments + items + returns + open vendor credits in one call.
+        const cachedBillIds = cached.bills.map(b => b.id) as string[]
         if (cachedBillIds.length) {
-          const [payData, itemsData] = await Promise.all([
-            // v3.22.1: include currency_code, exchange_rate, base_currency_amount for cross-currency aware paidByBill
-            supabase.from("payments").select("id, bill_id, amount, status, currency_code, exchange_rate, base_currency_amount").eq("company_id", companyId).eq("status", "approved").in("bill_id", cachedBillIds),
-            supabase.from("bill_items").select("bill_id, quantity, product_id, returned_quantity, products(name)").in("bill_id", cachedBillIds),
-          ])
-          setPayments(payData.data || [])
-          setBillItems(itemsData.data || [])
+          const { data: cachedPayload } = await supabase.rpc('get_bills_payload', {
+            p_company_id: companyId,
+            p_bill_ids: cachedBillIds,
+          })
+          setPayments(((cachedPayload?.payments) || []) as any)
+          setBillItems(((cachedPayload?.items) || []) as any)
+          setReturnedQuantities(((cachedPayload?.returned_by_item) || []) as any)
+          setBillOpenVcMap(((cachedPayload?.open_vc_by_bill) || {}) as any)
         }
+        loadDataInFlightRef.current = false
         return
       }
 
@@ -521,69 +531,34 @@ export default function BillsPage() {
         .order("name")
       setProducts(productsData || [])
 
-      // ─── تحميل البيانات المرتبطة للصفحة الحالية فقط ───────────────────────
-      // مقيّد بـ billIds الصفحة الحالية → لا over-fetching
-      const billIds = fetchedBills.map(b => b.id)
+      // v3.74.196 — Single RPC `get_bills_payload` replaces the five
+      // dependent SELECTs (payments + bill_items + vendor_credits +
+      // vendor_credit_items + open-VC aggregation) with one round-trip.
+      // SECURITY INVOKER preserves RLS as if each table was queried
+      // directly.
+      const billIds = fetchedBills.map(b => b.id) as string[]
       if (billIds.length) {
-        const { data: payData } = await supabase
-          .from("payments")
-          // v3.22.1: include FX columns for cross-currency aware paidByBill aggregation
-          .select("id, bill_id, amount, status, currency_code, exchange_rate, base_currency_amount")
-          .eq("company_id", companyId)
-          .eq("status", "approved")   // ✅ فقط الدفعات المعتمدة — المرفوضة والمعلقة لا تُعرض
-          .in("bill_id", billIds)
-        setPayments(payData || [])
-
-        const { data: itemsData } = await supabase
-          .from("bill_items")
-          .select("bill_id, quantity, product_id, returned_quantity, products(name)")
-          .in("bill_id", billIds)
-        setBillItems(itemsData || [])
-
-        const { data: vendorCredits } = await supabase
-          .from("vendor_credits")
-          .select("id, bill_id, total_amount, applied_amount, status")
-          .in("bill_id", billIds)
-
-        // v3.74.175 — accumulate per-bill open vendor-credit balance so the
-        // "+سُلفَة" badge on the Remaining column reflects only the portion
-        // that actually sits as a credit on the supplier ledger. Cash- and
-        // bank-settled returns close the credit immediately and must not
-        // inflate the badge.
-        const vcBalanceMap: Record<string, number> = {}
-        if (vendorCredits) {
-          for (const vc of vendorCredits as Array<{ bill_id: string | null; total_amount: number | string | null; applied_amount: number | string | null; status: string | null }>) {
-            if (!vc.bill_id) continue
-            if (vc.status !== 'open') continue
-            const open = Math.max(0, Number(vc.total_amount || 0) - Number(vc.applied_amount || 0))
-            vcBalanceMap[vc.bill_id] = (vcBalanceMap[vc.bill_id] || 0) + open
-          }
-        }
-        setBillOpenVcMap(vcBalanceMap)
-
-        if (vendorCredits && vendorCredits.length > 0) {
-          const vcIds = vendorCredits.map((vc: { id: string }) => vc.id)
-          const { data: vcItems } = await supabase
-            .from("vendor_credit_items")
-            .select("vendor_credit_id, product_id, quantity")
-            .in("vendor_credit_id", vcIds)
-
-          const returnedQty: ReturnedQuantity[] = (vcItems || []).map((item: { vendor_credit_id: string; product_id: string | null; quantity: number | null }) => {
-            const vc = vendorCredits.find((v: { id: string; bill_id: string }) => v.id === item.vendor_credit_id)
-            return {
-              bill_id: vc?.bill_id || '',
-              product_id: item.product_id || '',
-              quantity: item.quantity || 0
-            }
-          }).filter((r: ReturnedQuantity) => r.bill_id && r.product_id)
-          setReturnedQuantities(returnedQty)
-        } else {
+        const { data: payload, error: payloadErr } = await supabase.rpc('get_bills_payload', {
+          p_company_id: companyId,
+          p_bill_ids: billIds,
+        })
+        if (payloadErr) {
+          console.error('[Bills] get_bills_payload error:', payloadErr)
+          setPayments([])
+          setBillItems([])
           setReturnedQuantities([])
+          setBillOpenVcMap({})
+        } else {
+          setPayments(((payload?.payments) || []) as any)
+          setBillItems(((payload?.items) || []) as any)
+          setReturnedQuantities(((payload?.returned_by_item) || []) as any)
+          setBillOpenVcMap(((payload?.open_vc_by_bill) || {}) as any)
         }
       } else {
         setPayments([])
         setBillItems([])
         setReturnedQuantities([])
+        setBillOpenVcMap({})
       }
 
       // تحميل شركات الشحن
@@ -594,6 +569,7 @@ export default function BillsPage() {
       setShippingProviders(providersData || [])
     } finally {
       setLoading(false)
+      loadDataInFlightRef.current = false
     }
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useTransition } from "react"
+import { useState, useEffect, useMemo, useTransition, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
@@ -454,7 +454,14 @@ export default function InvoicesPage() {
     }
   });
 
+  // v3.74.195 — concurrency guard. Realtime + page mount + filter changes
+  // can all trigger loadData within milliseconds; without this, the page
+  // would refire the whole bundle (now smaller, but still wasteful).
+  const loadDataInFlightRef = useRef(false)
+
   const loadData = async () => {
+    if (loadDataInFlightRef.current) return
+    loadDataInFlightRef.current = true
     try {
       setIsLoading(true)
 
@@ -463,6 +470,7 @@ export default function InvoicesPage() {
       } = await supabase.auth.getUser()
       if (!user) {
         setIsLoading(false)
+        loadDataInFlightRef.current = false
         return
       }
 
@@ -472,6 +480,7 @@ export default function InvoicesPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) {
         setIsLoading(false)
+        loadDataInFlightRef.current = false
         return
       }
 
@@ -642,128 +651,39 @@ export default function InvoicesPage() {
 
       setInvoices(result.data || [])
 
-      // تحميل المدفوعات من جدول payments لحساب المبالغ المدفوعة الفعلية
-      const invoiceIds = Array.from(new Set((result.data || []).map((inv: any) => inv.id)))
+      // v3.74.195 — Single RPC `get_invoices_payload` replaces six
+      // dependent SELECTs (sales_return_requests + payments + invoice_items
+      // + sales_returns + sales_return_items + invoices for the employee
+      // map + sales_orders). All five state slices below come from one
+      // round-trip; SECURITY INVOKER preserves RLS as if the page had
+      // queried each table directly.
+      const invoiceIds = Array.from(new Set((result.data || []).map((inv: any) => inv.id))) as string[]
       if (invoiceIds.length) {
-        try {
-          const { data: activeRequests } = await supabase
-            .from("sales_return_requests")
-            .select("id, invoice_id, status, created_at")
-            .eq("company_id", companyId)
-            .in("invoice_id", invoiceIds)
-            .in("status", SALES_RETURN_ACTIVE_REQUEST_STATUSES as unknown as string[])
-            .order("created_at", { ascending: false })
-
-          const nextRequestMap: Record<string, ActiveSalesReturnRequest> = {}
-          ; (activeRequests || []).forEach((request: any) => {
-            const invoiceId = String(request.invoice_id || "")
-            if (!invoiceId || nextRequestMap[invoiceId]) return
-            nextRequestMap[invoiceId] = {
-              id: String(request.id),
-              status: String(request.status || ""),
-            }
-          })
-          setActiveSalesReturnRequestsByInvoiceId(nextRequestMap)
-        } catch (requestError) {
-          console.warn("Failed to load active sales return requests:", requestError)
-          setActiveSalesReturnRequestsByInvoiceId({})
-        }
-
-        // v3.22.0: include currency_code, exchange_rate, base_currency_amount
-        // so the paidByInvoice aggregation can convert payment amounts
-        // (in payment currency) to invoice currency before summing.
-        const { data: payData } = await supabase
-          .from("payments")
-          .select("id, invoice_id, amount, currency_code, exchange_rate, base_currency_amount")
-          .eq("company_id", companyId)
-          .in("invoice_id", invoiceIds)
-        setPayments(payData || [])
-
-        // تحميل بنود الفواتير مع أسماء المنتجات و returned_quantity للفلترة
-        const { data: itemsData } = await supabase
-          .from("invoice_items")
-          .select("invoice_id, quantity, product_id, returned_quantity, products(name)")
-          .in("invoice_id", invoiceIds)
-        setInvoiceItems(itemsData || [])
-
-        // تحميل الكميات المرتجعة من sales_return_items
-        const { data: salesReturns } = await supabase
-          .from("sales_returns")
-          .select("id, invoice_id")
-          .in("invoice_id", invoiceIds)
-
-        if (salesReturns && salesReturns.length > 0) {
-          const srIds = salesReturns.map((sr: any) => sr.id)
-          const { data: srItems } = await supabase
-            .from("sales_return_items")
-            .select("sales_return_id, product_id, quantity")
-            .in("sales_return_id", srIds)
-
-          const returnedQty: ReturnedQuantity[] = (srItems || []).map((item: any) => {
-            const sr = salesReturns.find((s: any) => s.id === item.sales_return_id)
-            return {
-              invoice_id: sr?.invoice_id || '',
-              product_id: item.product_id || '',
-              quantity: item.quantity || 0
-            }
-          }).filter((r: any) => r.invoice_id && r.product_id)
-          setReturnedQuantities(returnedQty)
-        } else {
+        const { data: payload, error: payloadErr } = await supabase.rpc('get_invoices_payload', {
+          p_company_id: companyId,
+          p_invoice_ids: invoiceIds,
+        })
+        if (payloadErr) {
+          console.error('[Invoices] get_invoices_payload error:', payloadErr)
+          setPayments([])
+          setInvoiceItems([])
           setReturnedQuantities([])
+          setActiveSalesReturnRequestsByInvoiceId({})
+          setInvoiceToEmployeeMap({})
+        } else {
+          setPayments(((payload?.payments) || []) as any)
+          setInvoiceItems(((payload?.items) || []) as any)
+          setReturnedQuantities(((payload?.returned_by_item) || []) as any)
+          setActiveSalesReturnRequestsByInvoiceId(((payload?.active_return_requests) || {}) as any)
+          setInvoiceToEmployeeMap(((payload?.invoice_to_employee) || {}) as any)
         }
       } else {
         setPayments([])
         setInvoiceItems([])
         setReturnedQuantities([])
         setActiveSalesReturnRequestsByInvoiceId({})
+        setInvoiceToEmployeeMap({})
       }
-
-      // تحميل أوامر البيع المرتبطة بالفواتير لمعرفة الموظف المنشئ
-      // بناء خريطة: invoice_id -> created_by_user_id
-      // أولوية: 1) من sales_order، 2) من created_by_user_id مباشرة من قاعدة البيانات
-      const invToEmpMap: Record<string, string> = {}
-
-      // إذا كان هناك فواتير، جلب created_by_user_id و sales_order_id مباشرة من قاعدة البيانات
-      // استخدام invoiceIds الموجود من الأعلى (السطر 453)
-      if (invoiceIds.length > 0) {
-        const { data: invoicesFromDb } = await supabase
-          .from("invoices")
-          .select("id, created_by_user_id, sales_order_id")
-          .in("id", invoiceIds)
-
-        // أولاً: ملء created_by_user_id مباشرة من قاعدة البيانات
-        for (const inv of (invoicesFromDb || [])) {
-          if (inv.created_by_user_id) {
-            invToEmpMap[inv.id] = inv.created_by_user_id
-          }
-        }
-
-        // ثانياً: تحديث من sales_orders إذا كان متوفراً (أولوية أعلى)
-        const salesOrderIds = (invoicesFromDb || [])
-          .filter((inv: any) => inv.sales_order_id)
-          .map((inv: any) => inv.sales_order_id)
-          .filter((id: any) => id) // إزالة القيم null/undefined
-
-        if (salesOrderIds.length > 0) {
-          const { data: salesOrders } = await supabase
-            .from("sales_orders")
-            .select("id, created_by_user_id")
-            .in("id", salesOrderIds)
-
-          // تحديث الخريطة من sales_orders (أولوية أعلى من created_by_user_id المباشر)
-          for (const inv of (invoicesFromDb || [])) {
-            if (inv.sales_order_id) {
-              const so = (salesOrders || []).find((s: any) => s.id === inv.sales_order_id)
-              if (so?.created_by_user_id) {
-                invToEmpMap[inv.id] = so.created_by_user_id
-              }
-            }
-          }
-        }
-
-      }
-
-      setInvoiceToEmployeeMap(invToEmpMap)
 
       // تحميل شركات الشحن
       const { data: providersData } = await supabase
@@ -853,6 +773,7 @@ export default function InvoicesPage() {
       })
     } finally {
       setIsLoading(false)
+      loadDataInFlightRef.current = false
     }
   }
 

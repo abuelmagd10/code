@@ -216,7 +216,14 @@ export default function SuppliersPage() {
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadSuppliers() })
 
+  // v3.74.194 — concurrency guard. realtime + useEffect + useAutoRefresh
+  // can all race to trigger loadSuppliers within milliseconds of each
+  // other; without this guard we'd refire the RPC multiple times.
+  const loadSuppliersInFlightRef = useRef(false)
+
   const loadSuppliers = async () => {
+    if (loadSuppliersInFlightRef.current) return
+    loadSuppliersInFlightRef.current = true
     try {
       setIsLoading(true)
       const companyId = await getActiveCompanyId(supabase)
@@ -266,27 +273,31 @@ export default function SuppliersPage() {
         })))
       }
 
-      // تحميل الموردين
-      let suppliersQuery = supabase.from("suppliers").select("*, branches(branch_name)").eq("company_id", companyId)
-
-      // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
+      // v3.74.194 — Single RPC `get_suppliers_overview` replaces the
+      // suppliers SELECT + the per-supplier N+1 loop in loadSupplierBalances
+      // (which used to fire 3 SELECTs per supplier: bills + vendor_credits +
+      // advance payments). The RPC computes payables, open_credits, bill
+      // overpayments, and advances in one round-trip.
+      let p_branch_filter: string | null = null
       if (canFilterByBranch && selectedBranchId) {
-        // المستخدم المميز اختار فرعاً معيناً
-        suppliersQuery = suppliersQuery.eq("branch_id", selectedBranchId)
+        p_branch_filter = selectedBranchId
       } else if (!canFilterByBranch && userBranchId) {
-        // المستخدم العادي - فلترة بفرعه فقط
-        suppliersQuery = suppliersQuery.eq("branch_id", userBranchId)
+        p_branch_filter = userBranchId
       }
-      // else: المستخدم المميز بدون فلتر = جميع الفروع
 
-      const { data, error } = await suppliersQuery
-      if (error) {
-        // ERP-grade error handling: عدم وجود جدول محاسبي هو خطأ نظام حرج
-        if (error.code === 'PGRST116' || error.code === 'PGRST205') {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('get_suppliers_overview', {
+        p_company_id: companyId,
+        p_branch_filter,
+        p_search: null,
+        p_page: 1,
+        p_page_size: 500
+      })
+      if (rpcErr) {
+        if (rpcErr.code === 'PGRST116' || rpcErr.code === 'PGRST205') {
           const errorMsg = appLang === 'en'
             ? 'System not initialized: suppliers table is missing. Please run company initialization first.'
             : 'النظام غير مهيأ: جدول الموردين مفقود. يرجى تشغيل تهيئة الشركة أولاً.'
-          console.error("ERP System Error:", errorMsg, error)
+          console.error("ERP System Error:", errorMsg, rpcErr)
           toast({
             title: appLang === 'en' ? 'System Not Initialized' : 'النظام غير مهيأ',
             description: errorMsg,
@@ -296,9 +307,36 @@ export default function SuppliersPage() {
           setIsLoading(false)
           return
         }
+        console.error('[Suppliers] get_suppliers_overview error:', rpcErr)
         toastActionError(toast, "الجلب", "الموردين", "تعذر جلب قائمة الموردين")
       }
-      setSuppliers(data || [])
+
+      const rows: any[] = (rpcRes && rpcRes.rows) || []
+      const data = rows.map((r: any) => {
+        // Suppliers table shape — strip the aggregate fields we added.
+        const {
+          payables: _p, bill_overpayments: _bo, open_credits: _oc, advances: _adv,
+          ...supplierFields
+        } = r
+        return supplierFields
+      })
+      setSuppliers(data)
+
+      // Hydrate balances directly from the RPC result.
+      const newBalances: Record<string, SupplierBalance> = {}
+      for (const r of rows) {
+        const sid = String(r.id)
+        const advances = Number(r.advances || 0)
+        const openCredits = Number(r.open_credits || 0)
+        const billOver = Number(r.bill_overpayments || 0)
+        newBalances[sid] = {
+          advances,
+          payables: Number(r.payables || 0),
+          // v3.26.3 + v3.74.158: open credits + true bill overpayments + advances
+          debitCredits: openCredits + billOver + advances,
+        }
+      }
+      setBalances(newBalances)
 
       // ===== تحميل الحسابات للاستخدام في سند استرداد السلفة =====
       // 🔒 ERP Rule: يُعرض فقط الخزن والبنوك (cash / bank)
@@ -343,10 +381,8 @@ export default function SuppliersPage() {
       const activeCurrencies = await getActiveCurrencies(supabase)
       setCurrencies(activeCurrencies)
 
-      // تحميل أرصدة الموردين
-      if (data && data.length > 0) {
-        await loadSupplierBalances(companyId, data)
-      }
+      // v3.74.194 — balances already hydrated above from the same RPC result.
+      // No second pass needed.
 
       // تحديث البيانات في Next.js
       router.refresh()
@@ -354,6 +390,7 @@ export default function SuppliersPage() {
       console.error("Error loading suppliers:", error)
     } finally {
       setIsLoading(false)
+      loadSuppliersInFlightRef.current = false
     }
   }
 
@@ -479,138 +516,14 @@ export default function SuppliersPage() {
   })
 
   // دالة تحميل أرصدة الموردين
-  const loadSupplierBalances = async (companyId: string, suppliersList: Supplier[]) => {
-    try {
-      console.log("🔄 بدء تحميل أرصدة الموردين...", { companyId, suppliersCount: suppliersList.length })
-      const newBalances: Record<string, SupplierBalance> = {}
-
-      for (const supplier of suppliersList) {
-        let payables = 0
-
-        // ✅ حساب الذمم الدائنة مباشرة من الفواتير (Cash Basis)
-        // في نظام Cash Basis، فواتير المشتريات المستلمة لا تُنشئ قيود محاسبية
-        // لذلك نحسب الذمم من الفواتير مباشرة: total_amount - paid_amount
-        const { data: bills, error: billsError } = await supabase
-          .from("bills")
-          .select("id, total_amount, paid_amount, status, returned_amount")
-          .eq("company_id", companyId)
-          .eq("supplier_id", supplier.id)
-          .neq("status", "draft")
-          .neq("status", "cancelled")
-          .neq("status", "fully_returned")
-
-        if (billsError) {
-          console.error(`❌ خطأ في جلب فواتير المورد ${supplier.name}:`, billsError)
-          continue
-        }
-
-        // v3.26.3: track TRUE bill overpayments (paid > total) — mirrors customer
-        // overpayment fix. BUG in v3.26.2: subtracting returned_amount double-counted
-        // purchase returns that are already tracked via vendor_credits.
-        //
-        // Payables = ما علينا للمورد (لم يدفع بعد)
-        //          = (total - returned) - paid   if positive
-        // True overpayment = paid > total (paid in excess of ORIGINAL bill total)
-        // Returns are handled separately via vendor_credits, NOT here.
-        let billOverpayments = 0
-        if (bills && bills.length > 0) {
-          for (const bill of bills) {
-            const totalAmount = Number(bill.total_amount || 0)
-            const paidAmount = Number(bill.paid_amount || 0)
-            const returnedAmount = Number(bill.returned_amount || 0)
-            const netDue = Math.max(0, totalAmount - returnedAmount)
-            const remainingDue = netDue - paidAmount
-
-            if (remainingDue > 0) {
-              // لازلنا مدينين للمورد
-              payables += remainingDue
-            }
-            // True overpayment: دفعنا أكثر من إجمالى الفاتورة الأصلية
-            const trueOverpayment = paidAmount - totalAmount
-            if (trueOverpayment > 0.005) {
-              billOverpayments += trueOverpayment
-            }
-          }
-          console.log(`📋 ${supplier.name}: ${bills.length} فاتورة، مطلوبات: ${payables.toFixed(2)}, مستحقات لنا (true overpayments): ${billOverpayments.toFixed(2)}`)
-        }
-
-        // حساب الرصيد المدين من إشعارات الدائن (vendor_credits)
-        let debitCreditsTotal = 0
-        try {
-          const { data: vendorCredits, error: vendorCreditsError } = await supabase
-            .from("vendor_credits")
-            .select("total_amount, applied_amount, status")
-            .eq("company_id", companyId)
-            .eq("supplier_id", supplier.id)
-            .eq("status", "open")
-
-          if (vendorCreditsError) {
-            console.error("Error loading vendor credits:", vendorCreditsError)
-          } else if (vendorCredits) {
-            for (const vc of vendorCredits) {
-              const available = Number(vc.total_amount || 0) - Number(vc.applied_amount || 0)
-              debitCreditsTotal += Math.max(0, available)
-            }
-          }
-        } catch (error: any) {
-          console.error("Error calculating supplier debit credits:", error)
-        }
-
-        // v3.74.158 — vendor advance payments (دفعة سلفة بدون ربط بفاتورة)
-        // are recorded in payments with supplier_id set but bill_id and
-        // invoice_id NULL. payments.unallocated_amount tracks how much of
-        // the advance is still available (consumed allocations decrement it).
-        // We sum that across approved advance rows and surface it in the
-        // "مستحقات لنا (سلفة مورد)" column so the supplier balance
-        // reflects what the GL already shows under 1180.
-        let advancesTotal = 0
-        try {
-          const { data: advanceRows, error: advanceErr } = await supabase
-            .from("payments")
-            .select("amount, unallocated_amount")
-            .eq("company_id", companyId)
-            .eq("supplier_id", supplier.id)
-            .is("bill_id", null)
-            .is("invoice_id", null)
-            .eq("status", "approved")
-            .neq("is_deleted", true)
-          if (advanceErr) {
-            console.error("Error loading supplier advance payments:", advanceErr)
-          } else if (advanceRows) {
-            for (const r of advanceRows) {
-              // Prefer unallocated_amount when it's populated; fall back
-              // to amount for legacy rows that pre-date that column.
-              const available = (r as any).unallocated_amount != null
-                ? Number((r as any).unallocated_amount || 0)
-                : Math.abs(Number((r as any).amount || 0))
-              if (available > 0.005) advancesTotal += available
-            }
-          }
-        } catch (error: any) {
-          console.error("Error calculating supplier advances:", error)
-        }
-
-        newBalances[supplier.id] = {
-          advances: advancesTotal,
-          payables,
-          // v3.26.3: مستحقات لنا = vendor credits + فائض الدفع الحقيقى على الفواتير
-          // v3.74.158: + سلف الموردين (دفعات بدون ربط بفاتورة)
-          debitCredits: debitCreditsTotal + billOverpayments + advancesTotal,
-        }
-
-        // تسجيل بيانات المورد للتشخيص
-        if (payables > 0 || debitCreditsTotal > 0 || billOverpayments > 0) {
-          console.log(`📊 ${supplier.name}:`, { payables, debitCredits: debitCreditsTotal, billOverpayments })
-        }
-      }
-
-      console.log("✅ تم تحميل أرصدة الموردين:", Object.keys(newBalances).length, "مورد")
-      console.log("📊 تفاصيل الأرصدة:", newBalances)
-      setBalances(newBalances)
-      console.log("✅ تم حفظ الأرصدة في state")
-    } catch (error) {
-      console.error("❌ خطأ في تحميل أرصدة الموردين:", error)
-    }
+  // v3.74.194 — The 3-queries-per-supplier N+1 loop that used to live here
+  // is gone. Balances now come straight from get_suppliers_overview as part
+  // of loadSuppliers itself. This wrapper survives for the realtime ref
+  // (loadBalancesRef.current is called by handleBalancesRealtimeEvent on
+  // vendor_credits / bills / payments changes) and just refreshes the whole
+  // overview — one round-trip instead of 3×N.
+  const loadSupplierBalances = async (_companyId: string, _suppliersList: Supplier[]) => {
+    await loadSuppliers()
   }
 
   // ربط الـ ref بالدالة الحالية لضمان استخدامها في Realtime handlers
