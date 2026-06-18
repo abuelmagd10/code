@@ -2101,6 +2101,14 @@ export default function InvoiceDetailPage() {
                 ? invoice.currency_code
                 : (payInDifferentCurrency ? paymentCurrency : null))
             : null,
+          // v3.74.219 — forward the exchange rate selector's metadata so the
+          // payment row stores rate_source ('manual' vs 'api') and the
+          // exchange_rate_id link. Without these the row used to default to
+          // rate_source='api' even when the accountant picked a manual rate.
+          exchangeRateId: paymentFCAmount > 0 ? (selectedRateId || null) : null,
+          rateSource: paymentFCAmount > 0
+            ? (availableRates.find(r => r.id === selectedRateId)?.source || null)
+            : null,
         }),
       })
 

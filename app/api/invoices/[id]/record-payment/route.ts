@@ -52,6 +52,13 @@ export async function POST(
       // adjustment journal entry after the main payment journal.
       exchangeRate: body?.exchangeRate != null ? Number(body.exchangeRate) : null,
       originalCurrencyAmount: body?.originalCurrencyAmount != null ? Number(body.originalCurrencyAmount) : null,
+      // v3.74.219 — the actual payment currency (e.g. "USD") and its rate
+      // metadata. Passed through to the RPC so the payment row stores
+      // currency_code / original_amount / exchange_rate / rate_source
+      // correctly, instead of defaulting to EGP / 1.
+      paymentCurrency: body?.paymentCurrency || null,
+      exchangeRateId: body?.exchangeRateId || null,
+      rateSource: body?.rateSource || null,
     }
 
     const adminSupabase = createClient(

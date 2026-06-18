@@ -31,6 +31,14 @@ export type RecordInvoicePaymentCommand = {
   // the main payment journal succeeds.
   exchangeRate?: number | null
   originalCurrencyAmount?: number | null
+  // v3.74.219 — the actual currency the customer paid in (e.g. "USD")
+  // when it differs from the invoice currency. Passed through to the
+  // RPC so payments.currency_code / original_amount / original_currency
+  // are persisted correctly. Without this the row stored EGP/rate=1 even
+  // when the customer paid in USD with a manual rate.
+  paymentCurrency?: string | null
+  exchangeRateId?: string | null
+  rateSource?: string | null
 }
 
 export type RecordInvoicePaymentResult = {
@@ -590,6 +598,14 @@ export class SalesInvoicePaymentCommandService {
           p_user_id: context.actor.userId || null,
           p_idempotency_key: context.idempotencyKey,
           p_request_hash: context.requestHash,
+          // v3.74.219 — forward FX context so the RPC persists currency_code /
+          // original_amount / exchange_rate on the payment row and stamps the
+          // JE lines with their native amounts.
+          p_payment_currency: context.command.paymentCurrency || null,
+          p_exchange_rate: context.command.exchangeRate ?? null,
+          p_original_amount: context.command.originalCurrencyAmount ?? null,
+          p_exchange_rate_id: context.command.exchangeRateId || null,
+          p_rate_source: context.command.rateSource || null,
         }
       : {
           p_invoice_id: context.command.invoiceId,

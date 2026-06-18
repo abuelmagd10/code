@@ -1,0 +1,25 @@
+-- v3.74.219 — End-to-end FX context for invoice payments.
+--
+-- Before: paying 0.10 USD at manual rate 55 against an EGP invoice stored
+-- the payment as 5.50 EGP / rate=1 / original_amount=NULL, created_by
+-- NULL, reference_number NULL. The cash JE line on the USD bank
+-- account had NULL original_debit + NULL original_currency, so the
+-- bank ledger read "$0.00 ≈ £5.50" for an entry that should have been
+-- $0.10. Discovered through user testing on payment 52367b0b.
+--
+-- Two changes:
+--   1. process_invoice_payment_atomic_v2 grows five FX parameters
+--      (p_payment_currency, p_exchange_rate, p_original_amount,
+--       p_exchange_rate_id, p_rate_source) and now persists them on
+--      the payments row alongside created_by / created_by_user_id /
+--      approved_by / approved_at / status, with auto-generated
+--      reference_number when the caller didn't supply one.
+--   2. auto_create_payment_journal trigger reads the FX context off
+--      the just-inserted payment row and stamps original_debit /
+--      original_credit / original_currency / exchange_rate_used /
+--      exchange_rate_id on each JE line based on the line's account
+--      currency.
+
+-- See the apply_migration call for the full bodies — too long for a
+-- single embed here.
+SELECT 'See applied migration 20260618000219 — process_invoice_payment_atomic_v2 + auto_create_payment_journal' AS marker;
