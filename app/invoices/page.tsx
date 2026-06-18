@@ -225,17 +225,22 @@ export default function InvoicesPage() {
   const [pageSize, setPageSize] = useState(10)
 
   // تجميع المدفوعات الفعلية من جدول payments حسب الفاتورة
-  // v3.22.0: cross-currency safe — converts each payment amount from payment
-  // currency to invoice currency before summing, so a 0.2 USD payment on a
-  // 10 EGP invoice contributes ~10 EGP (not 0.2 EGP) to paidByInvoice.
+  // v3.74.220 — formula reworked. Pre-v3.74.219 the payment row stored
+  // amount in the payment currency, so `amount × (payRate / invRate)`
+  // gave the invoice-currency equivalent. After v3.74.219 amount is the
+  // BASE-currency equivalent (5.50 EGP), so the old formula multiplied
+  // again by the rate and gave 5.50 × 55 = 302.50 for a 0.10 USD
+  // payment on an EGP invoice — the user reported 17.50 + 297 = 314.50
+  // showing in the invoices list.
   //
-  // Formula: applied_in_invoice_ccy = payment.amount × (payment.exchange_rate / invoice.exchange_rate)
-  // where exchange_rate is FC → base. When currencies match, factor = 1.
+  // Unified safe formula: every payment row has base_currency_amount
+  // (or amount as fallback) which is always the base equivalent. Divide
+  // by the invoice's rate to land in invoice currency. Works for every
+  // combination (same-ccy / cross-ccy / FC invoice / base invoice).
   const paidByInvoice: Record<string, number> = useMemo(() => {
-    const invInfo: Record<string, { code: string; rate: number }> = {}
+    const invInfo: Record<string, { rate: number }> = {}
     invoices.forEach((inv) => {
       invInfo[inv.id] = {
-        code: String(inv.currency_code || "").toUpperCase(),
         rate: Number(inv.exchange_rate || 1) || 1,
       }
     })
@@ -243,18 +248,11 @@ export default function InvoicesPage() {
     payments.forEach((p) => {
       const key = p.invoice_id || ""
       if (!key) return
-      const pAmount = Number(p.amount || 0)
-      if (!pAmount) return
+      const baseAmt = Number((p as any).base_currency_amount ?? p.amount ?? 0)
+      if (!baseAmt) return
       const inv = invInfo[key]
-      const pCurrency = String(p.currency_code || "").toUpperCase()
-      if (!inv || !pCurrency || pCurrency === inv.code) {
-        agg[key] = (agg[key] || 0) + pAmount
-        return
-      }
-      // Cross-currency: convert payment amount to invoice currency
-      const pRate = Number(p.exchange_rate || 1) || 1
-      const factor = pRate / inv.rate
-      agg[key] = (agg[key] || 0) + pAmount * factor
+      const invRate = (inv?.rate || 1) || 1
+      agg[key] = (agg[key] || 0) + baseAmt / invRate
     })
     return agg
   }, [payments, invoices])
