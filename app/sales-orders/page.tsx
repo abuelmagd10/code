@@ -2025,16 +2025,16 @@ function SalesOrdersContent() {
                           <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                         </td>
                         <td>
-                          <Input type="number" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                          <Input type="number" inputMode="decimal" step="0.0001" min="0" value={it.quantity} onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                         </td>
                         <td>
-                          <Input type="number" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                          <Input type="number" inputMode="decimal" step="0.01" min="0" value={it.unit_price} onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                         </td>
                         <td>
-                          <Input type="number" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                          <Input type="number" inputMode="decimal" step="0.01" min="0" max="100" value={it.discount_percent || 0} onChange={(e) => updateItem(idx, { discount_percent: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                         </td>
                         <td>
-                          <Input type="number" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                          <Input type="number" inputMode="decimal" step="0.01" min="0" max="100" value={it.tax_rate || 0} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                         </td>
                         <td className="dark:text-white">{it.line_total.toFixed(2)}</td>
                         <td>
@@ -2048,7 +2048,7 @@ function SalesOrdersContent() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs dark:text-gray-300">{appLang === 'en' ? 'Total Tax' : 'ضريبة إجمالية'}</label>
-                  <Input type="number" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                  <Input type="number" inputMode="decimal" step="0.01" min="0" value={taxAmount} onChange={(e) => setTaxAmount(Number(e.target.value))} className="dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                 </div>
                 <div className="flex items-end text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}: {totals.subtotal.toFixed(2)}</div>
                 <div className="flex items-end font-bold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {totals.total.toFixed(2)}</div>

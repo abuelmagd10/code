@@ -401,11 +401,11 @@ export default function PayrollPage() {
                           return (
                             <tr key={e.id} className="border-b">
                               <td className="p-2">{e.full_name}</td>
-                              <td className="p-2" data-ai-help="payroll.allowances"><Input type="number" value={v.allowances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, allowances: Number(ev.target.value) } })} /></td>
-                              <td className="p-2" data-ai-help="payroll.deductions"><Input type="number" value={v.deductions} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, deductions: Number(ev.target.value) } })} /></td>
-                              <td className="p-2" data-ai-help="payroll.bonuses"><Input type="number" value={v.bonuses} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, bonuses: Number(ev.target.value) } })} /></td>
-                              <td className="p-2" data-ai-help="payroll.advances"><Input type="number" value={v.advances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, advances: Number(ev.target.value) } })} /></td>
-                              <td className="p-2" data-ai-help="payroll.insurance"><Input type="number" value={v.insurance} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, insurance: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.allowances"><Input type="number" inputMode="decimal" step="0.01" min="0" value={v.allowances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, allowances: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.deductions"><Input type="number" inputMode="decimal" step="0.01" min="0" value={v.deductions} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, deductions: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.bonuses"><Input type="number" inputMode="decimal" step="0.01" min="0" value={v.bonuses} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, bonuses: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.advances"><Input type="number" inputMode="decimal" step="0.01" min="0" value={v.advances} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, advances: Number(ev.target.value) } })} /></td>
+                              <td className="p-2" data-ai-help="payroll.insurance"><Input type="number" inputMode="decimal" step="0.01" min="0" value={v.insurance} onChange={(ev) => setAdjustments({ ...adjustments, [e.id]: { ...v, insurance: Number(ev.target.value) } })} /></td>
                             </tr>
                           )
                         })}
@@ -541,15 +541,15 @@ export default function PayrollPage() {
                           return (
                             <tr key={`${p.employee_id}`} className="border-b">
                               <td className="p-2">{emp?.full_name || p.employee_id}</td>
-                              <td className="p-2" data-ai-help="payroll.base_salary">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.base_salary} onChange={(ev) => setEditSlip({ ...editSlip, base_salary: Number(ev.target.value) })} />) : Number(p.base_salary || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.allowances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.allowances} onChange={(ev) => setEditSlip({ ...editSlip, allowances: Number(ev.target.value) })} />) : Number(p.allowances || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.bonuses">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.base_salary">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.base_salary} onChange={(ev) => setEditSlip({ ...editSlip, base_salary: Number(ev.target.value) })} />) : Number(p.base_salary || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.allowances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.allowances} onChange={(ev) => setEditSlip({ ...editSlip, allowances: Number(ev.target.value) })} />) : Number(p.allowances || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.bonuses">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
                               <td className="p-2 text-green-600">{Number(p.sales_bonus || 0).toFixed(2)}</td>
                               <td className="p-2 text-blue-600 font-semibold">{Number(p.commission || 0).toFixed(2)}</td>
                               <td className="p-2 text-orange-600">{Number(p.commission_advance_deducted || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.advances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.insurance">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.deductions">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.advances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.insurance">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
+                              <td className="p-2" data-ai-help="payroll.deductions">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
                               <td className="p-2 font-semibold" data-ai-help="payroll.net_salary">{Number(p.net_salary || 0).toFixed(2)}</td>
                               <td className="p-2 no-print">
                                 {editingSlipEmp === String(p.employee_id) ? (
@@ -615,7 +615,7 @@ export default function PayrollPage() {
                                 {paymentAccounts.map((a: any) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
                               </select>
                             ) : ((accountMap[p.account_id]?.code || '') + ' - ' + (accountMap[p.account_id]?.name || p.account_id))}</td>
-                            <td className="p-2 font-semibold">{editingPaymentId === String(p.id) ? (<Input type="number" value={editPayment.amount} onChange={(ev) => setEditPayment({ ...editPayment, amount: Number(ev.target.value) })} />) : Number(p.amount || 0).toFixed(2)}</td>
+                            <td className="p-2 font-semibold">{editingPaymentId === String(p.id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editPayment.amount} onChange={(ev) => setEditPayment({ ...editPayment, amount: Number(ev.target.value) })} />) : Number(p.amount || 0).toFixed(2)}</td>
                             <td className="p-2">{editingPaymentId === String(p.id) ? (<Input value={editPayment.description} onChange={(ev) => setEditPayment({ ...editPayment, description: ev.target.value })} />) : (p.description || '')}</td>
                             <td className="p-2">
                               {editingPaymentId === String(p.id) ? (

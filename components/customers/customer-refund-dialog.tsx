@@ -329,6 +329,9 @@ export function CustomerRefundDialog({
               <Label>{appLang==='en' ? 'Refund Amount' : 'مبلغ الصرف'}</Label>
               <Input
                 type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
                 value={refundAmount}
                 max={maxAmount}
                 onChange={(e) => setRefundAmount(Math.min(Number(e.target.value || 0), maxAmount))}

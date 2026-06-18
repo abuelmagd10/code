@@ -180,7 +180,7 @@ export function CustomerVoucherDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>{appLang==='en' ? 'Amount' : 'المبلغ'}</Label>
-              <Input type="number" value={voucherAmount} onChange={(e) => setVoucherAmount(Number(e.target.value || 0))} />
+              <Input type="number" inputMode="decimal" step="0.01" min="0" value={voucherAmount} onChange={(e) => setVoucherAmount(Number(e.target.value || 0))} />
             </div>
             <div className="space-y-2">
               <Label>{appLang==='en' ? 'Currency' : 'العملة'}</Label>

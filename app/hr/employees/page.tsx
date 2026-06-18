@@ -103,7 +103,7 @@ export default function EmployeesPage() {
               <div data-ai-help="employees.job_title"><Label>{t('Job Title', 'الوظيفة')}</Label><Input value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} /></div>
               <div data-ai-help="employees.department"><Label>{t('Department', 'القسم')}</Label><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
               <div data-ai-help="employees.joined_date"><Label>{t('Joined Date', 'تاريخ التعيين')}</Label><Input type="date" value={form.joined_date} onChange={(e) => setForm({ ...form, joined_date: e.target.value })} /></div>
-              <div data-ai-help="employees.base_salary"><Label>{t('Base Salary', 'الراتب الأساسي')}</Label><Input type="number" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: Number(e.target.value) })} /></div>
+              <div data-ai-help="employees.base_salary"><Label>{t('Base Salary', 'الراتب الأساسي')}</Label><Input type="number" inputMode="decimal" step="0.01" min="0" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: Number(e.target.value) })} /></div>
               <div className="md:col-span-3"><Button disabled={loading} onClick={addEmployee} data-ai-help="employees.add_button">{t('Add', 'إضافة')}</Button></div>
             </CardContent>
           </Card>
@@ -124,7 +124,7 @@ export default function EmployeesPage() {
                           <td className="p-2" data-ai-help="employees.job_title">{editingId === e.id ? (<Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />) : e.job_title}</td>
                           <td className="p-2" data-ai-help="employees.department">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
                           <td className="p-2" data-ai-help="employees.joined_date">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
-                          <td className="p-2" data-ai-help="employees.base_salary">{editingId === e.id ? (<Input type="number" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
+                          <td className="p-2" data-ai-help="employees.base_salary">{editingId === e.id ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
                           <td className="p-2">
                             {editingId === e.id ? (
                               <div className="flex gap-2">
