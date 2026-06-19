@@ -24,6 +24,7 @@ const PUBLIC_PATHS = [
   "/legal", // الصفحات القانونية عامة — لا تحتاج صلاحيات
   "/contact", // صفحة التواصل عامة
   "/blog", // المدوَّنة عامة — قمع SEO
+  "/demo",  // v3.74.228 — صَفحَة العَرض التَّوضيحى عامَّة لِلزُّوَّار
 ]
 
 interface AppShellProps {
@@ -155,4 +156,3 @@ export function AppShell({ children }: AppShellProps) {
   // حالة السماح - عرض المحتوى (الصفحة تتولى Sidebar بنفسها)
   return <>{children}</>
 }
-

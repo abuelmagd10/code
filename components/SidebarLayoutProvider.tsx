@@ -8,7 +8,11 @@ import { usePathname } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 
 const EXACT_HIDE_PATHS = ["/"]
-const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog"]
+// v3.74.228 — /demo is a public marketing page and must render full-bleed
+// (no app sidebar shoulder-to-shoulder with the demo canvas). Logged-in
+// visitors who reach it from the landing page would otherwise see their
+// authenticated sidebar overlap the demo content, which we saw in the test.
+const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo"]
 
 export function SidebarLayoutProvider() {
   const pathname = usePathname()
