@@ -32,7 +32,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Pause, Play, RotateCcw, ChevronDown, ChevronUp, X, Volume2, VolumeX } from "lucide-react"
+import { ArrowRight, Pause, Play, RotateCcw, ChevronDown, ChevronUp, X, Volume2, VolumeX, Mic2 } from "lucide-react"
 
 type Lang = "ar" | "en"
 
@@ -177,6 +177,30 @@ const SCENES: Scene[] = [
   },
 ]
 
+// v3.74.233 — pre-generated narration audio via Higgsfield (Mark voice:
+// ElevenLabs for Arabic, Cozy Voice for English). Keyed by scene id and
+// language. When a key is missing the audio playback effect falls back
+// to the browser's Web Speech API. We host the files on Higgsfield's
+// CloudFront because it's the original output bucket and re-uploading
+// to our own /public would have meant downloading each file manually
+// (the sandbox has no network access to cloudfront, and we ran out of
+// budget to regenerate locally).
+const HIGGSFIELD_AUDIO_BASE = "https://d8j0ntlcm91z4.cloudfront.net/user_3FMU0QOVEn3oxuRY11sO50WDSeV"
+const SCENE_AUDIO: Record<string, { ar?: string; en?: string }> = {
+  hero: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_160547_a3a2befa-7a75-416c-8913-88c05640d6a8.mp3`, en: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_160302_aee5206c-1e8f-4902-961c-ae59047e80f7.wav` },
+  modules: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161008_42fcc98b-577c-47bb-ad8b-0e87b93d6133.mp3`, en: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_162346_610c521c-ba6c-4224-b0ce-7fe5a393a748.wav` },
+  invoice: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161205_e21f2264-db2a-466f-9563-4342f1f8a30b.mp3`, en: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_162620_7f3f8007-560b-411d-813a-83e459c29a21.wav` },
+  refund: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161332_69957913-9a33-46f4-8fe9-64bba1629a2c.mp3`, en: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_162710_74c67cea-b281-4ab4-aca7-e7b19b7d0441.wav` },
+  dashboard: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161453_53c26cd4-216a-4bbf-9cc6-77e1840066cf.mp3` },
+  purchases: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161559_eb60b6f2-3e91-48d3-9163-a037d0ba6d7e.mp3` },
+  inventory: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161708_56ed2468-8f82-4599-8494-0678657aaab1.mp3` },
+  banking: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161811_6fd0f958-c8d8-4372-8229-d712d1a0ddf1.mp3` },
+  reports: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_161916_22bac4d7-d7dc-42f7-83de-885cfce30b37.mp3` },
+  payroll: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_162025_62026710-7c1d-44d9-850c-03c668e81d53.mp3` },
+  manufacturing: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_162129_bd6be672-09fa-4bba-8767-e422e4895cd8.mp3` },
+  cta: { ar: `${HIGGSFIELD_AUDIO_BASE}/hf_20260619_162234_0235c8b0-4d12-4fb0-8720-618ca9d47b66.mp3` },
+}
+
 const T = {
   toolbarLang: { ar: "EN", en: "عربى" },
   pause: { ar: "إِيقاف", en: "Pause" },
@@ -191,6 +215,10 @@ const T = {
   audioOn: { ar: "تَشغيل الصَّوت", en: "Sound on" },
   audioOff: { ar: "إِيقاف الصَّوت", en: "Sound off" },
   audioUnsupported: { ar: "المُتَصَفِّح لا يَدعَم القِراءَة الصَّوتِيَّة", en: "Browser does not support speech" },
+  voicePick: { ar: "اختيار الصَّوت", en: "Pick voice" },
+  voiceLabel: { ar: "الصَّوت الحالى", en: "Current voice" },
+  voiceNoneInLang: { ar: "لا يوجد صَوت بِالعَرَبِيَّة عَلى هَذا الجِهاز", en: "No voice installed for this language" },
+  voiceTipWindows: { ar: "نَصيحَة: ثَبِّت صَوت «Hoda Online (Natural)» مِن Windows Settings ← Time & Language ← Speech لِجَودَة أَفضَل.", en: "Tip: install a Microsoft Online (Natural) voice from Windows Settings → Time & Language → Speech for the best quality." },
 }
 
 export default function DemoPage() {
@@ -207,6 +235,15 @@ export default function DemoPage() {
   // omit it). When unsupported we hide the toggle and skip speak() calls.
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [audioSupported, setAudioSupported] = useState(true)
+  // v3.74.232 — voice picker. We keep a separate selected voice per
+  // language because the same person rarely wants the same voice for AR
+  // and EN. voicesByLang is the filtered, ranked candidate list shown in
+  // the dropdown (neural / online / natural voices rank highest).
+  const [voicesAr, setVoicesAr] = useState<SpeechSynthesisVoice[]>([])
+  const [voicesEn, setVoicesEn] = useState<SpeechSynthesisVoice[]>([])
+  const [selectedVoiceAr, setSelectedVoiceAr] = useState<string>("")
+  const [selectedVoiceEn, setSelectedVoiceEn] = useState<string>("")
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false)
 
   // On mount: pick language from ?lang=, falling back to localStorage. We
   // don't read window during SSR — this runs only client-side.
@@ -232,9 +269,39 @@ export default function DemoPage() {
       const stored = localStorage.getItem("demo_audio_enabled")
       if (stored === "true") setAudioEnabled(true)
     } catch { /* private mode */ }
-    // Trigger the voice list load (no-op if already loaded).
-    window.speechSynthesis.getVoices()
-    const onVoicesChanged = () => { window.speechSynthesis.getVoices() }
+    // v3.74.232 — rank installed voices for each language. Neural /
+    // Online / Natural voices ship better prosody and accent control,
+    // so we float them to the top of the dropdown.
+    const rankVoice = (v: SpeechSynthesisVoice): number => {
+      const name = v.name.toLowerCase()
+      let score = 0
+      if (/(neural|natural|online|enhanced|premium|wavenet|studio|hd)/.test(name)) score += 100
+      if (v.localService === false) score += 10  // remote voices are usually the high-quality cloud ones
+      if (v.default) score += 1
+      return score
+    }
+    const loadVoices = () => {
+      const all = window.speechSynthesis.getVoices()
+      if (!all || all.length === 0) return
+      const ar = all.filter((v) => v.lang.toLowerCase().startsWith("ar")).sort((a, b) => rankVoice(b) - rankVoice(a))
+      const en = all.filter((v) => v.lang.toLowerCase().startsWith("en")).sort((a, b) => rankVoice(b) - rankVoice(a))
+      setVoicesAr(ar)
+      setVoicesEn(en)
+      // Restore persisted selection or default to the top-ranked voice.
+      try {
+        const storedAr = localStorage.getItem("demo_voice_ar")
+        const storedEn = localStorage.getItem("demo_voice_en")
+        if (storedAr && ar.some((v) => v.name === storedAr)) setSelectedVoiceAr(storedAr)
+        else if (ar.length > 0) setSelectedVoiceAr(ar[0].name)
+        if (storedEn && en.some((v) => v.name === storedEn)) setSelectedVoiceEn(storedEn)
+        else if (en.length > 0) setSelectedVoiceEn(en[0].name)
+      } catch {
+        if (ar.length > 0) setSelectedVoiceAr(ar[0].name)
+        if (en.length > 0) setSelectedVoiceEn(en[0].name)
+      }
+    }
+    loadVoices()
+    const onVoicesChanged = () => { loadVoices() }
     window.speechSynthesis.addEventListener("voiceschanged", onVoicesChanged)
     return () => {
       window.speechSynthesis.removeEventListener("voiceschanged", onVoicesChanged)
@@ -246,11 +313,33 @@ export default function DemoPage() {
   // (scene jump, language switch, audio toggle). Cancels any in-flight
   // utterance so we never overlap audio. Pause/resume hooks into the
   // existing `paused` state so the speech tracks the visual playback.
+  // v3.74.233 — prefer the pre-generated Higgsfield clip (Mark voice,
+  // ElevenLabs for Arabic, Cozy Voice for English). When the file is
+  // missing for a particular scene+language combo we fall back to the
+  // browser's Web Speech API, so the demo still narrates even before all
+  // clips are generated.
+  const higgsfieldAudioRef = useRef<HTMLAudioElement | null>(null)
   useEffect(() => {
     if (!audioSupported || typeof window === "undefined") return
+    // Stop both backends.
     window.speechSynthesis.cancel()
+    if (higgsfieldAudioRef.current) {
+      higgsfieldAudioRef.current.pause()
+      higgsfieldAudioRef.current.src = ""
+      higgsfieldAudioRef.current = null
+    }
     if (!audioEnabled || paused) return
     const sceneNow = SCENES[activeIdx]
+    const audioUrl = SCENE_AUDIO[sceneNow.id]?.[lang]
+    if (audioUrl) {
+      try {
+        const a = new Audio(audioUrl)
+        a.crossOrigin = "anonymous"
+        higgsfieldAudioRef.current = a
+        a.play().catch(() => { /* autoplay blocked, fall through to web-speech */ })
+        return () => { try { a.pause() } catch {} }
+      } catch { /* fall through to Web Speech API */ }
+    }
     const text = lang === "ar"
       ? (sceneNow.narrationAr || sceneNow.captionAr)
       : (sceneNow.narrationEn || sceneNow.captionEn)
@@ -259,18 +348,21 @@ export default function DemoPage() {
     utter.lang = lang === "ar" ? "ar-EG" : "en-US"
     utter.rate = lang === "ar" ? 0.95 : 1.0
     utter.pitch = 1
-    // Pick the best-matching installed voice (some browsers — notably
-    // older Android Chrome — ignore utter.lang and need an explicit voice
-    // assignment to switch language).
+    // v3.74.232 — use the user-selected voice from the picker. Falls
+    // back to the top-ranked voice (assigned at init time) when nothing
+    // is selected. Some browsers (notably older Android Chrome) ignore
+    // utter.lang without an explicit voice, so this also fixes the
+    // accidental-English-on-Arabic case.
     try {
       const voices = window.speechSynthesis.getVoices()
-      const wanted = lang === "ar" ? "ar" : "en"
-      const v = voices.find((vv) => vv.lang.toLowerCase().startsWith(wanted))
+      const wantedName = lang === "ar" ? selectedVoiceAr : selectedVoiceEn
+      const v = (wantedName && voices.find((vv) => vv.name === wantedName))
+        || voices.find((vv) => vv.lang.toLowerCase().startsWith(lang === "ar" ? "ar" : "en"))
       if (v) utter.voice = v
     } catch { /* getVoices may throw in some webviews */ }
     window.speechSynthesis.speak(utter)
     return () => { window.speechSynthesis.cancel() }
-  }, [audioEnabled, audioSupported, activeIdx, lang, paused])
+  }, [audioEnabled, audioSupported, activeIdx, lang, paused, selectedVoiceAr, selectedVoiceEn])
 
   // Animation loop. We use requestAnimationFrame instead of setInterval so the
   // progress bar stays smooth and gets paused with the tab. Each scene is
@@ -358,6 +450,73 @@ export default function DemoPage() {
                 {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
                 <span className="hidden sm:inline">{audioEnabled ? t("audioOff") : t("audioOn")}</span>
               </button>
+            )}
+            {audioSupported && (
+              <div className="relative">
+                <button
+                  onClick={() => setVoicePickerOpen((o) => !o)}
+                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 text-xs sm:text-sm font-medium hover:border-blue-500 hover:text-blue-600"
+                  aria-label={t("voicePick")}
+                  title={t("voicePick")}
+                >
+                  <Mic2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{t("voicePick")}</span>
+                </button>
+                {voicePickerOpen && (
+                  <div
+                    className="absolute end-0 mt-2 w-72 sm:w-80 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shadow-2xl p-3 z-10"
+                    onMouseLeave={() => setVoicePickerOpen(false)}
+                  >
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-2">{t("voiceLabel")}</div>
+                    {(() => {
+                      const list = lang === "ar" ? voicesAr : voicesEn
+                      const selected = lang === "ar" ? selectedVoiceAr : selectedVoiceEn
+                      const setSelected = (name: string) => {
+                        if (lang === "ar") {
+                          setSelectedVoiceAr(name)
+                          try { localStorage.setItem("demo_voice_ar", name) } catch { }
+                        } else {
+                          setSelectedVoiceEn(name)
+                          try { localStorage.setItem("demo_voice_en", name) } catch { }
+                        }
+                      }
+                      if (list.length === 0) {
+                        return (
+                          <div className="text-xs text-gray-500 leading-relaxed">
+                            <div className="mb-2 text-rose-600 font-semibold">{t("voiceNoneInLang")}</div>
+                            <div>{t("voiceTipWindows")}</div>
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <ul className="max-h-72 overflow-y-auto -mx-1 space-y-1">
+                            {list.map((v) => {
+                              const isPremium = /(neural|natural|online|enhanced|premium|wavenet|studio|hd)/i.test(v.name)
+                              const isSelected = v.name === selected
+                              return (
+                                <li key={v.name}>
+                                  <button
+                                    onClick={() => setSelected(v.name)}
+                                    className={`w-full text-start flex items-start gap-2 px-3 py-2 rounded-lg text-xs transition-colors ${isSelected ? "bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 font-semibold" : "hover:bg-gray-50 dark:hover:bg-gray-900 text-gray-700 dark:text-gray-300"}`}
+                                  >
+                                    <span className={`mt-0.5 w-3 h-3 rounded-full flex-shrink-0 ${isSelected ? "bg-blue-600" : "border border-gray-300 dark:border-gray-700"}`} />
+                                    <span className="flex-1 min-w-0">
+                                      <span className="block truncate">{v.name}</span>
+                                      <span className="block text-[10px] text-gray-400 mt-0.5">{v.lang}{isPremium ? " · Neural" : ""}</span>
+                                    </span>
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-[10px] text-gray-400 leading-relaxed">{t("voiceTipWindows")}</div>
+                        </>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
             )}
             <button
               onClick={toggleLang}
