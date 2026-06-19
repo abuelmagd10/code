@@ -69,6 +69,12 @@ export async function updateSession(request: NextRequest) {
                           request.nextUrl.pathname === "/api/contact"
     // المدوَّنة عامة بالكامل — جزء من قمع SEO
     const isBlogPage = request.nextUrl.pathname.startsWith("/blog")
+    // v3.74.235 — صفحة العرض التوضيحى عامة بالكامل. كانت تَفتح
+    // للمُستخدِم المُسجَّل (AppShell + SidebarLayoutProvider يُعفوها منذ
+    // v3.74.228) لكن middleware الـsession كان يُعيد توجيه الزوار غير
+    // المُسجَّلين إلى /auth/login قبل أن يَصِل الطَّلَب أصلًا لصفحة Demo.
+    // إضافتها هنا تجعل الرابط /demo?lang=en يَفتَح فورًا لأى زائر.
+    const isDemoPage = request.nextUrl.pathname.startsWith("/demo")
     // السماح لصفحة قبول الدعوة بدون تسجيل الدخول (للمستخدمين الجدد)
     const isInvitationAcceptPage = request.nextUrl.pathname.startsWith("/invitations/accept")
     // السماح لمسارات API للدعوات وإعادة إرسال التأكيد بدون تسجيل الدخول
@@ -82,7 +88,7 @@ export async function updateSession(request: NextRequest) {
       request.nextUrl.pathname.startsWith("/api/webhooks/") ||
       request.nextUrl.pathname === "/api/billing/renew"
 
-    if (!isAuthPage && !isLegalPage && !isContactPage && !isBlogPage && !isInvitationAcceptPage && !isPublicApi && !session) {
+    if (!isAuthPage && !isLegalPage && !isContactPage && !isBlogPage && !isDemoPage && !isInvitationAcceptPage && !isPublicApi && !session) {
       // لا توجد جلسة وليست على صفحة auth أو قبول الدعوة - أعد التوجيه إلى login
       if (!isRootPath) {
         const url = request.nextUrl.clone()
@@ -111,7 +117,7 @@ export async function updateSession(request: NextRequest) {
 
       // Skip the check on pages where blocking would be wrong/wasteful
       if (
-        !isAuthPage && !isLegalPage && !isContactPage && !isBlogPage && !isInvitationAcceptPage && !isPublicApi &&
+        !isAuthPage && !isLegalPage && !isContactPage && !isBlogPage && !isDemoPage && !isInvitationAcceptPage && !isPublicApi &&
         !isSuspendedPage && !isOnboarding && !isStatic
       ) {
         // Fast RPC: one query returns { has_company, is_owner, is_suspended }
@@ -129,7 +135,6 @@ export async function updateSession(request: NextRequest) {
           status?.has_company === true &&
           status?.is_suspended === true &&
           status?.is_owner === false
-
         if (isNonOwnerOnSuspendedCompany) {
           // Non-owner member of a suspended company → redirect to /suspended
           // Allow them to log out though (handled by /auth/* exclusion above)
