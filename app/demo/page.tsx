@@ -32,7 +32,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Pause, Play, RotateCcw, ChevronDown, ChevronUp, X, Volume2, VolumeX, Mic2 } from "lucide-react"
+import { ArrowRight, Pause, Play, RotateCcw, ChevronDown, ChevronUp, X, Mic2 } from "lucide-react"
 
 type Lang = "ar" | "en"
 
@@ -228,13 +228,15 @@ export default function DemoPage() {
   const [progress, setProgress] = useState(0)
   const lastTickRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
-  // v3.74.231 — narration via the browser's Web Speech API. Free, instant,
-  // no credits required. The user toggles it from the toolbar; the choice
-  // persists in localStorage('demo_audio_enabled'). audioSupported reflects
-  // whether window.speechSynthesis exists at all (some embedded webviews
-  // omit it). When unsupported we hide the toggle and skip speak() calls.
-  const [audioEnabled, setAudioEnabled] = useState(false)
+  // v3.74.231 — narration via the browser's Web Speech API or pre-recorded
+  // Higgsfield MP3s. Free, instant, no credits required at runtime.
+  // v3.74.234 — the explicit Sound on / Sound off button was removed; the
+  // user asked for narration to always be on. audioSupported still gates
+  // the path so unsupported browsers don't try to speak. audioEnabled is
+  // now derived directly from audioSupported (constant true on capable
+  // browsers).
   const [audioSupported, setAudioSupported] = useState(true)
+  const audioEnabled = audioSupported
   // v3.74.232 — voice picker. We keep a separate selected voice per
   // language because the same person rarely wants the same voice for AR
   // and EN. voicesByLang is the filtered, ranked candidate list shown in
@@ -265,10 +267,6 @@ export default function DemoPage() {
     const supported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window
     setAudioSupported(supported)
     if (!supported) return
-    try {
-      const stored = localStorage.getItem("demo_audio_enabled")
-      if (stored === "true") setAudioEnabled(true)
-    } catch { /* private mode */ }
     // v3.74.232 — rank installed voices for each language. Neural /
     // Online / Natural voices ship better prosody and accent control,
     // so we float them to the top of the dropdown.
@@ -306,6 +304,34 @@ export default function DemoPage() {
     return () => {
       window.speechSynthesis.removeEventListener("voiceschanged", onVoicesChanged)
       window.speechSynthesis.cancel()
+    }
+  }, [])
+
+  // v3.74.234 — most browsers block autoplay until the page has received a
+  // gesture. The user reaches /demo through a click on the landing page,
+  // but Next.js client navigation doesn't always carry that gesture across
+  // routes. To make sure the narration always starts, we install a single
+  // first-interaction listener that bumps a counter; the speak effect
+  // depends on it and re-triggers play() at that moment.
+  const [unlockKey, setUnlockKey] = useState(0)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    let armed = true
+    const onFirstInteraction = () => {
+      if (!armed) return
+      armed = false
+      setUnlockKey((k) => k + 1)
+      window.removeEventListener("pointerdown", onFirstInteraction)
+      window.removeEventListener("keydown", onFirstInteraction)
+      window.removeEventListener("touchstart", onFirstInteraction)
+    }
+    window.addEventListener("pointerdown", onFirstInteraction, { once: true, passive: true })
+    window.addEventListener("keydown", onFirstInteraction, { once: true, passive: true })
+    window.addEventListener("touchstart", onFirstInteraction, { once: true, passive: true })
+    return () => {
+      window.removeEventListener("pointerdown", onFirstInteraction)
+      window.removeEventListener("keydown", onFirstInteraction)
+      window.removeEventListener("touchstart", onFirstInteraction)
     }
   }, [])
 
@@ -362,7 +388,7 @@ export default function DemoPage() {
     } catch { /* getVoices may throw in some webviews */ }
     window.speechSynthesis.speak(utter)
     return () => { window.speechSynthesis.cancel() }
-  }, [audioEnabled, audioSupported, activeIdx, lang, paused, selectedVoiceAr, selectedVoiceEn])
+  }, [audioEnabled, audioSupported, activeIdx, lang, paused, selectedVoiceAr, selectedVoiceEn, unlockKey])
 
   // Animation loop. We use requestAnimationFrame instead of setInterval so the
   // progress bar stays smooth and gets paused with the tab. Each scene is
@@ -436,21 +462,6 @@ export default function DemoPage() {
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t("restart")}</span>
             </button>
-            {audioSupported && (
-              <button
-                onClick={() => {
-                  const next = !audioEnabled
-                  setAudioEnabled(next)
-                  try { localStorage.setItem("demo_audio_enabled", String(next)) } catch { }
-                }}
-                className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs sm:text-sm font-medium ${audioEnabled ? "border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-950/30" : "border-gray-300 dark:border-gray-700 hover:border-blue-500 hover:text-blue-600"}`}
-                aria-label={audioEnabled ? t("audioOff") : t("audioOn")}
-                title={audioEnabled ? t("audioOff") : t("audioOn")}
-              >
-                {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{audioEnabled ? t("audioOff") : t("audioOn")}</span>
-              </button>
-            )}
             {audioSupported && (
               <div className="relative">
                 <button
