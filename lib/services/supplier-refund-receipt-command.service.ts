@@ -170,7 +170,10 @@ export class SupplierRefundReceiptCommandService {
       ])
       if (linesError) throw new Error(linesError.message || "Failed to create supplier refund journal lines")
 
-      await this.applyVendorCredits(command.companyId, command.supplierId, command.amount, updatedCredits)
+      // v3.74.223 — vendor_credits.applied_amount is base-currency
+      // denominated. Pass baseAmount, not the refund-currency amount.
+      // Mirror of the customer-side fix in customer-refund-command.service.ts.
+      await this.applyVendorCredits(command.companyId, command.supplierId, command.baseAmount, updatedCredits)
 
       const { error: postError } = await this.adminSupabase
         .from("journal_entries")
