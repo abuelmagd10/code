@@ -52,6 +52,9 @@ interface CustomerRefundDialogProps {
   refundNotes: string
   setRefundNotes: (notes: string) => void
   refundExRate: { rate: number; rateId: string | null; source: string }
+  // v3.74.222 — let the parent receive the user's manual/live rate choice
+  // (optional so legacy callers keep working with the previous read-only display).
+  setRefundExRate?: (meta: { rate: number; rateId: string | null; source: string }) => void
   onRefundComplete: () => void
   // 🔐 ERP Governance - سياق المستخدم
   userRole?: string
@@ -90,6 +93,7 @@ export function CustomerRefundDialog({
   refundNotes,
   setRefundNotes,
   refundExRate,
+  setRefundExRate,
   onRefundComplete,
   // 🔐 ERP Governance
   userRole = 'staff',
@@ -357,10 +361,33 @@ export function CustomerRefundDialog({
               </Select>
             </div>
           </div>
+          {/* v3.74.222 — let the user pick the live API rate vs a manual
+              override (same UX as the banking transfer + customer refund
+              v3.74.200/201 flows). The parent's auto-fetched rate stays as
+              the default selection; the user can switch to a manual entry
+              from /settings/exchange-rates. */}
           {refundCurrency !== appCurrency && refundAmount > 0 && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">
-              <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {refundCurrency} = {refundExRate.rate.toFixed(4)} {appCurrency}</strong> ({refundExRate.source})</div>
-              <div>{appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(refundAmount * refundExRate.rate).toFixed(2)} {appCurrency}</strong></div>
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm space-y-2">
+              {setRefundExRate ? (
+                <ExchangeRateSelector
+                  fromCurrency={refundCurrency}
+                  baseCurrency={appCurrency}
+                  value={refundExRate.rate}
+                  onChange={(r) => setRefundExRate({ ...refundExRate, rate: r })}
+                  onRateMetaChange={(meta) => {
+                    if (meta) {
+                      setRefundExRate({ rate: meta.rate, rateId: meta.rateId, source: meta.source })
+                    }
+                  }}
+                  labelEn={`Refund rate (${refundCurrency} → ${appCurrency})`}
+                  labelAr={`سعر صرف المبلغ (${refundCurrency} → ${appCurrency})`}
+                />
+              ) : (
+                <div>{appLang==='en' ? 'Exchange Rate' : 'سعر الصرف'}: <strong>1 {refundCurrency} = {refundExRate.rate.toFixed(4)} {appCurrency}</strong> ({refundExRate.source})</div>
+              )}
+              <div className="text-xs text-gray-700 dark:text-gray-300">
+                {appLang==='en' ? 'Base Amount' : 'المبلغ الأساسي'}: <strong>{(refundAmount * refundExRate.rate).toFixed(2)} {appCurrency}</strong>
+              </div>
             </div>
           )}
           <div className="space-y-2">

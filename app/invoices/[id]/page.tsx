@@ -4215,6 +4215,7 @@ export default function InvoiceDetailPage() {
               refundNotes={refundNotes}
               setRefundNotes={setRefundNotes}
               refundExRate={refundExRate}
+              setRefundExRate={setRefundExRate}
               onRefundComplete={() => {
                 setShowCustomerRefund(false)
                 loadInvoice()

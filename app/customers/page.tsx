@@ -1323,6 +1323,7 @@ export default function CustomersPage() {
         refundNotes={refundNotes}
         setRefundNotes={setRefundNotes}
         refundExRate={refundExRate}
+        setRefundExRate={setRefundExRate}
         onRefundComplete={loadCustomers}
         // 🔐 ERP Governance - سياق المستخدم
         userRole={currentUserRole}
