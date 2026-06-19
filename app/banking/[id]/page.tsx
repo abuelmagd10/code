@@ -800,20 +800,66 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                     </tr>
                   )}
                 </tbody>
-                {filteredLines.length > 0 && (
+                {filteredLines.length > 0 && (() => {
+                  // v3.74.225: align tfoot with rows — when this is a foreign-currency
+                  // account, show native-currency totals (USD primary, EGP reference)
+                  // just like each row does. Base-currency accounts continue to show
+                  // only the base total.
+                  const baseDebitTotal = Array.isArray(filteredLines)
+                    ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0)
+                    : 0
+                  const baseCreditTotal = Array.isArray(filteredLines)
+                    ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0)
+                    : 0
+                  const baseBalanceTotal = baseDebitTotal - baseCreditTotal
+                  const nativeDebitTotal = Array.isArray(filteredLines)
+                    ? filteredLines.reduce((s, l) => s + Number(l.original_debit || 0), 0)
+                    : 0
+                  const nativeCreditTotal = Array.isArray(filteredLines)
+                    ? filteredLines.reduce((s, l) => s + Number(l.original_credit || 0), 0)
+                    : 0
+                  const nativeBalanceTotal = nativeDebitTotal - nativeCreditTotal
+                  const fmt = (n: number) => new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(n)
+                  return (
                   <tfoot className="bg-gray-100 dark:bg-slate-800 font-bold">
                     <tr>
                       <td className="px-3 py-3 text-gray-900 dark:text-white" colSpan={1}>{appLang === 'en' ? 'Total' : 'الإجمالي'}</td>
                       <td className="px-3 py-3 hidden sm:table-cell" colSpan={1}></td>
                       <td className="px-3 py-3 hidden lg:table-cell" colSpan={1}></td>
-                      <td className="px-3 py-3 text-green-600 dark:text-green-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(Array.isArray(filteredLines) ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency), 0) : 0)} {currencySymbol}</td>
-                      <td className="px-3 py-3 text-red-600 dark:text-red-400">{new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(Array.isArray(filteredLines) ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) : 0)} {currencySymbol}</td>
-                      <td className={`px-3 py-3 hidden sm:table-cell ${Array.isArray(filteredLines) && filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2 }).format(Array.isArray(filteredLines) ? filteredLines.reduce((s, l) => s + getDisplayAmount(l.debit_amount || 0, l.display_debit, l.display_currency) - getDisplayAmount(l.credit_amount || 0, l.display_credit, l.display_currency), 0) : 0)} {currencySymbol}
+                      <td className="px-3 py-3 text-green-600 dark:text-green-400">
+                        {isFCAccount ? (
+                          <>
+                            {fmt(nativeDebitTotal)} {nativeCurrencySymbol}
+                            <div className="text-[10px] text-gray-400 font-normal">≈ {fmt(baseDebitTotal)} {currencySymbol}</div>
+                          </>
+                        ) : (
+                          <>{fmt(baseDebitTotal)} {currencySymbol}</>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-red-600 dark:text-red-400">
+                        {isFCAccount ? (
+                          <>
+                            {fmt(nativeCreditTotal)} {nativeCurrencySymbol}
+                            <div className="text-[10px] text-gray-400 font-normal">≈ {fmt(baseCreditTotal)} {currencySymbol}</div>
+                          </>
+                        ) : (
+                          <>{fmt(baseCreditTotal)} {currencySymbol}</>
+                        )}
+                      </td>
+                      <td className={`px-3 py-3 hidden sm:table-cell ${(isFCAccount ? nativeBalanceTotal : baseBalanceTotal) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {isFCAccount ? (
+                          <>
+                            {fmt(nativeBalanceTotal)} {nativeCurrencySymbol}
+                            <div className="text-[10px] text-gray-400 font-normal">≈ {fmt(baseBalanceTotal)} {currencySymbol}</div>
+                          </>
+                        ) : (
+                          <>{fmt(baseBalanceTotal)} {currencySymbol}</>
+                        )}
                       </td>
                     </tr>
                   </tfoot>
-                )}
+                  )
+                })()}
               </table>
             </div>
           </CardContent>

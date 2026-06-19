@@ -351,6 +351,11 @@ export class CustomerRefundCommandService {
         customerId: command.customerId,
         refundDate: command.refundDate,
         amount: command.amount,
+        baseAmount: command.baseAmount,
+        currencyCode: refundCurrency,
+        exchangeRate: command.exchangeRate,
+        exchangeRateId: command.exchangeRateId || null,
+        rateSource: command.rateSource || null,
         refundMethod: command.refundMethod,
         referenceNumber: command.invoiceNumber ? `REF-INV-${command.invoiceNumber}-${Date.now()}` : `REF-${Date.now()}`,
         notes: enrichedNotes,
@@ -526,6 +531,11 @@ export class CustomerRefundCommandService {
     customerId: string
     refundDate: string
     amount: number
+    baseAmount?: number
+    currencyCode?: string | null
+    exchangeRate?: number | null
+    exchangeRateId?: string | null
+    rateSource?: string | null
     refundMethod: string
     referenceNumber: string
     notes: string
@@ -533,11 +543,25 @@ export class CustomerRefundCommandService {
     costCenterId: string | null
     accountId: string
   }) {
-    const payload = {
+    // v3.74.225 — persist FX context so the /payments list and details
+    // modal show "0.01 $ ≈ 0.55 £" instead of just "-0.55 £" for cross-
+    // currency refunds. Mirrors v3.74.219 on the invoice-payment side.
+    const ccy = String(params.currencyCode || 'EGP').toUpperCase()
+    const baseAmt = Number(params.baseAmount ?? params.amount)
+    const rate = Number(params.exchangeRate || 1) || 1
+    const payload: Record<string, any> = {
       company_id: params.companyId,
       customer_id: params.customerId,
       payment_date: params.refundDate,
-      amount: -params.amount,
+      amount: -baseAmt,
+      currency_code: ccy,
+      exchange_rate: rate,
+      exchange_rate_used: rate,
+      exchange_rate_id: params.exchangeRateId || null,
+      rate_source: params.rateSource || null,
+      base_currency_amount: -baseAmt,
+      original_amount: -Math.abs(params.amount),
+      original_currency: ccy,
       payment_method: params.refundMethod === "bank" ? "bank" : "cash",
       reference_number: params.referenceNumber,
       notes: params.notes,

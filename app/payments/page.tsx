@@ -266,12 +266,15 @@ export default function PaymentsPage() {
   }
 
   // v3.11.0: Smart amount display — shows currency code + base equivalent for FX payments
+  // v3.74.225: use Math.abs on the magnitude check so refund rows
+  // (amount < 0) also surface their FC context. The displayed number
+  // keeps its original sign so refunds still show as -0.01 $.
   const renderPaymentAmount = (payment: Payment, baseCur: string) => {
     const baseAmount = getDisplayAmount(payment)
     const origAmt = Number(payment.original_amount || 0)
     const origCur = String(payment.original_currency || payment.currency_code || '').toUpperCase()
     const baseCurUpper = baseCur.toUpperCase()
-    const isFC = origCur && origCur !== baseCurUpper && origAmt > 0
+    const isFC = !!origCur && origCur !== baseCurUpper && Math.abs(origAmt) > 0
     if (isFC) {
       const origSymbol = currencySymbols[origCur] || origCur
       return (
