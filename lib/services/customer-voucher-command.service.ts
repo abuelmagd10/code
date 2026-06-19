@@ -127,6 +127,10 @@ export class CustomerVoucherCommandService {
         referenceNumber: command.referenceNumber || null,
         notes: command.notes || null,
         accountId: command.voucherAccountId,
+        // v3.74.226 — same fix as customer-refund: write actor so the
+        // payments details modal can show the creator instead of
+        // "غَير مُسَجَّل" / "Unknown user".
+        createdBy: actor.actorId,
       })
       if (paymentError || !payment?.id) throw new Error(paymentError?.message || "Failed to create customer voucher payment")
       paymentId = String(payment.id)
@@ -235,8 +239,9 @@ export class CustomerVoucherCommandService {
     referenceNumber: string | null
     notes: string | null
     accountId: string
+    createdBy?: string | null
   }) {
-    const payload = {
+    const payload: Record<string, any> = {
       company_id: params.companyId,
       customer_id: params.customerId,
       payment_date: params.paymentDate,
@@ -244,6 +249,7 @@ export class CustomerVoucherCommandService {
       payment_method: params.paymentMethod,
       reference_number: params.referenceNumber,
       notes: params.notes,
+      created_by: params.createdBy || null,
     }
     const { data, error } = await this.adminSupabase.from("payments").insert({ ...payload, account_id: params.accountId }).select("id").single()
     if (!error) return { data, error: null }

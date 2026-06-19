@@ -393,6 +393,18 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
   const rate = Number(payment?.exchange_rate_used || payment?.exchange_rate || 1)
   const hasFx = (currency !== baseCurrency) || (rate !== 1)
 
+  // v3.74.226 — for cross-currency payments (e.g., a USD refund on an EGP
+  // credit), the header must show the original amount in the original
+  // currency as the primary, with the base equivalent as a small reference
+  // underneath. Previously the header read "-0.55 USD" — mixing the base
+  // figure with the foreign-currency label. Math.abs guards refund rows
+  // (negative amounts), which would otherwise fail an "origAmt > 0" check.
+  const headerOrigAmt = Number(payment?.original_amount || 0)
+  const headerOrigCur = String(payment?.original_currency || '').toUpperCase()
+  const headerBaseAmt = Number(payment?.base_currency_amount ?? payment?.amount ?? 0)
+  const headerBaseCur = String(baseCurrency || 'EGP').toUpperCase()
+  const headerIsFC = !!headerOrigCur && headerOrigCur !== headerBaseCur && Math.abs(headerOrigAmt) > 0
+
   const isVoid = !!payment?.voids_payment_id          // this row IS a correction
   const isVoided = !!payment?.voided_by_payment_id     // this row WAS corrected
 
@@ -458,10 +470,22 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
               </DialogDescription>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-                {fmtAmount(payment?.amount)}
-                <span className="text-sm sm:text-base font-normal text-slate-500 ml-1">{currency}</span>
-              </div>
+              {headerIsFC ? (
+                <>
+                  <div className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+                    {fmtAmount(headerOrigAmt)}
+                    <span className="text-sm sm:text-base font-normal text-slate-500 ml-1">{headerOrigCur}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {`≈ ${fmtAmount(headerBaseAmt)} ${headerBaseCur}`}
+                  </div>
+                </>
+              ) : (
+                <div className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+                  {fmtAmount(payment?.amount)}
+                  <span className="text-sm sm:text-base font-normal text-slate-500 ml-1">{currency}</span>
+                </div>
+              )}
               <div className="mt-1 sm:mt-2 flex justify-end">
                 <Badge className={`${statusBadgeClass(payment?.status)} px-2 py-1 text-xs`}>
                   {statusLabel(payment?.status || '', appLang)}

@@ -362,6 +362,7 @@ export class CustomerRefundCommandService {
         branchId,
         costCenterId,
         accountId: command.refundAccountId,
+        createdBy: actor.actorId,
       })
       if (paymentError) throw new Error(paymentError.message || "Failed to create customer refund payment record")
       paymentId = payment?.id ? String(payment.id) : null
@@ -542,6 +543,7 @@ export class CustomerRefundCommandService {
     branchId: string | null
     costCenterId: string | null
     accountId: string
+    createdBy?: string | null
   }) {
     // v3.74.225 — persist FX context so the /payments list and details
     // modal show "0.01 $ ≈ 0.55 £" instead of just "-0.55 £" for cross-
@@ -567,6 +569,11 @@ export class CustomerRefundCommandService {
       notes: params.notes,
       branch_id: params.branchId,
       cost_center_id: params.costCenterId,
+      // v3.74.226 — propagate the actor so the /payments details modal can
+      // show the creator name and the audit log can attribute the CREATE
+      // event. Without this, both surfaces fell back to "غَير مُسَجَّل" /
+      // "Unknown user" and the approval trail showed an empty author row.
+      created_by: params.createdBy || null,
     }
     const { data, error } = await this.adminSupabase.from("payments").insert({ ...payload, account_id: params.accountId }).select("id").single()
     if (!error) return { data, error: null }
@@ -733,7 +740,6 @@ export class CustomerRefundCommandService {
     const ids = await this.findLinkedEntityIds(traceId, entityType)
     return ids[0] || null
   }
-
   private async findLinkedEntityIds(traceId: string, entityType: string): Promise<string[]> {
     const { data, error } = await this.adminSupabase
       .from("financial_operation_trace_links")
