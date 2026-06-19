@@ -45,7 +45,7 @@ type Scene = {
   captionAr: string
   captionEn: string
   /** which mock component to render */
-  kind: "hero" | "modules" | "invoice" | "refund" | "dashboard" | "cta"
+  kind: "hero" | "modules" | "invoice" | "refund" | "dashboard" | "purchases" | "inventory" | "banking" | "reports" | "payroll" | "manufacturing" | "cta"
 }
 
 const SCENES: Scene[] = [
@@ -88,6 +88,54 @@ const SCENES: Scene[] = [
     captionAr: "أَرباح، تَدَفُّق نَقدى، أَعمار الذِّمَم — كُل مُؤَشِّر تَجِدُه فى مَكانِه بِنَقرَة واحِدَة.",
     captionEn: "Profit, cash-flow, aging — every KPI you need, one click away.",
     kind: "dashboard",
+  },
+  {
+    id: "purchases",
+    titleAr: "المُشتَرَيات وَالفَواتير",
+    titleEn: "Purchases & Bills",
+    captionAr: "أَوامِر شِراء، فَواتير مُورِّدين، اعتِمادات مُتَعَدِّدَة المُستَوَيات — دَورَة شِراء كامِلَة فى مَكان واحِد.",
+    captionEn: "Purchase orders, supplier bills, multi-level approvals — the full procurement cycle in one place.",
+    kind: "purchases",
+  },
+  {
+    id: "inventory",
+    titleAr: "المَخزون وَتَتَبُّع التَّكلِفَة (FIFO)",
+    titleEn: "Inventory & FIFO Costing",
+    captionAr: "مُستَوَدَعات، تَحويلات، دَفعات FIFO — تَكلِفَة دَقيقَة لِكُل صِنف وَمُستَوَى مَخزون لَحظى.",
+    captionEn: "Warehouses, transfers, FIFO lots — accurate per-item cost and real-time stock levels.",
+    kind: "inventory",
+  },
+  {
+    id: "banking",
+    titleAr: "البُنوك وَالتَّسويَة",
+    titleEn: "Banking & Reconciliation",
+    captionAr: "حِسابات بَنكِيَّة بِعِدَّة عُمَلات، تَحويلات داخِلِيَّة، وَتَسوِيَة كَشف الحِساب بِنَقرَة.",
+    captionEn: "Multi-currency bank accounts, internal transfers, and one-click statement reconciliation.",
+    kind: "banking",
+  },
+  {
+    id: "reports",
+    titleAr: "تَقارير مالِيَّة فَورِيَّة",
+    titleEn: "Instant Financial Reports",
+    captionAr: "قائِمَة الدَّخل، المَركَز المالى، أَعمار الذِّمَم، تَدَفُّقات نَقدِيَّة — كُلُّها لَحظِيَّة وَقابِلَة لِلتَّصدير.",
+    captionEn: "P&L, balance sheet, AR/AP aging, cash flow — all real-time and one-click exportable.",
+    kind: "reports",
+  },
+  {
+    id: "payroll",
+    titleAr: "المَوارِد البَشَرِيَّة وَالرَّواتِب",
+    titleEn: "HR & Payroll",
+    captionAr: "بَيانات المُوَظَّفين، رَواتِب شَهرِيَّة، حَوافِز وَخَصمَيات، وَقَيد مُحاسَبى تِلقائى.",
+    captionEn: "Employee records, monthly payroll, bonuses & deductions, with auto-generated journal entries.",
+    kind: "payroll",
+  },
+  {
+    id: "manufacturing",
+    titleAr: "الإِنتاج وَأَوامِر التَّصنيع",
+    titleEn: "Manufacturing & Work Orders",
+    captionAr: "قَوائِم مَوادّ (BOM)، أَوامِر إِنتاج، صَرف مَخزون، حِساب تَكلِفَة المَنتَج النِّهائى تِلقائِيًّا.",
+    captionEn: "Bills of materials, work orders, stock consumption — finished-product cost computed automatically.",
+    kind: "manufacturing",
   },
   {
     id: "cta",
@@ -297,6 +345,12 @@ function SceneCanvas({ scene, isAr, progress }: { scene: Scene; isAr: boolean; p
     case "invoice":   return <InvoiceMock isAr={isAr} progress={progress} />
     case "refund":    return <RefundMock isAr={isAr} progress={progress} />
     case "dashboard": return <DashboardMock isAr={isAr} progress={progress} />
+    case "purchases":     return <PurchasesMock isAr={isAr} progress={progress} />
+    case "inventory":     return <InventoryMock isAr={isAr} progress={progress} />
+    case "banking":       return <BankingMock isAr={isAr} progress={progress} />
+    case "reports":       return <ReportsMock isAr={isAr} progress={progress} />
+    case "payroll":       return <PayrollMock isAr={isAr} progress={progress} />
+    case "manufacturing": return <ManufacturingMock isAr={isAr} progress={progress} />
     case "cta":       return <CtaMock isAr={isAr} progress={progress} />
   }
 }
@@ -530,3 +584,251 @@ function CtaMock({ isAr, progress }: { isAr: boolean; progress: number }) {
     </div>
   )
 }
+
+function PurchasesMock({ isAr, progress }: { isAr: boolean; progress: number }) {
+  const p1 = Math.min(1, progress * 2.5)
+  const p2 = Math.max(0, Math.min(1, progress * 2 - 0.5))
+  return (
+    <div className="absolute inset-0 p-3 sm:p-6 flex flex-col gap-3">
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 sm:p-4" style={{ opacity: p1 }}>
+        <div className="text-[11px] text-gray-400 mb-1">{isAr ? "أَمر شِراء" : "Purchase Order"}</div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-bold text-sm">PO-00037</span>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-700">{isAr ? "بِانتِظار الاعتِماد" : "Pending approval"}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="text-gray-500">{isAr ? "المُورِّد" : "Supplier"}</div>
+          <div className="font-medium text-end">{isAr ? "شَرِكَة المَوادّ الخام" : "Raw Materials Co."}</div>
+          <div className="text-gray-500">{isAr ? "الإِجمالى" : "Total"}</div>
+          <div className="font-bold text-end">85,400.00 ج.م</div>
+        </div>
+      </div>
+      <div className="flex-1 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 sm:p-4" style={{ opacity: p2, transform: `translateY(${(1 - p2) * 14}px)` }}>
+        <div className="text-[11px] text-gray-400 mb-2">{isAr ? "مَسار الاعتِماد" : "Approval workflow"}</div>
+        <div className="flex items-center justify-between text-xs">
+          {[
+            { ar: "المُشتَرَيات", en: "Buyer", done: true },
+            { ar: "المُدير", en: "Manager", done: true },
+            { ar: "المالى", en: "Finance", done: false },
+          ].map((s, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${s.done ? "bg-emerald-500 text-white" : "bg-gray-200 dark:bg-gray-800 text-gray-500"}`}>{s.done ? "✓" : i + 1}</div>
+              <span className="mt-1 text-gray-600 dark:text-gray-400">{isAr ? s.ar : s.en}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InventoryMock({ isAr, progress }: { isAr: boolean; progress: number }) {
+  const rows = [
+    { sku: "SKU-1001", name: { ar: "زَيت تَشحيم", en: "Lubricant oil" }, qty: 248, lot: "L-204", cost: 12.5 },
+    { sku: "SKU-1042", name: { ar: "فِلتَر هَواء", en: "Air filter" }, qty: 96, lot: "L-211", cost: 35.0 },
+    { sku: "SKU-1107", name: { ar: "بَطَّارِيَّة 60Ah", en: "60Ah Battery" }, qty: 32, lot: "L-219", cost: 880.0 },
+  ]
+  return (
+    <div className="absolute inset-0 p-3 sm:p-6 flex flex-col gap-3">
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 overflow-hidden flex-1">
+        <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+          <span className="text-xs font-semibold">{isAr ? "أَرصِدَة المَخزون — مُستَوَدَع الرَّئيسى" : "Stock balances — Main warehouse"}</span>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">FIFO</span>
+        </div>
+        <table className="w-full text-xs">
+          <thead className="bg-gray-50 dark:bg-gray-800/50 text-gray-500">
+            <tr>
+              <th className="text-start p-2 font-medium">{isAr ? "الصِّنف" : "Item"}</th>
+              <th className="text-end p-2 font-medium">{isAr ? "الكَمِّيَّة" : "Qty"}</th>
+              <th className="text-end p-2 font-medium hidden sm:table-cell">{isAr ? "الدَّفعَة" : "Lot"}</th>
+              <th className="text-end p-2 font-medium">{isAr ? "التَّكلِفَة" : "Cost"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const reveal = Math.min(1, Math.max(0, progress * 4 - i * 0.4))
+              return (
+                <tr key={r.sku} className="border-t border-gray-100 dark:border-gray-800" style={{ opacity: reveal }}>
+                  <td className="p-2">
+                    <div className="font-medium">{isAr ? r.name.ar : r.name.en}</div>
+                    <div className="text-[10px] text-gray-400">{r.sku}</div>
+                  </td>
+                  <td className="p-2 text-end font-medium">{r.qty}</td>
+                  <td className="p-2 text-end hidden sm:table-cell text-gray-500">{r.lot}</td>
+                  <td className="p-2 text-end font-medium text-blue-600">{r.cost.toFixed(2)} ج.م</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[11px] text-gray-500 text-center">
+        {isAr ? "تَكلِفَة دَقيقَة بِنِظام FIFO — كُل دَفعَة مُتَتَبَّعَة مِن الشِّراء حَتَّى البَيع." : "Accurate FIFO costing — every lot tracked from purchase to sale."}
+      </div>
+    </div>
+  )
+}
+
+function BankingMock({ isAr, progress }: { isAr: boolean; progress: number }) {
+  const p1 = Math.min(1, progress * 2.5)
+  const p2 = Math.max(0, Math.min(1, progress * 2 - 0.6))
+  return (
+    <div className="absolute inset-0 p-3 sm:p-6 grid grid-rows-[auto_1fr] gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3" style={{ opacity: p1 }}>
+        {[
+          { name: { ar: "بَنك قَناة السُّوَيس", en: "Suez Canal Bank" }, n: "1010", bal: "0.09 $", base: "≈ 4.95 ج.م", color: "from-blue-500 to-cyan-500" },
+          { name: { ar: "البَنك الأَهلى", en: "National Bank" }, n: "1020", bal: "182,400.00 ج.م", color: "from-emerald-500 to-teal-500" },
+          { name: { ar: "خَزينَة الفَرع", en: "Branch Cash" }, n: "1030", bal: "12,650.00 ج.م", color: "from-purple-500 to-fuchsia-500" },
+        ].map((a) => (
+          <div key={a.n} className={`p-2.5 sm:p-3 rounded-xl bg-gradient-to-br ${a.color} text-white shadow`}>
+            <div className="text-[10px] opacity-90">{isAr ? a.name.ar : a.name.en} ({a.n})</div>
+            <div className="text-sm sm:text-base font-bold mt-1">{a.bal}</div>
+            {a.base && <div className="text-[10px] opacity-90">{a.base}</div>}
+          </div>
+        ))}
+      </div>
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 sm:p-4 flex flex-col gap-2" style={{ opacity: p2, transform: `translateY(${(1 - p2) * 14}px)` }}>
+        <div className="text-[11px] text-gray-400">{isAr ? "تَسويَة كَشف الحِساب" : "Statement reconciliation"}</div>
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <div>
+            <div className="text-[10px] text-gray-500">{isAr ? "حَركات مُسَوَّاة" : "Matched"}</div>
+            <div className="text-base sm:text-lg font-bold text-emerald-600">147</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-500">{isAr ? "بِانتِظار" : "Pending"}</div>
+            <div className="text-base sm:text-lg font-bold text-amber-600">5</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-500">{isAr ? "فَروقات" : "Variance"}</div>
+            <div className="text-base sm:text-lg font-bold text-rose-600">0.00 ج.م</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReportsMock({ isAr, progress }: { isAr: boolean; progress: number }) {
+  const p1 = Math.min(1, progress * 2)
+  return (
+    <div className="absolute inset-0 p-3 sm:p-6 grid grid-cols-2 grid-rows-2 gap-3" style={{ opacity: p1 }}>
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 flex flex-col justify-between">
+        <div>
+          <div className="text-[10px] text-gray-400">{isAr ? "قائِمَة الدَّخل" : "Profit & Loss"}</div>
+          <div className="text-xs font-semibold mt-0.5">{isAr ? "صافى الرِّبح" : "Net profit"}</div>
+        </div>
+        <div className="text-end">
+          <div className="text-lg sm:text-xl font-extrabold text-emerald-600">387,420 ج.م</div>
+          <div className="text-[10px] text-emerald-600">+8.2%</div>
+        </div>
+      </div>
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 flex flex-col justify-between">
+        <div>
+          <div className="text-[10px] text-gray-400">{isAr ? "المَركَز المالى" : "Balance Sheet"}</div>
+          <div className="text-xs font-semibold mt-0.5">{isAr ? "إِجمالى الأُصول" : "Total assets"}</div>
+        </div>
+        <div className="text-end">
+          <div className="text-lg sm:text-xl font-extrabold text-blue-600">2.41 M ج.م</div>
+          <div className="text-[10px] text-gray-500">{isAr ? "31 ديسَمبَر" : "Dec 31"}</div>
+        </div>
+      </div>
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 flex flex-col justify-between">
+        <div>
+          <div className="text-[10px] text-gray-400">{isAr ? "أَعمار الذِّمَم" : "AR Aging"}</div>
+          <div className="text-xs font-semibold mt-0.5">{isAr ? "أَكثَر مِن 90 يَومًا" : "90+ days"}</div>
+        </div>
+        <div className="text-end">
+          <div className="text-lg sm:text-xl font-extrabold text-rose-600">42,800 ج.م</div>
+          <div className="text-[10px] text-rose-600">{isAr ? "تَحَرُّك مَطلوب" : "Action needed"}</div>
+        </div>
+      </div>
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 flex flex-col justify-between">
+        <div>
+          <div className="text-[10px] text-gray-400">{isAr ? "التَّدَفُّق النَّقدى" : "Cash Flow"}</div>
+          <div className="text-xs font-semibold mt-0.5">{isAr ? "الشَّهر الحالى" : "Current month"}</div>
+        </div>
+        <div className="text-end">
+          <div className="text-lg sm:text-xl font-extrabold text-purple-600">+118,300 ج.م</div>
+          <div className="text-[10px] text-gray-500">{isAr ? "تَشغيلى" : "Operating"}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PayrollMock({ isAr, progress }: { isAr: boolean; progress: number }) {
+  const p1 = Math.min(1, progress * 2.2)
+  const rows = [
+    { name: { ar: "أَحمَد عَلى", en: "Ahmed Aly" }, role: { ar: "مُحاسِب", en: "Accountant" }, salary: 9500 },
+    { name: { ar: "سارَة مَحمود", en: "Sara Mahmoud" }, role: { ar: "مَبيعات", en: "Sales" }, salary: 8200 },
+    { name: { ar: "مُحَمَّد حَسَن", en: "Mohamed Hassan" }, role: { ar: "مَخزون", en: "Warehouse" }, salary: 7400 },
+  ]
+  return (
+    <div className="absolute inset-0 p-3 sm:p-6 flex flex-col gap-3">
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 overflow-hidden flex-1">
+        <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+          <span className="text-xs font-semibold">{isAr ? "كَشف رَواتِب — يونيو 2026" : "Payroll run — June 2026"}</span>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">{isAr ? "جاهِز لِلصَّرف" : "Ready to post"}</span>
+        </div>
+        <div className="divide-y divide-gray-100 dark:divide-gray-800">
+          {rows.map((r, i) => {
+            const reveal = Math.min(1, Math.max(0, progress * 4 - i * 0.4))
+            return (
+              <div key={i} className="flex items-center justify-between px-3 py-2" style={{ opacity: reveal }}>
+                <div>
+                  <div className="text-sm font-medium">{isAr ? r.name.ar : r.name.en}</div>
+                  <div className="text-[10px] text-gray-500">{isAr ? r.role.ar : r.role.en}</div>
+                </div>
+                <div className="text-end">
+                  <div className="text-sm font-bold text-blue-600">{r.salary.toLocaleString()} ج.م</div>
+                  <div className="text-[10px] text-gray-500">{isAr ? "صافى الرَّاتِب" : "Net pay"}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div className="text-[11px] text-gray-500 text-center" style={{ opacity: p1 }}>
+        {isAr ? "اعتِماد الكَشف يُولِّد القَيد المُحاسَبى وَأَوامِر التَّحويل البَنكى تِلقائِيًّا." : "Approving the run posts the journal entry and queues bank transfers automatically."}
+      </div>
+    </div>
+  )
+}
+
+function ManufacturingMock({ isAr, progress }: { isAr: boolean; progress: number }) {
+  const p1 = Math.min(1, progress * 2.5)
+  const p2 = Math.max(0, Math.min(1, progress * 2 - 0.6))
+  return (
+    <div className="absolute inset-0 p-3 sm:p-6 flex flex-col gap-3">
+      <div className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 sm:p-4" style={{ opacity: p1 }}>
+        <div className="text-[11px] text-gray-400 mb-1">{isAr ? "أَمر إِنتاج" : "Work order"}</div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-bold text-sm">WO-00112</span>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700">{isAr ? "جارٍ التَّصنيع" : "In progress"}</span>
+        </div>
+        <div className="text-sm font-medium">{isAr ? "زَيت تَزييت 1L — 200 وَحدَة" : "Lubricant 1L — 200 units"}</div>
+      </div>
+      <div className="flex-1 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3 sm:p-4" style={{ opacity: p2, transform: `translateY(${(1 - p2) * 14}px)` }}>
+        <div className="text-[11px] text-gray-400 mb-2">{isAr ? "صَرف مَوادّ خام (BOM)" : "Raw materials consumption (BOM)"}</div>
+        <div className="space-y-1.5 text-xs">
+          {[
+            { ar: "زَيت أَساس", en: "Base oil", qty: "180 L", cost: "1,440 ج.م" },
+            { ar: "مادَّة مُضافَة", en: "Additive", qty: "20 L", cost: "920 ج.م" },
+            { ar: "زُجاجَات فارِغَة", en: "Empty bottles", qty: "200", cost: "300 ج.م" },
+          ].map((m, i) => (
+            <div key={i} className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-1.5 last:border-0">
+              <span className="text-gray-500">{isAr ? m.ar : m.en}</span>
+              <span className="font-medium">{m.qty}</span>
+              <span className="font-medium text-blue-600">{m.cost}</span>
+            </div>
+          ))}
+          <div className="flex justify-between pt-2 font-bold border-t border-gray-200 dark:border-gray-700">
+            <span>{isAr ? "تَكلِفَة الوَحدَة" : "Cost per unit"}</span>
+            <span className="text-emerald-600">13.30 ج.م</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
