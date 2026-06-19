@@ -280,20 +280,28 @@ export class CustomerRefundCommandService {
       ])
       if (linesError) throw new Error(linesError.message || "Failed to create customer refund journal lines")
 
-      await this.applyCustomerCredits(command.companyId, command.customerId, command.amount, updatedCredits)
+      // v3.74.223 — customer_credits is denominated in base currency, so
+      // a 0.01 USD refund at rate 55 must deduct 0.55 EGP from used_amount,
+      // not 0.01. The previous code passed command.amount (USD) instead of
+      // command.baseAmount (EGP), so used_amount drifted from the GL on
+      // every foreign-currency refund — the integrity check reported a
+      // 0.54 EGP discrepancy after the user paid 0.01 USD on a 0.67 EGP
+      // credit.
+      await this.applyCustomerCredits(command.companyId, command.customerId, command.baseAmount, updatedCredits)
 
       // v3.74.100 — write the refund row into customer_credit_ledger so the
       // ledger-based balance (used by /api/customer-credits and the invoice
       // detail banner) reflects the disbursement immediately. Without this,
       // /invoices/[id] still shows the old credit as "available" because the
       // ledger balance never decreased to match used_amount.
+      // v3.74.223 — same currency fix: ledger is base-currency.
       try {
         await this.adminSupabase.from("customer_credit_ledger").insert({
           company_id: command.companyId,
           customer_id: command.customerId,
           source_type: "customer_refund",
           source_id: operationId,
-          amount: -Math.abs(Number(command.amount || 0)),
+          amount: -Math.abs(Number(command.baseAmount || 0)),
           description: command.invoiceNumber
             ? `صَرف رَصيد دائن للعَميل — مرتبط بفاتورة ${command.invoiceNumber}`
             : `صَرف رَصيد دائن للعَميل`,
