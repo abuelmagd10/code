@@ -96,6 +96,22 @@ const ERPWebsite = () => {
                 { href: '#pricing', label: isAr ? 'الأسعار' : 'Pricing' },
                 { href: '#faq', label: isAr ? 'الأسئلة' : 'FAQ' },
               ].map((i) => (<a key={i.href} href={i.href} onClick={() => setIsMenuOpen(false)} className="block text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600">{i.label}</a>))}
+              {/* v3.74.227 — language switcher was only inside the hidden
+                  md:flex desktop nav, so mobile users had no way to switch
+                  between Arabic and English. Surface it in the mobile menu
+                  too, with the same persistence. */}
+              <button
+                onClick={() => {
+                  const n = isAr ? 'en' : 'ar'
+                  setAppLang(n)
+                  try { localStorage.setItem('app_language', n) } catch { }
+                  setIsMenuOpen(false)
+                }}
+                className="w-full flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 pt-3 mt-1 border-t border-gray-100 dark:border-gray-800"
+              >
+                <span>{isAr ? 'تَغيير اللُّغَة' : 'Change language'}</span>
+                <span className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-700">{isAr ? 'EN' : 'عربى'}</span>
+              </button>
               <div className="pt-3 border-t border-gray-200 dark:border-gray-800 flex flex-col gap-2">
                 <Link href="/auth/login" className="text-sm font-medium text-center py-2 rounded-lg border border-gray-300 dark:border-gray-700">{isAr ? 'تسجيل الدخول' : 'Sign In'}</Link>
                 <Link href="/auth/sign-up" className="text-sm font-semibold text-center py-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white">{isAr ? 'تجربة مجانية' : 'Free Trial'}</Link>

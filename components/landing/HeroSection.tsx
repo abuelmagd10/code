@@ -27,7 +27,7 @@ export function HeroSection({ appLang = 'ar' }: { appLang?: 'ar' | 'en' }) {
                 {t('ابدأ تجربتك المجانية','Start Free Trial')}
                 <ArrowRight className="w-5 h-5 rtl:rotate-180" />
               </Link>
-              <Link href="#demo" className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl border-2 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white font-semibold hover:border-blue-500 hover:text-blue-600 transition-colors">
+              <Link href={`/demo?lang=${appLang}`} className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl border-2 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white font-semibold hover:border-blue-500 hover:text-blue-600 transition-colors">
                 <Play className="w-5 h-5" />
                 {t('شاهد العرض التوضيحى','Watch Demo')}
               </Link>
