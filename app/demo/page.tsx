@@ -32,7 +32,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Pause, Play, RotateCcw, ChevronDown, ChevronUp, X } from "lucide-react"
+import { ArrowRight, Pause, Play, RotateCcw, ChevronDown, ChevronUp, X, Volume2, VolumeX } from "lucide-react"
 
 type Lang = "ar" | "en"
 
@@ -44,6 +44,12 @@ type Scene = {
   titleEn: string
   captionAr: string
   captionEn: string
+  /** v3.74.231 — extended Arabic narration spoken by the browser TTS when
+   *  audio is enabled. Falls back to captionAr when missing. */
+  narrationAr?: string
+  /** v3.74.231 — extended English narration spoken by the browser TTS
+   *  when audio is enabled. Falls back to captionEn when missing. */
+  narrationEn?: string
   /** which mock component to render */
   kind: "hero" | "modules" | "invoice" | "refund" | "dashboard" | "purchases" | "inventory" | "banking" | "reports" | "payroll" | "manufacturing" | "cta"
 }
@@ -55,6 +61,8 @@ const SCENES: Scene[] = [
     titleEn: "Welcome to 7esab ERP",
     captionAr: "نِظام مُحاسَبَة وَإِدارَة كامِل — بِالعَرَبِيَّة، بِالعُملَة المَحَلِّيَّة، بِأَمان مُؤَسَّسى.",
     captionEn: "A complete accounting & ops platform — Arabic-first, multi-currency, enterprise-secure.",
+    narrationAr: "أَهلاً بِك فى نِظام سَبعة حِساب لِإِدارَة المَوارِد، نِظام مُحاسَبَة وَإِدارَة كامِل بِاللُّغَة العَرَبِيَّة، يَدعَم تَعَدُّد العُمَلات وَالشَّرِكات بِأَمان مُؤَسَّسى.",
+    narrationEn: "Welcome to 7esab ERP, a complete accounting and operations platform with first-class Arabic, multi-currency support, and enterprise-grade security.",
     kind: "hero",
   },
   {
@@ -63,6 +71,8 @@ const SCENES: Scene[] = [
     titleEn: "Integrated Modules",
     captionAr: "مَبيعات • مُشتَرَيات • مَخزون • حِسابات • تَقارير. كُلُّها مُتَّصِلَة وَتُحَدَّث لَحظِيًّا.",
     captionEn: "Sales • Purchases • Inventory • Accounting • Reports — all connected, all real-time.",
+    narrationAr: "وَحَدات مُتَكامِلَة تُغَطّى المَبيعات وَالمُشتَرَيات وَالمَخزون وَالحِسابات وَالتَّقارير. كُلُّها مُتَّصِلَة وَتُحَدِّث الأَرقام لَحظَة بِلَحظَة بِدون تَدَخُّل يَدَوى.",
+    narrationEn: "Integrated modules covering sales, purchases, inventory, accounting, and reports. Every number updates in real time, with zero manual sync.",
     kind: "modules",
   },
   {
@@ -71,6 +81,8 @@ const SCENES: Scene[] = [
     titleEn: "Foreign-Currency Invoice",
     captionAr: "أَنشِئ فاتورَة بِالدولار، يَتِم تَسجيلُها فى الحِسابات بِالجُنَيه تِلقائِيًّا بِسِعر صَرف اليَوم.",
     captionEn: "Issue an invoice in USD — your books capture the EGP equivalent automatically at today's rate.",
+    narrationAr: "أَنشِئ فاتورَة مَبيعات بِأَىِّ عُملَة، مِثل الدولار أَو اليورو. النِّظام يَلتَقِط سِعر الصَّرف تِلقائِيًّا وَيُسَجِّل القَيد المُحاسَبى بِالجُنَيه فى الدَّفاتِر.",
+    narrationEn: "Issue a sales invoice in any currency such as US dollars or euros. The system captures the exchange rate automatically and posts the journal entry in your base currency.",
     kind: "invoice",
   },
   {
@@ -79,6 +91,8 @@ const SCENES: Scene[] = [
     titleEn: "Customer Credit Refund",
     captionAr: "إِرجاع المَبلَغ بِأَىّ عُملَة، مَع مُتابَعَة الرَّصيد المُتَبَقِّى وَالقَيد المُحاسَبى تِلقائِيًّا.",
     captionEn: "Refund in any currency — the running credit balance and the journal entry both stay in sync.",
+    narrationAr: "حَتَّى استرداد رَصيد العَميل بِعُملَة أَجنَبِيَّة يَتِم بِنَقرَة واحِدَة. يُحَدَّث الرَّصيد الدائِن، وَيُسَجَّل القَيد، وَتَظهَر القيمَة الأَصلِيَّة وَالمُعادِلَة فى التَّفاصيل.",
+    narrationEn: "Even foreign-currency customer credit refunds take just one click. The credit balance updates, the journal entry posts, and both the original and the base values stay visible in the details.",
     kind: "refund",
   },
   {
@@ -87,6 +101,8 @@ const SCENES: Scene[] = [
     titleEn: "Real-time Dashboard",
     captionAr: "أَرباح، تَدَفُّق نَقدى، أَعمار الذِّمَم — كُل مُؤَشِّر تَجِدُه فى مَكانِه بِنَقرَة واحِدَة.",
     captionEn: "Profit, cash-flow, aging — every KPI you need, one click away.",
+    narrationAr: "لَوحَة تَحَكُّم لَحظِيَّة تُظهِر المَبيعات وَالأَرباح وَالعُمَلاء وَالفَواتير، مَع رَسم بَيانى لِأَداء آخِر اثنا عَشَر شَهرًا، حَتَّى تَعرِف وَضع شَرِكَتِك فى ثَوانٍ.",
+    narrationEn: "A real-time dashboard surfaces sales, profit, customers, and invoices, plus a twelve-month trend chart, so you know exactly where your business stands in seconds.",
     kind: "dashboard",
   },
   {
@@ -95,6 +111,8 @@ const SCENES: Scene[] = [
     titleEn: "Purchases & Bills",
     captionAr: "أَوامِر شِراء، فَواتير مُورِّدين، اعتِمادات مُتَعَدِّدَة المُستَوَيات — دَورَة شِراء كامِلَة فى مَكان واحِد.",
     captionEn: "Purchase orders, supplier bills, multi-level approvals — the full procurement cycle in one place.",
+    narrationAr: "أَوامِر شِراء وَفَواتير مُورِّدين مَع مَسار اعتِماد مُتَعَدِّد المُستَوَيات. كُلُّ خُطوَة يُسَجَّل عَلَيها مَن وافَقَ وَمَتى لِغَرَض المُراجَعَة وَالحَوكَمَة.",
+    narrationEn: "Purchase orders and supplier bills run through a multi-level approval workflow. Every step records who approved and when, ready for audit and governance.",
     kind: "purchases",
   },
   {
@@ -103,6 +121,8 @@ const SCENES: Scene[] = [
     titleEn: "Inventory & FIFO Costing",
     captionAr: "مُستَوَدَعات، تَحويلات، دَفعات FIFO — تَكلِفَة دَقيقَة لِكُل صِنف وَمُستَوَى مَخزون لَحظى.",
     captionEn: "Warehouses, transfers, FIFO lots — accurate per-item cost and real-time stock levels.",
+    narrationAr: "إِدارَة مَخزون بِنِظام دَفعات FIFO يَتَتَبَّع تَكلِفَة كُل صِنف مِن الشِّراء حَتَّى البَيع، مَع مُستَوَدَعات وَتَحويلات وَتَتَبُّع لَحظى لِلأَرصِدَة.",
+    narrationEn: "Inventory management uses FIFO lots to track every item's cost from purchase to sale, with warehouses, transfers, and live stock balances.",
     kind: "inventory",
   },
   {
@@ -111,6 +131,8 @@ const SCENES: Scene[] = [
     titleEn: "Banking & Reconciliation",
     captionAr: "حِسابات بَنكِيَّة بِعِدَّة عُمَلات، تَحويلات داخِلِيَّة، وَتَسوِيَة كَشف الحِساب بِنَقرَة.",
     captionEn: "Multi-currency bank accounts, internal transfers, and one-click statement reconciliation.",
+    narrationAr: "حِسابات بَنكِيَّة بِعُمَلات مُتَعَدِّدَة، تَحويلات داخِلِيَّة بَين الفُروع، وَتَسوِيَة كَشف الحِساب البَنكى بِنَقرَة واحِدَة بِدون أَخطاء.",
+    narrationEn: "Multi-currency bank accounts, internal transfers between branches, and one-click bank-statement reconciliation with zero variance.",
     kind: "banking",
   },
   {
@@ -119,6 +141,8 @@ const SCENES: Scene[] = [
     titleEn: "Instant Financial Reports",
     captionAr: "قائِمَة الدَّخل، المَركَز المالى، أَعمار الذِّمَم، تَدَفُّقات نَقدِيَّة — كُلُّها لَحظِيَّة وَقابِلَة لِلتَّصدير.",
     captionEn: "P&L, balance sheet, AR/AP aging, cash flow — all real-time and one-click exportable.",
+    narrationAr: "تَقارير مالِيَّة فَورِيَّة تَشمَل قائِمَة الدَّخل، وَالمَركَز المالى، وَأَعمار الذِّمَم المَدينَة، وَالتَّدَفُّقات النَّقدِيَّة، قابِلَة لِلتَّصدير لاكسِل وَPDF.",
+    narrationEn: "Instant financial reports including profit and loss, balance sheet, accounts-receivable aging, and cash flow, all exportable to Excel and PDF.",
     kind: "reports",
   },
   {
@@ -127,6 +151,8 @@ const SCENES: Scene[] = [
     titleEn: "HR & Payroll",
     captionAr: "بَيانات المُوَظَّفين، رَواتِب شَهرِيَّة، حَوافِز وَخَصمَيات، وَقَيد مُحاسَبى تِلقائى.",
     captionEn: "Employee records, monthly payroll, bonuses & deductions, with auto-generated journal entries.",
+    narrationAr: "إِدارَة المُوَظَّفين وَالرَّواتِب الشَّهرِيَّة مَع الحَوافِز وَالخَصمَيات. اعتِماد الكَشف يُولِّد القَيد المُحاسَبى وَأَوامِر التَّحويل البَنكى تِلقائِيًّا.",
+    narrationEn: "Manage employees and monthly payroll runs with bonuses and deductions. Approving the run posts the journal entry and queues bank transfers automatically.",
     kind: "payroll",
   },
   {
@@ -135,6 +161,8 @@ const SCENES: Scene[] = [
     titleEn: "Manufacturing & Work Orders",
     captionAr: "قَوائِم مَوادّ (BOM)، أَوامِر إِنتاج، صَرف مَخزون، حِساب تَكلِفَة المَنتَج النِّهائى تِلقائِيًّا.",
     captionEn: "Bills of materials, work orders, stock consumption — finished-product cost computed automatically.",
+    narrationAr: "أَوامِر إِنتاج مَع قائِمَة المَوادّ الخام، صَرف المَخزون تِلقائِيًّا، وَحِساب تَكلِفَة الوَحدَة النِّهائِيَّة فَور الانتِهاء مِن أَمر التَّصنيع.",
+    narrationEn: "Work orders with bills of materials, automatic stock consumption, and a finished-unit cost computed the moment production completes.",
     kind: "manufacturing",
   },
   {
@@ -143,6 +171,8 @@ const SCENES: Scene[] = [
     titleEn: "Start Free Today",
     captionAr: "مُستَخدِم واحِد مَجَّانى لِلأَبَد — بِدون بِطاقَة ائتِمان، بِدون حُدود زَمَنِيَّة.",
     captionEn: "One user free forever — no credit card, no time limits.",
+    narrationAr: "ابدَأ تَجرُبَتَك مَجَّانًا الآن. مُستَخدِم واحِد مَجَّانى لِلأَبَد، بِدون بِطاقَة ائتِمان، بِدون قُيود زَمَنِيَّة. ادخُل عَلى سَبعة حِساب دوت كوم.",
+    narrationEn: "Start your free trial right now. One user free forever, no credit card, no time limits. Just head over to 7esab.com and you're in.",
     kind: "cta",
   },
 ]
@@ -158,6 +188,9 @@ const T = {
   cta_signup: { ar: "ابدَأ تَجرِبَة مَجَّانِيَّة", en: "Start Free Trial" },
   cta_pricing: { ar: "اطَّلِع عَلى الأَسعار", en: "See Pricing" },
   bookkeeping_note: { ar: "كُلُّ ما تَراه فى هَذا العَرض مَبنى عَلى مُكَوَّنات حَقيقِيَّة مِن داخِل التَّطبيق.", en: "Everything in this demo is built from real components used inside the app." },
+  audioOn: { ar: "تَشغيل الصَّوت", en: "Sound on" },
+  audioOff: { ar: "إِيقاف الصَّوت", en: "Sound off" },
+  audioUnsupported: { ar: "المُتَصَفِّح لا يَدعَم القِراءَة الصَّوتِيَّة", en: "Browser does not support speech" },
 }
 
 export default function DemoPage() {
@@ -167,6 +200,13 @@ export default function DemoPage() {
   const [progress, setProgress] = useState(0)
   const lastTickRef = useRef<number>(0)
   const rafRef = useRef<number | null>(null)
+  // v3.74.231 — narration via the browser's Web Speech API. Free, instant,
+  // no credits required. The user toggles it from the toolbar; the choice
+  // persists in localStorage('demo_audio_enabled'). audioSupported reflects
+  // whether window.speechSynthesis exists at all (some embedded webviews
+  // omit it). When unsupported we hide the toggle and skip speak() calls.
+  const [audioEnabled, setAudioEnabled] = useState(false)
+  const [audioSupported, setAudioSupported] = useState(true)
 
   // On mount: pick language from ?lang=, falling back to localStorage. We
   // don't read window during SSR — this runs only client-side.
@@ -179,6 +219,58 @@ export default function DemoPage() {
       if (stored === "ar" || stored === "en") setLang(stored)
     } catch { /* SSR / sandbox */ }
   }, [])
+
+  // v3.74.231 — initialize audio: check browser support, load persisted
+  // preference, and warm the voice list (some browsers populate voices
+  // asynchronously, so we register the voiceschanged listener once).
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const supported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window
+    setAudioSupported(supported)
+    if (!supported) return
+    try {
+      const stored = localStorage.getItem("demo_audio_enabled")
+      if (stored === "true") setAudioEnabled(true)
+    } catch { /* private mode */ }
+    // Trigger the voice list load (no-op if already loaded).
+    window.speechSynthesis.getVoices()
+    const onVoicesChanged = () => { window.speechSynthesis.getVoices() }
+    window.speechSynthesis.addEventListener("voiceschanged", onVoicesChanged)
+    return () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", onVoicesChanged)
+      window.speechSynthesis.cancel()
+    }
+  }, [])
+
+  // v3.74.231 — speak the current scene's narration whenever it changes
+  // (scene jump, language switch, audio toggle). Cancels any in-flight
+  // utterance so we never overlap audio. Pause/resume hooks into the
+  // existing `paused` state so the speech tracks the visual playback.
+  useEffect(() => {
+    if (!audioSupported || typeof window === "undefined") return
+    window.speechSynthesis.cancel()
+    if (!audioEnabled || paused) return
+    const sceneNow = SCENES[activeIdx]
+    const text = lang === "ar"
+      ? (sceneNow.narrationAr || sceneNow.captionAr)
+      : (sceneNow.narrationEn || sceneNow.captionEn)
+    if (!text) return
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.lang = lang === "ar" ? "ar-EG" : "en-US"
+    utter.rate = lang === "ar" ? 0.95 : 1.0
+    utter.pitch = 1
+    // Pick the best-matching installed voice (some browsers — notably
+    // older Android Chrome — ignore utter.lang and need an explicit voice
+    // assignment to switch language).
+    try {
+      const voices = window.speechSynthesis.getVoices()
+      const wanted = lang === "ar" ? "ar" : "en"
+      const v = voices.find((vv) => vv.lang.toLowerCase().startsWith(wanted))
+      if (v) utter.voice = v
+    } catch { /* getVoices may throw in some webviews */ }
+    window.speechSynthesis.speak(utter)
+    return () => { window.speechSynthesis.cancel() }
+  }, [audioEnabled, audioSupported, activeIdx, lang, paused])
 
   // Animation loop. We use requestAnimationFrame instead of setInterval so the
   // progress bar stays smooth and gets paused with the tab. Each scene is
@@ -252,6 +344,21 @@ export default function DemoPage() {
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t("restart")}</span>
             </button>
+            {audioSupported && (
+              <button
+                onClick={() => {
+                  const next = !audioEnabled
+                  setAudioEnabled(next)
+                  try { localStorage.setItem("demo_audio_enabled", String(next)) } catch { }
+                }}
+                className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs sm:text-sm font-medium ${audioEnabled ? "border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-950/30" : "border-gray-300 dark:border-gray-700 hover:border-blue-500 hover:text-blue-600"}`}
+                aria-label={audioEnabled ? t("audioOff") : t("audioOn")}
+                title={audioEnabled ? t("audioOff") : t("audioOn")}
+              >
+                {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{audioEnabled ? t("audioOff") : t("audioOn")}</span>
+              </button>
+            )}
             <button
               onClick={toggleLang}
               className="inline-flex items-center px-2.5 sm:px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 text-xs sm:text-sm font-medium hover:border-blue-500 hover:text-blue-600"
