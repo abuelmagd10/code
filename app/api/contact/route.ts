@@ -17,14 +17,13 @@
 import { NextResponse } from "next/server"
 import nodemailer from "nodemailer"
 
-// v3.74.238 — the previous default "info@7esab.com" looks right on the
-// branding side but the 7esab.com domain only has outbound SMTP wired up
-// through Resend; there's no MX record pointing at a real mailbox, so
-// every inquiry was being accepted by Resend and then black-holed at the
-// destination. Default now points at the live Gmail inbox the owner
-// actually reads. The env var still wins when set, so production can
-// override this without a code change once a real info@ inbox exists.
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "7esab.erb@gmail.com"
+// v3.74.239 — Zoho Mail is now live for the 7esab.com domain (Vercel DNS
+// no longer has the Amazon SES inbound MX that was black-holing mail;
+// Zoho MX records published; info@7esab.com user exists and MX verified
+// on Zoho's side). The default destination is moved back to the branded
+// address. The env var still wins when set, so we can override per
+// environment without another code change.
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "info@7esab.com"
 const FROM = process.env.SMTP_FROM || "7esab.com <noreply@7esab.com>"
 
 // ─── Rate limit: in-memory bucket ─────────────────────────────
