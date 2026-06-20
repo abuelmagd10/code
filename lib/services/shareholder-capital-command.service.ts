@@ -79,8 +79,12 @@ export class ShareholderCapitalCommandService {
     const paymentAccount = await this.loadPaymentAccount(command.companyId, command.paymentAccountId)
     if (!paymentAccount) throw new Error("Payment account was not found")
 
-    const capitalAccount = await this.loadCapitalAccount(command.companyId, shareholder.name)
-    if (!capitalAccount) throw new Error(`Capital account was not found for ${shareholder.name}`)
+    // v3.74.243 — ensure (and auto-create if absent) the capital account
+    // for this shareholder. Avoids a hard 500 "Capital account was not
+    // found" that strands the contribution form whenever the equity
+    // account was dropped between shareholder creation and the first
+    // contribution.
+    const capitalAccount = await this.ensureCapitalAccount(command.companyId, shareholder.name)
 
     const branchId = await this.resolveBranchId(command.companyId, command.branchId || actor.actorBranchId || null)
     if (!branchId) throw new Error("No branch available to record the journal entry. Please create a branch first.")
@@ -231,6 +235,52 @@ export class ShareholderCapitalCommandService {
       .maybeSingle()
     if (error || !data) return null
     return data
+  }
+
+  // v3.74.243 — self-heal when the per-shareholder capital account is
+  // missing. The UI usually auto-creates it the moment a shareholder is
+  // added (app/shareholders/page.tsx), but the account can disappear in
+  // two real situations:
+  //   1. The shareholder was deleted with the old hard-delete flow and
+  //      then re-created — the cleanup script (or v3.74.241 guard) may
+  //      have dropped the empty equity account.
+  //   2. An admin manually deleted the row from chart_of_accounts.
+  // Throwing in those cases makes the contribution UI look broken even
+  // though the data we need to fix it is trivially derivable. We allocate
+  // the next available equity code, insert the account, and continue.
+  private async ensureCapitalAccount(companyId: string, shareholderName: string) {
+    const existing = await this.loadCapitalAccount(companyId, shareholderName)
+    if (existing) return existing
+    const capitalAccountName = `رأس مال - ${shareholderName}`
+    // Compute the next equity code by reading what's already in the
+    // chart. Default base is 3000 to stay consistent with the UI path.
+    const { data: equityAccounts } = await this.adminSupabase
+      .from("chart_of_accounts")
+      .select("account_code")
+      .eq("company_id", companyId)
+      .eq("account_type", "equity")
+    const numericCodes = (equityAccounts || [])
+      .map((a: any) => parseInt(a.account_code, 10))
+      .filter((n: number) => Number.isFinite(n))
+    const nextCode = numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 3000
+    const { data: created, error: createErr } = await this.adminSupabase
+      .from("chart_of_accounts")
+      .insert({
+        company_id: companyId,
+        account_code: String(nextCode),
+        account_name: capitalAccountName,
+        account_type: "equity",
+        description: "حساب رأس مال خاص بالمساهم",
+        opening_balance: 0,
+        normal_balance: "credit",
+        is_active: true,
+      })
+      .select("id, account_code, account_name")
+      .single()
+    if (createErr || !created) {
+      throw new Error(createErr?.message || `Failed to create capital account for ${shareholderName}`)
+    }
+    return created
   }
 
   private async resolveBranchId(companyId: string, preferredBranchId: string | null) {
