@@ -241,9 +241,9 @@ export default function DemoPage() {
   // scene, we drive the scene timing from the audio's ended event instead
   // of the fixed SCENE_DURATION_MS RAF clock. Otherwise the scene used to
   // advance after 6s even though the narration was 9-13s long, cutting
-  // off the voice mid-sentence. The visual progress bar follows the
-  // audio's currentTime/duration while the audio plays.
-  const [audioDrivenProgress, setAudioDrivenProgress] = useState<number | null>(null)
+  // off the voice mid-sentence. v3.74.237 — the audio's timeupdate handler
+  // writes directly into `progress` so the scene canvas animations and
+  // the top progress bar both follow the audio in lock-step.
   const audioActiveRef = useRef(false)
   // v3.74.232 — voice picker. We keep a separate selected voice per
   // language because the same person rarely wants the same voice for AR
@@ -373,12 +373,16 @@ export default function DemoPage() {
         audioActiveRef.current = true
         const onTimeUpdate = () => {
           if (a.duration && a.duration > 0) {
-            setAudioDrivenProgress(Math.min(1, a.currentTime / a.duration))
+            // v3.74.237 — drive the main `progress` state directly so the
+            // scene canvas animations (which read `progress` for opacity /
+            // translate-Y) follow the audio. The top progress bar reads
+            // the same value, so they stay in sync without an extra hop
+            // through a separate audio-only progress state.
+            setProgress(Math.min(1, a.currentTime / a.duration))
           }
         }
         const onEnded = () => {
           audioActiveRef.current = false
-          setAudioDrivenProgress(null)
           setProgress(0)
           setActiveIdx((i) => (i + 1) % SCENES.length)
         }
@@ -386,7 +390,6 @@ export default function DemoPage() {
           // Network or decode error — clear the driving flag so the RAF
           // timer takes over and the scene still advances.
           audioActiveRef.current = false
-          setAudioDrivenProgress(null)
         }
         a.addEventListener("timeupdate", onTimeUpdate)
         a.addEventListener("ended", onEnded)
@@ -396,19 +399,16 @@ export default function DemoPage() {
           // first-interaction unlock retry. The RAF timer in the
           // meantime will advance the scene normally.
           audioActiveRef.current = false
-          setAudioDrivenProgress(null)
         })
         return () => {
           a.removeEventListener("timeupdate", onTimeUpdate)
           a.removeEventListener("ended", onEnded)
           a.removeEventListener("error", onError)
           audioActiveRef.current = false
-          setAudioDrivenProgress(null)
           try { a.pause() } catch {}
         }
       } catch {
         audioActiveRef.current = false
-        setAudioDrivenProgress(null)
         /* fall through to Web Speech API */
       }
     }
@@ -601,7 +601,7 @@ export default function DemoPage() {
         <div className="h-1 bg-gray-100 dark:bg-gray-800">
           <div
             className="h-full bg-gradient-to-r from-blue-600 via-cyan-500 to-purple-600 transition-[width] duration-100 ease-linear"
-            style={{ width: `${Math.min(100, (audioDrivenProgress ?? progress) * 100)}%` }}
+            style={{ width: `${Math.min(100, progress * 100)}%` }}
           />
         </div>
       </header>
