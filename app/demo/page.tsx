@@ -237,6 +237,14 @@ export default function DemoPage() {
   // browsers).
   const [audioSupported, setAudioSupported] = useState(true)
   const audioEnabled = audioSupported
+  // v3.74.236 — when a Higgsfield narration is playing for the current
+  // scene, we drive the scene timing from the audio's ended event instead
+  // of the fixed SCENE_DURATION_MS RAF clock. Otherwise the scene used to
+  // advance after 6s even though the narration was 9-13s long, cutting
+  // off the voice mid-sentence. The visual progress bar follows the
+  // audio's currentTime/duration while the audio plays.
+  const [audioDrivenProgress, setAudioDrivenProgress] = useState<number | null>(null)
+  const audioActiveRef = useRef(false)
   // v3.74.232 — voice picker. We keep a separate selected voice per
   // language because the same person rarely wants the same voice for AR
   // and EN. voicesByLang is the filtered, ranked candidate list shown in
@@ -362,9 +370,47 @@ export default function DemoPage() {
         const a = new Audio(audioUrl)
         a.crossOrigin = "anonymous"
         higgsfieldAudioRef.current = a
-        a.play().catch(() => { /* autoplay blocked, fall through to web-speech */ })
-        return () => { try { a.pause() } catch {} }
-      } catch { /* fall through to Web Speech API */ }
+        audioActiveRef.current = true
+        const onTimeUpdate = () => {
+          if (a.duration && a.duration > 0) {
+            setAudioDrivenProgress(Math.min(1, a.currentTime / a.duration))
+          }
+        }
+        const onEnded = () => {
+          audioActiveRef.current = false
+          setAudioDrivenProgress(null)
+          setProgress(0)
+          setActiveIdx((i) => (i + 1) % SCENES.length)
+        }
+        const onError = () => {
+          // Network or decode error — clear the driving flag so the RAF
+          // timer takes over and the scene still advances.
+          audioActiveRef.current = false
+          setAudioDrivenProgress(null)
+        }
+        a.addEventListener("timeupdate", onTimeUpdate)
+        a.addEventListener("ended", onEnded)
+        a.addEventListener("error", onError)
+        a.play().catch(() => {
+          // Autoplay was blocked — drop the driving flag and let the
+          // first-interaction unlock retry. The RAF timer in the
+          // meantime will advance the scene normally.
+          audioActiveRef.current = false
+          setAudioDrivenProgress(null)
+        })
+        return () => {
+          a.removeEventListener("timeupdate", onTimeUpdate)
+          a.removeEventListener("ended", onEnded)
+          a.removeEventListener("error", onError)
+          audioActiveRef.current = false
+          setAudioDrivenProgress(null)
+          try { a.pause() } catch {}
+        }
+      } catch {
+        audioActiveRef.current = false
+        setAudioDrivenProgress(null)
+        /* fall through to Web Speech API */
+      }
     }
     const text = lang === "ar"
       ? (sceneNow.narrationAr || sceneNow.captionAr)
@@ -403,14 +449,20 @@ export default function DemoPage() {
     const tick = (now: number) => {
       const dt = now - lastTickRef.current
       lastTickRef.current = now
-      setProgress((p) => {
-        const next = p + dt / SCENE_DURATION_MS
-        if (next >= 1) {
-          setActiveIdx((i) => (i + 1) % SCENES.length)
-          return 0
-        }
-        return next
-      })
+      // v3.74.236 — when a Higgsfield clip is in charge of the timing the
+      // RAF clock should not advance the scene; the audio's ended event
+      // does it instead. We still re-arm the RAF so when the audio ends
+      // (or stops driving) the timer picks up smoothly.
+      if (!audioActiveRef.current) {
+        setProgress((p) => {
+          const next = p + dt / SCENE_DURATION_MS
+          if (next >= 1) {
+            setActiveIdx((i) => (i + 1) % SCENES.length)
+            return 0
+          }
+          return next
+        })
+      }
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
@@ -549,7 +601,7 @@ export default function DemoPage() {
         <div className="h-1 bg-gray-100 dark:bg-gray-800">
           <div
             className="h-full bg-gradient-to-r from-blue-600 via-cyan-500 to-purple-600 transition-[width] duration-100 ease-linear"
-            style={{ width: `${Math.min(100, progress * 100)}%` }}
+            style={{ width: `${Math.min(100, (audioDrivenProgress ?? progress) * 100)}%` }}
           />
         </div>
       </header>
