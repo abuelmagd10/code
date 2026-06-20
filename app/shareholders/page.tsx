@@ -589,12 +589,71 @@ export default function ShareholdersPage() {
   }
 
   const handleDelete = async (id: string) => {
+    // v3.74.241 — guard against data-integrity loss. The shareholder row
+    // had ON DELETE CASCADE on capital_contributions but NOT on the
+    // journal_entries / journal_entry_lines those contributions wrote,
+    // and not on the chart_of_accounts capital account it created. Hard-
+    // deleting a shareholder with posted contributions therefore left an
+    // orphan journal entry crediting "رأس مال - <name>" to nowhere — the
+    // treasury kept the cash but no shareholder was on the hook for it.
+    // We now refuse the delete and tell the user to reverse the
+    // contributions first.
     try {
+      const { count: contribCount, error: countErr } = await supabase
+        .from("capital_contributions")
+        .select("id", { count: "exact", head: true })
+        .eq("shareholder_id", id)
+      if (countErr) throw countErr
+
+      let drawingsCount = 0
+      try {
+        const r = await supabase
+          .from("shareholder_drawings")
+          .select("id", { count: "exact", head: true })
+          .eq("shareholder_id", id)
+        drawingsCount = r.count || 0
+      } catch { /* table may not exist on older companies; ignore */ }
+
+      if ((contribCount || 0) > 0 || drawingsCount > 0) {
+        toast({
+          title: appLang === 'en' ? "Cannot delete shareholder" : "لا يُمكِن حَذف المُساهِم",
+          description: appLang === 'en'
+            ? `This shareholder has ${contribCount || 0} contribution(s) and ${drawingsCount} drawing(s) on the books. Reverse them from the shareholder page before deleting.`
+            : `لِلمُساهِم ${contribCount || 0} مُساهَمَة و${drawingsCount} مَسحوبات مُسَجَّلَة على الدَّفاتِر. ارجِع المُساهَمات وَالمَسحوبات أَوَّلًا قَبل الحَذف.`,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Safe to delete now — also drop the auto-created capital account
+      // if it never received any entries (otherwise leave it alone).
+      const { data: sh } = await supabase
+        .from("shareholders")
+        .select("name, capital_account_id")
+        .eq("id", id)
+        .maybeSingle()
+
       const { error } = await supabase.from("shareholders").delete().eq("id", id)
       if (error) throw error
+
+      if (sh?.capital_account_id) {
+        const { count: lineCount } = await supabase
+          .from("journal_entry_lines")
+          .select("id", { count: "exact", head: true })
+          .eq("account_id", sh.capital_account_id)
+        if ((lineCount || 0) === 0) {
+          await supabase
+            .from("chart_of_accounts")
+            .delete()
+            .eq("id", sh.capital_account_id)
+        }
+      }
+
       if (companyId) await loadShareholders(companyId)
-    } catch (error) {
+      toastActionSuccess(toast, "الحذف", "المساهم")
+    } catch (error: any) {
       console.error("Error deleting shareholder:", error)
+      toastActionError(toast, "الحذف", "المساهم", error?.message || "خطأ غير متوقع")
     }
   }
 
