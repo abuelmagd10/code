@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
     // ✅ 5. جلب بيانات الشركة
     const { data: company, error: companyError } = await supabase
       .from("companies")
-      .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, created_at, updated_at")
+      .select("id, user_id, name, email, phone, address, city, country, tax_id, base_currency, fiscal_year_start, logo_url, enabled_modules, created_at, updated_at")
       .eq("id", companyId)
       .maybeSingle()
 

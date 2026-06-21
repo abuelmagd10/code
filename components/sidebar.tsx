@@ -48,6 +48,7 @@ import { useApprovalBadges, sumBadges } from "@/hooks/use-approval-badges"
 import { NotificationCenter } from "@/components/NotificationCenter"
 import { getUnreadNotificationCount } from "@/lib/governance-layer"
 import { ThemeToggle } from "@/components/ThemeToggle"
+import { isModuleEnabled, type ModuleKey } from "@/lib/module-manifest"
 
 function buildMenuItems(lang: string) {
   const ar = {
@@ -131,6 +132,10 @@ export function Sidebar() {
   const [hydrated, setHydrated] = useState(false)
   const [myCompanies, setMyCompanies] = useState<Array<{ id: string; name: string; logo_url?: string }>>([])
   const [activeCompanyId, setActiveCompanyId] = useState<string>("")
+  // v3.74.260 — Module Subscription Phase 1.
+  // NULL = backward-compatible: every module shows (legacy companies).
+  // Array = explicit set: only listed optional modules show in the sidebar.
+  const [enabledModules, setEnabledModules] = useState<string[] | null>(null)
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false)
   // v3.74.15 — unified approval badges (replaces the three separate
   // states/callbacks/endpoints that used to live here).
@@ -562,6 +567,10 @@ export function Sidebar() {
           setCompanyName(nm)
           const lu = String(c?.logo_url || (typeof window !== 'undefined' ? (localStorage.getItem('company_logo_url') || '') : '') || '')
           setLogoUrl(lu)
+          // v3.74.260 — load enabled_modules. NULL stays NULL so legacy
+          // companies keep showing every module until the owner picks.
+          const em = (c as any)?.enabled_modules
+          setEnabledModules(Array.isArray(em) ? em.map(String) : null)
           // حفظ في localStorage للاستخدام اللاحق
           if (nm && typeof window !== 'undefined') {
             try { localStorage.setItem('company_name', nm) } catch { }
@@ -1188,7 +1197,19 @@ export function Sidebar() {
                   ]
                 },
               ]
-              return groups.map((g) => <GroupAccordion key={g.key} group={g} q={q} />)
+              // v3.74.260 — Module Subscription Phase 1 (UI-only filter).
+              // Core groups always render. Optional groups render only when
+              // the company's enabled_modules array includes them. NULL keeps
+              // the legacy "show everything" behaviour, so nothing changes
+              // for existing companies until the owner opens Settings →
+              // الوحدات المُشتَرَك بها and picks a set explicitly. This is a
+              // pure presentation filter — APIs, RPCs and triggers are
+              // untouched, so deep links and external integrations keep
+              // working exactly as before.
+              const visibleGroups = groups.filter((g) =>
+                isModuleEnabled(g.key as ModuleKey, enabledModules)
+              )
+              return visibleGroups.map((g) => <GroupAccordion key={g.key} group={g} q={q} />)
             })()}
           </nav>
 
