@@ -1257,6 +1257,20 @@ export default function SuppliersPage() {
                                     try {
                                       const companyId = await getActiveCompanyId(supabase)
                                       if (!companyId) throw new Error('No company')
+                                      // v3.74.256 — pre_receipt requests use the new executor
+                                      // route which voids supplier payments and optionally
+                                      // cancels the bill + linked PO. Standard requests fall
+                                      // through to the legacy RPC.
+                                      if ((req as any).source_type === 'pre_receipt') {
+                                        const resp = await fetch(`/api/vendor-refund-requests/${req.id}/execute-pre-receipt`, { method: 'POST' })
+                                        const json = await resp.json()
+                                        if (!resp.ok || !json.success) throw new Error(json.error || 'Pre-receipt refund failed')
+                                        try { await dispatchVendorRefundDecisionNotification(req.id, 'approved') } catch {}
+                                        toastActionSuccess(toast, appLang === 'en' ? 'Approved' : 'تم الاعتماد', appLang === 'en' ? 'Pre-receipt refund executed' : 'تم تنفيذ استرداد ما قبل الاستلام')
+                                        loadRefundRequests()
+                                        loadSuppliers()
+                                        return
+                                      }
                                       const { data: result } = await supabase.rpc('approve_vendor_refund_request', {
                                         p_request_id: req.id,
                                         p_company_id: companyId,

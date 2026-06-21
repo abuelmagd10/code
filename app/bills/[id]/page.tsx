@@ -385,10 +385,24 @@ export default function BillViewPage() {
       setBill(billData as any)
       // v3.74.254 — load the most-recent rejected refund_request for this
       // bill so the banner can surface the reason.
-      // v3.74.255 — bills don't have a refund-request workflow yet (planned
-      // for vendor_refund_requests in a follow-up). Clear the banner so we
-      // don't keep querying the dropped refund_requests table.
-      setLastRejectedRefund(null)
+      // v3.74.256 — load the most-recent rejected pre_receipt request for
+      // this bill from vendor_refund_requests so the banner can surface the reason.
+      try {
+        const { data: lastRej } = await supabase
+          .from('vendor_refund_requests')
+          .select('id, rejection_reason, rejected_at')
+          .eq('source_type', 'pre_receipt')
+          .eq('bill_id', billData.id)
+          .eq('status', 'rejected')
+          .order('rejected_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (lastRej) {
+          setLastRejectedRefund({ id: (lastRej as any).id, reason: (lastRej as any).rejection_reason, rejected_at: (lastRej as any).rejected_at })
+        } else {
+          setLastRejectedRefund(null)
+        }
+      } catch { /* ignore */ }
 
       // Load branch and cost center names
       if (billData.branch_id) {
