@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useRef, useMemo, useTransition, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
@@ -143,6 +143,13 @@ export default function InvoiceDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState<string>("cash")
   const [paymentRef, setPaymentRef] = useState<string>("")
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  // v3.74.250 — pre-shipment refund dialog state (refund customer's
+  // payment when the warehouse hasn't approved dispatch yet).
+  const [showPreShipmentRefund, setShowPreShipmentRefund] = useState(false)
+  const [preShipmentRefundMode, setPreShipmentRefundMode] = useState<'cancel_invoice' | 'keep_open'>('cancel_invoice')
+  const [preShipmentRefundAccountId, setPreShipmentRefundAccountId] = useState<string>('')
+  const [preShipmentRefundReason, setPreShipmentRefundReason] = useState<string>('')
+  const [preShipmentRefundSaving, setPreShipmentRefundSaving] = useState(false)
   // Multi-currency (IAS 21) fields — supports 2 scenarios:
   //  1) Invoice in FC, payment in same FC → FX gain/loss on rate difference
   //  2) Invoice in base, payment in FC → cross-currency receipt with auto-conversion
@@ -541,7 +548,34 @@ export default function InvoiceDetailPage() {
     })()
   }, [showPayment])
 
-  // v3.74.246 — load branch-filtered cash/bank accounts the moment the
+  // v3.74.250 — load filtered cash/bank accounts the moment the
+  // pre-shipment refund dialog opens, so the disbursement dropdown has
+  // data without depending on the payment or return dialog being opened first.
+  useEffect(() => {
+    ; (async () => {
+      if (!showPreShipmentRefund || !invoice?.company_id) return
+      try {
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, sub_type, branch_id, original_currency")
+          .eq("company_id", invoice.company_id)
+        const list = (accounts || []).filter((a: any) => {
+          const st = String(a.sub_type || "").toLowerCase()
+          const nm = String(a.account_name || "")
+          const nmLower = nm.toLowerCase()
+          const isCashOrBankSubtype = st === "cash" || st === "bank"
+          const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
+          const isCashBank = isCashOrBankSubtype || nameSuggestsCashOrBank
+          if (!isCashBank) return false
+          if (isPrivilegedUser) return true
+          return a.branch_id === userBranchId
+        })
+        setCashBankAccounts(list)
+      } catch (e) { /* ignore */ }
+    })()
+  }, [showPreShipmentRefund, invoice?.company_id, isPrivilegedUser, userBranchId])
+
+    // v3.74.246 — load branch-filtered cash/bank accounts the moment the
   // return dialog opens, so the settlement dropdown has data even if the
   // user never opened the payment dialog first. Same filtering rule as
   // the payment loader: regulars see only their branch, owner/admin/GM
@@ -1469,6 +1503,54 @@ export default function InvoiceDetailPage() {
   }, [returnItems])
 
   // Process partial sales return
+  // v3.74.250 — submit pre-shipment refund.
+  const submitPreShipmentRefund = async () => {
+    if (!invoice) return
+    if (!preShipmentRefundAccountId) {
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Pre-shipment refund' : 'استرداد قبل الشحن',
+        appLang === 'en' ? 'Invoice' : 'الفاتورة',
+        appLang === 'en' ? 'Select the cash drawer / bank account to refund from.' : 'يرجى اختيار حساب الصرف الذى ستخرج منه الفلوس.'
+      )
+      return
+    }
+    setPreShipmentRefundSaving(true)
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/pre-shipment-refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settlement_account_id: preShipmentRefundAccountId,
+          mode: preShipmentRefundMode,
+          reason: preShipmentRefundReason || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || (appLang === 'en' ? 'Refund failed' : 'فشل الاسترداد'))
+      }
+      toastActionSuccess(
+        toast,
+        appLang === 'en' ? 'Pre-shipment refund' : 'استرداد قبل الشحن',
+        appLang === 'en'
+          ? `Refunded ${Number(json.data?.refundedAmount || 0).toLocaleString()} ${preShipmentRefundMode === 'cancel_invoice' ? '— invoice cancelled.' : '— invoice kept open.'}`
+          : `تم استرداد ${Number(json.data?.refundedAmount || 0).toLocaleString()} ${preShipmentRefundMode === 'cancel_invoice' ? '— تم إلغاء الفاتورة.' : '— الفاتورة باقية مفتوحة.'}`
+      )
+      setShowPreShipmentRefund(false)
+      await loadInvoice()
+    } catch (e: any) {
+      toastActionError(
+        toast,
+        appLang === 'en' ? 'Pre-shipment refund' : 'استرداد قبل الشحن',
+        appLang === 'en' ? 'Invoice' : 'الفاتورة',
+        e?.message || (appLang === 'en' ? 'Unexpected error' : 'خطأ غير متوقع')
+      )
+    } finally {
+      setPreShipmentRefundSaving(false)
+    }
+  }
+
   const processPartialReturn = async () => {
     if (!invoice || returnTotal <= 0) return
     try {
@@ -3458,6 +3540,26 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
                 ) : null}
+                {/* v3.74.250 — Pre-shipment refund: only show while warehouse
+                    hasn't approved dispatch AND the customer has paid something.
+                    Cash hasn't been "earned" yet under IFRS 15, so the customer
+                    is entitled to ask for it back. */}
+                {(() => {
+                  const wh = String((invoice as any).warehouse_status || '').toLowerCase()
+                  const alreadyRefunded = !!(invoice as any).pre_shipment_refund_at
+                  const hasPaid = Number((invoice as any).paid_amount || 0) > 0
+                  const eligible = hasPaid && wh !== 'approved' && !alreadyRefunded && invoice.status !== 'cancelled'
+                  if (!eligible || !isPrivilegedUser) return null
+                  return (
+                    <Button
+                      variant="outline"
+                      className="border-amber-500 text-amber-700 hover:bg-amber-50 dark:border-amber-400 dark:text-amber-300"
+                      onClick={() => { setShowPreShipmentRefund(true); setPreShipmentRefundAccountId(''); setPreShipmentRefundReason(''); setPreShipmentRefundMode('cancel_invoice') }}
+                    >
+                      {appLang === 'en' ? 'Refund pre-shipment payment' : 'استرداد دفعة قبل الشحن'}
+                    </Button>
+                  )
+                })()}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
                 {/* View Shipment Button - if shipment/third party goods exists */}
                 {existingShipment ? (
@@ -3890,6 +3992,100 @@ export default function InvoiceDetailPage() {
           {/* ❌ تم إزالة Dialog: Full Credit Note - استخدم المرتجع الجزئي/الكامل بدلاً منه */}
 
           {/* Dialog: Partial Return */}
+          {/* v3.74.250 — Pre-shipment refund dialog */}
+          <Dialog open={showPreShipmentRefund} onOpenChange={setShowPreShipmentRefund}>
+            <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{appLang === 'en' ? 'Refund pre-shipment payment' : 'استرداد دفعة قبل الشحن'}</DialogTitle>
+                <DialogDescription className="text-xs leading-relaxed">
+                  {appLang === 'en'
+                    ? "The customer paid but the warehouse hasn't approved dispatch yet. Until the goods leave, the cash is a contract liability — return it now and choose what happens to the invoice."
+                    : 'العميل دفع لكن المخزن لسه ماعتمدش الإرسال. طالما البضاعة فى المخزن، الفلوس أمانة عند الشركة — هترجعها الآن وتختار مصير الفاتورة.'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="p-3 rounded bg-blue-50 dark:bg-blue-900/20 text-sm">
+                  <div className="flex justify-between">
+                    <span>{appLang === 'en' ? 'Refundable amount' : 'المبلغ القابل للاسترداد'}:</span>
+                    <span className="font-bold">{Number((invoice as any).paid_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{appLang === 'en' ? 'What should happen to the invoice?' : 'مصير الفاتورة'}</Label>
+                  <div className="space-y-2">
+                    <label className="flex items-start gap-2 p-2 rounded border cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <input type="radio" name="psr-mode" checked={preShipmentRefundMode === 'cancel_invoice'} onChange={() => setPreShipmentRefundMode('cancel_invoice')} className="mt-1" />
+                      <span className="text-sm">
+                        <div className="font-medium">{appLang === 'en' ? 'Cancel the invoice (recommended)' : 'إلغاء الفاتورة (موصى به)'}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {appLang === 'en'
+                            ? 'Full unwind: payments reversed, revenue JE reversed, invoice + linked sales order cancelled.'
+                            : 'إلغاء كامل: عكس المدفوعات، عكس قيد الإيراد، إلغاء الفاتورة وأمر البيع المرتبط.'}
+                        </div>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 p-2 rounded border cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <input type="radio" name="psr-mode" checked={preShipmentRefundMode === 'keep_open'} onChange={() => setPreShipmentRefundMode('keep_open')} className="mt-1" />
+                      <span className="text-sm">
+                        <div className="font-medium">{appLang === 'en' ? 'Keep invoice open' : 'إبقاء الفاتورة مفتوحة'}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {appLang === 'en'
+                            ? 'Reverse payments only. Invoice goes back to sent (unpaid). Customer can pay again later.'
+                            : 'عكس المدفوعات فقط. الفاتورة ترجع لحالة مرسلة (غير مدفوعة). العميل يقدر يدفع لاحقاً.'}
+                        </div>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{appLang === 'en' ? 'Cash drawer / bank account to refund from' : 'حساب الصرف (خزينة / بنك)'}</Label>
+                  <select
+                    className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                    value={preShipmentRefundAccountId}
+                    onChange={(e) => setPreShipmentRefundAccountId(e.target.value)}
+                  >
+                    <option value="">{appLang === 'en' ? '— select account —' : '— اختر حسابًا —'}</option>
+                    {(cashBankAccounts || []).map((a: any) => (
+                      <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+                    ))}
+                  </select>
+                  {!isPrivilegedUser && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en' ? 'Showing accounts belonging to your branch.' : 'يتم عرض الحسابات التابعة لفرعك فقط.'}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{appLang === 'en' ? 'Reason (optional)' : 'السبب (اختيارى)'}</Label>
+                  <Input
+                    value={preShipmentRefundReason}
+                    onChange={(e) => setPreShipmentRefundReason(e.target.value)}
+                    placeholder={appLang === 'en' ? 'e.g. Customer changed mind' : 'مثال: العميل غيّر رأيه'}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowPreShipmentRefund(false)} disabled={preShipmentRefundSaving}>
+                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button
+                  variant={preShipmentRefundMode === 'cancel_invoice' ? 'destructive' : 'default'}
+                  onClick={submitPreShipmentRefund}
+                  disabled={preShipmentRefundSaving || !preShipmentRefundAccountId}
+                >
+                  {preShipmentRefundSaving
+                    ? (appLang === 'en' ? 'Processing...' : 'جارى التنفيذ...')
+                    : preShipmentRefundMode === 'cancel_invoice'
+                      ? (appLang === 'en' ? 'Refund + cancel invoice' : 'استرداد + إلغاء الفاتورة')
+                      : (appLang === 'en' ? 'Refund (keep invoice open)' : 'استرداد (إبقاء الفاتورة)')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={showPartialReturn} onOpenChange={setShowPartialReturn}>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>

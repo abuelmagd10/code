@@ -148,7 +148,7 @@ export default function CustomersPage() {
   }, [])
 
   const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string }[]>([])
-  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number; credits?: number; disbursed?: number }>>({})
+  const [balances, setBalances] = useState<Record<string, { advance: number; applied: number; available: number; credits?: number; disbursed?: number; preShipmentAdvance?: number }>>({})
   // الذمم المدينة لكل عميل (المبالغ المستحقة من الفواتير)
   const [receivables, setReceivables] = useState<Record<string, number>>({})
   // تتبع العملاء الذين لديهم فواتير نشطة (تمنع الحذف والتعديل)
@@ -446,7 +446,7 @@ export default function CustomersPage() {
       }))
       setCustomers(allCustomers)
 
-      const out: Record<string, { advance: number; applied: number; available: number; credits: number; disbursed: number }> = {}
+      const out: Record<string, { advance: number; applied: number; available: number; credits: number; disbursed: number; preShipmentAdvance: number }> = {}
       const recMap: Record<string, number> = {}
       const activeCustomers = new Set<string>()
       const anyInvoiceCustomers = new Set<string>()
@@ -461,11 +461,42 @@ export default function CustomersPage() {
           available: Math.max(advance - applied, 0) + credits,
           credits,
           disbursed: Number(r.disbursed_credits || 0),
+          // v3.74.250 — populated below from a separate aggregator. The
+          // RPC doesn't know about pre-shipment refunds yet; we layer
+          // the new balance on top here.
+          preShipmentAdvance: 0,
         }
         recMap[id] = Number(r.receivables || 0)
         if (r.has_active_invoices) activeCustomers.add(id)
         if (r.has_any_invoices) anyInvoiceCustomers.add(id)
       }
+      // v3.74.250 — load pre-shipment refundable balance per customer.
+      // Sum paid_amount on invoices where warehouse_status != approved,
+      // not cancelled / fully_returned, and not yet refunded. This is
+      // the customer's "advance held against unshipped invoice" balance.
+      try {
+        const { data: psrInvs } = await supabase
+          .from("invoices")
+          .select("customer_id, paid_amount, status, warehouse_status, pre_shipment_refund_at")
+          .eq("company_id", activeCompanyId)
+          .neq("is_deleted", true)
+          .gt("paid_amount", 0)
+        for (const inv of (psrInvs || [])) {
+          const wh = String((inv as any).warehouse_status || '').toLowerCase()
+          if (wh === 'approved') continue
+          const st = String((inv as any).status || '').toLowerCase()
+          if (st === 'cancelled' || st === 'fully_returned') continue
+          if ((inv as any).pre_shipment_refund_at) continue
+          const cid = String((inv as any).customer_id || '')
+          if (!cid) continue
+          if (!out[cid]) continue
+          out[cid].preShipmentAdvance += Number((inv as any).paid_amount || 0)
+          // Roll into the customer's headline "available" credit so it
+          // shows in every spot the existing balance shows up.
+          out[cid].available += Number((inv as any).paid_amount || 0)
+        }
+      } catch (e) { /* ignore — UI degrades gracefully to existing balances */ }
+
       setBalances(out)
       setReceivables(recMap)
       setCustomersWithActiveInvoices(activeCustomers)
