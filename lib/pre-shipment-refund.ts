@@ -226,10 +226,13 @@ export async function executePreShipmentRefund(
         await admin.from("journal_entries").delete().eq("id", jeRow.id)
         return { success: false, error: linesErr.message }
       }
-      await admin
-        .from("journal_entries")
-        .update({ status: "posted" })
-        .eq("id", jeRow.id)
+      // v3.74.252 — DO NOT post the JE here. We post it only AFTER the
+      // void payment row insert succeeds. A trigger blocks editing /
+      // deleting a posted JE, so if we post first and then the void
+      // payment insert fails (as happened with the v3.74.250 status
+      // bug), the JE becomes an unremovable orphan. Keeping it 'draft'
+      // until everything else lands means a failure here is recoverable
+      // via a simple delete + retry.
 
       // Insert a "void payment" companion row + link both ways for audit.
       const { data: voidRow, error: vErr } = await admin
@@ -249,12 +252,21 @@ export async function executePreShipmentRefund(
           journal_entry_id: jeRow.id,
           branch_id: p.branch_id || invoice.branch_id || null,
           cost_center_id: p.cost_center_id || invoice.cost_center_id || null,
-          status: "posted",
+          // v3.74.252 — payments.status has a CHECK constraint that only
+          // accepts 'pending_approval' / 'approved' / 'rejected'. The
+          // void-payment row is an admin-approved reversal action, so
+          // mark it 'approved'. 'posted' violated the constraint and
+          // returned PostgREST 400 / Postgres error 23514.
+          status: "approved",
           voids_payment_id: p.id,
         })
         .select("id")
         .single()
       if (vErr || !voidRow?.id) {
+        // v3.74.252 — void-payment insert failed; the JE is still draft,
+        // so delete it + its lines and bail. No half-state is left behind.
+        await admin.from("journal_entry_lines").delete().eq("journal_entry_id", jeRow.id)
+        await admin.from("journal_entries").delete().eq("id", jeRow.id)
         return { success: false, error: vErr?.message || "Failed to record void payment" }
       }
 
@@ -269,6 +281,13 @@ export async function executePreShipmentRefund(
             (params.lang === "en" ? "Pre-shipment refund" : "استرداد قبل الشحن"),
         })
         .eq("id", p.id)
+
+      // v3.74.252 — flip the JE to posted only after every dependent
+      // write succeeded.
+      await admin
+        .from("journal_entries")
+        .update({ status: "posted" })
+        .eq("id", jeRow.id)
 
       paymentReversalJeIds.push(jeRow.id)
     }

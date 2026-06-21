@@ -222,10 +222,9 @@ export async function executePreReceiptRefund(
         await admin.from("journal_entries").delete().eq("id", jeRow.id)
         return { success: false, error: linesErr.message }
       }
-      await admin
-        .from("journal_entries")
-        .update({ status: "posted" })
-        .eq("id", jeRow.id)
+      // v3.74.252 — keep JE 'draft' until the void payment + linkage
+      // succeed, so a downstream failure leaves no posted-orphan JE
+      // (the no-edit-posted trigger would otherwise lock it in).
 
       // Void-payment companion row.
       const { data: voidRow, error: vErr } = await admin
@@ -245,12 +244,19 @@ export async function executePreReceiptRefund(
           journal_entry_id: jeRow.id,
           branch_id: p.branch_id || bill.branch_id || null,
           cost_center_id: p.cost_center_id || bill.cost_center_id || null,
-          status: "posted",
+          // v3.74.252 — payments.status CHECK constraint only accepts
+          // 'pending_approval' / 'approved' / 'rejected'. Mark the void
+          // companion 'approved' (admin reversal action). 'posted'
+          // returned PostgREST 400 / Postgres error 23514.
+          status: "approved",
           voids_payment_id: p.id,
         })
         .select("id")
         .single()
       if (vErr || !voidRow?.id) {
+        // v3.74.252 — clean rollback: delete the draft JE + its lines.
+        await admin.from("journal_entry_lines").delete().eq("journal_entry_id", jeRow.id)
+        await admin.from("journal_entries").delete().eq("id", jeRow.id)
         return { success: false, error: vErr?.message || "Failed to record void payment" }
       }
 
@@ -265,6 +271,12 @@ export async function executePreReceiptRefund(
             (params.lang === "en" ? "Pre-receipt refund" : "استرداد قبل الاستلام"),
         })
         .eq("id", p.id)
+
+      // v3.74.252 — post the JE only after every dependent write succeeded.
+      await admin
+        .from("journal_entries")
+        .update({ status: "posted" })
+        .eq("id", jeRow.id)
 
       paymentReversalJeIds.push(jeRow.id)
     }
