@@ -168,6 +168,10 @@ export default function InvoiceDetailPage() {
   const [showPartialReturn, setShowPartialReturn] = useState(false)
   const [returnItems, setReturnItems] = useState<{ item_id: string; product_id: string | null; product_name: string; max_qty: number; return_qty: number; unit_price: number; tax_rate: number; discount_percent: number }[]>([])
   const [returnMethod, setReturnMethod] = useState<'cash' | 'credit_note' | 'bank_transfer'>('credit_note')
+  // v3.74.246 — settlement disbursement account picked by the requester.
+  // Required when returnMethod is cash or bank_transfer. Filtered to the
+  // user's branch for regular roles, all branches for owner/admin/GM.
+  const [returnSettlementAccountId, setReturnSettlementAccountId] = useState<string>('')
   const [returnNotes, setReturnNotes] = useState<string>('')
   const [returnProcessing, setReturnProcessing] = useState(false)
   const [returnDialogMode, setReturnDialogMode] = useState<'partial' | 'full'>('partial')
@@ -536,6 +540,46 @@ export default function InvoiceDetailPage() {
       }
     })()
   }, [showPayment])
+
+  // v3.74.246 — load branch-filtered cash/bank accounts the moment the
+  // return dialog opens, so the settlement dropdown has data even if the
+  // user never opened the payment dialog first. Same filtering rule as
+  // the payment loader: regulars see only their branch, owner/admin/GM
+  // see the whole company.
+  useEffect(() => {
+    ; (async () => {
+      if (!showPartialReturn || !invoice?.company_id) return
+      try {
+        const { data: accounts } = await supabase
+          .from("chart_of_accounts")
+          .select("id, account_code, account_name, account_type, sub_type, branch_id, original_currency")
+          .eq("company_id", invoice.company_id)
+        const list = (accounts || []).filter((a: any) => {
+          const st = String(a.sub_type || "").toLowerCase()
+          const nm = String(a.account_name || "")
+          const nmLower = nm.toLowerCase()
+          const isCashOrBankSubtype = st === "cash" || st === "bank"
+          const nameSuggestsCashOrBank = nmLower.includes("bank") || nmLower.includes("cash") || /بنك|بنكي|مصرف|خزينة|نقد/.test(nm)
+          const isCashBank = isCashOrBankSubtype || nameSuggestsCashOrBank
+          if (!isCashBank) return false
+          if (isPrivilegedUser) return true
+          return a.branch_id === userBranchId
+        }).map((a: any) => {
+          // Normalize sub_type so the dialog's cash/bank split filter
+          // works even on rows that only matched by Arabic name pattern.
+          const st = String(a.sub_type || "").toLowerCase()
+          if (st === 'cash' || st === 'bank') return a
+          const nm = String(a.account_name || "")
+          const nmLower = nm.toLowerCase()
+          const inferred = nmLower.includes('bank') || /بنك|بنكي|مصرف/.test(nm) ? 'bank' : 'cash'
+          return { ...a, sub_type: inferred }
+        })
+        setCashBankAccounts(list)
+      } catch (e) {
+        /* ignore — the dialog will show "no accounts" message */
+      }
+    })()
+  }, [showPartialReturn, invoice?.company_id, isPrivilegedUser, userBranchId])
 
   // 🔐 تحميل بيانات صرف رصيد العميل الدائن
   useEffect(() => {
@@ -1483,6 +1527,24 @@ export default function InvoiceDetailPage() {
         return
       }
 
+      // v3.74.246 — the settlement preference + disbursement account are
+      // only meaningful when there is actual paid money to refund. For
+      // an unpaid invoice (no money in), the form hides the controls and
+      // we send null so the request execution path treats it as a pure
+      // inventory/revenue reversal with no payment movement.
+      const hasPaidAmount = Number((invoice as any)?.paid_amount || 0) > 0
+      const isCashOrBank = (returnMethod === 'cash' || returnMethod === 'bank_transfer')
+      if (hasPaidAmount && isCashOrBank && !returnSettlementAccountId) {
+        toastActionError(
+          toast,
+          appLang === 'en' ? 'Return Request' : 'طلب المرتجع',
+          appLang === 'en' ? 'Invoice' : 'الفاتورة',
+          appLang === 'en'
+            ? `Select the ${returnMethod === 'cash' ? 'cash' : 'bank'} account to refund from.`
+            : `يرجى اختيار ${returnMethod === 'cash' ? 'حساب الخزينة' : 'الحساب البنكى'} الذى سيتم الصرف منه.`
+        )
+        return
+      }
       const response = await fetch("/api/sales-return-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1496,6 +1558,10 @@ export default function InvoiceDetailPage() {
               ? (appLang === 'en' ? 'Full sales return request' : 'طلب مرتجع مبيعات كامل')
               : (appLang === 'en' ? 'Partial sales return request' : 'طلب مرتجع مبيعات جزئي')
           ),
+          // v3.74.246 — capture settlement preference + account so the
+          // executor refunds from the right drawer.
+          settlement_method: hasPaidAmount ? returnMethod : null,
+          settlement_account_id: hasPaidAmount && isCashOrBank ? returnSettlementAccountId : null,
         }),
       })
 
@@ -4036,24 +4102,84 @@ export default function InvoiceDetailPage() {
                   )
                 })()}
 
-                {/* Refund Method */}
-                <div className="space-y-2">
-                  <Label>{appLang === 'en' ? 'Settlement Preference After Approval' : 'تفضيل التسوية بعد الاعتماد'}</Label>
-                  <select
-                    className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
-                    value={returnMethod}
-                    onChange={(e) => setReturnMethod(e.target.value as any)}
-                  >
-                    <option value="credit_note">{appLang === 'en' ? 'Credit Note (Customer Credit)' : 'مذكرة دائن (رصيد للعميل)'}</option>
-                    <option value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
-                    <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
-                  </select>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {appLang === 'en'
-                      ? 'Informational only at this stage. The request still requires management and warehouse approvals before any execution.'
-                      : 'هذا الاختيار إرشادي فقط في هذه المرحلة. الطلب ما زال يحتاج إلى اعتماد الإدارة ثم المخزن قبل أي تنفيذ فعلي.'}
-                  </p>
-                </div>
+                {/* v3.74.246 — Settlement preference: hidden for invoices with
+                    no actual paid amount (no money in = nothing to refund);
+                    when a cash/bank method is picked, also require the user
+                    to choose the disbursement account, filtered by branch
+                    for regular roles. */}
+                {(() => {
+                  const hasPaidAmount = Number((invoice as any)?.paid_amount || 0) > 0
+                  if (!hasPaidAmount) {
+                    return (
+                      <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                        <p className="text-sm text-amber-700 dark:text-amber-300">
+                          {appLang === 'en'
+                            ? 'This invoice has no payments on the books, so no settlement is needed. The return will only reverse revenue and restock inventory.'
+                            : 'الفاتورة ليس بها مدفوعات مسجّلة، فلا حاجة لاختيار تسوية. المرتجع سيعكس الإيراد ويعيد المخزون فقط.'}
+                        </p>
+                      </div>
+                    )
+                  }
+                  const accCoa = (a: any) => String(a?.sub_type || '').toLowerCase()
+                  const cashOnly  = (cashBankAccounts || []).filter((a: any) => accCoa(a) === 'cash')
+                  const bankOnly  = (cashBankAccounts || []).filter((a: any) => accCoa(a) === 'bank')
+                  const eligibleAccounts = returnMethod === 'cash' ? cashOnly
+                                         : returnMethod === 'bank_transfer' ? bankOnly
+                                         : []
+                  const accountLabel = returnMethod === 'cash'
+                    ? (appLang === 'en' ? 'Cash drawer to refund from' : 'الخزينة المسحوب منها')
+                    : (appLang === 'en' ? 'Bank account to refund from' : 'الحساب البنكى المسحوب منه')
+                  return (
+                    <>
+                      <div className="space-y-2">
+                        <Label>{appLang === 'en' ? 'Settlement Preference After Approval' : 'تفضيل التسوية بعد الاعتماد'}</Label>
+                        <select
+                          className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                          value={returnMethod}
+                          onChange={(e) => { setReturnMethod(e.target.value as any); setReturnSettlementAccountId('') }}
+                        >
+                          <option value="credit_note">{appLang === 'en' ? 'Credit Note (Customer Credit)' : 'مذكرة دائن (رصيد للعميل)'}</option>
+                          <option value="cash">{appLang === 'en' ? 'Cash Refund' : 'استرداد نقدي'}</option>
+                          <option value="bank_transfer">{appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي'}</option>
+                        </select>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {appLang === 'en'
+                            ? 'Informational only at this stage. The request still requires management and warehouse approvals before any execution.'
+                            : 'هذا الاختيار إرشادي فقط في هذه المرحلة. الطلب ما زال يحتاج إلى اعتماد الإدارة ثم المخزن قبل أي تنفيذ فعلي.'}
+                        </p>
+                      </div>
+                      {(returnMethod === 'cash' || returnMethod === 'bank_transfer') && (
+                        <div className="space-y-2">
+                          <Label>{accountLabel}</Label>
+                          <select
+                            className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                            value={returnSettlementAccountId}
+                            onChange={(e) => setReturnSettlementAccountId(e.target.value)}
+                          >
+                            <option value="">{appLang === 'en' ? '— select account —' : '— اختر حسابًا —'}</option>
+                            {eligibleAccounts.map((a: any) => (
+                              <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+                            ))}
+                          </select>
+                          {eligibleAccounts.length === 0 && (
+                            <p className="text-xs text-red-600 dark:text-red-400">
+                              {appLang === 'en'
+                                ? `No ${returnMethod === 'cash' ? 'cash' : 'bank'} accounts are available for your branch. Ask the owner to create one.`
+                                : `لا توجد ${returnMethod === 'cash' ? 'حسابات خزينة' : 'حسابات بنكية'} متاحة لفرعك. اطلب من المالك إنشاء واحد.`}
+                            </p>
+                          )}
+                          {!isPrivilegedUser && eligibleAccounts.length > 0 && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {appLang === 'en'
+                                ? 'Showing accounts belonging to your branch.'
+                                : 'يتم عرض الحسابات التابعة لفرعك فقط.'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
 
                 {/* Notes */}
                 <div className="space-y-2">

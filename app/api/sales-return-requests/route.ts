@@ -57,6 +57,11 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     const { invoice_id, return_type, items, notes, total_return_amount } = body
+    // v3.74.246 — settlement preference captured at request time so the
+    // executor knows which cash drawer / bank account to refund from
+    // rather than guessing from the original payment account.
+    const settlement_method: string | null = body?.settlement_method || null
+    const settlement_account_id: string | null = body?.settlement_account_id || null
 
     if (!invoice_id) return badRequestError("معرف الفاتورة مطلوب")
     if (!return_type || !["partial", "full"].includes(return_type)) {
@@ -135,6 +140,10 @@ export async function POST(req: NextRequest) {
         items: normalizedItems,
         total_return_amount: totalReturnAmount,
         notes: notes || null,
+        // v3.74.246 — persist the chosen settlement method + disbursement
+        // account so warehouse-approval executes the refund correctly.
+        settlement_method: settlement_method,
+        settlement_account_id: (settlement_method === "cash" || settlement_method === "bank_transfer") ? settlement_account_id : null,
       })
       .select()
       .single()
