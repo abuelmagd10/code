@@ -242,6 +242,8 @@ export default function BillViewPage() {
   const [preReceiptRefundAccountId, setPreReceiptRefundAccountId] = useState<string>('')
   const [preReceiptRefundReason, setPreReceiptRefundReason] = useState<string>('')
   const [preReceiptRefundSaving, setPreReceiptRefundSaving] = useState(false)
+  // v3.74.254 — last rejected refund_request for this bill (for the banner).
+  const [lastRejectedRefund, setLastRejectedRefund] = useState<{ id: string; reason: string | null; rejected_at: string } | null>(null)
 
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
@@ -381,6 +383,24 @@ export default function BillViewPage() {
         return
       }
       setBill(billData as any)
+      // v3.74.254 — load the most-recent rejected refund_request for this
+      // bill so the banner can surface the reason.
+      try {
+        const { data: lastRej } = await supabase
+          .from('refund_requests')
+          .select('id, rejection_reason, rejected_at')
+          .eq('source_type', 'bill')
+          .eq('source_id', billData.id)
+          .eq('status', 'rejected')
+          .order('rejected_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (lastRej) {
+          setLastRejectedRefund({ id: (lastRej as any).id, reason: (lastRej as any).rejection_reason, rejected_at: (lastRej as any).rejected_at })
+        } else {
+          setLastRejectedRefund(null)
+        }
+      } catch { /* ignore */ }
 
       // Load branch and cost center names
       if (billData.branch_id) {
@@ -1419,6 +1439,22 @@ export default function BillViewPage() {
                   </Button>
                 )}
 
+                {/* v3.74.254 — last-rejection banner. */}
+                {lastRejectedRefund && (() => {
+                  const rc = String((bill as any).receipt_status || '').toLowerCase()
+                  const alreadyRefunded = !!(bill as any).pre_receipt_refund_at
+                  const hasPaid = Number((bill as any).paid_amount || 0) > 0
+                  const isPrivileged = ['owner', 'admin', 'general_manager', 'accountant'].includes(String(currentUserRole || '').toLowerCase())
+                  const eligible = hasPaid && rc !== 'received' && !alreadyRefunded && bill.status !== 'cancelled'
+                  if (!eligible || !isPrivileged) return null
+                  return (
+                    <div className="w-full p-2 mb-2 rounded border border-red-300 bg-red-50 dark:bg-red-900/20 text-xs text-red-800 dark:text-red-200">
+                      {appLang === 'en'
+                        ? `Previous refund request was rejected${lastRejectedRefund.reason ? `: ${lastRejectedRefund.reason}` : ''}. You can submit a new request.`
+                        : `تم رفض طلب الاسترداد السابق${lastRejectedRefund.reason ? `. السبب: ${lastRejectedRefund.reason}` : ''}. يمكنك إعادة الإرسال.`}
+                    </div>
+                  )
+                })()}
                 {/* v3.74.251 — Pre-receipt refund: only show while warehouse
                     hasn't confirmed receipt AND the supplier has been paid
                     something. Until the goods change hands, the cash is

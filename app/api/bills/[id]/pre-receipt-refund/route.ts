@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
+import { notifyRefundRequestSubmitted } from "@/lib/refund-request-notifications"
 
 const REQUEST_ROLES = new Set([
   "owner", "general_manager",
@@ -132,6 +133,24 @@ export async function POST(
         { status: dup ? 409 : 500 }
       )
     }
+
+    // v3.74.254 — notify owner / general_manager.
+    let billNumberForNotify = ""
+    try {
+      const { data: billRow } = await admin
+        .from("bills").select("bill_number").eq("id", id).maybeSingle()
+      billNumberForNotify = (billRow as any)?.bill_number || id.slice(0, 8)
+    } catch {}
+    await notifyRefundRequestSubmitted(admin as any, {
+      companyId: context.companyId,
+      requestId: req.id,
+      sourceType: 'bill',
+      sourceNumber: billNumberForNotify,
+      branchId: (bill as any).branch_id || null,
+      createdBy: context.user?.id || '',
+      amount: paid,
+      modeLabel: modeRaw === 'cancel_bill' ? 'إلغاء الفاتورة' : 'إبقاء مفتوحة',
+    })
 
     return NextResponse.json({
       success: true,

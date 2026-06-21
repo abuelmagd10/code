@@ -175,6 +175,8 @@ export function Sidebar() {
       "sales_return_request_l1",
       "sales_return_request_warehouse",
     ])
+  // v3.74.254 — pre-shipment / pre-receipt refund approvals (owner/GM only).
+  const pendingRefundApprovalsCount = sumBadges(approvalBadges, ["refund_request_pending"])
 
   // الحفاظ على التوافق مع النظام القديم (fallback)
   const [permissionsReady, setPermissionsReady] = useState<boolean>(false)
@@ -1124,8 +1126,11 @@ export function Sidebar() {
                     // v3.74.14 — Sales Return Requests workflow page
                     { label: (lang === 'en' ? 'Sales Return Approvals' : 'موافقات مرتجعات المبيعات'), href: `/sales-return-requests${q}`, icon: CheckCircle, badge: pendingSalesReturnRequestsCount },
                     { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
-                    // v3.74.253 — pre-shipment / pre-receipt refund approvals queue for owner / general_manager.
-                    { label: (lang === 'en' ? 'Refund Approvals' : 'موافقات الاسترداد'), href: `/refund-approvals${q}`, icon: CheckCircle },
+                    // v3.74.253 / 3.74.254 — pre-shipment / pre-receipt refund approvals.
+                    // Owner / general_manager only; badge from refund_request_pending.
+                    ...(["owner", "general_manager"].includes(myRole)
+                      ? [{ label: (lang === 'en' ? 'Refund Approvals' : 'موافقات الاسترداد'), href: `/refund-approvals${q}`, icon: CheckCircle, badge: pendingRefundApprovalsCount }]
+                      : []),
                   ]
                 },
                 {

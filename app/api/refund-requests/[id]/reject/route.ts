@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
+import { notifyRefundRequestRejected } from "@/lib/refund-request-notifications"
 
 const APPROVER_ROLES = new Set(["owner", "general_manager"])
 
@@ -31,7 +32,7 @@ export async function POST(
 
     const { data: req } = await admin
       .from("refund_requests")
-      .select("id, status")
+      .select("id, status, source_type, source_id, branch_id, requested_by, amount")
       .eq("id", id)
       .eq("company_id", context.companyId)
       .maybeSingle()
@@ -53,6 +54,30 @@ export async function POST(
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
+
+    // v3.74.254 — notify the requester with the rejection reason.
+    let srcNumber = ""
+    try {
+      if ((req as any).source_type === "invoice") {
+        const { data: inv } = await admin
+          .from("invoices").select("invoice_number").eq("id", (req as any).source_id).maybeSingle()
+        srcNumber = (inv as any)?.invoice_number || String((req as any).source_id).slice(0, 8)
+      } else {
+        const { data: bill } = await admin
+          .from("bills").select("bill_number").eq("id", (req as any).source_id).maybeSingle()
+        srcNumber = (bill as any)?.bill_number || String((req as any).source_id).slice(0, 8)
+      }
+    } catch {}
+    await notifyRefundRequestRejected(admin as any, {
+      companyId: context.companyId,
+      requestId: id,
+      sourceType: (req as any).source_type,
+      sourceNumber: srcNumber,
+      branchId: (req as any).branch_id || null,
+      createdBy: context.user?.id || "",
+      requesterUserId: (req as any).requested_by || null,
+      reason,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {

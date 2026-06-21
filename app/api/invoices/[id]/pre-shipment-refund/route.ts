@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreShipmentRefund } from "@/lib/pre-shipment-refund"
+import { notifyRefundRequestSubmitted } from "@/lib/refund-request-notifications"
 
 const REQUEST_ROLES = new Set([
   "owner", "general_manager",
@@ -133,6 +134,25 @@ export async function POST(
         { status: dup ? 409 : 500 }
       )
     }
+
+    // v3.74.254 — notify owner / general_manager that a request is waiting.
+    const inv2 = inv as any
+    let invNumberForNotify = ""
+    try {
+      const { data: invRow } = await admin
+        .from("invoices").select("invoice_number").eq("id", id).maybeSingle()
+      invNumberForNotify = (invRow as any)?.invoice_number || id.slice(0, 8)
+    } catch {}
+    await notifyRefundRequestSubmitted(admin as any, {
+      companyId: context.companyId,
+      requestId: req.id,
+      sourceType: 'invoice',
+      sourceNumber: invNumberForNotify,
+      branchId: inv2.branch_id || null,
+      createdBy: context.user?.id || '',
+      amount: paid,
+      modeLabel: modeRaw === 'cancel_invoice' ? 'إلغاء الفاتورة' : 'إبقاء مفتوحة',
+    })
 
     return NextResponse.json({
       success: true,

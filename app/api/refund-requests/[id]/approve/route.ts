@@ -10,6 +10,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreShipmentRefund } from "@/lib/pre-shipment-refund"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
+import { notifyRefundRequestApproved } from "@/lib/refund-request-notifications"
 
 const APPROVER_ROLES = new Set(["owner", "general_manager"])
 
@@ -94,6 +95,30 @@ export async function POST(
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
+
+    // v3.74.254 — notify the requester. Fetch source_number for the message.
+    let srcNumber = ""
+    try {
+      if (req.source_type === "invoice") {
+        const { data: inv } = await admin
+          .from("invoices").select("invoice_number").eq("id", req.source_id).maybeSingle()
+        srcNumber = (inv as any)?.invoice_number || req.source_id.slice(0, 8)
+      } else {
+        const { data: bill } = await admin
+          .from("bills").select("bill_number").eq("id", req.source_id).maybeSingle()
+        srcNumber = (bill as any)?.bill_number || req.source_id.slice(0, 8)
+      }
+    } catch {}
+    await notifyRefundRequestApproved(admin as any, {
+      companyId: context.companyId,
+      requestId: id,
+      sourceType: req.source_type,
+      sourceNumber: srcNumber,
+      branchId: req.branch_id || null,
+      createdBy: context.user?.id || "",
+      requesterUserId: req.requested_by || null,
+      amount: Number(req.amount || 0),
+    })
 
     return NextResponse.json({
       success: true,

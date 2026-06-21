@@ -150,6 +150,9 @@ export default function InvoiceDetailPage() {
   const [preShipmentRefundAccountId, setPreShipmentRefundAccountId] = useState<string>('')
   const [preShipmentRefundReason, setPreShipmentRefundReason] = useState<string>('')
   const [preShipmentRefundSaving, setPreShipmentRefundSaving] = useState(false)
+  // v3.74.254 — surface the last rejection so the requester can re-submit
+  // informed. Loaded when invoice loads; nullable.
+  const [lastRejectedRefund, setLastRejectedRefund] = useState<{ id: string; reason: string | null; rejected_at: string } | null>(null)
   // Multi-currency (IAS 21) fields — supports 2 scenarios:
   //  1) Invoice in FC, payment in same FC → FX gain/loss on rate difference
   //  2) Invoice in base, payment in FC → cross-currency receipt with auto-conversion
@@ -708,6 +711,25 @@ export default function InvoiceDetailPage() {
 
       if (invoiceData) {
         setInvoice(invoiceData)
+        // v3.74.254 — load the most-recent rejected refund_request for
+        // this invoice (if any) to power the "rejected — see reason"
+        // banner on the action area.
+        try {
+          const { data: lastRej } = await supabase
+            .from('refund_requests')
+            .select('id, rejection_reason, rejected_at')
+            .eq('source_type', 'invoice')
+            .eq('source_id', invoiceId)
+            .eq('status', 'rejected')
+            .order('rejected_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (lastRej) {
+            setLastRejectedRefund({ id: (lastRej as any).id, reason: (lastRej as any).rejection_reason, rejected_at: (lastRej as any).rejected_at })
+          } else {
+            setLastRejectedRefund(null)
+          }
+        } catch { /* ignore */ }
         
         // 📸 استخدام Snapshot إذا كان موجوداً، وإلا استخدام البيانات الحية
         // هذا يضمن عرض البيانات الأصلية وقت إنشاء الفاتورة
@@ -3553,6 +3575,23 @@ export default function InvoiceDetailPage() {
                     {appLang === 'en' ? 'Record Payment' : 'تسجيل دفعة'}
                   </Button>
                 ) : null}
+                {/* v3.74.254 — show the last rejection reason inline so the
+                    requester knows why their previous submission failed and
+                    can resubmit with a better justification. */}
+                {lastRejectedRefund && (() => {
+                  const wh = String((invoice as any).warehouse_status || '').toLowerCase()
+                  const alreadyRefunded = !!(invoice as any).pre_shipment_refund_at
+                  const hasPaid = Number((invoice as any).paid_amount || 0) > 0
+                  const eligible = hasPaid && wh !== 'approved' && !alreadyRefunded && invoice.status !== 'cancelled'
+                  if (!eligible) return null
+                  return (
+                    <div className="w-full p-2 mb-2 rounded border border-red-300 bg-red-50 dark:bg-red-900/20 text-xs text-red-800 dark:text-red-200">
+                      {appLang === 'en'
+                        ? `Previous refund request was rejected${lastRejectedRefund.reason ? `: ${lastRejectedRefund.reason}` : ''}. You can submit a new request.`
+                        : `تم رفض طلب الاسترداد السابق${lastRejectedRefund.reason ? `. السبب: ${lastRejectedRefund.reason}` : ''}. يمكنك إعادة الإرسال.`}
+                    </div>
+                  )
+                })()}
                 {/* v3.74.250 — Pre-shipment refund: only show while warehouse
                     hasn't approved dispatch AND the customer has paid something.
                     Cash hasn't been "earned" yet under IFRS 15, so the customer
