@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Plus, Edit2, Trash2, DollarSign, Users, AlertCircle, CheckCircle, Banknote } from "lucide-react"
+import { Plus, Edit2, Trash2, DollarSign, Users, AlertCircle, CheckCircle, Banknote, FileText } from "lucide-react"
 import { filterLeafAccounts, filterCashBankAccounts } from "@/lib/accounts"
 import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -86,6 +86,30 @@ export default function ShareholdersPage() {
   })
   const [isSavingShareholder, setIsSavingShareholder] = useState<boolean>(false)
   const [isContributionOpen, setIsContributionOpen] = useState<boolean>(false)
+  // v3.74.248 — contribution history dialog (lists every contribution per
+  // shareholder, with Edit + Reverse buttons so wrong-amount entries can
+  // be fixed without manual SQL).
+  const [historyOpen, setHistoryOpen] = useState<boolean>(false)
+  const [historyShareholder, setHistoryShareholder] = useState<{ id: string; name: string } | null>(null)
+  const [historyRows, setHistoryRows] = useState<Array<{
+    id: string;
+    contribution_date: string;
+    amount: number;
+    notes: string | null;
+    is_reversed: boolean;
+    last_edited_at: string | null;
+    original_amount: number | null;
+    reversal_reason: string | null;
+  }>>([])
+  const [historyLoading, setHistoryLoading] = useState<boolean>(false)
+  const [editingContribId, setEditingContribId] = useState<string | null>(null)
+  const [editContribAmount, setEditContribAmount] = useState<number>(0)
+  const [editContribDate, setEditContribDate] = useState<string>('')
+  const [editContribNotes, setEditContribNotes] = useState<string>('')
+  const [editContribSaving, setEditContribSaving] = useState<boolean>(false)
+  const [reverseContribId, setReverseContribId] = useState<string | null>(null)
+  const [reverseReason, setReverseReason] = useState<string>('')
+  const [reverseSaving, setReverseSaving] = useState<boolean>(false)
   const [contributionForm, setContributionForm] = useState<ContributionForm>({
     shareholder_id: "",
     contribution_date: new Date().toISOString().slice(0, 10),
@@ -217,14 +241,18 @@ export default function ShareholdersPage() {
       .eq("company_id", company_id)
       .order("created_at", { ascending: true })
 
+    // v3.74.248 — exclude reversed contributions from the total. The
+    // reversed row is kept on the books (audit trail) but its effect was
+    // cancelled by the reversing JE, so it doesn't count toward equity.
     const { data: contribData } = await supabase
       .from("capital_contributions")
-      .select("shareholder_id, amount")
+      .select("shareholder_id, amount, is_reversed")
       .eq("company_id", company_id)
 
     const map = new Map<string, number>()
     if (contribData) {
       contribData.forEach((c: any) => {
+        if (c?.is_reversed) return
         map.set(c.shareholder_id, (map.get(c.shareholder_id) || 0) + Number(c.amount || 0))
       })
     }
@@ -654,6 +682,93 @@ export default function ShareholdersPage() {
     } catch (error: any) {
       console.error("Error deleting shareholder:", error)
       toastActionError(toast, "الحذف", "المساهم", error?.message || "خطأ غير متوقع")
+    }
+  }
+
+  // v3.74.248 — open the contribution history dialog for a shareholder.
+  const openContributionHistory = async (s: Shareholder) => {
+    if (!companyId) return
+    setHistoryShareholder({ id: s.id, name: s.name })
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("capital_contributions")
+        .select("id, contribution_date, amount, notes, is_reversed, last_edited_at, original_amount, reversal_reason")
+        .eq("company_id", companyId)
+        .eq("shareholder_id", s.id)
+        .order("contribution_date", { ascending: false })
+        .order("created_at", { ascending: false })
+      if (error) throw error
+      setHistoryRows((data || []) as any)
+    } catch (e: any) {
+      toastActionError(toast, "تحميل", "سجل المساهمات", e?.message || "خطأ غير متوقع")
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  // v3.74.248 — start editing a single contribution.
+  const startEditContrib = (row: { id: string; contribution_date: string; amount: number; notes: string | null }) => {
+    setEditingContribId(row.id)
+    setEditContribAmount(Number(row.amount || 0))
+    setEditContribDate(row.contribution_date)
+    setEditContribNotes(row.notes || '')
+  }
+
+  const submitEditContrib = async () => {
+    if (!editingContribId || !historyShareholder) return
+    if (!Number.isFinite(editContribAmount) || editContribAmount <= 0) {
+      toastActionError(toast, "التعديل", "المساهمة", appLang === 'en' ? 'Amount must be greater than zero' : 'المبلغ يجب أن يكون أكبر من صفر')
+      return
+    }
+    setEditContribSaving(true)
+    try {
+      const res = await fetch(`/api/shareholders/contributions/${editingContribId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: editContribAmount,
+          contribution_date: editContribDate || undefined,
+          notes: editContribNotes || null,
+        })
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed')
+      toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التعديل', appLang === 'en' ? 'Contribution' : 'المساهمة')
+      setEditingContribId(null)
+      // Reload the history + the totals on the main table.
+      await openContributionHistory({ id: historyShareholder.id, name: historyShareholder.name } as Shareholder)
+      if (companyId) await loadShareholders(companyId)
+    } catch (e: any) {
+      toastActionError(toast, "التعديل", "المساهمة", e?.message || 'خطأ غير متوقع')
+    } finally {
+      setEditContribSaving(false)
+    }
+  }
+
+  // v3.74.248 — reverse a contribution (posts an opposing JE; original row
+  // is kept and flagged as reversed for the audit trail).
+  const submitReverseContrib = async () => {
+    if (!reverseContribId || !historyShareholder) return
+    setReverseSaving(true)
+    try {
+      const res = await fetch(`/api/shareholders/contributions/${reverseContribId}/reverse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reverseReason || null })
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed')
+      toastActionSuccess(toast, appLang === 'en' ? 'Reverse' : 'العكس', appLang === 'en' ? 'Contribution' : 'المساهمة')
+      setReverseContribId(null)
+      setReverseReason('')
+      await openContributionHistory({ id: historyShareholder.id, name: historyShareholder.name } as Shareholder)
+      if (companyId) await loadShareholders(companyId)
+    } catch (e: any) {
+      toastActionError(toast, "العكس", "المساهمة", e?.message || 'خطأ غير متوقع')
+    } finally {
+      setReverseSaving(false)
     }
   }
 
@@ -1202,6 +1317,10 @@ export default function ShareholdersPage() {
                                 <DollarSign className="w-4 h-4 mr-1" /> {(hydrated && appLang === 'en') ? 'Capital contribution' : 'مساهمة رأس مال'}
                               </Button>
                             )}
+                            {/* v3.74.248 — open the per-shareholder contribution history with edit + reverse actions */}
+                            <Button variant="outline" size="sm" onClick={() => openContributionHistory(s)}>
+                              <FileText className="w-4 h-4 mr-1" /> {(hydrated && appLang === 'en') ? 'Contributions log' : 'سجل المساهمات'}
+                            </Button>
                             {permDelete && (
                               <Button variant="destructive" size="sm" onClick={() => handleDelete(s.id)}>
                                 <Trash2 className="w-4 h-4 mr-1" /> {(hydrated && appLang === 'en') ? 'Delete' : 'حذف'}
@@ -1219,6 +1338,166 @@ export default function ShareholdersPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* v3.74.248 — Contributions history dialog */}
+          <Dialog open={historyOpen} onOpenChange={(o) => { setHistoryOpen(o); if (!o) { setEditingContribId(null); setReverseContribId(null) } }}>
+            <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {appLang === 'en'
+                    ? `Contributions log — ${historyShareholder?.name || ''}`
+                    : `سجل المساهمات — ${historyShareholder?.name || ''}`}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                {historyLoading ? (
+                  <div className="py-6 text-center text-sm text-gray-600 dark:text-gray-400">
+                    {appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}
+                  </div>
+                ) : historyRows.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-gray-600 dark:text-gray-400">
+                    {appLang === 'en' ? 'No contributions yet for this shareholder.' : 'لا توجد مساهمات لهذا المساهم بعد.'}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{appLang === 'en' ? 'Date' : 'التاريخ'}</TableHead>
+                          <TableHead>{appLang === 'en' ? 'Amount' : 'المبلغ'}</TableHead>
+                          <TableHead>{appLang === 'en' ? 'Notes' : 'الملاحظات'}</TableHead>
+                          <TableHead>{appLang === 'en' ? 'Status' : 'الحالة'}</TableHead>
+                          <TableHead>{appLang === 'en' ? 'Actions' : 'إجراءات'}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {historyRows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="whitespace-nowrap">{row.contribution_date}</TableCell>
+                            <TableCell className={row.is_reversed ? 'line-through text-gray-400' : 'font-medium'}>
+                              {Number(row.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {row.last_edited_at && !row.is_reversed && row.original_amount != null && Number(row.original_amount) !== Number(row.amount) && (
+                                <span className="text-xs text-amber-600 dark:text-amber-400 ms-2">
+                                  ({appLang === 'en' ? 'edited from' : 'مُعدَّل من'} {Number(row.original_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-gray-600 dark:text-gray-400 max-w-[200px] truncate" title={row.notes || ''}>
+                              {row.notes || '—'}
+                            </TableCell>
+                            <TableCell>
+                              {row.is_reversed ? (
+                                <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                                  {appLang === 'en' ? 'Reversed' : 'معكوسة'}
+                                </span>
+                              ) : (
+                                <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+                                  {appLang === 'en' ? 'Active' : 'نشطة'}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="space-x-2 rtl:space-x-reverse whitespace-nowrap">
+                              {!row.is_reversed && (
+                                <>
+                                  <Button variant="outline" size="sm" onClick={() => startEditContrib(row)}>
+                                    {appLang === 'en' ? 'Edit' : 'تعديل'}
+                                  </Button>
+                                  <Button variant="destructive" size="sm" onClick={() => { setReverseContribId(row.id); setReverseReason('') }}>
+                                    {appLang === 'en' ? 'Reverse' : 'عكس'}
+                                  </Button>
+                                </>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {appLang === 'en'
+                    ? 'Edit rewrites the original journal entry in place. Reverse posts an opposing entry and keeps the original on the books for audit.'
+                    : 'التعديل يُعيد كتابة القيد المحاسبى الأصلى نفسه. العكس ينشئ قيداً عكسياً ويحتفظ بالقيد الأصلى لأغراض التدقيق.'}
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setHistoryOpen(false)}>
+                  {appLang === 'en' ? 'Close' : 'إغلاق'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* v3.74.248 — Edit single contribution dialog */}
+          <Dialog open={!!editingContribId} onOpenChange={(o) => { if (!o) setEditingContribId(null) }}>
+            <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{appLang === 'en' ? 'Edit contribution' : 'تعديل المساهمة'}</DialogTitle>
+                <DialogDescription className="text-xs">
+                  {appLang === 'en'
+                    ? 'The linked journal entry will be rewritten with the new amount. Bank/cash debit and capital credit move together.'
+                    : 'سيتم إعادة كتابة القيد المحاسبى المرتبط بالقيمة الجديدة. مدين الحساب البنكى/الخزينة ودائن رأس المال يتحركان معاً.'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
+                  <NumericInput
+                    step="0.01"
+                    min={0.01}
+                    value={editContribAmount}
+                    onChange={(v) => setEditContribAmount(Number(v) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>{appLang === 'en' ? 'Date' : 'التاريخ'}</Label>
+                  <Input type="date" value={editContribDate} onChange={(e) => setEditContribDate(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>{appLang === 'en' ? 'Notes' : 'الملاحظات'}</Label>
+                  <Input value={editContribNotes} onChange={(e) => setEditContribNotes(e.target.value)} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingContribId(null)} disabled={editContribSaving}>
+                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button onClick={submitEditContrib} disabled={editContribSaving || editContribAmount <= 0}>
+                  {editContribSaving
+                    ? (appLang === 'en' ? 'Saving...' : 'جاري الحفظ...')
+                    : (appLang === 'en' ? 'Save' : 'حفظ')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* v3.74.248 — Reverse contribution confirmation dialog */}
+          <Dialog open={!!reverseContribId} onOpenChange={(o) => { if (!o) { setReverseContribId(null); setReverseReason('') } }}>
+            <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{appLang === 'en' ? 'Reverse contribution' : 'عكس المساهمة'}</DialogTitle>
+                <DialogDescription className="text-xs">
+                  {appLang === 'en'
+                    ? 'An opposing journal entry will be posted today (Dr capital, Cr cash/bank). The original entry stays in the books as audit history.'
+                    : 'سيتم تسجيل قيد عكسى بتاريخ اليوم (مدين رأس المال، دائن الخزينة/البنك). يبقى القيد الأصلى فى الدفاتر لأغراض التدقيق.'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label>{appLang === 'en' ? 'Reason (optional)' : 'السبب (اختياري)'}</Label>
+                <Input value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} placeholder={appLang === 'en' ? 'e.g. Wrong shareholder' : 'مثال: مساهم خطأ'} />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setReverseContribId(null); setReverseReason('') }} disabled={reverseSaving}>
+                  {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+                </Button>
+                <Button variant="destructive" onClick={submitReverseContrib} disabled={reverseSaving}>
+                  {reverseSaving
+                    ? (appLang === 'en' ? 'Reversing...' : 'جاري العكس...')
+                    : (appLang === 'en' ? 'Confirm reverse' : 'تأكيد العكس')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Contribution dialog */}
           <Dialog open={isContributionOpen} onOpenChange={setIsContributionOpen}>

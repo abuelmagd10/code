@@ -1,0 +1,185 @@
+/**
+ * v3.74.248 — Edit + read a single capital contribution.
+ *
+ * PATCH lets the requester correct the amount (and optionally the date /
+ * notes) when the contribution was posted with the wrong number. The
+ * linked journal entry is rewritten in lockstep so the cash/bank account
+ * and the equity capital account both reflect the corrected amount —
+ * without this, an "Edit" button would silently desync the books.
+ *
+ * GET returns the row so the UI can preload the edit dialog.
+ *
+ * Reversal lives in /reverse/route.ts — keep edit and reverse separate
+ * so audit trails stay readable.
+ */
+import { NextRequest, NextResponse } from "next/server"
+import { apiGuard } from "@/lib/core/security/api-guard"
+import { createServiceClient } from "@/lib/supabase/server"
+import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+
+const PRIVILEGED_ROLES = new Set(["owner", "admin", "manager", "general_manager", "accountant"])
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { context, errorResponse } = await apiGuard(request)
+  if (errorResponse || !context) return errorResponse
+  const { id } = await params
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from("capital_contributions")
+    .select("id, company_id, shareholder_id, contribution_date, amount, notes, is_reversed, reversed_at, reversal_reason, original_amount, last_edited_at, created_at")
+    .eq("id", id)
+    .eq("company_id", context.companyId)
+    .maybeSingle()
+  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+  if (!data) return NextResponse.json({ success: false, error: "Contribution not found" }, { status: 404 })
+  return NextResponse.json({ success: true, data })
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { context, errorResponse } = await apiGuard(request)
+  if (errorResponse || !context) return errorResponse
+
+  const actorRole = String(context.member?.role || "").toLowerCase()
+  if (!PRIVILEGED_ROLES.has(actorRole)) {
+    return NextResponse.json(
+      { success: false, error: "Insufficient permission to edit capital contributions" },
+      { status: 403 }
+    )
+  }
+
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const newAmountRaw = body?.amount
+    const newDate = body?.contributionDate || body?.contribution_date || null
+    const newNotes = (body?.notes ?? null) as string | null
+
+    const newAmount = Number(newAmountRaw)
+    if (!Number.isFinite(newAmount) || newAmount <= 0) {
+      return NextResponse.json(
+        { success: false, error: "Amount must be a positive number" },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createServiceClient()
+
+    // 1. Load the contribution + check governance flags.
+    const { data: contribution, error: cErr } = await supabase
+      .from("capital_contributions")
+      .select("id, company_id, shareholder_id, contribution_date, amount, notes, is_reversed, original_amount")
+      .eq("id", id)
+      .eq("company_id", context.companyId)
+      .maybeSingle()
+    if (cErr) return NextResponse.json({ success: false, error: cErr.message }, { status: 500 })
+    if (!contribution) return NextResponse.json({ success: false, error: "Contribution not found" }, { status: 404 })
+    if (contribution.is_reversed) {
+      return NextResponse.json(
+        { success: false, error: "Cannot edit a reversed contribution. Add a new one instead." },
+        { status: 409 }
+      )
+    }
+
+    const effectiveDate = newDate || contribution.contribution_date
+    await requireOpenFinancialPeriod(context.companyId, effectiveDate)
+
+    // 2. Find the linked JE (posted at creation time with reference_type
+    //    'capital_contribution' and reference_id = contribution.id).
+    const { data: je, error: jeErr } = await supabase
+      .from("journal_entries")
+      .select("id, entry_date, description")
+      .eq("company_id", context.companyId)
+      .eq("reference_type", "capital_contribution")
+      .eq("reference_id", id)
+      .maybeSingle()
+    if (jeErr) return NextResponse.json({ success: false, error: jeErr.message }, { status: 500 })
+    if (!je) {
+      return NextResponse.json(
+        { success: false, error: "Linked journal entry not found — please reverse and recreate" },
+        { status: 409 }
+      )
+    }
+
+    // 3. Read the JE lines and rewrite the amounts in lockstep. The Dr
+    //    line is the cash/bank account; the Cr line is the equity capital
+    //    account. Both must move together to keep the books balanced.
+    const { data: lines, error: lErr } = await supabase
+      .from("journal_entry_lines")
+      .select("id, account_id, debit_amount, credit_amount")
+      .eq("journal_entry_id", je.id)
+    if (lErr || !lines || lines.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Linked journal lines not found — please reverse and recreate" },
+        { status: 409 }
+      )
+    }
+    const debitLine  = lines.find((l: any) => Number(l.debit_amount  || 0) > 0)
+    const creditLine = lines.find((l: any) => Number(l.credit_amount || 0) > 0)
+    if (!debitLine || !creditLine) {
+      return NextResponse.json(
+        { success: false, error: "Journal lines are malformed; cannot rewrite safely" },
+        { status: 409 }
+      )
+    }
+
+    // 4. Update the contribution row first (so an audit reader sees the
+    //    new amount even if the line update fails — the recovery path
+    //    is the reverse-and-recreate workflow).
+    const userId = context.user?.id || null
+    const upd: any = {
+      amount: newAmount,
+      last_edited_at: new Date().toISOString(),
+      last_edited_by: userId,
+    }
+    if (newDate) upd.contribution_date = newDate
+    if (body?.notes !== undefined) upd.notes = newNotes
+    if (contribution.original_amount == null) upd.original_amount = contribution.amount
+
+    const { error: updErr } = await supabase
+      .from("capital_contributions")
+      .update(upd)
+      .eq("id", id)
+    if (updErr) return NextResponse.json({ success: false, error: updErr.message }, { status: 500 })
+
+    // 5. Rewrite the JE lines and (if date changed) the JE header.
+    const { error: dlErr } = await supabase
+      .from("journal_entry_lines")
+      .update({ debit_amount: newAmount })
+      .eq("id", debitLine.id)
+    if (dlErr) return NextResponse.json({ success: false, error: dlErr.message }, { status: 500 })
+
+    const { error: clErr } = await supabase
+      .from("journal_entry_lines")
+      .update({ credit_amount: newAmount })
+      .eq("id", creditLine.id)
+    if (clErr) return NextResponse.json({ success: false, error: clErr.message }, { status: 500 })
+
+    if (newDate && newDate !== je.entry_date) {
+      await supabase
+        .from("journal_entries")
+        .update({ entry_date: newDate })
+        .eq("id", je.id)
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id,
+        amount: newAmount,
+        contribution_date: effectiveDate,
+        journal_entry_id: je.id,
+      },
+    })
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error?.message || "Failed to edit contribution" },
+      { status: 500 }
+    )
+  }
+}
