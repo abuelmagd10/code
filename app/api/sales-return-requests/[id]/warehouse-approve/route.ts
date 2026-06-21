@@ -128,6 +128,49 @@ export async function PATCH(
       return NextResponse.json({ error: atomicResult.error || "فشل تنفيذ المرتجع" }, { status: 400 })
     }
 
+    // v3.74.247 — if the requester picked cash / bank_transfer on the
+    // return form, the atomic above already created the customer-credit
+    // ledger entry but didn't move any actual cash. Post a follow-up
+    // disbursement journal now so the refund leaves the drawer they
+    // chose. Best-effort: failures here don't roll back the atomic.
+    let disbursementResult: any = null
+    try {
+      const settlementMethod = String((request as any).settlement_method || '').toLowerCase()
+      const settlementAccountId = (request as any).settlement_account_id
+      const targetReturnId = atomicResult.returnIds?.[0]
+      if (
+        (settlementMethod === 'cash' || settlementMethod === 'bank_transfer') &&
+        settlementAccountId &&
+        targetReturnId
+      ) {
+        const { postSalesReturnCashDisbursement } = await import('@/lib/sales-return-cash-disbursement')
+        disbursementResult = await postSalesReturnCashDisbursement(supabase as any, {
+          companyId,
+          salesReturnRequestId: id,
+          salesReturnId: targetReturnId,
+          invoiceId: request.invoice_id,
+          invoiceNumber: requestInvoice?.invoice_number || request.invoice_id,
+          customerId: request.customer_id,
+          settlementMethod: settlementMethod as 'cash' | 'bank_transfer',
+          settlementAccountId: String(settlementAccountId),
+          actorUserId: user?.id || '',
+          lang: 'ar',
+        })
+        if (!disbursementResult.success) {
+          console.warn('[CashDisbursement] failed:', disbursementResult.error)
+        } else if (disbursementResult.skipped) {
+          console.log('[CashDisbursement] skipped:', disbursementResult.reason)
+        } else {
+          console.log('[CashDisbursement] posted:', {
+            refundedAmount: disbursementResult.refundedAmount,
+            journalEntryId: disbursementResult.journalEntryId,
+          })
+        }
+      }
+    } catch (disbErr: any) {
+      console.error('[CashDisbursement] unexpected error:', disbErr?.message || disbErr)
+    }
+
     // v3.74.34 — Persist the final workflow status. Earlier revisions of
     // this route relied on the atomic RPC's p_update_source path to flip
     // sales_return_requests.status to 'approved_completed', but the
