@@ -2253,12 +2253,25 @@ export default function BillViewPage() {
                   })
                   const json = await res.json()
                   if (!res.ok || !json.success) throw new Error(json.error || 'Failed')
-                  toastActionSuccess(
-                    toast,
-                    appLang === 'en' ? 'Pre-receipt refund' : 'استرداد قبل الاستلام',
-                    appLang === 'en' ? 'Bill' : 'فاتورة الشراء',
-                    appLang
-                  )
+                  // v3.74.253 — regular roles get a "submitted for approval"
+                  // message; owner/GM get the immediate "executed" message.
+                  if (json.pending_approval) {
+                    // v3.74.253 — use a toast with description directly so
+                    // we can show the "submitted for approval" message.
+                    toast({
+                      title: appLang === 'en' ? 'Refund request' : 'طلب الاسترداد',
+                      description: appLang === 'en'
+                        ? 'Submitted for owner / general manager approval.'
+                        : 'تم إرسال طلب الاسترداد لاعتماد المالك / المدير العام.'
+                    })
+                  } else {
+                    toastActionSuccess(
+                      toast,
+                      appLang === 'en' ? 'Pre-receipt refund' : 'استرداد قبل الاستلام',
+                      appLang === 'en' ? 'Bill' : 'فاتورة الشراء',
+                      appLang
+                    )
+                  }
                   setShowPreReceiptRefund(false)
                   await loadData()
                 } catch (e: any) {

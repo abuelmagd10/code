@@ -1124,6 +1124,8 @@ export function Sidebar() {
                     // v3.74.14 — Sales Return Requests workflow page
                     { label: (lang === 'en' ? 'Sales Return Approvals' : 'موافقات مرتجعات المبيعات'), href: `/sales-return-requests${q}`, icon: CheckCircle, badge: pendingSalesReturnRequestsCount },
                     { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
+                    // v3.74.253 — pre-shipment / pre-receipt refund approvals queue for owner / general_manager.
+                    { label: (lang === 'en' ? 'Refund Approvals' : 'موافقات الاسترداد'), href: `/refund-approvals${q}`, icon: CheckCircle },
                   ]
                 },
                 {

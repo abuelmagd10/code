@@ -1,30 +1,19 @@
 /**
- * v3.74.250 — POST /api/invoices/[id]/pre-shipment-refund
+ * v3.74.250 / 3.74.253 — POST /api/invoices/[id]/pre-shipment-refund
  *
- * Refund the customer's payments on an invoice that has NOT yet been
- * approved by the warehouse. The requester picks the disbursement
- * account (cash drawer / bank account) and a mode:
- *
- *   cancel_invoice  — full unwind. Reverse payments + reverse revenue
- *                     JE + set invoice + linked sales order to cancelled.
- *   keep_open       — light unwind. Reverse payments only; invoice stays
- *                     'sent' with paid_amount = 0 so the customer can
- *                     re-pay later. SO stays linked.
- *
- * Authorisation: owner / admin / general_manager / accountant.
+ * v3.74.253: owner/general_manager self-execute. Anyone else creates a
+ * refund_request that lands in /refund-approvals for owner/GM review.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreShipmentRefund } from "@/lib/pre-shipment-refund"
 
-const PRIVILEGED_ROLES = new Set([
-  "owner",
-  "admin",
-  "manager",
-  "general_manager",
-  "accountant",
+const REQUEST_ROLES = new Set([
+  "owner", "general_manager",
+  "admin", "manager", "accountant",
 ])
+const SELF_EXECUTE_ROLES = new Set(["owner", "general_manager"])
 
 export async function POST(
   request: NextRequest,
@@ -34,12 +23,9 @@ export async function POST(
   if (errorResponse || !context) return errorResponse
 
   const actorRole = String(context.member?.role || "").toLowerCase()
-  if (!PRIVILEGED_ROLES.has(actorRole)) {
+  if (!REQUEST_ROLES.has(actorRole)) {
     return NextResponse.json(
-      {
-        success: false,
-        error: "Insufficient permission for pre-shipment refund",
-      },
+      { success: false, error: "Insufficient permission for pre-shipment refund" },
       { status: 403 }
     )
   }
@@ -67,38 +53,96 @@ export async function POST(
     }
 
     const admin = createServiceClient()
-    const result = await executePreShipmentRefund(admin as any, {
-      companyId: context.companyId,
-      invoiceId: id,
-      settlementAccountId,
-      mode: modeRaw as "cancel_invoice" | "keep_open",
-      reason,
-      actorUserId: context.user?.id || "",
-      lang: "ar",
-    })
 
-    if (!result.success) {
+    if (SELF_EXECUTE_ROLES.has(actorRole)) {
+      const result = await executePreShipmentRefund(admin as any, {
+        companyId: context.companyId,
+        invoiceId: id,
+        settlementAccountId,
+        mode: modeRaw as "cancel_invoice" | "keep_open",
+        reason,
+        actorUserId: context.user?.id || "",
+        lang: "ar",
+      })
+      if (!result.success) {
+        return NextResponse.json(
+          { success: false, error: result.error || "Refund failed" },
+          { status: 400 }
+        )
+      }
+      return NextResponse.json({
+        success: true,
+        executed: true,
+        data: {
+          refundedAmount: result.refundedAmount,
+          reversedPaymentCount: result.reversedPaymentCount,
+          revenueReversalJeId: result.revenueReversalJeId,
+          paymentReversalJeIds: result.paymentReversalJeIds,
+        },
+      })
+    }
+
+    const { data: inv, error: invErr } = await admin
+      .from("invoices")
+      .select("id, company_id, branch_id, status, warehouse_status, paid_amount, pre_shipment_refund_at")
+      .eq("id", id)
+      .eq("company_id", context.companyId)
+      .maybeSingle()
+    if (invErr) return NextResponse.json({ success: false, error: invErr.message }, { status: 500 })
+    if (!inv) return NextResponse.json({ success: false, error: "Invoice not found" }, { status: 404 })
+
+    if ((inv as any).pre_shipment_refund_at) {
+      return NextResponse.json({ success: false, error: "Invoice already refunded" }, { status: 409 })
+    }
+    if (String((inv as any).warehouse_status || "").toLowerCase() === "approved") {
       return NextResponse.json(
-        { success: false, error: result.error || "Refund failed" },
-        { status: 400 }
+        { success: false, error: "Warehouse already approved dispatch - use a sales return" },
+        { status: 409 }
+      )
+    }
+    const paid = Number((inv as any).paid_amount || 0)
+    if (paid <= 0) {
+      return NextResponse.json({ success: false, error: "Invoice has no paid amount" }, { status: 400 })
+    }
+
+    const { data: req, error: reqErr } = await admin
+      .from("refund_requests")
+      .insert({
+        company_id: context.companyId,
+        branch_id: (inv as any).branch_id || null,
+        source_type: "invoice",
+        source_id: id,
+        mode: modeRaw,
+        settlement_account_id: settlementAccountId,
+        amount: paid,
+        reason,
+        status: "pending_approval",
+        requested_by: context.user?.id || null,
+      })
+      .select("id")
+      .single()
+    if (reqErr || !req?.id) {
+      const dup = String(reqErr?.message || "").toLowerCase().includes("unique")
+      return NextResponse.json(
+        {
+          success: false,
+          error: dup
+            ? "There is already an active refund request for this invoice"
+            : reqErr?.message || "Failed to create refund request",
+        },
+        { status: dup ? 409 : 500 }
       )
     }
 
     return NextResponse.json({
       success: true,
-      data: {
-        refundedAmount: result.refundedAmount,
-        reversedPaymentCount: result.reversedPaymentCount,
-        revenueReversalJeId: result.revenueReversalJeId,
-        paymentReversalJeIds: result.paymentReversalJeIds,
-      },
+      executed: false,
+      pending_approval: true,
+      data: { request_id: req.id },
     })
   } catch (error: any) {
     return NextResponse.json(
-      {
-        success: false,
-        error: error?.message || "Failed to process pre-shipment refund",
-      },
+      { success: false, error: error?.message || "Failed to process pre-shipment refund" },
       { status: 500 }
     )
   }

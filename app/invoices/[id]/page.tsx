@@ -1530,13 +1530,26 @@ export default function InvoiceDetailPage() {
       if (!res.ok || !json.success) {
         throw new Error(json.error || (appLang === 'en' ? 'Refund failed' : 'فشل الاسترداد'))
       }
-      toastActionSuccess(
-        toast,
-        appLang === 'en' ? 'Pre-shipment refund' : 'استرداد قبل الشحن',
-        appLang === 'en'
-          ? `Refunded ${Number(json.data?.refundedAmount || 0).toLocaleString()} ${preShipmentRefundMode === 'cancel_invoice' ? '— invoice cancelled.' : '— invoice kept open.'}`
-          : `تم استرداد ${Number(json.data?.refundedAmount || 0).toLocaleString()} ${preShipmentRefundMode === 'cancel_invoice' ? '— تم إلغاء الفاتورة.' : '— الفاتورة باقية مفتوحة.'}`
-      )
+      // v3.74.253 — the API returns executed=true for owner/GM and
+      // executed=false (pending_approval=true) for everyone else. Show
+      // the right toast so a regular user knows their request is queued.
+      if (json.pending_approval) {
+        toastActionSuccess(
+          toast,
+          appLang === 'en' ? 'Refund request' : 'طلب الاسترداد',
+          appLang === 'en'
+            ? 'Submitted for owner / general manager approval. The refund will only post once approved.'
+            : 'تم إرسال طلب الاسترداد لاعتماد المالك / المدير العام. لن يتم تنفيذ القيد إلا بعد الاعتماد.'
+        )
+      } else {
+        toastActionSuccess(
+          toast,
+          appLang === 'en' ? 'Pre-shipment refund' : 'استرداد قبل الشحن',
+          appLang === 'en'
+            ? `Refunded ${Number(json.data?.refundedAmount || 0).toLocaleString()} ${preShipmentRefundMode === 'cancel_invoice' ? '— invoice cancelled.' : '— invoice kept open.'}`
+            : `تم استرداد ${Number(json.data?.refundedAmount || 0).toLocaleString()} ${preShipmentRefundMode === 'cancel_invoice' ? '— تم إلغاء الفاتورة.' : '— الفاتورة باقية مفتوحة.'}`
+        )
+      }
       setShowPreShipmentRefund(false)
       await loadInvoice()
     } catch (e: any) {
