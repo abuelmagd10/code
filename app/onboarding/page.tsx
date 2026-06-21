@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { Building2, Globe, Coins, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Sparkles, MapPin, Phone, FileText, Rocket } from "lucide-react"
+import { Building2, Globe, Coins, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Sparkles, MapPin, Phone, FileText, Rocket, LayoutGrid } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createDefaultChartOfAccounts } from "@/lib/default-chart-of-accounts"
+import { OPTIONAL_MODULES, MODULE_LABELS, type ModuleKey } from "@/lib/module-manifest"
 
 // Professional currency list
 const CURRENCIES = [
@@ -47,6 +48,14 @@ export default function OnboardingPage() {
   const [country, setCountry] = useState("")
   const [phone, setPhone] = useState("")
   const [taxId, setTaxId] = useState("")
+  // v3.74.261 — اختيار الوحدات وقت الإنشاء. الافتراضى: كل الوحدات
+  // الاختيارية مفعّلة، عشان المالك يلغّى اللى ما يحتاجهاش بدل ما يفكّر
+  // فى اللى عاوزه من الصفر. لو خلاها فاضية بنخزّن مصفوفة فاضية ([]) —
+  // مش null — عشان نفرّق بين "اختار قصداً ما يفعّل حاجة" و"شركة قديمة
+  // ما اختارتش".
+  const [selectedModules, setSelectedModules] = useState<Set<ModuleKey>>(
+    () => new Set<ModuleKey>(OPTIONAL_MODULES as readonly ModuleKey[])
+  )
 
   // Load saved preferences
   useEffect(() => {
@@ -96,6 +105,8 @@ export default function OnboardingPage() {
       step1Title: "معلومات الشركة الأساسية",
       step2Title: "إعدادات العملة واللغة",
       step3Title: "معلومات الاتصال",
+      step4Title: "الوحدات اللى تحتاجها",
+      step4Subtitle: "اختار اللى يخص شغلك — تقدر تغيّر الاختيار لاحقاً من الإعدادات → المستخدمون",
       companyName: "اسم الشركة",
       currency: "العملة الأساسية",
       language: "لغة النظام",
@@ -120,6 +131,8 @@ export default function OnboardingPage() {
       step1Title: "Basic Company Information",
       step2Title: "Currency & Language Settings",
       step3Title: "Contact Information",
+      step4Title: "Modules You Need",
+      step4Subtitle: "Pick what fits your business — you can change this later from Settings → Users",
       companyName: "Company Name",
       currency: "Base Currency",
       language: "System Language",
@@ -149,8 +162,17 @@ export default function OnboardingPage() {
     }
   }, [language])
 
-  const totalSteps = 3
+  const totalSteps = 4
   const progress = (step / totalSteps) * 100
+
+  // v3.74.261 — toggle for the new step's switches
+  const toggleModule = (k: ModuleKey) => {
+    setSelectedModules((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k); else next.add(k)
+      return next
+    })
+  }
 
   const handleNext = () => {
     if (step === 1 && !companyName.trim()) {
@@ -191,6 +213,10 @@ export default function OnboardingPage() {
           country: country || null,
           phone: phone || null,
           tax_id: taxId || null,
+          // v3.74.261 — persist the wizard's pick. Empty array = "owner
+          // chose nothing optional" (sidebar shows core only). null is
+          // reserved for legacy companies that pre-date this column.
+          enabled_modules: Array.from(selectedModules).sort(),
         })
         .select()
         .single()
@@ -286,13 +312,13 @@ export default function OnboardingPage() {
         {/* Progress */}
         <div className="mb-8">
           <div className="flex justify-between mb-2">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div key={s} className={`flex items-center gap-2 ${s <= step ? 'text-violet-600' : 'text-gray-400 dark:text-gray-500'}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${s < step ? 'bg-green-500 text-white' : s === step ? 'bg-violet-600 text-white' : 'bg-gray-200 dark:bg-slate-700'}`}>
                   {s < step ? <CheckCircle2 className="w-5 h-5" /> : s}
                 </div>
                 <span className="text-sm font-medium hidden sm:inline">
-                  {s === 1 ? L.step1Title : s === 2 ? L.step2Title : L.step3Title}
+                  {s === 1 ? L.step1Title : s === 2 ? L.step2Title : s === 3 ? L.step3Title : L.step4Title}
                 </span>
               </div>
             ))}
@@ -407,6 +433,50 @@ export default function OnboardingPage() {
                     <Label className="flex items-center gap-2"><FileText className="w-4 h-4" />{L.taxId}</Label>
                     <Input value={taxId} onChange={(e) => setTaxId(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* v3.74.261 — Step 4: Modules pick (writes to companies.enabled_modules) */}
+            {step === 4 && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <LayoutGrid className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{L.step4Title}</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{L.step4Subtitle}</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(OPTIONAL_MODULES as readonly ModuleKey[]).map((k) => {
+                    const meta = MODULE_LABELS[k]
+                    const on = selectedModules.has(k)
+                    const label = language === 'en' ? meta.en : meta.ar
+                    const desc = language === 'en' ? meta.description?.en : meta.description?.ar
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => toggleModule(k)}
+                        className={`flex items-start justify-between p-4 rounded-xl border-2 text-right transition-all
+                          ${on
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600 shadow-sm'
+                            : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 hover:border-gray-300 dark:hover:border-slate-700'}`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-white">{label}</div>
+                          {desc && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{desc}</div>
+                          )}
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors
+                          ${on
+                            ? 'bg-emerald-500 border-emerald-500'
+                            : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600'}`}
+                        >
+                          {on && <CheckCircle2 className="w-4 h-4 text-white" />}
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
