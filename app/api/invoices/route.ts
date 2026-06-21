@@ -241,6 +241,83 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // v3.74.259 — Owner / general_manager may create an invoice without
+    // first picking a sales order. When they skip it, we create the SO
+    // automatically with the same totals + items so the existing
+    // sync trigger keeps the SO in step with the invoice (status,
+    // returned_amount, etc.) afterwards. Other roles still need a SO.
+    const AUTO_SO_ROLES = new Set(['owner', 'general_manager'])
+    if (!invoiceData.sales_order_id && AUTO_SO_ROLES.has(String(member.role || '').toLowerCase())) {
+      const soDate = invoiceData.invoice_date || new Date().toISOString().slice(0, 10)
+      const soStatus = invoiceData.status || 'draft'
+      const soInsert: any = {
+        company_id: companyId,
+        customer_id: invoiceData.customer_id,
+        so_date: soDate,
+        due_date: invoiceData.due_date || null,
+        status: soStatus,
+        subtotal: Number(invoiceData.subtotal || 0),
+        tax_amount: Number(invoiceData.tax_amount || 0),
+        discount_amount: 0,
+        shipping_charge: Number(invoiceData.shipping || 0),
+        shipping_tax: 0,
+        adjustment: Number(invoiceData.adjustment || 0),
+        total: Number(invoiceData.total_amount || 0),
+        total_amount: Number(invoiceData.total_amount || 0),
+        currency: invoiceData.currency_code || 'EGP',
+        exchange_rate: Number(invoiceData.exchange_rate || 1) || 1,
+        total_base: Number(invoiceData.base_currency_total || invoiceData.total_amount || 0),
+        tax_inclusive: !!invoiceData.tax_inclusive,
+        discount_type: invoiceData.discount_type || null,
+        discount_value: Number(invoiceData.discount_value || 0),
+        discount_position: invoiceData.discount_position || null,
+        shipping: Number(invoiceData.shipping || 0),
+        shipping_tax_rate: Number(invoiceData.shipping_tax_rate || 0),
+        shipping_provider_id: invoiceData.shipping_provider_id || null,
+        notes: invoiceData.notes || null,
+        branch_id: finalBranchId,
+        cost_center_id: finalCostCenterId,
+        warehouse_id: finalWarehouseId,
+        created_by_user_id: user.id,
+      }
+      const { data: newSO, error: soErr } = await supabase
+        .from('sales_orders').insert(soInsert).select('id').single()
+      if (soErr || !newSO?.id) {
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to auto-create the linked sales order',
+          error_ar: 'فشل إنشاء أمر البيع المرتبط تلقائياً: ' + (soErr?.message || 'unknown'),
+        }, { status: 500 })
+      }
+      const soItems = invoiceItems.map((it: any) => ({
+        sales_order_id: newSO.id,
+        product_id: it.product_id,
+        quantity: Number(it.quantity || 0),
+        unit_price: Number(it.unit_price || 0),
+        tax_rate: Number(it.tax_rate || 0),
+        discount_percent: Number(it.discount_percent || 0),
+        subtotal: Number(it.subtotal || (Number(it.quantity || 0) * Number(it.unit_price || 0))),
+        tax_amount: Number(it.tax_amount || 0),
+        total: Number(it.line_total || it.total || 0),
+        line_total: Number(it.line_total || it.total || 0),
+        description: it.description || null,
+        item_type: it.item_type || 'product',
+      }))
+      if (soItems.length > 0) {
+        const { error: soItemsErr } = await supabase
+          .from('sales_order_items').insert(soItems)
+        if (soItemsErr) {
+          await supabase.from('sales_orders').delete().eq('id', newSO.id)
+          return NextResponse.json({
+            success: false,
+            error: 'Failed to auto-create sales order items',
+            error_ar: 'فشل إنشاء بنود أمر البيع: ' + soItemsErr.message,
+          }, { status: 500 })
+        }
+      }
+      invoiceData.sales_order_id = newSO.id
+    }
+
     // 3️⃣ Call Atomic RPC (handles creation and synchronous accounting engine)
     const { data: rpcResult, error: rpcError } = await supabase.rpc('create_sales_invoice_atomic', {
       p_invoice_data: invoiceData,
