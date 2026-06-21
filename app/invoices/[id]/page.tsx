@@ -716,10 +716,10 @@ export default function InvoiceDetailPage() {
         // banner on the action area.
         try {
           const { data: lastRej } = await supabase
-            .from('refund_requests')
+            .from('customer_refund_requests')
             .select('id, rejection_reason, rejected_at')
-            .eq('source_type', 'invoice')
-            .eq('source_id', invoiceId)
+            .eq('source_type', 'pre_shipment')
+            .eq('invoice_id', invoiceId)
             .eq('status', 'rejected')
             .order('rejected_at', { ascending: false })
             .limit(1)

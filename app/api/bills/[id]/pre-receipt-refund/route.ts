@@ -1,18 +1,20 @@
 /**
- * v3.74.251 / 3.74.253 — POST /api/bills/[id]/pre-receipt-refund
+ * v3.74.251 / 3.74.255 — POST /api/bills/[id]/pre-receipt-refund
  *
- * v3.74.253: owner/GM self-execute. Other roles create a refund_request.
+ * Refund our payment to a supplier on a bill the warehouse hasn't
+ * confirmed receipt for. Modes: cancel_bill / keep_open.
+ *
+ * v3.74.255: tightened to owner / general_manager only while the
+ * purchases-side approval workflow is being integrated into the
+ * existing vendor_refund_requests table. Other roles see "Insufficient
+ * permission" for now and must ask the owner/GM directly. The full
+ * workflow will be re-enabled once vendor_refund_requests is extended.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
-import { notifyRefundRequestSubmitted } from "@/lib/refund-request-notifications"
 
-const REQUEST_ROLES = new Set([
-  "owner", "general_manager",
-  "admin", "manager", "accountant",
-])
 const SELF_EXECUTE_ROLES = new Set(["owner", "general_manager"])
 
 export async function POST(
@@ -23,9 +25,9 @@ export async function POST(
   if (errorResponse || !context) return errorResponse
 
   const actorRole = String(context.member?.role || "").toLowerCase()
-  if (!REQUEST_ROLES.has(actorRole)) {
+  if (!SELF_EXECUTE_ROLES.has(actorRole)) {
     return NextResponse.json(
-      { success: false, error: "Insufficient permission for pre-receipt refund" },
+      { success: false, error: "Only the owner or general manager can refund a pre-receipt payment" },
       { status: 403 }
     )
   }
@@ -41,122 +43,39 @@ export async function POST(
 
     if (!settlementAccountId) {
       return NextResponse.json(
-        { success: false, error: "Settlement account is required" },
-        { status: 400 }
+        { success: false, error: "Settlement account is required" }, { status: 400 }
       )
     }
     if (modeRaw !== "cancel_bill" && modeRaw !== "keep_open") {
       return NextResponse.json(
-        { success: false, error: "Mode must be 'cancel_bill' or 'keep_open'" },
-        { status: 400 }
+        { success: false, error: "Mode must be 'cancel_bill' or 'keep_open'" }, { status: 400 }
       )
     }
 
     const admin = createServiceClient()
-
-    if (SELF_EXECUTE_ROLES.has(actorRole)) {
-      const result = await executePreReceiptRefund(admin as any, {
-        companyId: context.companyId,
-        billId: id,
-        settlementAccountId,
-        mode: modeRaw as "cancel_bill" | "keep_open",
-        reason,
-        actorUserId: context.user?.id || "",
-        lang: "ar",
-      })
-      if (!result.success) {
-        return NextResponse.json(
-          { success: false, error: result.error || "Refund failed" },
-          { status: 400 }
-        )
-      }
-      return NextResponse.json({
-        success: true,
-        executed: true,
-        data: {
-          refundedAmount: result.refundedAmount,
-          reversedPaymentCount: result.reversedPaymentCount,
-          billReversalJeId: result.billReversalJeId,
-          paymentReversalJeIds: result.paymentReversalJeIds,
-        },
-      })
-    }
-
-    const { data: bill, error: billErr } = await admin
-      .from("bills")
-      .select("id, company_id, branch_id, status, receipt_status, paid_amount, pre_receipt_refund_at")
-      .eq("id", id)
-      .eq("company_id", context.companyId)
-      .maybeSingle()
-    if (billErr) return NextResponse.json({ success: false, error: billErr.message }, { status: 500 })
-    if (!bill) return NextResponse.json({ success: false, error: "Bill not found" }, { status: 404 })
-
-    if ((bill as any).pre_receipt_refund_at) {
-      return NextResponse.json({ success: false, error: "Bill already refunded" }, { status: 409 })
-    }
-    if (String((bill as any).receipt_status || "").toLowerCase() === "received") {
-      return NextResponse.json(
-        { success: false, error: "Warehouse already confirmed receipt - use a purchase return" },
-        { status: 409 }
-      )
-    }
-    const paid = Number((bill as any).paid_amount || 0)
-    if (paid <= 0) {
-      return NextResponse.json({ success: false, error: "Bill has no paid amount" }, { status: 400 })
-    }
-
-    const { data: req, error: reqErr } = await admin
-      .from("refund_requests")
-      .insert({
-        company_id: context.companyId,
-        branch_id: (bill as any).branch_id || null,
-        source_type: "bill",
-        source_id: id,
-        mode: modeRaw,
-        settlement_account_id: settlementAccountId,
-        amount: paid,
-        reason,
-        status: "pending_approval",
-        requested_by: context.user?.id || null,
-      })
-      .select("id")
-      .single()
-    if (reqErr || !req?.id) {
-      const dup = String(reqErr?.message || "").toLowerCase().includes("unique")
-      return NextResponse.json(
-        {
-          success: false,
-          error: dup
-            ? "There is already an active refund request for this bill"
-            : reqErr?.message || "Failed to create refund request",
-        },
-        { status: dup ? 409 : 500 }
-      )
-    }
-
-    // v3.74.254 — notify owner / general_manager.
-    let billNumberForNotify = ""
-    try {
-      const { data: billRow } = await admin
-        .from("bills").select("bill_number").eq("id", id).maybeSingle()
-      billNumberForNotify = (billRow as any)?.bill_number || id.slice(0, 8)
-    } catch {}
-    await notifyRefundRequestSubmitted(admin as any, {
+    const result = await executePreReceiptRefund(admin as any, {
       companyId: context.companyId,
-      requestId: req.id,
-      sourceType: 'bill',
-      sourceNumber: billNumberForNotify,
-      branchId: (bill as any).branch_id || null,
-      createdBy: context.user?.id || '',
-      amount: paid,
-      modeLabel: modeRaw === 'cancel_bill' ? 'إلغاء الفاتورة' : 'إبقاء مفتوحة',
+      billId: id,
+      settlementAccountId,
+      mode: modeRaw as "cancel_bill" | "keep_open",
+      reason,
+      actorUserId: context.user?.id || "",
+      lang: "ar",
     })
-
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: result.error || "Refund failed" }, { status: 400 }
+      )
+    }
     return NextResponse.json({
       success: true,
-      executed: false,
-      pending_approval: true,
-      data: { request_id: req.id },
+      executed: true,
+      data: {
+        refundedAmount: result.refundedAmount,
+        reversedPaymentCount: result.reversedPaymentCount,
+        billReversalJeId: result.billReversalJeId,
+        paymentReversalJeIds: result.paymentReversalJeIds,
+      },
     })
   } catch (error: any) {
     return NextResponse.json(

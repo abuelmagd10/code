@@ -482,7 +482,11 @@ export default function CustomerRefundRequestsPage() {
           ? (appLang === 'en' ? '📦 Delivery rejected' : '📦 رَفض تَسليم')
           : r.source_type === 'payment_correction'
             ? (appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة')
-            : r.source_type
+            : r.source_type === 'pre_shipment'
+              ? (appLang === 'en' ? '🚚 Pre-shipment refund' : '🚚 استرداد قبل الشحن')
+              : r.source_type === 'credit_refund'
+                ? (appLang === 'en' ? 'Credit refund' : 'استرداد رصيد دائن')
+                : r.source_type
         const reason = (r.notes || '').trim()
         // v3.74.114 - surface proposed changes so the approver sees what
         // the requester wants the corrected payment to look like.

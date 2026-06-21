@@ -1,20 +1,20 @@
 /**
- * v3.74.250 / 3.74.253 — POST /api/invoices/[id]/pre-shipment-refund
+ * v3.74.250 / 3.74.255 — POST /api/invoices/[id]/pre-shipment-refund
  *
- * v3.74.253: owner/general_manager self-execute. Anyone else creates a
- * refund_request that lands in /refund-approvals for owner/GM review.
+ * v3.74.255: re-routed to customer_refund_requests (existing table +
+ * approval page) with source_type='pre_shipment'. Owner / GM still self-
+ * execute immediately. Everyone else creates a row that appears on the
+ * existing /customer-refund-requests page, filtered by source_type.
+ *
+ * mode (cancel_invoice / keep_open) is stored in the metadata jsonb.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreShipmentRefund } from "@/lib/pre-shipment-refund"
-import { notifyRefundRequestSubmitted } from "@/lib/refund-request-notifications"
 
-const REQUEST_ROLES = new Set([
-  "owner", "general_manager",
-  "admin", "manager", "accountant",
-])
-const SELF_EXECUTE_ROLES = new Set(["owner", "general_manager"])
+const REQUEST_ROLES = new Set(["owner","general_manager","admin","manager","accountant"])
+const SELF_EXECUTE_ROLES = new Set(["owner","general_manager"])
 
 export async function POST(
   request: NextRequest,
@@ -42,14 +42,12 @@ export async function POST(
 
     if (!settlementAccountId) {
       return NextResponse.json(
-        { success: false, error: "Settlement account is required" },
-        { status: 400 }
+        { success: false, error: "Settlement account is required" }, { status: 400 }
       )
     }
     if (modeRaw !== "cancel_invoice" && modeRaw !== "keep_open") {
       return NextResponse.json(
-        { success: false, error: "Mode must be 'cancel_invoice' or 'keep_open'" },
-        { status: 400 }
+        { success: false, error: "Mode must be 'cancel_invoice' or 'keep_open'" }, { status: 400 }
       )
     }
 
@@ -67,8 +65,7 @@ export async function POST(
       })
       if (!result.success) {
         return NextResponse.json(
-          { success: false, error: result.error || "Refund failed" },
-          { status: 400 }
+          { success: false, error: result.error || "Refund failed" }, { status: 400 }
         )
       }
       return NextResponse.json({
@@ -83,9 +80,10 @@ export async function POST(
       })
     }
 
+    // Regular role -> file a customer_refund_requests row, source_type='pre_shipment'.
     const { data: inv, error: invErr } = await admin
       .from("invoices")
-      .select("id, company_id, branch_id, status, warehouse_status, paid_amount, pre_shipment_refund_at")
+      .select("id, company_id, customer_id, branch_id, cost_center_id, status, warehouse_status, paid_amount, pre_shipment_refund_at, currency_code, exchange_rate_used")
       .eq("id", id)
       .eq("company_id", context.companyId)
       .maybeSingle()
@@ -106,53 +104,51 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Invoice has no paid amount" }, { status: 400 })
     }
 
+    // Block if there's already an active request for this invoice in
+    // the existing table (no unique index there, so we check manually).
+    const { data: existingActive } = await admin
+      .from("customer_refund_requests")
+      .select("id")
+      .eq("company_id", context.companyId)
+      .eq("invoice_id", id)
+      .eq("source_type", "pre_shipment")
+      .in("status", ["pending", "approved"])
+      .maybeSingle()
+    if (existingActive) {
+      return NextResponse.json(
+        { success: false, error: "There is already an active pre-shipment refund request for this invoice" },
+        { status: 409 }
+      )
+    }
+
     const { data: req, error: reqErr } = await admin
-      .from("refund_requests")
+      .from("customer_refund_requests")
       .insert({
         company_id: context.companyId,
-        branch_id: (inv as any).branch_id || null,
-        source_type: "invoice",
-        source_id: id,
-        mode: modeRaw,
-        settlement_account_id: settlementAccountId,
+        customer_id: (inv as any).customer_id,
+        invoice_id: id,
+        source_type: "pre_shipment",
         amount: paid,
-        reason,
-        status: "pending_approval",
+        refund_account_id: settlementAccountId,
+        refund_method: "cash",
+        branch_id: (inv as any).branch_id || null,
+        cost_center_id: (inv as any).cost_center_id || null,
+        currency: (inv as any).currency_code || "EGP",
+        exchange_rate: Number((inv as any).exchange_rate_used || 1) || 1,
+        base_amount: paid,
+        notes: reason,
+        status: "pending",
         requested_by: context.user?.id || null,
+        metadata: { mode: modeRaw, reason },
       })
       .select("id")
       .single()
     if (reqErr || !req?.id) {
-      const dup = String(reqErr?.message || "").toLowerCase().includes("unique")
       return NextResponse.json(
-        {
-          success: false,
-          error: dup
-            ? "There is already an active refund request for this invoice"
-            : reqErr?.message || "Failed to create refund request",
-        },
-        { status: dup ? 409 : 500 }
+        { success: false, error: reqErr?.message || "Failed to create refund request" },
+        { status: 500 }
       )
     }
-
-    // v3.74.254 — notify owner / general_manager that a request is waiting.
-    const inv2 = inv as any
-    let invNumberForNotify = ""
-    try {
-      const { data: invRow } = await admin
-        .from("invoices").select("invoice_number").eq("id", id).maybeSingle()
-      invNumberForNotify = (invRow as any)?.invoice_number || id.slice(0, 8)
-    } catch {}
-    await notifyRefundRequestSubmitted(admin as any, {
-      companyId: context.companyId,
-      requestId: req.id,
-      sourceType: 'invoice',
-      sourceNumber: invNumberForNotify,
-      branchId: inv2.branch_id || null,
-      createdBy: context.user?.id || '',
-      amount: paid,
-      modeLabel: modeRaw === 'cancel_invoice' ? 'إلغاء الفاتورة' : 'إبقاء مفتوحة',
-    })
 
     return NextResponse.json({
       success: true,

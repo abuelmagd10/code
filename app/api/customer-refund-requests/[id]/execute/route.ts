@@ -75,6 +75,57 @@ export async function POST(
       }, { status: 403 })
     }
 
+    // v3.74.255 — pre-shipment refund branch: customer paid an invoice
+    // but warehouse hasn't approved dispatch. Delegate to the
+    // executePreShipmentRefund helper which voids payments + reverses
+    // revenue JE + optionally cancels invoice & sales order.
+    if ((refundReq as any).source_type === 'pre_shipment') {
+      const { createClient: createServiceClient } = await import("@supabase/supabase-js")
+      const admin = createServiceClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+      const { data: full } = await admin
+        .from("customer_refund_requests")
+        .select("id, invoice_id, refund_account_id, metadata, notes")
+        .eq("id", id)
+        .maybeSingle()
+      const settlementAccountId = (full as any)?.refund_account_id || null
+      const metaMode = (full as any)?.metadata?.mode
+      const mode = (metaMode === 'cancel_invoice' || metaMode === 'keep_open') ? metaMode : 'cancel_invoice'
+      if (!settlementAccountId || !(full as any)?.invoice_id) {
+        return NextResponse.json({ error: "Refund request is missing the settlement account or invoice" }, { status: 400 })
+      }
+      const { executePreShipmentRefund } = await import("@/lib/pre-shipment-refund")
+      const r = await executePreShipmentRefund(admin as any, {
+        companyId,
+        invoiceId: (full as any).invoice_id,
+        settlementAccountId,
+        mode,
+        reason: (full as any).notes || null,
+        actorUserId: user.id,
+        lang: "ar",
+      })
+      if (!r.success) {
+        return NextResponse.json({ error: r.error || "Pre-shipment refund failed" }, { status: 400 })
+      }
+      await admin
+        .from("customer_refund_requests")
+        .update({
+          status: 'executed',
+          executed_by: user.id,
+          executed_at: new Date().toISOString(),
+          reversal_journal_entry_id: r.revenueReversalJeId || r.paymentReversalJeIds?.[0] || null,
+        })
+        .eq("id", id)
+      return NextResponse.json({
+        success: true,
+        message: "تم تنفيذ استرداد قبل الشحن",
+        refundedAmount: r.refundedAmount,
+      })
+    }
+
     // payment_correction: delegate to execute_payment_correction RPC
     if ((refundReq as any).source_type === 'payment_correction') {
       const { data: rpcResult, error: rpcErr } = await supabase.rpc("execute_payment_correction", {
