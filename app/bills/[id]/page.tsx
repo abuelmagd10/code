@@ -235,6 +235,14 @@ export default function BillViewPage() {
   const [receiptRejectDialogOpen, setReceiptRejectDialogOpen] = useState(false)
   const [receiptRejectionReason, setReceiptRejectionReason] = useState("")
 
+  // v3.74.251 — Pre-receipt refund dialog state (refund supplier's
+  // payment when the warehouse hasn't confirmed receipt yet).
+  const [showPreReceiptRefund, setShowPreReceiptRefund] = useState(false)
+  const [preReceiptRefundMode, setPreReceiptRefundMode] = useState<'cancel_bill' | 'keep_open'>('cancel_bill')
+  const [preReceiptRefundAccountId, setPreReceiptRefundAccountId] = useState<string>('')
+  const [preReceiptRefundReason, setPreReceiptRefundReason] = useState<string>('')
+  const [preReceiptRefundSaving, setPreReceiptRefundSaving] = useState(false)
+
   // Currency symbols map
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
@@ -1411,6 +1419,30 @@ export default function BillViewPage() {
                   </Button>
                 )}
 
+                {/* v3.74.251 — Pre-receipt refund: only show while warehouse
+                    hasn't confirmed receipt AND the supplier has been paid
+                    something. Until the goods change hands, the cash is
+                    a vendor prepayment (IAS 2 / IFRS 9 asset). */}
+                {(() => {
+                  const rc = String((bill as any).receipt_status || '').toLowerCase()
+                  const alreadyRefunded = !!(bill as any).pre_receipt_refund_at
+                  const hasPaid = Number((bill as any).paid_amount || 0) > 0
+                  const isPrivileged = ['owner', 'admin', 'general_manager', 'accountant'].includes(String(currentUserRole || '').toLowerCase())
+                  const eligible = hasPaid && rc !== 'received' && !alreadyRefunded && bill.status !== 'cancelled'
+                  if (!eligible || !isPrivileged) return null
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-amber-700 hover:text-amber-800 border-amber-300 hover:border-amber-400"
+                      onClick={() => { setShowPreReceiptRefund(true); setPreReceiptRefundAccountId(''); setPreReceiptRefundReason(''); setPreReceiptRefundMode('cancel_bill') }}
+                    >
+                      <RotateCcw className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{appLang === 'en' ? 'Refund pre-receipt payment' : 'استرداد دفعة قبل الاستلام'}</span>
+                    </Button>
+                  )
+                })()}
+
                 {/* فاصل */}
                 <div className="h-6 w-px bg-gray-300 dark:bg-slate-600 hidden sm:block" />
 
@@ -2123,6 +2155,129 @@ export default function BillViewPage() {
       </main>
 
       {/* ❌ Receipt Rejection Dialog */}
+      {/* v3.74.251 — Pre-receipt refund dialog */}
+      <Dialog open={showPreReceiptRefund} onOpenChange={setShowPreReceiptRefund}>
+        <DialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{appLang === 'en' ? 'Refund pre-receipt payment' : 'استرداد دفعة قبل الاستلام'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+              {appLang === 'en'
+                ? "We paid the supplier but the warehouse hasn't confirmed receipt yet. The prepayment is refundable — choose what happens to the bill."
+                : 'دفعنا للمورد لكن المخزن لسه ماأكّدش الاستلام. السلفة قابلة للاسترداد — اختر مصير فاتورة الشراء.'}
+            </p>
+
+            <div className="p-3 rounded bg-blue-50 dark:bg-blue-900/20 text-sm">
+              <div className="flex justify-between">
+                <span>{appLang === 'en' ? 'Refundable amount' : 'المبلغ القابل للاسترداد'}:</span>
+                <span className="font-bold">{Number((bill as any).paid_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{appLang === 'en' ? 'What should happen to the bill?' : 'مصير الفاتورة'}</label>
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 p-2 rounded border cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <input type="radio" name="prr-mode" checked={preReceiptRefundMode === 'cancel_bill'} onChange={() => setPreReceiptRefundMode('cancel_bill')} className="mt-1" />
+                  <span className="text-sm">
+                    <div className="font-medium">{appLang === 'en' ? 'Cancel the bill (recommended)' : 'إلغاء الفاتورة (موصى به)'}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en'
+                        ? 'Full unwind: payments reversed, bill JE reversed, bill + linked PO cancelled.'
+                        : 'إلغاء كامل: عكس المدفوعات، عكس قيد الفاتورة، إلغاء الفاتورة وأمر الشراء المرتبط.'}
+                    </div>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 p-2 rounded border cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <input type="radio" name="prr-mode" checked={preReceiptRefundMode === 'keep_open'} onChange={() => setPreReceiptRefundMode('keep_open')} className="mt-1" />
+                  <span className="text-sm">
+                    <div className="font-medium">{appLang === 'en' ? 'Keep bill open' : 'إبقاء الفاتورة مفتوحة'}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {appLang === 'en'
+                        ? 'Reverse payments only. Bill goes back to pending (unpaid). Supplier can be paid again later.'
+                        : 'عكس المدفوعات فقط. الفاتورة ترجع لحالة pending. يمكن دفعها مجدداً لاحقاً.'}
+                    </div>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{appLang === 'en' ? 'Cash drawer / bank account that received the refund' : 'حساب الإيداع (خزينة / بنك)'}</label>
+              <select
+                className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                value={preReceiptRefundAccountId}
+                onChange={(e) => setPreReceiptRefundAccountId(e.target.value)}
+              >
+                <option value="">{appLang === 'en' ? '— select account —' : '— اختر حسابًا —'}</option>
+                {(accounts || []).filter((a: any) => { const st = String(a?.sub_type || '').toLowerCase(); return st === 'cash' || st === 'bank' }).map((a: any) => (
+                  <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{appLang === 'en' ? 'Reason (optional)' : 'السبب (اختيارى)'}</label>
+              <input
+                className="w-full border rounded px-3 py-2 bg-white dark:bg-slate-900"
+                value={preReceiptRefundReason}
+                onChange={(e) => setPreReceiptRefundReason(e.target.value)}
+                placeholder={appLang === 'en' ? 'e.g. Supplier cancelled' : 'مثال: المورد ألغى الطلب'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreReceiptRefund(false)} disabled={preReceiptRefundSaving}>
+              {appLang === 'en' ? 'Cancel' : 'إلغاء'}
+            </Button>
+            <Button
+              variant={preReceiptRefundMode === 'cancel_bill' ? 'destructive' : 'default'}
+              disabled={preReceiptRefundSaving || !preReceiptRefundAccountId}
+              onClick={async () => {
+                if (!bill) return
+                if (!preReceiptRefundAccountId) {
+                  toastActionError(toast, "الاسترداد", "الفاتورة", appLang === 'en' ? 'Select cash/bank account' : 'اختر حساب الإيداع', appLang)
+                  return
+                }
+                setPreReceiptRefundSaving(true)
+                try {
+                  const res = await fetch(`/api/bills/${bill.id}/pre-receipt-refund`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      settlement_account_id: preReceiptRefundAccountId,
+                      mode: preReceiptRefundMode,
+                      reason: preReceiptRefundReason || null,
+                    }),
+                  })
+                  const json = await res.json()
+                  if (!res.ok || !json.success) throw new Error(json.error || 'Failed')
+                  toastActionSuccess(
+                    toast,
+                    appLang === 'en' ? 'Pre-receipt refund' : 'استرداد قبل الاستلام',
+                    appLang === 'en' ? 'Bill' : 'فاتورة الشراء',
+                    appLang
+                  )
+                  setShowPreReceiptRefund(false)
+                  await loadData()
+                } catch (e: any) {
+                  toastActionError(toast, "الاسترداد", "الفاتورة", e?.message || 'خطأ', appLang)
+                } finally {
+                  setPreReceiptRefundSaving(false)
+                }
+              }}
+            >
+              {preReceiptRefundSaving
+                ? (appLang === 'en' ? 'Processing...' : 'جارى التنفيذ...')
+                : preReceiptRefundMode === 'cancel_bill'
+                  ? (appLang === 'en' ? 'Refund + cancel bill' : 'استرداد + إلغاء الفاتورة')
+                  : (appLang === 'en' ? 'Refund (keep bill open)' : 'استرداد (إبقاء الفاتورة)')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={receiptRejectDialogOpen} onOpenChange={setReceiptRejectDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

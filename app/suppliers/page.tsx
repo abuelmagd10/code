@@ -45,6 +45,9 @@ interface SupplierBalance {
   advances: number      // السلف المدفوعة للمورد
   payables: number      // الذمم الدائنة (ما علينا للمورد)
   debitCredits: number  // الأرصدة المدينة (ما للمورد عندنا من مرتجعات)
+  // v3.74.251 — pre-receipt refundable: cash on bills the warehouse
+  // hasn't confirmed receipt for. Refundable until goods arrive.
+  preReceiptAdvance?: number
 }
 
 export default function SuppliersPage() {
@@ -336,6 +339,31 @@ export default function SuppliersPage() {
           debitCredits: openCredits + billOver + advances,
         }
       }
+      // v3.74.251 — fold in the pre-receipt refundable balance.
+      try {
+        const { data: prrBills } = await supabase
+          .from("bills")
+          .select("supplier_id, paid_amount, status, receipt_status, pre_receipt_refund_at")
+          .eq("company_id", companyId)
+          .neq("is_deleted", true)
+          .gt("paid_amount", 0)
+        for (const b of (prrBills || [])) {
+          const rc = String((b as any).receipt_status || '').toLowerCase()
+          if (rc === 'received') continue
+          const st = String((b as any).status || '').toLowerCase()
+          if (st === 'cancelled') continue
+          if ((b as any).pre_receipt_refund_at) continue
+          const sid = String((b as any).supplier_id || '')
+          if (!sid) continue
+          if (!newBalances[sid]) continue
+          const add = Number((b as any).paid_amount || 0)
+          newBalances[sid].preReceiptAdvance = (newBalances[sid].preReceiptAdvance || 0) + add
+          // Roll into the supplier's headline "debit credits" so every
+          // place the balance shows up reflects the held advance.
+          newBalances[sid].debitCredits += add
+        }
+      } catch { /* ignore — UI degrades gracefully */ }
+
       setBalances(newBalances)
 
       // ===== تحميل الحسابات للاستخدام في سند استرداد السلفة =====
