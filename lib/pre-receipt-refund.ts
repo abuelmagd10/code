@@ -350,8 +350,9 @@ export async function executePreReceiptRefund(
     }
 
     // 8. Update the bill: paid_amount=0, status, audit columns.
+    // v3.74.257 — capture the error symmetrically with the sales side.
     const newStatus = params.mode === "cancel_bill" ? "cancelled" : "pending"
-    await admin
+    const { error: billUpdErr } = await admin
       .from("bills")
       .update({
         paid_amount: 0,
@@ -365,6 +366,12 @@ export async function executePreReceiptRefund(
           billReversalJeId || paymentReversalJeIds[0] || null,
       })
       .eq("id", params.billId)
+    if (billUpdErr) {
+      return {
+        success: false,
+        error: `Refund posted but bill row update failed: ${billUpdErr.message}. The cash + JEs are correct; the bill flags need a manual stamp.`,
+      }
+    }
 
     // 9. If cancelling, also cancel the linked purchase order.
     if (params.mode === "cancel_bill" && bill.purchase_order_id) {

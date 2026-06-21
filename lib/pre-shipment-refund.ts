@@ -363,8 +363,15 @@ export async function executePreShipmentRefund(
     }
 
     // 8. Update the invoice — paid_amount=0, status, audit columns.
+    //
+    // v3.74.257 — capture the error. Before v3.74.257 the prevent_paid
+    // invoice modification trigger blocked the pre_shipment_refund_*
+    // columns, the executor silently moved on, and the row was left
+    // with paid_amount = 1500 / pre_shipment_refund_at = null. Aging
+    // reports then showed phantom AR. The trigger now allows these
+    // columns; this guard surfaces any future schema drift loudly.
     const newStatus = params.mode === "cancel_invoice" ? "cancelled" : "sent"
-    await admin
+    const { error: invUpdErr } = await admin
       .from("invoices")
       .update({
         paid_amount: 0,
@@ -378,6 +385,15 @@ export async function executePreShipmentRefund(
           revenueReversalJeId || paymentReversalJeIds[0] || null,
       })
       .eq("id", params.invoiceId)
+    if (invUpdErr) {
+      // Books-side work is already committed (JEs posted, payments voided).
+      // Surface the row-update failure so the caller can warn the owner;
+      // they can re-run a stamp from the dashboard later.
+      return {
+        success: false,
+        error: `Refund posted but invoice row update failed: ${invUpdErr.message}. The cash + JEs are correct; the invoice flags need a manual stamp.`,
+      }
+    }
 
     // 9. If cancelling, also cancel the linked sales order so the
     //    operations side stops chasing it.
