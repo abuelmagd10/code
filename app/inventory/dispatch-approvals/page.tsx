@@ -180,7 +180,13 @@ export default function DispatchApprovalsPage() {
         `)
         .eq('company_id', companyId)
         .eq('warehouse_status', 'pending')
-        .in('status', ['sent', 'paid'])
+        // v3.74.249 — include partially_paid. A partially-paid invoice
+        // still needs warehouse approval before the goods can ship; the
+        // remaining cash is recognised as AR on the books, not blocked
+        // on the operational side. Excluding it stranded INV-00005 in
+        // company notniche between "money came in" and "ready to ship"
+        // with no place in the queue.
+        .in('status', ['sent', 'paid', 'partially_paid'])
         .order('invoice_date', { ascending: false })
 
       if (invError) throw invError
