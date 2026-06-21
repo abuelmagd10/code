@@ -89,83 +89,28 @@ export async function PATCH(
     const effectiveDate = newDate || contribution.contribution_date
     await requireOpenFinancialPeriod(context.companyId, effectiveDate)
 
-    // 2. Find the linked JE (posted at creation time with reference_type
-    //    'capital_contribution' and reference_id = contribution.id).
-    const { data: je, error: jeErr } = await supabase
-      .from("journal_entries")
-      .select("id, entry_date, description")
-      .eq("company_id", context.companyId)
-      .eq("reference_type", "capital_contribution")
-      .eq("reference_id", id)
-      .maybeSingle()
-    if (jeErr) return NextResponse.json({ success: false, error: jeErr.message }, { status: 500 })
-    if (!je) {
-      return NextResponse.json(
-        { success: false, error: "Linked journal entry not found — please reverse and recreate" },
-        { status: 409 }
-      )
-    }
-
-    // 3. Read the JE lines and rewrite the amounts in lockstep. The Dr
-    //    line is the cash/bank account; the Cr line is the equity capital
-    //    account. Both must move together to keep the books balanced.
-    const { data: lines, error: lErr } = await supabase
-      .from("journal_entry_lines")
-      .select("id, account_id, debit_amount, credit_amount")
-      .eq("journal_entry_id", je.id)
-    if (lErr || !lines || lines.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Linked journal lines not found — please reverse and recreate" },
-        { status: 409 }
-      )
-    }
-    const debitLine  = lines.find((l: any) => Number(l.debit_amount  || 0) > 0)
-    const creditLine = lines.find((l: any) => Number(l.credit_amount || 0) > 0)
-    if (!debitLine || !creditLine) {
-      return NextResponse.json(
-        { success: false, error: "Journal lines are malformed; cannot rewrite safely" },
-        { status: 409 }
-      )
-    }
-
-    // 4. Update the contribution row first (so an audit reader sees the
-    //    new amount even if the line update fails — the recovery path
-    //    is the reverse-and-recreate workflow).
+    // v3.74.262 — Use the atomic RPC. It sets app.allow_direct_post for
+    // the transaction so the two governance triggers
+    // (enforce_posted_entry_no_edit + enforce_posted_entry_lines_no_edit)
+    // let the audited fields through. The RPC rewrites the contribution
+    // row, the JE header date (if changed) and the two JE lines in one
+    // transaction — no more partial-failure window between three
+    // separate REST calls.
     const userId = context.user?.id || null
-    const upd: any = {
-      amount: newAmount,
-      last_edited_at: new Date().toISOString(),
-      last_edited_by: userId,
+    const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+      "update_capital_contribution_amount",
+      {
+        p_contribution_id: id,
+        p_new_amount: newAmount,
+        p_new_date: newDate || null,
+        p_new_notes: body?.notes !== undefined ? newNotes : null,
+        p_user_id: userId,
+      }
+    )
+    if (rpcErr) {
+      return NextResponse.json({ success: false, error: rpcErr.message }, { status: 500 })
     }
-    if (newDate) upd.contribution_date = newDate
-    if (body?.notes !== undefined) upd.notes = newNotes
-    if (contribution.original_amount == null) upd.original_amount = contribution.amount
-
-    const { error: updErr } = await supabase
-      .from("capital_contributions")
-      .update(upd)
-      .eq("id", id)
-    if (updErr) return NextResponse.json({ success: false, error: updErr.message }, { status: 500 })
-
-    // 5. Rewrite the JE lines and (if date changed) the JE header.
-    const { error: dlErr } = await supabase
-      .from("journal_entry_lines")
-      .update({ debit_amount: newAmount })
-      .eq("id", debitLine.id)
-    if (dlErr) return NextResponse.json({ success: false, error: dlErr.message }, { status: 500 })
-
-    const { error: clErr } = await supabase
-      .from("journal_entry_lines")
-      .update({ credit_amount: newAmount })
-      .eq("id", creditLine.id)
-    if (clErr) return NextResponse.json({ success: false, error: clErr.message }, { status: 500 })
-
-    if (newDate && newDate !== je.entry_date) {
-      await supabase
-        .from("journal_entries")
-        .update({ entry_date: newDate })
-        .eq("id", je.id)
-    }
+    const rpc: any = rpcResult || {}
 
     return NextResponse.json({
       success: true,
@@ -173,7 +118,7 @@ export async function PATCH(
         id,
         amount: newAmount,
         contribution_date: effectiveDate,
-        journal_entry_id: je.id,
+        journal_entry_id: rpc?.journal_entry_id ?? null,
       },
     })
   } catch (error: any) {
