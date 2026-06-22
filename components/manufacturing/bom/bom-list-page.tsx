@@ -212,12 +212,27 @@ export function BomListPage() {
     loadCreateScopeBoms()
   }, [loadCreateScopeBoms])
 
+
+  // v3.74.267 — auto-generate the next free BOM-NN code so the owner
+  // doesn't have to invent one. Reads the boms list and picks max+1.
+  const nextAutoBomCode = (): string => {
+    let max = 0
+    for (const b of boms) {
+      const m = /^BOM-(\d+)$/.exec(String(b.bom_code || ""))
+      if (m) { const n = parseInt(m[1], 10); if (n > max) max = n }
+    }
+    return `BOM-${String(max + 1).padStart(3, "0")}`
+  }
+
   const resetCreateForm = useCallback(() => {
+    // v3.74.267 — pre-fill branch (default to first) + auto BOM code so
+    // the dialog opens with only the Product field needing user input.
     setCreateForm({
       ...EMPTY_CREATE_FORM,
-      branch_id: branches.length === 1 ? branches[0].id : "",
+      branch_id: branches[0]?.id || "",
+      bom_code: nextAutoBomCode(),
     })
-  }, [branches])
+  }, [branches, boms])
 
   const handleOpenCreate = () => {
     resetCreateForm()
@@ -242,13 +257,31 @@ export function BomListPage() {
   }, [lang, toast])
 
   const handleCreate = async () => {
-    if (!createForm.branch_id || !createForm.product_id || !createForm.bom_code.trim() || !createForm.bom_name.trim()) {
+    // v3.74.267 — only require product; everything else gets sensible defaults.
+    if (!createForm.product_id) {
       toast({
         variant: "destructive",
-        title: lang === "en" ? "Missing required fields" : "البيانات الأساسية غير مكتملة",
+        title: lang === "en" ? "Product required" : "محتاجين تحدد المنتج",
         description: lang === "en"
-          ? "Branch, product, BOM code and name are required."
-          : "يجب تحديد الفرع والمنتج ورمز قائمة المواد واسمها قبل الإنشاء.",
+          ? "Select the manufactured product first."
+          : "اختر المنتج المُصنّع اللى هتعمله قائمة مكوّنات.",
+      })
+      return
+    }
+    // Fill in defaults for fields the user may have left blank.
+    if (!createForm.branch_id) createForm.branch_id = branches[0]?.id || ""
+    if (!createForm.bom_code.trim()) createForm.bom_code = nextAutoBomCode()
+    if (!createForm.bom_name.trim()) {
+      const product = products.find((p) => p.id === createForm.product_id)
+      createForm.bom_name = product?.name || product?.sku || createForm.bom_code
+    }
+    if (!createForm.branch_id) {
+      toast({
+        variant: "destructive",
+        title: lang === "en" ? "No branches yet" : "ما فيش فروع بعد",
+        description: lang === "en"
+          ? "Add a branch from Settings first."
+          : "ضيف فرع من الإعدادات الأول.",
       })
       return
     }
@@ -644,78 +677,46 @@ export function BomListPage() {
                   : "قائمة المواد هي \"وصفة\" منتجك — حدد المنتج النهائي أولاً، ثم ستضيف مكوناته في الخطوة التالية."}
               </p>
             </DialogHeader>
-            <div className="grid gap-4 py-2 md:grid-cols-2">
+            <div className="space-y-4 py-2">
+              {/* v3.74.267 — حقل واحد ظاهر فقط: المنتج النهائى */}
               <div className="space-y-2">
-                <Label>{lang === "en" ? "Branch" : "الفرع"}</Label>
-                <Select
-                  value={createForm.branch_id || ""}
-                  onValueChange={(value) =>
-                    setCreateForm((current) => ({
-                      ...current,
-                      branch_id: value,
-                      product_id: "",
-                      source_warehouse_id: null,
-                    }))
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="اختر الفرع" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
-                        {buildBranchLabel(branch)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {/* ── مخزن الصرف الافتراضي (Phase 1 Simplification) ── */}
-              <div className="space-y-2">
-                <Label>
-                  {lang === "en" ? "Default Issue Warehouse" : "مخزن صرف المواد الافتراضي"}
-                  <span className="ml-1 text-xs text-muted-foreground">({lang === "en" ? "optional" : "اختياري"})</span>
-                </Label>
-                <WarehouseSelector
-                  value={createForm.source_warehouse_id || ""}
-                  onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
-                  branchId={createForm.branch_id || null}
-                  placeholder={lang === "en" ? "Select source warehouse..." : "اختر مخزن الصرف..."}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {lang === "en"
-                    ? "This warehouse will be auto-filled in production orders created from this BOM."
-                    : "سيتم ملء هذا المخزن تلقائياً في أوامر الإنتاج المرتبطة بهذه القائمة."}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "Manufactured Product" : "المنتج المصنَّع"}</Label>
+                <Label>{lang === "en" ? "Manufactured Product" : "المنتج المصنّع"} <span className="text-red-500">*</span></Label>
                 <Select
                   value={createForm.product_id || ""}
                   disabled={!createForm.branch_id || createScopeLoading}
-                  onValueChange={(value) => setCreateForm((current) => ({ ...current, product_id: value }))}
+                  onValueChange={(value) => {
+                    // v3.74.267 — also auto-fill bom_name with the product's name
+                    // unless the user already typed a custom name.
+                    const product = products.find((p) => p.id === value)
+                    setCreateForm((current) => ({
+                      ...current,
+                      product_id: value,
+                      bom_name: current.bom_name && current.bom_name.trim() && current.bom_name !== "وصفة"
+                        ? current.bom_name
+                        : (product?.name || product?.sku || ""),
+                    }))
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue
                       placeholder={
                         !createForm.branch_id
                           ? (lang === "en" ? "Select branch first" : "اختر الفرع أولاً")
-                          : (lang === "en" ? "Select finished product" : "اختر المنتج النهائي")
+                          : (lang === "en" ? "Select finished product" : "اختر المنتج النهائى")
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
                     {createScopeLoading ? (
                       <div className="py-3 px-2 text-sm text-muted-foreground text-center">
-                        {lang === "en" ? "Loading available products..." : "جاري تحميل المنتجات المتاحة..."}
+                        {lang === "en" ? "Loading available products..." : "جارٍ تحميل المنتجات المتاحة..."}
                       </div>
                     ) : ownerProductOptions.length === 0 ? (
                       <div className="py-3 px-2 text-sm text-muted-foreground text-center">
                         {createScopeBoms.length > 0
                           ? (lang === "en"
                               ? "All manufactured products for this branch/usage already have a BOM"
-                              : "كل المنتجات التصنيعية لهذا الفرع ونوع الاستخدام لديها قائمة مواد بالفعل")
+                              : "كل المنتجات التصنيعية لهذا الفرع لديها قائمة مكوّنات بالفعل")
                           : (lang === "en" ? "No products available for this branch" : "لا توجد منتجات متاحة للفرع المختار")}
                       </div>
                     ) : (
@@ -731,69 +732,132 @@ export function BomListPage() {
                   <p className="text-xs text-destructive leading-relaxed">
                     ⚠️ {lang === "en"
                       ? `Product type must be "Manufactured". Change it from the Products page.`
-                      : `يجب أن يكون نوع المنتج "تصنيعي" — غيّر ذلك من صفحة المنتجات.`}
+                      : `يجب أن يكون نوع المنتج "تصنيعى" — غيّر ذلك من صفحة المنتجات.`}
                   </p>
                 )}
                 {selectedProduct?.product_type === "manufactured" && (
-                  <p className="text-xs text-emerald-600">✓ {lang === "en" ? "Eligible for BOM" : "منتج مؤهل لقائمة المواد"}</p>
+                  <p className="text-xs text-emerald-600">✓ {lang === "en" ? "Eligible for BOM" : "المنتج جاهز لإنشاء قائمة مكوّنات"}</p>
                 )}
+                <p className="text-xs text-slate-400">
+                  {lang === "en"
+                    ? "Pick the finished product. We'll prepare a recipe shell now; you'll add the raw-material components on the next screen."
+                    : "اختار المنتج النهائى. هنحضّر القائمة دلوقتى، وفى الشاشة الجاية تضيف الخامات المكوّنة له."}
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "BOM Code" : "رمز قائمة المواد"}</Label>
-                <Input
-                  value={createForm.bom_code}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, bom_code: event.target.value }))}
-                  placeholder="BOM-FG-001"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "BOM Name" : "اسم قائمة المواد"}</Label>
-                <Input
-                  value={createForm.bom_name}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, bom_name: event.target.value }))}
-                  placeholder={lang === "en" ? "e.g. Finished Product BOM" : "مثال: وصفة تصنيع المنتج النهائي"}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
-                <Select
-                  value={createForm.bom_usage}
-                  onValueChange={(value) => setCreateForm((current) => ({
-                    ...current,
-                    bom_usage: value as BomCreatePayload["bom_usage"],
-                    product_id: "",
-                  }))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BOM_USAGE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {lang === "en" ? option.label : option.labelAr}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border px-4 py-3">
-                <div className="space-y-1">
-                  <div className="font-medium text-slate-900">{lang === "en" ? "Active" : "تفعيل قائمة المواد"}</div>
-                  <div className="text-sm text-slate-500">{lang === "en" ? "Can be deactivated later from details." : "يمكن تعطيل السجل لاحقًا من صفحة التفاصيل."}</div>
+
+              {/* ─── إعدادات متقدمة (مطوية) ─── */}
+              <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
+                <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    ⚙️ {lang === "en" ? "Advanced settings" : "إعدادات متقدمة"}
+                    <span className="text-xs text-slate-400 font-normal">
+                      ({lang === "en" ? "optional — code, name, warehouse, etc." : "اختيارى — الكود والاسم والمخزن وغيره"})
+                    </span>
+                  </span>
+                  <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="grid gap-4 md:grid-cols-2 p-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Branch" : "الفرع"}</Label>
+                    <Select
+                      value={createForm.branch_id || ""}
+                      onValueChange={(value) =>
+                        setCreateForm((current) => ({
+                          ...current,
+                          branch_id: value,
+                          product_id: "",
+                          source_warehouse_id: null,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="اختر الفرع" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            {buildBranchLabel(branch)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>
+                      {lang === "en" ? "Default Issue Warehouse" : "مخزن صرف الخامات الافتراضى"}
+                      <span className="ml-1 text-xs text-muted-foreground">({lang === "en" ? "optional" : "اختيارى"})</span>
+                    </Label>
+                    <WarehouseSelector
+                      value={createForm.source_warehouse_id || ""}
+                      onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
+                      branchId={createForm.branch_id || null}
+                      placeholder={lang === "en" ? "Select source warehouse..." : "اختر مخزن الصرف..."}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {lang === "en"
+                        ? "This warehouse will be auto-filled in production orders."
+                        : "هيتعبّأ تلقائياً فى أوامر الإنتاج المرتبطة بالقائمة دى."}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "BOM Code" : "رمز القائمة"}</Label>
+                    <Input
+                      value={createForm.bom_code}
+                      onChange={(event) => setCreateForm((current) => ({ ...current, bom_code: event.target.value }))}
+                      placeholder="BOM-001"
+                    />
+                    <p className="text-xs text-slate-400">{lang === "en" ? "Auto-generated. Override if you have your own coding." : "متولّد تلقائياً، تقدر تغيّره."}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "BOM Name" : "اسم القائمة"}</Label>
+                    <Input
+                      value={createForm.bom_name}
+                      onChange={(event) => setCreateForm((current) => ({ ...current, bom_name: event.target.value }))}
+                      placeholder={lang === "en" ? "Defaults to the product's name" : "بيتعبّأ من اسم المنتج تلقائياً"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
+                    <Select
+                      value={createForm.bom_usage}
+                      onValueChange={(value) => setCreateForm((current) => ({
+                        ...current,
+                        bom_usage: value as BomCreatePayload["bom_usage"],
+                        product_id: "",
+                      }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BOM_USAGE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {lang === "en" ? option.label : option.labelAr}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border px-4 py-3">
+                    <div className="space-y-1">
+                      <div className="font-medium text-slate-900 text-sm">{lang === "en" ? "Active" : "تفعيل القائمة"}</div>
+                      <div className="text-xs text-slate-500">{lang === "en" ? "Can be deactivated later." : "تقدر تعطّلها لاحقاً."}</div>
+                    </div>
+                    <Switch
+                      checked={createForm.is_active}
+                      onCheckedChange={(checked) => setCreateForm((current) => ({ ...current, is_active: Boolean(checked) }))}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>{lang === "en" ? "Description (optional)" : "الوصف (اختيارى)"}</Label>
+                    <Textarea
+                      value={createForm.description || ""}
+                      onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
+                      placeholder={lang === "en" ? "General notes about this BOM..." : "ملاحظات عامة عن الغرض من القائمة دى أو طريقة استخدامها."}
+                    />
+                  </div>
                 </div>
-                <Switch
-                  checked={createForm.is_active}
-                  onCheckedChange={(checked) => setCreateForm((current) => ({ ...current, is_active: Boolean(checked) }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>{lang === "en" ? "Description (optional)" : "الوصف (اختياري)"}</Label>
-                <Textarea
-                  value={createForm.description || ""}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
-                  placeholder={lang === "en" ? "General notes about this BOM..." : "ملاحظات عامة عن الغرض من هذه القائمة أو طريقة استخدامها."}
-                />
-              </div>
+              </details>
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
