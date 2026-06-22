@@ -205,7 +205,13 @@ export default function BillingPage() {
         setCheckoutError(data?.error || 'فشل في إنشاء طلب الدفع')
         return
       }
-      if (data?.checkout_url) {
+      // v3.74.292 — 100% discount path: API granted seats without
+      // going to Paymob and returned a redirect_url instead of a
+      // checkout_url. Jump there with a hard navigation so the seat
+      // status reloads fresh.
+      if (data?.free_grant && data?.redirect_url) {
+        window.location.href = data.redirect_url
+      } else if (data?.checkout_url) {
         window.location.href = data.checkout_url
       } else {
         setCheckoutError('لم يتم استلام رابط الدفع من بوابة الدفع')

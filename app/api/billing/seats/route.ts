@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, internalError, HTTP_STATUS } from "@/lib/api-error-handler"
-import { getSeatStatus, SEAT_PRICE_EGP } from "@/lib/billing/seat-service"
+import { getSeatStatus, SEAT_PRICE_EGP, increaseSeats } from "@/lib/billing/seat-service"
 import { calculatePricing } from "@/lib/billing/pricing-engine"
 
 // ─────────────────────────────────────────
@@ -102,6 +102,59 @@ export async function POST(req: NextRequest) {
     } catch (pricingErr: any) {
       console.error("[billing/seats] pricing-engine error:", pricingErr)
       return internalError("تعذر حساب السعر — يرجى المحاولة لاحقاً", "pricing_failed")
+    }
+
+    // v3.74.292 — When a coupon brings the total to zero (e.g. internal
+    // TEST100 100%-off code) there is nothing to charge. Paymob rejects
+    // zero-amount intentions, so we skip the gateway entirely and grant
+    // the seats directly via the same RPC the webhook calls on success.
+    // The synthetic transaction id keeps the unique-index idempotency
+    // protection while making it obvious this row never went through
+    // Paymob.
+    if (pricing.chargeTotalEgp === 0 && pricing.couponApplied) {
+      const syntheticTxnId = `FREE-${pricing.couponApplied}-${Date.now()}-${companyId.slice(0, 8)}`
+      const grant = await increaseSeats(
+        companyId,
+        seats,
+        syntheticTxnId,
+        0,
+        user.id,
+        billingPeriod,
+      )
+      if (!grant.success) {
+        return internalError(grant.error || "تعذر منح المقاعد", "free_grant_failed")
+      }
+      try {
+        // Best-effort coupon usage increment. Atomic so concurrent
+        // free-grants for the same coupon can't both read the same
+        // current_uses. We don't fail the request if this skips —
+        // the seats are already granted.
+        const { createClient: createAdmin } = await import("@supabase/supabase-js")
+        const sb = createAdmin(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        )
+        const { data: row } = await sb
+          .from("billing_coupons")
+          .select("current_uses")
+          .eq("code", pricing.couponApplied)
+          .maybeSingle()
+        const next = ((row as any)?.current_uses ?? 0) + 1
+        await sb
+          .from("billing_coupons")
+          .update({ current_uses: next })
+          .eq("code", pricing.couponApplied)
+      } catch {}
+      return apiSuccess({
+        free_grant: true,
+        seats,
+        billing_period: billingPeriod,
+        amount_egp: 0,
+        amount_display: pricing.totalDisplay,
+        display_currency: pricing.targetCurrency,
+        coupon_applied: pricing.couponApplied,
+        redirect_url: "/settings/billing?free_grant=success",
+      })
     }
 
     if (!pricing.chargeTotalEgp || pricing.chargeTotalEgp <= 0) {
