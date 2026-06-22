@@ -7,12 +7,14 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 
-// v3.74.279 - translate the most common Supabase auth errors so the
-// user sees a clear Arabic explanation instead of "Auth session missing!"
+// v3.74.279/280 - translate Supabase auth errors to plain Arabic
 function translateAuthError(msg: string): string {
   const lower = (msg || "").toLowerCase()
   if (lower.includes("session missing") || lower.includes("session_not_found")) {
     return "انتهت صلاحية رابط إعادة تعيين كلمة المرور. اطلب رابط جديد من صفحة الدخول."
+  }
+  if (lower.includes("pkce") || lower.includes("code verifier")) {
+    return "الرابط ده ابتدأ من جهاز تانى. اطلب رابط جديد واضغطه من نفس الجهاز اللى طلبت منه."
   }
   if (lower.includes("password should be") || lower.includes("weak password")) {
     return "كلمة المرور ضعيفة. استخدم 8 أحرف على الأقل وامزج بين الحروف والأرقام."
@@ -37,28 +39,58 @@ export default function ForceChangePasswordPage() {
     const bootstrap = async () => {
       try {
         const supabase = createClient()
-        const params = new URLSearchParams(window.location.search)
-        const code = params.get("code")
-        if (code) {
-          const { error: exchErr } = await supabase.auth.exchangeCodeForSession(code)
-          if (exchErr) {
-            if (cancelled) return
-            setSessionError(translateAuthError(exchErr.message))
-            setBootstrapping(false)
-            return
+
+        // v3.74.280 — implicit flow: tokens are in the URL hash like
+        // #access_token=...&refresh_token=...&type=recovery
+        // The Supabase client auto-detects this on init, but we read
+        // the hash explicitly so we can show a clear error if needed.
+        const hash = (typeof window !== "undefined" ? window.location.hash : "") || ""
+        if (hash && hash.includes("access_token")) {
+          const params = new URLSearchParams(hash.replace(/^#/, ""))
+          const accessToken = params.get("access_token")
+          const refreshToken = params.get("refresh_token")
+          if (accessToken && refreshToken) {
+            const { error: setErr } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            })
+            if (setErr) {
+              if (cancelled) return
+              setSessionError(translateAuthError(setErr.message))
+              setBootstrapping(false)
+              return
+            }
+            // Clean the hash so a refresh doesn't replay it
+            try { window.history.replaceState({}, "", window.location.pathname) } catch {}
           }
-          try {
-            const url = new URL(window.location.href)
-            url.searchParams.delete("code")
-            window.history.replaceState({}, "", url.toString())
-          } catch { /* ignore */ }
+        } else {
+          // v3.74.279 — backwards-compat: handle PKCE ?code= URLs from
+          // older emails. Same-device flows still work.
+          const search = new URLSearchParams(window.location.search)
+          const code = search.get("code")
+          if (code) {
+            const { error: exchErr } = await supabase.auth.exchangeCodeForSession(code)
+            if (exchErr) {
+              if (cancelled) return
+              setSessionError(translateAuthError(exchErr.message))
+              setBootstrapping(false)
+              return
+            }
+            try {
+              const url = new URL(window.location.href)
+              url.searchParams.delete("code")
+              window.history.replaceState({}, "", url.toString())
+            } catch {}
+          }
         }
+
+        // Confirm a session is live now
         const { data: { session } } = await supabase.auth.getSession()
         if (cancelled) return
         if (session) {
           setSessionReady(true)
         } else {
-          await new Promise(r => setTimeout(r, 500))
+          await new Promise((r) => setTimeout(r, 500))
           const { data: { session: s2 } } = await supabase.auth.getSession()
           if (cancelled) return
           if (s2) setSessionReady(true)

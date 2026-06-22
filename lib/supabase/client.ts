@@ -48,6 +48,20 @@ export function createClient() {
             apikey: supabaseAnonKey,
           },
         },
+        // v3.74.280 — switch to implicit flow so password-reset and
+        // magic-link emails work cross-device. PKCE requires the
+        // code_verifier saved on the originating device's storage; if
+        // the user starts "forgot password" on a laptop and opens the
+        // email on their phone, PKCE fails ("code verifier not found
+        // in storage"). Implicit puts the tokens directly in the URL
+        // hash, so any device that opens the link can establish the
+        // session.
+        auth: {
+          flowType: 'implicit',
+          detectSessionInUrl: true,
+          autoRefreshToken: true,
+          persistSession: true,
+        },
       }
     )
     return supabaseClient
