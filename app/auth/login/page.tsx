@@ -15,6 +15,55 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  // v3.74.277 — reset-password inline flow
+  const [resetSent, setResetSent] = useState(false)
+  const [resetSending, setResetSending] = useState(false)
+
+  // v3.74.277 — ترجمة رسائل Supabase الشائعة لعربى يفهمه المستخدم العادى
+  const translateAuthError = (msg: string): string => {
+    const lower = (msg || "").toLowerCase()
+    if (lower.includes("invalid login credentials") || lower.includes("invalid_credentials")) {
+      return 'البريد الإلكترونى أو كلمة المرور غير صحيحة. لو نسيت كلمة المرور، اضغط "نسيت كلمة المرور؟" تحت.'
+    }
+    if (lower.includes("email not confirmed")) {
+      return "البريد الإلكترونى لسه ما اتفعّلش. افتح رسالة التفعيل اللى اتبعتت لك."
+    }
+    if (lower.includes("too many requests") || lower.includes("rate")) {
+      return "محاولات كتير فى وقت قصير. استنى دقيقة ثم حاول تانى."
+    }
+    if (lower.includes("user not found")) {
+      return "ما فيش حساب بهذا البريد. تأكد من الإيميل أو أنشئ حساب جديد."
+    }
+    return msg
+  }
+
+  const handleForgotPassword = async () => {
+    if (!login.trim()) {
+      setError("اكتب البريد الإلكترونى الأول، ثم اضغط نسيت كلمة المرور.")
+      return
+    }
+    if (!login.includes("@")) {
+      setError("لإعادة تعيين كلمة المرور، اكتب البريد الإلكترونى الكامل (مش اسم المستخدم).")
+      return
+    }
+    try {
+      setResetSending(true)
+      setError(null)
+      const supabase = createClient()
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
+        login.trim().toLowerCase(),
+        {
+          redirectTo: `${window.location.origin}/auth/force-change-password`,
+        }
+      )
+      if (resetErr) throw resetErr
+      setResetSent(true)
+    } catch (e: any) {
+      setError(translateAuthError(e?.message || "تعذّر إرسال رابط إعادة التعيين"))
+    } finally {
+      setResetSending(false)
+    }
+  }
   const router = useRouter()
   const envOk = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -105,7 +154,7 @@ export default function LoginPage() {
         }
       }
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "خطأ في تسجيل الدخول")
+      setError(translateAuthError(error instanceof Error ? error.message : "حدث خطأ فى تسجيل الدخول"))
     } finally {
       setIsLoading(false)
     }
@@ -241,7 +290,22 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && <p className="text-sm text-red-500 leading-relaxed">{error}</p>}
+              {resetSent && (
+                <p className="text-sm text-green-600 dark:text-green-400 leading-relaxed bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900/40 rounded-md p-2">
+                  ✓ بعتنا لك لينك إعادة تعيين كلمة المرور على بريدك. افتح الرسالة واضغط الزر داخلها لتعيين كلمة جديدة.
+                </p>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={resetSending}
+                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  {resetSending ? "جارٍ الإرسال..." : "نسيت كلمة المرور؟"}
+                </button>
+              </div>
               <Button type="submit" className="w-full" disabled={isLoading || !envOk}>
                 {isLoading ? "جاري الدخول..." : "دخول"}
               </Button>
