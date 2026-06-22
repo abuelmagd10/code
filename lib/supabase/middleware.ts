@@ -81,9 +81,17 @@ export async function updateSession(request: NextRequest) {
     // + cron jobs (تحمى نفسها بـ CRON_SECRET)
     // + webhooks (تحمى نفسها بـ HMAC verification)
     // + renewal link (تحمى نفسها بـ HMAC-signed token)
+    // v3.74.291 — Auth-flow endpoints must be reachable WITHOUT a session,
+    // because the user is signing up / resetting password — by definition
+    // they aren't logged in yet. Until they were whitelisted, middleware
+    // returned a 307 redirect to /auth/login on every POST and the page
+    // showed a generic "فشل التحقق" error.
     const isPublicApi = request.nextUrl.pathname.startsWith("/api/get-invitation") ||
       request.nextUrl.pathname.startsWith("/api/accept-invite") ||
       request.nextUrl.pathname.startsWith("/api/resend-confirmation") ||
+      request.nextUrl.pathname.startsWith("/api/verify-signup-with-code") ||
+      request.nextUrl.pathname.startsWith("/api/reset-password-with-code") ||
+      request.nextUrl.pathname.startsWith("/api/check-email-registered") ||
       request.nextUrl.pathname.startsWith("/api/cron/") ||
       request.nextUrl.pathname.startsWith("/api/webhooks/") ||
       request.nextUrl.pathname === "/api/billing/renew"
