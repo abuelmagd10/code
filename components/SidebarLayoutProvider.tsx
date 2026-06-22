@@ -12,7 +12,13 @@ const EXACT_HIDE_PATHS = ["/"]
 // (no app sidebar shoulder-to-shoulder with the demo canvas). Logged-in
 // visitors who reach it from the landing page would otherwise see their
 // authenticated sidebar overlap the demo content, which we saw in the test.
-const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo"]
+// v3.74.286 — /auth/force-change-password is reached either right after
+// a "forgot password" reset or as the forced first-login flow for invited
+// users. In both cases the app sidebar (full nav of an authenticated
+// session) showing in the background is wrong: the recovery session is a
+// minimal-permission session that hasn't accepted membership yet, and the
+// page is meant to feel like an auth screen, not a logged-in workspace.
+const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/auth/force-change-password", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo"]
 
 export function SidebarLayoutProvider() {
   const pathname = usePathname()
