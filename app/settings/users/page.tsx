@@ -1268,7 +1268,18 @@ export default function UsersSettingsPage() {
         .eq("accepted", false)
         .gt("expires_at", new Date().toISOString())
       setInvites((cinv || []) as any)
-      toastActionSuccess(toast, "إنشاء", "الدعوة")
+      // v3.74.294 — Surface the case where the invitation was created but
+      // Resend rejected the email (unverified domain / expired API key /
+      // network). The row is in the DB, the link is valid; the inviter
+      // just needs to copy it with the "نسخ الرابط" button below.
+      if (data?.email_delivered === false || data?.type === "manual") {
+        setActionError(
+          data?.warning ||
+          "الدعوة اتسجّلت لكن الإيميل ما اتبعتش (Resend رفض الإرسال). انسخ الرابط من زرار 'نسخ الرابط' فى الدعوات المعلقة وابعته يدوياً."
+        )
+      } else {
+        toastActionSuccess(toast, "إنشاء", "الدعوة")
+      }
     } catch (e) {
       setActionError((e as any)?.message || "حدث خطأ أثناء إنشاء الدعوة")
     } finally { setLoading(false) }

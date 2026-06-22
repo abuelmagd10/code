@@ -159,10 +159,20 @@ export async function POST(req: NextRequest) {
       role === "viewer" ? "عرض فقط" :
       "موظف"
 
-    // Send email via Resend (unchanged)
+    // Send email via Resend.
+    // v3.74.294 — log the full Resend response when the call doesn't
+    // come back with an id so we can see the real reason (unverified
+    // domain, expired key, etc.) in Vercel runtime logs. Previously a
+    // silent fall-through to "manual" left the user wondering why no
+    // mail arrived.
     const resendApiKey = process.env.RESEND_API_KEY
-    if (resendApiKey) {
+    let resendError: string | null = null
+    if (!resendApiKey) {
+      console.error("[send-invite] RESEND_API_KEY not set in env — falling back to manual link")
+      resendError = "missing_resend_api_key"
+    } else {
       try {
+        const fromAddr = process.env.EMAIL_FROM || "7ESAB <info@7esab.com>"
         const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
@@ -170,14 +180,14 @@ export async function POST(req: NextRequest) {
             Authorization: `Bearer ${resendApiKey}`,
           },
           body: JSON.stringify({
-            from: process.env.EMAIL_FROM || "7ESAB <info@7esab.com>",
+            from: fromAddr,
             to: [email.toLowerCase().trim()],
             subject: `دعوة للانضمام إلى ${companyName} | You've Been Invited to ${companyName}`,
             html: buildInviteEmail(companyName, roleName, acceptLink),
           }),
         })
-        const emailResult = await emailRes.json()
-        if (emailRes.ok && emailResult.id) {
+        const emailResult = await emailRes.json().catch(() => ({}))
+        if (emailRes.ok && emailResult?.id) {
           return apiSuccess({
             ok: true,
             type: "resend",
@@ -185,22 +195,34 @@ export async function POST(req: NextRequest) {
             accept_token: acceptToken || null,
             invite_id: inviteId || null,
             emailId: emailResult.id,
-            message: "تم إرسال الدعوة بنجاح. يرجى التحقق من البريد الإلكتروني (بما في ذلك مجلد Spam)",
+            message: "تم إرسال الدعوة بنجاح. يرجى التحقق من البريد الإلكتروني (بما فى ذلك مجلد Spam)",
           })
         }
+        console.error("[send-invite] Resend rejected:", JSON.stringify({
+          status: emailRes.status,
+          from: fromAddr,
+          to: email.toLowerCase().trim(),
+          response: emailResult,
+        }))
+        resendError = emailResult?.name || emailResult?.message || `resend_status_${emailRes.status}`
       } catch (resendErr: any) {
-        console.error("Resend API exception:", resendErr.message)
+        console.error("[send-invite] Resend API exception:", resendErr?.message || resendErr)
+        resendError = "resend_exception"
       }
     }
 
-    // Fallback: return link without sending email
+    // Fallback: invitation row exists, link is valid — surface the
+    // failure so the client UI can prompt the inviter to copy the link
+    // manually instead of pretending the email went out.
     return apiSuccess({
       ok: true,
       type: "manual",
       link: acceptLink,
       accept_token: acceptToken || null,
       invite_id: inviteId || null,
-      warning: "تعذر إرسال الإيميل تلقائياً - يرجى مشاركة الرابط يدوياً",
+      email_delivered: false,
+      email_error: resendError,
+      warning: "تعذّر إرسال الإيميل تلقائياً. الدعوة اتسجّلت، انسخ الرابط من زرار 'نسخ الرابط' وابعته للموظف يدوياً.",
       manualLink: acceptLink,
     })
   } catch (e: any) {
