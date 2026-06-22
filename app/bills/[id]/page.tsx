@@ -419,7 +419,7 @@ export default function BillViewPage() {
           .from("branches")
           .select("name, branch_name")
           .eq("id", billData.branch_id)
-          .single()
+          .maybeSingle()
         setBranchName(branchData?.name || branchData?.branch_name || null)
       }
       if (billData.cost_center_id) {
@@ -446,7 +446,7 @@ export default function BillViewPage() {
           .from("purchase_orders")
           .select("id, po_number")
           .eq("id", billData.purchase_order_id)
-          .single()
+          .maybeSingle()
         if (poData) {
           setLinkedPurchaseOrder(poData)
         }
@@ -469,7 +469,7 @@ export default function BillViewPage() {
       // Load Three-Way Matching Status
       await loadMatchingStatus(id, billData.company_id)
 
-      const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).single()
+      const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).maybeSingle()
       setSupplier(supplierData as any)
       const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
       setItems((itemData || []) as any)
@@ -516,7 +516,7 @@ export default function BillViewPage() {
             // Get product names
             const items = await Promise.all((itemsData || []).map(async (item: any) => {
               if (item.product_id) {
-                const { data: prod } = await supabase.from("products").select("name").eq("id", item.product_id).single()
+                const { data: prod } = await supabase.from("products").select("name").eq("id", item.product_id).maybeSingle()
                 return { ...item, product_name: prod?.name || item.description || '-' }
               }
               return { ...item, product_name: item.description || '-' }
@@ -855,7 +855,7 @@ export default function BillViewPage() {
         .from("bills")
         .select("purchase_order_id, status, subtotal, tax_amount, total_amount, returned_amount, return_status")
         .eq("id", billId)
-        .single()
+        .maybeSingle()
 
       if (!billData?.purchase_order_id) return // لا يوجد أمر شراء مرتبط
 
