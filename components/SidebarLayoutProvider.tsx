@@ -12,13 +12,19 @@ const EXACT_HIDE_PATHS = ["/"]
 // (no app sidebar shoulder-to-shoulder with the demo canvas). Logged-in
 // visitors who reach it from the landing page would otherwise see their
 // authenticated sidebar overlap the demo content, which we saw in the test.
-// v3.74.286 — /auth/force-change-password is reached either right after
-// a "forgot password" reset or as the forced first-login flow for invited
-// users. In both cases the app sidebar (full nav of an authenticated
-// session) showing in the background is wrong: the recovery session is a
-// minimal-permission session that hasn't accepted membership yet, and the
-// page is meant to feel like an auth screen, not a logged-in workspace.
-const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/auth/force-change-password", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo"]
+// v3.74.286 — auth-flow landing pages must not render the app sidebar:
+//   /auth/force-change-password — reached after a "forgot password" reset
+//     or as the forced first-login flow for invited users. The recovery
+//     session has replaced auth, but the previously-cached
+//     active_company_id in localStorage/cookie still points at whatever
+//     tenant was last active on this browser — so the sidebar would
+//     render the wrong company's menu next to the password form.
+//   /invitations/accept — same root cause: after verifyOtp on an invite
+//     link the auth session is the invitee, but active_company_id is the
+//     tenant the browser last opened, so the sidebar shows the unrelated
+//     company. The user accepts the invite from here, after which the
+//     accept handler writes the correct active_company_id and redirects.
+const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/auth/force-change-password", "/invitations/accept", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo"]
 
 export function SidebarLayoutProvider() {
   const pathname = usePathname()

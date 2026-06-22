@@ -11,10 +11,12 @@ if ($v -match 'APP_VERSION = "3.74.286"') {
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 $slp = Get-Content -LiteralPath "components/SidebarLayoutProvider.tsx" -Raw
-if ($slp -notmatch '/auth/force-change-password') {
-    Write-Host "X SidebarLayoutProvider missing /auth/force-change-password" -ForegroundColor Red; exit 1
+foreach ($p in @('/auth/force-change-password','/invitations/accept')) {
+    if ($slp -notmatch [regex]::Escape($p)) {
+        Write-Host "X SidebarLayoutProvider missing $p" -ForegroundColor Red; exit 1
+    }
 }
-Write-Host "+ SidebarLayoutProvider: /auth/force-change-password now hides sidebar" -ForegroundColor Green
+Write-Host "+ SidebarLayoutProvider: force-change-password + invitations/accept now hide sidebar" -ForegroundColor Green
 
 Write-Host "Running tsc..." -ForegroundColor Cyan
 $tsc = & npx tsc --noEmit -p tsconfig.json 2>&1
@@ -35,25 +37,28 @@ if (-not $staged) {
 } else {
     $msgPath = Join-Path $env:TEMP "commit_v3_74_286.txt"
     $msgLines = @(
-        'fix(auth): v3.74.286 - hide app sidebar on /auth/force-change-password',
+        'fix(auth): v3.74.286 - hide app sidebar on auth-flow landing pages',
         '',
         'When a user clicked a password-reset link from an email on a browser',
         'where another company was previously signed in, the page would render',
         'with the previous company sidebar visible alongside the password form.',
+        'The same bug also affected /invitations/accept (the invite link flow).',
         '',
         'Root cause: SidebarLayoutProvider only hid the sidebar on a fixed list',
         'of public auth routes (/auth/login, /auth/sign-up, /auth/callback,',
-        'etc.). /auth/force-change-password was not in that list because the',
-        'route was added later for the forced first-login + recovery flow.',
+        'etc.). /auth/force-change-password and /invitations/accept were not in',
+        'that list because the routes were added later.',
         '',
-        'After verifyOtp the auth session is replaced with the recovery user,',
-        'but the cached active_company_id in localStorage / cookie still points',
-        'at the previous tenant, so the sidebar renders the old menu.',
+        'After verifyOtp on the recovery / invite link, the auth session is',
+        'replaced with the new user, but the cached active_company_id in',
+        'localStorage / cookie still points at the previous tenant, so the',
+        'sidebar renders the old menu next to the password / accept form.',
         '',
-        'Fix: add /auth/force-change-password to PREFIX_HIDE_PATHS. After the',
-        'user saves the new password, /api/accept-membership writes the correct',
-        'active_company_id and the redirect goes to the right workspace, so no',
-        'other logic needs to change.',
+        'Fix: add both /auth/force-change-password and /invitations/accept to',
+        'PREFIX_HIDE_PATHS. After the user saves the password / accepts the',
+        'invite, the existing handlers (/api/accept-membership and the accept',
+        'flow) write the correct active_company_id and redirect to the right',
+        'workspace, so no other logic needs to change.',
         '',
         'Files',
         '  components/SidebarLayoutProvider.tsx',
