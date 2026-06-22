@@ -15,11 +15,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  // v3.74.277 — reset-password inline flow
-  const [resetSent, setResetSent] = useState(false)
+  // v3.74.287 — reset-password inline flow using a 6-digit code.
+  // Stages: 'idle' (regular login form), 'codeSent' (code+new-password form)
+  const [resetStage, setResetStage] = useState<'idle' | 'codeSent'>('idle')
   const [resetSending, setResetSending] = useState(false)
+  const [resetCode, setResetCode] = useState("")
+  const [resetNewPassword, setResetNewPassword] = useState("")
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("")
 
   // v3.74.277 — ترجمة رسائل Supabase الشائعة لعربى يفهمه المستخدم العادى
+  // v3.74.287 — تغطية رسائل verifyOtp للكود الرقمى
   const translateAuthError = (msg: string): string => {
     const lower = (msg || "").toLowerCase()
     if (lower.includes("invalid login credentials") || lower.includes("invalid_credentials")) {
@@ -34,10 +39,26 @@ export default function LoginPage() {
     if (lower.includes("user not found")) {
       return "ما فيش حساب بهذا البريد. تأكد من الإيميل أو أنشئ حساب جديد."
     }
+    if (lower.includes("token has expired") || lower.includes("expired")) {
+      return "انتهت صلاحية الكود. اطلب كود جديد."
+    }
+    if (lower.includes("invalid") && (lower.includes("token") || lower.includes("otp") || lower.includes("code"))) {
+      return "الكود اللى كتبته مش صحيح. تأكد منه أو اطلب كود جديد."
+    }
+    if (lower.includes("password should be") || lower.includes("weak password")) {
+      return "كلمة المرور ضعيفة. ٨ أحرف على الأقل وامزج حروف وأرقام."
+    }
+    if (lower.includes("same as the old") || lower.includes("same_password")) {
+      return "كلمة المرور الجديدة لازم تكون مختلفة عن القديمة."
+    }
     return msg
   }
 
-  const handleForgotPassword = async () => {
+  // v3.74.287 — Step 1 of password reset: ask Supabase to email a 6-digit
+  // code (template uses {{ .Token }} instead of {{ .TokenHash }}). We pass
+  // no redirectTo because there is no link to click — the code is what the
+  // user copies.
+  const handleSendResetCode = async () => {
     if (!login.trim()) {
       setError("اكتب البريد الإلكترونى الأول، ثم اضغط نسيت كلمة المرور.")
       return
@@ -51,17 +72,95 @@ export default function LoginPage() {
       setError(null)
       const supabase = createClient()
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
-        login.trim().toLowerCase(),
-        {
-          redirectTo: `${window.location.origin}/auth/force-change-password`,
-        }
+        login.trim().toLowerCase()
       )
       if (resetErr) throw resetErr
-      setResetSent(true)
+      setResetStage('codeSent')
+      setResetCode("")
+      setResetNewPassword("")
+      setResetConfirmPassword("")
     } catch (e: any) {
-      setError(translateAuthError(e?.message || "تعذّر إرسال رابط إعادة التعيين"))
+      setError(translateAuthError(e?.message || "تعذّر إرسال كود إعادة التعيين"))
     } finally {
       setResetSending(false)
+    }
+  }
+
+  // v3.74.287 — Step 2 of password reset: user typed the 6-digit code from
+  // the email + a new password. We verify the code against Supabase (this
+  // creates a recovery session for the user), then update the password,
+  // then redirect into the workspace. Because the code lives only in the
+  // email body and never in a URL, no email scanner / link-prefetcher can
+  // consume it before the user does — that was the failure mode of the
+  // old link-based flow.
+  const handleVerifyResetCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    if (!/^\d{6}$/.test(resetCode.trim())) {
+      setError("اكتب كود التحقق (٦ أرقام) اللى وصل على الإيميل.")
+      return
+    }
+    if (resetNewPassword.length < 8) {
+      setError("كلمة المرور الجديدة الحد الأدنى ٨ أحرف.")
+      return
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setError("كلمتا المرور غير متطابقتين.")
+      return
+    }
+    try {
+      setIsLoading(true)
+      const supabase = createClient()
+      const email = login.trim().toLowerCase()
+
+      // 1. Verify the OTP code — succeeds only if the code matches what
+      //    Supabase emailed AND hasn't expired AND hasn't been used.
+      const { error: vErr } = await supabase.auth.verifyOtp({
+        email,
+        token: resetCode.trim(),
+        type: 'recovery',
+      })
+      if (vErr) { setError(translateAuthError(vErr.message)); return }
+
+      // 2. Now that we have a recovery session, set the new password.
+      const { error: updErr } = await supabase.auth.updateUser({
+        password: resetNewPassword,
+        data: { must_change_password: false } as any,
+      })
+      if (updErr) { setError(translateAuthError(updErr.message)); return }
+
+      // 3. Make sure their membership / active company is set, then go
+      //    to whatever first page they're allowed to see.
+      let cidForRedirect = ""
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.email && user?.id) {
+          const res = await fetch("/api/accept-membership", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ email: user.email, userId: user.id }),
+          })
+          const js = await res.json()
+          const cid = String(js?.companyId || "")
+          if (res.ok && cid) {
+            cidForRedirect = cid
+            try { localStorage.setItem("active_company_id", cid) } catch {}
+            try { document.cookie = `active_company_id=${cid}; path=/; max-age=31536000` } catch {}
+          }
+        }
+      } catch {}
+
+      try {
+        const res = await fetch("/api/first-allowed-page")
+        const data = await res.json()
+        window.location.href = data.path || (cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard")
+      } catch {
+        window.location.href = cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard"
+      }
+    } catch (e: any) {
+      setError(translateAuthError(e?.message || "تعذّر تغيير كلمة المرور"))
+    } finally {
+      setIsLoading(false)
     }
   }
   const router = useRouter()
@@ -267,58 +366,125 @@ export default function LoginPage() {
             <CardDescription className="text-center">أدخل بيانات حسابك للدخول</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="login">البريد الإلكتروني أو اسم المستخدم</Label>
-                <Input
-                  id="login"
-                  type="text"
-                  placeholder="example@company.com أو username"
-                  required
-                  value={login}
-                  onChange={(e) => setLogin(e.target.value)}
-                  autoComplete="username"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">كلمة المرور</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              {error && <p className="text-sm text-red-500 leading-relaxed">{error}</p>}
-              {resetSent && (
-                <p className="text-sm text-green-600 dark:text-green-400 leading-relaxed bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900/40 rounded-md p-2">
-                  ✓ بعتنا لك لينك إعادة تعيين كلمة المرور على بريدك. افتح الرسالة واضغط الزر داخلها لتعيين كلمة جديدة.
-                </p>
-              )}
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={resetSending}
-                  className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-                >
-                  {resetSending ? "جارٍ الإرسال..." : "نسيت كلمة المرور؟"}
-                </button>
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading || !envOk}>
-                {isLoading ? "جاري الدخول..." : "دخول"}
-              </Button>
-              {!envOk && (
-                <p className="mt-2 text-xs text-amber-600 text-center">الرجاء ضبط مفاتيح Supabase في البيئة قبل تسجيل الدخول</p>
-              )}
-            </form>
-            <div className="mt-4 text-center text-sm">
-              ليس لديك حساب؟{" "}
-              <Link href="/auth/sign-up" className="text-blue-600 hover:underline dark:text-blue-400">
-                إنشاء حساب جديد
-              </Link>
-            </div>
+            {resetStage === 'codeSent' ? (
+              // v3.74.287 — Reset code + new-password form. Replaces the
+              // login form once the user has requested a code. No magic
+              // link involved; the code from the email is typed here.
+              <form onSubmit={handleVerifyResetCode} className="space-y-4">
+                <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30 p-3 text-sm leading-relaxed text-blue-900 dark:text-blue-200">
+                  بعتنا كود تحقق من ٦ أرقام على <strong>{login.trim().toLowerCase()}</strong>. افتح الإيميل وانسخ الكود تحت.
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="resetCode">كود التحقق</Label>
+                  <Input
+                    id="resetCode"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d{6}"
+                    maxLength={6}
+                    placeholder="000000"
+                    autoComplete="one-time-code"
+                    required
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="text-center tracking-[0.5em] text-lg font-mono"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="resetNewPassword">كلمة المرور الجديدة</Label>
+                  <Input
+                    id="resetNewPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="resetConfirmPassword">تأكيد كلمة المرور</Label>
+                  <Input
+                    id="resetConfirmPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                  />
+                </div>
+                {error && <p className="text-sm text-red-500 leading-relaxed">{error}</p>}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? "جارٍ الحفظ..." : "تعيين كلمة المرور"}
+                </Button>
+                <div className="flex items-center justify-between text-sm">
+                  <button
+                    type="button"
+                    onClick={handleSendResetCode}
+                    disabled={resetSending}
+                    className="text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    {resetSending ? "جارٍ الإرسال..." : "إعادة إرسال الكود"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setResetStage('idle'); setError(null) }}
+                    className="text-gray-600 hover:underline dark:text-gray-400"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="login">البريد الإلكتروني أو اسم المستخدم</Label>
+                    <Input
+                      id="login"
+                      type="text"
+                      placeholder="example@company.com أو username"
+                      required
+                      value={login}
+                      onChange={(e) => setLogin(e.target.value)}
+                      autoComplete="username"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">كلمة المرور</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  {error && <p className="text-sm text-red-500 leading-relaxed">{error}</p>}
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSendResetCode}
+                      disabled={resetSending}
+                      className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      {resetSending ? "جارٍ الإرسال..." : "نسيت كلمة المرور؟"}
+                    </button>
+                  </div>
+                  <Button type="submit" className="w-full" disabled={isLoading || !envOk}>
+                    {isLoading ? "جاري الدخول..." : "دخول"}
+                  </Button>
+                  {!envOk && (
+                    <p className="mt-2 text-xs text-amber-600 text-center">الرجاء ضبط مفاتيح Supabase في البيئة قبل تسجيل الدخول</p>
+                  )}
+                </form>
+                <div className="mt-4 text-center text-sm">
+                  ليس لديك حساب؟{" "}
+                  <Link href="/auth/sign-up" className="text-blue-600 hover:underline dark:text-blue-400">
+                    إنشاء حساب جديد
+                  </Link>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
