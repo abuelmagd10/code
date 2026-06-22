@@ -120,16 +120,40 @@ export function RoutingListPage() {
     })
   }
 
+  // v3.74.274 — auto-generate the next free ROUT-NNN code so the owner
+  // doesn't have to invent one.
+  const nextAutoRoutingCode = (): string => {
+    let max = 0
+    for (const r of routings) {
+      const m = /^ROUT-(\d+)$/.exec(String((r as any).routing_code || ""))
+      if (m) { const n = parseInt(m[1], 10); if (n > max) max = n }
+    }
+    return `ROUT-${String(max + 1).padStart(3, "0")}`
+  }
+
+  const handleOpenCreate = () => {
+    // v3.74.274 — pre-fill code so only BOM/product is left for the user
+    setCreateForm({ ...EMPTY_CREATE_FORM, routing_code: nextAutoRoutingCode() })
+    setCreateOpen(true)
+  }
+
   const handleCreate = async () => {
-    if (!createForm.product_id.trim() || !createForm.routing_code.trim() || !createForm.routing_name.trim()) {
+    // v3.74.274 — only require the product (the BOM picker fills it for us).
+    // Code and name fall back to auto-defaults when blank.
+    if (!createForm.product_id.trim()) {
       toast({
         variant: "destructive",
-        title: lang === "en" ? "Missing required fields" : "البيانات الأساسية غير مكتملة",
+        title: lang === "en" ? "Product required" : "محتاجين تحدد المنتج",
         description: lang === "en"
-          ? "Product, routing code and name are required."
-          : "يجب تحديد المنتج ورمز المسار واسمه قبل الإنشاء.",
+          ? "Pick a BOM (which fills the product) or pick a product directly in Advanced."
+          : "اختر قائمة مكوّنات (هتعبّى المنتج)، أو اختر المنتج مباشرة من إعدادات متقدمة.",
       })
       return
+    }
+    if (!createForm.routing_code.trim()) createForm.routing_code = nextAutoRoutingCode()
+    if (!createForm.routing_name.trim()) {
+      // default to "مسار تصنيع <اسم المنتج>" or just the code
+      createForm.routing_name = createForm.routing_code
     }
 
     try {
@@ -214,7 +238,7 @@ export function RoutingListPage() {
                     <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                     {lang === "en" ? "Refresh" : "تحديث"}
                   </Button>
-                  <Button onClick={() => setCreateOpen(true)} disabled={!canWrite} className="gap-2">
+                  <Button onClick={handleOpenCreate} disabled={!canWrite} className="gap-2">
                     <Plus className="h-4 w-4" />
                     {lang === "en" ? "New Routing" : "مسار تصنيع جديد"}
                   </Button>
@@ -465,20 +489,12 @@ export function RoutingListPage() {
                   : "مسار التصنيع يحدد خطوات العمل بالتسلسل لتحويل المواد إلى منتج. حدد العمليات ووقتها بعد الإنشاء."}
               </p>
             </DialogHeader>
-            <div className="grid gap-4 py-2 md:grid-cols-2">
+            <div className="space-y-4 py-2">
+              {/* v3.74.274 — حقل واحد ظاهر: قائمة المكوّنات (تعبّى المنتج تلقائياً) */}
               <div className="space-y-2">
-                <Label>{lang === "en" ? "Branch (optional)" : "الفرع (اختياري)"}</Label>
-                <BranchSelector
-                  value={createForm.branch_id || ""}
-                  onChange={(id) => setCreateForm((current) => ({ ...current, branch_id: id }))}
-                  placeholder={lang === "en" ? "Leave blank to use your current branch" : "اتركه فارغًا لاستخدام فرعك الحالي"}
-                />
-              </div>
-              {/* ── Phase 2: BOM Selector — auto-cascades product ── */}
-              <div className="space-y-2">
-                <Label>
-                  {lang === "en" ? "Link to BOM" : "ربط بقائمة المواد"}
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">({lang === "en" ? "optional" : "اختياري"})</span>
+                <Label className="text-sm font-semibold">
+                  {lang === "en" ? "Link to BOM" : "اختر قائمة المكوّنات"}
+                  <span className="text-red-500 ml-1">*</span>
                 </Label>
                 <BomSelector
                   value={createForm.bom_id || ""}
@@ -486,86 +502,113 @@ export function RoutingListPage() {
                     setCreateForm((c) => ({
                       ...c,
                       bom_id: bomId || null,
-                      // Auto-cascade product from BOM
                       product_id: bom?.product_id ? bom.product_id : c.product_id,
+                      // auto-derive routing_name from BOM name if user hasn't typed one
+                      routing_name: c.routing_name && c.routing_name.trim() && !/^ROUT-\d+$/.test(c.routing_name)
+                        ? c.routing_name
+                        : (bom?.bom_name ? (lang === "en" ? `Routing — ${bom.bom_name}` : `مسار — ${bom.bom_name}`) : c.routing_name),
                     }))
                   }}
                   loadAll
-                  placeholder={lang === "en" ? "Select a BOM to link (auto-fills product)..." : "اختر قائمة مواد للربط (يملأ المنتج تلقائياً)..."}
+                  placeholder={lang === "en" ? "Pick the BOM this routing belongs to..." : "اختر قائمة المكوّنات اللى المسار ده يخصها..."}
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {lang === "en"
-                    ? "Selecting a BOM will auto-fill the product and enables material display in the routing."
-                    : "اختيار قائمة المواد يملأ المنتج تلقائياً ويتيح عرض المواد داخل مسار التصنيع."}
+                    ? "Each BOM = one product. Picking it fills the product automatically and links the routing's steps to the BOM's materials. You'll define the actual steps (mix, shape, pack...) on the next screen."
+                    : "كل قائمة مكوّنات = منتج واحد. اختيارها بيعبّى المنتج تلقائياً ويربط خطوات المسار بمواد القائمة. هتحدّد الخطوات الفعلية (خلط، تشكيل، تعبئة...) فى الشاشة الجاية."}
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">{lang === "en" ? "Manufactured Product" : "المنتج المراد تصنيعه"}</Label>
-                <ManufacturingProductSelector
-                  value={createForm.product_id}
-                  onChange={(id) => setCreateForm((c) => ({ ...c, product_id: id }))}
-                  productType="manufactured"
-                  placeholder={lang === "en" ? "Select the finished product for this routing" : "اختر المنتج النهائي الذي سيُنتج بهذا المسار"}
-                  disabled={!!createForm.bom_id}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {createForm.bom_id
-                    ? (lang === "en" ? "Product is inherited from the selected BOM." : "المنتج موروث من قائمة المواد المختارة.")
-                    : (lang === "en" ? "Only manufactured products are listed." : "تظهر فقط المنتجات المصنّعة المسجّلة في النظام")}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "Routing Code" : "رمز مسار التصنيع"}</Label>
-                <Input
-                  value={createForm.routing_code}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, routing_code: event.target.value }))}
-                  placeholder="ROUT-FG-001"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "Routing Name" : "اسم مسار التصنيع"}</Label>
-                <Input
-                  value={createForm.routing_name}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, routing_name: event.target.value }))}
-                  placeholder={lang === "en" ? "e.g. Finished Product Routing" : "مثال: مسار تصنيع المنتج النهائي"}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
-                <Select
-                  value={createForm.routing_usage}
-                  onValueChange={(value) => setCreateForm((current) => ({ ...current, routing_usage: value as RoutingCreatePayload["routing_usage"] }))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROUTING_USAGE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {lang === "en" ? option.label : option.labelAr}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border px-4 py-3">
-                <div className="space-y-1">
-                  <div className="font-medium text-slate-900">{lang === "en" ? "Active" : "تفعيل مسار التصنيع"}</div>
-                  <div className="text-sm text-slate-500">{lang === "en" ? "Can be deactivated later from details." : "يمكن تعطيله لاحقًا من صفحة التفاصيل."}</div>
+
+              {/* ─── إعدادات متقدمة (مطوية) ─── */}
+              <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
+                <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    ⚙️ {lang === "en" ? "Advanced settings" : "إعدادات متقدمة"}
+                    <span className="text-xs text-slate-400 font-normal">
+                      ({lang === "en" ? "optional — branch, code, name, usage, description" : "اختيارى — الفرع، الكود، الاسم، نوع الاستخدام، الوصف"})
+                    </span>
+                  </span>
+                  <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="grid gap-4 md:grid-cols-2 p-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Branch" : "الفرع"}</Label>
+                    <BranchSelector
+                      value={createForm.branch_id || ""}
+                      onChange={(id) => setCreateForm((current) => ({ ...current, branch_id: id }))}
+                      placeholder={lang === "en" ? "Leave blank to use your current branch" : "اتركه فاضى لاستخدام فرعك الحالى"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Manufactured Product" : "المنتج المراد تصنيعه"}</Label>
+                    <ManufacturingProductSelector
+                      value={createForm.product_id}
+                      onChange={(id) => setCreateForm((c) => ({ ...c, product_id: id }))}
+                      productType="manufactured"
+                      placeholder={lang === "en" ? "Select the finished product" : "اختر المنتج النهائى"}
+                      disabled={!!createForm.bom_id}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {createForm.bom_id
+                        ? (lang === "en" ? "Product is inherited from the selected BOM." : "المنتج موروث من قائمة المكوّنات المختارة.")
+                        : (lang === "en" ? "Used only if you didn't pick a BOM." : "يُستخدم فقط لو ما اخترتش قائمة مكوّنات.")}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Routing Code" : "رمز المسار"}</Label>
+                    <Input
+                      value={createForm.routing_code}
+                      onChange={(event) => setCreateForm((current) => ({ ...current, routing_code: event.target.value }))}
+                      placeholder="ROUT-001"
+                    />
+                    <p className="text-xs text-slate-400">{lang === "en" ? "Auto-generated. Override if you have your own coding." : "متولّد تلقائياً، تقدر تغيّره."}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Routing Name" : "اسم المسار"}</Label>
+                    <Input
+                      value={createForm.routing_name}
+                      onChange={(event) => setCreateForm((current) => ({ ...current, routing_name: event.target.value }))}
+                      placeholder={lang === "en" ? "Defaults to the BOM name" : "بيتعبّأ من اسم قائمة المكوّنات تلقائياً"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{lang === "en" ? "Usage Type" : "نوع الاستخدام"}</Label>
+                    <Select
+                      value={createForm.routing_usage}
+                      onValueChange={(value) => setCreateForm((current) => ({ ...current, routing_usage: value as RoutingCreatePayload["routing_usage"] }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ROUTING_USAGE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {lang === "en" ? option.label : option.labelAr}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border px-4 py-3">
+                    <div className="space-y-1">
+                      <div className="font-medium text-slate-900 text-sm">{lang === "en" ? "Active" : "تفعيل المسار"}</div>
+                      <div className="text-xs text-slate-500">{lang === "en" ? "Can be deactivated later." : "تقدر تعطّله لاحقاً."}</div>
+                    </div>
+                    <Switch
+                      checked={createForm.is_active}
+                      onCheckedChange={(checked) => setCreateForm((current) => ({ ...current, is_active: Boolean(checked) }))}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>{lang === "en" ? "Description (optional)" : "الوصف (اختيارى)"}</Label>
+                    <Textarea
+                      value={createForm.description || ""}
+                      onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
+                      placeholder={lang === "en" ? "General notes about this routing..." : "ملاحظات عامة عن المسار ده."}
+                    />
+                  </div>
                 </div>
-                <Switch
-                  checked={createForm.is_active}
-                  onCheckedChange={(checked) => setCreateForm((current) => ({ ...current, is_active: Boolean(checked) }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>{lang === "en" ? "Description (optional)" : "الوصف (اختياري)"}</Label>
-                <Textarea
-                  value={createForm.description || ""}
-                  onChange={(event) => setCreateForm((current) => ({ ...current, description: event.target.value }))}
-                  placeholder={lang === "en" ? "General notes about this routing..." : "ملاحظات عامة عن هذا المسار التصنيعي."}
-                />
-              </div>
+              </details>
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
