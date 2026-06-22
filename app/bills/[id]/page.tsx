@@ -370,13 +370,22 @@ export default function BillViewPage() {
       }
 
       // 🔐 منع تداخل بيانات الشركات: يجب أن تنتمي الفاتورة للشركة النشطة الحالية
-      const { data: billData } = await supabase
+      // v3.74.270 — استخدم maybeSingle بدل single عشان لو الفاتورة مش
+      // موجودة (مثلاً link قديم بعد حذف الفاتورة) نرجع null بسلامة بدل
+      // ما نرمى exception ويظهر للمستخدم Error page.
+      const { data: billData, error: billErr } = await supabase
         .from("bills")
         .select("*, shipping_providers(provider_name), receipt_status, receipt_rejection_reason, received_by, received_at, created_by, rejection_reason, rejected_by, rejected_at")
         .eq("id", id)
         .eq("company_id", activeCompanyId)
-        .single()
-      
+        .maybeSingle()
+
+      if (billErr) {
+        console.error('[bills/[id]] supabase error:', billErr)
+        setBill(null)
+        setLoading(false)
+        return
+      }
       if (!billData) {
         setBill(null)
         setLoading(false)
@@ -1210,7 +1219,38 @@ export default function BillViewPage() {
         {loading ? (
           <div className="text-gray-600 dark:text-gray-400">جاري التحميل...</div>
         ) : !bill ? (
-          <div className="text-red-600">لم يتم العثور على الفاتورة</div>
+          // v3.74.270 — صفحة لطيفة لما الفاتورة مش موجودة (link قديم/محذوف)
+          <div className="max-w-xl mx-auto bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-sm p-6 mt-6">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 dark:text-amber-400"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-1">
+                  {appLang === 'en' ? 'Bill not found' : 'الفاتورة مش موجودة'}
+                </h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {appLang === 'en'
+                    ? 'This bill may have been deleted, or the link points to a record that does not exist in the current company.'
+                    : 'الفاتورة دى ممكن تكون اتمسحت، أو اللينك بيشاور على فاتورة مش موجودة فى الشركة الحالية.'}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => router.push('/bills')}
+                    className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    {appLang === 'en' ? 'Go to bills' : 'الذهاب لقائمة الفواتير'}
+                  </button>
+                  <button
+                    onClick={() => router.back()}
+                    className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                  >
+                    {appLang === 'en' ? 'Back' : 'رجوع'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="space-y-4 sm:space-y-6 max-w-full">
             {/* ==================== Header Section ==================== */}
