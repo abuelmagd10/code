@@ -74,13 +74,6 @@ export const HUB_COPY = {
         color: "blue",
         items: [
           {
-            href: "/manufacturing/mrp",
-            title: "تخطيط احتياجات المواد",
-            desc: "احسب الخامات اللى هتحتاجها قبل ما تبدأ الإنتاج، عشان ما تتفاجأش بنقص.",
-            icon: "Calculator",
-            optional: true,
-          },
-          {
             href: "/manufacturing/production-orders",
             title: "أوامر الإنتاج",
             desc: "أنشئ أمر إنتاج جديد، يحدّد المنتج والكمية وميعاد التسليم.",
@@ -163,13 +156,6 @@ export const HUB_COPY = {
         subtitle: "Verify raw-material availability, then create the production order.",
         color: "blue",
         items: [
-          {
-            href: "/manufacturing/mrp",
-            title: "Material Requirements Planning",
-            desc: "Calculate raw materials needed before production starts so you don't get caught short.",
-            icon: "Calculator",
-            optional: true,
-          },
           {
             href: "/manufacturing/production-orders",
             title: "Production Orders",

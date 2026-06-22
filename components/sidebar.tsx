@@ -1151,7 +1151,6 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Routings' : 'مسارات التصنيع'), href: `/manufacturing/routings${q}`, icon: GitMerge },
                     // ── التخطيط والتنفيذ ──
                     { label: (lang === 'en' ? 'Planning & Execution' : 'التخطيط والتنفيذ'), href: `#`, icon: Factory },
-                    { label: (lang === 'en' ? 'MRP' : 'تخطيط متطلبات المواد (MRP)'), href: `/manufacturing/mrp${q}`, icon: Calculator },
                     { label: (lang === 'en' ? 'Production Orders' : 'أوامر الإنتاج'), href: `/manufacturing/production-orders${q}`, icon: ClipboardList },
                     { label: (lang === 'en' ? 'Issue Materials' : 'صرف المواد'), href: `/manufacturing/material-issue${q}`, icon: PackagePlus },
                     { label: (lang === 'en' ? 'Receive Finished Product' : 'استلام المنتج النهائي'), href: `/manufacturing/product-receive${q}`, icon: PackageCheck },

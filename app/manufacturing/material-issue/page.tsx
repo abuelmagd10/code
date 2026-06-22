@@ -197,12 +197,12 @@ export default function MaterialIssuePage() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-                  {lang === "ar" ? "صرف المواد الخام" : "Issue Raw Materials"}
+                  {lang === "ar" ? "صرف الخامات لخط الإنتاج" : "Issue Materials to Production"}
                 </h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   {lang === "ar"
-                    ? "أوامر الإنتاج المُصدرة والجاهزة لبدء التنفيذ"
-                    : "Released production orders ready to start"}
+                    ? "أوامر الإنتاج جاهزة لاستلام الخامات من المخزن"
+                    : "Production orders ready to receive materials from the warehouse"}
                 </p>
               </div>
             </div>
@@ -211,6 +211,34 @@ export default function MaterialIssuePage() {
               {lang === "ar" ? "تحديث" : "Refresh"}
             </Button>
           </div>
+
+          {/* v3.74.278 — شريط توضيحى للـ workflow */}
+          {activeTab === "pending" && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40">
+              <div className="text-blue-600 dark:text-blue-400 text-xl leading-none">ℹ️</div>
+              <div className="text-sm text-blue-900 dark:text-blue-200 leading-relaxed">
+                {lang === "ar" ? (
+                  <>
+                    <div className="font-semibold mb-1">إزاى يشتغل صرف الخامات؟</div>
+                    <ol className="list-decimal pr-4 space-y-1 text-blue-800 dark:text-blue-300">
+                      <li>تضغط <strong>"طلب اعتماد الصرف"</strong> جنب الأمر اللى عاوز تبدأ تنفيذه.</li>
+                      <li>مسؤول المخزن يدخل صفحة اعتمادات الصرف، يراجع الكميات، ويوافق.</li>
+                      <li>بمجرد الموافقة، الخامات بتتخصم من المخزن تلقائياً والأمر يبقى "قيد التنفيذ".</li>
+                    </ol>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-semibold mb-1">How does material issue work?</div>
+                    <ol className="list-decimal pl-4 space-y-1 text-blue-800 dark:text-blue-300">
+                      <li>Click <strong>"Request Issue Approval"</strong> next to the order you want to start.</li>
+                      <li>The warehouse manager opens the approvals page, reviews quantities, and approves.</li>
+                      <li>Once approved, materials are auto-deducted from the warehouse and the order moves to "In Progress".</li>
+                    </ol>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Stats (only on pending tab) */}
           {activeTab === "pending" && (
@@ -250,7 +278,7 @@ export default function MaterialIssuePage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
-              {lang === "ar" ? "أوامر جاهزة للصرف" : "Ready to Issue"}
+              {lang === "ar" ? "🟠 أوامر تنتظر الصرف" : "🟠 Awaiting Issue"}
             </button>
             <button
               onClick={() => setActiveTab("history")}
@@ -260,7 +288,7 @@ export default function MaterialIssuePage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
-              {lang === "ar" ? "سجل طلبات الصرف" : "Issue Request History"}
+              {lang === "ar" ? "📋 سجل طلبات الصرف السابقة" : "📋 Past Issue Requests"}
             </button>
           </div>
 
@@ -271,8 +299,8 @@ export default function MaterialIssuePage() {
               <CardTitle className="text-base">{lang === "ar" ? "أوامر الإنتاج المُصدرة" : "Released Production Orders"}</CardTitle>
               <CardDescription>
                 {lang === "ar"
-                  ? "اضغط 'طلب اعتماد الصرف' لإرسال طلب لمسؤول المخزن — عند الموافقة يبدأ تنفيذ الأمر تلقائياً"
-                  : "Click 'Request Issue Approval' to send a request to the warehouse manager — approval automatically starts the order"}
+                  ? "الأوامر دى صدّرت ومستنية يبدأ تنفيذها. اضغط زر الصرف، ينوصل لمسؤول المخزن طلب موافقة، ولما يوافق الخامات تنزل تلقائياً."
+                  : "These orders are released and waiting to start. Hit the button, a request goes to the warehouse manager, and on approval the materials drop automatically."}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -360,10 +388,10 @@ export default function MaterialIssuePage() {
                                 >
                                   <Send className="h-3.5 w-3.5" />
                                   {requestingId === order.id
-                                    ? (lang === "ar" ? "جاري..." : "Sending...")
+                                    ? (lang === "ar" ? "جارٍ الإرسال..." : "Sending...")
                                     : isRejected
-                                      ? (lang === "ar" ? "إعادة الطلب" : "Re-request")
-                                      : (lang === "ar" ? "طلب اعتماد الصرف" : "Request Approval")}
+                                      ? (lang === "ar" ? "إعادة إرسال الطلب" : "Re-send Request")
+                                      : (lang === "ar" ? "ابعت طلب صرف الخامات" : "Send Issue Request")}
                                 </Button>
                               )}
                               {isPending && (

@@ -169,12 +169,12 @@ export default function ProductReceivePage() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-                  {lang === "ar" ? "استلام المنتج النهائي" : "Receive Finished Product"}
+                  {lang === "ar" ? "استلام المنتج الجاهز" : "Receive Finished Product"}
                 </h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   {lang === "ar"
-                    ? "أوامر الإنتاج قيد التنفيذ — اطلب اعتماد الاستلام من مسؤول المخزن"
-                    : "In-progress orders — request receipt approval from warehouse manager"}
+                    ? "خلص التصنيع؟ ابعت طلب لمسؤول المخزن يستلم المنتج النهائى ويضيفه للرصيد."
+                    : "Done manufacturing? Send a request to the warehouse manager to receive the finished product."}
                 </p>
               </div>
             </div>
@@ -190,13 +190,39 @@ export default function ProductReceivePage() {
             </div>
           </div>
 
+          {/* v3.74.278 — شريط توضيحى للـ workflow */}
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40">
+            <div className="text-emerald-600 dark:text-emerald-400 text-xl leading-none">✓</div>
+            <div className="text-sm text-emerald-900 dark:text-emerald-200 leading-relaxed">
+              {lang === "ar" ? (
+                <>
+                  <div className="font-semibold mb-1">إزاى يشتغل استلام المنتج؟</div>
+                  <ol className="list-decimal pr-4 space-y-1 text-emerald-800 dark:text-emerald-300">
+                    <li>تضغط <strong>"اطلب استلام المنتج"</strong> جنب الأمر اللى خلصت تصنيعه.</li>
+                    <li>تدخل الكمية الفعلية اللى صنعتها (ممكن تكون أقل أو أكتر من المخطط).</li>
+                    <li>مسؤول المخزن يراجع ويوافق، فالكمية تتضاف لرصيد المنتج فى المستودع تلقائياً.</li>
+                  </ol>
+                </>
+              ) : (
+                <>
+                  <div className="font-semibold mb-1">How does product receive work?</div>
+                  <ol className="list-decimal pl-4 space-y-1 text-emerald-800 dark:text-emerald-300">
+                    <li>Click <strong>"Request Receive"</strong> next to the order you finished.</li>
+                    <li>Enter the actual quantity you produced (may differ from planned).</li>
+                    <li>The warehouse manager reviews and approves, and the quantity is auto-added to product stock.</li>
+                  </ol>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Tabs */}
           <div className="flex border-b border-gray-200 dark:border-slate-800">
             <button onClick={() => setActiveTab("pending")} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === "pending" ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400" : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"}`}>
-              {lang === "ar" ? "أوامر جاهزة للاستلام" : "Ready to Receive"}
+              {lang === "ar" ? "🟢 أوامر تنتظر الاستلام" : "🟢 Awaiting Receive"}
             </button>
             <button onClick={() => setActiveTab("history")} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === "history" ? "border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400" : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"}`}>
-              {lang === "ar" ? "سجل طلبات الاستلام" : "Receipt Request History"}
+              {lang === "ar" ? "📋 سجل طلبات الاستلام السابقة" : "📋 Past Receive Requests"}
             </button>
           </div>
 
@@ -235,8 +261,8 @@ export default function ProductReceivePage() {
               <CardTitle className="text-base">{lang === "ar" ? "أوامر الإنتاج قيد التنفيذ" : "In-Progress Production Orders"}</CardTitle>
               <CardDescription>
                 {lang === "ar"
-                  ? "اضغط 'طلب اعتماد الاستلام' لإرسال طلب لمسؤول المخزن — سيتم إضافة المنتج للمستودع بعد الموافقة"
-                  : "Click 'Request Receipt Approval' to send to warehouse manager — product added to warehouse after approval"}
+                  ? "الأوامر دى قيد التنفيذ. لما تخلص الإنتاج، اضغط زر الاستلام، يوصل طلب لمسؤول المخزن، ولما يوافق المنتج يتضاف لرصيدك."
+                  : "These orders are in progress. When you finish, hit the button, a request goes to the warehouse manager, and on approval the product is added to your stock."}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -299,8 +325,8 @@ export default function ProductReceivePage() {
                               >
                                 <SendHorizontal className="h-3.5 w-3.5" />
                                 {order.product_receive_approval_status === "rejected"
-                                  ? (lang === "ar" ? "إعادة طلب الاعتماد" : "Re-request Approval")
-                                  : (lang === "ar" ? "طلب اعتماد الاستلام" : "Request Receipt Approval")}
+                                  ? (lang === "ar" ? "إعادة إرسال الطلب" : "Re-send Request")
+                                  : (lang === "ar" ? "اطلب استلام المنتج" : "Request Receive")}
                               </Button>
                             )}
                             <Button
