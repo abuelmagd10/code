@@ -2232,6 +2232,11 @@ export default function BillViewPage() {
         )}
       </main>
 
+      {/* v3.74.272 — wrap trailing Dialogs in `bill &&` so the JSX inside
+          them isn't evaluated when bill is null (which crashed on
+          paid_amount even with the dialog closed). */}
+      {bill && (
+      <>
       {/* ❌ Receipt Rejection Dialog */}
       {/* v3.74.251 — Pre-receipt refund dialog */}
       <Dialog open={showPreReceiptRefund} onOpenChange={setShowPreReceiptRefund}>
@@ -2770,6 +2775,8 @@ export default function BillViewPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+    )}
     </div>
   )
 }
