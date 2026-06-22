@@ -41,6 +41,7 @@ import {
 import { readAppLanguage, getTextDirection, type AppLang } from "@/lib/manufacturing/manufacturing-ui"
 import { ManufacturingGuide } from "@/components/manufacturing/manufacturing-guide"
 import { WarehouseSelector } from "@/components/manufacturing/manufacturing-selectors"
+import { RawMaterialWarehousePicker } from "@/components/manufacturing/raw-material-warehouse-picker"
 
 const EMPTY_CREATE_FORM: BomCreatePayload = {
   branch_id: "",
@@ -255,16 +256,12 @@ export function BomListPage() {
     })
   }, [branches, boms])
 
-  const handleOpenCreate = async () => {
+  const handleOpenCreate = () => {
+    // v3.74.269 — no auto-pick. The user sees an empty warehouse field
+    // with raw-material stock counts next to each option so they can
+    // pick the right one themselves.
     resetCreateForm()
     setCreateOpen(true)
-    // v3.74.268 — auto-pick an issue warehouse so the user doesn't have
-    // to expand Advanced for a sensible default.
-    const branchId = branches[0]?.id || ""
-    if (branchId) {
-      const wh = await fetchDefaultWarehouseForBranch(branchId)
-      if (wh) setCreateForm((current) => current.source_warehouse_id ? current : { ...current, source_warehouse_id: wh })
-    }
   }
 
   const handleApplyFilters = () => {
@@ -298,20 +295,18 @@ export function BomListPage() {
       })
       return
     }
+    // v3.74.269 — no auto-fallback. The user must pick the warehouse
+    // explicitly so they know exactly which one will be the source of
+    // the raw materials.
     if (!createForm.source_warehouse_id) {
-      const wh = await fetchDefaultWarehouseForBranch(createForm.branch_id || branches[0]?.id || "")
-      if (wh) {
-        createForm.source_warehouse_id = wh
-      } else {
-        toast({
-          variant: "destructive",
-          title: lang === "en" ? "Issue warehouse required" : "محتاجين مخزن صرف الخامات",
-          description: lang === "en"
-            ? "Add at least one warehouse for this branch, or pick an issue warehouse in Advanced settings."
-            : "ضيف مخزن واحد على الأقل للفرع، أو اختر مخزن صرف من إعدادات متقدمة.",
-        })
-        return
-      }
+      toast({
+        variant: "destructive",
+        title: lang === "en" ? "Issue warehouse required" : "محتاجين تختار مخزن صرف الخامات",
+        description: lang === "en"
+          ? "Open Advanced settings and pick the warehouse the production order will pull raw materials from."
+          : "افتح إعدادات متقدمة واختر المخزن اللى أمر الإنتاج هيسحب منه الخامات.",
+      })
+      return
     }
     // Fill in defaults for fields the user may have left blank.
     if (!createForm.branch_id) createForm.branch_id = branches[0]?.id || ""
@@ -832,11 +827,11 @@ export function BomListPage() {
                       {lang === "en" ? "Issue Warehouse" : "مخزن صرف الخامات"}
                       <span className="text-red-500 ml-1">*</span>
                     </Label>
-                    <WarehouseSelector
+                    <RawMaterialWarehousePicker
                       value={createForm.source_warehouse_id || ""}
                       onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
                       branchId={createForm.branch_id || null}
-                      placeholder={lang === "en" ? "Select issue warehouse..." : "اختر مخزن الصرف..."}
+                      lang={lang}
                     />
                     <p className="text-xs text-muted-foreground">
                       {lang === "en"

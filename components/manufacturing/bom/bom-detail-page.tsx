@@ -96,6 +96,7 @@ import {
   updateBomVersion,
 } from "@/lib/manufacturing/bom-ui"
 import { WarehouseSelector } from "@/components/manufacturing/manufacturing-selectors"
+import { RawMaterialWarehousePicker } from "@/components/manufacturing/raw-material-warehouse-picker"
 
 interface BomDetailPageProps {
   bomId: string
@@ -1571,12 +1572,12 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 مخزن صرف الخامات
                                 <span className="text-red-500">*</span>
                               </Label>
-                              <WarehouseSelector
+                              <RawMaterialWarehousePicker
                                 value={headerForm.source_warehouse_id || ""}
                                 onChange={(warehouseId) => setHeaderForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
                                 branchId={bom?.branch_id || null}
-                                placeholder="اختر مخزن الصرف الافتراضي..."
-                                disabled={!canUpdate} />
+                                disabled={!canUpdate}
+                                lang="ar" />
                               <p className="text-xs text-muted-foreground">
                                 إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات من المخزن ده.
                               </p>
