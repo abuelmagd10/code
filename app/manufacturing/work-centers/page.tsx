@@ -30,7 +30,7 @@ interface WorkCenter {
   nominal_capacity_per_hour?: number | null
   available_hours_per_day?: number | null
   efficiency_percent?: number | null
-  // v3.7.0: 3-element costing rates (Material + Labor + Manufacturing Overhead)
+  // v3.7.0 / v3.74.266: 3-element costing rates (worker + machine + overheads)
   labor_cost_rate?: number | null
   machine_cost_rate?: number | null
   variable_overhead_rate?: number | null
@@ -103,7 +103,25 @@ export default function WorkCentersPage() {
 
   useEffect(() => { if (canRead) loadData() }, [canRead, loadData])
 
-  const openAdd = () => { setEditingWC(null); setFormData(EMPTY_FORM); setDialogOpen(true) }
+  // v3.74.266 — pick the next free WC-NN code so the user doesn't have
+  // to think about codes. Reads the current list and finds max(NN)+1.
+  const nextAutoCode = (): string => {
+    let max = 0
+    for (const wc of workCenters) {
+      const m = /^WC-(\d+)$/.exec(wc.code || "")
+      if (m) { const n = parseInt(m[1], 10); if (n > max) max = n }
+    }
+    return `WC-${String(max + 1).padStart(2, "0")}`
+  }
+
+  const openAdd = () => {
+    setEditingWC(null)
+    // v3.74.266 — pre-fill code and branch so the visible form only asks
+    // the user for things they actually have to decide (name + type).
+    const defaultBranch = branches[0]?.id || ""
+    setFormData({ ...EMPTY_FORM, code: nextAutoCode(), branch_id: defaultBranch })
+    setDialogOpen(true)
+  }
   const openEdit = (wc: WorkCenter) => {
     setEditingWC(wc)
     setFormData({
@@ -127,9 +145,14 @@ export default function WorkCentersPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.code.trim()) return toast({ variant: "destructive", title: "الكود مطلوب" })
-    if (!formData.name.trim()) return toast({ variant: "destructive", title: "الاسم مطلوب" })
-    if (!formData.branch_id) return toast({ variant: "destructive", title: "يجب تحديد الفرع" })
+    // v3.74.266 — اسم المحطة هو الحقل الوحيد المطلوب من المستخدم.
+    // الكود يتولّد تلقائياً والفرع بيتعبأ من openAdd().
+    if (!formData.name.trim()) return toast({ variant: "destructive", title: "محتاجين اسم المحطة" })
+    let codeToSubmit = formData.code.trim()
+    if (!codeToSubmit) codeToSubmit = nextAutoCode()
+    let branchToSubmit = formData.branch_id
+    if (!branchToSubmit) branchToSubmit = branches[0]?.id || ""
+    if (!branchToSubmit) return toast({ variant: "destructive", title: "ما فيش فروع بعد", description: "ضيف فرع من الإعدادات الأول." })
     try {
       setSaving(true)
       const url = editingWC ? `/api/manufacturing/work-centers/${editingWC.id}` : "/api/manufacturing/work-centers"
@@ -137,6 +160,8 @@ export default function WorkCentersPage() {
       // Build payload — convert empty strings to null/0 for numeric fields
       const payload = {
         ...formData,
+        code: codeToSubmit,
+        branch_id: branchToSubmit,
         nominal_capacity_per_hour: formData.nominal_capacity_per_hour || null,
         available_hours_per_day: formData.available_hours_per_day || null,
         efficiency_percent: formData.efficiency_percent ? Number(formData.efficiency_percent) : 100,
@@ -244,104 +269,153 @@ export default function WorkCentersPage() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingWC ? "تعديل مركز العمل" : "إضافة مركز عمل جديد"}</DialogTitle>
+            <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+              مركز العمل هو أى آلة أو خط أو ورشة بتشتغل فيها خطوة من خطوات التصنيع. أدخل الاسم والنوع فقط، وباقى الإعدادات اختيارية.
+            </p>
           </DialogHeader>
-          <div className="grid gap-4 py-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>الكود *</Label>
-              <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} placeholder="WC-01" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>الاسم *</Label>
-              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="آلة الخياطة" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>الفرع *</Label>
-              <Select value={formData.branch_id} onValueChange={(v) => setFormData({ ...formData, branch_id: v })} disabled={saving || !!editingWC}>
-                <SelectTrigger><SelectValue placeholder="اختر الفرع..." /></SelectTrigger>
-                <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>النوع</Label>
-              <Select value={formData.work_center_type} onValueChange={(v) => setFormData({ ...formData, work_center_type: v })} disabled={saving}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="machine">آلة</SelectItem>
-                  <SelectItem value="production_line">خط إنتاج</SelectItem>
-                  <SelectItem value="labor_group">مجموعة عمالة</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>الحالة</Label>
-              <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })} disabled={saving}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">نشط</SelectItem>
-                  <SelectItem value="inactive">غير نشط</SelectItem>
-                  <SelectItem value="blocked">موقوف</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>وحدة الطاقة (اختياري)</Label>
-              <Input value={formData.capacity_uom} onChange={(e) => setFormData({ ...formData, capacity_uom: e.target.value })} placeholder="قطعة، كجم، لتر..." disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>الطاقة الإنتاجية / ساعة</Label>
-              <Input type="number" min="0" value={formData.nominal_capacity_per_hour} onChange={(e) => setFormData({ ...formData, nominal_capacity_per_hour: e.target.value })} placeholder="100" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>ساعات العمل / يوم</Label>
-              <Input type="number" min="0" max="24" value={formData.available_hours_per_day} onChange={(e) => setFormData({ ...formData, available_hours_per_day: e.target.value })} placeholder="8" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>كفاءة التشغيل % (اختياري)</Label>
-              <Input type="number" min="0" max="200" step="0.01" value={formData.efficiency_percent} onChange={(e) => setFormData({ ...formData, efficiency_percent: e.target.value })} placeholder="100" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>وحدة معدلات التكلفة</Label>
-              <Select value={formData.cost_rate_uom} onValueChange={(v) => setFormData({ ...formData, cost_rate_uom: v })} disabled={saving}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="per_hour">للساعة</SelectItem>
-                  <SelectItem value="per_minute">للدقيقة</SelectItem>
-                  <SelectItem value="per_unit">للوحدة</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            {/* v3.7.0: Cost rates section — required for IAS 2 manufacturing costing */}
-            <div className="sm:col-span-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
-              <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                💰 معدلات التكلفة ({COST_UOM_LABELS[formData.cost_rate_uom] || ""})
+          {/* v3.74.266 — تبسيط الفورم: 3 حقول ظاهرة + قسمان مطويان */}
+          <div className="space-y-4 py-2">
+            {/* ─── الأساسيات (دايماً ظاهرة) ─── */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>اسم المحطة <span className="text-red-500">*</span></Label>
+                <Input
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="مثلاً: آلة الخلط الكبرى، خط التعبئة، ورشة التجميع"
+                  disabled={saving}
+                />
+                <p className="text-xs text-slate-400">اكتب اسم واضح يميّز المحطة عن غيرها.</p>
               </div>
-              <p className="text-xs text-slate-500 mb-3">
-                تستخدم لحساب تكلفة عمليات الإنتاج (Labor + Manufacturing Overhead) وفقاً لمعيار IAS 2. اتركها صفر لو ما تريد تطبيق التكلفة على هذا المركز.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>معدل تكلفة العمالة</Label>
-              <Input type="number" min="0" step="0.01" value={formData.labor_cost_rate} onChange={(e) => setFormData({ ...formData, labor_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>معدل تكلفة الآلة</Label>
-              <Input type="number" min="0" step="0.01" value={formData.machine_cost_rate} onChange={(e) => setFormData({ ...formData, machine_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>الأعباء الصناعية المتغيرة</Label>
-              <Input type="number" min="0" step="0.01" value={formData.variable_overhead_rate} onChange={(e) => setFormData({ ...formData, variable_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
-            </div>
-            <div className="space-y-2">
-              <Label>الأعباء الصناعية الثابتة</Label>
-              <Input type="number" min="0" step="0.01" value={formData.fixed_overhead_rate} onChange={(e) => setFormData({ ...formData, fixed_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>نوع المحطة</Label>
+                <Select value={formData.work_center_type} onValueChange={(v) => setFormData({ ...formData, work_center_type: v })} disabled={saving}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="machine">⚙️ آلة — جهاز واحد يشتغل لوحده</SelectItem>
+                    <SelectItem value="production_line">🏭 خط إنتاج — مجموعة آلات متتابعة</SelectItem>
+                    <SelectItem value="labor_group">👷 ورشة يدوية — عمالة بشرية</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>شرح مختصر (اختيارى)</Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="ايه اللى بيحصل فى المحطة دى؟ (سطر أو سطرين)"
+                  disabled={saving}
+                  rows={2}
+                />
+              </div>
             </div>
 
-            <div className="space-y-2 sm:col-span-2">
-              <Label>الوصف (اختياري)</Label>
-              <Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="وصف مختصر لمركز العمل..." disabled={saving} rows={2} />
-            </div>
+            {/* ─── إعدادات متقدمة (مطوية) ─── */}
+            <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  ⚙️ إعدادات تشغيلية متقدمة
+                  <span className="text-xs text-slate-400 font-normal">(اختيارى — للى عاوز يتابع الأداء)</span>
+                </span>
+                <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div className="grid gap-4 sm:grid-cols-2 p-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-2">
+                  <Label>كود المحطة</Label>
+                  <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} placeholder="WC-01" disabled={saving} />
+                  <p className="text-xs text-slate-400">رمز قصير لتمييز المحطة. متولّد تلقائياً، تقدر تغيّره.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>الفرع</Label>
+                  <Select value={formData.branch_id} onValueChange={(v) => setFormData({ ...formData, branch_id: v })} disabled={saving || !!editingWC}>
+                    <SelectTrigger><SelectValue placeholder="اختر الفرع..." /></SelectTrigger>
+                    <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-400">الفرع اللى موجودة فيه المحطة فعلياً.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>الحالة</Label>
+                  <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })} disabled={saving}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">نشط — شغّال ويستقبل أوامر</SelectItem>
+                      <SelectItem value="inactive">غير نشط — متوقف مؤقتاً</SelectItem>
+                      <SelectItem value="blocked">موقوف — معطّل عن الاستخدام</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>وحدة الإنتاج</Label>
+                  <Input value={formData.capacity_uom} onChange={(e) => setFormData({ ...formData, capacity_uom: e.target.value })} placeholder="قطعة، كجم، لتر" disabled={saving} />
+                  <p className="text-xs text-slate-400">ايه اللى المحطة دى بتنتجه؟ قطع، أوزان، حجوم؟</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>الإنتاج فى الساعة</Label>
+                  <Input type="number" min="0" value={formData.nominal_capacity_per_hour} onChange={(e) => setFormData({ ...formData, nominal_capacity_per_hour: e.target.value })} placeholder="100" disabled={saving} />
+                  <p className="text-xs text-slate-400">كم قطعة/كجم/لتر بتنتجها فى الساعة؟</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>ساعات العمل اليومية</Label>
+                  <Input type="number" min="0" max="24" value={formData.available_hours_per_day} onChange={(e) => setFormData({ ...formData, available_hours_per_day: e.target.value })} placeholder="8" disabled={saving} />
+                </div>
+                <div className="space-y-2">
+                  <Label>كفاءة التشغيل %</Label>
+                  <Input type="number" min="0" max="200" step="0.01" value={formData.efficiency_percent} onChange={(e) => setFormData({ ...formData, efficiency_percent: e.target.value })} placeholder="100" disabled={saving} />
+                  <p className="text-xs text-slate-400">100% = المحطة بتشتغل بالطاقة القصوى. أقل من ده لو فى وقت تحضير أو صيانة.</p>
+                </div>
+              </div>
+            </details>
+
+            {/* ─── حسابات التكلفة (مطوية تماماً) ─── */}
+            <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  💰 حسابات التكلفة
+                  <span className="text-xs text-slate-400 font-normal">(للمحاسب فقط — اتركها فاضية لو ما تتبعش تكلفة المحطة)</span>
+                </span>
+                <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div className="p-4 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="space-y-2 max-w-xs">
+                  <Label>كل قيم التكلفة التالية محسوبة:</Label>
+                  <Select value={formData.cost_rate_uom} onValueChange={(v) => setFormData({ ...formData, cost_rate_uom: v })} disabled={saving}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="per_hour">للساعة الواحدة</SelectItem>
+                      <SelectItem value="per_minute">للدقيقة الواحدة</SelectItem>
+                      <SelectItem value="per_unit">للقطعة الواحدة</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-sm">تكلفة العامل</Label>
+                    <Input type="number" min="0" step="0.01" value={formData.labor_cost_rate} onChange={(e) => setFormData({ ...formData, labor_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
+                    <p className="text-xs text-slate-400">متوسط أجر العامل اللى يشغّل المحطة.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm">تكلفة تشغيل الآلة</Label>
+                    <Input type="number" min="0" step="0.01" value={formData.machine_cost_rate} onChange={(e) => setFormData({ ...formData, machine_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
+                    <p className="text-xs text-slate-400">كهرباء وزيوت ومستهلكات وإهلاك الآلة.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm">مصاريف متغيرة</Label>
+                    <Input type="number" min="0" step="0.01" value={formData.variable_overhead_rate} onChange={(e) => setFormData({ ...formData, variable_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
+                    <p className="text-xs text-slate-400">مصاريف بتتغير حسب الإنتاج (مياه، تنظيف، نقل).</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm">مصاريف ثابتة</Label>
+                    <Input type="number" min="0" step="0.01" value={formData.fixed_overhead_rate} onChange={(e) => setFormData({ ...formData, fixed_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
+                    <p className="text-xs text-slate-400">مصاريف ثابتة شهرياً (إيجار، تأمين، صيانة دورية) موزعة على الساعة.</p>
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>إلغاء</Button>
             <Button onClick={handleSave} disabled={saving} className="gap-2">
