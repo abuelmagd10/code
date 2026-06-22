@@ -109,13 +109,12 @@ export default function LoginPage() {
     }
   }
 
-  // v3.74.287 — Step 2 of password reset: user typed the 6-digit code from
-  // the email + a new password. We verify the code against Supabase (this
-  // creates a recovery session for the user), then update the password,
-  // then redirect into the workspace. Because the code lives only in the
-  // email body and never in a URL, no email scanner / link-prefetcher can
-  // consume it before the user does — that was the failure mode of the
-  // old link-based flow.
+  // v3.74.287/289 — Step 2 of password reset: user typed the 6-digit code
+  // and a new password. Everything (verify code + update password) runs
+  // in ONE server-side request to avoid the client-side abort race we hit
+  // in 287 (verifyOtp succeeded, then updateUser fetch was aborted before
+  // it left the browser). The server returns tokens we use to establish
+  // the session locally and continue into the workspace.
   const handleVerifyResetCode = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -133,39 +132,41 @@ export default function LoginPage() {
     }
     try {
       setIsLoading(true)
-      const supabase = createClient()
       const email = login.trim().toLowerCase()
 
-      // 1. Verify the OTP code — succeeds only if the code matches what
-      //    Supabase emailed AND hasn't expired AND hasn't been used.
-      const { error: vErr } = await supabase.auth.verifyOtp({
-        email,
-        token: resetCode.trim(),
-        type: 'recovery',
+      // 1. Single server-side call does verify + update atomically.
+      const res = await fetch("/api/reset-password-with-code", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, code: resetCode.trim(), password: resetNewPassword }),
       })
-      if (vErr) { setError(translateAuthError(vErr.message)); return }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success) {
+        setError(translateAuthError(data?.error || "تعذّر تغيير كلمة المرور"))
+        return
+      }
 
-      // 2. Now that we have a recovery session, set the new password.
-      const { error: updErr } = await supabase.auth.updateUser({
-        password: resetNewPassword,
-        data: { must_change_password: false } as any,
-      })
-      if (updErr) { setError(translateAuthError(updErr.message)); return }
-
-      // 3. Make sure their membership / active company is set, then go
-      //    to whatever first page they're allowed to see.
+      // 2. Bring the new session into the browser so the user is signed
+      //    in for the redirect.
       let cidForRedirect = ""
       try {
+        const supabase = createClient()
+        if (data.access_token && data.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          })
+        }
         const { data: { user } } = await supabase.auth.getUser()
         if (user?.email && user?.id) {
-          const res = await fetch("/api/accept-membership", {
+          const ar = await fetch("/api/accept-membership", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ email: user.email, userId: user.id }),
           })
-          const js = await res.json()
+          const js = await ar.json()
           const cid = String(js?.companyId || "")
-          if (res.ok && cid) {
+          if (ar.ok && cid) {
             cidForRedirect = cid
             try { localStorage.setItem("active_company_id", cid) } catch {}
             try { document.cookie = `active_company_id=${cid}; path=/; max-age=31536000` } catch {}
@@ -174,9 +175,9 @@ export default function LoginPage() {
       } catch {}
 
       try {
-        const res = await fetch("/api/first-allowed-page")
-        const data = await res.json()
-        window.location.href = data.path || (cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard")
+        const r2 = await fetch("/api/first-allowed-page")
+        const j2 = await r2.json()
+        window.location.href = j2.path || (cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard")
       } catch {
         window.location.href = cidForRedirect ? `/dashboard?cid=${cidForRedirect}` : "/dashboard"
       }
