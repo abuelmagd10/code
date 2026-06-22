@@ -81,6 +81,13 @@ export async function POST(req: NextRequest) {
 
     // ✅ 4. Create invitation (unchanged logic)
     if (!acceptToken) {
+      // v3.74.293 — Insert with seat_reserved=FALSE. The reserve_seat
+      // RPC below is what actually flips it to true *after* it has
+      // confirmed availability under an advisory lock. If we insert
+      // it as TRUE up-front, get_seat_status (called inside
+      // reserve_seat) counts the row we just inserted as a pending
+      // reservation and the RPC rejects with no_seats_available — a
+      // race against ourselves.
       const { data: created, error: invInsErr } = await admin
         .from("company_invitations")
         .insert({
@@ -90,7 +97,7 @@ export async function POST(req: NextRequest) {
           employee_name: employeeName ? String(employeeName) : null,
           invited_by_user_id: user.id,
           status: "pending",
-          seat_reserved: true,
+          seat_reserved: false,
         })
         .select("id, accept_token")
         .single()
