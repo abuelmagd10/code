@@ -295,16 +295,25 @@ export function BomListPage() {
       })
       return
     }
-    // v3.74.269 — no auto-fallback. The user must pick the warehouse
-    // explicitly so they know exactly which one will be the source of
-    // the raw materials.
+    // v3.74.275 — branch + warehouse now live in the main form; same toast
+    // style as the product-required message.
+    if (!createForm.branch_id) {
+      toast({
+        variant: "destructive",
+        title: lang === "en" ? "Branch required" : "محتاجين تحدد الفرع",
+        description: lang === "en"
+          ? "Pick the branch this BOM belongs to."
+          : "اختر الفرع اللى القائمة دى تخصه.",
+      })
+      return
+    }
     if (!createForm.source_warehouse_id) {
       toast({
         variant: "destructive",
         title: lang === "en" ? "Issue warehouse required" : "محتاجين تختار مخزن صرف الخامات",
         description: lang === "en"
-          ? "Open Advanced settings and pick the warehouse the production order will pull raw materials from."
-          : "افتح إعدادات متقدمة واختر المخزن اللى أمر الإنتاج هيسحب منه الخامات.",
+          ? "Pick the warehouse this BOM's production orders will pull raw materials from."
+          : "اختر المخزن اللى أوامر الإنتاج هتسحب منه الخامات.",
       })
       return
     }
@@ -785,6 +794,57 @@ export function BomListPage() {
                 </p>
               </div>
 
+              {/* v3.74.275 — الفرع ظاهر دلوقتى لأنه شرط لاختيار مخزن الصرف */}
+              <div className="space-y-2">
+                <Label>{lang === "en" ? "Branch" : "الفرع"} <span className="text-red-500">*</span></Label>
+                <Select
+                  value={createForm.branch_id || ""}
+                  onValueChange={(value) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      branch_id: value,
+                      product_id: "",
+                      source_warehouse_id: null,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={lang === "en" ? "Pick a branch" : "اختر الفرع"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {buildBranchLabel(branch)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {lang === "en"
+                    ? "The branch where this BOM is used. Determines which products and warehouses appear below."
+                    : "الفرع اللى القائمة دى تخصه. هيحدد المنتجات والمخازن اللى تظهرلك تحت."}
+                </p>
+              </div>
+
+              {/* v3.74.275 — مخزن صرف الخامات ظاهر دلوقتى لأنه إجبارى */}
+              <div className="space-y-2">
+                <Label>
+                  {lang === "en" ? "Issue Warehouse" : "مخزن صرف الخامات"}
+                  <span className="text-red-500 ml-1">*</span>
+                </Label>
+                <RawMaterialWarehousePicker
+                  value={createForm.source_warehouse_id || ""}
+                  onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
+                  branchId={createForm.branch_id || null}
+                  lang={lang}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "en"
+                    ? "Required. Production orders made from this BOM will issue raw materials from this warehouse."
+                    : "إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات من المخزن ده."}
+                </p>
+              </div>
+
               {/* ─── إعدادات متقدمة (مطوية) ─── */}
               <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
                 <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
@@ -797,48 +857,6 @@ export function BomListPage() {
                   <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
                 <div className="grid gap-4 md:grid-cols-2 p-4 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="space-y-2">
-                    <Label>{lang === "en" ? "Branch" : "الفرع"}</Label>
-                    <Select
-                      value={createForm.branch_id || ""}
-                      onValueChange={(value) =>
-                        setCreateForm((current) => ({
-                          ...current,
-                          branch_id: value,
-                          product_id: "",
-                          source_warehouse_id: null,
-                        }))
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="اختر الفرع" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {branches.map((branch) => (
-                          <SelectItem key={branch.id} value={branch.id}>
-                            {buildBranchLabel(branch)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>
-                      {lang === "en" ? "Issue Warehouse" : "مخزن صرف الخامات"}
-                      <span className="text-red-500 ml-1">*</span>
-                    </Label>
-                    <RawMaterialWarehousePicker
-                      value={createForm.source_warehouse_id || ""}
-                      onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
-                      branchId={createForm.branch_id || null}
-                      lang={lang}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {lang === "en"
-                        ? "Required. Production orders made from this BOM will issue raw materials from this warehouse."
-                        : "إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات منه. اخترناه لك تلقائياً، تقدر تغيّره."}
-                    </p>
-                  </div>
                   <div className="space-y-2">
                     <Label>{lang === "en" ? "BOM Code" : "رمز القائمة"}</Label>
                     <Input
