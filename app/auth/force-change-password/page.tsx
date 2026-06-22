@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 
-// v3.74.279/280 - translate Supabase auth errors to plain Arabic
+// v3.74.279/280/281 - translate Supabase auth errors to plain Arabic
 function translateAuthError(msg: string): string {
   const lower = (msg || "").toLowerCase()
   if (lower.includes("session missing") || lower.includes("session_not_found")) {
@@ -15,6 +15,12 @@ function translateAuthError(msg: string): string {
   }
   if (lower.includes("pkce") || lower.includes("code verifier")) {
     return "الرابط ده ابتدأ من جهاز تانى. اطلب رابط جديد واضغطه من نفس الجهاز اللى طلبت منه."
+  }
+  if (lower.includes("token has expired") || lower.includes("expired")) {
+    return "انتهت صلاحية الرابط. اطلب رابط جديد من صفحة الدخول."
+  }
+  if (lower.includes("invalid token") || lower.includes("not found")) {
+    return "الرابط مش صحيح أو اتستخدم قبل كده. اطلب رابط جديد من صفحة الدخول."
   }
   if (lower.includes("password should be") || lower.includes("weak password")) {
     return "كلمة المرور ضعيفة. استخدم 8 أحرف على الأقل وامزج بين الحروف والأرقام."
@@ -39,13 +45,32 @@ export default function ForceChangePasswordPage() {
     const bootstrap = async () => {
       try {
         const supabase = createClient()
-
-        // v3.74.280 — implicit flow: tokens are in the URL hash like
-        // #access_token=...&refresh_token=...&type=recovery
-        // The Supabase client auto-detects this on init, but we read
-        // the hash explicitly so we can show a clear error if needed.
+        const search = new URLSearchParams(window.location.search)
         const hash = (typeof window !== "undefined" ? window.location.hash : "") || ""
-        if (hash && hash.includes("access_token")) {
+
+        // v3.74.281 — Path A: token_hash (the cross-device safe path).
+        // Email template emits a link like
+        //   /auth/force-change-password?token_hash=<hash>&type=recovery
+        // verifyOtp accepts the hash directly and creates the session
+        // server-side; no device-bound code_verifier is needed.
+        const tokenHash = search.get("token_hash")
+        const type = search.get("type")
+        if (tokenHash && (type === "recovery" || type === "magiclink" || type === "invite" || type === "signup")) {
+          const { error: vErr } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type as any,
+          })
+          if (vErr) {
+            if (cancelled) return
+            setSessionError(translateAuthError(vErr.message))
+            setBootstrapping(false)
+            return
+          }
+          // Clean the URL so a refresh doesn't replay the now-used token
+          try { window.history.replaceState({}, "", window.location.pathname) } catch {}
+        } else if (hash && hash.includes("access_token")) {
+          // Path B: implicit flow (tokens in URL hash). Kept for backwards
+          // compatibility with any old emails still in inboxes.
           const params = new URLSearchParams(hash.replace(/^#/, ""))
           const accessToken = params.get("access_token")
           const refreshToken = params.get("refresh_token")
@@ -60,13 +85,10 @@ export default function ForceChangePasswordPage() {
               setBootstrapping(false)
               return
             }
-            // Clean the hash so a refresh doesn't replay it
             try { window.history.replaceState({}, "", window.location.pathname) } catch {}
           }
         } else {
-          // v3.74.279 — backwards-compat: handle PKCE ?code= URLs from
-          // older emails. Same-device flows still work.
-          const search = new URLSearchParams(window.location.search)
+          // Path C: PKCE ?code= (oldest emails). Same-device only.
           const code = search.get("code")
           if (code) {
             const { error: exchErr } = await supabase.auth.exchangeCodeForSession(code)
