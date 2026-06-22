@@ -597,7 +597,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       toast({
         variant: "destructive",
         title: "لا يمكن إرسال نسخة فارغة",
-        description: "أضف مادة واحدة على الأقل ثم اضغط حفظ المواد قبل الإرسال للاعتماد.",
+        description: "أضف مادة واحدة على الأقل ثم اضغط حفظ الخامات قبل الإرسال للاعتماد.",
       })
       return
     }
@@ -781,7 +781,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         }
       case "approve":
         return {
-          title: "اعتماد النسخة الحالية",
+          title: "اعتماد الإصدار الحالية",
           description: selectedVersion
             ? `سيتم اعتماد النسخة v${selectedVersion.version_no}. بعد الاعتماد ستصبح للقراءة فقط ويمكن تعيينها كنسخة افتراضية.`
             : "سيتم اعتماد النسخة الحالية.",
@@ -847,11 +847,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
           <CompanyHeader />
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-          title={loadingBom ? "جاري تحميل هيكل المواد..." : bom ? `${bom.bom_code} — ${bom.bom_name}` : "هيكل المواد غير متاح"}
-          description="إدارة بيانات هيكل المواد، نسخه، ومكوناته. جميع عمليات الاعتماد والتفعيل مؤمّنة ومسجّلة."
+          title={loadingBom ? "جارٍ تحميل قائمة المكوّنات..." : bom ? `${bom.bom_code} — ${bom.bom_name}` : "القائمة مش متاحة"}
+          description="إدارة قائمة المكوّنات وإصداراتها. اعتماد كل إصدار مسجّل ومحفوظ للتدقيق."
           variant="detail"
           backHref="/manufacturing/boms"
-          backLabel="العودة للقائمة"
+          backLabel="رجوع لقوائم المكوّنات"
           extra={
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
               <Factory className="h-3.5 w-3.5" />
@@ -862,11 +862,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
             <>
               <Button variant="outline" className="gap-2" onClick={() => refreshWorkspace(selectedVersionId)} disabled={loadingBom || loadingVersion}>
                 <RefreshCw className={`h-4 w-4 ${(loadingBom || loadingVersion) ? "animate-spin" : ""}`} />
-                تحديث السجل
+                تحديث
               </Button>
               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !bom} className="gap-2" data-ai-help="manufacturing_bom_detail.create_version_button">
                 <CopyPlus className="h-4 w-4" />
-                إنشاء نسخة
+                إنشاء إصدار جديد
               </Button>
             </>
           }
@@ -874,18 +874,31 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
           </div>
 
         <div className="space-y-6">
+          {/* v3.74.283 — banner explaining the version workflow in plain Arabic */}
+          {!loadingBom && bom && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40">
+              <div className="text-blue-600 dark:text-blue-400 text-xl leading-none">ℹ️</div>
+              <div className="text-sm text-blue-900 dark:text-blue-200 leading-relaxed">
+                <div className="font-semibold mb-1">إيه يعنى "إصدار" قائمة المكوّنات؟</div>
+                <p className="text-blue-800 dark:text-blue-300">
+                  كل قائمة لها إصدار واحد معتمد فى المرة. الإصدار ده بيحدد الخامات وكمياتها وقت إنتاج المنتج. لما تحب تغيّر الوصفة، تنشئ <strong>إصدار جديد</strong>، تعدّل عليه، وترسله للاعتماد. الإصدارات القديمة تفضل محفوظة كأثر لأى أمر إنتاج قديم اتعمل عليها.
+                </p>
+              </div>
+            </div>
+          )}
+
           {loadingBom && !bom ? (
                 <div className="flex min-h-[280px] items-center justify-center text-slate-500">
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  جاري تحميل بيانات هيكل المواد...
+                  جارٍ تحميل بيانات قائمة المكوّنات...
                 </div>
               ) : !bom ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
                   <div className="mx-auto flex max-w-lg flex-col items-center gap-3">
                     <AlertTriangle className="h-10 w-10 text-amber-500" />
-                    <h2 className="text-xl font-semibold text-slate-900">تعذر الوصول إلى هذا السجل</h2>
+                    <h2 className="text-xl font-semibold text-slate-900">القائمة دى مش موجودة</h2>
                     <p className="text-sm leading-6 text-slate-600">
-                      قد يكون السجل غير موجود، أو أن الوصول إليه محجوب بالصلاحيات أو قيود الفرع الحالية.
+                      يا ترى انمسحت، يا ترى مش عندك صلاحية تشوفها، يا ترى الفرع الحالى مش هو فرعها.
                     </p>
                   </div>
                 </div>
@@ -951,29 +964,29 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           <div>
                             <CardTitle className="flex items-center gap-2 text-lg">
                               <Package2 className="h-5 w-5 text-cyan-700" />
-                              المواد الخام
+                              الخامات المُكوّنة للمنتج
                             </CardTitle>
                             <CardDescription>
                               {selectedVersion
                                 ? structureEditable
-                                  ? "النسخة قابلة للتعديل — أضف المواد الخام واحفظ."
+                                  ? "الإصدار ده قابل للتعديل. أضف الخامات وكمياتها واحفظ."
                                   : getVersionLockMessage(selectedVersion.status)
                                 : bom.versions.length === 0
-                                ? "أنشئ النسخة الأولى لبدء إضافة المواد."
-                                : "اختر نسخة من القائمة أعلاه لعرض مكوناتها."}
+                                ? "أنشئ الإصدار الأول علشان تبدأ تضيف الخامات."
+                                : "اختر إصدار من اللى فوق علشان تشوف مكوّناته."}
                             </CardDescription>
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {bom.versions.length === 0 && (
                               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
                                 <CopyPlus className="h-4 w-4" />
-                                إنشاء النسخة الأولى
+                                إنشاء الإصدار الأول
                               </Button>
                             )}
                             {structureEditable && canUpdate && (
                               <>
                                 <Button variant="outline" onClick={addLine} className="gap-2" data-ai-help="manufacturing_bom_detail.components_table">
-                                  إضافة مكوّن
+                                  إضافة خامة
                                 </Button>
                                 <Button
                                   variant="outline"
@@ -1028,9 +1041,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           <div className="rounded-2xl border border-dashed p-10 text-center">
                             <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                               <Package2 className="h-8 w-8 text-slate-300" />
-                              <div className="text-lg font-medium text-slate-900">لا توجد نسخة بعد</div>
+                              <div className="text-lg font-medium text-slate-900">مفيش إصدار لسه</div>
                               <p className="text-sm leading-6 text-slate-500">
-                                قائمة المواد تحتاج إلى نسخة لإضافة المواد الخام.
+                                القائمة محتاجة إصدار علشان تقدر تضيف الخامات.
                               </p>
                               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
                                 <CopyPlus className="h-4 w-4" />
@@ -1042,21 +1055,21 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           loadingVersion ? (
                             <div className="flex min-h-[160px] items-center justify-center text-slate-500">
                               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                              جاري تحميل النسخة...
+                              جارٍ تحميل الإصدار...
                             </div>
                           ) : (
                             <div className="rounded-2xl border border-dashed p-8 text-center">
                               <WandSparkles className="mx-auto h-8 w-8 text-slate-300" />
-                              <div className="mt-3 text-base font-medium text-slate-900">اختر نسخة من القائمة أعلاه</div>
+                              <div className="mt-3 text-base font-medium text-slate-900">اختر إصدار من اللى فوق</div>
                             </div>
                           )
                         ) : structureDraft.length === 0 ? (
                               <div className="rounded-2xl border border-dashed p-10 text-center">
                                 <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                                   <Package2 className="h-8 w-8 text-slate-300" />
-                                  <div className="text-lg font-medium text-slate-900">لا توجد مكونات بعد</div>
+                                  <div className="text-lg font-medium text-slate-900">الإصدار ده لسه فاضى</div>
                                   <p className="text-sm leading-6 text-slate-500">
-                                    ابدأ بإضافة مكوّنات التصنيع اللازمة لهذا المنتج.
+                                    أضف الخامات اللى بتدخل فى تصنيع المنتج وكمياتها.
                                   </p>
                                   {structureEditable && (
                                     <Button onClick={addLine} disabled={!canUpdate}>إضافة مكوّن</Button>
