@@ -213,6 +213,27 @@ export function BomListPage() {
   }, [loadCreateScopeBoms])
 
 
+  // v3.74.268 — fetch the first available warehouse for a branch.
+  // Used to auto-pick a default issue warehouse so BOMs never go to
+  // production with a blank source_warehouse_id (would mean materials
+  // get issued from "nowhere").
+  const fetchDefaultWarehouseForBranch = async (branchId: string): Promise<string | null> => {
+    if (!branchId) return null
+    try {
+      const r = await fetch(`/api/warehouses?branch_id=${encodeURIComponent(branchId)}`)
+      const data = await r.json()
+      const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []
+      if (list.length === 0) return null
+      // Prefer a raw-materials warehouse, then "main" warehouse, then any.
+      const raw = list.find((w: any) => /خام|raw|material/i.test(`${w.name || ''} ${w.warehouse_type || ''} ${w.code || ''}`))
+      const main = list.find((w: any) => w.is_main || w.is_default)
+      const pick = raw || main || list[0]
+      return pick?.id || null
+    } catch {
+      return null
+    }
+  }
+
   // v3.74.267 — auto-generate the next free BOM-NN code so the owner
   // doesn't have to invent one. Reads the boms list and picks max+1.
   const nextAutoBomCode = (): string => {
@@ -234,9 +255,16 @@ export function BomListPage() {
     })
   }, [branches, boms])
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
     resetCreateForm()
     setCreateOpen(true)
+    // v3.74.268 — auto-pick an issue warehouse so the user doesn't have
+    // to expand Advanced for a sensible default.
+    const branchId = branches[0]?.id || ""
+    if (branchId) {
+      const wh = await fetchDefaultWarehouseForBranch(branchId)
+      if (wh) setCreateForm((current) => current.source_warehouse_id ? current : { ...current, source_warehouse_id: wh })
+    }
   }
 
   const handleApplyFilters = () => {
@@ -258,6 +286,8 @@ export function BomListPage() {
 
   const handleCreate = async () => {
     // v3.74.267 — only require product; everything else gets sensible defaults.
+    // v3.74.268 — source_warehouse_id is also required so production orders
+    // always inherit a real issue warehouse.
     if (!createForm.product_id) {
       toast({
         variant: "destructive",
@@ -267,6 +297,21 @@ export function BomListPage() {
           : "اختر المنتج المُصنّع اللى هتعمله قائمة مكوّنات.",
       })
       return
+    }
+    if (!createForm.source_warehouse_id) {
+      const wh = await fetchDefaultWarehouseForBranch(createForm.branch_id || branches[0]?.id || "")
+      if (wh) {
+        createForm.source_warehouse_id = wh
+      } else {
+        toast({
+          variant: "destructive",
+          title: lang === "en" ? "Issue warehouse required" : "محتاجين مخزن صرف الخامات",
+          description: lang === "en"
+            ? "Add at least one warehouse for this branch, or pick an issue warehouse in Advanced settings."
+            : "ضيف مخزن واحد على الأقل للفرع، أو اختر مخزن صرف من إعدادات متقدمة.",
+        })
+        return
+      }
     }
     // Fill in defaults for fields the user may have left blank.
     if (!createForm.branch_id) createForm.branch_id = branches[0]?.id || ""
@@ -784,19 +829,19 @@ export function BomListPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      {lang === "en" ? "Default Issue Warehouse" : "مخزن صرف الخامات الافتراضى"}
-                      <span className="ml-1 text-xs text-muted-foreground">({lang === "en" ? "optional" : "اختيارى"})</span>
+                      {lang === "en" ? "Issue Warehouse" : "مخزن صرف الخامات"}
+                      <span className="text-red-500 ml-1">*</span>
                     </Label>
                     <WarehouseSelector
                       value={createForm.source_warehouse_id || ""}
                       onChange={(warehouseId) => setCreateForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
                       branchId={createForm.branch_id || null}
-                      placeholder={lang === "en" ? "Select source warehouse..." : "اختر مخزن الصرف..."}
+                      placeholder={lang === "en" ? "Select issue warehouse..." : "اختر مخزن الصرف..."}
                     />
                     <p className="text-xs text-muted-foreground">
                       {lang === "en"
-                        ? "This warehouse will be auto-filled in production orders."
-                        : "هيتعبّأ تلقائياً فى أوامر الإنتاج المرتبطة بالقائمة دى."}
+                        ? "Required. Production orders made from this BOM will issue raw materials from this warehouse."
+                        : "إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات منه. اخترناه لك تلقائياً، تقدر تغيّره."}
                     </p>
                   </div>
                   <div className="space-y-2">

@@ -379,6 +379,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       })
       return
     }
+    // v3.74.268 — اشتراط مخزن صرف الخامات: أمر الإنتاج بيرث منه
+    if (!headerForm.source_warehouse_id) {
+      toast({
+        variant: "destructive",
+        title: "محتاجين مخزن صرف الخامات",
+        description: "اختر مخزن، عشان كل أمر إنتاج بيتعمل من القائمة دى يسحب منه الخامات.",
+      })
+      return
+    }
 
     try {
       setSavingHeader(true)
@@ -1559,8 +1568,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             </div>
                             <div className="space-y-2">
                               <Label className="flex items-center gap-1">
-                                مخزن صرف المواد الافتراضي
-                                <span className="text-xs font-normal text-muted-foreground">(اختياري)</span>
+                                مخزن صرف الخامات
+                                <span className="text-red-500">*</span>
                               </Label>
                               <WarehouseSelector
                                 value={headerForm.source_warehouse_id || ""}
@@ -1569,7 +1578,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 placeholder="اختر مخزن الصرف الافتراضي..."
                                 disabled={!canUpdate} />
                               <p className="text-xs text-muted-foreground">
-                                عند تحديد مخزن هنا، سيتم ملؤه تلقائياً في حقل "مخزن الصرف" عند إنشاء أمر إنتاج مرتبط بهذه القائمة.
+                                إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات من المخزن ده.
                               </p>
                             </div>
                             <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-slate-50 px-4 py-3">
