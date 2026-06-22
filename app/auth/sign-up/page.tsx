@@ -256,12 +256,14 @@ export default function SignUpPage() {
         }
       }
 
-      // Create the user account
+      // Create the user account.
+      // v3.74.290 — we no longer pass emailRedirectTo because the
+      // Confirm-Sign-Up email is now a 6-digit code, not a link. There
+      // is nothing for Supabase to redirect back to.
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?type=signup`,
           data: {
             company_name: companyName,
             preferred_currency: currency,
@@ -270,37 +272,18 @@ export default function SignUpPage() {
         },
       })
 
-      // If Supabase fails ONLY because it can't send its own confirmation email,
-      // we handle it gracefully — our Resend API will send the branded email instead.
-      const isEmailSendError = authError?.message?.toLowerCase().includes("sending confirmation email")
-        || authError?.message?.toLowerCase().includes("error sending")
-        || authError?.message?.toLowerCase().includes("email")
-
-      if (authError && !isEmailSendError) {
+      if (authError) {
         throw authError
       }
 
-      // Check if email confirmation is needed
-      // If user is immediately confirmed (autoconfirm enabled), redirect to create company
+      // If autoconfirm is on, we already have a session — go straight to
+      // the callback which creates the company. Otherwise, Supabase has
+      // emailed a 6-digit code to the user; ask them to enter it on the
+      // success page.
       if (authData?.user?.confirmed_at || authData?.session) {
-        // User is confirmed - create company directly
         router.push("/auth/callback?type=signup&auto=true")
       } else {
-        // Email confirmation required - save email for resend feature
         sessionStorage.setItem("signup_email", email)
-
-        // Send our branded HTML email via Resend API (replaces Supabase's plain default email)
-        try {
-          await fetch("/api/resend-confirmation", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email }),
-          })
-        } catch (resendErr) {
-          console.error("Failed to send branded confirmation email:", resendErr)
-          // Non-blocking: continue to success page anyway
-        }
-
         router.push("/auth/sign-up-success")
       }
     } catch (error: unknown) {
