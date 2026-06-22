@@ -579,30 +579,15 @@ export function ProductionOrderListPage() {
           {autoCascading && (
             <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm text-cyan-700 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-400">
               <Zap className="h-4 w-4 animate-pulse" />
-              {appLang === "ar" ? "جاري تحميل قائمة المواد والمسارات تلقائياً..." : "Auto-loading BOMs and routings..."}
+              {appLang === "ar" ? "بنحضّر قائمة المكوّنات والمسار تلقائياً..." : "Auto-loading BOMs and routings..."}
             </div>
           )}
 
-          {/* ── الحقول الإلزامية ── */}
+          {/* v3.74.276 — الفورم المبسّط: 3 حقول ظاهرة فقط (المنتج + الكمية + الفرع) */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٠. الفرع" : "0. Branch"}
-              </Label>
-              <BranchSelector
-                value={createForm.branch_id || ""}
-                onChange={(branchId) => setCreateForm((c) => ({
-                  ...c,
-                  branch_id: branchId,
-                  issue_warehouse_id: "",
-                  receipt_warehouse_id: "",
-                }))}
-                placeholder={appLang === "ar" ? "اختر الفرع (اختياري)" : "Select branch (optional)"}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "١. المنتج المراد تصنيعه" : "1. Product to Manufacture"} <span className="text-red-500">*</span>
+                {appLang === "ar" ? "المنتج المراد تصنيعه" : "Product to Manufacture"} <span className="text-red-500">*</span>
               </Label>
               <ManufacturingProductSelector
                 value={createForm.product_id}
@@ -617,83 +602,16 @@ export function ProductionOrderListPage() {
                   }))
                 }
                 productType="manufactured"
-                placeholder={appLang === "ar" ? "اختر المنتج النهائي المراد تصنيعه" : "Select finished product"}
+                placeholder={appLang === "ar" ? "اختر المنتج النهائى" : "Select finished product"}
               />
+              <p className="text-xs text-muted-foreground">
+                {appLang === "ar"
+                  ? "هنختار قائمة المكوّنات والمسار تلقائياً لو فى واحد لكل منهم. لو فى اختيارات متعددة، هنطلب منك التحديد."
+                  : "We'll auto-pick the BOM and routing if there's only one. If there are multiple, we'll prompt you to choose."}
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٢. قائمة المواد" : "2. Bill of Materials"} <span className="text-red-500">*</span>
-              </Label>
-              <BomSelector
-                value={createForm.bom_id}
-                onChange={(id, bom) => {
-                  setCreateForm((c) => ({
-                    ...c,
-                    bom_id: id,
-                    bom_version_id: "",
-                    // Phase 3: auto-fill issue warehouse from BOM if not yet set
-                    issue_warehouse_id: !c.issue_warehouse_id && bom?.source_warehouse_id
-                      ? bom.source_warehouse_id
-                      : c.issue_warehouse_id,
-                    // Reset routing when BOM changes so cascade can re-select
-                    routing_id: id !== c.bom_id ? "" : c.routing_id,
-                    routing_version_id: id !== c.bom_id ? "" : c.routing_version_id,
-                  }))
-                  // Auto-open advanced panel if we're about to fill the warehouse
-                  if (bom?.source_warehouse_id) setShowAdvanced(true)
-                }}
-                productId={createForm.product_id}
-                placeholder={appLang === "ar" ? "اختر قائمة المواد" : "Select BOM"}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٣. إصدار قائمة المواد" : "3. BOM Version"} <span className="text-red-500">*</span>
-              </Label>
-              <BomVersionSelector
-                value={createForm.bom_version_id}
-                onChange={(id) => setCreateForm((c) => ({ ...c, bom_version_id: id }))}
-                bomId={createForm.bom_id}
-                placeholder={appLang === "ar" ? "اختر الإصدار المعتمد" : "Select approved version"}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٤. مسار التصنيع" : "4. Routing"} <span className="text-red-500">*</span>
-              </Label>
-              {/* Phase 3: prefer BOM-linked routings if BOM selected, else fallback to product routings */}
-              <RoutingSelector
-                value={createForm.routing_id}
-                onChange={(id) => setCreateForm((c) => ({ ...c, routing_id: id, routing_version_id: "" }))}
-                bomId={createForm.bom_id || undefined}
-                productId={createForm.product_id || undefined}
-                placeholder={appLang === "ar" ? "اختر مسار التصنيع" : "Select routing"}
-              />
-              {createForm.bom_id && (
-                <p className="text-xs text-muted-foreground">
-                  {appLang === "ar"
-                    ? "يظهر أولاً المسارات المرتبطة بقائمة المواد المختارة."
-                    : "Routings linked to the selected BOM are shown first."}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                {appLang === "ar" ? "٥. إصدار المسار" : "5. Routing Version"} <span className="text-red-500">*</span>
-              </Label>
-              <RoutingVersionSelector
-                value={createForm.routing_version_id}
-                onChange={(id) => setCreateForm((c) => ({ ...c, routing_version_id: id }))}
-                routingId={createForm.routing_id}
-                placeholder={appLang === "ar" ? "اختر إصدار المسار" : "Select routing version"}
-              />
-            </div>
-
-            <div className="space-y-2 sm:col-span-2">
               <Label className="text-sm font-semibold">
                 {copy.list.fields.plannedQuantity} <span className="text-red-500">*</span>
               </Label>
@@ -705,9 +623,98 @@ export function ProductionOrderListPage() {
                 onChange={(event) => setCreateForm((current) => ({ ...current, planned_quantity: Number(event.target.value || 0) }))}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">
+                {appLang === "ar" ? "الفرع" : "Branch"}
+              </Label>
+              <BranchSelector
+                value={createForm.branch_id || ""}
+                onChange={(branchId) => setCreateForm((c) => ({
+                  ...c,
+                  branch_id: branchId,
+                  issue_warehouse_id: "",
+                  receipt_warehouse_id: "",
+                }))}
+                placeholder={appLang === "ar" ? "الفرع الحالى" : "Current branch"}
+              />
+            </div>
           </div>
 
-          {/* ── الإعدادات المتقدمة (قابلة للطي) ── */}
+          {/* v3.74.276 — selectors المخفية تظهر تلقائياً لو الـ cascade ما لقاش خيار واحد */}
+          {createForm.product_id && (
+            <details className="group rounded-lg border border-slate-200 dark:border-slate-700" open={!createForm.bom_id || !createForm.bom_version_id || !createForm.routing_id || !createForm.routing_version_id}>
+              <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  📋 {appLang === "ar" ? "قائمة المكوّنات والمسار" : "BOM & Routing"}
+                  {createForm.bom_id && createForm.bom_version_id && createForm.routing_id && createForm.routing_version_id ? (
+                    <Badge variant="secondary" className="text-xs">{appLang === "ar" ? "تم الاختيار تلقائياً" : "Auto-picked"}</Badge>
+                  ) : (
+                    <span className="text-xs text-amber-600 font-normal">({appLang === "ar" ? "محتاج اختيار يدوى" : "manual pick needed"})</span>
+                  )}
+                </span>
+                <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div className="grid gap-4 sm:grid-cols-2 p-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">
+                    {appLang === "ar" ? "قائمة المكوّنات" : "Bill of Materials"} <span className="text-red-500">*</span>
+                  </Label>
+                  <BomSelector
+                    value={createForm.bom_id}
+                    onChange={(id, bom) => {
+                      setCreateForm((c) => ({
+                        ...c,
+                        bom_id: id,
+                        bom_version_id: "",
+                        issue_warehouse_id: !c.issue_warehouse_id && bom?.source_warehouse_id ? bom.source_warehouse_id : c.issue_warehouse_id,
+                        routing_id: id !== c.bom_id ? "" : c.routing_id,
+                        routing_version_id: id !== c.bom_id ? "" : c.routing_version_id,
+                      }))
+                    }}
+                    productId={createForm.product_id}
+                    placeholder={appLang === "ar" ? "اختر قائمة المكوّنات" : "Select BOM"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">
+                    {appLang === "ar" ? "إصدار القائمة" : "BOM Version"} <span className="text-red-500">*</span>
+                  </Label>
+                  <BomVersionSelector
+                    value={createForm.bom_version_id}
+                    onChange={(id) => setCreateForm((c) => ({ ...c, bom_version_id: id }))}
+                    bomId={createForm.bom_id}
+                    placeholder={appLang === "ar" ? "الإصدار المعتمد" : "Approved version"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">
+                    {appLang === "ar" ? "مسار التصنيع" : "Routing"} <span className="text-red-500">*</span>
+                  </Label>
+                  <RoutingSelector
+                    value={createForm.routing_id}
+                    onChange={(id) => setCreateForm((c) => ({ ...c, routing_id: id, routing_version_id: "" }))}
+                    bomId={createForm.bom_id || undefined}
+                    productId={createForm.product_id || undefined}
+                    placeholder={appLang === "ar" ? "اختر المسار" : "Select routing"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">
+                    {appLang === "ar" ? "إصدار المسار" : "Routing Version"} <span className="text-red-500">*</span>
+                  </Label>
+                  <RoutingVersionSelector
+                    value={createForm.routing_version_id}
+                    onChange={(id) => setCreateForm((c) => ({ ...c, routing_version_id: id }))}
+                    routingId={createForm.routing_id}
+                    placeholder={appLang === "ar" ? "الإصدار المعتمد" : "Approved version"}
+                  />
+                </div>
+              </div>
+            </details>
+          )}
+
+          {/* ── الإعدادات المتقدمة (قابلة للطي) — المستودعات/التواريخ/الملاحظات */}
           <div className="rounded-lg border border-slate-200 dark:border-slate-700">
             <button
               type="button"
@@ -718,7 +725,7 @@ export function ProductionOrderListPage() {
                 {showAdvanced
                   ? <ChevronUp className="h-4 w-4" />
                   : <ChevronDown className="h-4 w-4" />}
-                {appLang === "ar" ? "إعدادات متقدمة (المستودعات، التواريخ، الملاحظات)" : "Advanced Settings (Warehouses, Dates, Notes)"}
+                ⚙️ {appLang === "ar" ? "إعدادات متقدمة (المستودعات، التواريخ، الملاحظات)" : "Advanced Settings (Warehouses, Dates, Notes)"}
               </span>
               {(createForm.issue_warehouse_id || createForm.receipt_warehouse_id || createForm.planned_start_at || createForm.planned_end_at || createForm.notes) && (
                 <Badge variant="secondary" className="text-xs">{appLang === "ar" ? "تم التعبئة" : "Filled"}</Badge>
@@ -737,11 +744,11 @@ export function ProductionOrderListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{appLang === "ar" ? "مستودع الاستلام (المنتج النهائي)" : "Receipt Warehouse (Finished Goods)"}</Label>
+                  <Label>{appLang === "ar" ? "مستودع الاستلام (المنتج النهائى)" : "Receipt Warehouse (Finished Goods)"}</Label>
                   <WarehouseSelector
                     value={createForm.receipt_warehouse_id || ""}
                     onChange={(id) => setCreateForm((c) => ({ ...c, receipt_warehouse_id: id }))}
-                    placeholder={appLang === "ar" ? "مستودع إضافة المنتج النهائي" : "Finished goods warehouse"}
+                    placeholder={appLang === "ar" ? "مستودع إضافة المنتج النهائى" : "Finished goods warehouse"}
                     branchId={createForm.branch_id || undefined}
                   />
                 </div>
