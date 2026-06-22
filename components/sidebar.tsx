@@ -222,6 +222,8 @@ export function Sidebar() {
     if (href.includes('/inventory/goods-receipt')) return 'inventory_goods_receipt'
     if (href.includes('/inventory/product-availability')) return 'product_availability'
     if (href.includes('/inventory')) return 'inventory'
+    // v3.74.265 - Hub page resource maps to the same gate as the rest of the module
+    if (href === '/manufacturing' || href.startsWith('/manufacturing?')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/boms')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/bom-versions')) return 'manufacturing_boms'
     if (href.includes('/manufacturing/routings')) return 'manufacturing_boms'
@@ -1138,6 +1140,8 @@ export function Sidebar() {
                 },
                 {
                   key: 'manufacturing', icon: Factory, label: (lang === 'en' ? '🏭 Manufacturing' : '🏭 التصنيع'), badge: pendingApprovalsCount, items: [
+                    // v3.74.265 — Hub link first so the user always has a "home" for the module
+                    { label: (lang === 'en' ? '🗺️ Manufacturing Home' : '🗺️ صفحة التصنيع الرئيسية'), href: `/manufacturing${q}`, icon: Factory },
                     // ── الموافقات (مَنقولة من top-level — كلها خاصة بالتَصنيع) ──
                     { label: (lang === 'en' ? '🔔 Approval Inbox' : '🔔 صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle, badge: pendingApprovalsCount },
                     // ── الهندسة والإعداد ──

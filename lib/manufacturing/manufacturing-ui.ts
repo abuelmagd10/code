@@ -27,6 +27,194 @@ export function getTextDirection(lang: AppLang) {
 }
 
 // ─────────────────────────────────────────────
+// Manufacturing Hub (entry page) — v3.74.265
+// One landing page that explains the cycle visually so users don't have
+// to read a sidebar of acronyms to know where to start.
+// ─────────────────────────────────────────────
+export const HUB_COPY = {
+  ar: {
+    page: {
+      title: "دورة التصنيع",
+      subtitle: "كل خطوة تحتاجها لتصنيع منتج، مرتّبة من البداية للنهاية. ابدأ بالقسم الأول لو لسه ما عرّفتش المنتجات والمكوّنات.",
+      stepLabel: "خطوة",
+    },
+    sections: [
+      {
+        key: "setup",
+        order: 1,
+        title: "التحضير (مرة واحدة لكل منتج)",
+        subtitle: "تعريف المنتج وخامته وخطوات تصنيعه. لازم تخلص دى قبل أول أمر إنتاج.",
+        color: "indigo",
+        items: [
+          {
+            href: "/manufacturing/work-centers",
+            title: "مراكز العمل",
+            desc: "عرّف الآلات والأقسام اللى بيتم فيها الإنتاج (مثلاً: آلة الخلط، خط التعبئة).",
+            icon: "Cpu",
+          },
+          {
+            href: "/manufacturing/boms",
+            title: "قوائم المكوّنات",
+            desc: "حدّد لكل منتج جاهز الخامات اللى بتدخل فيه وكمياتها.",
+            icon: "Layers",
+          },
+          {
+            href: "/manufacturing/routings",
+            title: "مسارات التصنيع",
+            desc: "رتّب خطوات تصنيع كل منتج وحدّد مركز العمل لكل خطوة.",
+            icon: "GitMerge",
+          },
+        ],
+      },
+      {
+        key: "plan",
+        order: 2,
+        title: "تخطيط الإنتاج",
+        subtitle: "افحص توفّر المواد الخام، وأنشئ أمر الإنتاج الجديد.",
+        color: "blue",
+        items: [
+          {
+            href: "/manufacturing/mrp",
+            title: "تخطيط احتياجات المواد",
+            desc: "احسب الخامات اللى هتحتاجها قبل ما تبدأ الإنتاج، عشان ما تتفاجأش بنقص.",
+            icon: "Calculator",
+            optional: true,
+          },
+          {
+            href: "/manufacturing/production-orders",
+            title: "أوامر الإنتاج",
+            desc: "أنشئ أمر إنتاج جديد، يحدّد المنتج والكمية وميعاد التسليم.",
+            icon: "ClipboardList",
+            primary: true,
+          },
+        ],
+      },
+      {
+        key: "execute",
+        order: 3,
+        title: "أثناء التصنيع",
+        subtitle: "صرف الخامات من المخزن، استلام المنتج الجاهز، وإنهاء الأمر.",
+        color: "emerald",
+        items: [
+          {
+            href: "/manufacturing/material-issue",
+            title: "صرف المواد الخام",
+            desc: "خصم الخامات من المخزن وتسليمها لخط الإنتاج.",
+            icon: "PackagePlus",
+          },
+          {
+            href: "/manufacturing/product-receive",
+            title: "استلام المنتج النهائى",
+            desc: "إضافة المنتج المُصنَّع لمخزن البضائع الجاهزة.",
+            icon: "PackageCheck",
+          },
+          {
+            href: "/manufacturing/close-production-order",
+            title: "إغلاق أمر الإنتاج",
+            desc: "إنهاء دورة التصنيع وحساب التكلفة الفعلية للمنتج.",
+            icon: "CheckSquare",
+          },
+        ],
+      },
+    ],
+    helpStripTitle: "مش متأكد من إيه تبدأ بيه؟",
+    helpStripBody:
+      "لو دى أول مرة فى الشركة، اعمل: مراكز عمل → قائمة مكوّنات لمنتجك → مسار تصنيع → أمر إنتاج. بعدها التنفيذ بيبقى صرف → استلام → إغلاق.",
+    cta: "ابدأ من هنا",
+  },
+  en: {
+    page: {
+      title: "Manufacturing Cycle",
+      subtitle: "Every step you need to manufacture a product, in order. Start with section one if you haven't defined your products and recipes yet.",
+      stepLabel: "Step",
+    },
+    sections: [
+      {
+        key: "setup",
+        order: 1,
+        title: "Setup (once per product)",
+        subtitle: "Define products, recipes, and how each is manufactured. Finish this before your first production order.",
+        color: "indigo",
+        items: [
+          {
+            href: "/manufacturing/work-centers",
+            title: "Work Centers",
+            desc: "Define the machines and departments where production happens (e.g. Mixer, Packaging Line).",
+            icon: "Cpu",
+          },
+          {
+            href: "/manufacturing/boms",
+            title: "Bills of Materials",
+            desc: "For each finished product, list the raw materials and their quantities.",
+            icon: "Layers",
+          },
+          {
+            href: "/manufacturing/routings",
+            title: "Manufacturing Routings",
+            desc: "Define the manufacturing steps for each product and the work center for each step.",
+            icon: "GitMerge",
+          },
+        ],
+      },
+      {
+        key: "plan",
+        order: 2,
+        title: "Plan Production",
+        subtitle: "Verify raw-material availability, then create the production order.",
+        color: "blue",
+        items: [
+          {
+            href: "/manufacturing/mrp",
+            title: "Material Requirements Planning",
+            desc: "Calculate raw materials needed before production starts so you don't get caught short.",
+            icon: "Calculator",
+            optional: true,
+          },
+          {
+            href: "/manufacturing/production-orders",
+            title: "Production Orders",
+            desc: "Create a new production order specifying the product, quantity, and due date.",
+            icon: "ClipboardList",
+            primary: true,
+          },
+        ],
+      },
+      {
+        key: "execute",
+        order: 3,
+        title: "During Production",
+        subtitle: "Issue raw materials from the warehouse, receive the finished product, and close the order.",
+        color: "emerald",
+        items: [
+          {
+            href: "/manufacturing/material-issue",
+            title: "Issue Raw Materials",
+            desc: "Deduct raw materials from inventory and hand them to the production line.",
+            icon: "PackagePlus",
+          },
+          {
+            href: "/manufacturing/product-receive",
+            title: "Receive Finished Product",
+            desc: "Add the manufactured product to the finished-goods warehouse.",
+            icon: "PackageCheck",
+          },
+          {
+            href: "/manufacturing/close-production-order",
+            title: "Close Production Order",
+            desc: "End the manufacturing cycle and compute the actual product cost.",
+            icon: "CheckSquare",
+          },
+        ],
+      },
+    ],
+    helpStripTitle: "Not sure where to start?",
+    helpStripBody:
+      "If this is the company's first time, do: Work Centers → BOM for your product → Routing → Production Order. Then execution is: Issue → Receive → Close.",
+    cta: "Start here",
+  },
+} as const
+
+// ─────────────────────────────────────────────
 // Work Centers
 // ─────────────────────────────────────────────
 export const WORK_CENTER_COPY = {
