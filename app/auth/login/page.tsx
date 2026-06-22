@@ -58,6 +58,11 @@ export default function LoginPage() {
   // code (template uses {{ .Token }} instead of {{ .TokenHash }}). We pass
   // no redirectTo because there is no link to click — the code is what the
   // user copies.
+  //
+  // v3.74.288 — First confirm the email is registered, otherwise Supabase
+  // silently swallows the request (anti-enumeration) and the user waits
+  // forever for an email that will never arrive. We trade a tiny bit of
+  // enumeration exposure for a much better UX.
   const handleSendResetCode = async () => {
     if (!login.trim()) {
       setError("اكتب البريد الإلكترونى الأول، ثم اضغط نسيت كلمة المرور.")
@@ -70,10 +75,28 @@ export default function LoginPage() {
     try {
       setResetSending(true)
       setError(null)
+      const email = login.trim().toLowerCase()
+
+      // Check registration first
+      try {
+        const res = await fetch("/api/check-email-registered", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email }),
+        })
+        const data = await res.json()
+        if (res.ok && data?.exists === false) {
+          setError("ما فيش حساب مسجّل بالبريد الإلكترونى ده. تأكد من الكتابة، أو اعمل حساب جديد من رابط 'إنشاء حساب جديد'.")
+          return
+        }
+        // exists === true OR fail-open path: continue to request the code.
+      } catch {
+        // Network / endpoint failure — fall back to original flow (Supabase
+        // will silently accept and just not send if the email isn't real).
+      }
+
       const supabase = createClient()
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
-        login.trim().toLowerCase()
-      )
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email)
       if (resetErr) throw resetErr
       setResetStage('codeSent')
       setResetCode("")
