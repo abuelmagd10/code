@@ -141,14 +141,30 @@ export abstract class BaseShippingAdapter {
         body: data ? JSON.stringify(data) : undefined,
       })
 
-      const responseData = await response.json()
+      // v3.74.301 — Read body as text first, then attempt JSON parse.
+      // The provider may return an HTML 404 / 500 page (e.g. wrong
+      // endpoint path). Calling response.json() directly throws on
+      // that and the user got an unhelpful "Unexpected token '<'"
+      // message. With the text-first read we always know the HTTP
+      // status and can include a snippet of what the provider sent.
+      const rawText = await response.text()
+      let responseData: any = null
+      try {
+        responseData = rawText ? JSON.parse(rawText) : {}
+      } catch {
+        // Non-JSON response — keep responseData null. The branch
+        // below will fall back to status + snippet.
+      }
 
-      if (!response.ok) {
+      if (!response.ok || responseData === null) {
+        const snippet = rawText.replace(/\s+/g, ' ').slice(0, 120)
         return {
           success: false,
           error: {
             code: `HTTP_${response.status}`,
-            message: responseData.message || responseData.error || 'Request failed',
+            message: responseData?.message
+              || responseData?.error
+              || `Provider returned HTTP ${response.status}${snippet ? ` — ${snippet}` : ''}`,
           },
         }
       }

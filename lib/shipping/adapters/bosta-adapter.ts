@@ -134,20 +134,22 @@ export class BostaAdapter extends BaseShippingAdapter {
   }
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
-    // v3.74.300 — Use /deliveries?limit=1 instead of /users/me. The
-    // /users/me endpoint returns "Invalid authorization token" for
-    // business accounts even with a valid key, because business
-    // accounts authenticate against the business resource tree, not
-    // the user tree. /deliveries is the canonical "any read" call.
+    // v3.74.301 — Use /businesses/me as the ping path. Two earlier
+    // attempts didn't work: /users/me returned an auth-failure JSON
+    // for business keys because that endpoint is for user sessions,
+    // and the deliveries collection path returned an HTML 404 because
+    // Bosta doesn't expose it as a read collection at v2.
+    // /businesses/me returns 200 with the business info when the key
+    // is valid and a JSON 401 when it isn't.
     //
-    // Diagnostic console.log retained intentionally — without it, an
-    // auth failure is opaque from the UI. We log only the redacted
-    // summary, never the raw key.
-    const result = await this.makeRequest<any>('GET', '/deliveries?limit=1', null)
+    // The redacted console.log stays so we can read auth failures
+    // from Vercel runtime logs without redeploying.
+    const endpoint = '/businesses/me'
+    const result = await this.makeRequest<any>('GET', endpoint, null)
 
     const keyTail = (this.config.api_key || '').slice(-4)
     console.log(
-      `[bosta-adapter] testConnection url=${this.getBaseUrl()}/deliveries?limit=1`,
+      `[bosta-adapter] testConnection url=${this.getBaseUrl()}${endpoint}`,
       `keyTail=...${keyTail}`,
       `keyLen=${(this.config.api_key || '').length}`,
       `success=${result.success}`,
