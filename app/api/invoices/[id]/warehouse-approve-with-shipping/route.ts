@@ -139,12 +139,13 @@ export async function POST(
 
     const { data: customer, error: custErr } = await supabase
       .from("customers")
-      // v3.74.310 — dropped `area` from the select. The column doesn't
-      // exist in the customers table on this project; requesting it made
-      // every approve+ship attempt fail with
-      // "column customers.area does not exist". address + city already
-      // give Bosta enough detail.
-      .select("name, phone, address, city, country")
+      // v3.74.311 — read detailed_address + governorate too.
+      // The customer form writes the actual street address into
+      // detailed_address (the field labelled "العنوان التفصيلى" in the
+      // UI) and leaves the legacy `address` column blank, so the old
+      // select pulled an empty string and the validation below kept
+      // rejecting valid customers as "incomplete".
+      .select("name, phone, address, detailed_address, city, governorate, country")
       .eq("id", invoice.customer_id)
       .maybeSingle()
 
@@ -157,7 +158,12 @@ export async function POST(
         stage: "load_customer",
       }, { status: 400 })
     }
-    if (!customer?.name || !customer?.phone || !customer?.address || !customer?.city) {
+    // Prefer the UI-facing detailed_address; fall back to the legacy
+    // address column for older records that only have that one.
+    const consigneeAddress: string =
+      String((customer as any)?.detailed_address || "").trim()
+      || String((customer as any)?.address || "").trim()
+    if (!customer?.name || !customer?.phone || !consigneeAddress || !customer?.city) {
       return NextResponse.json({
         success: false,
         error: "بيانات العميل ناقصة. اكمل الاسم والتليفون والمدينة والعنوان قبل إرسال الشحنة.",
@@ -165,7 +171,7 @@ export async function POST(
         missing: {
           name: !customer?.name,
           phone: !customer?.phone,
-          address: !customer?.address,
+          address: !consigneeAddress,
           city: !customer?.city,
         },
       }, { status: 400 })
@@ -188,7 +194,7 @@ export async function POST(
       consignee: {
         name:    customer.name,
         phone:   customer.phone,
-        address: customer.address,
+        address: consigneeAddress,
         city:    customer.city,
         country: customer.country || "Egypt",
       },
