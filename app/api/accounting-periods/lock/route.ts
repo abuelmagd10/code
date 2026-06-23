@@ -44,6 +44,76 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = createClient(url, serviceKey);
+
+    // v3.74.298 — FX revaluation guard. If the period contains any open
+    // foreign-currency invoice or bill and no fx_period_end_revaluation
+    // journal entry was booked inside the period, refuse the lock so
+    // the closing balance sheet doesn't carry stale FC valuations.
+    // Owner can pass body.force === true to override (rare but
+    // sometimes legitimate, e.g. all FC amounts are immaterial).
+    const force = body.force === true
+    if (!force) {
+      const { data: periodRow } = await admin
+        .from('accounting_periods')
+        .select('period_start, period_end')
+        .eq('id', period_id)
+        .eq('company_id', context!.companyId)
+        .maybeSingle()
+
+      if (periodRow?.period_start && periodRow?.period_end) {
+        const { data: companyRow } = await admin
+          .from('companies')
+          .select('base_currency')
+          .eq('id', context!.companyId)
+          .maybeSingle()
+        const baseCur = String(companyRow?.base_currency || 'EGP').toUpperCase()
+
+        const { data: openInvs } = await admin
+          .from('invoices')
+          .select('id, total_amount, paid_amount, original_currency')
+          .eq('company_id', context!.companyId)
+          .lte('invoice_date', periodRow.period_end)
+          .neq('original_currency', baseCur)
+          .limit(500)
+        const openInvoicesCount = (openInvs || []).filter(
+          (r: any) => Number(r.total_amount || 0) > Number(r.paid_amount || 0)
+        ).length
+
+        const { data: openBills } = await admin
+          .from('bills')
+          .select('id, total_amount, paid_amount, original_currency')
+          .eq('company_id', context!.companyId)
+          .lte('bill_date', periodRow.period_end)
+          .neq('original_currency', baseCur)
+          .limit(500)
+        const openBillsCount = (openBills || []).filter(
+          (r: any) => Number(r.total_amount || 0) > Number(r.paid_amount || 0)
+        ).length
+
+        const totalOpenFx = openInvoicesCount + openBillsCount
+        if (totalOpenFx > 0) {
+          const { count: revalCount } = await admin
+            .from('journal_entries')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', context!.companyId)
+            .eq('reference_type', 'fx_period_end_revaluation')
+            .gte('entry_date', periodRow.period_start)
+            .lte('entry_date', periodRow.period_end)
+
+          if ((revalCount ?? 0) === 0) {
+            return ErrorHandler.handle(
+              ErrorHandler.validation(
+                `عندك ${totalOpenFx} مستند بعملة أجنبية مفتوح فى الفترة دى (${openInvoicesCount} فاتورة عميل، ${openBillsCount} فاتورة مشتريات) ولسة ما اتعملش إعادة تقييم. ` +
+                `افتح "الإعدادات → إعادة تقييم العملات"، شغّل التقييم لتاريخ ${periodRow.period_end}، ثم ارجع لإقفال الفترة. ` +
+                `لو الأرصدة غير جوهرية، ابعت force=true لتجاوز هذا الفحص.`
+              ),
+              context!.correlationId
+            )
+          }
+        }
+      }
+    }
+
     const { data, error } = await admin.rpc('close_accounting_period', {
       p_period_id: period_id,
       p_company_id: context!.companyId, // ✅ تمرير companyId لضمان عزل الشركات على مستوى RPC
