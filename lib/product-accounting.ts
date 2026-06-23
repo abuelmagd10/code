@@ -19,7 +19,10 @@ export interface ProductAccountingDefaults {
   expenseId: string
   incomeAccount?: ProductAccountingAccount
   expenseAccount?: ProductAccountingAccount
-  pattern: "stock_product" | "service"
+  // v3.74.296 — raw_material added: signals to the UI that the
+  // accounting section should be hidden entirely (no income / no
+  // COGS apply to raw materials).
+  pattern: "stock_product" | "service" | "raw_material"
 }
 
 function norm(value: unknown) {
@@ -52,6 +55,15 @@ function subType(account: ProductAccountingAccount) {
 
 export function isStockProductType(productType: ProductType, itemType?: CompatItemType) {
   return itemType !== "service" && productType !== "service"
+}
+
+// v3.74.296 — Raw materials never reach a sales journal entry. They get
+// purchased (Debit Raw Materials Inventory / Credit AP), then consumed in
+// production (Debit WIP / Credit Raw Materials). Income and COGS accounts
+// only fire on the FINISHED product sale, not on the raw material itself,
+// so raw_material records shouldn't carry those account links.
+export function isRawMaterialItem(productType: ProductType, itemType?: CompatItemType) {
+  return productType === "raw_material"
 }
 
 export function isUsableIncomeAccount(account: ProductAccountingAccount) {
@@ -142,10 +154,20 @@ function pickServiceRevenueAccount(accounts: ProductAccountingAccount[]) {
 function pickCogsAccount(accounts: ProductAccountingAccount[]) {
   const expenseAccounts = accounts.filter((account) => norm(account.account_type) === "expense")
 
+  // v3.74.296 — Multi-stage lookup: prefer accurate sub_type, then the
+  // canonical 5100 code, then the name match, then anything our
+  // isCogsAccount predicate accepts. Earlier this gave up silently when
+  // the chart of accounts had a slightly different code (5101, 5110…)
+  // and the COGS field on the product form ended up blank.
   return (
     firstBy(expenseAccounts, (account) => subType(account) === "cogs") ||
     firstBy(expenseAccounts, (account) => subType(account) === "cost_of_goods_sold") ||
     firstBy(expenseAccounts, (account) => accountCode(account) === "5100") ||
+    firstBy(expenseAccounts, (account) =>
+      accountName(account).includes("تكلفة البضاع") ||
+      accountName(account).includes("تكلفة المبيعات") ||
+      accountName(account).includes("cost of goods")
+    ) ||
     firstBy(expenseAccounts, isCogsAccount)
   )
 }
@@ -171,6 +193,19 @@ export function getDefaultProductAccountingAccounts(
     itemType,
     productType,
   })
+
+  // v3.74.296 — Raw materials short-circuit: they don't have a sale
+  // journal entry of their own (the cost flows through WIP into the
+  // finished product's COGS), so income/expense accounts are not
+  // applicable. UI hides the section entirely.
+  if (isRawMaterialItem(classification.productType, classification.itemType)) {
+    return {
+      incomeId: "",
+      expenseId: "",
+      pattern: "raw_material",
+    }
+  }
+
   const isStockProduct = isStockProductType(classification.productType, classification.itemType)
 
   const incomeAccount = isStockProduct
@@ -202,6 +237,14 @@ export function validateProductAccountingSelection(params: {
     itemType: params.itemType,
     productType: params.productType,
   })
+
+  // v3.74.296 — Raw materials skip accounting validation entirely.
+  // Either field may be empty; if accidentally filled it is ignored
+  // (we don't surface a spurious error).
+  if (isRawMaterialItem(classification.productType, classification.itemType)) {
+    return { success: true, errors: [] }
+  }
+
   const byId = new Map(params.accounts.map((account) => [account.id, account]))
   const incomeAccount = params.incomeAccountId ? byId.get(params.incomeAccountId) : null
   const expenseAccount = params.expenseAccountId ? byId.get(params.expenseAccountId) : null

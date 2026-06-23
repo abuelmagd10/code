@@ -1399,6 +1399,20 @@ export default function ProductsPage() {
                       </div>
 
                       {/* Accounting Links */}
+                      {/* v3.74.296 — Raw materials never hit a sales JE.
+                          Replace the income/COGS pickers with a short
+                          explainer so the user doesn't waste time looking
+                          for the right account. */}
+                      {formData.product_type === 'raw_material' ? (
+                        <div className="border-t pt-4 mt-4">
+                          <p className="text-sm font-medium mb-2">{appLang === 'en' ? 'Accounting' : 'الربط المحاسبي'}</p>
+                          <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30 p-3 text-sm leading-relaxed text-blue-900 dark:text-blue-200">
+                            {appLang === 'en'
+                              ? <><strong>Raw materials are not sold directly.</strong> They are consumed in production and flow into the finished product&apos;s cost. No revenue or COGS account is needed on this item.</>
+                              : <><strong>المواد الخام مش بتنباع لوحدها.</strong> بتتصرف فى الإنتاج وبتدخل ضمن تكلفة المنتج النهائى. علشان كده ما محتاجين حساب إيراد ولا تكلفة مبيعات هنا.</>}
+                          </div>
+                        </div>
+                      ) : (
                       <div className="border-t pt-4 mt-4">
                         <div className="flex items-center justify-between mb-3">
                           <p className="text-sm font-medium">{appLang === 'en' ? 'Accounting' : 'الربط المحاسبي'}</p>
@@ -1458,7 +1472,7 @@ export default function ProductsPage() {
                           </div>
                           <div className="space-y-2">
                             <div className="flex items-center gap-1.5">
-                              <Label>{appLang === 'en' ? (isStockAccountingProduct ? 'COGS Account' : 'Expense Account') : (isStockAccountingProduct ? 'حساب تكلفة المبيعات' : 'حساب المصروفات')}</Label>
+                              <Label>{appLang === 'en' ? (isStockAccountingProduct ? 'COGS Account' : 'Operating Expense Account (optional)') : (isStockAccountingProduct ? 'حساب تكلفة المبيعات' : 'حساب المصروفات التشغيلية (اختيارى)')}</Label>
                               {!editingId && autoFilledAccounts && formData.expense_account_id === autoFilledAccounts.expenseId && formData.expense_account_id && (
                                 <Sparkles className="w-3 h-3 text-purple-500" />
                               )}
@@ -1491,6 +1505,7 @@ export default function ProductsPage() {
                           </div>
                         </div>
                       </div>
+                      )}
 
                       <Button type="submit" className="w-full" disabled={isSaving}>
                         {isSaving
