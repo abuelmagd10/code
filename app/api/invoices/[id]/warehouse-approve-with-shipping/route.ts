@@ -139,7 +139,12 @@ export async function POST(
 
     const { data: customer, error: custErr } = await supabase
       .from("customers")
-      .select("name, phone, address, city, country, area")
+      // v3.74.310 — dropped `area` from the select. The column doesn't
+      // exist in the customers table on this project; requesting it made
+      // every approve+ship attempt fail with
+      // "column customers.area does not exist". address + city already
+      // give Bosta enough detail.
+      .select("name, phone, address, city, country")
       .eq("id", invoice.customer_id)
       .maybeSingle()
 
