@@ -145,9 +145,46 @@ export class SalesInvoicePaymentCommandService {
     if (!Number.isFinite(amount) || amount <= 0) badRequest("مبلغ الدفعة يجب أن يكون أكبر من صفر")
     if (!command.paymentDate) badRequest("تاريخ الدفعة مطلوب")
     if (!command.paymentMethod) badRequest("طريقة الدفع مطلوبة")
+    // v3.74.306 — accountId مطلوب على مستوى الـ service كمان (آخر خط دفاع).
+    // الـ DB كان بيقبل null، فأى caller ينسى الحقل ده كان بيخلى الدفعة
+    // تتسجل بدون حساب. الفحص ده بيقفل المسار من جذره.
+    if (!command.accountId) badRequest("اختيار حساب النقد/البنك مطلوب لتسجيل الدفعة")
 
     const resolvedCompanyId = command.bodyCompanyId || actor.companyId
     if (!resolvedCompanyId) badRequest("معرف الشركة مطلوب")
+
+    // v3.74.306 — تحقق إن الحساب موجود وتابع لنفس الشركة وفعلًا cash/bank.
+    // ده بيحمى من إن مستخدم خبيث يبعت accountId لحساب من شركة تانية أو
+    // حساب إيرادات/مصاريف بدل cash/bank.
+    {
+      const { data: acct, error: acctErr } = await this.adminSupabase
+        .from("chart_of_accounts")
+        .select("id, company_id, sub_type, account_name, is_active, is_archived")
+        .eq("id", command.accountId)
+        .maybeSingle()
+      if (acctErr || !acct) {
+        throw new SalesInvoicePaymentCommandError("الحساب المختار غير موجود", 400, "ERR_ACCOUNT_NOT_FOUND")
+      }
+      if (acct.company_id !== resolvedCompanyId) {
+        throw new SalesInvoicePaymentCommandError("الحساب المختار لا يخص الشركة الحالية", 403, "ERR_ACCOUNT_FOREIGN_COMPANY")
+      }
+      if (acct.is_active === false || acct.is_archived === true) {
+        throw new SalesInvoicePaymentCommandError("الحساب المختار موقوف أو مؤرشف", 400, "ERR_ACCOUNT_INACTIVE")
+      }
+      const subType = String(acct.sub_type || "").toLowerCase()
+      const nameStr = String(acct.account_name || "")
+      const isCashOrBank =
+        subType === "cash"
+        || subType === "bank"
+        || /bank|cash|بنك|بنكي|مصرف|خزينة|نقد/i.test(nameStr)
+      if (!isCashOrBank) {
+        throw new SalesInvoicePaymentCommandError(
+          "الحساب المختار ليس حساب نقدية أو بنك. اختر حسابًا صحيحًا لاستلام الدفعة.",
+          400,
+          "ERR_ACCOUNT_NOT_CASH_OR_BANK",
+        )
+      }
+    }
 
     if (command.bodyCompanyId && command.bodyCompanyId !== actor.companyId) {
       const { data: membership } = await this.authSupabase

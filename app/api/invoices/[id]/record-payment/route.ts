@@ -34,6 +34,19 @@ export async function POST(
     if (!user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
+
+    // v3.74.306 — defense-in-depth: ارفض الـ request بدون حساب نقدية/بنك.
+    // الواجهة بتعمل validation، لكن نخلى الـ API يرفض أى استدعاء مباشر
+    // (curl, integration, خلل JS) ما يحوش حساب. ده يقفل الثغرة اللى
+    // اتلاحظت فى INV-00006 من الجذر.
+    const rawAccountId = typeof body?.accountId === "string" ? body.accountId.trim() : ""
+    if (!rawAccountId) {
+      return NextResponse.json(
+        { success: false, error: "اختيار حساب النقد/البنك مطلوب لتسجيل الدفعة", code: "ERR_ACCOUNT_REQUIRED" },
+        { status: 400 },
+      )
+    }
+
     const command: RecordInvoicePaymentCommand = {
       invoiceId,
       amount: Number(body?.amount || 0),
@@ -41,7 +54,7 @@ export async function POST(
       paymentMethod: String(body?.paymentMethod || "").trim(),
       referenceNumber: body?.referenceNumber || null,
       notes: body?.notes || null,
-      accountId: body?.accountId || null,
+      accountId: rawAccountId,
       branchId: body?.branchId || null,
       costCenterId: body?.costCenterId || null,
       warehouseId: body?.warehouseId || null,

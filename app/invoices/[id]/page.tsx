@@ -543,11 +543,11 @@ export default function InvoiceDetailPage() {
           return a.branch_id === userBranchId
         })
         setCashBankAccounts(list)
-        // اختَر افتراضياً أول حساب بنكي إن وُجِد
-        if (!paymentAccountId && list && list.length > 0) {
-          const preferred = list.find((a: any) => String(a.sub_type || '').toLowerCase() === 'bank' || /بنك|بنكي|مصرف/.test(String(a.account_name || '')))
-          setPaymentAccountId((preferred || list[0]).id)
-        }
+        // v3.74.306 — لا نختار حساب افتراضياً.
+        // المستخدم لازم يختار الحساب بنفسه. الـ auto-default القديم كان
+        // بيخلى المستخدم يقفل النافذة وهو فاكر إنه ما اختارش حساب، فالدفعة
+        // كانت بتروح على أول حساب بنكى (حتى لو دولارى والفاتورة بالجنيه).
+        // الزرار disabled لحد ما المستخدم يختار، فالحقل الفاضى أأمن.
       } catch (e) {
         /* ignore */
       }
