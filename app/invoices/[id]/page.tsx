@@ -288,6 +288,9 @@ export default function InvoiceDetailPage() {
   })
   const [creatingShipment, setCreatingShipment] = useState(false)
   const [existingShipment, setExistingShipment] = useState<any>(null)
+  // v3.74.303 — Latest events on the shipment so we can render a
+  // mini-timeline inline on the invoice page (no page hop needed).
+  const [shipmentStatusLogs, setShipmentStatusLogs] = useState<any[]>([])
   const [permShipmentWrite, setPermShipmentWrite] = useState(false)
   const printAreaRef = useRef<HTMLDivElement | null>(null)
   const invoiceContentRef = useRef<HTMLDivElement | null>(null)
@@ -900,6 +903,21 @@ export default function InvoiceDetailPage() {
           .eq("invoice_id", invoiceId)
           .maybeSingle()
         setExistingShipment(shipmentData)
+
+        // v3.74.303 — Pull the most recent status log entries so the
+        // mini-timeline on the invoice has something to show. Limited
+        // to 5 — the full history lives on /inventory/third-party.
+        if (shipmentData?.id) {
+          const { data: logs } = await supabase
+            .from("shipment_status_logs")
+            .select("internal_status, provider_status, location, notes, created_at")
+            .eq("shipment_id", shipmentData.id)
+            .order("created_at", { ascending: false })
+            .limit(5)
+          setShipmentStatusLogs(logs || [])
+        } else {
+          setShipmentStatusLogs([])
+        }
 
         // 🔐 تحميل التنقل يُؤجَّل إلى useEffect منفصل يعتمد على الفاتورة + صلاحيات المستخدم
         // (انظر useEffect [invoice, isPrivilegedUser, userBranchId] أدناه)
@@ -3374,6 +3392,134 @@ export default function InvoiceDetailPage() {
               </div>
             )}
 
+            {/* v3.74.303 — Shipment tracking card. Visible whenever the
+                invoice has a shipment row, regardless of pay permissions
+                (anyone with invoice read access should see where the
+                package is). The mini-timeline shows up to 5 most recent
+                events; full history is on /inventory/third-party. */}
+            {existingShipment && (
+              <Card className="dark:bg-slate-900 dark:border-slate-800 border-cyan-200 dark:border-cyan-900/40">
+                <div className="p-4 border-b border-cyan-100 dark:border-cyan-900/30 bg-cyan-50/50 dark:bg-cyan-950/20 flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Truck className="h-5 w-5 text-cyan-600" />
+                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                      {appLang === 'en' ? 'Shipment Tracking' : '📦 تتبع الشحنة'}
+                    </h3>
+                    {(() => {
+                      const s = String(existingShipment.status || 'pending').toLowerCase()
+                      const map: Record<string, { label: string; labelEn: string; cls: string }> = {
+                        created:          { label: 'تم الإنشاء',          labelEn: 'Created',           cls: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300' },
+                        picked_up:        { label: 'اتسلّمت من البائع',   labelEn: 'Picked Up',         cls: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300' },
+                        in_transit:       { label: 'فى الطريق',           labelEn: 'In Transit',        cls: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300' },
+                        out_for_delivery: { label: 'مع المندوب للتوصيل', labelEn: 'Out for Delivery',  cls: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+                        delivered:        { label: 'اتسلّمت للعميل',      labelEn: 'Delivered',         cls: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300' },
+                        returned:         { label: 'رجعت',                labelEn: 'Returned',          cls: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300' },
+                        cancelled:        { label: 'ملغية',               labelEn: 'Cancelled',         cls: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300' },
+                        failed:           { label: 'فشل التوصيل',         labelEn: 'Delivery Failed',   cls: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300' },
+                        pending:          { label: 'فى الانتظار',         labelEn: 'Pending',           cls: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300' },
+                      }
+                      const m = map[s] || map.pending
+                      return (
+                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${m.cls}`}>
+                          {appLang === 'en' ? m.labelEn : m.label}
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-cyan-700 hover:text-cyan-900 hover:bg-cyan-100 dark:text-cyan-300 dark:hover:bg-cyan-900/40"
+                    onClick={() => window.open(`/inventory/third-party?invoice_id=${invoiceId}`, '_blank')}
+                  >
+                    {appLang === 'en' ? 'View Full' : 'عرض كامل'}
+                    <ExternalLink className="w-3 h-3 mr-1" />
+                  </Button>
+                </div>
+                <CardContent className="pt-4 space-y-4">
+                  {/* Shipment meta: number / tracking / provider */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{appLang === 'en' ? 'Shipment #' : 'رقم الشحنة'}</p>
+                      <p className="font-mono text-gray-900 dark:text-white">{existingShipment.shipment_number || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{appLang === 'en' ? 'Tracking' : 'رقم التتبع'}</p>
+                      {existingShipment.tracking_number ? (
+                        <a
+                          href={`https://bosta.co/track/${existingShipment.tracking_number}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-cyan-700 dark:text-cyan-300 hover:underline inline-flex items-center gap-1"
+                        >
+                          {existingShipment.tracking_number}
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <p className="text-gray-400">—</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{appLang === 'en' ? 'Carrier' : 'شركة الشحن'}</p>
+                      <p className="text-gray-900 dark:text-white">{existingShipment.shipping_providers?.provider_name || '—'}</p>
+                    </div>
+                  </div>
+
+                  {/* Mini timeline — newest first, max 5 entries */}
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{appLang === 'en' ? 'Latest events' : 'آخر التحديثات'}</p>
+                    {shipmentStatusLogs.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                        {appLang === 'en' ? 'No events yet. The carrier will push updates as the shipment progresses.' : 'لسة مفيش تحديثات. شركة الشحن هتبعت تحديثات وقت ما الشحنة تتحرّك.'}
+                      </p>
+                    ) : (
+                      <ol className="relative border-r-2 border-cyan-200 dark:border-cyan-900/40 pr-4 space-y-3">
+                        {shipmentStatusLogs.map((ev, i) => {
+                          const dt = ev.created_at ? new Date(ev.created_at) : null
+                          const s = String(ev.internal_status || '').toLowerCase()
+                          const labelMap: Record<string, { ar: string; en: string }> = {
+                            created:          { ar: 'تم إنشاء الشحنة',      en: 'Shipment created' },
+                            picked_up:        { ar: 'اتسلّمت من البائع',     en: 'Picked up from sender' },
+                            in_transit:       { ar: 'فى الطريق',             en: 'In transit' },
+                            out_for_delivery: { ar: 'مع المندوب للتوصيل',   en: 'Out for delivery' },
+                            delivered:        { ar: 'اتسلّمت للعميل',        en: 'Delivered to customer' },
+                            returned:         { ar: 'رجعت',                  en: 'Returned' },
+                            cancelled:        { ar: 'ملغية',                 en: 'Cancelled' },
+                            failed:           { ar: 'فشل التوصيل',           en: 'Delivery failed' },
+                            pending:          { ar: 'فى الانتظار',           en: 'Pending' },
+                          }
+                          const lbl = labelMap[s] || { ar: ev.provider_status || s, en: ev.provider_status || s }
+                          return (
+                            <li key={i} className="relative">
+                              <span className={`absolute right-[-21px] top-1 w-2.5 h-2.5 rounded-full ${i === 0 ? 'bg-cyan-500 ring-2 ring-cyan-200 dark:ring-cyan-900/60' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                                <p className={`text-sm ${i === 0 ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
+                                  {appLang === 'en' ? lbl.en : lbl.ar}
+                                </p>
+                                {dt && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    {dt.toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG')}
+                                    {' '}
+                                    {dt.toLocaleTimeString(appLang === 'en' ? 'en-US' : 'ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+                              {ev.location && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">📍 {ev.location}</p>
+                              )}
+                              {ev.notes && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ev.notes}</p>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* جدول المدفوعات */}
             {permPayView && (
               <Card className="dark:bg-slate-900 dark:border-slate-800" data-ai-help="invoices.payments_table">
@@ -3613,9 +3759,13 @@ export default function InvoiceDetailPage() {
                   )
                 })()}
                 {/* 📌 تم إلغاء زر "إنشاء شحنة" - الوظيفة مدمجة في "تحديد كمرسلة" */}
-                {/* View Shipment Button - if shipment/third party goods exists */}
+                {/* v3.74.303 — "View Shipment" button now points at the
+                    Third-Party Inventory page filtered by invoice, since
+                    /shipments/[id] doesn't exist as a standalone page.
+                    The shipment summary card below shows the latest
+                    timeline events inline. */}
                 {existingShipment ? (
-                  <Button variant="outline" className="border-cyan-500 text-cyan-600 hover:bg-cyan-50" onClick={() => window.open(`/shipments/${existingShipment.id}`, '_blank')}>
+                  <Button variant="outline" className="border-cyan-500 text-cyan-600 hover:bg-cyan-50" onClick={() => window.open(`/inventory/third-party?invoice_id=${invoiceId}`, '_blank')}>
                     <Truck className="w-4 h-4 ml-2" />
                     {appLang === 'en' ? `Shipment: ${existingShipment.shipment_number}` : `الشحنة: ${existingShipment.shipment_number}`}
                     {existingShipment.tracking_number && <ExternalLink className="w-3 h-3 mr-1" />}
