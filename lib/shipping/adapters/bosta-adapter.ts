@@ -134,17 +134,17 @@ export class BostaAdapter extends BaseShippingAdapter {
   }
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
-    // v3.74.301 — Use /businesses/me as the ping path. Two earlier
-    // attempts didn't work: /users/me returned an auth-failure JSON
-    // for business keys because that endpoint is for user sessions,
-    // and the deliveries collection path returned an HTML 404 because
-    // Bosta doesn't expose it as a read collection at v2.
-    // /businesses/me returns 200 with the business info when the key
-    // is valid and a JSON 401 when it isn't.
+    // v3.74.302 — Use /cities as the ping path. Verified directly
+    // against Bosta production: returns 200 + JSON {success:true,
+    // data:{list:[...]}} on a valid business API key. /users/me,
+    // /businesses/me and the deliveries collection all returned
+    // either auth errors or HTML 404 - Bosta simply doesn't expose
+    // them at /api/v2 for business keys. /cities is the smallest
+    // authenticated GET that confirms both the URL and the key.
     //
     // The redacted console.log stays so we can read auth failures
     // from Vercel runtime logs without redeploying.
-    const endpoint = '/businesses/me'
+    const endpoint = '/cities'
     const result = await this.makeRequest<any>('GET', endpoint, null)
 
     const keyTail = (this.config.api_key || '').slice(-4)
