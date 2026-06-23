@@ -65,12 +65,20 @@ export async function POST(req: NextRequest) {
       return badRequestError("انتهت صلاحية الدعوة", ["token"])
     }
 
-    // التحقق من تطابق البريد الإلكتروني
+    // التحقق من تطابق البريد الإلكتروني.
+    // v3.74.295 — apiError signature is (status, message, messageEn?,
+    // details?, code?). The original call put "email_mismatch" in the
+    // message slot and the Arabic explanation in messageEn, so the
+    // invitations/accept page (which switches on js.code === 'email_mismatch')
+    // never matched and the user saw the raw literal "email_mismatch"
+    // string instead of the friendly mismatch panel.
     if (user.email?.toLowerCase() !== inv.email.toLowerCase()) {
       return apiError(
-        HTTP_STATUS.FORBIDDEN, 
-        "email_mismatch", 
-        `هذه الدعوة مخصصة للبريد ${inv.email}. أنت مسجل دخولك بـ ${user.email}`
+        HTTP_STATUS.FORBIDDEN,
+        `هذه الدعوة مخصصة للبريد ${inv.email}. أنت داخل دلوقتى بحساب ${user.email}. سجّل خروج من الحساب الحالى ثم افتح الرابط تانى بحساب ${inv.email}.`,
+        "email_mismatch",
+        { invited_email: inv.email, current_email: user.email },
+        "email_mismatch",
       )
     }
 
