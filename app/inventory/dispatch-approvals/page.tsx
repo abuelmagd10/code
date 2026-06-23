@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { CompanyHeader } from "@/components/company-header"
-import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle, Loader2, Eye, ArrowLeftRight, Send } from "lucide-react"
+import { Package, Check, X, Box, Info, Search, Factory, FileText, AlertTriangle, Loader2, Eye, ArrowLeftRight, Send, Truck, ExternalLink } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import {
   Dialog,
@@ -127,6 +127,22 @@ export default function DispatchApprovalsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<"approve" | "reject">("approve")
   const [selectedRow, setSelectedRow] = useState<UnifiedRow | null>(null)
+
+  // v3.74.305 — "Approve + create shipment via provider API" state.
+  // shippingActionLoading: invoice id currently being sent to provider.
+  // shippingFailureDialog : when provider rejects, we show a friendly
+  //   modal explaining what happened and offering two clear paths:
+  //   keep going with the manual approval (no shipment), or jump to
+  //   the provider dashboard to register the shipment by hand.
+  const [shippingActionLoading, setShippingActionLoading] = useState<string | null>(null)
+  const [shippingFailureDialog, setShippingFailureDialog] = useState<{
+    row: UnifiedRow
+    providerName: string
+    providerCode: string
+    message: string
+    stage?: string
+    missing?: { name?: boolean; phone?: boolean; address?: boolean; city?: boolean }
+  } | null>(null)
   const [notes, setNotes] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -174,7 +190,7 @@ export default function DispatchApprovalsPage() {
           id, invoice_number, invoice_date, total_amount, warehouse_status,
           customer_id, warehouse_id, branch_id, shipping_provider_id,
           customers:customer_id (name),
-          shipping_providers:shipping_provider_id (provider_name),
+          shipping_providers:shipping_provider_id (id, provider_name, provider_code, auth_type),
           warehouses:warehouse_id (name),
           branches:branch_id (name)
         `)
@@ -467,6 +483,54 @@ export default function DispatchApprovalsPage() {
     }
   }, [activeTab, loadHistory])
 
+  // v3.74.305 — Click handler for "Approve + create shipment" button.
+  // Bosta-first ordering: we let the provider decide whether to accept
+  // the shipment BEFORE we touch inventory or post a journal entry. On
+  // failure the user can fall back to the regular Approve button
+  // (which we don't touch) and register the shipment manually.
+  const handleApproveWithShipping = async (
+    row: UnifiedRow,
+    providerName: string,
+    providerCode: string,
+  ) => {
+    setShippingActionLoading(row.id)
+    try {
+      const res = await fetch(`/api/invoices/${row.id}/warehouse-approve-with-shipping`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success) {
+        setShippingFailureDialog({
+          row,
+          providerName,
+          providerCode,
+          message: data?.error || (appLang === 'en' ? "Failed to create shipment." : "تعذّر إنشاء الشحنة."),
+          stage: data?.stage,
+          missing: data?.missing,
+        })
+        return
+      }
+      toast({
+        title: appLang === 'en' ? "Approved + shipment created" : "تم الاعتماد + إنشاء الشحنة",
+        description: data?.shipment?.tracking_number
+          ? (appLang === 'en' ? `Tracking: ${data.shipment.tracking_number}` : `رقم التتبع: ${data.shipment.tracking_number}`)
+          : undefined,
+      })
+      loadAll()
+    } catch (err: any) {
+      setShippingFailureDialog({
+        row,
+        providerName,
+        providerCode,
+        message: err?.message || (appLang === 'en' ? "Network error." : "خطأ فى الاتصال."),
+      })
+    } finally {
+      setShippingActionLoading(null)
+    }
+  }
+
   const handleActionClick = (row: UnifiedRow, mode: "approve" | "reject") => {
     setSelectedRow(row)
     setModalMode(mode)
@@ -659,12 +723,38 @@ export default function DispatchApprovalsPage() {
             ) : (
               /* فواتير المبيعات: السلوك القديم */
               <>
+                {/* v3.74.305 — Conditional "Approve + create shipment"
+                    button. Visible only when the invoice points at an
+                    API-integrated provider (bosta / aramex). The
+                    classic Approve button stays untouched as a fallback
+                    for when the provider call fails. */}
+                {(() => {
+                  const sp: any = (row.raw as any)?.shipping_provider
+                  const providerCode = String(sp?.provider_code || '').toLowerCase()
+                  const hasApi = ['bosta', 'aramex'].includes(providerCode) && !!sp?.auth_type
+                  if (!hasApi) return null
+                  const providerName: string = sp.provider_name || providerCode
+                  return (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 border-cyan-300"
+                      onClick={() => handleApproveWithShipping(row, providerName, providerCode)}
+                      disabled={actionLoading === row.id || shippingActionLoading === row.id}
+                    >
+                      <Truck className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} />
+                      {shippingActionLoading === row.id
+                        ? (appLang === 'en' ? 'Creating…' : 'جارٍ الإنشاء…')
+                        : (appLang === 'en' ? `Approve + send to ${providerName}` : `اعتماد + إرسال لـ ${providerName}`)}
+                    </Button>
+                  )
+                })()}
                 <Button
                   size="sm"
                   variant="outline"
                   className="text-green-600 hover:text-green-700 hover:bg-green-50"
                   onClick={() => handleActionClick(row, "approve")}
-                  disabled={actionLoading === row.id}
+                  disabled={actionLoading === row.id || shippingActionLoading === row.id}
                 >
                   <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Approve" : "اعتماد"}
                 </Button>
@@ -673,7 +763,7 @@ export default function DispatchApprovalsPage() {
                   variant="outline"
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                   onClick={() => handleActionClick(row, "reject")}
-                  disabled={actionLoading === row.id}
+                  disabled={actionLoading === row.id || shippingActionLoading === row.id}
                 >
                   <X className={`w-4 h-4 ${appLang === 'en' ? 'mr-1' : 'ml-1'}`} /> {appLang === 'en' ? "Reject" : "رفض"}
                 </Button>
@@ -1179,6 +1269,93 @@ export default function DispatchApprovalsPage() {
                   ? (appLang === 'en' ? "Processing..." : "جاري المعالجة...")
                   : (appLang === 'en' ? "Confirm" : "تأكيد")}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* v3.74.305 — Shipping-creation failure dialog. Opened when the
+            new "Approve + send" button calls the provider and the
+            provider rejects (bad address, API down, quota, etc.). The
+            user gets a plain-Arabic explanation plus two clear actions:
+            fall back to the regular Approve button (no provider call),
+            or jump to the provider's own dashboard to register the
+            shipment manually. */}
+        <Dialog
+          open={!!shippingFailureDialog}
+          onOpenChange={(open) => { if (!open) setShippingFailureDialog(null) }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                {appLang === 'en'
+                  ? `Couldn’t create shipment via ${shippingFailureDialog?.providerName || ''}`
+                  : `تعذّر إنشاء الشحنة فى ${shippingFailureDialog?.providerName || ''}`}
+              </DialogTitle>
+              <DialogDescription className="leading-relaxed pt-2 text-gray-700 dark:text-gray-300">
+                {shippingFailureDialog?.message}
+              </DialogDescription>
+            </DialogHeader>
+
+            {shippingFailureDialog?.missing && Object.values(shippingFailureDialog.missing).some(Boolean) && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30 p-3 text-sm">
+                <p className="font-medium mb-1">{appLang === 'en' ? 'Missing fields on the customer:' : 'الحقول الناقصة فى بيانات العميل:'}</p>
+                <ul className="list-disc pr-5 text-amber-700 dark:text-amber-300 space-y-0.5">
+                  {shippingFailureDialog.missing.name && <li>{appLang === 'en' ? 'Name' : 'الاسم'}</li>}
+                  {shippingFailureDialog.missing.phone && <li>{appLang === 'en' ? 'Phone' : 'التليفون'}</li>}
+                  {shippingFailureDialog.missing.city && <li>{appLang === 'en' ? 'City' : 'المدينة'}</li>}
+                  {shippingFailureDialog.missing.address && <li>{appLang === 'en' ? 'Address' : 'العنوان التفصيلى'}</li>}
+                </ul>
+              </div>
+            )}
+
+            <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30 p-3 text-sm text-blue-900 dark:text-blue-200 leading-relaxed">
+              {appLang === 'en'
+                ? <>Your stock and journal entries were <strong>not</strong> touched. You can either approve through the regular button (no shipment created) and register the shipment by hand on the carrier’s dashboard, or fix the issue above and try this button again.</>
+                : <>المخزون والقيود المحاسبية <strong>ما اتأثرتش</strong>. تقدر تكمّل من زرار "اعتماد" العادى (بدون شحنة) ثم سجّل الشحنة يدوياً على منصة شركة الشحن، أو تصلّح المشكلة أعلاه وتجرّب الزرار ده تانى.</>}
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+              <Button
+                variant="outline"
+                onClick={() => setShippingFailureDialog(null)}
+              >
+                {appLang === 'en' ? 'Close' : 'إغلاق'}
+              </Button>
+              {(() => {
+                const code = String(shippingFailureDialog?.providerCode || '').toLowerCase()
+                const url = code === 'bosta'
+                  ? 'https://app.bosta.co/'
+                  : code === 'aramex'
+                    ? 'https://www.aramex.com/'
+                    : null
+                if (!url) return null
+                return (
+                  <Button
+                    variant="outline"
+                    className="border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                    onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
+                    {appLang === 'en'
+                      ? `Open ${shippingFailureDialog?.providerName} dashboard`
+                      : `فتح منصة ${shippingFailureDialog?.providerName}`}
+                  </Button>
+                )
+              })()}
+              {shippingFailureDialog && (
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => {
+                    const r = shippingFailureDialog.row
+                    setShippingFailureDialog(null)
+                    handleActionClick(r, 'approve')
+                  }}
+                >
+                  <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
+                  {appLang === 'en' ? 'Approve without shipment' : 'اعتماد بدون شحنة'}
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
