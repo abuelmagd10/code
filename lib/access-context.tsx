@@ -317,10 +317,15 @@ async function fetchAccessProfile(
           'dispatch_approvals', 'inventory_goods_receipt',
           'payments', 'expenses', 'banking',
         ],
-        // 3. مسؤول المشتريات — 5 pages verbatim
+        // 3. مسؤول المشتريات
+        // v3.74.297 — Added products + services. The purchasing officer
+        // needs to be able to open the Products & Services page to look
+        // up which SKU to put on a purchase order and to register a new
+        // raw material when the supplier offers one we don't carry yet.
         purchasing_officer: [
           'suppliers', 'purchase_orders', 'inventory',
           'dispatch_approvals', 'inventory_goods_receipt',
+          'products', 'services',
         ],
         // 4. مسؤول الحجوزات — 2 pages verbatim
         booking_officer: ['bookings', 'customers'],
