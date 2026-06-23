@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2, UserCheck, X, ClipboardList } from "lucide-react"
+import { Package, Truck, DollarSign, FileText, ExternalLink, Loader2, UserCheck, X, ClipboardList, MapPin, Navigation } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -140,6 +142,20 @@ export default function ThirdPartyInventoryPage() {
   const [filterShippingProviders, setFilterShippingProviders] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
+
+  // v3.74.304 — shipment tracking integration
+  // Map invoice_id -> shipment row (one shipment per invoice).
+  const [shipmentsByInvoice, setShipmentsByInvoice] = useState<Record<string, any>>({})
+  // Filter by shipment status; "all" passes everything through.
+  const [filterShipmentStatus, setFilterShipmentStatus] = useState<string>("all")
+  // Tracking dialog state
+  const [trackingDialogShipment, setTrackingDialogShipment] = useState<any>(null)
+  const [trackingDialogLogs, setTrackingDialogLogs] = useState<any[]>([])
+  const [trackingDialogLoading, setTrackingDialogLoading] = useState(false)
+  // Optional invoice_id from URL — lets the invoice page deep-link
+  // straight to a single row.
+  const searchParams = useSearchParams()
+  const urlInvoiceId = searchParams?.get('invoice_id') || ''
 
   // خيارات الحالة
   const statusOptions = [
@@ -407,6 +423,20 @@ export default function ThirdPartyInventoryPage() {
         return
       }
 
+      // v3.74.304 — Pull shipments for the same invoices. One shipment
+      // per invoice, so we key by invoice_id. Used by the new "Shipment
+      // status / Tracking" columns and the Tracking dialog.
+      const { data: shipmentRows } = await supabase
+        .from("shipments")
+        .select("id, invoice_id, shipment_number, tracking_number, status, created_at")
+        .eq("company_id", companyId)
+        .in("invoice_id", invoiceIds)
+      const shipmentMap: Record<string, any> = {}
+      for (const sh of (shipmentRows || [])) {
+        if (sh.invoice_id) shipmentMap[String(sh.invoice_id)] = sh
+      }
+      setShipmentsByInvoice(shipmentMap)
+
       // جلب بنود الفواتير للحصول على سعر البيع و line_total (بعد خصم البند)
       const { data: invoiceItemsData } = await supabase
         .from("invoice_items")
@@ -514,6 +544,7 @@ export default function ThirdPartyInventoryPage() {
     setFilterShippingProviders([])
     setDateFrom("")
     setDateTo("")
+    setFilterShipmentStatus("all")
   }
 
   // Active filter count
@@ -526,8 +557,47 @@ export default function ThirdPartyInventoryPage() {
     filterProducts.length > 0,
     filterShippingProviders.length > 0,
     !!dateFrom,
-    !!dateTo
+    !!dateTo,
+    filterShipmentStatus !== "all",
   ].filter(Boolean).length
+
+  // v3.74.304 — Map an internal shipment status code to a display label
+  // (Arabic + English) plus the Tailwind classes for its colored badge.
+  const shipmentStatusMeta = (code: string): { label: string; labelEn: string; cls: string } => {
+    const s = String(code || 'pending').toLowerCase()
+    const map: Record<string, { label: string; labelEn: string; cls: string }> = {
+      created:          { label: 'تم الإنشاء',         labelEn: 'Created',          cls: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300' },
+      picked_up:        { label: 'اتسلّمت من البائع',   labelEn: 'Picked Up',        cls: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300' },
+      in_transit:       { label: 'فى الطريق',           labelEn: 'In Transit',       cls: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300' },
+      out_for_delivery: { label: 'مع المندوب',          labelEn: 'Out for Delivery', cls: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+      delivered:        { label: 'اتسلّمت للعميل',      labelEn: 'Delivered',        cls: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300' },
+      returned:         { label: 'رجعت',                labelEn: 'Returned',         cls: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300' },
+      cancelled:        { label: 'ملغية',               labelEn: 'Cancelled',        cls: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300' },
+      failed:           { label: 'فشل التوصيل',         labelEn: 'Delivery Failed',  cls: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300' },
+      pending:          { label: 'فى الانتظار',         labelEn: 'Pending',          cls: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300' },
+    }
+    return map[s] || map.pending
+  }
+
+  // v3.74.304 — Open the tracking dialog and lazy-load the full
+  // shipment_status_logs for the picked shipment.
+  const openTrackingDialog = useCallback(async (shipment: any) => {
+    if (!shipment?.id) return
+    setTrackingDialogShipment(shipment)
+    setTrackingDialogLogs([])
+    setTrackingDialogLoading(true)
+    try {
+      const { data: logs } = await supabase
+        .from("shipment_status_logs")
+        .select("internal_status, provider_status, location, notes, created_at")
+        .eq("shipment_id", shipment.id)
+        .order("created_at", { ascending: false })
+        .limit(50)
+      setTrackingDialogLogs(logs || [])
+    } finally {
+      setTrackingDialogLoading(false)
+    }
+  }, [supabase])
 
   // فلترة البضائع
   const filteredItems = useMemo(() => {
@@ -577,9 +647,22 @@ export default function ThirdPartyInventoryPage() {
       if (dateFrom && itemDate < dateFrom) return false
       if (dateTo && itemDate > dateTo) return false
 
+      // v3.74.304 — Shipment-status filter (driven by the new dropdown
+      // in the filter bar).
+      if (filterShipmentStatus !== "all") {
+        const sh = shipmentsByInvoice[String(item.invoice_id)]
+        const code = String(sh?.status || 'pending').toLowerCase()
+        if (code !== filterShipmentStatus) return false
+      }
+
+      // v3.74.304 — Deep-link filter: when the page is opened from the
+      // invoice card with ?invoice_id=... we narrow to that invoice
+      // only, so the user lands directly on the matching row.
+      if (urlInvoiceId && item.invoice_id !== urlInvoiceId) return false
+
       return true
     })
-  }, [items, filterBranchId, filterEmployeeId, searchQuery, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll, canSeeBranchFilter])
+  }, [items, filterBranchId, filterEmployeeId, searchQuery, filterStatuses, filterCustomers, filterProducts, filterShippingProviders, dateFrom, dateTo, canViewAll, canSeeBranchFilter, filterShipmentStatus, shipmentsByInvoice, urlInvoiceId])
 
   // حساب الإحصائيات
   const stats = useMemo(() => {
@@ -1007,6 +1090,30 @@ export default function ThirdPartyInventoryPage() {
                   className="h-10 text-sm"
                 />
 
+                {/* v3.74.304 — فلتر حالة الشحنة */}
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">
+                    {isAr ? 'حالة الشحنة' : 'Shipment Status'}
+                  </label>
+                  <Select value={filterShipmentStatus} onValueChange={setFilterShipmentStatus}>
+                    <SelectTrigger className="h-10 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{isAr ? 'الكل' : 'All'}</SelectItem>
+                      <SelectItem value="pending">{isAr ? 'فى الانتظار' : 'Pending'}</SelectItem>
+                      <SelectItem value="created">{isAr ? 'تم الإنشاء' : 'Created'}</SelectItem>
+                      <SelectItem value="picked_up">{isAr ? 'اتسلّمت من البائع' : 'Picked Up'}</SelectItem>
+                      <SelectItem value="in_transit">{isAr ? 'فى الطريق' : 'In Transit'}</SelectItem>
+                      <SelectItem value="out_for_delivery">{isAr ? 'مع المندوب' : 'Out for Delivery'}</SelectItem>
+                      <SelectItem value="delivered">{isAr ? 'اتسلّمت للعميل' : 'Delivered'}</SelectItem>
+                      <SelectItem value="returned">{isAr ? 'رجعت' : 'Returned'}</SelectItem>
+                      <SelectItem value="failed">{isAr ? 'فشل التوصيل' : 'Delivery Failed'}</SelectItem>
+                      <SelectItem value="cancelled">{isAr ? 'ملغية' : 'Cancelled'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* من تاريخ */}
                 <div className="space-y-1">
                   <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -1077,13 +1184,16 @@ export default function ThirdPartyInventoryPage() {
                       <TableHead className="text-xs sm:text-sm font-semibold text-center hidden sm:table-cell">{isAr ? "السعر" : "Price"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "القيمة" : "Value"}</TableHead>
                       <TableHead className="text-xs sm:text-sm font-semibold text-center">{isAr ? "الحالة" : "Status"}</TableHead>
-                      <TableHead className="text-xs sm:text-sm font-semibold text-center w-16">{isAr ? "عرض" : "View"}</TableHead>
+                      {/* v3.74.304 — Shipment columns */}
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center hidden md:table-cell">{isAr ? "حالة الشحنة" : "Shipment"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center hidden lg:table-cell">{isAr ? "رقم التتبع" : "Tracking"}</TableHead>
+                      <TableHead className="text-xs sm:text-sm font-semibold text-center w-20">{isAr ? "عرض" : "View"}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
                           <Truck className="h-12 w-12 mx-auto mb-2 opacity-50" />
                           {isAr ? "لا توجد بضائع لدى الغير" : "No third party goods found"}
                         </TableCell>
@@ -1183,23 +1293,71 @@ export default function ThirdPartyInventoryPage() {
                                 )}
                               </div>
                             </TableCell>
-                            {/* عرض */}
+                            {/* v3.74.304 — Shipment status badge */}
+                            <TableCell className="text-center hidden md:table-cell">
+                              {(() => {
+                                const sh = shipmentsByInvoice[String(item.invoice_id)]
+                                if (!sh) return <span className="text-gray-400 text-xs">—</span>
+                                const meta = shipmentStatusMeta(sh.status)
+                                return (
+                                  <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium ${meta.cls}`}>
+                                    {isAr ? meta.label : meta.labelEn}
+                                  </span>
+                                )
+                              })()}
+                            </TableCell>
+                            {/* v3.74.304 — Tracking number with external link */}
+                            <TableCell className="text-center hidden lg:table-cell text-xs">
+                              {(() => {
+                                const sh = shipmentsByInvoice[String(item.invoice_id)]
+                                if (!sh?.tracking_number) return <span className="text-gray-400">—</span>
+                                return (
+                                  <a
+                                    href={`https://bosta.co/track/${sh.tracking_number}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-mono text-cyan-700 dark:text-cyan-300 hover:underline inline-flex items-center gap-1"
+                                  >
+                                    {sh.tracking_number}
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )
+                              })()}
+                            </TableCell>
+                            {/* عرض + زرار التتبع */}
                             <TableCell className="text-center">
-                              {canAccessInvoices ? (
-                                <Link href={`/invoices/${item.invoice_id}`}>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
-                                    <ExternalLink className="h-4 w-4 text-blue-600" />
-                                  </Button>
-                                </Link>
-                              ) : item.invoices?.sales_order_id ? (
-                                <Link href={`/sales-orders/${item.invoices.sales_order_id}`}>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20" title={isAr ? "عرض أمر البيع" : "View Sales Order"}>
-                                    <ExternalLink className="h-4 w-4 text-blue-600" />
-                                  </Button>
-                                </Link>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
+                              <div className="flex items-center justify-center gap-1">
+                                {(() => {
+                                  const sh = shipmentsByInvoice[String(item.invoice_id)]
+                                  if (!sh) return null
+                                  return (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0 hover:bg-cyan-50 dark:hover:bg-cyan-900/20"
+                                      title={isAr ? "تتبع الشحنة" : "Track shipment"}
+                                      onClick={() => openTrackingDialog(sh)}
+                                    >
+                                      <Navigation className="h-4 w-4 text-cyan-600" />
+                                    </Button>
+                                  )
+                                })()}
+                                {canAccessInvoices ? (
+                                  <Link href={`/invoices/${item.invoice_id}`}>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20" title={isAr ? "عرض الفاتورة" : "View Invoice"}>
+                                      <ExternalLink className="h-4 w-4 text-blue-600" />
+                                    </Button>
+                                  </Link>
+                                ) : item.invoices?.sales_order_id ? (
+                                  <Link href={`/sales-orders/${item.invoices.sales_order_id}`}>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20" title={isAr ? "عرض أمر البيع" : "View Sales Order"}>
+                                      <ExternalLink className="h-4 w-4 text-blue-600" />
+                                    </Button>
+                                  </Link>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         )
@@ -1229,6 +1387,9 @@ export default function ThirdPartyInventoryPage() {
                         </TableCell>
                         {/* الحالة - فارغ */}
                         <TableCell></TableCell>
+                        {/* v3.74.304 — Shipment + Tracking columns - فارغ */}
+                        <TableCell className="hidden md:table-cell"></TableCell>
+                        <TableCell className="hidden lg:table-cell"></TableCell>
                         {/* عرض - فارغ */}
                         <TableCell></TableCell>
                       </TableRow>
@@ -1239,6 +1400,100 @@ export default function ThirdPartyInventoryPage() {
             </CardContent>
           </Card>
           </>)}
+
+          {/* v3.74.304 — Tracking timeline dialog */}
+          <Dialog open={!!trackingDialogShipment} onOpenChange={(open) => { if (!open) { setTrackingDialogShipment(null); setTrackingDialogLogs([]) } }}>
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-cyan-600" />
+                  {isAr ? 'تتبع الشحنة' : 'Shipment Tracking'}
+                  {trackingDialogShipment?.status && (() => {
+                    const meta = shipmentStatusMeta(trackingDialogShipment.status)
+                    return (
+                      <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full border font-medium ${meta.cls}`}>
+                        {isAr ? meta.label : meta.labelEn}
+                      </span>
+                    )
+                  })()}
+                </DialogTitle>
+              </DialogHeader>
+              {trackingDialogShipment && (
+                <div className="space-y-4">
+                  {/* Meta */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-gray-50 dark:bg-slate-800/50 rounded-lg p-3">
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{isAr ? 'رقم الشحنة' : 'Shipment #'}</p>
+                      <p className="font-mono text-gray-900 dark:text-white">{trackingDialogShipment.shipment_number || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{isAr ? 'رقم التتبع' : 'Tracking #'}</p>
+                      {trackingDialogShipment.tracking_number ? (
+                        <a
+                          href={`https://bosta.co/track/${trackingDialogShipment.tracking_number}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-cyan-700 dark:text-cyan-300 hover:underline inline-flex items-center gap-1"
+                        >
+                          {trackingDialogShipment.tracking_number}
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <p className="text-gray-400">—</p>
+                      )}
+                    </div>
+                  </div>
+                  {/* Timeline */}
+                  <div>
+                    <p className="text-sm font-semibold mb-3">{isAr ? 'كل التحديثات (من الأحدث للأقدم)' : 'All updates (newest first)'}</p>
+                    {trackingDialogLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {isAr ? 'جارٍ التحميل...' : 'Loading...'}
+                      </div>
+                    ) : trackingDialogLogs.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">
+                        {isAr ? 'لسة مفيش تحديثات. شركة الشحن هتبعت تحديثات وقت ما الشحنة تتحرّك.' : 'No updates yet. The carrier will push updates as the shipment progresses.'}
+                      </p>
+                    ) : (
+                      <ol className="relative border-r-2 border-cyan-200 dark:border-cyan-900/40 pr-4 space-y-3">
+                        {trackingDialogLogs.map((ev, i) => {
+                          const dt = ev.created_at ? new Date(ev.created_at) : null
+                          const meta = shipmentStatusMeta(ev.internal_status)
+                          return (
+                            <li key={i} className="relative">
+                              <span className={`absolute right-[-21px] top-1 w-2.5 h-2.5 rounded-full ${i === 0 ? 'bg-cyan-500 ring-2 ring-cyan-200 dark:ring-cyan-900/60' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                                <p className={`text-sm ${i === 0 ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
+                                  {isAr ? meta.label : meta.labelEn}
+                                </p>
+                                {dt && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    {dt.toLocaleDateString(isAr ? 'ar-EG' : 'en-US')}
+                                    {' '}
+                                    {dt.toLocaleTimeString(isAr ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+                              {ev.location && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {ev.location}
+                                </p>
+                              )}
+                              {ev.notes && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ev.notes}</p>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    )}
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* ── Log Tab ── */}
           {activeTab === "log" && (
