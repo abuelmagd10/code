@@ -1353,7 +1353,12 @@ export default function DispatchApprovalsPage() {
                   }}
                 >
                   <Check className={`w-4 h-4 ${appLang === 'en' ? 'mr-2' : 'ml-2'}`} />
-                  {appLang === 'en' ? 'Approve without shipment' : 'اعتماد بدون شحنة'}
+                  {/* v3.74.313 — اسم أوضح للمستخدم: بيقوله صراحة هيحتاج
+                      يسجل الشحنة يدوياً فى موقع شركة الشحن المرتبطة بالاسم،
+                      بدل "اعتماد بدون شحنة" الغامض. */}
+                  {appLang === 'en'
+                    ? `Approve (manual entry on ${shippingFailureDialog.providerName})`
+                    : `اعتماد (التسجيل يدوي بموقع ${shippingFailureDialog.providerName})`}
                 </Button>
               )}
             </DialogFooter>
