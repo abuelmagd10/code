@@ -69,6 +69,30 @@ export class BostaAdapter extends BaseShippingAdapter {
     const result = await this.makeRequest<any>('POST', '/deliveries', bostaPayload)
 
     if (!result.success) {
+      // v3.74.312 — translate Bosta's own auth wording into an actionable
+      // Arabic message. /cities is a public endpoint, so a successful
+      // testConnection does NOT prove the API key has "Create delivery"
+      // permission. If we land on HTTP 401/403 here, the user needs to
+      // fix the key permission on Bosta dashboard, not the data.
+      const code = String(result.error?.code || '')
+      const msg  = String(result.error?.message || '').toLowerCase()
+      const isAuthIssue =
+        code === 'HTTP_401' || code === 'HTTP_403'
+        || msg.includes('invalid authorization')
+        || msg.includes('invalid token')
+        || msg.includes('invalid api key')
+      if (isAuthIssue) {
+        return {
+          success: false,
+          error: {
+            code: 'AUTH_INVALID',
+            message:
+              'بوسطة رفضت الـ API key. الـ key اللى أنت ضايفه شغّال للقراءة بس (مثل /cities)، '
+              + 'لكن مش له صلاحية "إنشاء شحنة". افتح dashboard بوسطة → Settings → API، '
+              + 'وتأكد إن الـ key له صلاحية Create Delivery، أو ولّد key جديد بصلاحية كاملة.',
+          },
+        }
+      }
       return { success: false, error: result.error }
     }
 

@@ -157,7 +157,20 @@ export abstract class BaseShippingAdapter {
       }
 
       if (!response.ok || responseData === null) {
-        const snippet = rawText.replace(/\s+/g, ' ').slice(0, 120)
+        const snippet = rawText.replace(/\s+/g, ' ').slice(0, 200)
+
+        // v3.74.312 — log failure details on the server so we can read
+        // them from Vercel runtime logs without redeploying. The raw
+        // response from the carrier is what really tells us whether
+        // it's an auth issue, a body-validation issue, or a 5xx.
+        const keyTail = (this.config.api_key || '').slice(-4)
+        console.error(
+          `[${this.providerCode}-adapter] HTTP ${response.status} on ${method} ${endpoint}`,
+          ` keyTail=...${keyTail}`,
+          ` keyLen=${(this.config.api_key || '').length}`,
+          ` raw=${snippet}`,
+        )
+
         return {
           success: false,
           error: {
