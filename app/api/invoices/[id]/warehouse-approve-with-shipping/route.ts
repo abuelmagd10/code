@@ -63,33 +63,59 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
 
     // ── Step 1: load invoice, customer, provider ──────────────────────
+    // v3.74.308 — split the load into 3 separate queries.
+    // The previous single-query version with embedded relationships
+    // (`customers!invoices_customer_id_fkey(...)`,
+    // `shipping_providers:shipping_provider_id(*)`) returned a confusing
+    // "الفاتورة غير موجودة" message whenever PostgREST couldn't resolve
+    // the embedded relation (stale schema cache, RLS on the joined table,
+    // or any other join-time issue). The operator had no way to tell
+    // the actual cause. Three separate queries surface the real failure
+    // point (load_invoice / load_customer / load_provider) so the user
+    // sees exactly what's missing.
     const { data: invoice, error: invErr } = await supabase
       .from("invoices")
-      .select(`
-        id, invoice_number, total_amount, paid_amount, shipping_provider_id, customer_id, branch_id, warehouse_status,
-        customers!invoices_customer_id_fkey(name, phone, address, city, country, area),
-        shipping_providers:shipping_provider_id(*)
-      `)
+      .select("id, invoice_number, total_amount, paid_amount, shipping_provider_id, customer_id, branch_id, warehouse_status")
       .eq("id", invoiceId)
       .eq("company_id", companyId)
       .maybeSingle()
 
     if (invErr || !invoice) {
+      console.error("[warehouse-approve-with-shipping] load_invoice", {
+        invoiceId, companyId, err: invErr?.message,
+      })
       return NextResponse.json({
         success: false,
-        error: "الفاتورة غير موجودة",
+        error: invErr?.message
+          ? `الفاتورة غير موجودة (${invErr.message})`
+          : "الفاتورة غير موجودة أو لا يحق لك الوصول إليها",
         stage: "load_invoice",
+        debug: { invoiceId, companyId, error: invErr?.message || null },
       }, { status: 404 })
     }
 
-    const provider: any = Array.isArray(invoice.shipping_providers)
-      ? invoice.shipping_providers[0]
-      : invoice.shipping_providers
-    if (!provider?.id) {
+    if (!invoice.shipping_provider_id) {
       return NextResponse.json({
         success: false,
         error: "الفاتورة دى ما عليهاش شركة شحن. استخدم زرار الاعتماد العادى.",
         stage: "no_provider",
+      }, { status: 400 })
+    }
+
+    const { data: provider, error: provErr } = await supabase
+      .from("shipping_providers")
+      .select("*")
+      .eq("id", invoice.shipping_provider_id)
+      .eq("company_id", companyId)
+      .maybeSingle()
+
+    if (provErr || !provider?.id) {
+      return NextResponse.json({
+        success: false,
+        error: provErr?.message
+          ? `تعذر تحميل بيانات شركة الشحن (${provErr.message})`
+          : "شركة الشحن المرتبطة بالفاتورة غير موجودة.",
+        stage: "load_provider",
       }, { status: 400 })
     }
 
@@ -103,9 +129,29 @@ export async function POST(
     }
 
     // ── Step 2: validate customer address ────────────────────────────
-    const customer: any = Array.isArray((invoice as any).customers)
-      ? (invoice as any).customers[0]
-      : (invoice as any).customers
+    if (!invoice.customer_id) {
+      return NextResponse.json({
+        success: false,
+        error: "الفاتورة بدون عميل — أكمل بيانات العميل أولاً.",
+        stage: "no_customer",
+      }, { status: 400 })
+    }
+
+    const { data: customer, error: custErr } = await supabase
+      .from("customers")
+      .select("name, phone, address, city, country, area")
+      .eq("id", invoice.customer_id)
+      .maybeSingle()
+
+    if (custErr || !customer) {
+      return NextResponse.json({
+        success: false,
+        error: custErr?.message
+          ? `تعذر تحميل بيانات العميل (${custErr.message})`
+          : "بيانات العميل غير متاحة.",
+        stage: "load_customer",
+      }, { status: 400 })
+    }
     if (!customer?.name || !customer?.phone || !customer?.address || !customer?.city) {
       return NextResponse.json({
         success: false,
