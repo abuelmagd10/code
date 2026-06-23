@@ -1166,6 +1166,7 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Chart of Accounts' : 'الشجرة المحاسبية'), href: `/chart-of-accounts${q}`, icon: BookOpen },
                     { label: (lang === 'en' ? 'Accounting Periods' : 'الفترات المحاسبية'), href: `/accounting/periods${q}`, icon: Calendar },
                     { label: (lang === 'en' ? 'Period Closing' : 'إقفال الفترة'), href: `/accounting/period-closing${q}`, icon: Calendar },
+                    { label: (lang === 'en' ? 'FX Revaluation' : 'إعادة تقييم العملات'), href: `/settings/fx-revaluation${q}`, icon: Calculator },
                     { label: (lang === 'en' ? 'Annual Closing' : 'الإقفال السنوي'), href: `/annual-closing${q}`, icon: CheckCircle },
                     { label: (lang === 'en' ? 'Taxes' : 'الضرائب'), href: `/settings/taxes${q}`, icon: Settings },
                     { label: (lang === 'en' ? 'Shareholders' : 'المساهمون'), href: `/shareholders${q}`, icon: Users },
@@ -1196,7 +1197,6 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
                     { label: (lang === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
                     { label: (lang === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
-                    { label: (lang === 'en' ? 'FX Revaluation' : 'إعادة تقييم العملات'), href: `/settings/fx-revaluation${q}`, icon: Calculator },
                   ]
                 },
               ]

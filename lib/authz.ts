@@ -390,6 +390,7 @@ const FALLBACK_PAGES = [
   { resource: "purchase_orders", path: "/purchase-orders" },
   { resource: "purchase_returns", path: "/purchase-returns" },
   { resource: "vendor_credits", path: "/vendor-credits" },
+  { resource: "vendor_payment_correction_requests", path: "/vendor-payment-correction-requests" },
   // المخزون
   { resource: "manufacturing_boms", path: "/manufacturing/boms" },
   { resource: "products", path: "/products" },
@@ -402,6 +403,7 @@ const FALLBACK_PAGES = [
   { resource: "chart_of_accounts", path: "/chart-of-accounts" },
   { resource: "banking", path: "/banking" },
   { resource: "shareholders", path: "/shareholders" },
+  { resource: "fx_revaluation", path: "/settings/fx-revaluation" },
   { resource: "fixed_assets", path: "/fixed-assets" },
   { resource: "asset_categories", path: "/fixed-assets/categories" },
   { resource: "fixed_assets_reports", path: "/fixed-assets/reports" },

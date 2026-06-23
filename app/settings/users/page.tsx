@@ -1411,6 +1411,7 @@ export default function UsersSettingsPage() {
         { value: 'purchase_orders', label: 'أوامر الشراء' },
         { value: 'purchase_returns', label: 'مرتجعات المشتريات' },
         { value: 'vendor_credits', label: 'إشعارات دائن الموردين' },
+        { value: 'vendor_payment_correction_requests', label: 'طلبات تصحيح مدفوعات الموردين' },
       ]
     },
     inventory: {
