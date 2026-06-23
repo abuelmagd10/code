@@ -134,12 +134,31 @@ export class BostaAdapter extends BaseShippingAdapter {
   }
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
-    const result = await this.makeRequest<any>('GET', '/users/me', null)
+    // v3.74.300 — Use /deliveries?limit=1 instead of /users/me. The
+    // /users/me endpoint returns "Invalid authorization token" for
+    // business accounts even with a valid key, because business
+    // accounts authenticate against the business resource tree, not
+    // the user tree. /deliveries is the canonical "any read" call.
+    //
+    // Diagnostic console.log retained intentionally — without it, an
+    // auth failure is opaque from the UI. We log only the redacted
+    // summary, never the raw key.
+    const result = await this.makeRequest<any>('GET', '/deliveries?limit=1', null)
+
+    const keyTail = (this.config.api_key || '').slice(-4)
+    console.log(
+      `[bosta-adapter] testConnection url=${this.getBaseUrl()}/deliveries?limit=1`,
+      `keyTail=...${keyTail}`,
+      `keyLen=${(this.config.api_key || '').length}`,
+      `success=${result.success}`,
+      `err=${result.error?.code || ''}`,
+      `errMsg=${result.error?.message || ''}`,
+    )
 
     return {
       success: result.success,
-      message: result.success 
-        ? `Connected as: ${result.data?.name || result.data?.email}` 
+      message: result.success
+        ? 'Connection successful (Bosta business account)'
         : (result.error?.message || 'Connection failed')
     }
   }
