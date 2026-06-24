@@ -20,7 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Save, Link2 } from "lucide-react"
+import { Loader2, Save, Link2, MapPin } from "lucide-react"
 import { createServiceSchema, SERVICE_TYPE_VALUES } from "@/lib/services/booking-api"
 import {
   ServiceSchedulesEditor,
@@ -29,6 +29,7 @@ import {
 } from "@/components/services/ServiceSchedulesEditor"
 import { useState, useEffect } from "react"
 import type { Service, ServiceSchedule } from "@/types/services"
+import { useAccess } from "@/lib/access-context"
 
 // Use createServiceSchema for both create and edit (edit uses same fields)
 type ServiceFormValues = z.infer<typeof createServiceSchema>
@@ -97,6 +98,25 @@ export function ServiceForm({
         if (json?.products) {
           setCatalogProducts(json.products as CatalogProduct[])
         }
+      })
+      .catch(() => { /* non-critical */ })
+  }, [])
+
+  // v3.74.319 — اختيار الفرع للخدمة (NULL = متاحة لكل الفروع).
+  // المالك والمدير العام (admin) يقدروا يختاروا "كل الفروع" أو فرع محدد.
+  // المدير (manager) محصور على فرعه — ندى dropdown أحادى الخيار.
+  const { profile } = useAccess()
+  const isCompanyScope = !!(profile?.is_owner || profile?.is_admin)
+  const userBranchId = profile?.branch_id ?? null
+
+  interface BranchItem { id: string; name: string }
+  const [branches, setBranches] = useState<BranchItem[]>([])
+  useEffect(() => {
+    fetch("/api/branches")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        const list = json?.branches || json?.data || json
+        if (Array.isArray(list)) setBranches(list as BranchItem[])
       })
       .catch(() => { /* non-critical */ })
   }, [])
@@ -263,6 +283,64 @@ export function ServiceForm({
                     {t("اختر صنفاً من الكتالوج لعرض الأسعار والحسابات", "Pick a catalog item to preview its pricing and accounts")}
                   </div>
                 )}
+
+                {/* v3.74.319 — Branch selector.
+                    - Company-scope roles (owner/admin) can pick "كل الفروع" (NULL) or any specific branch.
+                    - Branch-scope roles (manager) see their own branch only, disabled. */}
+                <FormField
+                  control={form.control}
+                  name={"branch_id" as any}
+                  render={({ field }) => {
+                    const ALL_BRANCHES = "__ALL__"
+                    const currentVal = (field.value as string | null | undefined) ?? null
+                    const selectValue = isCompanyScope
+                      ? (currentVal ?? ALL_BRANCHES)
+                      : (currentVal ?? userBranchId ?? "")
+                    return (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                          {t("الفرع", "Branch")}
+                        </FormLabel>
+                        <Select
+                          value={selectValue || ""}
+                          onValueChange={(v) => {
+                            field.onChange(v === ALL_BRANCHES ? null : v)
+                          }}
+                          disabled={!isCompanyScope}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t("اختر الفرع", "Pick a branch")} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {isCompanyScope && (
+                              <SelectItem value={ALL_BRANCHES}>
+                                {t("كل الفروع (مشتركة)", "All branches (shared)")}
+                              </SelectItem>
+                            )}
+                            {branches.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription className="text-xs">
+                          {isCompanyScope
+                            ? t(
+                                "اتركها على «كل الفروع» علشان الخدمة تظهر لمسؤول الحجز فى أى فرع.",
+                                "Leave as 'All branches' to let booking officers in every branch see this service."
+                              )
+                            : t(
+                                "محدد تلقائياً بفرعك. لازم يكون مدير عام أو المالك لإنشاء خدمة لكل الفروع.",
+                                "Auto-set to your branch. Only owner / general manager can publish a service across all branches."
+                              )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )
+                  }}
+                />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 

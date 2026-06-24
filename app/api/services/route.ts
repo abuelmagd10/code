@@ -32,9 +32,11 @@ export async function GET(req: NextRequest) {
       .order('service_name')
       .range(from, to)
 
-    // booking_officer مقيَّد بفرعه تلقائياً
+    // v3.74.319 — booking_officer يرى خدمات فرعه + الخدمات المشتركة
+    // (branch_id IS NULL) اللى أنشأها المالك/المدير العام بدون فرع محدد.
+    // النص "branch_id.is.null,branch_id.eq.<id>" هى صياغة PostgREST لـ OR.
     if (member?.branch_id && String(member.role || '') === 'booking_officer') {
-      query = query.eq('branch_id', member.branch_id)
+      query = query.or(`branch_id.is.null,branch_id.eq.${member.branch_id}`)
     }
 
     const branchId     = sp.get('branch_id')
@@ -76,16 +78,24 @@ export async function POST(req: NextRequest) {
 
     const { user, companyId, member } = context!
 
-    // Resolve branch: scoped roles use their assigned branch
-    const branchId = member.branch_id
-
     const body = await parseJsonBody(req, createServiceSchema)
 
-    // Use member branch if no branch provided in body (and member has one)
-    const resolvedBranchId = body.branch_id ?? branchId
-    if (!resolvedBranchId) {
+    // v3.74.319 — branch_id is optional.
+    // Rules:
+    //   - Company-scope roles (owner/admin/general_manager) can pick any
+    //     branch OR leave it NULL for a service shared across all branches.
+    //   - Branch-scope roles (manager, etc.) MUST scope the service to
+    //     their own branch — if they leave it out, we default to their
+    //     member.branch_id rather than letting them publish company-wide.
+    const role = String(member.role || '')
+    const isCompanyScope = ['owner', 'admin', 'general_manager'].includes(role)
+    const resolvedBranchId = isCompanyScope
+      ? (body.branch_id ?? null)
+      : (body.branch_id ?? member.branch_id ?? null)
+
+    if (!isCompanyScope && !resolvedBranchId) {
       return NextResponse.json(
-        { success: false, error: 'branch_id مطلوب' },
+        { success: false, error: 'يجب اختيار الفرع — دورك يخصّك بفرع محدد.' },
         { status: 400 }
       )
     }
