@@ -52,6 +52,14 @@ interface FormData {
   tax_id: string
   credit_limit: number
   payment_terms: string
+  // v3.74.331 — branch picker (only shown for company-scope roles)
+  branch_id?: string | null
+}
+
+interface BranchOption {
+  id: string
+  name: string
+  is_main?: boolean
 }
 
 interface FormErrors {
@@ -111,6 +119,17 @@ export function CustomerFormDialog({
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCheckingPhone, setIsCheckingPhone] = useState(false)
 
+  // v3.74.331 — current member's role + branch + branches list, used to
+  // decide whether to surface the branch dropdown in the form. Only
+  // owner / admin (= "مدير عام") / a floating booking_officer need it;
+  // every other role gets their branch auto-assigned by governance.
+  const [currentRole, setCurrentRole] = useState<string>("")
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
+  const [branches, setBranches] = useState<BranchOption[]>([])
+  const COMPANY_SCOPE_ROLES = ['owner', 'admin', 'general_manager']
+  const isFloatingBookingOfficer = currentRole === 'booking_officer' && !currentBranchId
+  const needsBranchPicker = COMPANY_SCOPE_ROLES.includes(currentRole) || isFloatingBookingOfficer
+
   // Location data
   const [availableGovernorates, setAvailableGovernorates] = useState(getGovernoratesByCountry("EG"))
   const [availableCities, setAvailableCities] = useState<typeof cities>([])
@@ -129,6 +148,57 @@ export function CustomerFormDialog({
     // تحميل الصلاحيات فوراً لتفعيل الزر
     checkPerms()
   }, [supabase])
+
+  // v3.74.331 — Pull current member's role / branch / company branches.
+  // We only need this when the dialog is open (avoids one extra round
+  // trip on page load).
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const activeCompanyId = await getActiveCompanyId(supabase)
+        if (!activeCompanyId) return
+
+        const { data: memberRow } = await supabase
+          .from("company_members")
+          .select("role, branch_id")
+          .eq("company_id", activeCompanyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+        if (cancelled) return
+
+        // Owner has no row in company_members on some tenants — check
+        // companies.user_id for that case.
+        let role = memberRow?.role || ""
+        if (!role) {
+          const { data: companyRow } = await supabase
+            .from("companies")
+            .select("user_id")
+            .eq("id", activeCompanyId)
+            .maybeSingle()
+          if (companyRow?.user_id === user.id) role = "owner"
+        }
+        setCurrentRole(String(role || "").toLowerCase())
+        setCurrentBranchId(memberRow?.branch_id ?? null)
+
+        const { data: branchRows } = await supabase
+          .from("branches")
+          .select("id, name, is_main")
+          .eq("company_id", activeCompanyId)
+          .order("is_main", { ascending: false })
+          .order("name")
+        if (!cancelled && Array.isArray(branchRows)) {
+          setBranches(branchRows as BranchOption[])
+        }
+      } catch {
+        /* non-fatal — dropdown just won't show */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [open, supabase])
 
   // إعادة فحص الصلاحيات عند فتح Dialog
   useEffect(() => {
@@ -396,6 +466,17 @@ export function CustomerFormDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // v3.74.331 — For company-scope creators, require an explicit branch
+    // choice. Other roles get their branch auto-assigned by governance,
+    // so we skip the check for them.
+    if (!editingCustomer && needsBranchPicker && !formData.branch_id) {
+      setFormErrors(prev => ({
+        ...prev,
+        branch_id: appLang === 'en' ? 'Branch is required' : 'يجب اختيار الفرع'
+      }))
+      return
+    }
+
     // Check permissions first
     if (editingCustomer) {
       if (!permUpdate) {
@@ -543,15 +624,20 @@ export function CustomerFormDialog({
         toastActionSuccess(toast, appLang === 'en' ? 'Update' : 'التحديث', appLang === 'en' ? 'Customer' : 'العميل')
       } else {
         // 🔐 إضافة عميل جديد عبر API مع الحوكمة الإلزامية
-        // API يقوم تلقائياً بتعيين branch_id من فرع الموظف المنشئ
+        // v3.74.331 — Company-scope creators (owner / admin / floating
+        // booking_officer) pick the branch in the form; governance-
+        // middleware honours data.branch_id for those roles. Other
+        // roles still get the branch auto-assigned from their own
+        // member.branch_id on the server.
         const response = await fetch('/api/customers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...dataToSave,
-            company_id: activeCompanyId
-            // 🏢 branch_id يتم تعيينه تلقائياً من governance-middleware
-            // لا يمكن للموظف تجاوز هذا - يتم فرضه من الخادم
+            company_id: activeCompanyId,
+            ...(needsBranchPicker && formData.branch_id
+              ? { branch_id: formData.branch_id }
+              : {})
           })
         })
 
@@ -663,6 +749,43 @@ export function CustomerFormDialog({
           {isCheckingInvoices && (
             <div className="text-center text-sm text-gray-500">
               {appLang === 'en' ? 'Checking invoices...' : 'جاري التحقق من الفواتير...'}
+            </div>
+          )}
+
+          {/* v3.74.331 — Branch picker (only for company-scope roles or
+              a floating booking_officer). Other roles get their branch
+              auto-assigned by governance. */}
+          {!editingCustomer && needsBranchPicker && (
+            <div className="space-y-2">
+              <Label htmlFor="branch_id" className="flex items-center gap-1">
+                {appLang === 'en' ? 'Branch' : 'الفرع'} <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.branch_id || ""}
+                onValueChange={(value) => {
+                  setFormData({ ...formData, branch_id: value })
+                  if (formErrors.branch_id) setFormErrors(prev => ({ ...prev, branch_id: '' }))
+                }}
+              >
+                <SelectTrigger className={formErrors.branch_id ? "border-red-500" : ""}>
+                  <SelectValue placeholder={appLang === 'en' ? 'Pick a branch' : 'اختر الفرع'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}{b.is_main ? (appLang === 'en' ? ' (Main)' : ' (رئيسى)') : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formErrors.branch_id && (
+                <p className="text-xs text-red-500">{formErrors.branch_id}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {appLang === 'en'
+                  ? 'Customers are scoped to a branch for visibility and reporting.'
+                  : 'كل عميل مرتبط بفرع لتنظيم الرؤية والتقارير.'}
+              </p>
             </div>
           )}
 

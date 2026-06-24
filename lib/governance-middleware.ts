@@ -121,7 +121,19 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
   if (!member.company_id) {
     throw new Error('Governance Error: User has no company assigned')
   }
-  if (!member.branch_id) {
+
+  // v3.74.331 — Some roles are legitimately allowed to operate without
+  // a fixed branch:
+  //   * owner / admin (= "مدير عام" in the UI) / general_manager — they
+  //     work across the whole company by definition.
+  //   * booking_officer with no branch — the "بدون فرع" / floating
+  //     reception pattern enabled in v3.74.329.
+  // For these roles we don't throw on a missing branch_id; we fall
+  // through and the role-specific case below scopes them to the whole
+  // company's branches.
+  const _roleNorm = String(member.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
+  const _branchOptionalRoles = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin', 'generalmanager', 'booking_officer']
+  if (!member.branch_id && !_branchOptionalRoles.includes(_roleNorm)) {
     throw new Error('Governance Error: User has no branch assigned')
   }
 
@@ -205,7 +217,12 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
       {
         const branchIds = allBranches?.map((b: any) => b.id) || []
         const primary = member.branch_id
-        context.branchIds = [primary, ...branchIds.filter((id: string) => id !== primary)]
+        // v3.74.331 — primary may be NULL for owner/admin/general_manager
+        // who chose not to bind to a branch. In that case just list every
+        // branch in the company.
+        context.branchIds = primary
+          ? [primary, ...branchIds.filter((id: string) => id !== primary)]
+          : branchIds
       }
 
       const { data: allWarehouses } = await supabase
@@ -222,6 +239,25 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
 
       context.costCenterIds = allCostCenters?.map((c: any) => c.id) || []
       break
+
+    // v3.74.331 — booking_officer follows the same shape as admin/owner
+    // when they don't have a branch (the "بدون فرع" pattern). When they
+    // DO have a branch, they're locked to it like a manager.
+    case 'booking_officer': {
+      if (member.branch_id) {
+        context.branchIds = [member.branch_id]
+        const defaults = await getBranchDefaults(member.branch_id)
+        if (defaults.defaultWarehouseId) context.warehouseIds = [defaults.defaultWarehouseId]
+        if (defaults.defaultCostCenterId) context.costCenterIds = [defaults.defaultCostCenterId]
+      } else {
+        const { data: allBranches } = await supabase
+          .from('branches')
+          .select('id')
+          .eq('company_id', context.companyId)
+        context.branchIds = allBranches?.map((b: any) => b.id) || []
+      }
+      break
+    }
 
     default:
       // افتراضياً: نفس صلاحيات المدير
@@ -306,9 +342,14 @@ export function addGovernanceData(
   const role = String(context.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
   // purchasing_officer: يرى كل الفروع (read) لكن الكتابة تُجبَر على فرعه الأساسي (مثل المحاسب)
   const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
+  // v3.74.331 — a floating booking_officer (no branch assigned at all)
+  // gets the same "pick any branch you like" privilege as admin for
+  // writes; once they're tied to a branch, the standard non-admin path
+  // below pins them to it.
+  const isFloatingBookingOfficer = role === 'booking_officer' && context.branchIds.length > 1
 
   // For non-admin users, enforce their assigned governance values
-  if (!isAdmin) {
+  if (!isAdmin && !isFloatingBookingOfficer) {
     // Override any attempt to change governance fields
     return {
       ...data,
