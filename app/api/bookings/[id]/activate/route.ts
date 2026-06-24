@@ -89,6 +89,41 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       console.error('[bookings/activate] notification failed (non-blocking):', err)
     }
 
+    // v3.74.342 — Service commission hook for the "paid on activation"
+    // case. complete_booking_atomic stamps the invoice as 'paid'
+    // directly when the booking's paid_amount already covers the
+    // total, skipping the sales-invoice-payment service where the
+    // commission hook normally lives. We mirror the call here so the
+    // executor still earns their commission. Idempotent: the unique
+    // index on user_bonuses (company_id, booking_id) makes a second
+    // call a no-op if the payment-side hook also fired.
+    const newInvoiceId = (data as any)?.invoice_id as string | undefined
+    if (newInvoiceId) {
+      try {
+        const { data: invoiceCheck } = await supabase
+          .from('invoices')
+          .select('status')
+          .eq('id', newInvoiceId)
+          .eq('company_id', companyId)
+          .maybeSingle()
+        if (invoiceCheck?.status === 'paid') {
+          const { recordServiceCommissionForInvoice } = await import('@/lib/services/service-commission-calculator.service')
+          const commissionResult = await recordServiceCommissionForInvoice(supabase, {
+            companyId,
+            invoiceId: newInvoiceId,
+            createdBy: user.id,
+          })
+          if (commissionResult.recorded) {
+            console.log(`[ServiceCommission] Recorded on activation -> bonus ${commissionResult.bonus_id} amount ${commissionResult.amount}`)
+          } else if (commissionResult.reason && !['already_recorded','no_booking_for_invoice','zero_rate','no_responsible_user'].includes(commissionResult.reason)) {
+            console.log(`[ServiceCommission] Skipped on activation: ${commissionResult.reason}`)
+          }
+        }
+      } catch (err: any) {
+        console.error('[ServiceCommission] Activation hook error (non-fatal):', err?.message || err)
+      }
+    }
+
     asyncAuditLog({
       companyId,
       userId:   user.id,

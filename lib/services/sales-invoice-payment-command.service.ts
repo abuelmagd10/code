@@ -405,6 +405,33 @@ export class SalesInvoicePaymentCommandService {
           error: err?.message || err,
         })
       }
+
+      // v3.74.342 — Service commission hook. If the just-paid invoice
+      // belongs to a booking, the executor of that booking earns
+      // services.commission_rate% of the subtotal. The recorder
+      // gracefully no-ops on idempotent retries (unique partial index
+      // on (company_id, booking_id) where status not in reversed/cancelled).
+      try {
+        const { recordServiceCommissionForInvoice } = await import("./service-commission-calculator.service")
+        const commissionResult = await recordServiceCommissionForInvoice(this.adminSupabase, {
+          companyId: resolvedCompanyId,
+          invoiceId: command.invoiceId,
+          createdBy: actor.userId,
+        })
+        if (commissionResult.recorded) {
+          console.log(
+            `[ServiceCommission] Recorded for invoice ${command.invoiceId} -> bonus ${commissionResult.bonus_id} amount ${commissionResult.amount}`
+          )
+        } else if (commissionResult.reason && commissionResult.reason !== 'no_booking_for_invoice') {
+          // "no_booking_for_invoice" is the normal sales path; don't log that.
+          console.log(`[ServiceCommission] Skipped for invoice ${command.invoiceId}: ${commissionResult.reason}`)
+        }
+      } catch (err: any) {
+        console.error("[ServiceCommission] Unexpected error after payment:", {
+          invoiceId: command.invoiceId,
+          error: err?.message || err,
+        })
+      }
     }
 
     return {
