@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Archive } from "lucide-react"
+import { Trash2 } from "lucide-react"
 import type { Service } from "@/types/services"
 
 interface ServiceArchiveDialogProps {
@@ -38,13 +38,13 @@ export function ServiceArchiveDialog({
       <AlertDialogContent dir={isAr ? "rtl" : "ltr"}>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <Archive className="w-5 h-5 text-orange-500" />
-            {t("أرشفة الخدمة", "Archive Service")}
+            <Trash2 className="w-5 h-5 text-red-500" />
+            {t("حذف الخدمة", "Delete Service")}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {t(
-              `هل أنت متأكد من أرشفة "${service?.service_name}"؟ لن تظهر الخدمة في قوائم الحجز لكن يمكن استرجاعها لاحقاً.`,
-              `Are you sure you want to archive "${service?.service_name}"? It will no longer appear in booking lists but can be restored later.`
+              `هل أنت متأكد من حذف "${service?.service_name}"؟ الخدمة هتختفى من قوائم الحجز فوراً. لو فيها حجوزات نشطة، الحذف هيتوقف وهيظهرلك سبب واضح.`,
+              `Are you sure you want to delete "${service?.service_name}"? It will disappear from booking lists immediately. If it has active bookings, deletion will be blocked with a clear reason.`
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -55,9 +55,9 @@ export function ServiceArchiveDialog({
           <AlertDialogAction
             onClick={onConfirm}
             disabled={isLoading}
-            className="bg-orange-600 hover:bg-orange-700 text-white"
+            className="bg-red-600 hover:bg-red-700 text-white"
           >
-            {isLoading ? t("جاري الأرشفة...", "Archiving...") : t("أرشفة", "Archive")}
+            {isLoading ? t("جارٍ الحذف...", "Deleting...") : t("حذف", "Delete")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

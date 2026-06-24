@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { Eye, Pencil, Archive, Clock, Users, Link2 } from "lucide-react"
+import { Eye, Pencil, Trash2, Clock, Users, Link2 } from "lucide-react"
 import Link from "next/link"
 import type { Service } from "@/types/services"
 
@@ -174,8 +174,9 @@ export function ServicesTable({
               variant="ghost"
               className="h-8 w-8 p-0 text-destructive hover:text-destructive"
               onClick={() => onArchive(row)}
+              title={lang === "ar" ? "حذف الخدمة" : "Delete service"}
             >
-              <Archive className="w-4 h-4" />
+              <Trash2 className="w-4 h-4" />
             </Button>
           )}
         </div>

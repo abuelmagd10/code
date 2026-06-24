@@ -150,12 +150,14 @@ export default function ServicesPage() {
     try {
       const res  = await fetch(`/api/services/${archiveTarget.id}/archive`, { method: "POST" })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || "Failed to archive")
-      toastActionSuccess(toast, t("تمت الأرشفة بنجاح", "Service archived"))
+      if (!res.ok) throw new Error(json.error || "Failed to delete")
+      // v3.74.339 — renamed from "أرشفة" to "حذف" so the toasts match
+      // the button + dialog the user just clicked.
+      toastActionSuccess(toast, t("تم حذف الخدمة بنجاح", "Service deleted"))
       setArchiveTarget(null)
       await loadServices()
     } catch (err: any) {
-      toastActionError(toast, t("خطأ في الأرشفة", "Archive Error"), err.message)
+      toastActionError(toast, t("تعذّر الحذف", "Delete failed"), err.message)
     } finally {
       setIsArchiving(false)
     }
