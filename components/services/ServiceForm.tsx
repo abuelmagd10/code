@@ -141,13 +141,27 @@ export function ServiceForm({
 
   // v3.74.333 — products are filtered by the service's branch so the
   // owner / admin / manager can only link to a product that lives in
-  // (or is shared with) the service's branch. Re-fetches whenever the
-  // branch dropdown changes. A NULL branch (shouldn't happen post
-  // v3.74.323, but we guard anyway) falls back to the unfiltered list.
+  // (or is shared with) the service's branch.
+  //
+  // v3.74.340 — strict: until a branch is chosen, we don't fetch
+  // anything and the catalog dropdown stays disabled. The previous
+  // build was falling back to the unfiltered list when branch was
+  // NULL, which let an owner pick a service catalog item BEFORE
+  // committing to a branch — the opposite of the scenario the owner
+  // wrote up. Branch-scope roles (manager) get their branch_id auto-
+  // filled by the dropdown's "disabled + locked on member.branch_id"
+  // logic, so this still triggers the fetch immediately for them.
   const watchedServiceBranchId = form.watch("branch_id" as any) as string | null | undefined
   useEffect(() => {
-    const params = new URLSearchParams({ item_type: "service", limit: "500" })
-    if (watchedServiceBranchId) params.set("branch_id", watchedServiceBranchId)
+    if (!watchedServiceBranchId) {
+      setCatalogProducts([])
+      return
+    }
+    const params = new URLSearchParams({
+      item_type: "service",
+      limit: "500",
+      branch_id: watchedServiceBranchId,
+    })
     fetch(`/api/products?${params.toString()}`)
       .then((r) => r.ok ? r.json() : null)
       .then((json) => {
@@ -225,84 +239,13 @@ export function ServiceForm({
                 <CardTitle className="text-base">{t("معلومات الخدمة", "Service Information")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* ── Product Catalog Selector (REQUIRED — source of truth) ──
-                    v3.74.338 — removed the separate search input. It was
-                    rendering above the Select and ended up showing the
-                    same selected label twice ("تقشير — SR-001" in the
-                    search field + the trigger). The dropdown itself is
-                    enough, the list is already filtered to the chosen
-                    branch and is normally short. */}
-                <FormField
-                  control={form.control}
-                  name={"product_catalog_id" as any}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        <Link2 className="w-3.5 h-3.5 text-orange-500" />
-                        {t("صنف الكتالوج", "Catalog Product")} *
-                      </FormLabel>
-                      <Select
-                        value={(field.value as string) ?? ""}
-                        onValueChange={(v) => field.onChange(v)}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t("اختر صنفاً من كتالوج الخدمات", "Choose a service from catalog")} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {catalogProducts.length === 0 ? (
-                            <div className="p-3 text-sm text-muted-foreground text-center">
-                              {t(
-                                "لا توجد أصناف خدمات لهذا الفرع. أنشئ صنفاً من نوع «خدمة» فى «المنتجات والخدمات» أولاً.",
-                                "No service items for this branch. Create a product with item_type=service in /products first."
-                              )}
-                            </div>
-                          ) : (
-                            catalogProducts.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>
-                                {p.sku ? `${p.name} — ${p.sku}` : p.name}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription className="text-xs">
-                        {t(
-                          "💡 الأسعار والحسابات تُنسخ من الصنف وقت إنشاء الخدمة. القائمة مفلترة بفرع الخدمة المختار.",
-                          "💡 Pricing and accounts are copied from the catalog item at create time. The list is filtered by the service's branch."
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
-                {/* ── Inherited Values Preview (read-only) ── */}
-                {linkedProduct ? (
-                  <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50/40 dark:border-orange-800 dark:bg-orange-950/20 p-4 space-y-2">
-                    <p className="text-xs font-medium text-orange-700 dark:text-orange-300">
-                      📦 {t("قيم موروثة من الكتالوج (للقراءة فقط)", "Inherited from catalog (read-only)")}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("الاسم", "Name")}:</span><span className="font-medium">{linkedProduct.name}</span></div>
-                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("الكود (SKU)", "SKU")}:</span><span className="font-mono text-xs">{linkedProduct.sku ?? "—"}</span></div>
-                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("سعر البيع", "Unit Price")}:</span><span className="font-semibold text-green-700 dark:text-green-400 tabular-nums">{Number(linkedProduct.unit_price ?? 0).toLocaleString()}</span></div>
-                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("التكلفة", "Cost Price")}:</span><span className="tabular-nums">{Number(linkedProduct.cost_price ?? 0).toLocaleString()}</span></div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground text-center">
-                    {t("اختر صنفاً من الكتالوج لعرض الأسعار والحسابات", "Pick a catalog item to preview its pricing and accounts")}
-                  </div>
-                )}
-
-                {/* v3.74.323 — Branch selector (required for every service).
-                    - Company-scope roles (owner/admin) pick any branch.
-                    - Branch-scope roles (manager) see their own branch only, disabled.
-                    The shared/"All branches" option was rolled back: products are
-                    branch-bound and services link to products, so the service must
-                    live on one branch. */}
+                {/* v3.74.340 — Branch first, ALWAYS.
+                    The owner's scenario is explicit: pick the branch
+                    before anything else, then the catalog dropdown shows
+                    items available in that branch. Re-ordered above the
+                    catalog selector so the form reads top-to-bottom in
+                    the order the owner wants to think. */}
                 <FormField
                   control={form.control}
                   name={"branch_id" as any}
@@ -347,6 +290,91 @@ export function ServiceForm({
                     )
                   }}
                 />
+
+                {/* ── Product Catalog Selector (REQUIRED — source of truth) ──
+                    v3.74.338 — removed the duplicate search input.
+                    v3.74.340 — locked until a branch is chosen. The owner
+                    explicitly asked for branch-first; the dropdown stays
+                    disabled with a clear hint until watchedServiceBranchId
+                    is set. */}
+                <FormField
+                  control={form.control}
+                  name={"product_catalog_id" as any}
+                  render={({ field }) => {
+                    const branchPicked = !!watchedServiceBranchId
+                    return (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1.5">
+                          <Link2 className="w-3.5 h-3.5 text-orange-500" />
+                          {t("صنف الكتالوج", "Catalog Product")} *
+                        </FormLabel>
+                        <Select
+                          value={(field.value as string) ?? ""}
+                          onValueChange={(v) => field.onChange(v)}
+                          disabled={!branchPicked}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={
+                                !branchPicked
+                                  ? t("اختر الفرع أولاً", "Pick a branch first")
+                                  : t("اختر صنفاً من كتالوج الخدمات", "Choose a service from catalog")
+                              } />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {!branchPicked ? (
+                              <div className="p-3 text-sm text-muted-foreground text-center">
+                                {t("اختر الفرع لعرض أصنافه.", "Pick a branch to see its items.")}
+                              </div>
+                            ) : catalogProducts.length === 0 ? (
+                              <div className="p-3 text-sm text-muted-foreground text-center">
+                                {t(
+                                  "لا توجد أصناف خدمات لهذا الفرع. أنشئ صنفاً من نوع «خدمة» فى «المنتجات والخدمات» أولاً.",
+                                  "No service items for this branch. Create a product with item_type=service in /products first."
+                                )}
+                              </div>
+                            ) : (
+                              catalogProducts.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.sku ? `${p.name} — ${p.sku}` : p.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription className="text-xs">
+                          {!branchPicked
+                            ? t("اختر الفرع أولاً علشان نعرضلك أصناف الخدمات المتاحة فى هذا الفرع.",
+                                "Pick a branch first to see the catalog items available in that branch.")
+                            : t("💡 الأسعار والحسابات تُنسخ من الصنف وقت إنشاء الخدمة. القائمة مفلترة بفرع الخدمة المختار.",
+                                "💡 Pricing and accounts are copied from the catalog item at create time. The list is filtered by the service's branch.")
+                          }
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )
+                  }}
+                />
+
+                {/* ── Inherited Values Preview (read-only) ── */}
+                {linkedProduct ? (
+                  <div className="rounded-lg border-2 border-dashed border-orange-300 bg-orange-50/40 dark:border-orange-800 dark:bg-orange-950/20 p-4 space-y-2">
+                    <p className="text-xs font-medium text-orange-700 dark:text-orange-300">
+                      📦 {t("قيم موروثة من الكتالوج (للقراءة فقط)", "Inherited from catalog (read-only)")}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("الاسم", "Name")}:</span><span className="font-medium">{linkedProduct.name}</span></div>
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("الكود (SKU)", "SKU")}:</span><span className="font-mono text-xs">{linkedProduct.sku ?? "—"}</span></div>
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("سعر البيع", "Unit Price")}:</span><span className="font-semibold text-green-700 dark:text-green-400 tabular-nums">{Number(linkedProduct.unit_price ?? 0).toLocaleString()}</span></div>
+                      <div className="flex justify-between gap-2"><span className="text-muted-foreground">{t("التكلفة", "Cost Price")}:</span><span className="tabular-nums">{Number(linkedProduct.cost_price ?? 0).toLocaleString()}</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground text-center">
+                    {t("اختر صنفاً من الكتالوج لعرض الأسعار والحسابات", "Pick a catalog item to preview its pricing and accounts")}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
