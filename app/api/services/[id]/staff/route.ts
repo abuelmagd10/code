@@ -117,11 +117,24 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         .eq('is_primary', true)
     }
 
+    // v3.74.346 — service_staff.branch_id is NOT NULL, and the table's
+    // RLS WITH CHECK clause runs can_access_record_branch(company, branch)
+    // against NEW.branch_id. Previously we didn't pass branch_id at all,
+    // which meant Postgres tried to insert NULL — the WITH CHECK happens
+    // to short-circuit to TRUE for p_branch_id IS NULL but then the
+    // NOT NULL constraint flips the error into a 42501 / 23502 race
+    // depending on the path, surfacing as a hard 500 to the user.
+    // Forwarding svc.branch_id makes the constraint and the policy
+    // agree: the row lives in the same branch the service is bound to.
+    if (!svc.branch_id) {
+      throw new BookingApiError(400, 'لا يمكن إسناد موظف لخدمة بدون فرع. حدد فرع الخدمة أولاً.')
+    }
     const { data, error } = await supabase
       .from('service_staff')
       .upsert(
         {
           company_id:        companyId,
+          branch_id:         svc.branch_id,
           service_id:        serviceId,
           employee_user_id:  body.employee_user_id,
           is_primary:        body.is_primary ?? false,
