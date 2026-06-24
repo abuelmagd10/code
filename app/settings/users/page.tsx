@@ -186,6 +186,10 @@ export default function UsersSettingsPage() {
   const [showMemberBranchDialog, setShowMemberBranchDialog] = useState(false)
   const [editingMemberId, setEditingMemberId] = useState<string>("")
   const [editingMemberName, setEditingMemberName] = useState<string>("")
+  // v3.74.329 — role of the member currently being edited in the
+  // branch-assignment dialog. Drives whether the "بدون فرع" option
+  // appears (booking_officer only).
+  const [editingMemberRole, setEditingMemberRole] = useState<string>("")
   const [memberBranchId, setMemberBranchId] = useState<string>("")
   const [savingMemberBranches, setSavingMemberBranches] = useState(false)
   const [resendingInvite, setResendingInvite] = useState<string | null>(null)
@@ -1018,16 +1022,32 @@ export default function UsersSettingsPage() {
   const openMemberBranchDialog = async (member: Member) => {
     setEditingMemberId(member.user_id)
     setEditingMemberName(member.display_name || member.email || member.username || "")
+    // v3.74.329 — keep the member's role around so the dialog can decide
+    // whether to expose the "بدون فرع" option.
+    setEditingMemberRole(member.role || "")
 
     // ✅ المستخدم له فرع واحد فقط - استخدام branch_id من company_members
-    const memberBranchId = member.branch_id || ""
+    // v3.74.329 — booking_officer قد يكون بدون فرع؛ نعرض الـ sentinel
+    // الخاص فى الـ select ليطابق "عدم الربط بفرع".
+    const memberBranchId = member.branch_id
+      || (member.role === 'booking_officer' ? '__NONE__' : '')
     setMemberBranchId(memberBranchId)
     setShowMemberBranchDialog(true)
   }
 
-  // 🏢 حفظ فرع الموظف (Single Branch - Mandatory)
+  // 🏢 حفظ فرع الموظف (Single Branch - Mandatory for most roles)
+  // v3.74.329 — booking_officer may legitimately have NO branch (a
+  // floating reception role for the whole company); validation is
+  // relaxed for that role only.
+  const NO_BRANCH = "__NONE__"
   const saveMemberBranches = async () => {
-    if (!editingMemberId || !memberBranchId) {
+    if (!editingMemberId) {
+      toastActionError(toast, "حفظ", "الفرع", "غير محدد")
+      return
+    }
+    const isBookingOfficer = editingMemberRole === "booking_officer"
+    const isUnassigned     = memberBranchId === NO_BRANCH || memberBranchId === ""
+    if (isUnassigned && !isBookingOfficer) {
       toastActionError(toast, "حفظ", "الفرع", "يجب تحديد فرع واحد إلزاميًا")
       return
     }
@@ -1038,31 +1058,36 @@ export default function UsersSettingsPage() {
         throw new Error('User can belong to only one branch')
       }
 
+      // v3.74.329 — Resolve the actual branch_id to persist. The dialog
+      // uses the sentinel "__NONE__" (NO_BRANCH) for the booking_officer
+      // "بدون فرع" choice; everywhere else we want NULL on the row.
+      const effectiveBranchId: string | null = isUnassigned ? null : memberBranchId
+
       // 🏢 جلب المخزن التابع للفرع الجديد (إذا كان المستخدم store_manager)
       const currentMember = members.find(m => m.user_id === editingMemberId)
       let warehouseId = null
 
-      if (currentMember?.role === 'store_manager') {
+      if (currentMember?.role === 'store_manager' && effectiveBranchId) {
         const { data: branchWarehouse } = await supabase
           .from("warehouses")
           .select("id")
           .eq("company_id", companyId)
-          .eq("branch_id", memberBranchId)
+          .eq("branch_id", effectiveBranchId)
           .maybeSingle()
 
         warehouseId = branchWarehouse?.id || null
         console.log("🏢 Auto-updating warehouse for store_manager:", {
           userId: editingMemberId,
-          newBranchId: memberBranchId,
+          newBranchId: effectiveBranchId,
           newWarehouseId: warehouseId
         })
       }
 
-      // ✅ تحديث الفرع في company_members (فرع واحد فقط)
+      // ✅ تحديث الفرع في company_members (فرع واحد، يقبل NULL لمسؤول الحجز)
       const { error: updateError } = await supabase
         .from("company_members")
         .update({
-          branch_id: memberBranchId,
+          branch_id: effectiveBranchId,
           warehouse_id: warehouseId // 🏢 تحديث المخزن تلقائياً
         })
         .eq("company_id", companyId)
@@ -1079,28 +1104,32 @@ export default function UsersSettingsPage() {
         .eq("user_id", editingMemberId)
 
       // إضافة الفرع الجديد كفرع أساسي
-      const { error: accessError } = await supabase
-        .from("user_branch_access")
-        .upsert({
-          company_id: companyId,
-          user_id: editingMemberId,
-          branch_id: memberBranchId,
-          is_primary: true,
-          access_type: 'full',
-          can_view_customers: true,
-          can_view_orders: true,
-          can_view_invoices: true,
-          can_view_inventory: true,
-          can_view_prices: false,
-          is_active: true,
-          created_by: currentUserId
-        }, { onConflict: "company_id,user_id,branch_id" })
+      // v3.74.329 — لو مسؤول حجز بدون فرع، نتخطى user_branch_access entry
+      // لإنه يطلب branch_id NOT NULL.
+      if (effectiveBranchId) {
+        const { error: accessError } = await supabase
+          .from("user_branch_access")
+          .upsert({
+            company_id: companyId,
+            user_id: editingMemberId,
+            branch_id: effectiveBranchId,
+            is_primary: true,
+            access_type: 'full',
+            can_view_customers: true,
+            can_view_orders: true,
+            can_view_invoices: true,
+            can_view_inventory: true,
+            can_view_prices: false,
+            is_active: true,
+            created_by: currentUserId
+          }, { onConflict: "company_id,user_id,branch_id" })
 
-      if (accessError) throw accessError
+        if (accessError) throw accessError
+      }
 
       // تحديث القائمة المحلية
       setMembers(prev => prev.map(m =>
-        m.user_id === editingMemberId ? { ...m, branch_id: memberBranchId, warehouse_id: warehouseId } : m
+        m.user_id === editingMemberId ? { ...m, branch_id: effectiveBranchId ?? undefined, warehouse_id: warehouseId ?? undefined } : m
       ))
 
       toastActionSuccess(toast, "حفظ", "فرع الموظف")
@@ -2101,9 +2130,14 @@ export default function UsersSettingsPage() {
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  الفرع التابع له الموظف <span className="text-red-500">*</span>
+                  الفرع التابع له الموظف
+                  {editingMemberRole !== 'booking_officer' && <span className="text-red-500">*</span>}
                 </Label>
-                <p className="text-xs text-gray-500">اختر الفرع الواحد الذي ينتمي إليه الموظف (إلزامي)</p>
+                <p className="text-xs text-gray-500">
+                  {editingMemberRole === 'booking_officer'
+                    ? 'مسؤول الحجز ممكن يكون مرتبط بفرع أو يخدم الشركة كلها (بدون فرع).'
+                    : 'اختر الفرع الواحد الذي ينتمي إليه الموظف (إلزامي)'}
+                </p>
                 <Select
                   value={memberBranchId}
                   onValueChange={(value) => setMemberBranchId(value)}
@@ -2112,6 +2146,17 @@ export default function UsersSettingsPage() {
                     <SelectValue placeholder="اختر الفرع" />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* v3.74.329 — "بدون فرع" option, only for booking_officer */}
+                    {editingMemberRole === 'booking_officer' && (
+                      <SelectItem value="__NONE__">
+                        <div className="flex items-center gap-2">
+                          <span>عدم الربط بفرع</span>
+                          <Badge className="text-[9px] bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+                            كل الفروع
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    )}
                     {branches.map((branch) => (
                       <SelectItem key={branch.id} value={branch.id}>
                         <div className="flex items-center gap-2">
@@ -2128,13 +2173,19 @@ export default function UsersSettingsPage() {
                 </Select>
               </div>
 
-              {memberBranchId && (
+              {memberBranchId === "__NONE__" ? (
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    <strong>الفرع المحدد:</strong> مسؤول حجز بدون فرع — يقدر يستقبل ويتعامل مع عملاء كل الفروع.
+                  </p>
+                </div>
+              ) : memberBranchId ? (
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
                   <p className="text-sm text-emerald-700 dark:text-emerald-400">
                     <strong>الفرع المحدد:</strong> {branches.find(b => b.id === memberBranchId)?.name || "غير محدد"}
                   </p>
                 </div>
-              )}
+              ) : null}
 
               <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
                 <p className="text-xs text-amber-700 dark:text-amber-400">
