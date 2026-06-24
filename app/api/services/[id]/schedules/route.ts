@@ -75,14 +75,18 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       throw new BookingApiError(400, 'يوم مكرر في الجدول، كل يوم يُسمح له بسجل واحد فقط')
     }
 
-    // Replace: delete existing, insert new
-    const { error: delErr } = await supabase
-      .from('service_schedules')
-      .delete()
-      .eq('service_id', serviceId)
-      .eq('company_id', companyId)
-
-    if (delErr) throw delErr
+    // v3.74.321 — switched from "DELETE + INSERT" to "UPSERT + DELETE
+    // missing days". The old pattern produced an HTTP 409 (unique
+    // violation on uq_service_schedules_service_day) whenever the
+    // DELETE silently affected zero rows — most commonly when the
+    // service's branch_id had just changed and the old schedule rows
+    // sit under a different branch_id than what the SELECT side of
+    // the RLS policy considers visible. UPSERT keys on
+    // (service_id, day_of_week) which matches the existing unique
+    // constraint exactly, so it works regardless of which branch
+    // the row currently belongs to. After the upsert, any day that
+    // was removed in the request gets pruned.
+    const submittedDays = body.schedules.map((s) => s.day_of_week)
 
     const rows = body.schedules.map((s) => ({
       company_id:   companyId,
@@ -96,10 +100,24 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     const { data, error } = await supabase
       .from('service_schedules')
-      .insert(rows)
+      .upsert(rows, { onConflict: 'service_id,day_of_week' })
       .select()
 
     if (error) throw error
+
+    // Delete days that are no longer in the submitted schedule.
+    // If submittedDays is empty, we delete every schedule row for this
+    // service — `.in('day_of_week', [])` would be a no-op, so we just
+    // skip the call in that case.
+    if (submittedDays.length > 0) {
+      const { error: pruneErr } = await supabase
+        .from('service_schedules')
+        .delete()
+        .eq('service_id', serviceId)
+        .eq('company_id', companyId)
+        .not('day_of_week', 'in', `(${submittedDays.join(',')})`)
+      if (pruneErr) throw pruneErr
+    }
 
     asyncAuditLog({
       companyId,
