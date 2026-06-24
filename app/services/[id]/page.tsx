@@ -342,6 +342,7 @@ export default function ServiceDetailPage() {
               <CardContent>
                 <ServiceStaffManager
                   serviceId={id}
+                  serviceBranchId={service.branch_id ?? null}
                   lang={appLang}
                   canEdit={canEdit && service.is_active}
                 />

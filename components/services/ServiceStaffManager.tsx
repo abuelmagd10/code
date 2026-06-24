@@ -23,16 +23,22 @@ interface CompanyEmployee {
   display_name: string
   email?: string
   role: string
+  branch_id?: string | null
 }
 
 interface ServiceStaffManagerProps {
   serviceId: string
+  // v3.74.333 — required for branch-scoped employee filtering.
+  // Pass the service's branch_id so the picker only shows employees
+  // from the same branch (mirrors the rule for products).
+  serviceBranchId?: string | null
   lang?: string
   canEdit?: boolean
 }
 
 export function ServiceStaffManager({
   serviceId,
+  serviceBranchId,
   lang = "ar",
   canEdit = true,
 }: ServiceStaffManagerProps) {
@@ -101,12 +107,15 @@ export function ServiceStaffManager({
     }
   }
 
-  const handleRemove = async (staffRecordId: string) => {
-    setRemovingId(staffRecordId)
+  // v3.74.333 — DELETE expects employee_user_id (not staff_id). The UI
+  // was sending the wrong param so removal silently 400-ed.
+  const handleRemove = async (staffRecord: StaffMember) => {
+    setRemovingId(staffRecord.id)
     try {
-      const res = await fetch(`/api/services/${serviceId}/staff?staff_id=${staffRecordId}`, {
-        method: "DELETE",
-      })
+      const res = await fetch(
+        `/api/services/${serviceId}/staff?employee_user_id=${encodeURIComponent(staffRecord.employee_user_id)}`,
+        { method: "DELETE" }
+      )
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "failed")
       toastActionSuccess(toast, t("تمت إزالة الموظف", "Staff member removed"))
@@ -119,7 +128,12 @@ export function ServiceStaffManager({
   }
 
   const assignedUserIds = new Set(staffList.map((s) => s.employee_user_id))
-  const availableEmployees = employees.filter((e) => !assignedUserIds.has(e.user_id))
+  // v3.74.333 — filter employees to the service's branch. NULL branch
+  // (legacy services or company-level members) is treated as available.
+  const branchScopedEmployees = serviceBranchId
+    ? employees.filter((e) => !e.branch_id || e.branch_id === serviceBranchId)
+    : employees
+  const availableEmployees = branchScopedEmployees.filter((e) => !assignedUserIds.has(e.user_id))
 
   if (isLoading) {
     return (
@@ -168,7 +182,7 @@ export function ServiceStaffManager({
                   variant="ghost"
                   className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                   disabled={removingId === s.id}
-                  onClick={() => handleRemove(s.id)}
+                  onClick={() => handleRemove(s)}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>

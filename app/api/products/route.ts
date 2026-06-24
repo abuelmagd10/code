@@ -20,12 +20,16 @@ export async function GET(req: Request) {
     const itemType = url.searchParams.get('item_type')
     const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '50', 10), 500)
     const search = url.searchParams.get('search') ?? ''
+    // v3.74.333 — optional branch filter for "scope products to a service's
+    // branch" use cases. Returns rows where branch_id = X OR branch_id IS NULL
+    // (NULL = company-level product, available to all branches).
+    const branchId = url.searchParams.get('branch_id')
 
     const supabase = await createClient()
 
     let query = supabase
       .from('products')
-      .select('id, name, item_type, is_active', { count: 'exact' })
+      .select('id, name, sku, unit_price, cost_price, item_type, branch_id, income_account_id, expense_account_id, is_active', { count: 'exact' })
       .eq('company_id', companyId)
       .eq('is_active', true)
       .order('name')
@@ -33,6 +37,10 @@ export async function GET(req: Request) {
 
     if (itemType) query = query.eq('item_type', itemType)
     if (search)   query = query.ilike('name', `%${search}%`)
+    if (branchId) {
+      // PostgREST OR syntax — branch-bound + shared (NULL) products
+      query = query.or(`branch_id.is.null,branch_id.eq.${branchId}`)
+    }
 
     const { data: products, error, count } = await query
     if (error) throw error

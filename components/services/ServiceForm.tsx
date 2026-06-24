@@ -86,21 +86,12 @@ export function ServiceForm({
     sku?: string
     unit_price?: number
     cost_price?: number
+    branch_id?: string | null
     income_account_id?: string | null
     expense_account_id?: string | null
   }
   const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([])
   const [catalogQuery, setCatalogQuery] = useState("")
-  useEffect(() => {
-    fetch("/api/products?item_type=service&limit=500")
-      .then((r) => r.ok ? r.json() : null)
-      .then((json) => {
-        if (json?.products) {
-          setCatalogProducts(json.products as CatalogProduct[])
-        }
-      })
-      .catch(() => { /* non-critical */ })
-  }, [])
 
   // v3.74.319 — اختيار الفرع للخدمة (NULL = متاحة لكل الفروع).
   // المالك والمدير العام (admin) يقدروا يختاروا "كل الفروع" أو فرع محدد.
@@ -147,6 +138,37 @@ export function ServiceForm({
       ...initialData,
     } as any,
   })
+
+  // v3.74.333 — products are filtered by the service's branch so the
+  // owner / admin / manager can only link to a product that lives in
+  // (or is shared with) the service's branch. Re-fetches whenever the
+  // branch dropdown changes. A NULL branch (shouldn't happen post
+  // v3.74.323, but we guard anyway) falls back to the unfiltered list.
+  const watchedServiceBranchId = form.watch("branch_id" as any) as string | null | undefined
+  useEffect(() => {
+    const params = new URLSearchParams({ item_type: "service", limit: "500" })
+    if (watchedServiceBranchId) params.set("branch_id", watchedServiceBranchId)
+    fetch(`/api/products?${params.toString()}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.products) {
+          setCatalogProducts(json.products as CatalogProduct[])
+        }
+      })
+      .catch(() => { /* non-critical */ })
+  }, [watchedServiceBranchId])
+
+  // v3.74.333 — if the linked product is no longer in the filtered list
+  // (because the branch changed), clear the selection so the user
+  // doesn't silently keep a cross-branch link.
+  useEffect(() => {
+    const current = form.getValues("product_catalog_id" as any) as string | undefined
+    if (!current) return
+    if (catalogProducts.length === 0) return
+    if (!catalogProducts.some((p) => p.id === current)) {
+      form.setValue("product_catalog_id" as any, undefined as any)
+    }
+  }, [catalogProducts, form])
 
   // Resolved linked product (for inheritance preview)
   const linkedProductId = form.watch("product_catalog_id" as any) as string | undefined
@@ -256,8 +278,8 @@ export function ServiceForm({
                       </Select>
                       <FormDescription className="text-xs">
                         {t(
-                          "💡 الأسعار والحسابات تُسحب من هذا الصنف وتُحدَّث تلقائياً عند أي تعديل على المنتج.",
-                          "💡 Pricing and accounts are inherited from this catalog item and refresh automatically whenever the product changes."
+                          "💡 الأسعار والحسابات تُنسخ من هذا الصنف وقت إنشاء الخدمة. القائمة مفلترة بفرع الخدمة المختار.",
+                          "💡 Pricing and accounts are copied from this catalog item at create time. The list is filtered by the service's branch."
                         )}
                       </FormDescription>
                       <FormMessage />
