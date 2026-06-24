@@ -30,6 +30,9 @@ import {
 import { useState, useEffect } from "react"
 import type { Service, ServiceSchedule } from "@/types/services"
 import { useAccess } from "@/lib/access-context"
+// v3.74.343 — Tax rate dropdown sourced from /settings/taxes
+import { useSupabase } from "@/lib/supabase/hooks"
+import { listTaxCodes, ensureDefaultsIfEmpty, type TaxCode } from "@/lib/taxes"
 
 // Use createServiceSchema for both create and edit (edit uses same fields)
 type ServiceFormValues = z.infer<typeof createServiceSchema>
@@ -111,6 +114,30 @@ export function ServiceForm({
       })
       .catch(() => { /* non-critical */ })
   }, [])
+
+  // v3.74.343 — Tax codes from /settings/taxes. We read the same
+  // tax_codes table the Tax Settings page writes to. ensureDefaults
+  // seeds {0%, VAT 5%, VAT 15%} on the first ever read so a brand
+  // new company isn't stuck with an empty dropdown.
+  const supabase = useSupabase()
+  const [taxCodes, setTaxCodes] = useState<TaxCode[]>([])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        await ensureDefaultsIfEmpty(supabase)
+        const rows = await listTaxCodes(supabase)
+        if (cancelled) return
+        // Only "sales" or "both" — purchase-only codes don't belong
+        // on a sales-facing service.
+        const filtered = rows.filter((r) => r.is_active && (r.scope === "sales" || r.scope === "both"))
+        setTaxCodes(filtered)
+      } catch {
+        /* non-critical — the dropdown will just show "no codes" */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [supabase])
 
   const form = useForm<ServiceFormValues>({
     resolver: zodResolver(createServiceSchema),
@@ -438,30 +465,64 @@ export function ServiceForm({
                     )}
                   />
 
-                  {/* Tax Rate */}
+                  {/* Tax Rate — v3.74.343: dropdown sourced from /settings/taxes */}
                   <FormField
                     control={form.control}
                     name="tax_rate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t("نسبة الضريبة %", "Tax Rate %")}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={0.01}
-                            value={field.value ?? 0}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                          />
-                        </FormControl>
-                        <FormDescription className="text-xs">
-                          {t("ⓘ معدل الضريبة مستقل عن صنف الكتالوج", "ⓘ Tax rate is independent of the catalog item")}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      const currentRate = Number(field.value ?? 0)
+                      // Preserve a legacy rate that doesn't match any defined code
+                      // (e.g. an old service with tax_rate=7 when codes are 0/5/15).
+                      // We surface it as a "custom" entry so the user sees what's
+                      // saved without losing the value on next save.
+                      const hasMatch = taxCodes.some((c) => Number(c.rate) === currentRate)
+                      const legacyOption =
+                        currentRate > 0 && !hasMatch
+                          ? { id: `__legacy_${currentRate}`, name: `${currentRate}%`, rate: currentRate, scope: "both" as const, is_active: true, company_id: "" }
+                          : null
+                      return (
+                        <FormItem>
+                          <FormLabel>{t("نسبة الضريبة", "Tax Rate")}</FormLabel>
+                          <Select
+                            value={String(currentRate)}
+                            onValueChange={(v) => field.onChange(parseFloat(v) || 0)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue
+                                  placeholder={t("اختر رمز ضريبة", "Pick a tax code")}
+                                />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {taxCodes.length === 0 && !legacyOption ? (
+                                <SelectItem value="0">{t("بدون ضريبة (0%)", "No tax (0%)")}</SelectItem>
+                              ) : (
+                                <>
+                                  {taxCodes.map((c) => (
+                                    <SelectItem key={c.id} value={String(c.rate)}>
+                                      {c.name} — {c.rate}%
+                                    </SelectItem>
+                                  ))}
+                                  {legacyOption && (
+                                    <SelectItem key={legacyOption.id} value={String(legacyOption.rate)}>
+                                      {t("قيمة قديمة", "Legacy")}: {legacyOption.rate}%
+                                    </SelectItem>
+                                  )}
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription className="text-xs">
+                            {t(
+                              "ⓘ القائمة تستمد من إعدادات الضرائب. لإضافة رمز جديد افتح ‎/settings/taxes",
+                              "ⓘ List comes from Tax Settings. To add a new code open /settings/taxes",
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )
+                    }}
                   />
 
                   {/* Commission Rate */}
