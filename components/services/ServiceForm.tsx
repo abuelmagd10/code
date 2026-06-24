@@ -139,6 +139,21 @@ export function ServiceForm({
     } as any,
   })
 
+  // v3.74.341 — for branch-scope roles (manager), auto-fill the form's
+  // branch_id from the user's profile on mount. Without this the form
+  // shows the branch name visually but field.value stays null, so the
+  // catalog dropdown stays locked even though the user "obviously"
+  // already picked their branch. Owner/admin keep their explicit pick.
+  useEffect(() => {
+    if (!profile) return
+    if (isCompanyScope) return
+    if (!userBranchId) return
+    const current = form.getValues("branch_id" as any)
+    if (!current) {
+      form.setValue("branch_id" as any, userBranchId as any)
+    }
+  }, [profile, isCompanyScope, userBranchId, form])
+
   // v3.74.333 — products are filtered by the service's branch so the
   // owner / admin / manager can only link to a product that lives in
   // (or is shared with) the service's branch.
