@@ -92,6 +92,45 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
 
+    // v3.74.334 — defense-in-depth: refuse to link a product from a
+    // different branch. The form already filters the dropdown, but a
+    // direct API call or stale client state could still try to pass
+    // a foreign product_catalog_id. NULL branch_id on the product is
+    // OK (company-level / shared product, available everywhere).
+    if (body.product_catalog_id) {
+      const { data: catalogProduct, error: catalogErr } = await supabase
+        .from('products')
+        .select('id, branch_id, item_type, is_active')
+        .eq('id', body.product_catalog_id)
+        .eq('company_id', companyId)
+        .maybeSingle()
+      if (catalogErr) throw catalogErr
+      if (!catalogProduct) {
+        return NextResponse.json(
+          { success: false, error: 'صنف الخدمة المختار غير موجود.' },
+          { status: 400 }
+        )
+      }
+      if (catalogProduct.is_active === false) {
+        return NextResponse.json(
+          { success: false, error: 'صنف الخدمة المختار موقوف.' },
+          { status: 400 }
+        )
+      }
+      if (catalogProduct.item_type !== 'service') {
+        return NextResponse.json(
+          { success: false, error: 'صنف الـ catalog المختار ليس من نوع "خدمة".' },
+          { status: 400 }
+        )
+      }
+      if (catalogProduct.branch_id && catalogProduct.branch_id !== resolvedBranchId) {
+        return NextResponse.json(
+          { success: false, error: 'صنف الخدمة المختار يخص فرعاً آخر.' },
+          { status: 400 }
+        )
+      }
+    }
+
     const { data: result, error } = await supabase.rpc('create_service_atomic', {
       p_company_id:          companyId,
       p_branch_id:           resolvedBranchId,

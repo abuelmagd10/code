@@ -75,16 +75,37 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const supabase = await createClient()
 
-    // Verify service belongs to company
+    // Verify service belongs to company + grab its branch for the
+    // cross-branch employee check below.
     const { data: svc, error: svcErr } = await supabase
       .from('services')
-      .select('id')
+      .select('id, branch_id')
       .eq('id', serviceId)
       .eq('company_id', companyId)
       .maybeSingle()
 
     if (svcErr) throw svcErr
     if (!svc) throw new BookingApiError(404, 'الخدمة غير موجودة')
+
+    // v3.74.334 — defense-in-depth: only allow assigning an employee
+    // who actually belongs to the service's branch (or is company-level
+    // with branch_id IS NULL). The form filters the picker already, but
+    // a direct API call could bypass it.
+    if (svc.branch_id) {
+      const { data: empMember, error: empErr } = await supabase
+        .from('company_members')
+        .select('user_id, branch_id, role')
+        .eq('company_id', companyId)
+        .eq('user_id', body.employee_user_id)
+        .maybeSingle()
+      if (empErr) throw empErr
+      if (!empMember) {
+        throw new BookingApiError(400, 'الموظف غير موجود فى أعضاء الشركة.')
+      }
+      if (empMember.branch_id && empMember.branch_id !== svc.branch_id) {
+        throw new BookingApiError(400, 'الموظف المختار من فرع آخر؛ لا يمكن إسناده لخدمة هذا الفرع.')
+      }
+    }
 
     // If setting as primary, clear existing primary first
     if (body.is_primary) {
