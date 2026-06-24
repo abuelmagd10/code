@@ -1537,6 +1537,39 @@ export function getAccessFilter(
     };
   }
 
+  // v3.74.330 — booking_officer follows a branch-wide rule, NOT the
+  // "own scope" pattern that staff/sales use:
+  //   * If the officer is tied to a branch, they see every customer in
+  //     that branch (matches the customers_booking_officer_select_branch
+  //     RLS added in v3.74.328).
+  //   * If the officer has no branch_id at all (the floating /
+  //     "بدون فرع" case from v3.74.329), they see every customer in the
+  //     company — no client-side filter at all; the RLS still gates the
+  //     company boundary.
+  // Without this special case the page would filter by created_by_user_id
+  // even though the RLS already grants the row, and the officer would
+  // see nothing.
+  if (roleLower === 'booking_officer') {
+    if (!userBranchId) {
+      return {
+        filterByCreatedBy: !!filterByEmployee,
+        createdByUserId: filterByEmployee || null,
+        filterByBranch: false,
+        branchId: null,
+        filterByCostCenter: false,
+        costCenterId: null
+      };
+    }
+    return {
+      filterByCreatedBy: !!filterByEmployee,
+      createdByUserId: filterByEmployee || null,
+      filterByBranch: true,
+      branchId: userBranchId,
+      filterByCostCenter: false,
+      costCenterId: null
+    };
+  }
+
   // Staff/Sales/Employee - فقط ما أنشأه
   return {
     filterByCreatedBy: true,
