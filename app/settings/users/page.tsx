@@ -1132,6 +1132,30 @@ export default function UsersSettingsPage() {
         m.user_id === editingMemberId ? { ...m, branch_id: effectiveBranchId ?? undefined, warehouse_id: warehouseId ?? undefined } : m
       ))
 
+      // v3.74.332 — also refresh userBranchAccess state in place.
+      // getMemberBranchNames() reads from this state first; if we only
+      // update setMembers, an "بدون فرع" save would still render the
+      // stale branch name until the next page reload because the old
+      // user_branch_access rows live on in the local state with
+      // is_active=true. We just deactivated them all in the DB above;
+      // mirror that locally, then add the new row if there is one.
+      setUserBranchAccess(prev => {
+        const others = prev.filter(a => a.user_id !== editingMemberId)
+        if (effectiveBranchId) {
+          others.push({
+            id: 'local-' + Date.now(),
+            user_id: editingMemberId,
+            branch_id: effectiveBranchId,
+            is_primary: true,
+            can_view_customers: true,
+            can_view_orders: true,
+            can_view_prices: false,
+            is_active: true,
+          } as UserBranchAccess)
+        }
+        return others
+      })
+
       toastActionSuccess(toast, "حفظ", "فرع الموظف")
 
       // إنشاء إشعار للمستخدم عند تغيير فرعه من الخلفية فقط
