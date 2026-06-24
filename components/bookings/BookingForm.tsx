@@ -20,11 +20,13 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Save, AlertTriangle } from "lucide-react"
+import { Loader2, Save, AlertTriangle, MapPin } from "lucide-react"
 import { createBookingSchema, BOOKING_SOURCE_VALUES } from "@/lib/services/booking-api"
 import { AvailabilityChecker } from "@/components/bookings/AvailabilityChecker"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import type { AvailableSlot } from "@/types/bookings"
+// v3.74.337 — for the floating booking_officer flow (pick branch first)
+import { useAccess } from "@/lib/access-context"
 
 type BookingFormValues = z.infer<typeof createBookingSchema>
 
@@ -58,6 +60,9 @@ interface SimpleStaff {
   user_id: string
   display_name: string
   email?: string
+  // v3.74.337 — needed to fall back to "every employee in the service's
+  // branch" when the service itself has no staff assigned.
+  branch_id?: string | null
 }
 
 interface BookingFormProps {
@@ -128,8 +133,47 @@ export function BookingForm({
   const watchedQty         = form.watch("quantity") ?? 1
   const watchedDiscount    = form.watch("discount_amount") ?? 0
 
+  // v3.74.337 — staff list for THIS service. Populated from
+  // /api/services/[id]/staff. If the response is empty, we treat the
+  // service as open to every employee in its branch (the "golden rule"
+  // the owner spelled out for both BookingForm and the bookings list).
+  const [serviceStaffIds, setServiceStaffIds] = useState<string[] | null>(null)
+  const [serviceStaffLoading, setServiceStaffLoading] = useState(false)
+
+  // v3.74.337 — floating booking_officer flow:
+  //   - If the user has no branch_id, expose a branch dropdown at the
+  //     top of the form. Until a branch is chosen, the services
+  //     dropdown stays empty.
+  //   - For every other role (manager / officer-with-branch / owner /
+  //     admin), the branch is implicitly the service's branch, so we
+  //     hide the dropdown.
+  const { profile } = useAccess()
+  const isFloatingBookingOfficer = profile?.role === 'booking_officer' && !profile?.branch_id
+  interface BranchOption { id: string; name: string; is_main?: boolean }
+  const [branches, setBranches] = useState<BranchOption[]>([])
+  useEffect(() => {
+    if (!isFloatingBookingOfficer) return
+    fetch("/api/branches")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        const list = json?.branches || json?.data || json
+        if (Array.isArray(list)) setBranches(list as BranchOption[])
+      })
+      .catch(() => { /* non-critical */ })
+  }, [isFloatingBookingOfficer])
+
+  // v3.74.337 — services are filtered to the selected branch. For the
+  // floating officer, the user picks the branch first; for everyone
+  // else the branch is the user's own and the list is naturally
+  // single-branch already.
+  const visibleServices = isFloatingBookingOfficer && watchedBranchId
+    ? services.filter((s) => s.branch_id === watchedBranchId)
+    : isFloatingBookingOfficer
+      ? [] // no branch picked yet
+      : services
+
   // When service changes: update selectedService, pull its branch_id
-  // into the booking, and reset the slot.
+  // into the booking, reset the slot, and reload the staff list.
   // v3.74.323 — auto-fill branch_id from the chosen service so the
   // availability check, the eventual booking row, and the invoice
   // generated at complete time all agree on the same branch.
@@ -141,6 +185,22 @@ export function BookingForm({
     if (svc?.branch_id) {
       form.setValue("branch_id" as any, svc.branch_id)
     }
+    // v3.74.337 — load the service's assigned staff so the staff
+    // picker can switch from "every branch employee" to "these
+    // employees only" when the owner has scoped the service.
+    if (!watchedServiceId) {
+      setServiceStaffIds(null)
+      return
+    }
+    setServiceStaffLoading(true)
+    fetch(`/api/services/${watchedServiceId}/staff`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        const list = (json?.staff ?? []) as Array<{ employee_user_id: string }>
+        setServiceStaffIds(list.map((s) => s.employee_user_id))
+      })
+      .catch(() => setServiceStaffIds([]))
+      .finally(() => setServiceStaffLoading(false))
   }, [watchedServiceId, services, form])
 
   // When date changes: reset slot
@@ -192,6 +252,52 @@ export function BookingForm({
             <CardTitle className="text-base">{t("الخدمة والعميل", "Service & Customer")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+
+            {/* v3.74.337 — Branch picker (floating booking_officer only).
+                Other roles inherit the branch from the chosen service. */}
+            {isFloatingBookingOfficer && (
+              <FormField
+                control={form.control}
+                name={"branch_id" as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                      {t("الفرع", "Branch")} *
+                    </FormLabel>
+                    <Select
+                      value={(field.value as string) || ""}
+                      onValueChange={(v) => {
+                        field.onChange(v)
+                        // Clear the previous service if it doesn't belong to the new branch
+                        form.setValue("service_id", "")
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("اختر الفرع أولاً", "Pick a branch first")} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.name}{b.is_main ? (isAr ? " (رئيسى)" : " (Main)") : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription className="text-xs">
+                      {t(
+                        "اختر الفرع علشان تشوف خدماته. لو غيّرت الفرع، اختيار الخدمة الحالى يتمسح.",
+                        "Pick a branch to see its services. Changing branches clears the current service selection."
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
               {/* Service */}
@@ -201,22 +307,38 @@ export function BookingForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("الخدمة", "Service")} *</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={isFloatingBookingOfficer && !watchedBranchId}
+                    >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder={t("اختر خدمة...", "Select service...")} />
+                          <SelectValue placeholder={
+                            isFloatingBookingOfficer && !watchedBranchId
+                              ? t("اختر الفرع أولاً", "Pick a branch first")
+                              : t("اختر خدمة...", "Select service...")
+                          } />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {services.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            <span className="flex items-center gap-2">
-                              <span className="font-mono text-xs text-muted-foreground">{s.service_code}</span>
-                              {s.service_name}
-                              <span className="text-muted-foreground text-xs">({s.duration_minutes}m)</span>
-                            </span>
-                          </SelectItem>
-                        ))}
+                        {visibleServices.length === 0 ? (
+                          <div className="p-3 text-sm text-muted-foreground text-center">
+                            {isFloatingBookingOfficer && !watchedBranchId
+                              ? t("اختر الفرع لعرض خدماته", "Pick a branch to see its services")
+                              : t("لا توجد خدمات متاحة", "No services available")}
+                          </div>
+                        ) : (
+                          visibleServices.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              <span className="flex items-center gap-2">
+                                <span className="font-mono text-xs text-muted-foreground">{s.service_code}</span>
+                                {s.service_name}
+                                <span className="text-muted-foreground text-xs">({s.duration_minutes}m)</span>
+                              </span>
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -245,35 +367,62 @@ export function BookingForm({
                 )}
               />
 
-              {/* Staff */}
-              <FormField
-                control={form.control}
-                name="staff_user_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("الموظف المسؤول", "Assigned Staff")}</FormLabel>
-                    <Select
-                      value={field.value ?? "none"}
-                      onValueChange={(v) => field.onChange(v === "none" ? null : v)}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t("أي موظف", "Any staff")} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">{t("أي موظف متاح", "Any available staff")}</SelectItem>
-                        {staff.map((m) => (
-                          <SelectItem key={m.user_id} value={m.user_id}>
-                            {m.display_name || m.email || m.user_id}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* v3.74.337 — Staff dropdown follows the golden rule:
+                  - service has assigned staff → only those names appear
+                  - service has NO assigned staff → every employee in the
+                    service's branch appears (the open-queue case)
+                  Filtering happens client-side using the staff list +
+                  serviceStaffIds + the selected service's branch_id.
+              */}
+              {(() => {
+                const svcBranchId = selectedService?.branch_id ?? null
+                const branchStaff = svcBranchId
+                  ? staff.filter((m) => !m.branch_id || m.branch_id === svcBranchId)
+                  : staff
+                const filteredStaff =
+                  serviceStaffIds && serviceStaffIds.length > 0
+                    ? staff.filter((m) => serviceStaffIds.includes(m.user_id))
+                    : branchStaff
+                const hint = !watchedServiceId
+                  ? t("اختر الخدمة أولاً", "Pick the service first")
+                  : serviceStaffLoading
+                    ? t("جارٍ تحميل الموظفين...", "Loading staff...")
+                    : serviceStaffIds && serviceStaffIds.length > 0
+                      ? t("الخدمة محدد لها موظفون — تظهر أسماؤهم فقط", "Service has assigned staff — only they appear")
+                      : t("الخدمة بدون موظفين محددين — كل موظفى الفرع متاحين", "Service has no specific staff — every branch employee is eligible")
+                return (
+                  <FormField
+                    control={form.control}
+                    name="staff_user_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t("الموظف المسؤول", "Assigned Staff")}</FormLabel>
+                        <Select
+                          value={field.value ?? "none"}
+                          onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                          disabled={!watchedServiceId || serviceStaffLoading}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t("أي موظف", "Any staff")} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">{t("بدون تحديد (يظهر للجميع المسموح لهم)", "Unassigned (visible to all eligible)")}</SelectItem>
+                            {filteredStaff.map((m) => (
+                              <SelectItem key={m.user_id} value={m.user_id}>
+                                {m.display_name || m.email || m.user_id}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">{hint}</p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )
+              })()}
 
               {/* Source */}
               <FormField

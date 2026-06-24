@@ -19,7 +19,12 @@ interface SimpleService {
   branch_id: string
 }
 interface SimpleCustomer { id: string; name: string; phone?: string }
-interface SimpleStaff    { user_id: string; display_name: string; email?: string }
+interface SimpleStaff    {
+  user_id: string; display_name: string; email?: string
+  // v3.74.337 — needed so BookingForm can fall back to "every employee
+  // in the service's branch" when the service has no assigned staff.
+  branch_id?: string | null
+}
 
 export default function NewBookingPage() {
   const searchParams = useSearchParams()
