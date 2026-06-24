@@ -19,22 +19,35 @@ import type { AvailableSlot } from '@/types/bookings'
  * Query params:
  *   service_id     (required)
  *   date           YYYY-MM-DD (required)
+ *   branch_id      (required) — v3.74.322: see note below
  *   staff_user_id  optional
+ *
+ * v3.74.322 — Branch-aware capacity check
+ *   When a service is shared across all branches (services.branch_id IS
+ *   NULL), the same service is bookable in every physical location. If
+ *   we counted conflicts across ALL branches, a service with capacity 2
+ *   would block its second slot the moment any branch booked one — even
+ *   if the other booking is 200 km away. We now require branch_id on
+ *   the query so the conflict check scopes to that branch only.
  */
 export async function GET(req: NextRequest) {
   try {
     const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
     if (errorResponse) return errorResponse
 
-    const { companyId } = context!
+    const { companyId, member } = context!
     const sp = req.nextUrl.searchParams
 
     const serviceId   = sp.get('service_id')
     const dateStr     = sp.get('date')
     const staffUserId = sp.get('staff_user_id') ?? null
+    // v3.74.322 — accept branch_id from query, fall back to caller's
+    // own branch (booking_officer / manager always have one).
+    const branchId    = sp.get('branch_id') || member?.branch_id || null
 
     if (!serviceId) throw new BookingApiError(400, 'service_id مطلوب')
     if (!dateStr)   throw new BookingApiError(400, 'date مطلوب (YYYY-MM-DD)')
+    if (!branchId)  throw new BookingApiError(400, 'branch_id مطلوب لحساب الإتاحة بشكل صحيح')
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       throw new BookingApiError(400, 'date يجب أن يكون بصيغة YYYY-MM-DD')
     }
@@ -122,12 +135,15 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // 4. Fetch all active bookings for this service on this date
+    // 4. Fetch all active bookings for this service on this date AT THIS BRANCH
+    //    v3.74.322 — scope the conflict check to the requested branch.
+    //    See JSDoc above for the shared-service rationale.
     const { data: existingBookings, error: bErr } = await supabase
       .from('bookings')
       .select('start_time, end_time, staff_user_id')
       .eq('service_id', serviceId)
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .eq('booking_date', dateStr)
       .not('status', 'in', '("cancelled","no_show")')
 

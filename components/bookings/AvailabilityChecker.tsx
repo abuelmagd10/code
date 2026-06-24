@@ -9,6 +9,9 @@ import type { AvailableSlot } from "@/types/bookings"
 interface AvailabilityCheckerProps {
   serviceId:    string
   date:         string           // YYYY-MM-DD
+  // v3.74.322 — required: scope availability to one branch so that
+  // shared-service capacity is per-branch, not company-wide.
+  branchId:     string | null
   staffUserId?: string | null
   selectedTime: string | null    // HH:MM — the currently chosen slot
   onSelect:     (slot: AvailableSlot) => void
@@ -18,6 +21,7 @@ interface AvailabilityCheckerProps {
 export function AvailabilityChecker({
   serviceId,
   date,
+  branchId,
   staffUserId,
   selectedTime,
   onSelect,
@@ -46,9 +50,15 @@ export function AvailabilityChecker({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!serviceId || !date) {
+    if (!serviceId || !date || !branchId) {
       setSlots([])
-      setReason(null)
+      // v3.74.322 — surface the missing-branch case to the user
+      // instead of silently showing zero slots.
+      setReason(!branchId && serviceId && date
+        ? (lang === "en"
+            ? "Pick a branch first to see availability."
+            : "اختر الفرع أولاً لعرض الأوقات المتاحة.")
+        : null)
       return
     }
 
@@ -62,6 +72,7 @@ export function AvailabilityChecker({
         const params = new URLSearchParams({
           service_id: serviceId,
           date,
+          branch_id: branchId,
           ...(staffUserId ? { staff_user_id: staffUserId } : {}),
         })
         const res  = await fetch(`/api/bookings/availability?${params.toString()}`)
@@ -80,7 +91,7 @@ export function AvailabilityChecker({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [serviceId, date, staffUserId])
+  }, [serviceId, date, branchId, staffUserId])
 
   if (!serviceId || !date) return null
 

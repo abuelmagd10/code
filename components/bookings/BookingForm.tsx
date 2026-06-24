@@ -118,6 +118,9 @@ export function BookingForm({
   const watchedServiceId   = form.watch("service_id")
   const watchedDate        = form.watch("booking_date")
   const watchedStaffId     = form.watch("staff_user_id")
+  // v3.74.322 — availability checker needs the booking branch so that
+  // a shared service's capacity is counted per-branch, not globally.
+  const watchedBranchId    = form.watch("branch_id" as any) as string | null | undefined
   const watchedQty         = form.watch("quantity") ?? 1
   const watchedDiscount    = form.watch("discount_amount") ?? 0
 
@@ -335,6 +338,7 @@ export function BookingForm({
                 <AvailabilityChecker
                   serviceId={watchedServiceId}
                   date={watchedDate}
+                  branchId={watchedBranchId ?? null}
                   staffUserId={watchedStaffId ?? undefined}
                   selectedTime={form.watch("start_time") || null}
                   onSelect={handleSlotSelect}
