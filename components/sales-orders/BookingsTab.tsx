@@ -26,7 +26,10 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
   Calendar, Clock, User, Plus, Eye, RefreshCw, Filter,
+  CheckCircle, Loader2,
 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 
 type BookingRow = {
   id: string
@@ -64,11 +67,53 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
+  const { toast } = useToast()
   const [rows, setRows]           = useState<BookingRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError]         = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [searchQuery, setSearchQuery]   = useState<string>("")
+  // v3.74.326 — per-row activation spinner
+  const [activatingId, setActivatingId] = useState<string | null>(null)
+
+  const handleActivate = async (row: BookingRow) => {
+    // Defensive guard: surface a friendly toast instead of letting the
+    // RPC bubble a P0001 for terminal statuses.
+    if (["completed", "cancelled", "no_show"].includes(row.status)) {
+      toastActionError(toast,
+        t("لا يمكن التفعيل", "Cannot activate"),
+        t(`أمر الحجز فى حالة "${STATUS_LABEL[row.status]?.ar || row.status}" — مش ينفع يتفعّل.`,
+          `Booking is in "${STATUS_LABEL[row.status]?.en || row.status}" — cannot activate.`))
+      return
+    }
+    const ok = window.confirm(
+      isAr
+        ? `هتفعّل أمر الحجز ${row.booking_no}؟\nالنتيجة:\n- يتحوّل إلى مكتمل\n- يتم إنشاء فاتورة تلقائياً\n- يتم تسجيلك كمسؤول التفعيل`
+        : `Activate booking ${row.booking_no}?\nThis will:\n- Move it to completed\n- Auto-create an invoice\n- Record you as the activator`
+    )
+    if (!ok) return
+    setActivatingId(row.id)
+    try {
+      const res  = await fetch(`/api/bookings/${row.id}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || "Failed to activate")
+      toastActionSuccess(toast,
+        t("تم التفعيل بنجاح", "Activated successfully"),
+        json?.invoice_no
+          ? t(`فاتورة ${json.invoice_no} أنشئت تلقائياً`, `Invoice ${json.invoice_no} created`)
+          : undefined)
+      await load()
+    } catch (e: any) {
+      toastActionError(toast,
+        t("فشل التفعيل", "Activation failed"),
+        e?.message || "Network error")
+    } finally {
+      setActivatingId(null)
+    }
+  }
 
   const load = async () => {
     setIsLoading(true)
@@ -212,11 +257,32 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                         <Badge className={meta.cls}>{isAr ? meta.ar : meta.en}</Badge>
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <Link href={`/bookings/${r.id}`}>
-                          <Button variant="ghost" size="sm">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </Link>
+                        <div className="flex items-center justify-center gap-1">
+                          <Link href={`/bookings/${r.id}`}>
+                            <Button variant="ghost" size="sm" title={t("عرض التفاصيل", "View")}>
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                          {/* v3.74.326 — "تفعيل" — hidden for terminal states */}
+                          {!["completed", "cancelled", "no_show"].includes(r.status) && (
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white h-8 px-2"
+                              onClick={() => handleActivate(r)}
+                              disabled={activatingId === r.id}
+                              title={t("تفعيل وإنشاء فاتورة", "Activate & create invoice")}
+                            >
+                              {activatingId === r.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <CheckCircle className="w-4 h-4 me-1" />
+                                  <span className="hidden md:inline">{t("تفعيل", "Activate")}</span>
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
