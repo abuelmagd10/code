@@ -35,6 +35,11 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable";
 import { StatusBadge } from "@/components/DataTableFormatters";
 import { useRealtimeTable } from "@/hooks/use-realtime-table";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+// v3.74.325 — "أوامر الحجز" tab — reads from the bookings table; no
+// data was moved into sales_orders.
+import { BookingsTab } from "@/components/sales-orders/BookingsTab"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Calendar as CalendarIcon } from "lucide-react"
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Product = { id: string; name: string; unit_price?: number; item_type?: 'product' | 'service' };
@@ -118,6 +123,8 @@ function SalesOrdersContent() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
+  // v3.74.325 — current tab: "sales" = موجود (أوامر البيع), "bookings" = أوامر الحجز
+  const [activeTab, setActiveTab] = useState<"sales" | "bookings">("sales");
   const [orderItems, setOrderItems] = useState<SOItemWithProduct[]>([]);
   const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([]);
   const [filterProducts, setFilterProducts] = useState<string[]>([]);
@@ -1615,6 +1622,26 @@ function SalesOrdersContent() {
           />
         </div>
 
+        {/* v3.74.325 — Tabs bar */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "sales" | "bookings")}>
+          <TabsList className="grid grid-cols-2 max-w-md">
+            <TabsTrigger value="sales">
+              <ShoppingCart className="w-4 h-4 me-2" />
+              {appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
+            </TabsTrigger>
+            <TabsTrigger value="bookings">
+              <CalendarIcon className="w-4 h-4 me-2" />
+              {appLang === 'en' ? 'Booking Orders' : 'أوامر الحجز'}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* v3.74.325 — "أوامر الحجز" content (reads from bookings table) */}
+        {activeTab === 'bookings' && <BookingsTab lang={appLang} />}
+
+        {/* v3.74.325 — original sales-orders content, hidden when on bookings tab */}
+        <div className={activeTab === 'bookings' ? 'hidden' : ''}>
+
         {/* Statistics Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
           <Card className="p-3 sm:p-4 dark:bg-slate-900 dark:border-slate-800">
@@ -2087,6 +2114,9 @@ function SalesOrdersContent() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* v3.74.325 — close the wrapping div that hides original content on bookings tab */}
+        </div>
       </main>
     </div>
   );
