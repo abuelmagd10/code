@@ -91,7 +91,7 @@ export function ServiceForm({
     expense_account_id?: string | null
   }
   const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([])
-  const [catalogQuery, setCatalogQuery] = useState("")
+  // v3.74.338 — removed catalogQuery state; the dropdown alone is enough
 
   // v3.74.319 — اختيار الفرع للخدمة (NULL = متاحة لكل الفروع).
   // المالك والمدير العام (admin) يقدروا يختاروا "كل الفروع" أو فرع محدد.
@@ -175,14 +175,6 @@ export function ServiceForm({
   const linkedProduct = catalogProducts.find((p) => p.id === linkedProductId) || null
   const initialLinkedProductId = (initialData as any)?.product_catalog_id as string | undefined
 
-  // Filtered list for the search input
-  const filteredCatalog = catalogQuery.trim().length === 0
-    ? catalogProducts
-    : catalogProducts.filter((p) => {
-        const q = catalogQuery.toLowerCase()
-        return (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q))
-      })
-
   const handleSubmit = async (data: ServiceFormValues) => {
     // Validate schedule times before submitting
     const invalidDay = schedules.find(
@@ -233,7 +225,13 @@ export function ServiceForm({
                 <CardTitle className="text-base">{t("معلومات الخدمة", "Service Information")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* ── Product Catalog Selector (REQUIRED — source of truth) ── */}
+                {/* ── Product Catalog Selector (REQUIRED — source of truth) ──
+                    v3.74.338 — removed the separate search input. It was
+                    rendering above the Select and ended up showing the
+                    same selected label twice ("تقشير — SR-001" in the
+                    search field + the trigger). The dropdown itself is
+                    enough, the list is already filtered to the chosen
+                    branch and is normally short. */}
                 <FormField
                   control={form.control}
                   name={"product_catalog_id" as any}
@@ -243,13 +241,6 @@ export function ServiceForm({
                         <Link2 className="w-3.5 h-3.5 text-orange-500" />
                         {t("صنف الكتالوج", "Catalog Product")} *
                       </FormLabel>
-                      <Input
-                        type="search"
-                        placeholder={t("ابحث بالاسم أو الكود (SKU)...", "Search by name or SKU…")}
-                        value={catalogQuery}
-                        onChange={(e) => setCatalogQuery(e.target.value)}
-                        className="mb-2"
-                      />
                       <Select
                         value={(field.value as string) ?? ""}
                         onValueChange={(v) => field.onChange(v)}
@@ -260,15 +251,15 @@ export function ServiceForm({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {filteredCatalog.length === 0 ? (
+                          {catalogProducts.length === 0 ? (
                             <div className="p-3 text-sm text-muted-foreground text-center">
                               {t(
-                                "لا توجد أصناف خدمات. أنشئ صنفاً من نوع «خدمة» في المنتجات والخدمات أولاً.",
-                                "No service items. Create a product with item_type=service first."
+                                "لا توجد أصناف خدمات لهذا الفرع. أنشئ صنفاً من نوع «خدمة» فى «المنتجات والخدمات» أولاً.",
+                                "No service items for this branch. Create a product with item_type=service in /products first."
                               )}
                             </div>
                           ) : (
-                            filteredCatalog.map((p) => (
+                            catalogProducts.map((p) => (
                               <SelectItem key={p.id} value={p.id}>
                                 {p.sku ? `${p.name} — ${p.sku}` : p.name}
                               </SelectItem>
@@ -278,8 +269,8 @@ export function ServiceForm({
                       </Select>
                       <FormDescription className="text-xs">
                         {t(
-                          "💡 الأسعار والحسابات تُنسخ من هذا الصنف وقت إنشاء الخدمة. القائمة مفلترة بفرع الخدمة المختار.",
-                          "💡 Pricing and accounts are copied from this catalog item at create time. The list is filtered by the service's branch."
+                          "💡 الأسعار والحسابات تُنسخ من الصنف وقت إنشاء الخدمة. القائمة مفلترة بفرع الخدمة المختار.",
+                          "💡 Pricing and accounts are copied from the catalog item at create time. The list is filtered by the service's branch."
                         )}
                       </FormDescription>
                       <FormMessage />
