@@ -79,6 +79,10 @@ export const createServiceSchema = z.object({
 
 export const updateServiceSchema = z
   .object({
+    // v3.74.320 — allow editing the branch (or clearing it to NULL
+    // for "shared across all branches"). Company-scope roles only
+    // — the API guards the actual permission.
+    branch_id: uuidSchema.optional().nullable(),
     service_type: z.enum(SERVICE_TYPE_VALUES).optional(),
     duration_minutes: z.coerce.number().int().positive().optional(),
     description: nullableString.optional(),

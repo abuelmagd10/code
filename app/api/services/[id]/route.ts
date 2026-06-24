@@ -145,6 +145,26 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     if (error) throw error
 
+    // v3.74.320 — update_service_atomic doesn't accept p_branch_id,
+    // so any change to the service's branch was being silently dropped.
+    // Apply branch_id as a separate UPDATE — but ONLY for company-scope
+    // roles. A branch-scoped manager has no business reassigning a
+    // service to a different branch, and a booking_officer can't reach
+    // this route at all (the guard above + RBAC).
+    if ('branch_id' in (body as any)) {
+      const role = String(member.role || '')
+      const isCompanyScope = ['owner', 'admin', 'general_manager'].includes(role)
+      if (isCompanyScope) {
+        const nextBranchId = ((body as any).branch_id as string | null | undefined) ?? null
+        const { error: branchErr } = await supabase
+          .from('services')
+          .update({ branch_id: nextBranchId, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .eq('company_id', companyId)
+        if (branchErr) throw branchErr
+      }
+    }
+
     asyncAuditLog({
       companyId,
       userId:   user.id,
