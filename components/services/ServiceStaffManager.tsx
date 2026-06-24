@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { Trash2, UserPlus, Star } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -49,8 +47,8 @@ export function ServiceStaffManager({
   const [staffList, setStaffList] = useState<StaffMember[]>([])
   const [employees, setEmployees] = useState<CompanyEmployee[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedUserId, setSelectedUserId] = useState<string>("")
-  const [isPrimary, setIsPrimary] = useState(false)
+  // v3.74.336 — multi-select: pick several employees and add them in a batch
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
   const [isAdding, setIsAdding] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
 
@@ -85,26 +83,46 @@ export function ServiceStaffManager({
     loadEmployees()
   }, [serviceId])
 
+  // v3.74.336 — add a batch of employees in one click. Each one is
+  // POSTed individually; we count failures and report a friendly
+  // summary at the end. is_primary is intentionally NOT exposed in
+  // multi-add (it only makes sense for a single row) — the owner can
+  // toggle it later from a per-row action.
   const handleAdd = async () => {
-    if (!selectedUserId) return
+    if (selectedUserIds.length === 0) return
     setIsAdding(true)
-    try {
-      const res = await fetch(`/api/services/${serviceId}/staff`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employee_user_id: selectedUserId, is_primary: isPrimary }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || "failed")
-      toastActionSuccess(toast, t("تمت إضافة الموظف بنجاح", "Staff member added"))
-      setSelectedUserId("")
-      setIsPrimary(false)
-      await loadStaff()
-    } catch (err: any) {
-      toastActionError(toast, t("خطأ", "Error"), err.message)
-    } finally {
-      setIsAdding(false)
+    let success = 0
+    const failures: string[] = []
+    for (const userId of selectedUserIds) {
+      try {
+        const res = await fetch(`/api/services/${serviceId}/staff`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employee_user_id: userId, is_primary: false }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || "failed")
+        success += 1
+      } catch (err: any) {
+        const emp = employees.find((e) => e.user_id === userId)
+        failures.push(`${emp?.display_name || emp?.email || userId}: ${err.message}`)
+      }
     }
+    if (success > 0) {
+      toastActionSuccess(
+        toast,
+        t(`تمت إضافة ${success} موظف`, `${success} staff member(s) added`),
+        failures.length > 0
+          ? t(`فشل ${failures.length} موظف`, `${failures.length} failed`)
+          : undefined
+      )
+    }
+    if (failures.length > 0 && success === 0) {
+      toastActionError(toast, t("فشل الإضافة", "Add failed"), failures.join(" — "))
+    }
+    setSelectedUserIds([])
+    await loadStaff()
+    setIsAdding(false)
   }
 
   // v3.74.333 — DELETE expects employee_user_id (not staff_id). The UI
@@ -192,26 +210,28 @@ export function ServiceStaffManager({
         </div>
       )}
 
-      {/* Add staff form */}
+      {/* v3.74.336 — Add staff form (multi-select) */}
       {canEdit && (
         <div className="border border-dashed rounded-lg p-4 space-y-3">
           <p className="text-sm font-medium text-muted-foreground">
-            {t("إضافة موظف", "Add Staff Member")}
+            {t("إضافة موظفين (اختيار متعدد)", "Add Staff Members (Multi-select)")}
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             {availableEmployees.length > 0 ? (
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder={t("اختر موظفاً...", "Select employee...")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableEmployees.map((e) => (
-                    <SelectItem key={e.user_id} value={e.user_id}>
-                      {e.display_name || e.email || e.user_id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex-1">
+                <MultiSelect
+                  options={availableEmployees.map((e) => ({
+                    value: e.user_id,
+                    label: e.display_name || e.email || e.user_id,
+                  }))}
+                  selected={selectedUserIds}
+                  onChange={setSelectedUserIds}
+                  placeholder={t("اختر موظف أو أكثر...", "Pick one or more employees...")}
+                  emptyMessage={t("لا توجد نتائج", "No results found.")}
+                  searchPlaceholder={t("بحث بالاسم...", "Search by name...")}
+                  maxDisplay={3}
+                />
+              </div>
             ) : (
               <div className="flex-1 text-sm text-muted-foreground px-3 py-2 border rounded-md bg-muted/40">
                 {t("جميع الموظفين مضافون بالفعل", "All employees already assigned")}
@@ -219,26 +239,25 @@ export function ServiceStaffManager({
             )}
             <Button
               onClick={handleAdd}
-              disabled={!selectedUserId || isAdding}
+              disabled={selectedUserIds.length === 0 || isAdding}
               className="bg-orange-600 hover:bg-orange-700 text-white gap-2"
               size="sm"
             >
               <UserPlus className="w-4 h-4" />
-              {isAdding ? t("جاري الإضافة...", "Adding...") : t("إضافة", "Add")}
+              {isAdding
+                ? t("جاري الإضافة...", "Adding...")
+                : selectedUserIds.length > 1
+                  ? t(`إضافة ${selectedUserIds.length}`, `Add ${selectedUserIds.length}`)
+                  : t("إضافة", "Add")
+              }
             </Button>
           </div>
-          {availableEmployees.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Switch
-                id="is_primary"
-                checked={isPrimary}
-                onCheckedChange={setIsPrimary}
-              />
-              <Label htmlFor="is_primary" className="text-sm cursor-pointer">
-                {t("موظف رئيسي", "Primary staff")}
-              </Label>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "💡 اختر أكتر من موظف للإضافة دفعة واحدة. اترك بدون اختيار لتترك الخدمة متاحة لجميع موظفى الفرع.",
+              "💡 Pick several employees to add in one batch. Leave empty to keep the service open to every employee in the branch."
+            )}
+          </p>
         </div>
       )}
     </div>
