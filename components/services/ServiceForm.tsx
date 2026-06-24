@@ -659,23 +659,11 @@ export function ServiceForm({
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="requires_approval"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center gap-3 rounded-lg border p-3">
-                        <FormControl>
-                          <Switch checked={!!field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                        <div>
-                          <FormLabel className="cursor-pointer">{t("يتطلب موافقة", "Requires Approval")}</FormLabel>
-                          <FormDescription className="text-xs">
-                            {t("يحتاج الحجز لموافقة الإدارة", "Booking needs management approval")}
-                          </FormDescription>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
+                  {/* v3.74.344 — حذف زر "يتطلب موافقة" بناءً على طلب
+                      المالك. الحقل lا يزال موجوداً فى الـ defaults بقيمة
+                      false (مرفوض ضمنياً) عشان الـ DB ما يتأثرش بأى
+                      backend logic سابق يفترض وجوده، لكن المستخدم مش
+                      يقدر يفعّله من الـ UI. */}
                 </div>
               </CardContent>
             </Card>
