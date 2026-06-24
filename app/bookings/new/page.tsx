@@ -14,6 +14,9 @@ interface SimpleService {
   id: string; service_name: string; service_code: string
   unit_price: number; duration_minutes: number; tax_rate: number
   advance_booking_days: number
+  // v3.74.323 — BookingForm reads this to auto-fill bookings.branch_id
+  // and to scope the availability check.
+  branch_id: string
 }
 interface SimpleCustomer { id: string; name: string; phone?: string }
 interface SimpleStaff    { user_id: string; display_name: string; email?: string }

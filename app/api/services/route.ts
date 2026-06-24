@@ -32,11 +32,10 @@ export async function GET(req: NextRequest) {
       .order('service_name')
       .range(from, to)
 
-    // v3.74.319 — booking_officer يرى خدمات فرعه + الخدمات المشتركة
-    // (branch_id IS NULL) اللى أنشأها المالك/المدير العام بدون فرع محدد.
-    // النص "branch_id.is.null,branch_id.eq.<id>" هى صياغة PostgREST لـ OR.
+    // v3.74.323 — shared services were rolled back; every service is
+    // tied to one branch. booking_officer goes back to a simple .eq().
     if (member?.branch_id && String(member.role || '') === 'booking_officer') {
-      query = query.or(`branch_id.is.null,branch_id.eq.${member.branch_id}`)
+      query = query.eq('branch_id', member.branch_id)
     }
 
     const branchId     = sp.get('branch_id')
@@ -80,22 +79,13 @@ export async function POST(req: NextRequest) {
 
     const body = await parseJsonBody(req, createServiceSchema)
 
-    // v3.74.319 — branch_id is optional.
-    // Rules:
-    //   - Company-scope roles (owner/admin/general_manager) can pick any
-    //     branch OR leave it NULL for a service shared across all branches.
-    //   - Branch-scope roles (manager, etc.) MUST scope the service to
-    //     their own branch — if they leave it out, we default to their
-    //     member.branch_id rather than letting them publish company-wide.
-    const role = String(member.role || '')
-    const isCompanyScope = ['owner', 'admin', 'general_manager'].includes(role)
-    const resolvedBranchId = isCompanyScope
-      ? (body.branch_id ?? null)
-      : (body.branch_id ?? member.branch_id ?? null)
-
-    if (!isCompanyScope && !resolvedBranchId) {
+    // v3.74.323 — every service must belong to one branch (the shared-
+    // service path was rolled back). If the caller didn't specify a
+    // branch_id, fall back to their own. If they have neither — refuse.
+    const resolvedBranchId = body.branch_id ?? member.branch_id ?? null
+    if (!resolvedBranchId) {
       return NextResponse.json(
-        { success: false, error: 'يجب اختيار الفرع — دورك يخصّك بفرع محدد.' },
+        { success: false, error: 'branch_id مطلوب لإنشاء الخدمة.' },
         { status: 400 }
       )
     }

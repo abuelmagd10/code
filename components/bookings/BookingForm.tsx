@@ -43,6 +43,9 @@ interface SimpleService {
   duration_minutes: number
   tax_rate: number
   advance_booking_days: number
+  // v3.74.323 — every service is now branch-bound. The form reads this
+  // to pre-fill bookings.branch_id and pass it to the availability check.
+  branch_id: string
 }
 
 interface SimpleCustomer {
@@ -118,18 +121,26 @@ export function BookingForm({
   const watchedServiceId   = form.watch("service_id")
   const watchedDate        = form.watch("booking_date")
   const watchedStaffId     = form.watch("staff_user_id")
-  // v3.74.322 — availability checker needs the booking branch so that
-  // a shared service's capacity is counted per-branch, not globally.
+  // v3.74.323 — branch is now derived from the selected service (every
+  // service is branch-bound). We still watch the form field so manual
+  // resets or pre-fills propagate.
   const watchedBranchId    = form.watch("branch_id" as any) as string | null | undefined
   const watchedQty         = form.watch("quantity") ?? 1
   const watchedDiscount    = form.watch("discount_amount") ?? 0
 
-  // When service changes: update selectedService and reset slot
+  // When service changes: update selectedService, pull its branch_id
+  // into the booking, and reset the slot.
+  // v3.74.323 — auto-fill branch_id from the chosen service so the
+  // availability check, the eventual booking row, and the invoice
+  // generated at complete time all agree on the same branch.
   useEffect(() => {
     const svc = services.find((s) => s.id === watchedServiceId) ?? null
     setSelectedService(svc)
     setSelectedSlot(null)
     form.setValue("start_time", "")
+    if (svc?.branch_id) {
+      form.setValue("branch_id" as any, svc.branch_id)
+    }
   }, [watchedServiceId, services, form])
 
   // When date changes: reset slot

@@ -284,29 +284,27 @@ export function ServiceForm({
                   </div>
                 )}
 
-                {/* v3.74.319 — Branch selector.
-                    - Company-scope roles (owner/admin) can pick "كل الفروع" (NULL) or any specific branch.
-                    - Branch-scope roles (manager) see their own branch only, disabled. */}
+                {/* v3.74.323 — Branch selector (required for every service).
+                    - Company-scope roles (owner/admin) pick any branch.
+                    - Branch-scope roles (manager) see their own branch only, disabled.
+                    The shared/"All branches" option was rolled back: products are
+                    branch-bound and services link to products, so the service must
+                    live on one branch. */}
                 <FormField
                   control={form.control}
                   name={"branch_id" as any}
                   render={({ field }) => {
-                    const ALL_BRANCHES = "__ALL__"
                     const currentVal = (field.value as string | null | undefined) ?? null
-                    const selectValue = isCompanyScope
-                      ? (currentVal ?? ALL_BRANCHES)
-                      : (currentVal ?? userBranchId ?? "")
+                    const selectValue = currentVal ?? (isCompanyScope ? "" : (userBranchId ?? ""))
                     return (
                       <FormItem>
                         <FormLabel className="flex items-center gap-1.5">
                           <MapPin className="w-3.5 h-3.5 text-blue-500" />
-                          {t("الفرع", "Branch")}
+                          {t("الفرع", "Branch")} *
                         </FormLabel>
                         <Select
                           value={selectValue || ""}
-                          onValueChange={(v) => {
-                            field.onChange(v === ALL_BRANCHES ? null : v)
-                          }}
+                          onValueChange={(v) => field.onChange(v)}
                           disabled={!isCompanyScope}
                         >
                           <FormControl>
@@ -315,11 +313,6 @@ export function ServiceForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {isCompanyScope && (
-                              <SelectItem value={ALL_BRANCHES}>
-                                {t("كل الفروع (مشتركة)", "All branches (shared)")}
-                              </SelectItem>
-                            )}
                             {branches.map((b) => (
                               <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                             ))}
@@ -328,12 +321,12 @@ export function ServiceForm({
                         <FormDescription className="text-xs">
                           {isCompanyScope
                             ? t(
-                                "اتركها على «كل الفروع» علشان الخدمة تظهر لمسؤول الحجز فى أى فرع.",
-                                "Leave as 'All branches' to let booking officers in every branch see this service."
+                                "كل خدمة لازم تكون مرتبطة بفرع — لإن المنتجات والمخزون مرتبطين بفرع.",
+                                "Every service must belong to a branch — products and inventory are branch-scoped."
                               )
                             : t(
-                                "محدد تلقائياً بفرعك. لازم يكون مدير عام أو المالك لإنشاء خدمة لكل الفروع.",
-                                "Auto-set to your branch. Only owner / general manager can publish a service across all branches."
+                                "محدد تلقائياً بفرعك. غيره يحتاج مالك أو مدير عام.",
+                                "Auto-set to your branch. Change needs owner / general manager."
                               )}
                         </FormDescription>
                         <FormMessage />
