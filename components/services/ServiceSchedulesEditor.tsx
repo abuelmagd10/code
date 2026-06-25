@@ -68,17 +68,15 @@ export function ServiceSchedulesEditor({
     onChange(updated)
   }
 
+  // v3.74.353 — Drop the floating header row entirely and stick a tiny
+  // label directly on each time input ("بداية" / "نهاية"). The previous
+  // layout relied on a four-column grid whose visual order flips under
+  // RTL, so users were filling the start time into the "إلى" slot and
+  // vice-versa — which is exactly how some services ended up saved as
+  // 00:00–18:00 instead of 09:00–18:00. With the label welded to each
+  // input there is no way to read the wrong column.
   return (
     <div className="space-y-2">
-      <div
-        className={`grid grid-cols-[auto_1fr_1fr_auto] gap-x-4 gap-y-1 text-xs font-medium text-muted-foreground px-3 ${isAr ? "text-right" : "text-left"}`}
-      >
-        <span>{t("اليوم", "Day")}</span>
-        <span className="text-center">{t("من", "From")}</span>
-        <span className="text-center">{t("إلى", "To")}</span>
-        <span className="text-center">{t("مفعّل", "Active")}</span>
-      </div>
-
       {rows.map((row) => {
         const dayLabel = isAr
           ? DAY_LABELS[row.day_of_week]!.ar
@@ -103,46 +101,66 @@ export function ServiceSchedulesEditor({
           >
             <CardContent className="p-3">
               <div
-                className={`grid grid-cols-[auto_1fr_1fr_auto] items-center gap-x-4 gap-y-1 ${isAr ? "text-right" : "text-left"}`}
+                className={`flex flex-wrap items-center gap-3 ${
+                  isAr ? "justify-end" : "justify-start"
+                }`}
+                dir={isAr ? "rtl" : "ltr"}
               >
                 {/* Day name */}
                 <span className="text-sm font-medium min-w-[72px]">{dayLabel}</span>
 
-                {/* Start time */}
-                <Input
-                  type="time"
-                  value={row.start_time}
-                  disabled={disabled || !row.is_active}
-                  onChange={(e) =>
-                    updateRow(row.day_of_week, { start_time: e.target.value })
-                  }
-                  className={`h-8 text-sm tabular-nums ${timeInvalid ? "border-red-400" : ""}`}
-                />
+                {/* Start time block — label welded to the input */}
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                    {t("بداية", "Start")}
+                  </Label>
+                  <Input
+                    type="time"
+                    value={row.start_time}
+                    disabled={disabled || !row.is_active}
+                    onChange={(e) =>
+                      updateRow(row.day_of_week, { start_time: e.target.value })
+                    }
+                    className={`h-8 w-[120px] text-sm tabular-nums ${timeInvalid ? "border-red-400" : ""}`}
+                    dir="ltr"
+                  />
+                </div>
 
-                {/* End time */}
-                <Input
-                  type="time"
-                  value={row.end_time}
-                  disabled={disabled || !row.is_active}
-                  onChange={(e) =>
-                    updateRow(row.day_of_week, { end_time: e.target.value })
-                  }
-                  className={`h-8 text-sm tabular-nums ${timeInvalid ? "border-red-400" : ""}`}
-                />
+                {/* End time block — label welded to the input */}
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                    {t("نهاية", "End")}
+                  </Label>
+                  <Input
+                    type="time"
+                    value={row.end_time}
+                    disabled={disabled || !row.is_active}
+                    onChange={(e) =>
+                      updateRow(row.day_of_week, { end_time: e.target.value })
+                    }
+                    className={`h-8 w-[120px] text-sm tabular-nums ${timeInvalid ? "border-red-400" : ""}`}
+                    dir="ltr"
+                  />
+                </div>
 
-                {/* Active toggle */}
-                <Switch
-                  checked={row.is_active}
-                  disabled={disabled}
-                  onCheckedChange={(checked) =>
-                    updateRow(row.day_of_week, { is_active: checked })
-                  }
-                />
+                {/* Active toggle — push to the visual end of the row */}
+                <div className="flex items-center gap-2 ms-auto">
+                  <Label className="text-xs text-muted-foreground">
+                    {t("مفعّل", "Active")}
+                  </Label>
+                  <Switch
+                    checked={row.is_active}
+                    disabled={disabled}
+                    onCheckedChange={(checked) =>
+                      updateRow(row.day_of_week, { is_active: checked })
+                    }
+                  />
+                </div>
               </div>
               {timeInvalid && (
-                <p className="text-xs text-red-500 mt-1 col-span-4">
+                <p className="text-xs text-red-500 mt-2">
                   {t(
-                    "وقت الانتهاء يجب أن يكون بعد وقت البداية",
+                    "وقت النهاية يجب أن يكون بعد وقت البداية",
                     "End time must be after start time"
                   )}
                 </p>
@@ -154,8 +172,8 @@ export function ServiceSchedulesEditor({
 
       <p className="text-xs text-muted-foreground px-1 mt-1">
         {t(
-          "فعّل الأيام التي تُقدَّم فيها الخدمة وحدد ساعات العمل لكل يوم.",
-          "Enable the days the service is offered and set working hours for each day."
+          "فعّل الأيام التي تُقدَّم فيها الخدمة وحدد وقت بداية ووقت نهاية لكل يوم.",
+          "Enable the days the service is offered, then set a Start and End time for each."
         )}
       </p>
     </div>
