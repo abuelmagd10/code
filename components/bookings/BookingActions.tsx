@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -16,14 +17,15 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import {
-  CheckCircle, Play, Flag, XCircle, AlertCircle, FileText,
-  Loader2, AlertTriangle,
+  CheckCircle, Pencil, XCircle, FileText, Loader2, AlertTriangle,
 } from "lucide-react"
 import type { BookingStatus } from "@/types/bookings"
 
 interface BookingActionsProps {
   bookingId:          string
   status:             BookingStatus
+  /** v3.74.358 — drives "تم التأكيد ✓" badge + hides تأكيد button */
+  confirmedAt?:       string | null
   cancelBeforeHours:  number   // from service
   hasPaidAmount:      boolean  // to show refund warning
   invoiceId:          string | null
@@ -32,91 +34,26 @@ interface BookingActionsProps {
   onActionComplete:   () => void   // refresh parent
 }
 
-type ActionKey = "confirm" | "start" | "complete" | "cancel" | "no_show"
-
-interface ActionConfig {
-  key:      ActionKey
-  label:    { ar: string; en: string }
-  icon:     React.ElementType
-  variant:  "default" | "outline" | "destructive"
-  className?: string
-  endpoint: string
-  method:   "POST"
-  confirm:  { ar: string; en: string }
-  warning?: { ar: string; en: string }
-  needsReason?: boolean
-}
-
-const ACTION_CONFIGS: ActionConfig[] = [
-  {
-    key:       "confirm",
-    label:     { ar: "تأكيد الحجز",   en: "Confirm Booking" },
-    icon:      CheckCircle,
-    variant:   "default",
-    className: "bg-blue-600 hover:bg-blue-700 text-white",
-    endpoint:  "confirm",
-    method:    "POST",
-    confirm:   { ar: "هل تريد تأكيد هذا الحجز؟", en: "Confirm this booking?" },
-  },
-  {
-    key:       "start",
-    label:     { ar: "بدء الخدمة",    en: "Start Service" },
-    icon:      Play,
-    variant:   "default",
-    className: "bg-amber-500 hover:bg-amber-600 text-white",
-    endpoint:  "start",
-    method:    "POST",
-    confirm:   { ar: "هل تريد بدء تقديم الخدمة الآن؟", en: "Start the service now?" },
-  },
-  {
-    key:       "complete",
-    label:     { ar: "إكمال وإصدار فاتورة", en: "Complete & Invoice" },
-    icon:      Flag,
-    variant:   "default",
-    className: "bg-emerald-600 hover:bg-emerald-700 text-white",
-    endpoint:  "complete",
-    method:    "POST",
-    confirm:   { ar: "إكمال الحجز وإنشاء الفاتورة؟", en: "Complete booking and create invoice?" },
-    warning:   {
-      ar: "تأكد من ربط حساب الإيرادات بالخدمة — وإلا ستفشل عملية إنشاء الفاتورة.",
-      en: "Ensure the service has a revenue account — otherwise invoice creation will fail.",
-    },
-  },
-  {
-    key:          "cancel",
-    label:        { ar: "إلغاء الحجز",  en: "Cancel Booking" },
-    icon:         XCircle,
-    variant:      "destructive",
-    endpoint:     "cancel",
-    method:       "POST",
-    confirm:      { ar: "هل تريد إلغاء هذا الحجز؟", en: "Cancel this booking?" },
-    needsReason:  true,
-  },
-  {
-    key:       "no_show",
-    label:     { ar: "لم يحضر",       en: "Mark No-Show" },
-    icon:      AlertCircle,
-    variant:   "outline",
-    className: "border-purple-400 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/20",
-    endpoint:  "no-show",
-    method:    "POST",
-    confirm:   { ar: "تأكيد غياب العميل؟", en: "Confirm customer no-show?" },
-  },
-]
-
-// Which actions are allowed per status
-const ALLOWED_ACTIONS: Record<BookingStatus, ActionKey[]> = {
-  draft:       ["confirm", "cancel"],
-  confirmed:   ["start", "cancel", "no_show"],
-  in_progress: ["complete", "cancel"],
-  completed:   [],
-  cancelled:   [],
-  no_show:     [],
-}
-
+/**
+ * v3.74.358 — Booking workflow simplified.
+ *
+ * Three actions on the booking page:
+ *   1. تأكيد الحجز   — stamps confirmed_at; booking shows up as
+ *                       "أمر حجز" in /sales-orders tab. No invoice,
+ *                       no service execution.
+ *   2. تعديل الحجز  — opens the booking edit form. Allowed while
+ *                       status='draft' (whether confirmed or not).
+ *   3. إلغاء الحجز  — sets status='cancelled'.
+ *
+ * Service execution (إنشاء الفاتورة + خصم المخزون + المحاسبة) moves
+ * out of the booking page entirely. It lives on the /sales-orders
+ * booking tab under "تنفيذ الخدمة" (renamed from "تفعيل" in stage 1;
+ * the accounting rewrite is stage 2).
+ */
 export function BookingActions({
   bookingId,
   status,
+  confirmedAt,
   cancelBeforeHours,
   hasPaidAmount,
   invoiceId,
@@ -127,34 +64,37 @@ export function BookingActions({
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
   const { toast } = useToast()
+  const q = lang === "en" ? "?lang=en" : ""
 
-  const [pendingAction, setPendingAction] = useState<ActionConfig | null>(null)
-  const [reason, setReason]               = useState("")
-  const [isExecuting, setIsExecuting]     = useState(false)
+  type PendingAction = "confirm" | "cancel"
+  const [pending, setPending] = useState<PendingAction | null>(null)
+  const [reason, setReason] = useState("")
+  const [isExecuting, setIsExecuting] = useState(false)
 
-  const allowedKeys = ALLOWED_ACTIONS[status] ?? []
-  const actions     = ACTION_CONFIGS.filter((a) => allowedKeys.includes(a.key))
+  const isConfirmed = !!confirmedAt
+  const isDraft = status === "draft"
+  const isTerminal = ["completed", "cancelled", "no_show"].includes(status)
 
-  const executeAction = async () => {
-    if (!pendingAction) return
+  const execute = async (action: PendingAction) => {
     setIsExecuting(true)
     try {
+      const endpoint = action === "confirm" ? "confirm" : "cancel"
       const body: Record<string, any> = {}
-      if (pendingAction.needsReason && reason) body.cancellation_reason = reason
+      if (action === "cancel" && reason) body.cancellation_reason = reason
 
-      const res  = await fetch(`/api/bookings/${bookingId}/${pendingAction.endpoint}`, {
-        method:  "POST",
+      const res = await fetch(`/api/bookings/${bookingId}/${endpoint}`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
+        body: JSON.stringify(body),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Action failed")
 
       toastActionSuccess(
         toast,
-        isAr ? pendingAction.label.ar : pendingAction.label.en
+        action === "confirm" ? t("تم التأكيد", "Confirmed") : t("تم الإلغاء", "Cancelled"),
       )
-      setPendingAction(null)
+      setPending(null)
       setReason("")
       onActionComplete()
     } catch (err: any) {
@@ -164,7 +104,7 @@ export function BookingActions({
     }
   }
 
-  // Terminal states — show invoice link or read-only message
+  // --- Terminal: completed -----------------------------------------------
   if (status === "completed") {
     return (
       <div className="flex flex-wrap gap-3">
@@ -185,6 +125,7 @@ export function BookingActions({
     )
   }
 
+  // --- Terminal: cancelled / no_show -------------------------------------
   if (status === "cancelled" || status === "no_show") {
     return (
       <p className="text-sm text-muted-foreground italic">
@@ -193,71 +134,97 @@ export function BookingActions({
     )
   }
 
-  if (actions.length === 0) return null
-
+  // --- Active workflow (draft) -------------------------------------------
   return (
     <>
-      <div className="flex flex-wrap gap-3">
-        {actions.map((action) => {
-          const Icon = action.icon
-          return (
-            <Button
-              key={action.key}
-              variant={action.variant}
-              size="sm"
-              className={`gap-2 ${action.className ?? ""}`}
-              onClick={() => {
-                setReason("")
-                setPendingAction(action)
-              }}
-            >
-              <Icon className="w-4 h-4" />
-              {isAr ? action.label.ar : action.label.en}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* تأكيد الحجز — only shown while still un-confirmed */}
+        {isDraft && !isConfirmed && (
+          <Button
+            size="sm"
+            className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => { setReason(""); setPending("confirm") }}
+          >
+            <CheckCircle className="w-4 h-4" />
+            {t("تأكيد الحجز", "Confirm Booking")}
+          </Button>
+        )}
+
+        {/* "تم التأكيد ✓" badge after confirmation */}
+        {isDraft && isConfirmed && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-400 text-xs">
+            <CheckCircle className="w-4 h-4" />
+            <span>{t("تم التأكيد", "Confirmed")}</span>
+            <span className="text-emerald-500 dark:text-emerald-500 tabular-nums">
+              {new Date(confirmedAt!).toLocaleString(isAr ? "ar-EG" : "en-US", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </span>
+          </div>
+        )}
+
+        {/* تعديل الحجز — allowed while draft (confirmed or not) */}
+        {!isTerminal && (
+          <Link href={`/bookings/${bookingId}/edit${q}`}>
+            <Button size="sm" variant="outline" className="gap-2">
+              <Pencil className="w-4 h-4" />
+              {t("تعديل الحجز", "Edit Booking")}
             </Button>
-          )
-        })}
+          </Link>
+        )}
+
+        {/* إلغاء الحجز */}
+        {!isTerminal && (
+          <Button
+            size="sm"
+            variant="destructive"
+            className="gap-2"
+            onClick={() => { setReason(""); setPending("cancel") }}
+          >
+            <XCircle className="w-4 h-4" />
+            {t("إلغاء الحجز", "Cancel Booking")}
+          </Button>
+        )}
       </div>
 
-      {/* Confirmation Dialog */}
-      <AlertDialog open={!!pendingAction} onOpenChange={(open) => !open && setPendingAction(null)}>
+      {/* Confirmation dialog */}
+      <AlertDialog open={!!pending} onOpenChange={(open) => !open && setPending(null)}>
         <AlertDialogContent dir={isAr ? "rtl" : "ltr"}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingAction && (isAr ? pendingAction.label.ar : pendingAction.label.en)}
+              {pending === "confirm" && t("تأكيد الحجز", "Confirm Booking")}
+              {pending === "cancel" && t("إلغاء الحجز", "Cancel Booking")}
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
-              <span>
-                {pendingAction && (isAr ? pendingAction.confirm.ar : pendingAction.confirm.en)}
-              </span>
-
-              {/* Warning for complete */}
-              {pendingAction?.warning && (
-                <span className="flex items-start gap-2 mt-2 p-2 rounded bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 text-xs border border-amber-200 dark:border-amber-900/40">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {isAr ? pendingAction.warning.ar : pendingAction.warning.en}
-                </span>
-              )}
-
-              {/* Cancel warning — hours + deposit */}
-              {pendingAction?.key === "cancel" && cancelBeforeHours > 0 && (
-                <span className="flex items-start gap-2 mt-2 p-2 rounded bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs border border-red-200 dark:border-red-900/40">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              {pending === "confirm" && (
+                <span>
                   {t(
-                    `يجب الإلغاء قبل ${cancelBeforeHours} ساعة من موعد الخدمة.${hasPaidAmount ? " يرجى مراجعة سياسة استرداد الدفعة المُسبقة." : ""}`,
-                    `Booking must be cancelled ${cancelBeforeHours}h before the service.${hasPaidAmount ? " Review deposit refund policy." : ""}`
+                    "هل تريد تأكيد هذا الحجز؟ سيظهر بعدها كأمر حجز فى صفحة أوامر البيع.",
+                    "Confirm this booking? It will then appear as a booking order in /sales-orders.",
                   )}
                 </span>
               )}
-
-              {/* Reason input for cancel */}
-              {pendingAction?.needsReason && (
-                <Textarea
-                  className="mt-2"
-                  rows={2}
-                  placeholder={t("سبب الإلغاء (اختياري)...", "Cancellation reason (optional)...")}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
+              {pending === "cancel" && (
+                <>
+                  <span>{t("هل تريد إلغاء هذا الحجز؟", "Cancel this booking?")}</span>
+                  {cancelBeforeHours > 0 && (
+                    <span className="flex items-start gap-2 mt-2 p-2 rounded bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 text-xs border border-red-200 dark:border-red-900/40">
+                      <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      {t(
+                        `يجب الإلغاء قبل ${cancelBeforeHours} ساعة من موعد الخدمة.${hasPaidAmount ? " يرجى مراجعة سياسة استرداد الدفعة المُسبقة." : ""}`,
+                        `Booking must be cancelled ${cancelBeforeHours}h before the service.${hasPaidAmount ? " Review deposit refund policy." : ""}`,
+                      )}
+                    </span>
+                  )}
+                  <Textarea
+                    className="mt-2"
+                    rows={2}
+                    placeholder={t("سبب الإلغاء (اختياري)...", "Cancellation reason (optional)...")}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -266,18 +233,20 @@ export function BookingActions({
               {t("تراجع", "Back")}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={executeAction}
+              onClick={() => execute(pending!)}
               disabled={isExecuting}
               className={
-                pendingAction?.key === "cancel"
+                pending === "cancel"
                   ? "bg-destructive hover:bg-destructive/90 text-white"
-                  : "bg-orange-600 hover:bg-orange-700 text-white"
+                  : "bg-blue-600 hover:bg-blue-700 text-white"
               }
             >
               {isExecuting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                pendingAction && (isAr ? pendingAction.label.ar : pendingAction.label.en)
+                pending === "confirm"
+                  ? t("تأكيد الحجز", "Confirm Booking")
+                  : t("إلغاء الحجز", "Cancel Booking")
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

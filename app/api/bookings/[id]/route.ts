@@ -1,11 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { apiGuard } from '@/lib/core'
-import { handleBookingApiError, BookingApiError } from '@/lib/services/booking-api'
+import { apiGuard, asyncAuditLog } from '@/lib/core'
+import {
+  handleBookingApiError,
+  BookingApiError,
+  parseJsonBody,
+} from '@/lib/services/booking-api'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
+
+// v3.74.358 — schema for PATCH /api/bookings/[id]. Only fields the
+// owner asked to be editable on the draft booking. Status / payment /
+// invoice columns are intentionally NOT here — they have their own
+// dedicated endpoints (confirm, cancel, execute).
+const patchBookingSchema = z.object({
+  customer_id:     z.string().uuid().optional(),
+  service_id:      z.string().uuid().optional(),
+  staff_user_id:   z.string().uuid().nullable().optional(),
+  booking_date:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  start_time:      z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
+  end_time:        z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
+  quantity:        z.coerce.number().positive().optional(),
+  discount_amount: z.coerce.number().min(0).optional(),
+  notes:           z.string().nullable().optional(),
+})
 
 /**
  * GET /api/bookings/[id]
@@ -67,6 +88,106 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         status_history: history ?? [],
       },
     })
+  } catch (error) {
+    return handleBookingApiError(error)
+  }
+}
+
+/**
+ * v3.74.358 — PATCH /api/bookings/[id]
+ * Edit a draft booking before execution. Allowed while:
+ *   - status = 'draft'
+ *   - booking has not been executed (no invoice yet)
+ *
+ * Once "تنفيذ الخدمة" has fired, the booking moves to completed +
+ * gets an invoice, and editing through this endpoint is rejected.
+ */
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
+  try {
+    const { context, errorResponse } = await apiGuard(req, { requireAuth: true, requireCompany: true })
+    if (errorResponse) return errorResponse
+
+    const { user, companyId } = context!
+    const { id } = await params
+
+    const body = await parseJsonBody(req, patchBookingSchema)
+
+    const supabase = await createClient()
+
+    // Sanity: booking must be a still-editable draft.
+    const { data: current, error: cErr } = await supabase
+      .from('bookings')
+      .select('id, status, invoice_id, service_id')
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .maybeSingle()
+    if (cErr) throw cErr
+    if (!current) throw new BookingApiError(404, 'الحجز غير موجود')
+    if (current.status !== 'draft') {
+      throw new BookingApiError(
+        409,
+        'لا يمكن تعديل الحجز فى الحالة الحالية. التعديل متاح فقط للحجوزات فى حالة مسودة.',
+      )
+    }
+    if (current.invoice_id) {
+      throw new BookingApiError(
+        409,
+        'لا يمكن تعديل الحجز بعد تنفيذ الخدمة وإصدار الفاتورة.',
+      )
+    }
+
+    // If the schedule (date / start_time / staff / service) is being
+    // touched, recompute end_time and re-run the working-hours +
+    // advance-booking validators. The simplest way is to fall back to
+    // create_booking_atomic logic? No - we just update + let the
+    // BEFORE INSERT/UPDATE trigger bkg_trg_validate_booking do the
+    // working-hours check. The trigger already fires on UPDATE.
+    //
+    // For end_time recomputation when start_time changes but end_time
+    // isn't sent, we look up the service duration_minutes.
+    const patch: Record<string, any> = { ...body, updated_by: user.id, updated_at: new Date().toISOString() }
+
+    const startChanged = !!body.start_time
+    const endMissing   = !body.end_time
+    if (startChanged && endMissing) {
+      const svcId = body.service_id ?? current.service_id
+      const { data: svc } = await supabase
+        .from('services')
+        .select('duration_minutes')
+        .eq('id', svcId)
+        .eq('company_id', companyId)
+        .maybeSingle()
+      if (svc?.duration_minutes) {
+        const [h, m] = body.start_time!.split(':').map(Number)
+        const startMin = h! * 60 + m!
+        const endMin   = startMin + Number(svc.duration_minutes)
+        const eh = Math.floor((endMin % (24 * 60)) / 60)
+        const em = endMin % 60
+        patch.end_time = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
+        patch.duration_minutes = svc.duration_minutes
+      }
+    }
+
+    const { data: updated, error: uErr } = await supabase
+      .from('bookings')
+      .update(patch)
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .select('*')
+      .single()
+    if (uErr) throw uErr
+
+    asyncAuditLog({
+      companyId,
+      userId:    user.id,
+      userEmail: user.email,
+      action:    'UPDATE',
+      table:     'bookings',
+      recordId:  id,
+      newData:   body,
+    })
+
+    return NextResponse.json({ success: true, booking: updated })
   } catch (error) {
     return handleBookingApiError(error)
   }

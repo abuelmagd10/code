@@ -54,12 +54,14 @@ interface BookingsTabProps {
   lang?: string
 }
 
+// v3.74.358 — labels match the new workflow wording. "completed" =
+// "منفّذة" (the service was executed) instead of "تم التفعيل".
 const STATUS_LABEL: Record<string, { ar: string; en: string; cls: string }> = {
   draft:        { ar: "مسودة",        en: "Draft",         cls: "bg-gray-100 text-gray-700" },
   confirmed:    { ar: "مؤكد",          en: "Confirmed",     cls: "bg-blue-100 text-blue-700" },
   in_progress:  { ar: "قيد التنفيذ",   en: "In Progress",   cls: "bg-amber-100 text-amber-700" },
-  completed:    { ar: "تم التفعيل",   en: "Activated",     cls: "bg-green-100 text-green-700" },
-  cancelled:    { ar: "ملغى",          en: "Cancelled",     cls: "bg-red-100 text-red-700" },
+  completed:    { ar: "منفّذة",         en: "Executed",      cls: "bg-green-100 text-green-700" },
+  cancelled:    { ar: "ملغاة",         en: "Cancelled",     cls: "bg-red-100 text-red-700" },
   no_show:      { ar: "لم يحضر",       en: "No-show",       cls: "bg-orange-100 text-orange-700" },
 }
 
@@ -76,20 +78,22 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   // v3.74.326 — per-row activation spinner
   const [activatingId, setActivatingId] = useState<string | null>(null)
 
+  // v3.74.358 — function name kept (handleActivate) so we don't have
+  // to rename every reference; the user-facing wording switches to
+  // "تنفيذ الخدمة" everywhere. Stage 2 (v3.74.359) will swap the
+  // underlying RPC to produce a draft invoice + COGS split.
   const handleActivate = async (row: BookingRow) => {
-    // Defensive guard: surface a friendly toast instead of letting the
-    // RPC bubble a P0001 for terminal statuses.
     if (["completed", "cancelled", "no_show"].includes(row.status)) {
       toastActionError(toast,
-        t("لا يمكن التفعيل", "Cannot activate"),
-        t(`أمر الحجز فى حالة "${STATUS_LABEL[row.status]?.ar || row.status}" — مش ينفع يتفعّل.`,
-          `Booking is in "${STATUS_LABEL[row.status]?.en || row.status}" — cannot activate.`))
+        t("لا يمكن تنفيذ الخدمة", "Cannot execute service"),
+        t(`أمر الحجز فى حالة "${STATUS_LABEL[row.status]?.ar || row.status}" — مش ينفع يتنفّذ.`,
+          `Booking is in "${STATUS_LABEL[row.status]?.en || row.status}" — cannot execute.`))
       return
     }
     const ok = window.confirm(
       isAr
-        ? `هتفعّل أمر الحجز ${row.booking_no}؟\nالنتيجة:\n- يتحوّل إلى مكتمل\n- يتم إنشاء فاتورة تلقائياً\n- يتم تسجيلك كمسؤول التفعيل`
-        : `Activate booking ${row.booking_no}?\nThis will:\n- Move it to completed\n- Auto-create an invoice\n- Record you as the activator`
+        ? `هتنفّذ خدمة أمر الحجز ${row.booking_no}؟\nالنتيجة:\n- يتحوّل إلى منفّذ\n- يتم إنشاء فاتورة تلقائياً\n- يتم تسجيلك كمسؤول التنفيذ`
+        : `Execute the service for booking ${row.booking_no}?\nThis will:\n- Move it to executed\n- Auto-create an invoice\n- Record you as the executor`
     )
     if (!ok) return
     setActivatingId(row.id)
@@ -99,16 +103,16 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
         headers: { "Content-Type": "application/json" },
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || "Failed to activate")
+      if (!res.ok) throw new Error(json?.error || "Failed to execute")
       toastActionSuccess(toast,
-        t("تم التفعيل بنجاح", "Activated successfully"),
+        t("تم تنفيذ الخدمة بنجاح", "Service executed successfully"),
         json?.invoice_no
           ? t(`فاتورة ${json.invoice_no} أنشئت تلقائياً`, `Invoice ${json.invoice_no} created`)
           : undefined)
       await load()
     } catch (e: any) {
       toastActionError(toast,
-        t("فشل التفعيل", "Activation failed"),
+        t("فشل تنفيذ الخدمة", "Execution failed"),
         e?.message || "Network error")
     } finally {
       setActivatingId(null)
@@ -134,8 +138,14 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
 
   useEffect(() => { load() /* eslint-disable-next-line */ }, [statusFilter])
 
-  // Client-side search (booking_no + customer_name + service_name)
+  // v3.74.358 — booking tab in /sales-orders shows ONLY confirmed
+  // bookings. A booking only becomes "أمر حجز" after the owner clicks
+  // "تأكيد الحجز" on the booking page, which stamps confirmed_at.
+  // Unconfirmed bookings live only on /bookings; they don't pollute
+  // the sales-orders view.
   const filtered = rows.filter((r) => {
+    const confirmedAt = (r as any).confirmed_at
+    if (!confirmedAt) return false
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
     return (
@@ -160,6 +170,8 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
             />
           </div>
 
+          {/* v3.74.358 — simpler workflow: status filter shows only
+              the three states the new flow uses. */}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[180px]">
               <Filter className="w-4 h-4 me-2" />
@@ -167,12 +179,9 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t("كل الحالات", "All statuses")}</SelectItem>
-              <SelectItem value="draft">{t("مسودة (قيد التحضير)", "Draft (in prep)")}</SelectItem>
-              <SelectItem value="confirmed">{t("مؤكد", "Confirmed")}</SelectItem>
-              <SelectItem value="in_progress">{t("قيد التنفيذ", "In progress")}</SelectItem>
-              <SelectItem value="completed">{t("تم التفعيل", "Activated")}</SelectItem>
-              <SelectItem value="cancelled">{t("ملغى", "Cancelled")}</SelectItem>
-              <SelectItem value="no_show">{t("لم يحضر", "No-show")}</SelectItem>
+              <SelectItem value="draft">{t("مسودة (لم تُنفّذ بعد)", "Draft (not executed)")}</SelectItem>
+              <SelectItem value="completed">{t("منفّذة", "Executed")}</SelectItem>
+              <SelectItem value="cancelled">{t("ملغاة", "Cancelled")}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -263,21 +272,25 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                               <Eye className="w-4 h-4" />
                             </Button>
                           </Link>
-                          {/* v3.74.326 — "تفعيل" — hidden for terminal states */}
+                          {/* v3.74.358 — execute-service button.
+                              Same underlying RPC for stage 1; the
+                              accounting rewrite that turns the invoice
+                              into a draft + splits service vs extras
+                              lands in stage 2 (v3.74.359). */}
                           {!["completed", "cancelled", "no_show"].includes(r.status) && (
                             <Button
                               size="sm"
                               className="bg-green-600 hover:bg-green-700 text-white h-8 px-2"
                               onClick={() => handleActivate(r)}
                               disabled={activatingId === r.id}
-                              title={t("تفعيل وإنشاء فاتورة", "Activate & create invoice")}
+                              title={t("تنفيذ الخدمة وإنشاء فاتورة", "Execute service & create invoice")}
                             >
                               {activatingId === r.id ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
                                 <>
                                   <CheckCircle className="w-4 h-4 me-1" />
-                                  <span className="hidden md:inline">{t("تفعيل", "Activate")}</span>
+                                  <span className="hidden md:inline">{t("تنفيذ الخدمة", "Execute Service")}</span>
                                 </>
                               )}
                             </Button>
