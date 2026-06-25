@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
-import { Eye, Pencil, Trash2, Clock, Users, Link2 } from "lucide-react"
+import { Eye, Pencil, Trash2, Clock, Users, Link2, MapPin } from "lucide-react"
 import Link from "next/link"
 import type { Service } from "@/types/services"
 
@@ -14,6 +14,8 @@ interface ServicesTableProps {
   canEdit?: boolean
   canDelete?: boolean
   productsMap?: Record<string, { name: string; sku?: string }>
+  // v3.74.348 — id -> branch name for the new "الفرع" column
+  branchesMap?: Record<string, { name: string }>
 }
 
 const SERVICE_TYPE_LABELS: Record<string, { ar: string; en: string; color: string }> = {
@@ -31,6 +33,7 @@ export function ServicesTable({
   canEdit = true,
   canDelete = false,
   productsMap = {},
+  branchesMap = {},
 }: ServicesTableProps) {
   const isAr = lang !== "en"
   const t = (ar: string, en: string) => (isAr ? ar : en)
@@ -57,6 +60,26 @@ export function ServicesTable({
           <span className="font-medium">{row.service_name}</span>
         </div>
       ),
+    },
+    // v3.74.348 — Branch column. Owner wanted the table to show which
+    // branch each service belongs to. Falls back to "—" when the row
+    // is somehow company-scoped (legacy data; new services force a
+    // branch since v3.74.319).
+    {
+      key: "branch_id",
+      header: t("الفرع", "Branch"),
+      format: (_, row) => {
+        if (!row.branch_id) {
+          return <span className="text-muted-foreground text-xs">—</span>
+        }
+        const b = branchesMap[row.branch_id]
+        return (
+          <span className="inline-flex items-center gap-1 text-sm">
+            <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+            {b?.name ?? row.branch_id.slice(0, 8)}
+          </span>
+        )
+      },
     },
     {
       key: "service_type",

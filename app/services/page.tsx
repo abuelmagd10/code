@@ -16,6 +16,7 @@ import { ServicesTable } from "@/components/services/ServicesTable"
 import { ServiceArchiveDialog } from "@/components/services/ServiceArchiveDialog"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
+import { useAccess } from "@/lib/access-context"
 import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -50,9 +51,19 @@ export default function ServicesPage() {
 
   const supabase = useSupabase()
   const { toast } = useToast()
+  // v3.74.348 — branch filter respects the user's scope. Owner /
+  // admin (= "مدير عام") see "كل الفروع" + a list of every branch in
+  // the company. Branch-scope roles (manager, store_manager, etc.)
+  // get their branch locked in.
+  const { profile } = useAccess()
+  const isCompanyScope = !!(profile?.is_owner || profile?.is_admin)
+  const userBranchId = profile?.branch_id ?? null
 
   const [services, setServices]   = useState<Service[]>([])
   const [productsMap, setProductsMap] = useState<Record<string, { name: string; sku?: string }>>({})
+  // v3.74.348 — branches list for the filter + table column
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
+  const [branchesMap, setBranchesMap] = useState<Record<string, { name: string }>>({})
   const [total, setTotal]         = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [canEdit, setCanEdit]     = useState(false)
@@ -63,6 +74,10 @@ export default function ServicesPage() {
   const [search, setSearch]           = useState("")
   const [serviceType, setServiceType] = useState("all")
   const [status, setStatus]           = useState("active")
+  // v3.74.348 — branch filter. "all" = no filter (only honoured for
+  // company-scope users). Branch-scope users get their own branch
+  // auto-selected on mount and the dropdown is disabled.
+  const [branchFilter, setBranchFilter] = useState<string>("all")
   const [page, setPage]               = useState(1)
 
   // Archive dialog
@@ -109,6 +124,10 @@ export default function ServicesPage() {
       if (serviceType !== "all") params.set("service_type", serviceType)
       if (status === "active")   params.set("is_active", "true")
       if (status === "archived") params.set("is_active", "false")
+      // v3.74.348 — branch filter. Company-scope users pick from the
+      // dropdown; branch-scope users have their branch_id pinned by the
+      // server-side guard already, so we don't need to send it here.
+      if (branchFilter !== "all") params.set("branch_id", branchFilter)
       params.set("page",  String(page))
       params.set("limit", String(PAGE_SIZE))
 
@@ -122,7 +141,7 @@ export default function ServicesPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [search, serviceType, status, page, toast])
+  }, [search, serviceType, status, branchFilter, page, toast])
 
   useEffect(() => {
     loadServices()
@@ -143,6 +162,34 @@ export default function ServicesPage() {
       })
       .catch(() => { /* non-critical */ })
   }, [])
+
+  // v3.74.348 — branches list for the filter + table column
+  useEffect(() => {
+    fetch("/api/branches")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        const list = json?.branches || json?.data || json
+        if (Array.isArray(list)) {
+          setBranches(list)
+          const map: Record<string, { name: string }> = {}
+          for (const b of list) map[b.id] = { name: b.name }
+          setBranchesMap(map)
+        }
+      })
+      .catch(() => { /* non-critical */ })
+  }, [])
+
+  // v3.74.348 — branch-scope users have their branch pinned in the
+  // filter dropdown. The server already enforces the scope via RLS;
+  // we just reflect it visually so the user understands why they
+  // only see one branch's services.
+  useEffect(() => {
+    if (!profile) return
+    if (isCompanyScope) return
+    if (userBranchId && branchFilter === "all") {
+      setBranchFilter(userBranchId)
+    }
+  }, [profile, isCompanyScope, userBranchId, branchFilter])
 
   const handleArchive = async () => {
     if (!archiveTarget) return
@@ -167,13 +214,21 @@ export default function ServicesPage() {
     setSearch("")
     setServiceType("all")
     setStatus("active")
+    // v3.74.348 — branch-scope users can't actually clear the branch
+    // filter (their scope is enforced by RLS), so reset it back to
+    // their pinned branch instead of "all".
+    setBranchFilter(isCompanyScope ? "all" : (userBranchId ?? "all"))
     setPage(1)
   }
 
   const activeFilterCount =
     (search ? 1 : 0) +
     (serviceType !== "all" ? 1 : 0) +
-    (status !== "active" ? 1 : 0)
+    (status !== "active" ? 1 : 0) +
+    // v3.74.348 — only count the branch filter when company-scope user
+    // actually picked a specific branch; branch-scope users' pinned
+    // branch is "always-on" so it shouldn't bump the badge.
+    (isCompanyScope && branchFilter !== "all" ? 1 : 0)
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -266,6 +321,29 @@ export default function ServicesPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            {/* v3.74.348 — Branch filter. Company-scope picks freely;
+                branch-scope sees only their branch (and the picker is
+                disabled). */}
+            <Select
+              value={branchFilter}
+              onValueChange={(v) => { setBranchFilter(v); setPage(1) }}
+              disabled={!isCompanyScope && !!userBranchId}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder={t("الفرع", "Branch")} />
+              </SelectTrigger>
+              <SelectContent>
+                {isCompanyScope && (
+                  <SelectItem value="all">{t("كل الفروع", "All Branches")}</SelectItem>
+                )}
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </FilterContainer>
 
@@ -300,6 +378,7 @@ export default function ServicesPage() {
                 canDelete={canDelete}
                 onArchive={canDelete ? setArchiveTarget : undefined}
                 productsMap={productsMap}
+                branchesMap={branchesMap}
               />
             )}
           </CardContent>
