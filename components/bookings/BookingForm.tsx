@@ -20,7 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Save, AlertTriangle, MapPin } from "lucide-react"
+import { Loader2, Save, MapPin } from "lucide-react"
 import { createBookingSchema, BOOKING_SOURCE_VALUES } from "@/lib/services/booking-api"
 import { AvailabilityChecker } from "@/components/bookings/AvailabilityChecker"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
@@ -613,16 +613,14 @@ export function BookingForm({
               </div>
             )}
 
-            {/* Revenue account warning */}
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-400">
-              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>
-                {t(
-                  "تأكد من ربط الخدمة بحساب إيرادات قبل الإكمال — سيؤثر ذلك على إنشاء الفاتورة.",
-                  "Ensure the service has a revenue account linked before completing — this affects invoice creation."
-                )}
-              </span>
-            </div>
+            {/* v3.74.351 — removed the "Ensure the service has a revenue
+                account linked" warning. The booking_officer / front-desk
+                user creating the booking has no permission to wire up
+                accounting accounts (that's the owner / admin's job on
+                the service form), so flashing this every time only
+                created noise and made the form look broken. The actual
+                check still happens on the server side when the invoice
+                is generated. */}
           </CardContent>
         </Card>
 
