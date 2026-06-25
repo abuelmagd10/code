@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -68,6 +69,11 @@ const STATUS_LABEL: Record<string, { ar: string; en: string; cls: string }> = {
 export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
+  // v3.74.359 — programmatic navigation for the view button. Wrapping
+  // a shadcn Button inside Next Link was crashing /sales-orders for
+  // some users (the click bounced them back to /sales-orders instead
+  // of landing on /bookings/[id]). router.push sidesteps the issue.
+  const router = useRouter()
 
   // v3.74.359 — Format "HH:MM[:SS]" as 12-hour with localized AM/PM:
   // "ص" / "م" in Arabic, "AM" / "PM" in English. Owner asked the
@@ -284,15 +290,19 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                       </td>
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {/* v3.74.359 — Button asChild so the rendered
-                              DOM is a single <a>, not <a><button>. Next
-                              Link wrapping a Button created an invalid
-                              interactive-in-interactive nesting that
-                              silently broke navigation. */}
-                          <Button variant="ghost" size="sm" asChild title={t("عرض التفاصيل", "View")}>
-                            <Link href={`/bookings/${r.id}`}>
-                              <Eye className="w-4 h-4" />
-                            </Link>
+                          {/* v3.74.359 — programmatic navigation. The
+                              previous Link+asChild combination was
+                              bouncing some users back to /sales-orders
+                              instead of opening /bookings/[id]. Plain
+                              router.push avoids whatever DOM/router
+                              edge case was firing. */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title={t("عرض التفاصيل", "View")}
+                            onClick={() => router.push(`/bookings/${r.id}`)}
+                          >
+                            <Eye className="w-4 h-4" />
                           </Button>
                           {/* v3.74.358 — execute-service button.
                               Same underlying RPC for stage 1; the

@@ -27,11 +27,11 @@ if (Test-Path -LiteralPath $mig) {
     Write-Host "+ migration: v_bookings_full has staff_name" -ForegroundColor Green
 } else { Write-Host "X missing migration file" -ForegroundColor Red; exit 1 }
 
-# ---- BookingsTab uses Button asChild + Link wraps + 12h time ---------------
+# ---- BookingsTab uses router.push + 12h time --------------------------------
 $bt = Get-Content -LiteralPath "components/sales-orders/BookingsTab.tsx" -Raw
 foreach ($n in @(
-    'v3.74.359 — Button asChild',
-    'asChild title={t("عرض التفاصيل"',
+    'v3.74.359 — programmatic navigation',
+    'onClick={() => router.push(`/bookings/',
     'v3.74.359 — Format "HH:MM',
     'const fmtTime12 = (time'
 )) {
@@ -39,7 +39,7 @@ foreach ($n in @(
         Write-Host "X BookingsTab missing: $n" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ BookingsTab: Eye button asChild + 12-hour time" -ForegroundColor Green
+Write-Host "+ BookingsTab: Eye button uses router.push + 12-hour time" -ForegroundColor Green
 
 # ---- BookingsTable: 12-hour time + staff_name -------------------------------
 $btbl = Get-Content -LiteralPath "components/bookings/BookingsTable.tsx" -Raw
@@ -92,13 +92,13 @@ if (-not $staged) {
         '    -> company_members.email',
         '   (the same chain v3.74.347 uses for the service-staff API).',
         '',
-        '2. The Eye / "عرض التفاصيل" button in the bookings tab silently',
-        '   did nothing on click. <Link><Button shadcn></Button></Link>',
-        '   produces an invalid <a><button></button></a> nesting that',
-        '   most browsers refuse to navigate from.',
+        '2. The Eye / "عرض التفاصيل" button in the bookings tab was',
+        '   bouncing users back to /sales-orders instead of opening the',
+        '   booking detail page.',
         '',
-        '   Fix: <Button asChild><Link/></Button> so the rendered DOM is',
-        '   a single <a> styled as a button.',
+        '   Fix: programmatic navigation via router.push, dodging both',
+        '   the invalid <a><button></button></a> Link+Button nesting and',
+        '   any router race the previous asChild form exposed.',
         '',
         '3. Time column in the bookings tab printed 24-hour wall-clock',
         '   ("21:40 -> 21:55"). Owner asked for the localized 12-hour',
