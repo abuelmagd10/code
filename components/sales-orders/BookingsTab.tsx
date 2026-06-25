@@ -69,6 +69,23 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
+  // v3.74.359 — Format "HH:MM[:SS]" as 12-hour with localized AM/PM:
+  // "ص" / "م" in Arabic, "AM" / "PM" in English. Owner asked the
+  // bookings tab to read "9:40 م → 9:55 م" instead of "21:40 → 21:55".
+  const fmtTime12 = (time?: string | null): string => {
+    if (!time) return "—"
+    const [hStr, mStr] = time.split(":")
+    const h = parseInt(hStr ?? "0", 10)
+    const m = parseInt(mStr ?? "0", 10)
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return time
+    const period = isAr
+      ? (h < 12 ? "ص" : "م")
+      : (h < 12 ? "AM" : "PM")
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    const mm  = String(m).padStart(2, "0")
+    return `${h12}:${mm} ${period}`
+  }
+
   const { toast } = useToast()
   const [rows, setRows]           = useState<BookingRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -245,7 +262,7 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                         <div className="flex flex-col gap-0.5">
                           <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{r.booking_date}</span>
                           <span className="flex items-center gap-1 text-muted-foreground">
-                            <Clock className="w-3 h-3" />{r.start_time?.slice(0,5)} → {r.end_time?.slice(0,5)}
+                            <Clock className="w-3 h-3" />{fmtTime12(r.start_time)} → {fmtTime12(r.end_time)}
                           </span>
                         </div>
                       </td>
@@ -267,11 +284,16 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                       </td>
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <Link href={`/bookings/${r.id}`}>
-                            <Button variant="ghost" size="sm" title={t("عرض التفاصيل", "View")}>
+                          {/* v3.74.359 — Button asChild so the rendered
+                              DOM is a single <a>, not <a><button>. Next
+                              Link wrapping a Button created an invalid
+                              interactive-in-interactive nesting that
+                              silently broke navigation. */}
+                          <Button variant="ghost" size="sm" asChild title={t("عرض التفاصيل", "View")}>
+                            <Link href={`/bookings/${r.id}`}>
                               <Eye className="w-4 h-4" />
-                            </Button>
-                          </Link>
+                            </Link>
+                          </Button>
                           {/* v3.74.358 — execute-service button.
                               Same underlying RPC for stage 1; the
                               accounting rewrite that turns the invoice
