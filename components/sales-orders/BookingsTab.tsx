@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useAccess } from "@/lib/access-context"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -69,11 +69,29 @@ const STATUS_LABEL: Record<string, { ar: string; en: string; cls: string }> = {
 export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
-  // v3.74.359 — programmatic navigation for the view button. Wrapping
-  // a shadcn Button inside Next Link was crashing /sales-orders for
-  // some users (the click bounced them back to /sales-orders instead
-  // of landing on /bookings/[id]). router.push sidesteps the issue.
-  const router = useRouter()
+
+  // v3.74.360 — "تنفيذ الخدمة" button visibility (per-row).
+  //
+  // The owner clarified the rule:
+  //   * Owner + general_manager (admin)        -> can execute on any row
+  //   * The staff member named on the booking  -> can execute on that
+  //                                                row
+  //   * Booking with no staff_user_id          -> open queue: anyone in
+  //                                                the branch can execute
+  //   * Everyone else (including a branch      -> read-only on that row
+  //     manager who isn't the named staff)
+  //
+  // Branch managers therefore lose the blanket-execute privilege they
+  // used to have. They can still execute when the booking explicitly
+  // names them OR when no staff was picked (the "مفتوح للفرع" case).
+  const { profile } = useAccess()
+  const canExecuteRow = (r: BookingRow): boolean => {
+    if (profile?.is_owner || profile?.is_admin) return true
+    const myId = profile?.user_id ?? null
+    if (!myId) return false
+    if (!r.staff_user_id) return true                 // open queue
+    return r.staff_user_id === myId                   // named staff
+  }
 
   // v3.74.359 — Format "HH:MM[:SS]" as 12-hour with localized AM/PM:
   // "ص" / "م" in Arabic, "AM" / "PM" in English. Owner asked the
@@ -290,17 +308,22 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                       </td>
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {/* v3.74.359 — programmatic navigation. The
-                              previous Link+asChild combination was
-                              bouncing some users back to /sales-orders
-                              instead of opening /bookings/[id]. Plain
-                              router.push avoids whatever DOM/router
-                              edge case was firing. */}
+                          {/* v3.74.360 — full page navigation via
+                              window.location. router.push from Next
+                              triggered a client-side guard race that
+                              bounced booking_officer back to /sales-
+                              orders. A full nav forces the booking
+                              page to load through normal SSR + the
+                              hardened access checks, with no race. */}
                           <Button
                             variant="ghost"
                             size="sm"
                             title={t("عرض التفاصيل", "View")}
-                            onClick={() => router.push(`/bookings/${r.id}`)}
+                            onClick={() => {
+                              if (typeof window !== "undefined") {
+                                window.location.href = `/bookings/${r.id}`
+                              }
+                            }}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -309,7 +332,12 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                               accounting rewrite that turns the invoice
                               into a draft + splits service vs extras
                               lands in stage 2 (v3.74.359). */}
-                          {!["completed", "cancelled", "no_show"].includes(r.status) && (
+                          {/* v3.74.360 — execute button visibility is
+                              per-row (see canExecuteRow at the top of
+                              this component). A branch manager whose
+                              user_id is NOT the booking's staff_user_id
+                              now lands in read-only mode for that row. */}
+                          {canExecuteRow(r) && !["completed", "cancelled", "no_show"].includes(r.status) && (
                             <Button
                               size="sm"
                               className="bg-green-600 hover:bg-green-700 text-white h-8 px-2"

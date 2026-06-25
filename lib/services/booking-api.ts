@@ -170,7 +170,12 @@ export const createBookingSchema = z.object({
   booking_date: isoDateString,
   start_time: timeString,
   quantity: z.coerce.number().positive().optional().default(1),
+  // v3.74.361 — staff_user_id is kept for backward compatibility but
+  // staff_user_ids (array) is the new canonical input. If both are
+  // sent, the array wins. Empty array / NULL = "open to every staff
+  // member linked to the service".
   staff_user_id: uuidSchema.optional().nullable(),
+  staff_user_ids: z.array(uuidSchema).optional().nullable(),
   discount_amount: z.coerce.number().nonnegative().optional().default(0),
   booking_source: z.enum(BOOKING_SOURCE_VALUES).optional().default('manual'),
   notes: nullableString.optional(),

@@ -20,6 +20,10 @@ const patchBookingSchema = z.object({
   customer_id:     z.string().uuid().optional(),
   service_id:      z.string().uuid().optional(),
   staff_user_id:   z.string().uuid().nullable().optional(),
+  // v3.74.361 — multi-staff edit. Sending staff_user_ids REPLACES the
+  // entire assignments set (owner-confirmed rule: "remove ahmed, add
+  // khaled + samy"). Sending an empty array means "open queue".
+  staff_user_ids:  z.array(z.string().uuid()).nullable().optional(),
   booking_date:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   start_time:      z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
   end_time:        z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
@@ -145,7 +149,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     //
     // For end_time recomputation when start_time changes but end_time
     // isn't sent, we look up the service duration_minutes.
-    const patch: Record<string, any> = { ...body, updated_by: user.id, updated_at: new Date().toISOString() }
+
+    // v3.74.361 — staff_user_ids is handled separately (junction
+    // table). Strip it from the column-level patch so it doesn't end
+    // up in the bookings UPDATE.
+    const sentIds = (body as any).staff_user_ids as string[] | null | undefined
+    const idsArrayProvided = Array.isArray(sentIds)
+    const { staff_user_ids: _drop, ...bodyForBookingRow } = body as any
+    const patch: Record<string, any> = {
+      ...bodyForBookingRow,
+      updated_by: user.id,
+      updated_at: new Date().toISOString(),
+    }
+    // Keep the legacy mirror column in sync when an array is supplied.
+    if (idsArrayProvided) {
+      patch.staff_user_id = sentIds && sentIds.length > 0 ? sentIds[0] : null
+    }
 
     const startChanged = !!body.start_time
     const endMissing   = !body.end_time
@@ -176,6 +195,31 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       .select('*')
       .single()
     if (uErr) throw uErr
+
+    // v3.74.361 — REPLACE the assignments set when staff_user_ids was
+    // sent. Owner-confirmed rule (option A): a PATCH that names
+    // "Khaled + Samy" removes Ahmed entirely.
+    if (idsArrayProvided) {
+      const { error: delErr } = await supabase
+        .from('booking_staff_assignments')
+        .delete()
+        .eq('booking_id', id)
+        .eq('company_id', companyId)
+      if (delErr) throw delErr
+
+      if (sentIds && sentIds.length > 0) {
+        const rows = sentIds.map((uid) => ({
+          booking_id: id,
+          user_id:    uid,
+          company_id: companyId,
+          branch_id:  updated.branch_id,
+        }))
+        const { error: insErr } = await supabase
+          .from('booking_staff_assignments')
+          .insert(rows)
+        if (insErr) throw insErr
+      }
+    }
 
     asyncAuditLog({
       companyId,

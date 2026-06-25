@@ -35,8 +35,17 @@ export async function GET(req: NextRequest) {
       .order('start_time', { ascending: false })
       .range(from, to)
 
-    // Branch-scoped members only see their branch
-    if (member?.branch_id) {
+    // v3.74.360 — Branch scoping only applies to branch-scoped roles.
+    // Owner / admin / general_manager are company-wide: they must see
+    // bookings across every branch even when their own company_members
+    // row happens to carry a branch_id (a common case when the owner
+    // is also the day-to-day manager of one branch). The previous
+    // unconditional filter hid bookings created in other branches —
+    // including every "أمر حجز" a floating booking_officer creates in
+    // a branch the owner doesn't sit in.
+    const memberRole = String((member as any)?.role ?? '')
+    const isCompanyWide = ['owner', 'admin', 'general_manager'].includes(memberRole)
+    if (!isCompanyWide && member?.branch_id) {
       query = query.eq('branch_id', member.branch_id)
     }
 
@@ -94,6 +103,17 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
 
+    // v3.74.361 — multi-staff: prefer staff_user_ids[] when provided.
+    // Falls back to the legacy single staff_user_id so older clients
+    // keep working during the rollout.
+    const rawIds = (body as any).staff_user_ids as string[] | null | undefined
+    const staffIds = Array.isArray(rawIds)
+      ? rawIds.filter((s): s is string => typeof s === 'string' && s.length > 0)
+      : null
+    const effectiveIds = (staffIds && staffIds.length > 0)
+      ? staffIds
+      : (body.staff_user_id ? [body.staff_user_id] : null)
+
     const { data: result, error } = await supabase.rpc('create_booking_atomic', {
       p_company_id:          companyId,
       p_branch_id:           resolvedBranchId,
@@ -103,12 +123,13 @@ export async function POST(req: NextRequest) {
       p_booking_date:        body.booking_date,
       p_start_time:          body.start_time,
       p_quantity:            body.quantity ?? 1,
-      p_staff_user_id:       body.staff_user_id ?? null,
+      p_staff_user_id:       effectiveIds ? effectiveIds[0] : null,
       p_discount_amount:     body.discount_amount ?? 0,
       p_booking_source:      body.booking_source ?? 'manual',
       p_notes:               body.notes ?? null,
       p_cost_center_id:      body.cost_center_id ?? null,
       p_skip_schedule_check: body.skip_schedule_check ?? false,
+      p_staff_user_ids:      effectiveIds,
     })
 
     if (error) throw error
