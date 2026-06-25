@@ -34,22 +34,71 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     if (error) throw error
 
-    // Enrich with member profile (no hard FK between service_staff and company_members)
+    // v3.74.347 — Flatten the member enrichment so the UI can read
+    // display_name / email / full_name directly off the row. The
+    // previous shape nested everything under `company_members`, which
+    // ServiceStaffManager never reads, so every staff member rendered
+    // as their raw UUID.
+    //
+    // display_name lives on user_profiles, NOT on company_members, so
+    // we have to join both tables. employees.full_name is the canonical
+    // HR name and takes precedence over user_profiles.display_name
+    // because it tracks the actual employee record the company uses.
     let staff = staffRows ?? []
     if (staff.length > 0) {
       const userIds = [...new Set(staff.map((s: any) => s.employee_user_id))]
+
       const { data: members } = await supabase
         .from('company_members')
-        .select('user_id, email, role, full_name')
+        .select('user_id, email, role, employee_id')
         .eq('company_id', companyId)
         .in('user_id', userIds)
-      if (members && members.length > 0) {
-        const memberMap = Object.fromEntries(members.map((m: any) => [m.user_id, m]))
-        staff = staff.map((s: any) => ({
-          ...s,
-          company_members: memberMap[s.employee_user_id] ?? null,
-        }))
+
+      const memberMap = Object.fromEntries(
+        (members ?? []).map((m: any) => [m.user_id, m]),
+      )
+
+      // Look up display_name from user_profiles for each user.
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('user_id, username, display_name')
+        .in('user_id', userIds)
+
+      const profileMap = Object.fromEntries(
+        (profiles ?? []).map((p: any) => [p.user_id, p]),
+      )
+
+      // Pull HR full names where the member is linked to an employee.
+      const employeeIds = (members ?? [])
+        .map((m: any) => m.employee_id)
+        .filter(Boolean)
+      let employeeMap: Record<string, { full_name: string | null }> = {}
+      if (employeeIds.length > 0) {
+        const { data: employees } = await supabase
+          .from('employees')
+          .select('id, full_name')
+          .in('id', [...new Set(employeeIds)])
+        employeeMap = Object.fromEntries(
+          (employees ?? []).map((e: any) => [e.id, e]),
+        )
       }
+
+      staff = staff.map((s: any) => {
+        const m = memberMap[s.employee_user_id] || null
+        const p = profileMap[s.employee_user_id] || null
+        const e = m?.employee_id ? employeeMap[m.employee_id] : null
+        const fullName = e?.full_name ?? null
+        const displayName = p?.display_name ?? null
+        const username = p?.username ?? null
+        const email = m?.email ?? null
+        return {
+          ...s,
+          email,
+          full_name: fullName,
+          display_name: fullName || displayName || username || email || null,
+          role: m?.role ?? null,
+        }
+      })
     }
 
     return NextResponse.json({ success: true, staff })
