@@ -27,17 +27,33 @@ if (Test-Path -LiteralPath $mig) {
     Write-Host "+ migration: v_bookings_full has staff_name" -ForegroundColor Green
 } else { Write-Host "X missing migration file" -ForegroundColor Red; exit 1 }
 
-# ---- BookingsTab uses Button asChild + Link wraps ---------------------------
+# ---- BookingsTab uses Button asChild + Link wraps + 12h time ---------------
 $bt = Get-Content -LiteralPath "components/sales-orders/BookingsTab.tsx" -Raw
 foreach ($n in @(
     'v3.74.359 — Button asChild',
-    'asChild title={t("عرض التفاصيل"'
+    'asChild title={t("عرض التفاصيل"',
+    'v3.74.359 — Format "HH:MM',
+    'const fmtTime12 = (time'
 )) {
     if ($bt -notmatch [regex]::Escape($n)) {
         Write-Host "X BookingsTab missing: $n" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ BookingsTab: Eye button uses asChild" -ForegroundColor Green
+Write-Host "+ BookingsTab: Eye button asChild + 12-hour time" -ForegroundColor Green
+
+# ---- BookingsTable: 12-hour time + staff_name -------------------------------
+$btbl = Get-Content -LiteralPath "components/bookings/BookingsTable.tsx" -Raw
+foreach ($n in @(
+    'v3.74.359 — Format "HH:MM[:SS]" as 12-hour',
+    'fmtTime(row.start_time, isAr)',
+    'key: "staff_name"',
+    'r.staff_name || (r.staff_email ? r.staff_email.split'
+)) {
+    if ($btbl -notmatch [regex]::Escape($n)) {
+        Write-Host "X BookingsTable missing: $n" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ BookingsTable: 12-hour time + staff_name" -ForegroundColor Green
 
 # ---- type-check --------------------------------------------------------------
 Write-Host "Running tsc..." -ForegroundColor Cyan
@@ -60,9 +76,9 @@ if (-not $staged) {
 } else {
     $msgPath = Join-Path $env:TEMP "commit_v3_74_359.txt"
     $msgLines = @(
-        'fix(bookings): v3.74.359 - staff name in tab + view button opens',
+        'fix(bookings): v3.74.359 - staff name + view button + 12-hour time',
         '',
-        'Two paper cuts the owner spotted during the stage-1 test pass:',
+        'Three paper cuts the owner spotted during the stage-1 test pass:',
         '',
         '1. Bookings tab in /sales-orders showed the assigned staff as a',
         '   raw 8-char UUID prefix (e.g. "24550790"). v_bookings_full',
@@ -83,6 +99,23 @@ if (-not $staged) {
         '',
         '   Fix: <Button asChild><Link/></Button> so the rendered DOM is',
         '   a single <a> styled as a button.',
+        '',
+        '3. Time column in the bookings tab printed 24-hour wall-clock',
+        '   ("21:40 -> 21:55"). Owner asked for the localized 12-hour',
+        '   form with م / ص (or AM / PM in English).',
+        '',
+        '   Fix: small fmtTime12() helper in the component; renders',
+        '   "9:40 م -> 9:55 م" in Arabic and "9:40 PM -> 9:55 PM" in',
+        '   English. Handles midnight + the 12-versus-00 corner cases.',
+        '',
+        '4. Same two issues showed up in the main /bookings page table',
+        '   (BookingsTable): 24-hour time and "baikeyous1" rendered',
+        '   from staff_email instead of the actual name.',
+        '',
+        '   Fix: fmtTime in BookingsTable upgraded to the same 12-hour',
+        '   localized formatter, and the Staff column switched to read',
+        '   staff_name (added to v_bookings_full above) with the email',
+        '   local-part as a fallback.',
         '',
         'Files',
         '  supabase/migrations/20260625000359_v3_74_359_v_bookings_full_staff_name.sql',

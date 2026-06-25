@@ -13,10 +13,23 @@ interface BookingsTableProps {
   queryLang?: string   // for href ?lang=
 }
 
-/** Format HH:MM:SS → HH:MM */
-function fmtTime(t: string | null): string {
+/**
+ * v3.74.359 — Format "HH:MM[:SS]" as 12-hour with localized AM/PM.
+ *   Arabic  : "9:40 ص" / "9:55 م"
+ *   English : "9:40 AM" / "9:55 PM"
+ * Owner asked the bookings table to read "9:40 م – 9:55 م" instead of
+ * the raw 24-hour wall-clock "21:40 – 21:55".
+ */
+function fmtTime(t: string | null, isAr: boolean = true): string {
   if (!t) return "—"
-  return t.substring(0, 5)
+  const [hStr, mStr] = t.split(":")
+  const h = parseInt(hStr ?? "0", 10)
+  const m = parseInt(mStr ?? "0", 10)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return t.substring(0, 5)
+  const period = isAr ? (h < 12 ? "ص" : "م") : (h < 12 ? "AM" : "PM")
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  const mm  = String(m).padStart(2, "0")
+  return `${h12}:${mm} ${period}`
 }
 
 /** Format YYYY-MM-DD → locale date */
@@ -103,23 +116,28 @@ export function BookingsTable({ data, lang = "ar", queryLang }: BookingsTablePro
           </p>
           <p className="text-xs text-muted-foreground flex items-center gap-1 tabular-nums">
             <Clock className="w-3 h-3" />
-            {fmtTime(row.start_time)} – {fmtTime(row.end_time)}
+            {fmtTime(row.start_time, isAr)} – {fmtTime(row.end_time, isAr)}
           </p>
         </div>
       ),
     },
 
-    // Staff
+    // Staff — v3.74.359: prefer the canonical staff_name (HR full
+    // name -> profile display name -> username), fall back to the
+    // local-part of staff_email so older bookings without a profile
+    // still render something readable instead of the raw UUID.
     {
-      key: "staff_email",
+      key: "staff_name",
       header: t("الموظف", "Staff"),
-      format: (_, row) => (
-        <span className="text-sm text-muted-foreground">
-          {row.staff_email
-            ? row.staff_email.split("@")[0]
-            : <span className="italic opacity-50">—</span>}
-        </span>
-      ),
+      format: (_, row) => {
+        const r = row as unknown as { staff_name?: string | null; staff_email?: string | null }
+        const display = r.staff_name || (r.staff_email ? r.staff_email.split("@")[0] : null)
+        return (
+          <span className="text-sm text-muted-foreground">
+            {display || <span className="italic opacity-50">—</span>}
+          </span>
+        )
+      },
     },
 
     // Status
