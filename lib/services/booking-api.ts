@@ -114,10 +114,20 @@ export const upsertScheduleSchema = z
     end_time: timeString,
     is_active: z.boolean().optional().default(true),
   })
-  .refine((d) => d.end_time > d.start_time, {
-    message: 'وقت الانتهاء يجب أن يكون بعد وقت البداية (end_time must be after start_time)',
-    path: ['end_time'],
-  })
+  // v3.74.355 — Treat end_time "00:00" as midnight at the end of the
+  // day (24:00). Without this, a perfectly valid evening shift like
+  // 18:00 → 00:00 was rejected here by the server with a 422 even
+  // though the editor and the submit-time gate accept it (v3.74.354).
+  // <input type="time"> cannot represent 24:00 so "00:00" is the
+  // canonical encoding for end-of-day.
+  .refine(
+    (d) => d.end_time === '00:00' || d.end_time > d.start_time,
+    {
+      message:
+        'وقت الانتهاء يجب أن يكون بعد وقت البداية (أو 00:00 لنهاية اليوم) (end_time must be after start_time, or "00:00" for end-of-day)',
+      path: ['end_time'],
+    },
+  )
 
 export const upsertSchedulesSchema = z.object({
   schedules: z.array(upsertScheduleSchema).min(1, 'At least one schedule required'),
