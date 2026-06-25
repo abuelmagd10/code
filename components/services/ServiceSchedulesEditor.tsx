@@ -82,10 +82,17 @@ export function ServiceSchedulesEditor({
           ? DAY_LABELS[row.day_of_week]!.ar
           : DAY_LABELS[row.day_of_week]!.en
 
+        // v3.74.354 — Treat end_time "00:00" as midnight at the end
+        // of the day (i.e. 24:00). Without this, a perfectly valid
+        // shift like "06:00 م → 12:00 ص" (18:00 → 00:00) was rejected
+        // as "end must be after start" because lexicographically
+        // "00:00" sorts before "18:00".
+        const isMidnightEnd = row.end_time === "00:00"
         const timeInvalid =
           row.is_active &&
           !!row.start_time &&
           !!row.end_time &&
+          !isMidnightEnd &&
           row.end_time <= row.start_time
 
         return (

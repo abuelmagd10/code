@@ -232,9 +232,17 @@ export function ServiceForm({
   const initialLinkedProductId = (initialData as any)?.product_catalog_id as string | undefined
 
   const handleSubmit = async (data: ServiceFormValues) => {
-    // Validate schedule times before submitting
+    // v3.74.354 — "00:00" on the end side is treated as end-of-day
+    // (24:00), so a shift like 18:00 → 00:00 (6pm to midnight) is
+    // valid. The ServiceSchedulesEditor's inline validation already
+    // mirrors this rule; here we do the same gate at submit time.
     const invalidDay = schedules.find(
-      (r) => r.is_active && r.start_time && r.end_time && r.end_time <= r.start_time
+      (r) =>
+        r.is_active &&
+        r.start_time &&
+        r.end_time &&
+        r.end_time !== "00:00" &&
+        r.end_time <= r.start_time,
     )
     if (invalidDay) {
       const dayNames = isAr

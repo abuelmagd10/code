@@ -113,7 +113,14 @@ export async function GET(req: NextRequest) {
       const [eh, em] = (sched.end_time   as string).split(':').map(Number)
 
       let startMin = sh! * 60 + sm!
-      const endMin = eh! * 60 + em!
+      // v3.74.354 — end_time "00:00" is the editor's encoding for
+      // "midnight at the end of the day" (24:00). Map it to 1440
+      // minutes so a 18:00 -> 00:00 schedule generates slots up to
+      // midnight instead of immediately collapsing to zero slots
+      // (00:00 lexicographically before 18:00 would otherwise skip
+      // the entire while loop).
+      const endMin =
+        eh === 0 && em === 0 ? 24 * 60 : eh! * 60 + em!
 
       while (startMin + durationMin <= endMin) {
         const slotEndMin = startMin + durationMin
