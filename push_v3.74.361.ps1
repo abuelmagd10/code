@@ -27,6 +27,20 @@ if (Test-Path -LiteralPath $mig) {
     Write-Host "+ migration: assignments table + RPC + view" -ForegroundColor Green
 } else { Write-Host "X missing migration file" -ForegroundColor Red; exit 1 }
 
+$mig2 = "supabase/migrations/20260625000362_v3_74_361_bookings_select_honours_assignments.sql"
+if (Test-Path -LiteralPath $mig2) {
+    $mig2Text = Get-Content -LiteralPath $mig2 -Raw
+    foreach ($n in @(
+        'DROP POLICY IF EXISTS bookings_select_v5',
+        'FROM public.booking_staff_assignments bsa'
+    )) {
+        if ($mig2Text -notmatch [regex]::Escape($n)) {
+            Write-Host "X RLS hotfix missing: $n" -ForegroundColor Red; exit 1
+        }
+    }
+    Write-Host "+ RLS hotfix: bookings_select honours assignments" -ForegroundColor Green
+} else { Write-Host "X missing RLS hotfix file" -ForegroundColor Red; exit 1 }
+
 $ba = Get-Content -LiteralPath "lib/services/booking-api.ts" -Raw
 if ($ba -notmatch 'staff_user_ids: z.array\(uuidSchema\)') {
     Write-Host "X createBookingSchema missing staff_user_ids array" -ForegroundColor Red; exit 1
@@ -112,8 +126,17 @@ if (-not $staged) {
         '  - Commission skip when owner / general_manager executes',
         '    (v3.74.363).',
         '',
+        'Hotfix included in same release',
+        '  RLS bookings_select_v5: own-visibility now matches via',
+        '  booking_staff_assignments too, not just the legacy',
+        '  staff_user_id column. Without this, a staff member who',
+        '  was assigned but not the first in the list could not open',
+        '  the booking detail page (the page bounced them back to',
+        '  /sales-orders).',
+        '',
         'Files',
         '  supabase/migrations/20260625000361_v3_74_361_booking_multi_staff.sql',
+        '  supabase/migrations/20260625000362_v3_74_361_bookings_select_honours_assignments.sql',
         '  lib/services/booking-api.ts',
         '  app/api/bookings/route.ts',
         '  app/api/bookings/[id]/route.ts',
