@@ -12,6 +12,7 @@ import { BookingStatusTimeline } from "@/components/bookings/BookingStatusTimeli
 import { BookingActions } from "@/components/bookings/BookingActions"
 import { BookingPayments } from "@/components/bookings/BookingPayments"
 import { BookingRating } from "@/components/bookings/BookingRating"
+import { BookingNotes } from "@/components/bookings/BookingNotes"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
 import { Clock, User, Wrench, DollarSign, CalendarDays, Info } from "lucide-react"
@@ -169,6 +170,7 @@ export default function BookingDetailPage() {
             <TabsTrigger value="details">{t("التفاصيل", "Details")}</TabsTrigger>
             <TabsTrigger value="payments">{t("المدفوعات", "Payments")}</TabsTrigger>
             <TabsTrigger value="timeline">{t("سجل الحالة", "Timeline")}</TabsTrigger>
+            <TabsTrigger value="notes">{t("ملاحظات", "Notes")}</TabsTrigger>
             <TabsTrigger value="rating">{t("التقييم", "Rating")}</TabsTrigger>
           </TabsList>
 
@@ -312,6 +314,25 @@ export default function BookingDetailPage() {
                 <BookingStatusTimeline
                   history={booking.status_history}
                   lang={appLang}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── Notes (v3.74.368) ── */}
+          <TabsContent value="notes" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Info className="w-4 h-4 text-blue-500" />
+                  {t("ملاحظات أثناء التنفيذ", "Execution Notes")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <BookingNotes
+                  bookingId={id}
+                  lang={appLang}
+                  canAdd={!["cancelled", "no_show"].includes(booking.status)}
                 />
               </CardContent>
             </Card>
