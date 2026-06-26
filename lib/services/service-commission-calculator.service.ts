@@ -56,6 +56,27 @@ export async function recordServiceCommissionForInvoice(
     return { recorded: false, reason: 'no_responsible_user' }
   }
 
+  // v3.74.363 — Owner-confirmed rule: if the executor (the user who
+  // pressed "تنفيذ الخدمة" and now sits on current_responsible_user_id)
+  // is the owner or the general_manager (= admin), commission is NOT
+  // recorded for anyone. Their hits are oversight overrides, not
+  // billable service execution.
+  try {
+    const { data: execMember } = await supabase
+      .from('company_members')
+      .select('role')
+      .eq('company_id', companyId)
+      .eq('user_id', recipientUserId)
+      .maybeSingle()
+    const execRole = String(execMember?.role || '')
+    if (['owner', 'admin', 'general_manager'].includes(execRole)) {
+      return { recorded: false, reason: 'executed_by_owner_or_admin' }
+    }
+  } catch {
+    /* non-fatal — if the role lookup fails, fall through and let the
+       commission be recorded as before. */
+  }
+
   // 2. Pull the service to read commission_rate
   const { data: service, error: sErr } = await supabase
     .from('services')

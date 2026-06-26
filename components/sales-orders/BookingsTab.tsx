@@ -39,6 +39,9 @@ type BookingRow = {
   service_id: string
   branch_id: string
   staff_user_id: string | null
+  // v3.74.362 — multi-staff assignments from v_bookings_full
+  assigned_staff_user_ids?: string[] | null
+  assigned_staff_names?: string[] | null
   booking_date: string
   start_time: string
   end_time: string
@@ -70,27 +73,31 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
-  // v3.74.360 — "تنفيذ الخدمة" button visibility (per-row).
+  // v3.74.362 — "تنفيذ الخدمة" button visibility (per-row).
   //
-  // The owner clarified the rule:
-  //   * Owner + general_manager (admin)        -> can execute on any row
-  //   * The staff member named on the booking  -> can execute on that
-  //                                                row
-  //   * Booking with no staff_user_id          -> open queue: anyone in
-  //                                                the branch can execute
+  // The owner's final rule:
+  //   * Owner + general_manager (admin)        -> execute on any row
+  //   * Any user listed on bookings.assigned_   -> execute on that row
+  //     staff_user_ids
+  //   * No assignments + no legacy staff       -> open queue: anyone
+  //                                                in the branch can
+  //                                                execute
   //   * Everyone else (including a branch      -> read-only on that row
-  //     manager who isn't the named staff)
-  //
-  // Branch managers therefore lose the blanket-execute privilege they
-  // used to have. They can still execute when the booking explicitly
-  // names them OR when no staff was picked (the "مفتوح للفرع" case).
+  //     manager who isn't named)
   const { profile } = useAccess()
   const canExecuteRow = (r: BookingRow): boolean => {
     if (profile?.is_owner || profile?.is_admin) return true
     const myId = profile?.user_id ?? null
     if (!myId) return false
-    if (!r.staff_user_id) return true                 // open queue
-    return r.staff_user_id === myId                   // named staff
+    const assignments = r.assigned_staff_user_ids
+    if (Array.isArray(assignments) && assignments.length > 0) {
+      return assignments.includes(myId)
+    }
+    if (r.staff_user_id) {
+      return r.staff_user_id === myId
+    }
+    // Open queue: no assignments and no legacy staff id.
+    return true
   }
 
   // v3.74.359 — Format "HH:MM[:SS]" as 12-hour with localized AM/PM:
@@ -276,7 +283,17 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
               <tbody>
                 {filtered.map((r) => {
                   const meta = STATUS_LABEL[r.status] || STATUS_LABEL.draft!
-                  const isUnassigned = !r.staff_user_id
+                  // v3.74.362 — multi-staff display. Prefer the names
+                  // array from v_bookings_full; fall back to the legacy
+                  // single staff_name. "Unassigned" means the assignments
+                  // table is empty AND the legacy column is null.
+                  const assignedNames = Array.isArray(r.assigned_staff_names)
+                    ? r.assigned_staff_names
+                    : []
+                  const assignedIds = Array.isArray(r.assigned_staff_user_ids)
+                    ? r.assigned_staff_user_ids
+                    : []
+                  const isUnassigned = assignedIds.length === 0 && !r.staff_user_id
                   return (
                     <tr key={r.id} className="border-t hover:bg-gray-50/50">
                       <td className="px-3 py-2 font-mono text-xs">{r.booking_no}</td>
@@ -296,6 +313,12 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                             <User className="w-3 h-3 me-1" />
                             {t("غير محدد (مفتوح للفرع)", "Unassigned (open)")}
                           </Badge>
+                        ) : assignedNames.length > 0 ? (
+                          <span title={assignedNames.join("، ")}>
+                            {assignedNames.length === 1
+                              ? assignedNames[0]
+                              : `${assignedNames[0]} +${assignedNames.length - 1}`}
+                          </span>
                         ) : (
                           <span>{r.staff_name || r.staff_user_id?.slice(0, 8)}</span>
                         )}

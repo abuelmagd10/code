@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { ArrowLeft, Loader2, Save } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -37,6 +38,8 @@ interface BookingPayload {
   service_id:      string
   service_name?:   string | null
   staff_user_id:   string | null
+  // v3.74.362 — multi-staff
+  assigned_staff_user_ids?: string[] | null
   branch_id:       string | null
   booking_date:    string
   start_time:      string
@@ -73,7 +76,8 @@ export default function EditBookingPage() {
   // editable fields
   const [bookingDate, setBookingDate]       = useState("")
   const [startTime, setStartTime]           = useState("")
-  const [staffUserId, setStaffUserId]       = useState<string>("none")
+  // v3.74.362 — multi-staff picker
+  const [staffUserIds, setStaffUserIds]     = useState<string[]>([])
   const [quantity, setQuantity]             = useState<number>(1)
   const [discountAmount, setDiscountAmount] = useState<number>(0)
   const [notes, setNotes]                   = useState<string>("")
@@ -93,7 +97,12 @@ export default function EditBookingPage() {
         setBooking(b)
         setBookingDate(b.booking_date)
         setStartTime(b.start_time?.slice(0, 5) ?? "")
-        setStaffUserId(b.staff_user_id ?? "none")
+        // v3.74.362 — prefer the new assignments array, fall back to
+        // the legacy single staff_user_id so older bookings still load.
+        const initialIds = Array.isArray(b.assigned_staff_user_ids)
+          ? b.assigned_staff_user_ids
+          : (b.staff_user_id ? [b.staff_user_id] : [])
+        setStaffUserIds(initialIds)
         setQuantity(Number(b.quantity) || 1)
         setDiscountAmount(Number(b.discount_amount) || 0)
         setNotes(b.notes ?? "")
@@ -126,8 +135,21 @@ export default function EditBookingPage() {
       const body: Record<string, any> = {}
       if (bookingDate !== booking.booking_date)              body.booking_date    = bookingDate
       if (startTime    !== booking.start_time?.slice(0,5))   body.start_time      = startTime
-      const sUid = staffUserId === "none" ? null : staffUserId
-      if (sUid !== booking.staff_user_id)                    body.staff_user_id   = sUid
+
+      // v3.74.362 — only send staff_user_ids if the set actually
+      // changed. The PATCH endpoint REPLACES the assignments wholesale
+      // when this key is present, so we want to avoid noisy rewrites.
+      const initialIds = Array.isArray(booking.assigned_staff_user_ids)
+        ? [...booking.assigned_staff_user_ids].sort()
+        : (booking.staff_user_id ? [booking.staff_user_id] : [])
+      const currentIds = [...staffUserIds].sort()
+      const idsChanged =
+        initialIds.length !== currentIds.length ||
+        initialIds.some((x, i) => x !== currentIds[i])
+      if (idsChanged) {
+        body.staff_user_ids = staffUserIds
+      }
+
       if (Number(quantity)       !== Number(booking.quantity))        body.quantity        = quantity
       if (Number(discountAmount) !== Number(booking.discount_amount)) body.discount_amount = discountAmount
       if ((notes || "")          !== (booking.notes || ""))           body.notes           = notes || null
@@ -248,23 +270,32 @@ export default function EditBookingPage() {
 
                 <div>
                   <Label>{t("الموظف المسؤول", "Assigned Staff")}</Label>
-                  <Select
-                    value={staffUserId}
-                    onValueChange={setStaffUserId}
+                  {/* v3.74.362 — multi-select. Empty = open queue. */}
+                  <MultiSelect
+                    options={branchStaff.map((m) => ({
+                      value: m.user_id,
+                      label: m.display_name || m.email || m.user_id,
+                    }))}
+                    selected={staffUserIds}
+                    onChange={setStaffUserIds}
+                    placeholder={t("اختر موظف أو أكثر (اختياري)", "Pick one or more (optional)")}
+                    searchPlaceholder={t("بحث بالاسم...", "Search by name...")}
+                    emptyMessage={t("لا توجد نتائج", "No results")}
+                    maxDisplay={3}
                     disabled={!isEditable}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("أى موظف", "Any staff")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">{t("بدون تحديد", "Unassigned")}</SelectItem>
-                      {branchStaff.map((m) => (
-                        <SelectItem key={m.user_id} value={m.user_id}>
-                          {m.display_name || m.email || m.user_id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    className="min-h-9"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {staffUserIds.length === 0
+                      ? t(
+                          "بدون تحديد = مفتوح لكل المؤهلين للخدمة",
+                          "Empty = open to anyone linked to the service",
+                        )
+                      : t(
+                          `${staffUserIds.length} موظف محدد`,
+                          `${staffUserIds.length} staff selected`,
+                        )}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

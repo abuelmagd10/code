@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { Badge } from "@/components/ui/badge"
 import {
   Form,
@@ -114,13 +115,15 @@ export function BookingForm({
       start_time:          "",
       quantity:            1,
       staff_user_id:       null,
+      // v3.74.362 — multi-staff picker. Empty array = "open queue".
+      staff_user_ids:      [],
       discount_amount:     0,
       booking_source:      "manual",
       notes:               null,
       cost_center_id:      null,
       branch_id:           null,
       skip_schedule_check: false,
-    },
+    } as any,
   })
 
   const watchedServiceId   = form.watch("service_id")
@@ -367,13 +370,17 @@ export function BookingForm({
                 )}
               />
 
-              {/* v3.74.337 — Staff dropdown follows the golden rule:
-                  - service has assigned staff → only those names appear
-                  - service has NO assigned staff → every employee in the
-                    service's branch appears (the open-queue case)
-                  Filtering happens client-side using the staff list +
-                  serviceStaffIds + the selected service's branch_id.
-              */}
+              {/* v3.74.362 — Staff picker is now a multi-select.
+                  The owner-confirmed rule:
+                    * Service has assigned staff   → only those names
+                                                     appear in the picker.
+                    * Service has no assigned staff → every branch
+                                                     employee is eligible.
+                    * User can pick 0, 1, or many. An empty pick means
+                      "open queue" (anyone linked to the service can
+                      execute later).
+                  Stored as staff_user_ids on the form. staff_user_id is
+                  kept in sync as the first picked id for backward compat. */}
               {(() => {
                 const svcBranchId = selectedService?.branch_id ?? null
                 const branchStaff = svcBranchId
@@ -390,36 +397,60 @@ export function BookingForm({
                     : serviceStaffIds && serviceStaffIds.length > 0
                       ? t("الخدمة محدد لها موظفون — تظهر أسماؤهم فقط", "Service has assigned staff — only they appear")
                       : t("الخدمة بدون موظفين محددين — كل موظفى الفرع متاحين", "Service has no specific staff — every branch employee is eligible")
+
+                const multiOptions = filteredStaff.map((m) => ({
+                  value: m.user_id,
+                  label: m.display_name || m.email || m.user_id,
+                }))
+
                 return (
                   <FormField
                     control={form.control}
-                    name="staff_user_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t("الموظف المسؤول", "Assigned Staff")}</FormLabel>
-                        <Select
-                          value={field.value ?? "none"}
-                          onValueChange={(v) => field.onChange(v === "none" ? null : v)}
-                          disabled={!watchedServiceId || serviceStaffLoading}
-                        >
+                    name={"staff_user_ids" as any}
+                    render={({ field }) => {
+                      const value: string[] = Array.isArray(field.value)
+                        ? (field.value as string[])
+                        : []
+                      const handleChange = (next: string[]) => {
+                        field.onChange(next)
+                        // Keep legacy single-staff column in sync (first
+                        // picked id), so the create RPC's fallback branch
+                        // and any older consumer keep working.
+                        form.setValue("staff_user_id" as any, next[0] ?? null)
+                      }
+                      return (
+                        <FormItem>
+                          <FormLabel>{t("الموظف المسؤول", "Assigned Staff")}</FormLabel>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t("أي موظف", "Any staff")} />
-                            </SelectTrigger>
+                            <MultiSelect
+                              options={multiOptions}
+                              selected={value}
+                              onChange={handleChange}
+                              placeholder={t("اختر موظف أو أكثر (اختياري)", "Pick one or more (optional)")}
+                              searchPlaceholder={t("بحث بالاسم...", "Search by name...")}
+                              emptyMessage={t("لا توجد نتائج", "No results")}
+                              maxDisplay={3}
+                              className="min-h-9"
+                            />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">{t("بدون تحديد (يظهر للجميع المسموح لهم)", "Unassigned (visible to all eligible)")}</SelectItem>
-                            {filteredStaff.map((m) => (
-                              <SelectItem key={m.user_id} value={m.user_id}>
-                                {m.display_name || m.email || m.user_id}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">{hint}</p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                          <p className="text-xs text-muted-foreground">
+                            {hint}
+                            {value.length === 0 && (
+                              <>
+                                {" "}
+                                <span className="text-amber-700 dark:text-amber-400">
+                                  {t(
+                                    "(غير محدد = مفتوح لكل المؤهلين)",
+                                    "(empty = open to all eligible)",
+                                  )}
+                                </span>
+                              </>
+                            )}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )
+                    }}
                   />
                 )
               })()}
