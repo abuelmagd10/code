@@ -215,7 +215,11 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
       try {
         const [cRes, sRes, mRes, bRes] = await Promise.all([
           fetch("/api/customers?limit=500"),
-          fetch("/api/services?limit=500"),
+          // v3.74.366 — only active services. Archived services lived
+          // in the picker and showed up as duplicate names without any
+          // branch suffix (because they share the same branch as the
+          // active one).
+          fetch("/api/services?limit=500&is_active=true"),
           fetch("/api/company-members"),
           fetch("/api/branches"),
         ])
