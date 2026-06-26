@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * v3.74.368 — BookingNotes
+ * v3.74.369 — BookingNotes
  *
  * A small notes feed on the booking detail page. Lets the staff who
  * executes the service jot down free-text notes (problems with the
@@ -11,7 +11,7 @@
  * Backed by /api/bookings/[id]/notes (GET + POST + DELETE).
  */
 
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Send, Trash2, MessageSquare, User } from "lucide-react"
@@ -60,7 +60,21 @@ export function BookingNotes({
   const [posting, setPosting]   = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
+  // v3.74.369 fix — bulletproof against the infinite-fetch loop the
+  // previous v3.74.368 ship had. We no longer wrap load() in useCallback
+  // (which kept re-creating with t/toast deps and re-firing the effect
+  // forever — the user saw thousands of ERR_INSUFFICIENT_RESOURCES). The
+  // load() function is defined inside the effect with a cancelled flag
+  // so React unmounting can't double-fire, and the only dep is
+  // bookingId. Refs hold the latest toast/isAr so the closure doesn't
+  // need them as deps either.
+  const toastRef = useRef(toast)
+  const isArRef  = useRef(isAr)
+  useEffect(() => { toastRef.current = toast }, [toast])
+  useEffect(() => { isArRef.current = isAr }, [isAr])
+
+  // Standalone reload used by the post/delete handlers below.
+  const reload = async () => {
     try {
       setLoading(true)
       const res = await fetch(`/api/bookings/${bookingId}/notes`, { cache: "no-store" })
@@ -68,13 +82,39 @@ export function BookingNotes({
       if (!res.ok) throw new Error(json?.error || "Failed to load notes")
       setNotes(json.notes ?? [])
     } catch (err: any) {
-      toastActionError(toast, t("خطأ فى تحميل الملاحظات", "Failed to load notes"), err.message)
+      toastActionError(
+        toastRef.current,
+        isArRef.current ? "خطأ فى تحميل الملاحظات" : "Failed to load notes",
+        err.message,
+      )
     } finally {
       setLoading(false)
     }
-  }, [bookingId, toast, t])
+  }
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        setLoading(true)
+        const res = await fetch(`/api/bookings/${bookingId}/notes`, { cache: "no-store" })
+        const json = await res.json()
+        if (cancelled) return
+        if (!res.ok) throw new Error(json?.error || "Failed to load notes")
+        setNotes(json.notes ?? [])
+      } catch (err: any) {
+        if (cancelled) return
+        toastActionError(
+          toastRef.current,
+          isArRef.current ? "خطأ فى تحميل الملاحظات" : "Failed to load notes",
+          err.message,
+        )
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [bookingId])
 
   const handlePost = async () => {
     const body = text.trim()
@@ -89,7 +129,7 @@ export function BookingNotes({
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || "Failed to save note")
       setText("")
-      await load()
+      await reload()
       toastActionSuccess(toast, t("تمت إضافة الملاحظة", "Note added"))
     } catch (err: any) {
       toastActionError(toast, t("فشل الحفظ", "Save failed"), err.message)
