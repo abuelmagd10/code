@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   CheckCircle2, XCircle, Clock, Layers, GitMerge,
   RefreshCw, AlertCircle, ChevronDown, ChevronUp, Factory, Package,
+  Percent,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
@@ -44,7 +45,32 @@ interface PendingMaterialIssue {
   type: "material_issue"
 }
 
-type PendingItem = PendingBomVersion | PendingRoutingVersion | PendingProductionOrder | PendingMaterialIssue
+// v3.74.373 — discount approvals (Stage 2 of 5). Shape mirrors what
+// GET /api/discount-approvals returns: snapshot fields on the
+// approval row plus the requester's email when available.
+interface PendingDiscountApproval {
+  id: string
+  document_type: "sales_invoice" | "purchase_invoice" | "booking"
+  document_id: string
+  document_no: string | null
+  discount_value: number
+  discount_type: "percent" | "amount"
+  document_total: number | null
+  party_name: string | null
+  reason: string | null
+  status: string
+  requested_by: string
+  requested_at: string
+  requested_by_email: string | null
+  type: "discount_approval"
+}
+
+type PendingItem =
+  | PendingBomVersion
+  | PendingRoutingVersion
+  | PendingProductionOrder
+  | PendingMaterialIssue
+  | PendingDiscountApproval
 
 // ── Component ─────────────────────────────────────────────
 
@@ -57,10 +83,11 @@ function ApprovalsContent() {
   const [routingVersions, setRoutingVersions] = useState<PendingRoutingVersion[]>([])
   const [productionOrders, setProductionOrders] = useState<PendingProductionOrder[]>([])
   const [materialIssues, setMaterialIssues] = useState<PendingMaterialIssue[]>([])
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi">("all")
+  const [discountApprovals, setDiscountApprovals] = useState<PendingDiscountApproval[]>([])
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -176,6 +203,43 @@ function ApprovalsContent() {
         warehouse_name: m.warehouses?.name ?? "—",
         type: "material_issue" as const,
       })))
+
+      // v3.74.373 — Discount approvals (Stage 2).
+      // We deliberately go through the API route rather than a
+      // direct table query: the route enforces can_approve_discount
+      // and joins the requester's email via the service client, so
+      // the inbox stays consistent with the badge RPC for owner /
+      // admin / general_manager only.
+      try {
+        const discRes = await fetch(`/api/discount-approvals?company_id=${encodeURIComponent(cid)}`, {
+          cache: "no-store",
+        })
+        if (discRes.ok) {
+          const discJson = await discRes.json()
+          const rows = Array.isArray(discJson?.data) ? discJson.data : []
+          setDiscountApprovals(rows.map((d: any): PendingDiscountApproval => ({
+            id: d.id,
+            document_type: d.document_type,
+            document_id: d.document_id,
+            document_no: d.document_no ?? null,
+            discount_value: Number(d.discount_value ?? 0),
+            discount_type: d.discount_type,
+            document_total: d.document_total != null ? Number(d.document_total) : null,
+            party_name: d.party_name ?? null,
+            reason: d.reason ?? null,
+            status: d.status,
+            requested_by: d.requested_by,
+            requested_at: d.requested_at,
+            requested_by_email: d.requested_by_email ?? null,
+            type: "discount_approval",
+          })))
+        } else {
+          // 403 = caller isn't an approver; leave the list empty.
+          setDiscountApprovals([])
+        }
+      } catch {
+        setDiscountApprovals([])
+      }
     } finally {
       setIsLoading(false)
     }
@@ -186,6 +250,21 @@ function ApprovalsContent() {
   const handleApprove = async (item: PendingItem, stage?: "management" | "warehouse") => {
     setRunningId(item.id)
     try {
+      // v3.74.373 — discount approvals go through their dedicated
+      // POST … /decide endpoint with a JSON body. Everything else
+      // keeps the existing GET-style approve endpoints.
+      if (item.type === "discount_approval") {
+        const res = await fetch(`/api/discount-approvals/${item.id}/decide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision: "approved" }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || "Failed")
+        toast({ title: t("تمت الموافقة على الخصم ✅", "Discount approved ✅"), description: t("يمكن الآن إتمام المستند", "The document can now be finalized") })
+        await load()
+        return
+      }
       const endpoint =
         item.type === "bom_version"     ? `/api/manufacturing/bom-versions/${item.id}/approve` :
         item.type === "routing_version" ? `/api/manufacturing/routing-versions/${item.id}/approve` :
@@ -208,6 +287,21 @@ function ApprovalsContent() {
     if (!rejectId || !rejectType || !rejectReason.trim()) return
     setRunningId(rejectId)
     try {
+      // v3.74.373 — discount rejection goes through /decide with
+      // decision='rejected' and the note in `note`, not `rejection_reason`.
+      if (rejectType === "discount_approval") {
+        const res = await fetch(`/api/discount-approvals/${rejectId}/decide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision: "rejected", note: rejectReason.trim() }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || "Failed")
+        toast({ title: t("تم رفض الخصم", "Discount rejected"), description: t("تم إخطار مُرسل الطلب", "The requester has been notified") })
+        setRejectId(null); setRejectType(null); setRejectReason("")
+        await load()
+        return
+      }
       const endpoint =
         rejectType === "bom_version"     ? `/api/manufacturing/bom-versions/${rejectId}/reject` :
         rejectType === "routing_version" ? `/api/manufacturing/routing-versions/${rejectId}/reject` :
@@ -230,8 +324,23 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
+  const fmtMoney = (n: number) => {
+    try {
+      return new Intl.NumberFormat(appLang === "ar" ? "ar-EG" : "en-US", {
+        style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2,
+      }).format(n)
+    } catch { return String(n) }
+  }
+  const docTypeLabel = (d: PendingDiscountApproval["document_type"]) =>
+    d === "sales_invoice"    ? t("فاتورة مبيعات", "Sales Invoice")    :
+    d === "purchase_invoice" ? t("فاتورة مشتريات", "Purchase Invoice") :
+                               t("حجز خدمة", "Booking")
+  const docHref = (item: PendingDiscountApproval) =>
+    item.document_type === "sales_invoice"    ? `/invoices/${item.document_id}` :
+    item.document_type === "purchase_invoice" ? `/bills/${item.document_id}`    :
+                                                `/bookings/${item.document_id}`
 
   const BomCard = ({ b }: { b: PendingBomVersion }) => (
     <Card key={b.id} className="border-l-4 border-l-blue-500">
@@ -422,6 +531,101 @@ function ApprovalsContent() {
     )
   }
 
+  // v3.74.373 — Discount approval card. Renders one pending request
+  // with the snapshot fields (party, document_no, document_total) so
+  // the approver can decide without leaving the inbox.
+  const DiscountApprovalCard = ({ d }: { d: PendingDiscountApproval }) => {
+    const discountLabel = d.discount_type === "percent"
+      ? `${fmtMoney(d.discount_value)}%`
+      : `${fmtMoney(d.discount_value)} ${t("ج.م", "EGP")}`
+    const ratio = d.document_total && d.document_total > 0 && d.discount_type === "amount"
+      ? (d.discount_value / d.document_total) * 100
+      : null
+    return (
+      <Card key={d.id} className="border-l-4 border-l-rose-500">
+        <CardContent className="py-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg shrink-0">
+                <Percent className="w-4 h-4 text-rose-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">
+                  {docTypeLabel(d.document_type)} · {d.document_no ?? t("بدون رقم", "(no number)")}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  👤 {d.party_name ?? t("بدون طرف", "(no party)")}
+                  {d.document_total != null && (
+                    <> · 💰 {t("إجمالى", "Total")}: {fmtMoney(d.document_total)} {t("ج.م", "EGP")}</>
+                  )}
+                </p>
+                <p className="text-xs mt-1">
+                  <span className="font-semibold text-rose-700 dark:text-rose-300">
+                    {t("الخصم المطلوب", "Requested discount")}: {discountLabel}
+                  </span>
+                  {ratio != null && (
+                    <span className="text-muted-foreground"> ({fmtMoney(ratio)}%)</span>
+                  )}
+                </p>
+                {d.reason && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                    📝 {d.reason}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  🧑 {d.requested_by_email ?? d.requested_by.slice(0, 8)} · 📅 {fmtDate(d.requested_at)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+              </Badge>
+              <Link href={docHref(d)} className="text-xs text-rose-600 hover:underline">
+                {t("عرض المستند", "View document")}
+              </Link>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button
+              size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+              disabled={runningId === d.id}
+              onClick={() => handleApprove(d)}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الخصم", "Approve Discount")}
+            </Button>
+            <Button
+              size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+              disabled={runningId === d.id}
+              onClick={() => { setRejectId(d.id); setRejectType("discount_approval"); setRejectReason("") }}
+            >
+              <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+            </Button>
+          </div>
+          {rejectId === d.id && (
+            <div className="mt-3 space-y-2">
+              <Textarea
+                placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                rows={2}
+                className="text-sm"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" variant="destructive" className="text-xs" disabled={!rejectReason.trim() || runningId === d.id} onClick={handleReject}>
+                  {t("تأكيد الرفض", "Confirm Reject")}
+                </Button>
+                <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                  {t("إلغاء", "Cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
   const ProductionOrderCard = ({ p }: { p: PendingProductionOrder }) => (
     <Card key={p.id} className="border-l-4 border-l-orange-500">
       <CardContent className="py-4">
@@ -527,6 +731,9 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "mi"      ? "default" : "outline"} onClick={() => setActiveTab("mi")}      className="gap-1">
               <Package  className="w-3.5 h-3.5" />{t("طلبات الصرف", "Material Issues")} ({materialIssues.length})
             </Button>
+            <Button size="sm" variant={activeTab === "disc"    ? "default" : "outline"} onClick={() => setActiveTab("disc")}    className="gap-1">
+              <Percent  className="w-3.5 h-3.5" />{t("خصومات", "Discounts")} ({discountApprovals.length})
+            </Button>
           </div>
 
           {/* Content */}
@@ -579,6 +786,16 @@ function ApprovalsContent() {
                     <Package className="w-4 h-4" />{t("طلبات صرف المواد", "Material Issue Requests")}
                   </h2>
                   {materialIssues.map(m => <MaterialIssueCard key={m.id} m={m} />)}
+                </div>
+              )}
+
+              {/* v3.74.373 — Discount approvals (Stage 2). */}
+              {(activeTab === "all" || activeTab === "disc") && discountApprovals.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Percent className="w-4 h-4" />{t("اعتمادات الخصم", "Discount Approvals")}
+                  </h2>
+                  {discountApprovals.map(d => <DiscountApprovalCard key={d.id} d={d} />)}
                 </div>
               )}
             </div>

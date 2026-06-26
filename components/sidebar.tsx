@@ -180,6 +180,12 @@ export function Sidebar() {
       "sales_return_request_l1",
       "sales_return_request_warehouse",
     ])
+  // v3.74.373 — Inbox tile rolls up everything the /approvals page
+  // can act on. Today that's manufacturing approvals + discount
+  // approvals; future stages add nothing else here because each new
+  // workflow gets its own sumBadges() roll-up.
+  const pendingInboxCount =
+    pendingApprovalsCount + sumBadges(approvalBadges, ["discount_approval"])
 
 
   // الحفاظ على التوافق مع النظام القديم (fallback)
@@ -1143,7 +1149,7 @@ export function Sidebar() {
                     // v3.74.265 — Hub link first so the user always has a "home" for the module
                     { label: (lang === 'en' ? '🗺️ Manufacturing Home' : '🗺️ صفحة التصنيع الرئيسية'), href: `/manufacturing${q}`, icon: Factory },
                     // ── الموافقات (مَنقولة من top-level — كلها خاصة بالتَصنيع) ──
-                    { label: (lang === 'en' ? '🔔 Approval Inbox' : '🔔 صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle, badge: pendingApprovalsCount },
+                    { label: (lang === 'en' ? '🔔 Approval Inbox' : '🔔 صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle, badge: pendingInboxCount },
                     // ── الهندسة والإعداد ──
                     { label: (lang === 'en' ? 'Engineering Setup' : 'الهندسة والإعداد'), href: `#`, icon: Factory },
                     { label: (lang === 'en' ? 'Work Centers' : 'مراكز العمل'), href: `/manufacturing/work-centers${q}`, icon: Cpu },
