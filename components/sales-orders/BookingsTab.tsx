@@ -13,20 +13,20 @@
  *                                        + unassigned-in-my-branch
  */
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useAccess } from "@/lib/access-context"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
 import { LoadingState } from "@/components/ui/loading-state"
 import { EmptyState } from "@/components/ui/empty-state"
+// v3.74.364 — match the /sales-orders filter UX (FilterContainer + MultiSelect)
+import { FilterContainer } from "@/components/ui/filter-container"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
-  Calendar, Clock, User, Plus, Eye, RefreshCw, Filter,
+  Calendar, Clock, User, Plus, Eye, RefreshCw,
   CheckCircle, Loader2,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -121,10 +121,24 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const [rows, setRows]           = useState<BookingRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError]         = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [searchQuery, setSearchQuery]   = useState<string>("")
+  const [searchQuery, setSearchQuery] = useState<string>("")
   // v3.74.326 — per-row activation spinner
   const [activatingId, setActivatingId] = useState<string | null>(null)
+
+  // v3.74.364 — full filter set (mirrors /sales-orders).
+  const [filterStatuses,  setFilterStatuses]  = useState<string[]>([])
+  const [filterCustomers, setFilterCustomers] = useState<string[]>([])
+  const [filterServices,  setFilterServices]  = useState<string[]>([])
+  const [filterStaff,     setFilterStaff]     = useState<string[]>([])
+  const [filterBranches,  setFilterBranches]  = useState<string[]>([])
+  const [dateFrom,        setDateFrom]        = useState<string>("")
+  const [dateTo,          setDateTo]          = useState<string>("")
+
+  // Lookups for the dropdowns
+  const [lookupCustomers, setLookupCustomers] = useState<Array<{ id: string; name: string }>>([])
+  const [lookupServices,  setLookupServices]  = useState<Array<{ id: string; name: string }>>([])
+  const [lookupStaff,     setLookupStaff]     = useState<Array<{ id: string; name: string }>>([])
+  const [lookupBranches,  setLookupBranches]  = useState<Array<{ id: string; name: string }>>([])
 
   // v3.74.358 — function name kept (handleActivate) so we don't have
   // to rename every reference; the user-facing wording switches to
@@ -171,8 +185,13 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
     setIsLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({ limit: "200" })
-      if (statusFilter !== "all") params.set("status", statusFilter)
+      // v3.74.364 — server-side filter is now only the page size; the
+      // rest of the filters apply client-side from the FilterContainer.
+      // Date range still hits the server because /api/bookings supports
+      // date_from / date_to and it cuts the payload.
+      const params = new URLSearchParams({ limit: "500" })
+      if (dateFrom) params.set("date_from", dateFrom)
+      if (dateTo)   params.set("date_to",   dateTo)
       const res  = await fetch(`/api/bookings?${params.toString()}`, { cache: "no-store" })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || "Failed to load bookings")
@@ -184,60 +203,106 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
     }
   }
 
-  useEffect(() => { load() /* eslint-disable-next-line */ }, [statusFilter])
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [dateFrom, dateTo])
+
+  // v3.74.364 — load the dropdown options once.
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const [cRes, sRes, mRes, bRes] = await Promise.all([
+          fetch("/api/customers?limit=500"),
+          fetch("/api/services?limit=500"),
+          fetch("/api/company-members"),
+          fetch("/api/branches"),
+        ])
+        if (cRes.ok) {
+          const j = await cRes.json()
+          const arr = (j.customers ?? j.data ?? []) as Array<{ id: string; name: string }>
+          setLookupCustomers(arr)
+        }
+        if (sRes.ok) {
+          const j = await sRes.json()
+          const arr = (j.services ?? j.data ?? []) as Array<{ id: string; service_name?: string; name?: string }>
+          setLookupServices(arr.map((s) => ({ id: s.id, name: s.service_name || s.name || s.id })))
+        }
+        if (mRes.ok) {
+          const j = await mRes.json()
+          const arr = (j.members ?? []) as Array<{ user_id: string; display_name?: string | null; email?: string | null }>
+          setLookupStaff(arr.map((m) => ({
+            id: m.user_id,
+            name: m.display_name || m.email || m.user_id,
+          })))
+        }
+        if (bRes.ok) {
+          const j = await bRes.json()
+          const arr = (j.branches ?? j.data ?? j) as Array<{ id: string; name: string }>
+          if (Array.isArray(arr)) setLookupBranches(arr)
+        }
+      } catch {
+        /* non-critical: dropdowns will just be empty */
+      }
+    })()
+  }, [])
 
   // v3.74.358 — booking tab in /sales-orders shows ONLY confirmed
   // bookings. A booking only becomes "أمر حجز" after the owner clicks
   // "تأكيد الحجز" on the booking page, which stamps confirmed_at.
-  // Unconfirmed bookings live only on /bookings; they don't pollute
-  // the sales-orders view.
-  const filtered = rows.filter((r) => {
-    const confirmedAt = (r as any).confirmed_at
-    if (!confirmedAt) return false
-    if (!searchQuery.trim()) return true
-    const q = searchQuery.toLowerCase()
-    return (
-      r.booking_no?.toLowerCase().includes(q)
-      || (r.customer_name || "").toLowerCase().includes(q)
-      || (r.service_name  || "").toLowerCase().includes(q)
-    )
-  })
+  // v3.74.364 — full filter pipeline (mirrors /sales-orders).
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return rows.filter((r) => {
+      const confirmedAt = (r as any).confirmed_at
+      if (!confirmedAt) return false
+
+      if (filterStatuses.length > 0 && !filterStatuses.includes(r.status)) return false
+      if (filterCustomers.length > 0 && !filterCustomers.includes(r.customer_id)) return false
+      if (filterServices.length  > 0 && !filterServices.includes(r.service_id))  return false
+      if (filterBranches.length  > 0 && !filterBranches.includes(r.branch_id))   return false
+      if (filterStaff.length > 0) {
+        const ids = Array.isArray(r.assigned_staff_user_ids) ? r.assigned_staff_user_ids : []
+        const legacy = r.staff_user_id ? [r.staff_user_id] : []
+        const all = ids.length > 0 ? ids : legacy
+        if (!all.some((u) => filterStaff.includes(u))) return false
+      }
+      if (q) {
+        const hay = `${r.booking_no ?? ""} ${r.customer_name ?? ""} ${r.service_name ?? ""}`.toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [rows, searchQuery, filterStatuses, filterCustomers, filterServices, filterBranches, filterStaff])
+
+  const clearFilters = () => {
+    setSearchQuery("")
+    setFilterStatuses([])
+    setFilterCustomers([])
+    setFilterServices([])
+    setFilterStaff([])
+    setFilterBranches([])
+    setDateFrom("")
+    setDateTo("")
+  }
+
+  const activeFilterCount =
+    (searchQuery       ? 1 : 0) +
+    (filterStatuses.length  > 0 ? 1 : 0) +
+    (filterCustomers.length > 0 ? 1 : 0) +
+    (filterServices.length  > 0 ? 1 : 0) +
+    (filterStaff.length     > 0 ? 1 : 0) +
+    (filterBranches.length  > 0 ? 1 : 0) +
+    (dateFrom               ? 1 : 0) +
+    (dateTo                 ? 1 : 0)
+
+  const isCompanyScope = !!(profile?.is_owner || profile?.is_admin)
 
   return (
     <div className="space-y-4" dir={isAr ? "rtl" : "ltr"}>
-      {/* Action bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
-            <Input
-              type="search"
-              placeholder={t("بحث برقم الحجز / العميل / الخدمة...", "Search by no / customer / service...")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pe-10"
-            />
-          </div>
-
-          {/* v3.74.358 — simpler workflow: status filter shows only
-              the three states the new flow uses. */}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="w-4 h-4 me-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("كل الحالات", "All statuses")}</SelectItem>
-              <SelectItem value="draft">{t("مسودة (لم تُنفّذ بعد)", "Draft (not executed)")}</SelectItem>
-              <SelectItem value="completed">{t("منفّذة", "Executed")}</SelectItem>
-              <SelectItem value="cancelled">{t("ملغاة", "Cancelled")}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button variant="outline" size="sm" onClick={load} disabled={isLoading}>
-            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-
+      {/* v3.74.364 — Action bar above the filter container */}
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="outline" size="sm" onClick={load} disabled={isLoading} className="gap-2">
+          <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+          {t("تحديث", "Refresh")}
+        </Button>
         <Link href="/bookings/new">
           <Button className="bg-cyan-600 hover:bg-cyan-700 text-white">
             <Plus className="w-4 h-4 me-1" />
@@ -245,6 +310,138 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
           </Button>
         </Link>
       </div>
+
+      {/* v3.74.364 — Filter container mirrors /sales-orders */}
+      <FilterContainer
+        title={t("الفلاتر", "Filters")}
+        activeCount={activeFilterCount}
+        onClear={clearFilters}
+        defaultOpen={false}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Search */}
+          <div className="sm:col-span-2 lg:col-span-2">
+            <label className="text-xs text-muted-foreground">
+              {t("بحث", "Search")}
+            </label>
+            <Input
+              type="search"
+              placeholder={t("بحث برقم الحجز / العميل / الخدمة...", "Search by no / customer / service...")}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10"
+            />
+          </div>
+
+          {/* Status — multi-select */}
+          <div>
+            <label className="text-xs text-muted-foreground">{t("الحالة", "Status")}</label>
+            <MultiSelect
+              options={[
+                { value: "draft",     label: t("مسودة (لم تُنفّذ بعد)", "Draft (not executed)") },
+                { value: "completed", label: t("منفّذة", "Executed") },
+                { value: "cancelled", label: t("ملغاة", "Cancelled") },
+              ]}
+              selected={filterStatuses}
+              onChange={setFilterStatuses}
+              placeholder={t("جميع الحالات", "All statuses")}
+              searchPlaceholder={t("بحث...", "Search...")}
+              emptyMessage={t("لا نتائج", "No results")}
+              className="h-10"
+            />
+          </div>
+
+          {/* Customer — multi-select */}
+          <div>
+            <label className="text-xs text-muted-foreground">{t("العميل", "Customer")}</label>
+            <MultiSelect
+              options={lookupCustomers.map((c) => ({ value: c.id, label: c.name }))}
+              selected={filterCustomers}
+              onChange={setFilterCustomers}
+              placeholder={t("جميع العملاء", "All customers")}
+              searchPlaceholder={t("بحث فى العملاء...", "Search customers...")}
+              emptyMessage={t("لا عملاء", "No customers")}
+              className="h-10"
+            />
+          </div>
+
+          {/* Service — multi-select */}
+          <div>
+            <label className="text-xs text-muted-foreground">{t("الخدمة", "Service")}</label>
+            <MultiSelect
+              options={lookupServices.map((s) => ({ value: s.id, label: s.name }))}
+              selected={filterServices}
+              onChange={setFilterServices}
+              placeholder={t("جميع الخدمات", "All services")}
+              searchPlaceholder={t("بحث فى الخدمات...", "Search services...")}
+              emptyMessage={t("لا خدمات", "No services")}
+              className="h-10"
+            />
+          </div>
+
+          {/* Staff — multi-select */}
+          <div>
+            <label className="text-xs text-muted-foreground">{t("الموظف", "Staff")}</label>
+            <MultiSelect
+              options={lookupStaff.map((u) => ({ value: u.id, label: u.name }))}
+              selected={filterStaff}
+              onChange={setFilterStaff}
+              placeholder={t("جميع الموظفين", "All staff")}
+              searchPlaceholder={t("بحث فى الموظفين...", "Search staff...")}
+              emptyMessage={t("لا موظفين", "No staff")}
+              className="h-10"
+            />
+          </div>
+
+          {/* Branch — only for company-scope roles */}
+          {isCompanyScope && lookupBranches.length > 0 && (
+            <div>
+              <label className="text-xs text-muted-foreground">{t("الفرع", "Branch")}</label>
+              <MultiSelect
+                options={lookupBranches.map((b) => ({ value: b.id, label: b.name }))}
+                selected={filterBranches}
+                onChange={setFilterBranches}
+                placeholder={t("كل الفروع", "All branches")}
+                searchPlaceholder={t("بحث فى الفروع...", "Search branches...")}
+                emptyMessage={t("لا فروع", "No branches")}
+                className="h-10"
+              />
+            </div>
+          )}
+
+          {/* Date From */}
+          <div>
+            <label className="text-xs text-muted-foreground">{t("من تاريخ", "From")}</label>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-10"
+              dir="ltr"
+            />
+          </div>
+
+          {/* Date To */}
+          <div>
+            <label className="text-xs text-muted-foreground">{t("إلى تاريخ", "To")}</label>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-10"
+              dir="ltr"
+            />
+          </div>
+        </div>
+
+        {activeFilterCount > 0 && (
+          <div className="flex justify-start pt-3 border-t mt-3">
+            <span className="text-sm text-muted-foreground">
+              {t(`عرض ${filtered.length} من ${rows.length} حجز`, `Showing ${filtered.length} of ${rows.length}`)}
+            </span>
+          </div>
+        )}
+      </FilterContainer>
 
       {/* Body */}
       {isLoading ? (
