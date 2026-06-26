@@ -151,6 +151,8 @@ export default function BookingDetailPage() {
                 bookingId={id}
                 status={booking.status as BookingStatus}
                 confirmedAt={(booking as any).confirmed_at ?? null}
+                assignedStaffUserIds={(booking as any).assigned_staff_user_ids ?? null}
+                staffUserId={(booking as any).staff_user_id ?? null}
                 cancelBeforeHours={cancelBeforeHours}
                 hasPaidAmount={Number(booking.paid_amount) > 0}
                 invoiceId={booking.invoice_id}

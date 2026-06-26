@@ -27,10 +27,7 @@ import { FilterContainer } from "@/components/ui/filter-container"
 import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Calendar, Clock, User, Plus, Eye, RefreshCw,
-  CheckCircle, Loader2,
 } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
-import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 
 type BookingRow = {
   id: string
@@ -73,32 +70,10 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
-  // v3.74.362 — "تنفيذ الخدمة" button visibility (per-row).
-  //
-  // The owner's final rule:
-  //   * Owner + general_manager (admin)        -> execute on any row
-  //   * Any user listed on bookings.assigned_   -> execute on that row
-  //     staff_user_ids
-  //   * No assignments + no legacy staff       -> open queue: anyone
-  //                                                in the branch can
-  //                                                execute
-  //   * Everyone else (including a branch      -> read-only on that row
-  //     manager who isn't named)
+  // v3.74.367 — "تنفيذ الخدمة" moved to the booking detail page
+  // (BookingActions). The bookings tab here is view + filter only;
+  // the eye button takes you to the same screen.
   const { profile } = useAccess()
-  const canExecuteRow = (r: BookingRow): boolean => {
-    if (profile?.is_owner || profile?.is_admin) return true
-    const myId = profile?.user_id ?? null
-    if (!myId) return false
-    const assignments = r.assigned_staff_user_ids
-    if (Array.isArray(assignments) && assignments.length > 0) {
-      return assignments.includes(myId)
-    }
-    if (r.staff_user_id) {
-      return r.staff_user_id === myId
-    }
-    // Open queue: no assignments and no legacy staff id.
-    return true
-  }
 
   // v3.74.359 — Format "HH:MM[:SS]" as 12-hour with localized AM/PM:
   // "ص" / "م" in Arabic, "AM" / "PM" in English. Owner asked the
@@ -117,13 +92,10 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
     return `${h12}:${mm} ${period}`
   }
 
-  const { toast } = useToast()
   const [rows, setRows]           = useState<BookingRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError]         = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>("")
-  // v3.74.326 — per-row activation spinner
-  const [activatingId, setActivatingId] = useState<string | null>(null)
 
   // v3.74.364 — full filter set (mirrors /sales-orders).
   const [filterStatuses,  setFilterStatuses]  = useState<string[]>([])
@@ -144,46 +116,8 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   const [lookupStaff,     setLookupStaff]     = useState<Array<{ id: string; name: string }>>([])
   const [lookupBranches,  setLookupBranches]  = useState<Array<{ id: string; name: string }>>([])
 
-  // v3.74.358 — function name kept (handleActivate) so we don't have
-  // to rename every reference; the user-facing wording switches to
-  // "تنفيذ الخدمة" everywhere. Stage 2 (v3.74.359) will swap the
-  // underlying RPC to produce a draft invoice + COGS split.
-  const handleActivate = async (row: BookingRow) => {
-    if (["completed", "cancelled", "no_show"].includes(row.status)) {
-      toastActionError(toast,
-        t("لا يمكن تنفيذ الخدمة", "Cannot execute service"),
-        t(`أمر الحجز فى حالة "${STATUS_LABEL[row.status]?.ar || row.status}" — مش ينفع يتنفّذ.`,
-          `Booking is in "${STATUS_LABEL[row.status]?.en || row.status}" — cannot execute.`))
-      return
-    }
-    const ok = window.confirm(
-      isAr
-        ? `هتنفّذ خدمة أمر الحجز ${row.booking_no}؟\nالنتيجة:\n- يتحوّل إلى منفّذ\n- يتم إنشاء فاتورة تلقائياً\n- يتم تسجيلك كمسؤول التنفيذ`
-        : `Execute the service for booking ${row.booking_no}?\nThis will:\n- Move it to executed\n- Auto-create an invoice\n- Record you as the executor`
-    )
-    if (!ok) return
-    setActivatingId(row.id)
-    try {
-      const res  = await fetch(`/api/bookings/${row.id}/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || "Failed to execute")
-      toastActionSuccess(toast,
-        t("تم تنفيذ الخدمة بنجاح", "Service executed successfully"),
-        json?.invoice_no
-          ? t(`فاتورة ${json.invoice_no} أنشئت تلقائياً`, `Invoice ${json.invoice_no} created`)
-          : undefined)
-      await load()
-    } catch (e: any) {
-      toastActionError(toast,
-        t("فشل تنفيذ الخدمة", "Execution failed"),
-        e?.message || "Network error")
-    } finally {
-      setActivatingId(null)
-    }
-  }
+  // v3.74.367 — handleActivate removed. Execution lives in
+  // BookingActions on the booking detail page now.
 
   const load = async () => {
     setIsLoading(true)
@@ -577,34 +511,11 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          {/* v3.74.358 — execute-service button.
-                              Same underlying RPC for stage 1; the
-                              accounting rewrite that turns the invoice
-                              into a draft + splits service vs extras
-                              lands in stage 2 (v3.74.359). */}
-                          {/* v3.74.360 — execute button visibility is
-                              per-row (see canExecuteRow at the top of
-                              this component). A branch manager whose
-                              user_id is NOT the booking's staff_user_id
-                              now lands in read-only mode for that row. */}
-                          {canExecuteRow(r) && !["completed", "cancelled", "no_show"].includes(r.status) && (
-                            <Button
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700 text-white h-8 px-2"
-                              onClick={() => handleActivate(r)}
-                              disabled={activatingId === r.id}
-                              title={t("تنفيذ الخدمة وإنشاء فاتورة", "Execute service & create invoice")}
-                            >
-                              {activatingId === r.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <>
-                                  <CheckCircle className="w-4 h-4 me-1" />
-                                  <span className="hidden md:inline">{t("تنفيذ الخدمة", "Execute Service")}</span>
-                                </>
-                              )}
-                            </Button>
-                          )}
+                          {/* v3.74.367 — "تنفيذ الخدمة" moved into the
+                              booking detail page (BookingActions). The
+                              tab here is view + filter only; clicking
+                              the eye takes you to the same screen the
+                              named staff would land on to execute. */}
                         </div>
                       </td>
                     </tr>

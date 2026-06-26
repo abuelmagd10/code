@@ -18,7 +18,9 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import {
   CheckCircle, Pencil, XCircle, FileText, Loader2, AlertTriangle,
+  PlayCircle,
 } from "lucide-react"
+import { useAccess } from "@/lib/access-context"
 import type { BookingStatus } from "@/types/bookings"
 
 interface BookingActionsProps {
@@ -26,6 +28,9 @@ interface BookingActionsProps {
   status:             BookingStatus
   /** v3.74.358 — drives "تم التأكيد ✓" badge + hides تأكيد button */
   confirmedAt?:       string | null
+  /** v3.74.367 — multi-staff assignments for "تنفيذ الخدمة" visibility */
+  assignedStaffUserIds?: string[] | null
+  staffUserId?:       string | null
   cancelBeforeHours:  number   // from service
   hasPaidAmount:      boolean  // to show refund warning
   invoiceId:          string | null
@@ -54,6 +59,8 @@ export function BookingActions({
   bookingId,
   status,
   confirmedAt,
+  assignedStaffUserIds,
+  staffUserId,
   cancelBeforeHours,
   hasPaidAmount,
   invoiceId,
@@ -65,8 +72,9 @@ export function BookingActions({
   const t    = (ar: string, en: string) => (isAr ? ar : en)
   const { toast } = useToast()
   const q = lang === "en" ? "?lang=en" : ""
+  const { profile } = useAccess()
 
-  type PendingAction = "confirm" | "cancel"
+  type PendingAction = "confirm" | "cancel" | "execute"
   const [pending, setPending] = useState<PendingAction | null>(null)
   const [reason, setReason] = useState("")
   const [isExecuting, setIsExecuting] = useState(false)
@@ -75,10 +83,32 @@ export function BookingActions({
   const isDraft = status === "draft"
   const isTerminal = ["completed", "cancelled", "no_show"].includes(status)
 
+  // v3.74.367 — "تنفيذ الخدمة" visibility (owner-confirmed rules):
+  //   * Owner / general_manager (admin) -> always allowed
+  //   * Any user named in the booking's assignments -> allowed
+  //   * Open queue (no assignments, no legacy staff) -> allowed
+  //   * Everyone else -> hidden
+  // Also gated on isConfirmed: an unconfirmed draft is not yet an
+  // "أمر حجز" and shouldn't be executed.
+  const canExecute = (() => {
+    if (!isDraft || !isConfirmed) return false
+    if (profile?.is_owner || profile?.is_admin) return true
+    const myId = profile?.user_id ?? null
+    if (!myId) return false
+    const ids = Array.isArray(assignedStaffUserIds) ? assignedStaffUserIds : []
+    if (ids.length > 0) return ids.includes(myId)
+    if (staffUserId) return staffUserId === myId
+    return true // open queue
+  })()
+
   const execute = async (action: PendingAction) => {
     setIsExecuting(true)
     try {
-      const endpoint = action === "confirm" ? "confirm" : "cancel"
+      // v3.74.367 — "execute" maps to the existing /activate route
+      // (same RPC). The accounting rewrite that turns the invoice into
+      // a draft + splits service vs extras is still on the roadmap as
+      // a separate stage.
+      const endpoint = action === "confirm" ? "confirm" : action === "cancel" ? "cancel" : "activate"
       const body: Record<string, any> = {}
       if (action === "cancel" && reason) body.cancellation_reason = reason
 
@@ -92,7 +122,14 @@ export function BookingActions({
 
       toastActionSuccess(
         toast,
-        action === "confirm" ? t("تم التأكيد", "Confirmed") : t("تم الإلغاء", "Cancelled"),
+        action === "confirm"
+          ? t("تم التأكيد", "Confirmed")
+          : action === "cancel"
+            ? t("تم الإلغاء", "Cancelled")
+            : t("تم تنفيذ الخدمة", "Service executed"),
+        action === "execute" && json?.invoice_no
+          ? t(`فاتورة ${json.invoice_no} أنشئت تلقائياً`, `Invoice ${json.invoice_no} created`)
+          : undefined,
       )
       setPending(null)
       setReason("")
@@ -164,6 +201,21 @@ export function BookingActions({
           </div>
         )}
 
+        {/* v3.74.367 — تنفيذ الخدمة. Moved here from /sales-orders
+            bookings tab. Visible only to owner / general_manager / the
+            staff actually named on the booking (or anyone if the booking
+            is open queue), and only after the booking was confirmed. */}
+        {canExecute && (
+          <Button
+            size="sm"
+            className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+            onClick={() => setPending("execute")}
+          >
+            <PlayCircle className="w-4 h-4" />
+            {t("تنفيذ الخدمة", "Execute Service")}
+          </Button>
+        )}
+
         {/* تعديل الحجز — allowed while draft (confirmed or not) */}
         {!isTerminal && (
           <Link href={`/bookings/${bookingId}/edit${q}`}>
@@ -194,7 +246,8 @@ export function BookingActions({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pending === "confirm" && t("تأكيد الحجز", "Confirm Booking")}
-              {pending === "cancel" && t("إلغاء الحجز", "Cancel Booking")}
+              {pending === "cancel"  && t("إلغاء الحجز", "Cancel Booking")}
+              {pending === "execute" && t("تنفيذ الخدمة", "Execute Service")}
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               {pending === "confirm" && (
@@ -202,6 +255,14 @@ export function BookingActions({
                   {t(
                     "هل تريد تأكيد هذا الحجز؟ سيظهر بعدها كأمر حجز فى صفحة أوامر البيع.",
                     "Confirm this booking? It will then appear as a booking order in /sales-orders.",
+                  )}
+                </span>
+              )}
+              {pending === "execute" && (
+                <span>
+                  {t(
+                    "هل تريد تنفيذ الخدمة وإنشاء الفاتورة؟ هذا الإجراء يخصم المخزون ويسجل الإيراد.",
+                    "Execute the service and create the invoice? This deducts inventory and records revenue.",
                   )}
                 </span>
               )}
@@ -238,15 +299,19 @@ export function BookingActions({
               className={
                 pending === "cancel"
                   ? "bg-destructive hover:bg-destructive/90 text-white"
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
+                  : pending === "execute"
+                    ? "bg-green-600 hover:bg-green-700 text-white"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
               }
             >
               {isExecuting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
+              ) : pending === "confirm" ? (
+                t("تأكيد الحجز", "Confirm Booking")
+              ) : pending === "execute" ? (
+                t("تنفيذ الخدمة", "Execute Service")
               ) : (
-                pending === "confirm"
-                  ? t("تأكيد الحجز", "Confirm Booking")
-                  : t("إلغاء الحجز", "Cancel Booking")
+                t("إلغاء الحجز", "Cancel Booking")
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
