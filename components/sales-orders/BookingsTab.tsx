@@ -136,7 +136,11 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
 
   // Lookups for the dropdowns
   const [lookupCustomers, setLookupCustomers] = useState<Array<{ id: string; name: string }>>([])
-  const [lookupServices,  setLookupServices]  = useState<Array<{ id: string; name: string }>>([])
+  // v3.74.364 — services are per-branch since v3.74.319, so a service
+  // name like "تقشير" appears once per branch (different id each).
+  // Keep branch_id on each record so the picker can show the branch
+  // name alongside the service name and de-ambiguate the dropdown.
+  const [lookupServices,  setLookupServices]  = useState<Array<{ id: string; name: string; branch_id?: string | null }>>([])
   const [lookupStaff,     setLookupStaff]     = useState<Array<{ id: string; name: string }>>([])
   const [lookupBranches,  setLookupBranches]  = useState<Array<{ id: string; name: string }>>([])
 
@@ -222,8 +226,12 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
         }
         if (sRes.ok) {
           const j = await sRes.json()
-          const arr = (j.services ?? j.data ?? []) as Array<{ id: string; service_name?: string; name?: string }>
-          setLookupServices(arr.map((s) => ({ id: s.id, name: s.service_name || s.name || s.id })))
+          const arr = (j.services ?? j.data ?? []) as Array<{ id: string; service_name?: string; name?: string; branch_id?: string | null }>
+          setLookupServices(arr.map((s) => ({
+            id: s.id,
+            name: s.service_name || s.name || s.id,
+            branch_id: s.branch_id ?? null,
+          })))
         }
         if (mRes.ok) {
           const j = await mRes.json()
@@ -365,11 +373,29 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
             />
           </div>
 
-          {/* Service — multi-select */}
+          {/* Service — multi-select
+              v3.74.364: services are per-branch, so the same name can
+              appear once per branch. Suffix the branch name only when
+              the service name is duplicated to keep the dropdown clean. */}
           <div>
             <label className="text-xs text-muted-foreground">{t("الخدمة", "Service")}</label>
             <MultiSelect
-              options={lookupServices.map((s) => ({ value: s.id, label: s.name }))}
+              options={(() => {
+                // Count how many times each service name appears.
+                const nameCount = new Map<string, number>()
+                for (const s of lookupServices) {
+                  nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1)
+                }
+                const branchById = new Map(lookupBranches.map((b) => [b.id, b.name]))
+                return lookupServices.map((s) => {
+                  const isDuplicate = (nameCount.get(s.name) ?? 0) > 1
+                  const branchName = s.branch_id ? branchById.get(s.branch_id) : null
+                  const label = isDuplicate && branchName
+                    ? `${s.name} — ${branchName}`
+                    : s.name
+                  return { value: s.id, label }
+                })
+              })()}
               selected={filterServices}
               onChange={setFilterServices}
               placeholder={t("جميع الخدمات", "All services")}
