@@ -10,6 +10,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { BookingStatusBadge, PaymentStatusBadge } from "@/components/bookings/BookingStatusBadge"
 import { BookingStatusTimeline } from "@/components/bookings/BookingStatusTimeline"
 import { BookingActions } from "@/components/bookings/BookingActions"
+import { BookingDiscountApprovalBanner, type DiscountGate } from "@/components/bookings/BookingDiscountApprovalBanner"
 import { BookingPayments } from "@/components/bookings/BookingPayments"
 import { BookingRating } from "@/components/bookings/BookingRating"
 import { BookingNotes } from "@/components/bookings/BookingNotes"
@@ -54,6 +55,9 @@ export default function BookingDetailPage() {
   const [booking, setBooking]     = useState<FullBookingResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [canEdit, setCanEdit]     = useState(false)
+  // v3.74.374 — discount gate state. Banner sets this; we forward it
+  // to BookingActions so the activate button can lock itself.
+  const [discountGate, setDiscountGate] = useState<DiscountGate>("open")
 
   useEffect(() => {
     canAction(supabase, "bookings", "update").then(setCanEdit)
@@ -144,6 +148,15 @@ export default function BookingDetailPage() {
           }
         />
 
+        {/* v3.74.374 — Discount approval banner.
+            Sits above the actions card so the staff member sees the
+            blocker before they hit the activate button. */}
+        <BookingDiscountApprovalBanner
+          bookingId={id}
+          lang={appLang}
+          onGateChange={setDiscountGate}
+        />
+
         {/* Actions bar */}
         {canEdit && (
           <Card className="mt-4">
@@ -158,6 +171,7 @@ export default function BookingDetailPage() {
                 hasPaidAmount={Number(booking.paid_amount) > 0}
                 invoiceId={booking.invoice_id}
                 hasRating={hasRating}
+                discountGate={discountGate}
                 lang={appLang}
                 onActionComplete={loadBooking}
               />

@@ -35,6 +35,10 @@ interface BookingActionsProps {
   hasPaidAmount:      boolean  // to show refund warning
   invoiceId:          string | null
   hasRating:          boolean
+  /** v3.74.374 — discount approval gate. When anything other than
+   *  "open" the execute button locks itself and shows a helper
+   *  tooltip pointing at the banner above. */
+  discountGate?:      "open" | "blocked_no_request" | "blocked_pending" | "blocked_rejected"
   lang?:              string
   onActionComplete:   () => void   // refresh parent
 }
@@ -65,6 +69,7 @@ export function BookingActions({
   hasPaidAmount,
   invoiceId,
   hasRating,
+  discountGate = "open",
   lang = "ar",
   onActionComplete,
 }: BookingActionsProps) {
@@ -204,15 +209,26 @@ export function BookingActions({
         {/* v3.74.367 — تنفيذ الخدمة. Moved here from /sales-orders
             bookings tab. Visible only to owner / general_manager / the
             staff actually named on the booking (or anyone if the booking
-            is open queue), and only after the booking was confirmed. */}
+            is open queue), and only after the booking was confirmed.
+            v3.74.374 — disabled when a discount is awaiting approval
+            or was rejected. The banner above explains the reason. */}
         {canExecute && (
           <Button
             size="sm"
-            className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+            className="gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={discountGate !== "open"}
+            title={discountGate !== "open"
+              ? t("التنفيذ موقوف حتى يتم اعتماد الخصم", "Execution blocked until the discount is approved")
+              : undefined}
             onClick={() => setPending("execute")}
           >
             <PlayCircle className="w-4 h-4" />
             {t("تنفيذ الخدمة", "Execute Service")}
+            {discountGate !== "open" && (
+              <span className="text-[10px] opacity-90">
+                · {t("معلّق", "blocked")}
+              </span>
+            )}
           </Button>
         )}
 
