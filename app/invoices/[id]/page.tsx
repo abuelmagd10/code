@@ -38,6 +38,8 @@ import {
   SALES_RETURN_ACTIVE_REQUEST_STATUSES,
   getSalesReturnRequestStatusLabel,
 } from "@/lib/sales-return-requests"
+// v3.74.375 — discount approval banner + gate state for invoice posting.
+import { InvoiceDiscountApprovalBanner, type InvoiceDiscountGate } from "@/components/invoices/InvoiceDiscountApprovalBanner"
 
 interface Invoice {
   id: string
@@ -187,6 +189,10 @@ export default function InvoiceDetailPage() {
   const [returnDialogMode, setReturnDialogMode] = useState<'partial' | 'full'>('partial')
   const [activeSalesReturnRequest, setActiveSalesReturnRequest] = useState<ActiveSalesReturnRequest | null>(null)
   const [changingStatus, setChangingStatus] = useState(false)
+  // v3.74.375 — discount gate state from the banner. "open" means
+  // the invoice can be posted; everything else blocks the
+  // transition to 'sent'/'posted'.
+  const [discountGate, setDiscountGate] = useState<InvoiceDiscountGate>("open")
   const [isPending, startTransition] = useTransition()
 
   const [nextInvoiceId, setNextInvoiceId] = useState<string | null>(null)
@@ -1079,6 +1085,31 @@ export default function InvoiceDetailPage() {
         // 📌 التحقق من المتطلبات قبل الإرسال
         if (newStatus === "sent") {
           console.log("📦 Starting pre-send validation...")
+
+          // v3.74.375 — Discount approval gate. The DB trigger blocks
+          // this anyway, but stopping early gives a friendlier toast
+          // and avoids the unnecessary inventory + period checks.
+          if (discountGate !== "open") {
+            startTransition(() => { setChangingStatus(false) })
+            const msg = discountGate === "blocked_pending"
+              ? (appLang === 'en'
+                  ? "Discount is awaiting GM / owner approval. Posting is blocked."
+                  : "الخصم في انتظار اعتماد المدير العام / المالك. لا يمكن الترحيل قبل الاعتماد.")
+              : discountGate === "blocked_rejected"
+                ? (appLang === 'en'
+                    ? "Discount was rejected. Edit or remove the discount to proceed."
+                    : "تم رفض الخصم. عدّل قيمة الخصم أو ألغِه للمتابعة.")
+                : (appLang === 'en'
+                    ? "Discount needs approval. Save the invoice again to submit a request."
+                    : "الخصم يحتاج اعتماد. احفظ الفاتورة مرة أخرى لإرسال الطلب.")
+            toast({
+              variant: "destructive",
+              title: appLang === 'en' ? "Discount approval required" : "❌ يلزم اعتماد الخصم",
+              description: msg,
+              duration: 8000,
+            })
+            return
+          }
 
           // 1️⃣ التحقق من وجود شركة شحن (اختياري - إذا موجود يُستخدم نظام بضاعة لدى الغير)
           const shippingValidation = await validateShippingProvider(supabase, invoiceId)
@@ -2512,6 +2543,16 @@ export default function InvoiceDetailPage() {
       {/* Main Content - تحسين للهاتف */}
       <main ref={printAreaRef} className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 print-area overflow-x-hidden">
         <div className="space-y-4 sm:space-y-6 print:space-y-4 max-w-full">
+          {/* v3.74.375 — discount approval banner. Only renders when
+              the invoice is in draft with a non-zero discount; on
+              posted invoices and undiscounted ones it returns null
+              and adds zero layout weight. Sits above the header so
+              the user sees the blocker before any post action. */}
+          <InvoiceDiscountApprovalBanner
+            invoiceId={invoiceId}
+            lang={appLang as "ar" | "en"}
+            onGateChange={setDiscountGate}
+          />
           {/* ✅ Unified Page Header */}
           <ERPPageHeader
             title={appLang === 'en' ? `Invoice #${invoice.invoice_number}` : `الفاتورة #${invoice.invoice_number}`}
