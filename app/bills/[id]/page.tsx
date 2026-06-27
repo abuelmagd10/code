@@ -52,6 +52,8 @@ import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
 import { validateBillMatching } from "@/lib/three-way-matching"
+// v3.74.376 — discount approval banner + gate state for bill posting.
+import { BillDiscountApprovalBanner, type BillDiscountGate } from "@/components/bills/BillDiscountApprovalBanner"
 
 type Bill = {
   id: string
@@ -151,6 +153,10 @@ export default function BillViewPage() {
   const printAreaRef = useMemo(() => ({ current: null as HTMLDivElement | null }), [])
   const billContentRef = useRef<HTMLDivElement | null>(null)
   const [bill, setBill] = useState<Bill | null>(null)
+  // v3.74.376 — discount gate from the banner. "open" means posting
+  // is allowed; everything else short-circuits the submit-for-receipt
+  // flow with a destructive toast.
+  const [discountGate, setDiscountGate] = useState<BillDiscountGate>("open")
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [items, setItems] = useState<BillItem[]>([])
   const [products, setProducts] = useState<Record<string, Product>>({})
@@ -1103,6 +1109,28 @@ export default function BillViewPage() {
       }
 
       if (newStatus === "sent") {
+        // v3.74.376 — Discount approval gate. The DB trigger blocks
+        // this anyway, but stopping early gives a friendlier toast.
+        if (discountGate !== "open") {
+          const msg = discountGate === "blocked_pending"
+            ? (appLang === 'en'
+                ? "Discount is awaiting GM / owner approval. Posting is blocked."
+                : "الخصم في انتظار اعتماد المدير العام / المالك. لا يمكن الترحيل قبل الاعتماد.")
+            : discountGate === "blocked_rejected"
+              ? (appLang === 'en'
+                  ? "Discount was rejected. Edit or remove the discount to proceed."
+                  : "تم رفض الخصم. عدّل قيمة الخصم أو ألغِه للمتابعة.")
+              : (appLang === 'en'
+                  ? "Discount needs approval. Save the bill again to submit a request."
+                  : "الخصم يحتاج اعتماد. احفظ الفاتورة مرة أخرى لإرسال الطلب.")
+          toast({
+            variant: "destructive",
+            title: appLang === 'en' ? "Discount approval required" : "❌ يلزم اعتماد الخصم",
+            description: msg,
+            duration: 8000,
+          })
+          return
+        }
         const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/submit-for-receipt`, {
           method: "POST",
           headers: {
@@ -1253,6 +1281,15 @@ export default function BillViewPage() {
           </div>
         ) : (
           <div className="space-y-4 sm:space-y-6 max-w-full">
+            {/* v3.74.376 — discount approval banner. Renders only when
+                the bill is in draft with a non-zero discount; on posted
+                bills and undiscounted ones it returns null. Sits above
+                the header so the user sees the blocker upfront. */}
+            <BillDiscountApprovalBanner
+              billId={bill.id}
+              lang={appLang as "ar" | "en"}
+              onGateChange={setDiscountGate}
+            />
             {/* ==================== Header Section ==================== */}
             <div className="flex flex-col gap-4">
               {/* العنوان والحالة */}
