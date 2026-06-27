@@ -57,10 +57,15 @@ export async function POST(req: NextRequest) {
       { auth: { persistSession: false } }
     )
 
+    // v3.74.379 — RPC now records the actor in the audit log entry.
+    // Owner-only is already enforced at the route, so the actor is
+    // always the owner; we still pass it explicitly so log queries
+    // by user_id work.
     const { data, error: rpcErr } = await admin.rpc('swap_seat_numbers', {
       p_company_id: companyId,
       p_seat_a: seatA,
       p_seat_b: seatB,
+      p_actor_user_id: user.id,
     })
 
     if (rpcErr) {

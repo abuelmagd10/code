@@ -25,6 +25,10 @@ interface CompanyStatus {
   subscription_status?: string
   seat_number?: number
   paid_seats?: number
+  // v3.74.379 — per-seat expiry. NULL when the user has no license
+  // attached (e.g., legacy over-quota members or invitations that
+  // haven't been placed on a seat yet).
+  seat_expires_at?: string | null
   is_company_suspended?: boolean
   is_seat_suspended?: boolean
   is_suspended?: boolean
@@ -128,8 +132,8 @@ export default async function SuspendedPage() {
             <ShieldAlert className="w-9 h-9 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-1">
-            {status?.is_seat_suspended && !status?.is_company_suspended
-              ? "مقعدك غير مدفوع حالياً"
+            {status?.is_seat_suspended
+              ? "انتهت صلاحية مقعدك"
               : "تم إيقاف حساب شركتك مؤقتاً"}
           </h1>
           <p className="text-red-100 text-sm">
@@ -146,11 +150,25 @@ export default async function SuspendedPage() {
             <Lock className="w-5 h-5 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-semibold mb-1">لا يمكنك الوصول للنظام حالياً</p>
-              {status?.is_seat_suspended && !status?.is_company_suspended ? (
+              {/* v3.74.379 — three distinct cases now:
+                  1. Seat expired (license carries an expires_at in the past)
+                  2. No seat assigned (assigned_user_id was NULL on every license)
+                  3. Company-wide flag (subscription_status payment_failed) */}
+              {status?.is_seat_suspended && status?.seat_expires_at ? (
                 <p>
-                  مقعدك رقم #{status.seat_number} أعلى من عدد المقاعد المدفوعة فى الاشتراك الحالى
-                  (<strong>{status.paid_seats}</strong> مقعد مدفوع).
-                  يرجى التواصل مع صاحب الحساب لزيادة المقاعد أو ترتيب المقاعد.
+                  مقعدك رقم <strong>#{status.seat_number}</strong> انتهت صلاحيته فى
+                  {" "}
+                  <strong>
+                    {new Date(status.seat_expires_at).toLocaleDateString("ar-EG", {
+                      year: "numeric", month: "long", day: "numeric",
+                    })}
+                  </strong>.
+                  {" "}
+                  يرجى التواصل مع صاحب الحساب لتجديد المقعد أو نقلك إلى مقعد نشط من صفحة إدارة المقاعد.
+                </p>
+              ) : status?.is_seat_suspended ? (
+                <p>
+                  لم يتم إسناد مقعد لك بعد. يرجى التواصل مع صاحب الحساب لإسناد مقعد نشط لك من صفحة إدارة المقاعد.
                 </p>
               ) : (
                 <p>
