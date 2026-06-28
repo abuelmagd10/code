@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { ServiceForm } from "@/components/services/ServiceForm"
+// v3.74.386 — consumable BOM editor for the service.
+import { ServiceProductsEditor } from "@/components/services/ServiceProductsEditor"
 import { LoadingState } from "@/components/ui/loading-state"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
@@ -142,6 +144,12 @@ export default function EditServicePage() {
             isSubmitting={isSubmitting}
             lang={appLang}
           />
+
+          {/* v3.74.386 — consumable BOM. Independent save button so
+              the BOM can be edited without re-validating the whole
+              service form. Stage C reads this list at booking
+              execution time to gate / deduct inventory. */}
+          <ServiceProductsEditor serviceId={id} lang={appLang} />
         </div>
       </main>
     </div>
