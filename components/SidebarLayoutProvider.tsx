@@ -24,7 +24,14 @@ const EXACT_HIDE_PATHS = ["/"]
 //     tenant the browser last opened, so the sidebar shows the unrelated
 //     company. The user accepts the invite from here, after which the
 //     accept handler writes the correct active_company_id and redirects.
-const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/auth/force-change-password", "/invitations/accept", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo"]
+// v3.74.380 — /suspended must hide the sidebar. The page targets
+// non-owner members whose seat license has expired. The sidebar
+// auto-polls /api/sidebar/approval-badges and a few other endpoints
+// that aren't meant for suspended users — some of them return HTML
+// (login redirect, error page) which crashes the JSON parser with
+// "Unexpected token '<', "<!DOCTYPE "... is not valid JSON" in the
+// console even though the visible page is /suspended.
+const PREFIX_HIDE_PATHS = ["/auth/login", "/auth/sign-up", "/auth/sign-up-success", "/auth/callback", "/auth/force-change-password", "/invitations/accept", "/onboarding", "/saas-admin", "/legal", "/contact", "/blog", "/demo", "/suspended"]
 
 export function SidebarLayoutProvider() {
   const pathname = usePathname()

@@ -25,6 +25,11 @@ const PUBLIC_PATHS = [
   "/contact", // صفحة التواصل عامة
   "/blog", // المدوَّنة عامة — قمع SEO
   "/demo",  // v3.74.228 — صَفحَة العَرض التَّوضيحى عامَّة لِلزُّوَّار
+  // v3.74.380 — صَفحَة /suspended لازم تتعرض بدون الـ permission gate.
+  // المستخدم اللى مقعده منتهى ما عندوش صلاحيات، فلو AppShell حاول
+  // يعمله gate، الصفحة تظهر لحظة ثم تتحوّل لـ "جارى التحميل" دائم
+  // (redirect لـ /no-access أو getFirstAllowedPage يفشل).
+  "/suspended",
 ]
 
 interface AppShellProps {
