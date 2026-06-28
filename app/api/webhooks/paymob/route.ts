@@ -45,6 +45,10 @@ interface PaymobExtras {
   billing_period?: 'monthly' | 'annual'
   coupon_code?: string | null
   pricing_snapshot?: Record<string, any>
+  // v3.74.382 — Stage 5: renewal flow extras.
+  action?: 'buy' | 'renew'
+  seat_license_ids?: string[]
+  renew_count?: number
 }
 
 function extractExtras(transaction: any): PaymobExtras {
@@ -83,7 +87,10 @@ export async function POST(req: NextRequest) {
 
     // 2. Extract extras (company_id, additional_users, pricing_snapshot)
     const extras = extractExtras(transaction)
-    const { company_id, additional_users, billing_period, pricing_snapshot } = extras
+    const {
+      company_id, additional_users, billing_period, pricing_snapshot,
+      action, seat_license_ids, renew_count,
+    } = extras
 
     if (!company_id) {
       console.warn('[paymob-webhook] Missing company_id in extras — ignoring')
@@ -102,6 +109,11 @@ export async function POST(req: NextRequest) {
       error_occured:  Boolean(transaction.error_occured),
       billing_period: billing_period === 'annual' ? 'annual' : 'monthly',
       pricing_snapshot: pricing_snapshot as any,
+      // v3.74.382 — Stage 5: pass renewal extras through so the
+      // dispatcher in subscription-service can route to handleRenewalSuccess.
+      action: action === 'renew' ? 'renew' : 'buy',
+      seat_license_ids: Array.isArray(seat_license_ids) ? seat_license_ids : undefined,
+      renew_count: typeof renew_count === 'number' ? renew_count : undefined,
     }
 
     // 4. Sync with subscription service (idempotent)

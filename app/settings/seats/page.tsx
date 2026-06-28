@@ -87,6 +87,9 @@ export default function SeatsManagementPage() {
   const [error, setError] = useState<string | null>(null)
   const [swappingSeats, setSwappingSeats] = useState<Set<number>>(new Set())
   const [swapError, setSwapError] = useState<string | null>(null)
+  // v3.74.382 — Stage 5: renewal flow state.
+  const [renewingSeats, setRenewingSeats] = useState<Set<string>>(new Set())
+  const [renewError, setRenewError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -128,6 +131,49 @@ export default function SeatsManagementPage() {
       setSwappingSeats(new Set())
     }
   }, [fetchData])
+
+  // v3.74.382 — Stage 5: kick off Paymob checkout for renewing a set
+  // of seat licenses. Modes: 'one' (single seat), 'many' (selected
+  // ids), 'all_expired' (server resolves the list).
+  const startRenewal = useCallback(async (
+    mode: 'one' | 'many' | 'all_expired',
+    seatLicenseIds: string[] = [],
+  ) => {
+    setRenewError(null)
+    // Mark spinners on the affected rows so the user sees feedback.
+    seatLicenseIds.forEach((id) => setRenewingSeats((prev) => new Set(prev).add(id)))
+    try {
+      const res = await fetch('/api/billing/seats/renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode,
+          seat_license_ids: seatLicenseIds,
+          billing_period: data?.billing_period || 'monthly',
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setRenewError(json?.error || 'فشل بدء عملية التجديد')
+        return
+      }
+      // Free-grant path: server already renewed; just refresh.
+      if (json?.free_grant) {
+        await fetchData()
+        return
+      }
+      // Standard path: redirect to Paymob checkout.
+      if (json?.checkout_url) {
+        window.location.href = json.checkout_url
+      } else {
+        setRenewError('استجابة غير متوقعة من الخادم')
+      }
+    } catch (e: any) {
+      setRenewError(e?.message || 'خطأ فى الاتصال')
+    } finally {
+      setRenewingSeats(new Set())
+    }
+  }, [data?.billing_period, fetchData])
 
   useEffect(() => {
     fetchData()
@@ -296,7 +342,9 @@ export default function SeatsManagementPage() {
 
           {/* v3.74.378 — Expired seats alert. Each seat now has its
               own expires_at; some seats can be expired while others
-              are still active in the same company. */}
+              are still active in the same company.
+              v3.74.382 — Stage 5: added "تجديد كل المنتهى" button
+              so the owner can renew everything in one Paymob checkout. */}
           {hasExpiredSeats && (
             <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4 flex items-start gap-3">
               <Clock className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
@@ -304,11 +352,33 @@ export default function SeatsManagementPage() {
                 <p className="font-semibold text-orange-800 dark:text-orange-200 text-sm mb-1">
                   {expiredSeatCount} مقعد منتهى الصلاحية
                 </p>
-                <p className="text-xs text-orange-700 dark:text-orange-300">
-                  المقاعد المنتهية معلّمة فى الجدول أسفل. الموظفون المرتبطون بها لن يتمكنوا من الدخول بمجرد تفعيل النموذج الجديد للمقاعد.
-                  جدّد المقاعد من <Link href="/settings/billing" className="underline font-semibold">صفحة الفوترة</Link> أو انقل الموظفين إلى مقاعد نشطة باستخدام الأسهم.
+                <p className="text-xs text-orange-700 dark:text-orange-300 mb-3">
+                  الموظفون المرتبطون بمقاعد منتهية لا يستطيعون الدخول حالياً.
+                  جدّد المقاعد دفعة واحدة أو انقل الموظفين إلى مقاعد نشطة باستخدام الأسهم.
                 </p>
+                {data.is_caller_owner && (
+                  <button
+                    onClick={() => startRenewal('all_expired', [])}
+                    disabled={renewingSeats.size > 0}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {renewingSeats.size > 0 ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    تجديد كل المقاعد المنتهية ({expiredSeatCount})
+                  </button>
+                )}
               </div>
+            </div>
+          )}
+
+          {/* v3.74.382 — Renewal-flow errors. */}
+          {renewError && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 text-sm text-red-800 dark:text-red-200 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              {renewError}
             </div>
           )}
 
@@ -378,6 +448,13 @@ export default function SeatsManagementPage() {
                         onMoveDown={next && next.seat_number > 0 ? () => swapSeats(s.seat_number, next.seat_number) : undefined}
                         isSwapping={swappingSeats.has(s.seat_number)}
                         showActions={!!data.is_caller_owner}
+                        // v3.74.382 — Stage 5: single-seat renewal.
+                        onRenew={
+                          data.is_caller_owner && s.license_id && s.seat_number > 0
+                            ? () => startRenewal('one', [s.license_id!])
+                            : undefined
+                        }
+                        isRenewing={!!s.license_id && renewingSeats.has(s.license_id)}
                       />
                     )
                   })}
@@ -443,9 +520,12 @@ interface SeatRowProps {
   onMoveDown?: () => void
   isSwapping?: boolean
   showActions?: boolean
+  // v3.74.382 — Stage 5: per-row renewal.
+  onRenew?: () => void
+  isRenewing?: boolean
 }
 
-function SeatRow({ seat, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isSwapping, showActions }: SeatRowProps) {
+function SeatRow({ seat, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isSwapping, showActions, onRenew, isRenewing }: SeatRowProps) {
   const m = seat.member
 
   // v3.74.378 — seatBadge now distinguishes "active with occupant"
@@ -516,9 +596,10 @@ function SeatRow({ seat, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isSwappin
       <td className="px-5 py-3 text-xs">
         {/* v3.74.378 — seat license validity. The owner's seat (0)
             has no license, so we render a placeholder. Over-quota
-            members have no license backing either. */}
+            members have no license backing either.
+            v3.74.382 — Stage 5: per-row "جدد" button when allowed. */}
         {seat.purchased_at && seat.expires_at ? (
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             <p className="text-gray-500 dark:text-gray-400">
               اشترى: <span className="text-gray-700 dark:text-gray-300">{fmtDate(seat.purchased_at)}</span>
             </p>
@@ -540,6 +621,24 @@ function SeatRow({ seat, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isSwappin
                 </span>
               )}
             </p>
+            {onRenew && (
+              <button
+                onClick={onRenew}
+                disabled={isRenewing}
+                className={`mt-1 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  seat.is_expired
+                    ? 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-300'
+                    : 'bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-900/20 dark:hover:bg-violet-900/40 dark:text-violet-300'
+                }`}
+              >
+                {isRenewing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                {seat.is_expired ? 'جدد المقعد' : 'مدّد المقعد'}
+              </button>
+            )}
           </div>
         ) : (
           <span className="text-gray-400">—</span>

@@ -229,6 +229,60 @@ export async function createSeatLicensesForPurchase(
 }
 
 // ─────────────────────────────────────────
+// renewSeatLicenses
+// v3.74.382 — Stage 5 of 6.
+// Renews a set of seat licenses by extending their expires_at. Idempotent
+// on billing_invoice_id (the renewing payment). For expired seats the
+// new period starts at NOW; for active seats it extends from the current
+// expires_at so the customer doesn't lose days they already paid for.
+// ─────────────────────────────────────────
+export interface RenewLicensesResult {
+  success: boolean
+  idempotent?: boolean
+  renewed_count?: number
+  license_ids?: string[]
+  billing_period?: 'monthly' | 'annual'
+  requested?: number
+  unmatched?: number
+  error?: string
+}
+
+export async function renewSeatLicenses(
+  companyId: string,
+  seatLicenseIds: string[],
+  billingPeriod: 'monthly' | 'annual' = 'monthly',
+  billingInvoiceId?: string | null,
+  performedBy?: string | null,
+): Promise<RenewLicensesResult> {
+  const admin = getAdminClient()
+  const { data, error } = await admin.rpc('renew_seat_licenses', {
+    p_company_id:         companyId,
+    p_seat_license_ids:   seatLicenseIds,
+    p_billing_period:     billingPeriod,
+    p_billing_invoice_id: billingInvoiceId ?? null,
+    p_performed_by:       performedBy ?? null,
+  })
+
+  if (error) {
+    console.error('[SeatService] renewSeatLicenses error:', error)
+    return { success: false, error: error.message }
+  }
+  return data as RenewLicensesResult
+}
+
+export async function getExpiredSeatLicenseIds(companyId: string): Promise<string[]> {
+  const admin = getAdminClient()
+  const { data, error } = await admin.rpc('get_expired_seat_license_ids', {
+    p_company_id: companyId,
+  })
+  if (error) {
+    console.error('[SeatService] getExpiredSeatLicenseIds error:', error)
+    return []
+  }
+  return (data as string[]) || []
+}
+
+// ─────────────────────────────────────────
 // getSeatTransactions
 // Returns audit history for seat changes
 // ─────────────────────────────────────────

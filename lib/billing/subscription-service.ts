@@ -10,7 +10,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { increaseSeats, createSeatLicensesForPurchase } from './seat-service'
+import { increaseSeats, createSeatLicensesForPurchase, renewSeatLicenses } from './seat-service'
 import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generator'
 import { sendReactivationNotice } from './renewal-emails'
 import { notifyReactivation, notifyPaymentSuccess } from './subscription-notifications'
@@ -59,6 +59,13 @@ export interface PaymobWebhookPayload {
   billing_period?: 'monthly' | 'annual'
   /** Full pricing breakdown captured at checkout time (from pricing-engine) */
   pricing_snapshot?: PricingSnapshot
+  // v3.74.382 — Stage 5: renewal flow extras.
+  /** "buy" (default) or "renew". "renew" routes to handleRenewalSuccess. */
+  action?: 'buy' | 'renew'
+  /** When action="renew" this is the set of license rows to extend. */
+  seat_license_ids?: string[]
+  /** When action="renew" this is the count being renewed (mirrors length). */
+  renew_count?: number
 }
 
 // ─────────────────────────────────────────
@@ -340,6 +347,102 @@ export async function reactivateSubscription(companyId: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────
+// handleRenewalSuccess
+// v3.74.382 — Stage 5: same shape as handlePaymentSuccess but for
+// per-seat renewal. Does NOT bump total_paid_seats; instead pushes
+// the expires_at of the chosen licenses forward.
+// ─────────────────────────────────────────
+export async function handleRenewalSuccess(payload: PaymobWebhookPayload): Promise<{
+  success: boolean
+  idempotent?: boolean
+  invoiceNumber?: string
+  invoiceError?: string
+  error?: string
+}> {
+  try {
+    const seatIds = Array.isArray(payload.seat_license_ids) ? payload.seat_license_ids : []
+    if (seatIds.length === 0) {
+      return { success: false, error: 'no_seat_license_ids_in_payload' }
+    }
+
+    // ── Generate the renewal invoice first so we have its id for
+    //    dedup on the renew RPC. createInvoiceForPayment is idempotent
+    //    on paymob_transaction_id, so a re-fired webhook gets the
+    //    same row back.
+    let invoiceNumber: string | undefined
+    let invoiceId: string | undefined
+    let invoiceError: string | undefined
+    if (payload.pricing_snapshot) {
+      try {
+        const invoiceResult = await createInvoiceForPayment({
+          companyId: payload.company_id,
+          pricingSnapshot: payload.pricing_snapshot,
+          billingPeriod: payload.billing_period ?? 'monthly',
+          paymobTransactionId: payload.transaction_id,
+          paidAt: new Date().toISOString(),
+          invoiceType: 'subscription',
+        })
+        if (invoiceResult.success) {
+          invoiceNumber = invoiceResult.invoiceNumber
+          invoiceId = invoiceResult.invoiceId
+          if (invoiceResult.error) invoiceError = invoiceResult.error
+        } else {
+          invoiceError = invoiceResult.error
+          console.error('[SubscriptionService] renewal invoice creation failed:', invoiceResult.error)
+        }
+      } catch (invErr: any) {
+        invoiceError = invErr.message
+        console.error('[SubscriptionService] renewal invoice exception:', invErr)
+      }
+    } else {
+      invoiceError = 'pricing_snapshot_missing_in_payload'
+    }
+
+    // ── Extend the chosen seat licenses ──
+    const renewResult = await renewSeatLicenses(
+      payload.company_id,
+      seatIds,
+      payload.billing_period ?? 'monthly',
+      invoiceId ?? null,
+    )
+    if (!renewResult.success) {
+      return { success: false, error: renewResult.error, invoiceNumber, invoiceError }
+    }
+
+    // ── Audit + notify (best-effort) ──
+    try {
+      const admin = getAdminClient()
+      await admin.from('audit_logs').insert({
+        action: 'renewal_success',
+        company_id: payload.company_id,
+        target_table: 'company_seat_licenses',
+        new_data: {
+          paymob_transaction_id: payload.transaction_id,
+          seat_license_ids: seatIds,
+          renewed_count: renewResult.renewed_count,
+          amount_egp: Math.round(payload.amount_cents / 100),
+          invoice_number: invoiceNumber ?? null,
+          invoice_error: invoiceError ?? null,
+          billing_period: payload.billing_period ?? 'monthly',
+        },
+      })
+    } catch (logErr) {
+      console.error('[SubscriptionService] renewal audit log failed:', logErr)
+    }
+
+    return {
+      success: true,
+      idempotent: renewResult.idempotent,
+      invoiceNumber,
+      invoiceError,
+    }
+  } catch (err: any) {
+    console.error('[SubscriptionService] handleRenewalSuccess error:', err)
+    return { success: false, error: err.message }
+  }
+}
+
+// ─────────────────────────────────────────
 // syncSubscriptionFromWebhook
 // Main entry point for Paymob webhook processing
 // Determines event type and routes accordingly
@@ -356,6 +459,13 @@ export async function syncSubscriptionFromWebhook(
 }> {
   // Successful, non-pending transaction
   if (payload.success && !payload.pending && !payload.error_occured) {
+    // v3.74.382 — Stage 5: route to renewal handler when the
+    // checkout was initiated by /api/billing/seats/renew. Otherwise
+    // fall through to the buy flow.
+    if (payload.action === 'renew') {
+      const result = await handleRenewalSuccess(payload)
+      return { ...result, action: 'renewal_success' }
+    }
     const result = await handlePaymentSuccess(payload)
     return { ...result, action: 'payment_success' }
   }
