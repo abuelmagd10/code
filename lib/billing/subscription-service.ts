@@ -10,7 +10,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { increaseSeats } from './seat-service'
+import { increaseSeats, createSeatLicensesForPurchase } from './seat-service'
 import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generator'
 import { sendReactivationNotice } from './renewal-emails'
 import { notifyReactivation, notifyPaymentSuccess } from './subscription-notifications'
@@ -182,6 +182,7 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
     // ── Generate invoice + PDF (idempotent on paymob_transaction_id) ──
     // Non-blocking semantics: an invoice failure should NOT undo seat activation
     let invoiceNumber: string | undefined
+    let invoiceId: string | undefined
     let invoiceError: string | undefined
     if (payload.pricing_snapshot) {
       try {
@@ -195,6 +196,7 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
         })
         if (invoiceResult.success) {
           invoiceNumber = invoiceResult.invoiceNumber
+          invoiceId = invoiceResult.invoiceId
           if (invoiceResult.error) {
             invoiceError = invoiceResult.error  // e.g. pdf_render_failed (row was created)
           }
@@ -209,6 +211,42 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
     } else {
       invoiceError = 'pricing_snapshot_missing_in_payload'
       console.warn('[SubscriptionService] No pricing_snapshot in payload — skipping invoice generation')
+    }
+
+    // ── v3.74.381 — Stage 4: create per-seat licenses ─────────────
+    // Each purchased seat becomes its own row in company_seat_licenses
+    // with its own purchased_at + expires_at. The new model uses these
+    // as the access source of truth (see Stage 3 RPCs). Idempotent on
+    // billing_invoice_id so a re-fired webhook doesn't double-create.
+    //
+    // Failure here must NOT undo the seat increase or the invoice. The
+    // legacy total_paid_seats keeps the user functional even if license
+    // rows are missing; a follow-up backfill RPC can patch any gap.
+    if (payload.additional_users > 0) {
+      try {
+        const licResult = await createSeatLicensesForPurchase(
+          payload.company_id,
+          payload.additional_users,
+          payload.billing_period ?? 'monthly',
+          invoiceId ?? null,
+        )
+        if (!licResult.success) {
+          console.error(
+            '[SubscriptionService] createSeatLicensesForPurchase failed:',
+            licResult.error,
+          )
+        } else if (licResult.idempotent) {
+          console.log(
+            '[SubscriptionService] seat licenses already existed for this invoice — skipped',
+          )
+        } else {
+          console.log(
+            `[SubscriptionService] created ${licResult.created_count} seat licenses (seats ${licResult.first_seat}..${licResult.last_seat}), expires ${licResult.expires_at}`,
+          )
+        }
+      } catch (licErr: any) {
+        console.error('[SubscriptionService] seat-license creation exception:', licErr)
+      }
     }
 
     // Log to audit_logs

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, internalError, HTTP_STATUS } from "@/lib/api-error-handler"
-import { getSeatStatus, SEAT_PRICE_EGP, increaseSeats } from "@/lib/billing/seat-service"
+import { getSeatStatus, SEAT_PRICE_EGP, increaseSeats, createSeatLicensesForPurchase } from "@/lib/billing/seat-service"
 import { calculatePricing } from "@/lib/billing/pricing-engine"
 
 // ─────────────────────────────────────────
@@ -123,6 +123,27 @@ export async function POST(req: NextRequest) {
       )
       if (!grant.success) {
         return internalError(grant.error || "تعذر منح المقاعد", "free_grant_failed")
+      }
+
+      // v3.74.381 — Stage 4: free-grant path also creates per-seat
+      // licenses. No billing_invoice exists on this path (no Paymob
+      // payment was made), so we pass NULL — the syntheticTxnId is
+      // already unique per call so duplicate creation isn't possible.
+      try {
+        const licResult = await createSeatLicensesForPurchase(
+          companyId,
+          seats,
+          billingPeriod,
+          null,
+        )
+        if (!licResult.success) {
+          console.error(
+            "[billing/seats] free-grant seat licenses failed:",
+            licResult.error,
+          )
+        }
+      } catch (licErr: any) {
+        console.error("[billing/seats] free-grant license exception:", licErr)
       }
       try {
         // Best-effort coupon usage increment. Atomic so concurrent

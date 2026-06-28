@@ -181,6 +181,54 @@ export async function increaseSeats(
 }
 
 // ─────────────────────────────────────────
+// createSeatLicensesForPurchase
+// v3.74.381 — Stage 4 of 6.
+// After increaseSeats has bumped the legacy total_paid_seats counter,
+// this helper inserts N rows into company_seat_licenses with their
+// own purchased_at + expires_at. Idempotent on billing_invoice_id
+// so the Paymob webhook can re-fire safely.
+//
+// Pass billingInvoiceId AFTER the invoice has been created. If the
+// invoice creation fails or hasn't happened yet (free-grant path),
+// pass undefined — the rows still get created but lose the dedup
+// guarantee, so the caller must not retry.
+// ─────────────────────────────────────────
+export interface CreateLicensesResult {
+  success: boolean
+  idempotent?: boolean
+  created_count?: number
+  first_seat?: number
+  last_seat?: number
+  license_ids?: string[]
+  purchased_at?: string
+  expires_at?: string
+  billing_period?: 'monthly' | 'annual'
+  error?: string
+}
+
+export async function createSeatLicensesForPurchase(
+  companyId: string,
+  seatsCount: number,
+  billingPeriod: 'monthly' | 'annual' = 'monthly',
+  billingInvoiceId?: string | null,
+): Promise<CreateLicensesResult> {
+  const admin = getAdminClient()
+  const { data, error } = await admin.rpc('create_seat_licenses_for_purchase', {
+    p_company_id:         companyId,
+    p_seats_count:        seatsCount,
+    p_billing_period:     billingPeriod,
+    p_billing_invoice_id: billingInvoiceId ?? null,
+  })
+
+  if (error) {
+    console.error('[SeatService] createSeatLicensesForPurchase error:', error)
+    return { success: false, error: error.message }
+  }
+
+  return data as CreateLicensesResult
+}
+
+// ─────────────────────────────────────────
 // getSeatTransactions
 // Returns audit history for seat changes
 // ─────────────────────────────────────────
