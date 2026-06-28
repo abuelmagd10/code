@@ -17,6 +17,13 @@ import { Lock, ShieldAlert, LogOut, Mail } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+// v3.74.383 — never cache. A user whose seat just got renewed or
+// who was swapped onto an active seat must see the freshly-evaluated
+// status on the next request, not a stale "suspended" page. The
+// global Service Worker also receives the no-store hint via the
+// Cache-Control header we set below.
+export const revalidate = 0
+export const fetchCache = "force-no-store"
 
 interface CompanyStatus {
   has_company?: boolean
