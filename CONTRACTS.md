@@ -64,6 +64,13 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## G. اتساق عمود quantity_on_hand مع الـ ledger (v3.74.393)
+
+كل منتج فيزيائى (مش خدمة): قيمة `products.quantity_on_hand` لازم تساوى
+مجموع `inventory_transactions.quantity_change` لنفس المنتج. أى انحراف =
+خطأ — الـ ledger هو مصدر الحقيقة. ده اتضاف بعد ما اكتشفنا VitaSlims
+كان فيه 4 وحدات معلقة فى العمود ده بدون أى حركة فى الـ ledger.
+
 ## F. سلامة بيانات لكل شركة
 
 `assert_baseline()` يستدعى `run_all_integrity_checks()` على كل شركة، ويعتبر
