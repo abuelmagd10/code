@@ -1189,40 +1189,39 @@ export default function BillViewPage() {
   // (Soft Delete) القيود والمخزون بشكل آلي ومحكم.
   // ==========================================
 
-  const handleDelete = async () => {
+  // v3.74.402 — soft-cancel via /api/bills/[id]/void. The legacy
+  // /delete endpoint stays in place but no UI calls it; voiding keeps
+  // the audit trail and unblocks the source PO so a fresh bill can be
+  // issued after re-approval.
+  const handleVoid = async () => {
     if (!bill) return
     try {
-      // إن كانت مسودة ولا تحتوي على مدفوعات: حذف مباشر بدون عكس
-      if (canHardDelete) {
-        const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/delete`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill-delete-${bill.id}`,
-          },
-          body: JSON.stringify({
-            uiSurface: "bill_detail_page",
-          }),
-        })
-
-        const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
-        if (!response.ok || !result.success) {
-          throw new Error(result.error || (appLang === 'en' ? 'Failed to delete purchase bill' : 'فشل حذف فاتورة المورد'))
-        }
-
-        toastActionSuccess(toast, "الحذف", "الفاتورة")
-        router.push("/bills")
-        return
+      if (!canHardDelete) {
+        throw new Error(appLang === 'en'
+          ? 'Void is only available for draft bills without payments.'
+          : 'الإلغاء متاح فقط لفواتير المسودة التى ليس لها مدفوعات.')
       }
 
-      throw new Error(appLang === 'en'
-        ? 'Bill void/delete is only available through the backend command for draft bills without payments.'
-        : 'إلغاء/حذف فاتورة المورد متاح فقط عبر أمر خلفي لفواتير المسودة بدون مدفوعات.')
+      const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/void`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill-void-${bill.id}`,
+        },
+        body: JSON.stringify({ reason: "" }),
+      })
+
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string; purchase_order_unblocked?: boolean }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to void purchase bill' : 'فشل إلغاء فاتورة المورد'))
+      }
+
+      toastActionSuccess(toast, appLang === 'en' ? "Void" : "الإلغاء", appLang === 'en' ? "Bill" : "الفاتورة")
+      router.push("/bills")
     } catch (err: any) {
-      const msg = typeof err?.message === "string" ? err.message : "حدث خطأ غير متوقع"
-      const detail = (err?.code === "23503" || /foreign key/i.test(String(err?.message))) ? "لا يمكن حذف الفاتورة لوجود مراجع مرتبطة (مدفوعات/أرصدة/مستندات)." : undefined
-      toastActionError(toast, canHardDelete ? "الحذف" : "الإلغاء", "الفاتورة", detail ? detail : `فشل العملية: ${msg}`)
-      console.error("Error deleting/voiding bill:", err)
+      const msg = typeof err?.message === "string" ? err.message : (appLang === 'en' ? 'Unexpected error' : 'حدث خطأ غير متوقع')
+      toastActionError(toast, appLang === 'en' ? "Void" : "الإلغاء", appLang === 'en' ? "Bill" : "الفاتورة", msg)
+      console.error("Error voiding bill:", err)
     }
   }
 
@@ -1601,29 +1600,30 @@ export default function BillViewPage() {
                   <span className="hidden sm:inline">{appLang === 'en' ? 'PDF' : 'PDF'}</span>
                 </Button>
 
-                {/* زر الحذف - في النهاية */}
-                {/* 🔒 الحذف متاح فقط للفواتير في حالة draft (المسودة) وبدون مدفوعات */}
-                {/* canHardDelete = draft + no payments → حذف نهائي فقط */}
+                {/* v3.74.402 - replaced "Delete" with "Void". Hard-delete on a
+                    bill orphans the linked PO, notifications and discount_approvals.
+                    Void keeps the audit trail intact and unblocks the source PO so
+                    the owner can re-approve and get a fresh bill auto-created. */}
                 {permDelete && canHardDelete && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="sm" className="mr-auto sm:mr-0">
                         <Trash2 className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">{appLang === 'en' ? 'Delete' : 'حذف'}</span>
+                        <span className="hidden sm:inline">{appLang === 'en' ? 'Void' : 'إلغاء'}</span>
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>{appLang === 'en' ? 'Confirm Delete Bill' : 'تأكيد حذف الفاتورة'}</AlertDialogTitle>
+                        <AlertDialogTitle>{appLang === 'en' ? 'Confirm Void Bill' : 'تأكيد إلغاء الفاتورة'}</AlertDialogTitle>
                         <AlertDialogDescription>
                           {appLang === 'en'
-                            ? 'The draft bill will be permanently deleted. This action cannot be undone.'
-                            : 'سيتم حذف فاتورة المسودة نهائياً. لا يمكن التراجع عن هذا الإجراء.'}
+                            ? 'The bill will be marked as voided (kept in the audit trail). The linked purchase order will be unblocked so a new bill can be issued after re-approval.'
+                            : 'سيتم وضع الفاتورة فى حالة "ملغاة" (تبقى محفوظة فى سجل المراجعة). أمر الشراء المرتبط سيرجع للاعتماد عشان يتولّد فاتورة جديدة منه.'}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete}>{appLang === 'en' ? 'Delete' : 'حذف'}</AlertDialogAction>
+                        <AlertDialogAction onClick={handleVoid}>{appLang === 'en' ? 'Void' : 'إلغاء الفاتورة'}</AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>

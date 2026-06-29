@@ -64,6 +64,34 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## N. إلغاء الفاتورة بدل حذفها (v3.74.402)
+
+أى hard-delete لفاتورة بيكسر العلاقات الـ downstream:
+- الـ PO المرتبط يبقى عنده bill_id يشير لفاتورة محذوفة
+- الإشعارات وطلبات الموافقة على الخصم تبقى يتيمة
+- لو الفاتورة دخلت أى تقرير محاسبى، الأرقام تتغير بأثر رجعى
+
+**الحل**: استبدال زر "حذف" بزر "إلغاء" (void) — الفاتورة تبقى موجودة
+بحالة `voided`، الـ PO يرجع `pending_approval` لتوليد فاتورة جديدة.
+
+### المكونات
+- **العمود الجديد**: `bills.voided_by`, `voided_at`, `voided_reason`
+- **RPC جديدة**: `void_bill_atomic(p_bill_id, p_user_id, p_company_id, p_reason)`
+  - تتحقق: status='draft' + لا مدفوعات
+  - تضع status='voided' + تسجل voided_*
+  - تلغى أى pending discount_approvals على الفاتورة
+  - تحرر الـ PO: bill_id=NULL, status='pending_approval'
+  - تكتب audit log
+- **API**: `/api/bills/[id]/void` بدل `/delete`
+- **UI**: زر "إلغاء" بدل "حذف" فى صفحة عرض الفاتورة
+
+### Section N fingerprint
+`void_bill_atomic` body يجب يحتوى:
+- `bill_id = NULL` (لتحرير الـ PO)
+- `pending_approval` (إعادة الـ PO للمعتمد)
+- `discount_approvals` (لإلغاء الطلبات الـ pending)
+- `status = 'voided'`
+
 ## M. الموافقة على الخصم لأمر الشراء (v3.74.400 → v3.74.401)
 
 **اعتمادان منفصلان لأمر الشراء عند وجود خصم**:
