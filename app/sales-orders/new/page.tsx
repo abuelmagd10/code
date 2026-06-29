@@ -28,6 +28,7 @@ import { canAction, getAccessFilter } from "@/lib/authz"
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { type ShippingProvider } from "@/lib/shipping"
+import { computeDocumentTotals } from "@/lib/document-totals"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
@@ -724,71 +725,17 @@ export default function NewSalesOrderPage() {
     setBundleDialog({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
   }
 
-  const calculateTotals = () => {
-    let subtotalNet = 0
-    let totalTax = 0
-
-    soItems.forEach((item) => {
-      const qty = Number(item.quantity) || 0
-      const price = Number(item.unit_price) || 0
-      const taxRate = Number(item.tax_rate) || 0
-      const discountPct = Number(item.discount_percent) || 0
-
-      const rateFactor = 1 + taxRate / 100
-      const discountFactor = 1 - discountPct / 100
-      const base = qty * price * discountFactor
-
-      if (taxInclusive) {
-        const grossLine = base
-        const netLine = grossLine / rateFactor
-        const taxLine = grossLine - netLine
-        subtotalNet += netLine
-        totalTax += taxLine
-      } else {
-        const netLine = base
-        const taxLine = netLine * (taxRate / 100)
-        subtotalNet += netLine
-        totalTax += taxLine
-      }
-    })
-
-    const discountValue = Number(invoiceDiscount) || 0
-    const discountAmount = invoiceDiscountType === "percent"
-      ? (subtotalNet * Math.max(0, discountValue)) / 100
-      : Math.max(0, discountValue)
-
-    let finalSubtotal = subtotalNet
-    let finalTax = totalTax
-
-    if (invoiceDiscountPosition === "before_tax") {
-      finalSubtotal = Math.max(0, subtotalNet - discountAmount)
-      if (subtotalNet > 0) {
-        const factor = finalSubtotal / subtotalNet
-        finalTax = totalTax * factor
-      }
-    }
-
-    const shipping = Number(shippingCharge) || 0
-    const shippingTaxPct = Number(shippingTaxRate) || 0
-    const shippingTax = shipping * (shippingTaxPct / 100)
-    finalTax += shippingTax
-
-    let total = finalSubtotal + finalTax + shipping + (Number(adjustment) || 0)
-
-    if (invoiceDiscountPosition === "after_tax") {
-      const baseForDiscount = subtotalNet + totalTax
-      const discountAfterTax = invoiceDiscountType === "percent"
-        ? (baseForDiscount * Math.max(0, discountValue)) / 100
-        : Math.max(0, discountValue)
-      total = Math.max(0, baseForDiscount - discountAfterTax) + shipping + shippingTax + (Number(adjustment) || 0)
-    }
-
-    return {
-      subtotal: Math.round(finalSubtotal * 100) / 100,
-      tax: Math.round(finalTax * 100) / 100,
-      total: Math.round(total * 100) / 100
-    }
-  }
+  // v3.74.395 - routed through shared utility
+  const calculateTotals = () => computeDocumentTotals({
+    items: soItems,
+    taxInclusive,
+    discountType: invoiceDiscountType,
+    discountValue: invoiceDiscount,
+    discountPosition: invoiceDiscountPosition,
+    shippingCharge,
+    shippingTaxRate,
+    adjustment,
+  })
 
 
   const handleSubmit = async (e: React.FormEvent) => {

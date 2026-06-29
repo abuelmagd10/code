@@ -21,6 +21,7 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { TaxCodeSelect } from "@/components/forms/tax-code-select"
+import { computeDocumentTotals } from "@/lib/document-totals"
 
 interface Supplier {
   id: string
@@ -328,71 +329,18 @@ export default function EditPurchaseOrderPage() {
     setPoItems(updated)
   }
 
+  // v3.74.395 - routed through shared utility for cross-form consistency
   const totals = useMemo(() => {
-    let subtotalNet = 0
-    let totalTax = 0
-
-    poItems.forEach((item) => {
-      const qty = Number(item.quantity) || 0
-      const price = Number(item.unit_price) || 0
-      const taxRate = Number(item.tax_rate) || 0
-      const discountPct = Number(item.discount_percent) || 0
-
-      const rateFactor = 1 + taxRate / 100
-      const discountFactor = 1 - discountPct / 100
-      const base = qty * price * discountFactor
-
-      if (taxInclusive) {
-        const grossLine = base
-        const netLine = grossLine / rateFactor
-        const taxLine = grossLine - netLine
-        subtotalNet += netLine
-        totalTax += taxLine
-      } else {
-        const netLine = base
-        const taxLine = netLine * (taxRate / 100)
-        subtotalNet += netLine
-        totalTax += taxLine
-      }
+    return computeDocumentTotals({
+      items: poItems,
+      taxInclusive,
+      discountType: invoiceDiscountType,
+      discountValue: invoiceDiscount,
+      discountPosition: invoiceDiscountPosition,
+      shippingCharge,
+      shippingTaxRate,
+      adjustment,
     })
-
-    const discountValue = Number(invoiceDiscount) || 0
-    const discountAmount = invoiceDiscountType === "percent"
-      ? (subtotalNet * Math.max(0, discountValue)) / 100
-      : Math.max(0, discountValue)
-
-    let finalSubtotal = subtotalNet
-    let finalTax = totalTax
-
-    if (invoiceDiscountPosition === "before_tax") {
-      finalSubtotal = Math.max(0, subtotalNet - discountAmount)
-      if (subtotalNet > 0) {
-        const factor = finalSubtotal / subtotalNet
-        finalTax = totalTax * factor
-      }
-    }
-
-    const shipping = Number(shippingCharge) || 0
-    const shippingTaxPct = Number(shippingTaxRate) || 0
-    const shippingTax = shipping * (shippingTaxPct / 100)
-    finalTax += shippingTax
-
-    let total = finalSubtotal + finalTax + shipping + (Number(adjustment) || 0)
-
-    if (invoiceDiscountPosition === "after_tax") {
-      const baseForDiscount = subtotalNet + totalTax
-      const discountAfterTax = invoiceDiscountType === "percent"
-        ? (baseForDiscount * Math.max(0, discountValue)) / 100
-        : Math.max(0, discountValue)
-      total = Math.max(0, baseForDiscount - discountAfterTax) + shipping + shippingTax + (Number(adjustment) || 0)
-    }
-
-    return {
-      subtotal: Math.round(finalSubtotal * 100) / 100,
-      tax: Math.round(finalTax * 100) / 100,
-      discountAmount: discountAmount,
-      total: Math.round(total * 100) / 100,
-    }
   }, [poItems, taxInclusive, invoiceDiscount, invoiceDiscountType, invoiceDiscountPosition, shippingCharge, shippingTaxRate, adjustment])
 
   // v3.21.0: Currency change just updates the code; ExchangeRateSelector

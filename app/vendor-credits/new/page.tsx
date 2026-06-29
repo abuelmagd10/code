@@ -17,6 +17,7 @@ import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/curre
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
+import { computeDocumentTotals } from "@/lib/document-totals"
 
 type Supplier = { id: string; name: string }
 type Product = { id: string; name: string; cost_price: number | null; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number }
@@ -157,21 +158,20 @@ export default function NewVendorCreditPage() {
     }
   }, [credit.currency, baseCurrency])
 
-  const subtotal = useMemo(() => items.reduce((sum, it) => sum + Number(it.line_total || 0), 0), [items])
-  const shippingTax = useMemo(() => (credit.shipping || 0) * (Number(credit.shipping_tax_rate || 0) / 100), [credit.shipping, credit.shipping_tax_rate])
-  const discountBeforeTax = useMemo(() => {
-    if (credit.discount_type === "percent") return subtotal * (Number(credit.discount_value || 0) / 100)
-    return Number(credit.discount_value || 0)
-  }, [subtotal, credit.discount_type, credit.discount_value])
-  const itemsTax = useMemo(() => {
-    const base = credit.discount_position === "before_tax" ? subtotal - discountBeforeTax : subtotal
-    const itemsTaxSum = items.reduce((sum, it) => sum + (Number(it.line_total || 0) * (Number(it.tax_rate || 0) / 100)), 0)
-    return itemsTaxSum + shippingTax
-  }, [items, subtotal, discountBeforeTax, credit.discount_position, shippingTax])
-  const total = useMemo(() => {
-    const base = credit.discount_position === "before_tax" ? subtotal - discountBeforeTax : subtotal
-    return base + itemsTax + Number(credit.shipping || 0) + Number(credit.adjustment || 0)
-  }, [subtotal, discountBeforeTax, itemsTax, credit.shipping, credit.adjustment])
+  // v3.74.395 - single source of truth for totals across the app
+  const totals = useMemo(() => computeDocumentTotals({
+    items,
+    taxInclusive: !!credit.tax_inclusive,
+    discountType: credit.discount_type as any,
+    discountValue: credit.discount_value,
+    discountPosition: credit.discount_position as any,
+    shippingCharge: credit.shipping,
+    shippingTaxRate: credit.shipping_tax_rate,
+    adjustment: credit.adjustment,
+  }), [items, credit.tax_inclusive, credit.discount_type, credit.discount_value, credit.discount_position, credit.shipping, credit.shipping_tax_rate, credit.adjustment])
+  const subtotal = totals.subtotal
+  const itemsTax = totals.tax
+  const total = totals.total
 
   const updateItem = (idx: number, patch: Partial<ItemRow>) => {
     setItems(prev => {

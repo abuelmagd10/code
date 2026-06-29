@@ -33,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { canAction, getAccessFilter } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
 import { validateEmail, validatePhone, getValidationError, validateField, validateFinancialTransaction, type UserContext } from "@/lib/validation"
+import { computeDocumentTotals } from "@/lib/document-totals"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
@@ -607,79 +608,17 @@ export default function NewInvoicePage() {
     setBundleDialog({ open: false, parentName: "", parentRowIndex: -1, rows: [] })
   }
 
-  const calculateTotals = () => {
-    let subtotalNet = 0
-    let totalTax = 0
-
-    invoiceItems.forEach((item) => {
-      const qty = Number(item.quantity) || 0
-      const price = Number(item.unit_price) || 0
-      const taxRate = Number(item.tax_rate) || 0
-      const discountPct = Number(item.discount_percent) || 0
-
-      const rateFactor = 1 + taxRate / 100
-      const discountFactor = 1 - discountPct / 100
-      const base = qty * price * discountFactor
-
-      if (taxInclusive) {
-        // unit_price includes tax: extract net then compute tax, after discount
-        const grossLine = base
-        const netLine = grossLine / rateFactor
-        const taxLine = grossLine - netLine
-        subtotalNet += netLine
-        totalTax += taxLine
-      } else {
-        // unit_price excludes tax (apply discount before tax)
-        const netLine = base
-        const taxLine = netLine * (taxRate / 100)
-        subtotalNet += netLine
-        totalTax += taxLine
-      }
-    })
-
-    // حساب الخصم
-    const discountValue = Number(invoiceDiscount) || 0
-    const discountAmount = invoiceDiscountType === "percent"
-      ? (subtotalNet * Math.max(0, discountValue)) / 100
-      : Math.max(0, discountValue)
-
-    // الخصم قبل الضريبة
-    let finalSubtotal = subtotalNet
-    let finalTax = totalTax
-
-    if (invoiceDiscountPosition === "before_tax") {
-      finalSubtotal = Math.max(0, subtotalNet - discountAmount)
-      // تعديل الضريبة نسبياً
-      if (subtotalNet > 0) {
-        const factor = finalSubtotal / subtotalNet
-        finalTax = totalTax * factor
-      }
-    }
-
-    // ضريبة الشحن
-    const shipping = Number(shippingCharge) || 0
-    const shippingTaxPct = Number(shippingTaxRate) || 0
-    const shippingTax = shipping * (shippingTaxPct / 100)
-    finalTax += shippingTax
-
-    // حساب الإجمالي
-    let total = finalSubtotal + finalTax + shipping + (Number(adjustment) || 0)
-
-    // الخصم بعد الضريبة
-    if (invoiceDiscountPosition === "after_tax") {
-      const baseForDiscount = subtotalNet + totalTax
-      const discountAfterTax = invoiceDiscountType === "percent"
-        ? (baseForDiscount * Math.max(0, discountValue)) / 100
-        : Math.max(0, discountValue)
-      total = Math.max(0, baseForDiscount - discountAfterTax) + shipping + shippingTax + (Number(adjustment) || 0)
-    }
-
-    return {
-      subtotal: Math.round(finalSubtotal * 100) / 100,
-      tax: Math.round(finalTax * 100) / 100,
-      total: Math.round(total * 100) / 100
-    }
-  }
+  // v3.74.395 - routed through shared utility
+  const calculateTotals = () => computeDocumentTotals({
+    items: invoiceItems,
+    taxInclusive,
+    discountType: invoiceDiscountType,
+    discountValue: invoiceDiscount,
+    discountPosition: invoiceDiscountPosition,
+    shippingCharge,
+    shippingTaxRate,
+    adjustment,
+  })
 
   // 🔐 Branch-stock loader (Option A — UI guard)
   // Mirrors /sales-orders/new exactly so behaviour is identical between

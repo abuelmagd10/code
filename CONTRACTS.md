@@ -64,6 +64,27 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## I. حساب الإجماليات الموحد (v3.74.395)
+
+كل form بيتعامل مع items + خصم + ضريبة لازم يحسب الإجماليات عبر
+`lib/document-totals.ts → computeDocumentTotals(input)`. الـ utility ده
+بيضمن:
+
+- لو `discount_position = "before_tax"`: الخصم يقلل الـ taxable base،
+  والضريبة تعاد حسابها على الـ base المنخفض.
+- لو `discount_position = "after_tax"`: الضريبة على كامل الـ subtotal،
+  والخصم يتطرح من الـ after-tax total.
+- لو `discountValue = 0`: الفرق بين الموضعين = 0 (regression guard).
+- يعتنى بـ `tax_inclusive` (السعر يشمل الضريبة).
+
+self-tests داخل الملف بترفع warnings فى dev mode لو contracts الأرقام
+انكسرت. أى form يضيف حقل discount_position فى المستقبل لازم يستعمل
+الـ utility ده — مش يعمل implementation محلية.
+
+**Forms مُربوطة دلوقتى**:
+purchase-orders/new + /[id]/edit، bills/[id]/edit، invoices/new + /[id]/edit،
+sales-orders/new + /[id]/edit، vendor-credits/new.
+
 ## H. ربط الضريبة بصفحة الضرائب (v3.74.394 — المرحلة 1)
 
 كل صف فى `purchase_order_items` و `bill_items` لازم يكون له عمود

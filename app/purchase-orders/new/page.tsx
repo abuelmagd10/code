@@ -22,6 +22,7 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { TaxCodeSelect } from "@/components/forms/tax-code-select"
+import { computeDocumentTotals } from "@/lib/document-totals"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string; phone?: string | null }
@@ -350,48 +351,19 @@ export default function NewPurchaseOrderPage() {
     setPoItems(poItems.filter((_, i) => i !== index))
   }
 
-  // Totals calculation
+  // Totals calculation — v3.74.395 routes through the shared utility so
+  // discount_position semantics match every other form.
   const calculateTotals = useMemo(() => {
-    let itemsSubtotal = 0
-    let itemsTax = 0
-
-    poItems.forEach(item => {
-      const qty = Number(item.quantity) || 0
-      const price = Number(item.unit_price) || 0
-      const discPct = Number(item.discount_percent) || 0
-      const taxRate = Number(item.tax_rate) || 0
-
-      const lineGross = qty * price * (1 - discPct / 100)
-
-      if (taxInclusive) {
-        const lineExclTax = lineGross / (1 + taxRate / 100)
-        const lineTax = lineGross - lineExclTax
-        itemsSubtotal += lineExclTax
-        itemsTax += lineTax
-      } else {
-        const lineTax = lineGross * (taxRate / 100)
-        itemsSubtotal += lineGross
-        itemsTax += lineTax
-      }
+    return computeDocumentTotals({
+      items: poItems,
+      taxInclusive,
+      discountType,
+      discountValue,
+      discountPosition,
+      shippingCharge,
+      shippingTaxRate,
+      adjustment,
     })
-
-    // Discount calculation
-    let discountAmount = 0
-    if (discountPosition === "before_tax") {
-      discountAmount = discountType === "percent" ? itemsSubtotal * (discountValue / 100) : discountValue
-    } else {
-      const afterTaxTotal = itemsSubtotal + itemsTax
-      discountAmount = discountType === "percent" ? afterTaxTotal * (discountValue / 100) : discountValue
-    }
-
-    // Shipping
-    const shippingTax = shippingCharge * (shippingTaxRate / 100)
-
-    const subtotal = itemsSubtotal
-    const tax = itemsTax + shippingTax
-    const total = subtotal + tax - discountAmount + shippingCharge + adjustment
-
-    return { subtotal, tax, discountAmount, total }
   }, [poItems, taxInclusive, discountValue, discountType, discountPosition, shippingCharge, shippingTaxRate, adjustment])
 
   // Currency change handler

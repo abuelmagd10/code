@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { TaxCodeSelect } from "@/components/forms/tax-code-select"
+import { computeDocumentTotals } from "@/lib/document-totals"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { getActiveCompanyId } from "@/lib/company"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -370,47 +371,17 @@ export default function EditBillPage() {
     setItems(newItems)
   }
 
-  const calculateTotals = () => {
-    let subtotalNet = 0
-    let totalTax = 0
-    items.forEach(it => {
-      const rateFactor = 1 + (it.tax_rate / 100)
-      const discountFactor = 1 - ((it.discount_percent ?? 0) / 100)
-      const base = it.quantity * it.unit_price * discountFactor
-      if (taxInclusive) {
-        const gross = base
-        const net = gross / rateFactor
-        const tax = gross - net
-        subtotalNet += net
-        totalTax += tax
-      } else {
-        const net = base
-        const tax = net * (it.tax_rate / 100)
-        subtotalNet += net
-        totalTax += tax
-      }
-    })
-
-    const discountBeforeTax = discountType === "percent" ? (subtotalNet * Math.max(0, discountValue)) / 100 : Math.max(0, discountValue)
-    const discountedSubtotalNet = discountPosition === "before_tax" ? Math.max(0, subtotalNet - discountBeforeTax) : subtotalNet
-    let tax = totalTax
-    if (discountPosition === "before_tax" && subtotalNet > 0) {
-      const factor = discountedSubtotalNet / subtotalNet
-      tax = totalTax * factor
-    }
-    const shippingTax = (shippingCharge || 0) * (shippingTaxRate / 100)
-    tax += shippingTax
-
-    let totalBeforeShipping = discountedSubtotalNet + (discountPosition === "after_tax" ? totalTax : 0)
-    if (discountPosition === "after_tax") {
-      const baseForAfterTax = subtotalNet + totalTax
-      const discountAfterTax = discountType === "percent" ? (baseForAfterTax * Math.max(0, discountValue)) / 100 : Math.max(0, discountValue)
-      totalBeforeShipping = Math.max(0, baseForAfterTax - discountAfterTax)
-    }
-
-    const total = (discountPosition === "after_tax" ? totalBeforeShipping : discountedSubtotalNet + totalTax) + (shippingCharge || 0) + (adjustment || 0) + shippingTax
-    return { subtotal: discountedSubtotalNet, tax, total }
-  }
+  // v3.74.395 - routed through shared utility
+  const calculateTotals = () => computeDocumentTotals({
+    items,
+    taxInclusive,
+    discountType,
+    discountValue,
+    discountPosition,
+    shippingCharge,
+    shippingTaxRate,
+    adjustment,
+  })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
