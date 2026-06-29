@@ -1203,6 +1203,13 @@ export default function EditBillPage() {
                         {/* v3.74.396 - pre-discount for visual coherence */}
                         <span>{totals.subtotalBeforeDiscount.toFixed(2)}</span>
                       </div>
+                      {/* v3.74.399 - surface discount line so subtotal − discount + tax + shipping + adjustment = total visually */}
+                      {totals.discountAmount > 0 && (
+                        <div className="flex items-center justify-between text-red-600 dark:text-red-400">
+                          <span>{appLang === 'en' ? 'Discount' : 'الخصم'}</span>
+                          <span>-{totals.discountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
                         <span>{totals.tax.toFixed(2)}</span>

@@ -1757,6 +1757,13 @@ export default function NewSalesOrderPage() {
                     {/* v3.74.396 - pre-discount for visual coherence */}
                     <span className="font-semibold dark:text-white">{totals.subtotalBeforeDiscount.toFixed(2)} {soCurrency}</span>
                   </div>
+                  {/* v3.74.399 - surface discount line */}
+                  {totals.discountAmount > 0 && (
+                    <div className="flex justify-between text-red-600 dark:text-red-400">
+                      <span>{appLang === 'en' ? 'Discount' : 'الخصم'}</span>
+                      <span className="font-semibold">-{totals.discountAmount.toFixed(2)} {soCurrency}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
                     <span className="font-semibold dark:text-white">{totals.tax.toFixed(2)} {soCurrency}</span>

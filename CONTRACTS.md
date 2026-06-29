@@ -64,6 +64,21 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## L. سطر الخصم فى ملخص الفواتير (v3.74.399)
+
+كل forms اللى فيها discount header (purchase-orders، bills، invoices،
+sales-orders، vendor-credits) لازم تعرض سطر "الخصم" فى الملخص بين
+المجموع الفرعى والضريبة، عشان الـ visible math يقفل:
+
+```
+subtotalBeforeDiscount − discount + tax + shipping + adjustment = total
+```
+
+اللى مكنش بيظهر سطر الخصم (bills/[id]/edit + باقى الـ 5)، كانت
+الأرقام تبدو متناقضة (مثلاً 10 + 1.34 + 1 = 12.34 ≠ 10.94).
+
+أى form جديد يضيف header discount لازم يضيف نفس السطر أيضاً.
+
 ## K. ترحيل الحقول من أمر الشراء للفاتورة (v3.74.398)
 
 دالة `approve_purchase_order_atomic` بتنشئ الفاتورة تلقائياً عند

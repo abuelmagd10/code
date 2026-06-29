@@ -1944,6 +1944,13 @@ export default function NewInvoicePage() {
                     {/* v3.74.396 - pre-discount for visual coherence */}
                     <span className="font-semibold">{totals.subtotalBeforeDiscount.toFixed(2)}</span>
                   </div>
+                  {/* v3.74.399 - surface discount so subtotal − discount + tax = total visually */}
+                  {totals.discountAmount > 0 && (
+                    <div className="flex justify-between text-red-600 dark:text-red-400">
+                      <span>{appLang === 'en' ? 'Discount:' : 'الخصم:'}</span>
+                      <span className="font-semibold">-{totals.discountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span>{appLang === 'en' ? 'Tax:' : 'الضريبة:'}</span>
                     <span className="font-semibold">{totals.tax.toFixed(2)}</span>
