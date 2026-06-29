@@ -64,6 +64,25 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## J. اسم المنشئ فى إشعارات الموافقة (v3.74.397)
+
+إشعار "طلب موافقة على أمر شراء" بيظهر اسم المُنشئ (resolved من
+`employees.full_name`، fallback لـ `company_members.email`)، عشان
+المالك / المدير العام يقدر يحدد طالب الموافقة من قائمة الإشعارات
+مباشرة بدون فتح الـ PO. الـ field اسمه `createdByName` على
+`PurchaseOrderApprovalRequestNotificationParams` (اختيارى للـ
+backwards compatibility).
+
+نفس النمط مطلوب فى أنواع إشعارات الموافقة الأخرى:
+- BankVoucherNotificationService (وصل approve)
+- PaymentApprovalNotificationService
+- BookingNotificationService
+- PurchaseReturnNotificationService
+- WriteOffNotificationService
+- InventoryTransferNotificationService
+
+التطبيق على باقى الخدمات: TODO فى migrations مستقبلية لو المالك طلب.
+
 ## I. حساب الإجماليات الموحد (v3.74.395 → v3.74.396)
 
 ### v3.74.396 — تفريق صريح بين عرض UI وحفظ DB

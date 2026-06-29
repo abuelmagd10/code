@@ -20,6 +20,14 @@ type PurchaseOrderNotificationBaseParams = {
 
 export type PurchaseOrderApprovalRequestNotificationParams = PurchaseOrderNotificationBaseParams & {
   createdBy: string
+  /**
+   * Display name of the creator. v3.74.397 — surfaced inside the
+   * approver-facing message so the L1 approver (owner / GM) knows
+   * whose request is on their desk without opening the PO.
+   * Optional for backwards compatibility; if omitted, the message
+   * omits the "by X" clause.
+   */
+  createdByName?: string | null
   isResubmission?: boolean
 }
 
@@ -49,14 +57,19 @@ export class PurchaseOrderNotificationService {
         : isResubmission
           ? "إعادة طلب موافقة على أمر شراء (بعد التعديل)"
           : "طلب موافقة على أمر شراء"
+    // v3.74.397 — embed the creator's name when available so approvers
+    // can triage requests from the notification list directly.
+    const creatorClauseEn = params.createdByName ? ` (created by ${params.createdByName})` : ""
+    const creatorClauseAr = params.createdByName ? ` (المُنشِئ: ${params.createdByName})` : ""
+
     const message =
       params.appLang === "en"
         ? isResubmission
-          ? `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been modified and requires your re-approval`
-          : `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) requires your approval`
+          ? `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been modified and requires your re-approval${creatorClauseEn}`
+          : `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) requires your approval${creatorClauseEn}`
         : isResubmission
-          ? `تم تعديل أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} ويحتاج إلى إعادة الاعتماد`
-          : `أمر شراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} يحتاج إلى موافقتك`
+          ? `تم تعديل أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} ويحتاج إلى إعادة الاعتماد${creatorClauseAr}`
+          : `أمر شراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} يحتاج إلى موافقتك${creatorClauseAr}`
 
     // v3.74.22 — was resolveLeadershipVisibilityRecipients (admin-only)
     // which silently relied on RPC fan-out to reach owner / general_manager.

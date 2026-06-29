@@ -60,6 +60,33 @@ export async function POST(
       .maybeSingle()
 
     const supplierName = supplier?.name || "Unknown Supplier"
+
+    // v3.74.397 — resolve the creator's display name so the approver
+    // notification can show who submitted the PO. employees.full_name
+    // is the canonical place (linked to auth user via user_id). Fall
+    // back to company_members.email then auth user's email then null;
+    // notification service will skip the clause if name is empty.
+    const creatorUserId = po.created_by_user_id || user.id
+    let createdByName: string | null = null
+    if (creatorUserId) {
+      const { data: emp } = await supabase
+        .from("employees")
+        .select("full_name")
+        .eq("company_id", companyId)
+        .eq("user_id", creatorUserId)
+        .maybeSingle()
+      createdByName = (emp?.full_name as string | null) || null
+      if (!createdByName) {
+        const { data: mem } = await supabase
+          .from("company_members")
+          .select("email")
+          .eq("company_id", companyId)
+          .eq("user_id", creatorUserId)
+          .maybeSingle()
+        createdByName = (mem?.email as string | null) || null
+      }
+    }
+
     const notificationService = new PurchaseOrderNotificationService(supabase)
 
     if ((action === "approval_requested" || action === "approval_resubmitted") && po.status !== "pending_approval") {
@@ -96,6 +123,7 @@ export async function POST(
           branchId: po.branch_id,
           costCenterId: po.cost_center_id,
           createdBy: po.created_by_user_id || user.id,
+          createdByName, // v3.74.397
           appLang,
           isResubmission: action === "approval_resubmitted",
         })
