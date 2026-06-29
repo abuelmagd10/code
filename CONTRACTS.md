@@ -64,6 +64,27 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## K. ترحيل الحقول من أمر الشراء للفاتورة (v3.74.398)
+
+دالة `approve_purchase_order_atomic` بتنشئ الفاتورة تلقائياً عند
+اعتماد أمر الشراء. كان فى أعمدة ناقصة فى الـ INSERT لمسة الـ bill:
+`shipping_tax_rate`, `discount_position`, `tax_inclusive`,
+`exchange_rate`، و على bill_items: `tax_code_id`.
+
+النتيجة قبل الإصلاح: الـ bill بياخد القيم الافتراضية للجدول (صفر/NULL)
+وتتلخبط breakdown الضرائب. مثلاً PO-0001 كان شحن=1، ضريبة الشحن=14%،
+لكن BILL-0001 خزّن ضريبة الشحن=0 مع الإبقاء على tax_amount=1.34
+(فيها 0.14 ضريبة شحن يتيمة).
+
+v3.74.398 يصلح:
+1. الدالة كلها CREATE OR REPLACE بنفس الـ body + الأعمدة المفقودة.
+2. backfill يدوى لـ BILL-0001 من PO-0001.
+3. Section K fingerprint فى assert_baseline:
+   - نص دالة `approve_purchase_order_atomic` لازم يحتوى على كل العمود
+     (`shipping_tax_rate`, `discount_position`, `tax_inclusive`,
+     `exchange_rate`, `tax_code_id`)
+   - أى migration مستقبلية تشيل عمود من القائمة هتفشل قبل التطبيق.
+
 ## J. اسم المنشئ فى إشعارات الموافقة (v3.74.397)
 
 إشعار "طلب موافقة على أمر شراء" بيظهر اسم المُنشئ (resolved من
