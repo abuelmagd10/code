@@ -7,7 +7,21 @@ import { getSeatStatus, reserveSeat } from "@/lib/billing/seat-service"
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { email, role, token: existingToken, inviteId: existingInviteId, employeeName } = body || {}
+    const {
+      email,
+      role,
+      token: existingToken,
+      inviteId: existingInviteId,
+      employeeName,
+      // v3.74.389 — the /settings/users invite form sends these
+      // three. The old destructure dropped them, so invitations
+      // landed with NULL in the DB and the accept-invite handler
+      // fell back to the main branch — putting every invitee on
+      // the wrong branch regardless of what the inviter picked.
+      branch_id: invBranchId,
+      cost_center_id: invCostCenterId,
+      warehouse_id: invWarehouseId,
+    } = body || {}
 
     if (!email) return badRequestError("البريد الإلكتروني مطلوب", ["email"])
     if (!existingToken && !employeeName) return badRequestError("اسم الموظف مطلوب", ["employeeName"])
@@ -88,6 +102,32 @@ export async function POST(req: NextRequest) {
       // reserve_seat) counts the row we just inserted as a pending
       // reservation and the RPC rejects with no_seats_available — a
       // race against ourselves.
+      // v3.74.389 — validate branch / cost_center / warehouse all
+      // belong to the active company. Silently null-out anything
+      // that doesn't match so a stale or cross-company id from the
+      // form can't smuggle the new member onto the wrong tenant.
+      let safeBranchId: string | null = null
+      let safeCostCenterId: string | null = null
+      let safeWarehouseId: string | null = null
+      if (invBranchId) {
+        const { data: b } = await admin
+          .from("branches").select("id")
+          .eq("company_id", companyId).eq("id", invBranchId).maybeSingle()
+        if (b) safeBranchId = invBranchId
+      }
+      if (invCostCenterId) {
+        const { data: cc } = await admin
+          .from("cost_centers").select("id")
+          .eq("company_id", companyId).eq("id", invCostCenterId).maybeSingle()
+        if (cc) safeCostCenterId = invCostCenterId
+      }
+      if (invWarehouseId) {
+        const { data: w } = await admin
+          .from("warehouses").select("id")
+          .eq("company_id", companyId).eq("id", invWarehouseId).maybeSingle()
+        if (w) safeWarehouseId = invWarehouseId
+      }
+
       const { data: created, error: invInsErr } = await admin
         .from("company_invitations")
         .insert({
@@ -98,6 +138,12 @@ export async function POST(req: NextRequest) {
           invited_by_user_id: user.id,
           status: "pending",
           seat_reserved: false,
+          // v3.74.389 — propagate the form's branch context so the
+          // accept-invite handler doesn't fall back to "main branch"
+          // when these are NULL.
+          branch_id: safeBranchId,
+          cost_center_id: safeCostCenterId,
+          warehouse_id: safeWarehouseId,
         })
         .select("id, accept_token")
         .single()
