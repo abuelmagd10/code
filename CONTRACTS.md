@@ -204,7 +204,20 @@ sales-orders/new + /[id]/edit، vendor-credits/new.
 - self-test جديد فى `lib/document-totals.ts` يلزم الـ UI breakdown
   يقفل رياضياً.
 
-## H. ربط الضريبة بصفحة الضرائب (v3.74.394 — المرحلة 1)
+## H. ربط الضريبة بصفحة الضرائب (v3.74.394 — v3.74.403)
+
+### v3.74.403 — توسعة لـ المبيعات
+العمود `tax_code_id` اتضاف على باقى جداول البنود:
+- `invoice_items`, `sales_order_items`, `vendor_credit_items`
+- `estimate_items`, `customer_debit_note_items`
+
+Section H assert_baseline يفحص الـ 7 جداول كلها + أى صف مرتبط بـ
+`tax_codes` لازم rate الـ snapshot يساوى rate الـ master.
+
+الـ UI Component `TaxCodeSelect` (من v3.74.394) موصول الآن فى:
+purchase-orders + bills + invoices + sales-orders + vendor-credits.
+
+### v3.74.394 — المرحلة الأصلية
 
 كل صف فى `purchase_order_items` و `bill_items` لازم يكون له عمود
 `tax_code_id` (UUID مرجع لـ `tax_codes(id)` ON DELETE SET NULL). أى صف

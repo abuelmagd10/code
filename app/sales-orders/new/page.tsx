@@ -29,6 +29,7 @@ import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/l
 import { Textarea } from "@/components/ui/textarea"
 import { type ShippingProvider } from "@/lib/shipping"
 import { computeDocumentTotals } from "@/lib/document-totals"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
@@ -88,6 +89,8 @@ interface SOItem {
   quantity: number
   unit_price: number
   tax_rate: number
+  // v3.74.403 - link to /settings/taxes row
+  tax_code_id?: string | null
   discount_percent?: number
   item_type?: 'product' | 'service'
   description?: string
@@ -266,6 +269,7 @@ export default function NewSalesOrderPage() {
               quantity: Number(it.quantity) || 1,
               unit_price: Number(it.unit_price) || 0,
               tax_rate: Number(it.tax_rate) || 0,
+              tax_code_id: it.tax_code_id || null,
               discount_percent: Number(it.discount_percent) || 0,
               description: it.description || "",
             })))
@@ -592,6 +596,7 @@ export default function NewSalesOrderPage() {
         quantity: 1,
         unit_price: 0,
         tax_rate: 0,
+        tax_code_id: null,
         discount_percent: 0,
       },
     ])
@@ -861,6 +866,7 @@ export default function NewSalesOrderPage() {
               quantity:          item.quantity,
               unit_price:        item.unit_price,
               tax_rate:          item.tax_rate,
+              tax_code_id:       item.tax_code_id || null,
               discount_percent:  item.discount_percent ?? 0,
               item_type:         item.item_type ?? 'product',
               description:       item.description || undefined,
@@ -1484,31 +1490,18 @@ export default function NewSalesOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <select
-                                      className="w-full px-2 py-2 border rounded text-xs bg-white dark:bg-slate-800"
-                                      value={taxCodes.find((c) => c.rate === item.tax_rate)?.id ?? "custom"}
-                                      onChange={(e) => {
-                                        const selId = e.target.value
-                                        if (selId === "custom") return
-                                        const code = taxCodes.find((c) => c.id === selId)
-                                        updateItem(index, "tax_rate", code ? Number(code.rate) : 0)
-                                      }}
-                                    >
-                                      <option value="">{appLang === 'en' ? 'Code' : 'رمز'}</option>
-                                      {taxCodes.filter((c) => c.scope === "sales" || c.scope === "both").map((c) => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                      ))}
-                                      <option value="custom">{appLang === 'en' ? 'Custom' : 'مخصص'}</option>
-                                    </select>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      value={item.tax_rate}
-                                      onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
-                                      className="text-center text-xs"
-                                    />
-                                  </div>
+                                  {/* v3.74.403 - DB-sourced dropdown */}
+                                  <TaxCodeSelect
+                                    supabase={supabase}
+                                    scope="sales"
+                                    value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                    onChange={(v) => {
+                                      const newItems = [...soItems]
+                                      newItems[index] = { ...newItems[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                      setSoItems(newItems)
+                                    }}
+                                    lang={appLang as 'ar' | 'en'}
+                                  />
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -1616,12 +1609,18 @@ export default function NewSalesOrderPage() {
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
+                                {/* v3.74.403 - DB-sourced dropdown */}
+                                <TaxCodeSelect
+                                  supabase={supabase}
+                                  scope="sales"
+                                  value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                  onChange={(v) => {
+                                    const newItems = [...soItems]
+                                    newItems[index] = { ...newItems[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                    setSoItems(newItems)
+                                  }}
+                                  lang={appLang as 'ar' | 'en'}
                                   className="mt-1"
-                                  value={item.tax_rate}
-                                  onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
                                 />
                               </div>
                               <div>

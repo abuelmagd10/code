@@ -21,6 +21,7 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { useOrderPermissions } from "@/hooks/use-order-permissions"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { computeDocumentTotals } from "@/lib/document-totals"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 
 interface Customer {
   id: string
@@ -42,6 +43,8 @@ interface SOItem {
   quantity: number
   unit_price: number
   tax_rate: number
+  // v3.74.403 - link to /settings/taxes row
+  tax_code_id?: string | null
   discount_percent?: number
   item_type?: 'product' | 'service'
 }
@@ -340,6 +343,7 @@ export default function EditSalesOrderPage() {
           quantity: Number(it.quantity || 0),
           unit_price: Number(it.unit_price || 0),
           tax_rate: Number(it.tax_rate || 0),
+          tax_code_id: it.tax_code_id || null,
           discount_percent: Number(it.discount_percent || 0),
           item_type: it.item_type || 'product',
         }))
@@ -362,7 +366,7 @@ export default function EditSalesOrderPage() {
   const addSOItem = () => {
     setSOItems([
       ...soItems,
-      { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0 },
+      { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, tax_code_id: null, discount_percent: 0 },
     ])
   }
 
@@ -534,6 +538,7 @@ export default function EditSalesOrderPage() {
             quantity: item.quantity,
             unit_price: item.unit_price,
             tax_rate: item.tax_rate,
+            tax_code_id: item.tax_code_id || null,
             discount_percent: item.discount_percent ?? 0,
             line_total: netLine,
             item_type: product?.item_type || 'product',
@@ -599,6 +604,7 @@ export default function EditSalesOrderPage() {
             quantity: it.quantity,
             unit_price: it.unit_price,
             tax_rate: it.tax_rate,
+            tax_code_id: it.tax_code_id || null,
             discount_percent: it.discount_percent || 0,
             line_total: it.line_total,
             item_type: it.item_type || "product",
@@ -828,25 +834,18 @@ export default function EditSalesOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <div className="flex gap-1">
-                                    <select
-                                      value={item.tax_rate}
-                                      onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
-                                      className="flex-1 px-2 py-2 border rounded text-xs bg-white dark:bg-slate-800"
-                                    >
-                                      <option value={0}>{appLang === 'en' ? 'None' : 'بدون'}</option>
-                                      {taxCodes.filter((c) => c.scope === "sales" || c.scope === "both").map((c) => (
-                                        <option key={c.id} value={c.rate}>{c.name} ({c.rate}%)</option>
-                                      ))}
-                                    </select>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      value={item.tax_rate}
-                                      onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
-                                      className="w-16 text-xs text-center"
-                                    />
-                                  </div>
+                                  {/* v3.74.403 - DB-sourced dropdown */}
+                                  <TaxCodeSelect
+                                    supabase={supabase}
+                                    scope="sales"
+                                    value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                    onChange={(v) => {
+                                      const updated = [...soItems]
+                                      updated[index] = { ...updated[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                      setSOItems(updated)
+                                    }}
+                                    lang={appLang as 'ar' | 'en'}
+                                  />
                                 </td>
                                 <td className="px-3 py-3">
                                   <Input
@@ -945,12 +944,18 @@ export default function EditSalesOrderPage() {
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
+                                {/* v3.74.403 - DB-sourced dropdown */}
+                                <TaxCodeSelect
+                                  supabase={supabase}
+                                  scope="sales"
+                                  value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                  onChange={(v) => {
+                                    const updated = [...soItems]
+                                    updated[index] = { ...updated[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                    setSOItems(updated)
+                                  }}
+                                  lang={appLang as 'ar' | 'en'}
                                   className="mt-1"
-                                  value={item.tax_rate}
-                                  onChange={(e) => updateItem(index, "tax_rate", Number.parseFloat(e.target.value))}
                                 />
                               </div>
                               <div>

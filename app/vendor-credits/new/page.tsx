@@ -18,6 +18,7 @@ import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { computeDocumentTotals } from "@/lib/document-totals"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 
 type Supplier = { id: string; name: string }
 type Product = { id: string; name: string; cost_price: number | null; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number }
@@ -31,6 +32,8 @@ type ItemRow = {
   unit_price: number
   discount_percent: number
   tax_rate: number
+  // v3.74.403 - link to /settings/taxes row
+  tax_code_id?: string | null
   account_id: string | null
   line_total: number
 }
@@ -62,7 +65,7 @@ export default function NewVendorCreditPage() {
   })
 
   const [items, setItems] = useState<ItemRow[]>([
-    { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, account_id: null, line_total: 0 },
+    { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, tax_code_id: null, account_id: null, line_total: 0 },
   ])
   const [saving, setSaving] = useState(false)
 
@@ -187,7 +190,7 @@ export default function NewVendorCreditPage() {
     })
   }
 
-  const addItem = () => setItems(prev => [...prev, { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, account_id: null, line_total: 0 }])
+  const addItem = () => setItems(prev => [...prev, { product_id: null, description: "", quantity: 1, unit_price: 0, discount_percent: 0, tax_rate: 0, tax_code_id: null, account_id: null, line_total: 0 }])
   const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx))
 
   const saveCredit: React.FormEventHandler<HTMLFormElement> = async (e) => {
@@ -241,6 +244,7 @@ export default function NewVendorCreditPage() {
         quantity: it.quantity,
         unit_price: it.unit_price,
         tax_rate: it.tax_rate,
+        tax_code_id: it.tax_code_id || null,
         discount_percent: it.discount_percent,
         account_id: it.account_id,
         line_total: it.line_total,
@@ -415,12 +419,14 @@ export default function NewVendorCreditPage() {
                         <td className="p-2"><NumericInput min={0} step="0.01" value={it.unit_price} onChange={(val) => updateItem(idx, { unit_price: val })} decimalPlaces={2} /></td>
                         <td className="p-2"><NumericInput min={0} step="0.01" value={it.discount_percent} onChange={(val) => updateItem(idx, { discount_percent: val })} decimalPlaces={2} /></td>
                         <td className="p-2">
-                          <select className="w-full border rounded px-2 py-1" value={it.tax_rate} onChange={(e) => updateItem(idx, { tax_rate: Number(e.target.value) })}>
-                            <option value={0}>0%</option>
-                            {taxCodes.filter(t => t.scope === "purchase" || t.scope === "both").map(tc => (
-                              <option key={tc.id} value={tc.rate}>{tc.name} ({tc.rate}%)</option>
-                            ))}
-                          </select>
+                          {/* v3.74.403 - DB-sourced dropdown */}
+                          <TaxCodeSelect
+                            supabase={supabase}
+                            scope="purchase"
+                            value={{ tax_code_id: it.tax_code_id, tax_rate: it.tax_rate }}
+                            onChange={(v) => updateItem(idx, { tax_code_id: v.tax_code_id, tax_rate: v.tax_rate })}
+                            lang="ar"
+                          />
                         </td>
                         <td className="p-2 text-right">{it.line_total.toFixed(2)}</td>
                         <td className="p-2">

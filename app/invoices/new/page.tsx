@@ -34,6 +34,7 @@ import { canAction, getAccessFilter } from "@/lib/authz"
 import { type ShippingProvider } from "@/lib/shipping"
 import { validateEmail, validatePhone, getValidationError, validateField, validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { computeDocumentTotals } from "@/lib/document-totals"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 // دالة تطبيع رقم الهاتف - تحويل الأرقام العربية والهندية للإنجليزية وإزالة الفراغات والرموز
@@ -92,6 +93,8 @@ interface InvoiceItem {
   quantity: number
   unit_price: number
   tax_rate: number
+  // v3.74.403 - link to /settings/taxes row
+  tax_code_id?: string | null
   discount_percent?: number
   item_type?: 'product' | 'service'
   description?: string
@@ -454,6 +457,7 @@ export default function NewInvoicePage() {
           quantity: item.quantity,
           unit_price: item.unit_price,
           tax_rate: item.tax_rate || 0,
+          tax_code_id: item.tax_code_id || null,
           discount_percent: item.discount_percent || 0,
         })))
       }
@@ -470,6 +474,7 @@ export default function NewInvoicePage() {
         quantity: 1,
         unit_price: 0,
         tax_rate: 0,
+        tax_code_id: null,
         discount_percent: 0,
       },
     ])
@@ -832,6 +837,8 @@ export default function NewInvoicePage() {
               quantity: item.quantity,
               unit_price: item.unit_price,
               tax_rate: item.tax_rate,
+              // v3.74.403 - persist tax code link
+              tax_code_id: item.tax_code_id || null,
               discount_percent: item.discount_percent ?? 0,
               line_total: netLine,
               returned_quantity: 0,
@@ -1669,36 +1676,18 @@ export default function NewInvoicePage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <select
-                                      className="w-full px-2 py-2 border rounded text-xs bg-white dark:bg-slate-800"
-                                      value={taxCodes.find((c) => c.rate === item.tax_rate)?.id ?? "custom"}
-                                      onChange={(e) => {
-                                        const selId = e.target.value
-                                        if (selId === "custom") return
-                                        const code = taxCodes.find((c) => c.id === selId)
-                                        updateInvoiceItem(index, "tax_rate", code ? Number(code.rate) : 0)
-                                      }}
-                                    >
-                                      <option value="">{appLang === 'en' ? 'Code' : 'رمز'}</option>
-                                      {taxCodes
-                                        .filter((c) => c.scope === "sales" || c.scope === "both")
-                                        .map((c) => (
-                                          <option key={c.id} value={c.id}>
-                                            {c.name}
-                                          </option>
-                                        ))}
-                                      <option value="custom">{appLang === 'en' ? 'Custom' : 'مخصص'}</option>
-                                    </select>
-                                    <NumericInput
-                                      step="0.01"
-                                      min={0}
-                                      value={item.tax_rate}
-                                      onChange={(val) => updateInvoiceItem(index, "tax_rate", val)}
-                                      decimalPlaces={2}
-                                      className="text-center text-xs"
-                                    />
-                                  </div>
+                                  {/* v3.74.403 - DB-sourced dropdown */}
+                                  <TaxCodeSelect
+                                    supabase={supabase}
+                                    scope="sales"
+                                    value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                    onChange={(v) => {
+                                      const newItems = [...invoiceItems]
+                                      newItems[index] = { ...newItems[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                      setInvoiceItems(newItems)
+                                    }}
+                                    lang={appLang as 'ar' | 'en'}
+                                  />
                                 </td>
                                 <td className="px-3 py-3">
                                   <NumericInput
@@ -1797,13 +1786,18 @@ export default function NewInvoicePage() {
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                <NumericInput
-                                  step="0.01"
-                                  min={0}
+                                {/* v3.74.403 - DB-sourced dropdown */}
+                                <TaxCodeSelect
+                                  supabase={supabase}
+                                  scope="sales"
+                                  value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                  onChange={(v) => {
+                                    const newItems = [...invoiceItems]
+                                    newItems[index] = { ...newItems[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                    setInvoiceItems(newItems)
+                                  }}
+                                  lang={appLang as 'ar' | 'en'}
                                   className="mt-1"
-                                  value={item.tax_rate}
-                                  onChange={(val) => updateInvoiceItem(index, "tax_rate", val)}
-                                  decimalPlaces={2}
                                 />
                               </div>
                               <div>
