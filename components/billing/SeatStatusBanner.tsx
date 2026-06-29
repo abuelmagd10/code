@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Users, AlertTriangle, CreditCard, CheckCircle, Loader2, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { Users, AlertTriangle, CreditCard, CheckCircle, Loader2, RefreshCw, Clock } from 'lucide-react'
 
 interface SeatStatus {
   total_paid_seats: number
@@ -10,6 +11,12 @@ interface SeatStatus {
   can_invite: boolean
   subscription_status: string
   price_per_seat_egp: number
+  // v3.74.388 — new diagnostic fields. Optional so the banner still
+  // renders against old payloads.
+  license_count?: number
+  empty_active?: number
+  expired_seat_count?: number
+  active_seat_count?: number
 }
 
 interface SeatStatusBannerProps {
@@ -88,34 +95,72 @@ export default function SeatStatusBanner({ companyId, onAddSeat, className = '' 
     )
   }
 
-  // ─── No available seats (all used/reserved) ───
+  // ─── No available seats (all used/reserved/expired) ───
+  // v3.74.388 — surface the expired count so the owner sees WHY
+  // there are no seats. The old copy said "5 of 10 used" without
+  // explaining the other 5 were expired, which made the conclusion
+  // look like a contradiction.
   if (!status.can_invite) {
+    const expired = status.expired_seat_count ?? 0
+    const activeTotal = status.active_seat_count ?? status.total_paid_seats
+    const occupiedActive = status.used_seats
+    const reserved = status.reserved_seats
+    const hasExpiredSeats = expired > 0
+
     return (
       <div className={`rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 ${className}`}>
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-red-800 dark:text-red-300 text-sm">
-              لا توجد مقاعد متاحة
+              لا توجد مقاعد متاحة لدعوة جديدة
             </p>
-            <p className="text-red-700 dark:text-red-400 text-xs mt-1">
-              المقاعد: <strong>{status.used_seats}</strong> مستخدمة
-              {status.reserved_seats > 0 && <> + <strong>{status.reserved_seats}</strong> محجوزة لدعوات معلقة</>}
-              {' '}من إجمالي <strong>{status.total_paid_seats}</strong> مقعد مدفوع.
-            </p>
-            <p className="text-red-600 dark:text-red-400 text-xs mt-0.5">
-              لإرسال دعوة جديدة، يرجى إضافة مقعد مدفوع إلى اشتراك الشركة.
+
+            {/* Detailed breakdown */}
+            <div className="text-red-700 dark:text-red-400 text-xs mt-2 space-y-0.5">
+              <p>
+                <strong>{occupiedActive}</strong> مقعد نشط مشغول بموظف
+                {reserved > 0 && <> + <strong>{reserved}</strong> محجوز لدعوات معلقة</>}
+                {' '}من <strong>{activeTotal}</strong> مقعد نشط.
+              </p>
+              {hasExpiredSeats && (
+                <p>
+                  <strong className="text-orange-700 dark:text-orange-400">{expired}</strong> مقعد منتهى الصلاحية يحتاج تجديد.
+                </p>
+              )}
+              <p className="pt-1">
+                <strong>المتاحة دلوقتى: 0</strong>
+              </p>
+            </div>
+
+            {/* Action hints */}
+            <p className="text-red-600 dark:text-red-400 text-xs mt-2">
+              {hasExpiredSeats
+                ? 'تقدر تجدد مقعد منتهى عشان يبقى متاح، أو تشترى مقعد جديد.'
+                : 'لإرسال دعوة جديدة، يرجى إضافة مقعد مدفوع إلى اشتراك الشركة.'}
             </p>
           </div>
-          {onAddSeat && (
-            <button
-              onClick={onAddSeat}
-              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors"
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              إضافة مقعد شهري
-            </button>
-          )}
+
+          <div className="flex flex-col gap-2 flex-shrink-0">
+            {hasExpiredSeats && (
+              <Link
+                href="/settings/seats"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                تجديد مقعد منتهى
+              </Link>
+            )}
+            {onAddSeat && (
+              <button
+                onClick={onAddSeat}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                إضافة مقعد شهرى
+              </button>
+            )}
+          </div>
         </div>
       </div>
     )
