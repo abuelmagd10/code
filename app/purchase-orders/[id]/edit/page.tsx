@@ -20,6 +20,7 @@ import { useOrderPermissions } from "@/hooks/use-order-permissions"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 
 interface Supplier {
   id: string
@@ -42,6 +43,8 @@ interface POItem {
   quantity: number
   unit_price: number
   tax_rate: number
+  // v3.74.394 - link to /settings/taxes row
+  tax_code_id?: string | null
   discount_percent?: number
   item_type?: 'product' | 'service'
 }
@@ -274,6 +277,8 @@ export default function EditPurchaseOrderPage() {
           quantity: Number(it.quantity || 0),
           unit_price: Number(it.unit_price || 0),
           tax_rate: Number(it.tax_rate || 0),
+          // v3.74.394 - hydrate the linked tax_code for the dropdown
+          tax_code_id: it.tax_code_id || null,
           discount_percent: Number(it.discount_percent || 0),
           item_type: it.item_type || 'product',
         }))
@@ -296,7 +301,7 @@ export default function EditPurchaseOrderPage() {
   const addPOItem = () => {
     setPoItems([
       ...poItems,
-      { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0 },
+      { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, tax_code_id: null, discount_percent: 0 },
     ])
   }
 
@@ -516,6 +521,8 @@ export default function EditPurchaseOrderPage() {
             quantity: item.quantity,
             unit_price: item.unit_price,
             tax_rate: item.tax_rate,
+            // v3.74.394 - persist tax code link alongside the rate
+            tax_code_id: item.tax_code_id || null,
             discount_percent: item.discount_percent ?? 0,
             line_total: netLine,
             item_type: product?.item_type || 'product',
@@ -570,12 +577,14 @@ export default function EditPurchaseOrderPage() {
             .delete()
             .eq("bill_id", poData.bill_id)
 
-          const invItems = itemsToInsert.map(it => ({
+          const invItems = itemsToInsert.map((it: any) => ({
             bill_id: poData.bill_id,
             product_id: it.product_id,
             quantity: it.quantity,
             unit_price: it.unit_price,
             tax_rate: it.tax_rate,
+            // v3.74.394 - propagate the tax code link into the linked bill
+            tax_code_id: it.tax_code_id || null,
             discount_percent: it.discount_percent || 0,
             line_total: it.line_total,
             item_type: it.item_type || "product",
@@ -837,32 +846,20 @@ export default function EditPurchaseOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  {taxCodes.length > 0 ? (
-                                    <Select 
-                                      value={String(item.tax_rate)} 
-                                      onValueChange={(val) => updateItem(index, "tax_rate", Number(val))}
-                                      disabled={!canEdit}
-                                    >
-                                      <SelectTrigger className="h-9 w-full">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="0">0%</SelectItem>
-                                        {taxCodes.map(tc => (
-                                          <SelectItem key={tc.id || tc.code} value={String(tc.rate)}>{tc.name} ({tc.rate}%)</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <NumericInput
-                                      value={item.tax_rate}
-                                      onChange={(val) => updateItem(index, "tax_rate", val)}
-                                      className="text-center"
-                                      min={0}
-                                      max={100}
-                                      disabled={!canEdit}
-                                    />
-                                  )}
+                                  {/* v3.74.394 - shared dropdown sourced from /settings/taxes */}
+                                  <TaxCodeSelect
+                                    supabase={supabase}
+                                    scope="purchase"
+                                    value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                    onChange={(v) => {
+                                      const updated = [...poItems]
+                                      updated[index] = { ...updated[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                      setPoItems(updated)
+                                    }}
+                                    disabled={!canEdit}
+                                    lang={appLang as 'ar' | 'en'}
+                                    className="h-9 w-full bg-white dark:bg-slate-800 text-xs"
+                                  />
                                 </td>
                                 <td className="px-3 py-3 text-center font-medium bg-gray-50 dark:bg-slate-800/50">
                                   {lineTotal.toFixed(2)}
@@ -929,7 +926,19 @@ export default function EditPurchaseOrderPage() {
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                  <NumericInput value={item.tax_rate} onChange={(val) => updateItem(index, "tax_rate", val)} disabled={!canEdit} max={100} />
+                                  {/* v3.74.394 - shared dropdown sourced from /settings/taxes */}
+                                  <TaxCodeSelect
+                                    supabase={supabase}
+                                    scope="purchase"
+                                    value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                    onChange={(v) => {
+                                      const updated = [...poItems]
+                                      updated[index] = { ...updated[index], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                      setPoItems(updated)
+                                    }}
+                                    disabled={!canEdit}
+                                    lang={appLang as 'ar' | 'en'}
+                                  />
                                 </div>
                               </div>
                               <div className="pt-2 mt-2 border-t flex justify-between items-center text-sm font-medium">

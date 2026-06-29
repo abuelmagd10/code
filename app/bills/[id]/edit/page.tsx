@@ -19,13 +19,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { getActiveCompanyId } from "@/lib/company"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string }
 interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service' }
-interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; discount_percent?: number; item_type?: 'product' | 'service' }
+interface BillItem { product_id: string; quantity: number; unit_price: number; tax_rate: number; tax_code_id?: string | null; discount_percent?: number; item_type?: 'product' | 'service' }
 interface Bill {
   id: string
   supplier_id: string
@@ -339,6 +340,8 @@ export default function EditBillPage() {
         quantity: it.quantity,
         unit_price: it.unit_price,
         tax_rate: it.tax_rate,
+        // v3.74.394 - hydrate the linked tax_code so the dropdown shows the right option
+        tax_code_id: it.tax_code_id || null,
         discount_percent: it.discount_percent ?? 0,
         returned_quantity: it.returned_quantity ?? 0,
       })) as BillItem[]
@@ -354,7 +357,7 @@ export default function EditBillPage() {
     } finally { setIsLoading(false) }
   }
 
-  const addItem = () => { setItems([...items, { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0 }]) }
+  const addItem = () => { setItems([...items, { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, tax_code_id: null, discount_percent: 0 }]) }
   const removeItem = (index: number) => { setItems(items.filter((_, i) => i !== index)) }
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items]
@@ -661,6 +664,8 @@ export default function EditBillPage() {
           quantity: it.quantity,
           unit_price: it.unit_price,
           tax_rate: it.tax_rate,
+          // v3.74.394 - persist tax code link alongside the rate
+          tax_code_id: it.tax_code_id || null,
           discount_percent: it.discount_percent || 0,
           line_total: net,
           returned_quantity: (it as any).returned_quantity ?? 0,
@@ -1045,12 +1050,17 @@ export default function EditBillPage() {
                                 />
                               </td>
                               <td className="px-3 py-3">
-                                <NumericInput
-                                  min={0}
-                                  className="text-center text-sm"
-                                  value={it.tax_rate}
-                                  onChange={(val) => updateItem(idx, "tax_rate", val)}
-                                  decimalPlaces={1}
+                                {/* v3.74.394 - shared dropdown from /settings/taxes */}
+                                <TaxCodeSelect
+                                  supabase={supabase}
+                                  scope="purchase"
+                                  value={{ tax_code_id: it.tax_code_id, tax_rate: it.tax_rate }}
+                                  onChange={(v) => {
+                                    const newItems = [...items]
+                                    newItems[idx] = { ...newItems[idx], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                    setItems(newItems)
+                                  }}
+                                  lang={appLang as 'ar' | 'en'}
                                 />
                               </td>
                               <td className="px-3 py-3">
@@ -1110,7 +1120,19 @@ export default function EditBillPage() {
                             </div>
                             <div>
                               <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                              <NumericInput min={0} className="mt-1" value={it.tax_rate} onChange={(val) => updateItem(idx, "tax_rate", val)} decimalPlaces={1} />
+                              {/* v3.74.394 - shared dropdown from /settings/taxes */}
+                              <TaxCodeSelect
+                                supabase={supabase}
+                                scope="purchase"
+                                value={{ tax_code_id: it.tax_code_id, tax_rate: it.tax_rate }}
+                                onChange={(v) => {
+                                  const newItems = [...items]
+                                  newItems[idx] = { ...newItems[idx], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                  setItems(newItems)
+                                }}
+                                lang={appLang as 'ar' | 'en'}
+                                className="mt-1 bg-white dark:bg-slate-700"
+                              />
                             </div>
                             <div>
                               <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Discount %' : 'الخصم %'}</Label>

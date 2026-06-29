@@ -44,6 +44,10 @@ function buildPurchaseOrderItemRow(item: any, purchaseOrderId: string) {
     quantity: normalizeLineNumber(item.quantity, 0),
     unit_price: normalizeLineNumber(item.unit_price, 0),
     tax_rate: normalizeLineNumber(item.tax_rate, 0),
+    // v3.74.394 — link to canonical tax code from /settings/taxes.
+    // tax_rate is still snapshotted alongside so ledgers don't move if
+    // an admin later edits the tax_codes row.
+    tax_code_id: item.tax_code_id || null,
     discount_percent: normalizeLineNumber(item.discount_percent, 0),
     item_type: item.item_type || "product",
     line_total: normalizeLineNumber(item.line_total, 0),
@@ -58,6 +62,8 @@ function buildBillItemRow(item: any, billId: string) {
     quantity: normalizeLineNumber(item.quantity, 0),
     unit_price: normalizeLineNumber(item.unit_price, 0),
     tax_rate: normalizeLineNumber(item.tax_rate, 0),
+    // v3.74.394 — see buildPurchaseOrderItemRow comment.
+    tax_code_id: item.tax_code_id || null,
     discount_percent: normalizeLineNumber(item.discount_percent, 0),
     item_type: item.item_type || "product",
     line_total: normalizeLineNumber(item.line_total, 0),

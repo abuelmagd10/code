@@ -21,6 +21,7 @@ import { type ShippingProvider } from "@/lib/shipping"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
+import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string; phone?: string | null }
@@ -30,6 +31,8 @@ interface POItem {
   quantity: number;
   unit_price: number;
   tax_rate: number;
+  // v3.74.394 - link to /settings/taxes row (null = "no tax")
+  tax_code_id?: string | null;
   discount_percent?: number;
   item_type?: 'product' | 'service';
 }
@@ -322,7 +325,7 @@ export default function NewPurchaseOrderPage() {
 
   // Item management
   const addItem = () => {
-    setPoItems([...poItems, { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, discount_percent: 0 }])
+    setPoItems([...poItems, { product_id: "", quantity: 1, unit_price: 0, tax_rate: 0, tax_code_id: null, discount_percent: 0 }])
   }
 
   const updateItem = (index: number, field: keyof POItem, value: any) => {
@@ -536,6 +539,7 @@ export default function NewPurchaseOrderPage() {
         quantity: item.quantity,
         unit_price: item.unit_price,
         tax_rate: item.tax_rate,
+        tax_code_id: item.tax_code_id || null,
         discount_percent: item.discount_percent || 0,
         item_type: item.item_type || 'product',
         line_total: (() => {
@@ -844,30 +848,18 @@ export default function NewPurchaseOrderPage() {
                                   />
                                 </td>
                                 <td className="px-3 py-3">
-                                  {taxCodes.length > 0 ? (
-                                    <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
-                                      <SelectTrigger className="bg-white dark:bg-slate-800 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="0">0%</SelectItem>
-                                        {taxCodes.map(tc => (
-                                          <SelectItem key={tc.code} value={String(tc.rate)}>
-                                            {tc.rate}%
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <NumericInput
-                                      step="0.1"
-                                      min={0}
-                                      className="text-center text-sm"
-                                      value={item.tax_rate}
-                                      onChange={(val) => updateItem(idx, "tax_rate", val)}
-                                      decimalPlaces={1}
-                                    />
-                                  )}
+                                  {/* v3.74.394 - dropdown sourced from /settings/taxes via DB (was localStorage) */}
+                                  <TaxCodeSelect
+                                    supabase={supabase}
+                                    scope="purchase"
+                                    value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                    onChange={(v) => {
+                                      const newItems = [...poItems]
+                                      newItems[idx] = { ...newItems[idx], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                      setPoItems(newItems)
+                                    }}
+                                    lang={appLang}
+                                  />
                                 </td>
                                 <td className="px-3 py-3 text-center font-medium text-blue-600 dark:text-blue-400">
                                   {symbol}{lineTotal.toFixed(2)}
@@ -964,30 +956,19 @@ export default function NewPurchaseOrderPage() {
                               </div>
                               <div>
                                 <Label className="text-xs text-gray-500">{appLang === 'en' ? 'Tax %' : 'الضريبة %'}</Label>
-                                {taxCodes.length > 0 ? (
-                                  <Select value={String(item.tax_rate)} onValueChange={(v) => updateItem(idx, "tax_rate", Number(v))}>
-                                    <SelectTrigger className="mt-1 bg-white dark:bg-slate-700">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="0">0%</SelectItem>
-                                      {taxCodes.map(tc => (
-                                        <SelectItem key={tc.code} value={String(tc.rate)}>
-                                          {tc.rate}%
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <NumericInput
-                                    step="0.1"
-                                    min={0}
-                                    className="mt-1"
-                                    value={item.tax_rate}
-                                    onChange={(val) => updateItem(idx, "tax_rate", val)}
-                                    decimalPlaces={1}
-                                  />
-                                )}
+                                {/* v3.74.394 - shared dropdown, DB-sourced */}
+                                <TaxCodeSelect
+                                  supabase={supabase}
+                                  scope="purchase"
+                                  value={{ tax_code_id: item.tax_code_id, tax_rate: item.tax_rate }}
+                                  onChange={(v) => {
+                                    const newItems = [...poItems]
+                                    newItems[idx] = { ...newItems[idx], tax_code_id: v.tax_code_id, tax_rate: v.tax_rate }
+                                    setPoItems(newItems)
+                                  }}
+                                  lang={appLang}
+                                  className="mt-1 bg-white dark:bg-slate-700"
+                                />
                               </div>
                             </div>
                             <div className="mt-3 pt-3 border-t flex justify-between items-center">
