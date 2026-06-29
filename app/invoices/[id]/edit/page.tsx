@@ -1305,7 +1305,8 @@ export default function EditInvoicePage() {
                 <div className="space-y-3 max-w-xs mr-auto">
                   <div className="flex justify-between">
                     <span>{appLang === 'en' ? 'Subtotal:' : 'المجموع الفرعي:'}</span>
-                    <span className="font-semibold">{totals.subtotal.toFixed(2)}</span>
+                    {/* v3.74.396 - pre-discount for visual coherence */}
+                    <span className="font-semibold">{totals.subtotalBeforeDiscount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>{appLang === 'en' ? 'Tax:' : 'الضريبة:'}</span>

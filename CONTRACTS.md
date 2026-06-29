@@ -64,7 +64,9 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
-## I. حساب الإجماليات الموحد (v3.74.395)
+## I. حساب الإجماليات الموحد (v3.74.395 → v3.74.396)
+
+### v3.74.396 — تفريق صريح بين عرض UI وحفظ DB
 
 كل form بيتعامل مع items + خصم + ضريبة لازم يحسب الإجماليات عبر
 `lib/document-totals.ts → computeDocumentTotals(input)`. الـ utility ده
@@ -84,6 +86,14 @@ self-tests داخل الملف بترفع warnings فى dev mode لو contracts 
 **Forms مُربوطة دلوقتى**:
 purchase-orders/new + /[id]/edit، bills/[id]/edit، invoices/new + /[id]/edit،
 sales-orders/new + /[id]/edit، vendor-credits/new.
+
+**v3.74.396**: تفريق مهم بين عرض الـ UI وحفظ DB:
+- `totals.subtotal` → الـ POST-discount value (للـ DB save؛ يحافظ على
+  الـ convention القديم: INV-0011 خزّن 1500 = 1600 lines − 100 discount).
+- `totals.subtotalBeforeDiscount` → الـ PRE-discount value (للـ UI
+  display؛ يخلى المعادلة البصرية تتجمع: subtotal − discount + tax = total).
+- self-test جديد فى `lib/document-totals.ts` يلزم الـ UI breakdown
+  يقفل رياضياً.
 
 ## H. ربط الضريبة بصفحة الضرائب (v3.74.394 — المرحلة 1)
 

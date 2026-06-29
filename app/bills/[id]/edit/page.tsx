@@ -1200,7 +1200,8 @@ export default function EditBillPage() {
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span>
-                        <span>{totals.subtotal.toFixed(2)}</span>
+                        {/* v3.74.396 - pre-discount for visual coherence */}
+                        <span>{totals.subtotalBeforeDiscount.toFixed(2)}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>

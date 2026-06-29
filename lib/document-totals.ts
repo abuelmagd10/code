@@ -73,7 +73,17 @@ export interface DocumentTotalsInput {
 }
 
 export interface DocumentTotals {
-  /** Sum of line nets (after per-line discount, excluding tax). */
+  /**
+   * POST-header-discount subtotal. This is what callers should persist
+   * to the `subtotal` column on bills / invoices / purchase_orders /
+   * etc. — that matches the historical DB convention (see INV-0011
+   * which stored 1500 = 1600 lines − 100 discount).
+   *
+   * For UI breakdown display use `subtotalBeforeDiscount` instead, so
+   * the visible math the user reads is internally consistent:
+   *
+   *   subtotalBeforeDiscount − discount + tax + shipping + adjustment = total
+   */
   subtotal: number
   /** Tax actually charged (already adjusted for before_tax discount + shipping tax). */
   tax: number
@@ -83,7 +93,12 @@ export interface DocumentTotals {
   total: number
   /** What the tax would have been WITHOUT the header discount. */
   taxBeforeDiscount: number
-  /** What the line subtotal would have been WITHOUT the header discount. */
+  /**
+   * Sum of line nets BEFORE the header discount (after per-line
+   * discount only, excluding tax). Display this in the visible
+   * breakdown so the user can mentally add subtotal − discount + tax
+   * and arrive at total.
+   */
   subtotalBeforeDiscount: number
 }
 
@@ -174,6 +189,10 @@ export function computeDocumentTotals(input: DocumentTotalsInput): DocumentTotal
   }
 
   return {
+    // v3.74.396: `subtotal` stays POST-discount to match the DB
+    // convention (existing rows persist post-discount). Forms that
+    // render the visible breakdown should use `subtotalBeforeDiscount`
+    // so the user can read subtotal − discount + tax = total.
     subtotal: round2(finalSubtotal),
     tax: round2(finalTax),
     discountAmount: round2(discountAmount),
@@ -237,4 +256,30 @@ if (process.env.NODE_ENV !== "production" && typeof window === "undefined") {
     discountPosition: "after_tax",
   })
   assertClose(zeroBefore.total, zeroAfter.total, "scenario2 zero discount parity")
+
+  // Scenario 3 (owner-reported, v3.74.396): visible breakdown must add
+  // up to the total. items × tax 14% exclusive, header discount 10%,
+  // before_tax.
+  const userScenario = computeDocumentTotals({
+    items: [{ quantity: 10, unit_price: 1, tax_rate: 14 }],
+    taxInclusive: false,
+    discountType: "percent",
+    discountValue: 10,
+    discountPosition: "before_tax",
+  })
+  // Expected on screen: subtotal(pre-discount) = 10, discount = 1,
+  // tax = 1.26, total = 10.26. The visible math subtotal − discount +
+  // tax MUST equal total or the user sees nonsense.
+  assertClose(userScenario.subtotal, 9, "scenario3 subtotal (post-discount, for DB) = 9")
+  assertClose(userScenario.subtotalBeforeDiscount, 10, "scenario3 subtotalBeforeDiscount (for UI) = 10")
+  assertClose(userScenario.discountAmount, 1, "scenario3 discount = 1")
+  assertClose(userScenario.tax, 1.26, "scenario3 tax recomputed = 1.26")
+  assertClose(userScenario.total, 10.26, "scenario3 total = 10.26")
+  // The UI breakdown contract — what the user reads on screen must
+  // add up to the total cell on the same screen.
+  assertClose(
+    userScenario.subtotalBeforeDiscount - userScenario.discountAmount + userScenario.tax,
+    userScenario.total,
+    "scenario3 UI breakdown math closes (subtotalBeforeDiscount − discount + tax = total)"
+  )
 }

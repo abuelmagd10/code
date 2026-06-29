@@ -1754,7 +1754,8 @@ export default function NewSalesOrderPage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
-                    <span className="font-semibold dark:text-white">{totals.subtotal.toFixed(2)} {soCurrency}</span>
+                    {/* v3.74.396 - pre-discount for visual coherence */}
+                    <span className="font-semibold dark:text-white">{totals.subtotalBeforeDiscount.toFixed(2)} {soCurrency}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>

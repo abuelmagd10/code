@@ -973,7 +973,8 @@ export default function EditPurchaseOrderPage() {
                 <CardContent className="space-y-4">
                   <div className="flex justify-between items-center py-2 text-sm text-slate-600 dark:text-slate-400">
                     <span>{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
-                    <span className="font-semibold text-slate-900 dark:text-white">{totals.subtotal.toFixed(2)}</span>
+                    {/* v3.74.396 - pre-discount for visual coherence */}
+                    <span className="font-semibold text-slate-900 dark:text-white">{totals.subtotalBeforeDiscount.toFixed(2)}</span>
                   </div>
                   
                   {totals.discountAmount > 0 && (

@@ -474,7 +474,8 @@ export default function NewVendorCreditPage() {
 
               <div className="border-t pt-4">
                 <div className="flex flex-col items-end gap-2 text-sm">
-                  <div>المجموع قبل الضريبة: {subtotal.toFixed(2)}</div>
+                  {/* v3.74.396 - pre-discount for visual coherence */}
+                  <div>المجموع قبل الضريبة: {totals.subtotalBeforeDiscount.toFixed(2)}</div>
                   <div>ضريبة البنود + الشحن: {itemsTax.toFixed(2)}</div>
                   <div>الإجمالي: <span className="font-semibold">{total.toFixed(2)}</span></div>
                 </div>

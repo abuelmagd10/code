@@ -1023,7 +1023,8 @@ export default function NewPurchaseOrderPage() {
                 <div className="max-w-xs mr-auto space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعي'}</span>
-                    <span className="font-semibold dark:text-white">{calculateTotals.subtotal.toFixed(2)} {poCurrency}</span>
+                    {/* v3.74.396 - display pre-discount so subtotal − discount + tax = total visually */}
+                    <span className="font-semibold dark:text-white">{calculateTotals.subtotalBeforeDiscount.toFixed(2)} {poCurrency}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
