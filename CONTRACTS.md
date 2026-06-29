@@ -64,6 +64,32 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## M. الموافقة على الخصم لأمر الشراء (v3.74.400 → v3.74.401)
+
+**اعتمادان منفصلان لأمر الشراء عند وجود خصم**:
+
+1. اعتماد أمر الشراء (PO approval) — كما كان.
+2. اعتماد الخصم (discount approval) — جديد على مستوى PO، يصدر له
+   إشعار تلقائياً لأصحاب الصلاحية (المالك + المدير العام + admin).
+
+### المكونات:
+- **Trigger** `po_request_discount_approval` على `purchase_orders`:
+  - يخلق صف `discount_approvals` بنوع `purchase_order`
+  - يُدخل صفوف `notifications` للمعتمدين المعنيين (محل النقص فى
+    triggers الـ booking / invoice / bill القديمة اللى ما كانتش
+    تبعت إشعار)
+- **Gate** فى `approve_purchase_order_atomic`:
+  - يرفض اعتماد PO له خصم > 0 لو الـ discount_approval لسه pending
+  - رسالة الخطأ: "افتح صندوق الموافقات واعتمد الخصم أولاً"
+- **Bypass** فى `bill_request_discount_approval_trg`:
+  - يحترم أى قيمة فى `app.skip_discount_approval` (مش بس 'booking')
+  - الفاتورة المُنشأة من PO معتمد بتعدّى الـ trigger ده
+
+### Section M baseline:
+- trigger `po_request_discount_approval` موجود على purchase_orders
+- نص `approve_purchase_order_atomic` يحتوى على gate (لا يمكن اعتماد...)
+- نص `bill_request_discount_approval_trg` يقبل أى قيمة bypass
+
 ## L. سطر الخصم فى ملخص الفواتير (v3.74.399)
 
 كل forms اللى فيها discount header (purchase-orders، bills، invoices،

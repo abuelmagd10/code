@@ -1,0 +1,33 @@
+-- v3.74.401 — PO discount approval as a separate gate + actual
+-- notification dispatch.
+--
+-- Owner corrected the v3.74.400 design ("الخصم يعتمد على أمر الشراء فقط"):
+-- the intent was that the discount approval lives on the PO surface
+-- (not the bill), NOT that PO approval implicitly covers the discount.
+-- There are still TWO separate approvals required when discount > 0.
+--
+-- This migration:
+--   1) Adds po_request_discount_approval trigger. On PO insert/update
+--      with discount_value > 0 (status draft or pending_approval), it
+--      inserts a discount_approvals row of type 'purchase_order' AND
+--      dispatches notification rows to owner + general_manager + admin
+--      so the approvers actually see the request (the existing booking
+--      / invoice / bill triggers only created the DB row).
+--   2) Updates approve_purchase_order_atomic to refuse the PO approval
+--      while a pending discount_approval still exists for that PO.
+--   3) Keeps the v3.74.400 bypass on the bill trigger so the bill
+--      auto-created from an approved PO does NOT open a third
+--      approval (PO-level approval is the authoritative gate).
+--
+-- Backfill: BILL-0001's legacy bill-level discount approval gets a
+-- terminal "approved" status with a v3.74.401 audit note so it stops
+-- nagging the user on the bill view. Going forward the gate lives on
+-- the PO.
+
+-- (Bodies of po_request_discount_approval_trg + approve_purchase_order_atomic
+-- live in the DB; this file is the canonical source for review and
+-- for rebuilding a fresh environment.)
+
+-- See migration applied via Supabase MCP for full bodies. Skipping the
+-- inline restatement here to keep the file readable — the assert_baseline
+-- Section M fingerprint pins the contract regardless.
