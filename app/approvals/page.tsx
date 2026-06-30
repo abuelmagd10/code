@@ -205,7 +205,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -239,14 +239,16 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.status === "rejected"  ? "border-l-red-500" :
                                 "border-l-gray-400"
   const categoryLabel =
-    h.category === "discount"       ? t("خصم", "Discount") :
-    h.category === "bom_version"    ? t("قائمة مواد", "BOM") :
-    h.category === "material_issue" ? t("طلب صرف", "Material Issue") :
-                                       h.category
+    h.category === "discount"        ? t("خصم", "Discount") :
+    h.category === "bom_version"     ? t("قائمة مواد", "BOM") :
+    h.category === "material_issue"  ? t("طلب صرف", "Material Issue") :
+    h.category === "routing_version" ? t("مسار تصنيع", "Routing") :
+                                        h.category
   const CategoryIcon =
-    h.category === "discount"       ? Percent :
-    h.category === "bom_version"    ? Layers :
-                                       Package
+    h.category === "discount"        ? Percent :
+    h.category === "bom_version"     ? Layers :
+    h.category === "routing_version" ? GitMerge :
+                                        Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
       <CardContent className="py-4">
@@ -562,6 +564,39 @@ function ApprovalsContent() {
             decided_by_email: null,
             decided_at,
             decision_note: b.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // --- Routing versions (v3.74.437 added the approval columns)
+      try {
+        const { data: rvs } = await supabase
+          .from("manufacturing_routing_versions")
+          .select(`
+            id, version_no, approval_status, submitted_at, submitted_by,
+            approved_by, approved_at, rejected_by, rejected_at, rejection_reason,
+            manufacturing_routings!inner(routing_code, routing_name),
+            branches!inner(name)
+          `)
+          .eq("company_id", cid)
+          .in("approval_status", ["approved", "rejected"])
+          .order("submitted_at", { ascending: false })
+          .limit(200)
+        for (const r of (rvs || []) as any[]) {
+          const decided_at = r.approval_status === "approved" ? r.approved_at : r.rejected_at
+          merged.push({
+            id: `rv-${r.id}`,
+            category: "routing_version",
+            doc_label: `${r.manufacturing_routings?.routing_code ?? "Routing"} · إصدار ${r.version_no}`,
+            doc_href: null,
+            party_label: `${r.manufacturing_routings?.routing_name ?? "—"} · ${r.branches?.name ?? "—"}`,
+            value_label: null,
+            status: r.approval_status,
+            requested_by_email: null,
+            requested_at: r.submitted_at ?? r.approved_at ?? r.rejected_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: r.rejection_reason ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -1065,6 +1100,9 @@ function ApprovalsContent() {
                 </Button>
                 <Button size="sm" variant={historyFilter === "bom_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("bom_version")}>
                   <Layers className="w-3 h-3" />{t("قوائم المواد", "BOMs")} ({history.filter(h => h.category === "bom_version").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "routing_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("routing_version")}>
+                  <GitMerge className="w-3 h-3" />{t("مسارات التصنيع", "Routings")} ({history.filter(h => h.category === "routing_version").length})
                 </Button>
                 <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
                   <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})

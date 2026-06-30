@@ -1,0 +1,47 @@
+-- v3.74.437 — routing version approval workflow.
+--
+-- Before this release the code (UI + API + helpers) was written on
+-- the assumption that manufacturing_routing_versions had an approval
+-- column-set and matching RPCs. The table only had a `status` column
+-- and the RPCs did not exist. Every approve/reject/submit call on a
+-- routing version returned "function does not exist", and the
+-- /approvals fetch returned HTTP 400 querying a missing
+-- `approval_status` column.
+--
+-- This migration closes the gap end to end:
+--
+-- (A) Schema — add approval_status, submitted_by/at, approved_by/at,
+--     rejected_by/at, rejection_reason to manufacturing_routing_versions.
+--     CHECK constraint pins the vocabulary. Backfill grandfathers any
+--     existing 'active' routing version as approval_status='approved'
+--     so the new activation gate (in part B) doesn't lock historical
+--     data.
+--
+-- (B) Transition helper + guard trigger
+--     mr_is_routing_version_approval_transition_allowed encodes:
+--       draft → pending_approval
+--       pending_approval → approved / rejected
+--       rejected → pending_approval (re-submit)
+--     mr_guard_routing_version_approval_transition refuses illegal
+--     hops AND refuses status='active' when approval_status<>'approved'.
+--
+-- (C) Three RPCs (signatures match the existing API routes)
+--     submit_routing_version_for_approval_atomic
+--     approve_routing_version_atomic   (owner / general_manager)
+--     reject_routing_version_atomic    (owner / general_manager)
+--
+-- (D) Notifications
+--     routing_version_notify_approval — owner + GM ping on
+--       pending_approval transition
+--     routing_version_branch_manager_notify — FYI for branch manager
+--       on create + on approved/rejected (uses the notify_branch_manager
+--       helper from v3.74.428)
+--
+-- UI integration
+--     The unified history loader in /approvals (v3.74.435) now reads
+--     routing_versions with status IN (approved, rejected) and renders
+--     them with a GitMerge icon under the "Routings" filter chip.
+--
+-- Baseline (Section AK) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

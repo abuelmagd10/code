@@ -64,6 +64,59 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AK. دورة اعتماد مسارات التصنيع (v3.74.437)
+
+### الفجوة
+
+كل الكود (UI + API + helpers) مكتوب على افتراض إن
+`manufacturing_routing_versions` عندها أعمدة approval (`approval_status`,
+`submitted_by/at`, `approved_by/at`, `rejected_by/at`, `rejection_reason`)
+والـ RPCs موجودة. الواقع: الجدول عنده `status` فقط، والـ RPCs غير
+موجودة. الـ /approvals كانت ترجع HTTP 400 على routing versions، وأى
+ضغطة submit/approve/reject من API ترجع "function does not exist".
+
+### الحل (الكامل)
+
+١. **Schema**: إضافة الـ ٨ أعمدة + CHECK على
+   `approval_status IN (draft, pending_approval, approved, rejected)`
+   + backfill يتعامل مع الـ routing versions القديمة بحالة active كـ
+   approved (grandfathered).
+
+٢. **Transition helper** `mr_is_routing_version_approval_transition_allowed`
+   يحدد الانتقالات المسموحة. **Guard trigger**
+   `mr_guard_routing_version_approval_transition` يرفض الانتقالات
+   الغلط ويفرض إن `status='active'` لا يمكن إلا لو
+   `approval_status='approved'`.
+
+٣. **٣ RPCs** بـ signatures مطابقة للى الـ API routes الموجودة
+   بتنادى عليها:
+   - `submit_routing_version_for_approval_atomic` (أى عضو الشركة)
+   - `approve_routing_version_atomic` (owner / general_manager فقط)
+   - `reject_routing_version_atomic` (owner / general_manager فقط)
+
+٤. **Triggers إشعارات**:
+   - `routing_version_notify_approval` — owner + GM يوصلهم إشعار لما
+     النسخة تدخل pending_approval، يوجّه لـ /approvals
+   - `routing_version_branch_manager_notify` — مدير الفرع يوصله FYI
+     عند الإنشاء + عند الاعتماد/الرفض
+
+### الواجهة
+
+السجل الموحد فى /approvals (v3.74.435) دلوقتى بيقرأ routing_versions
+بحالة approved/rejected ويعرضها تحت chip "مسارات التصنيع" بـ Icon
+`GitMerge`.
+
+الـ API routes الموجودة من قبل (approve/reject/submit-approval)
+هتشتغل تلقائياً لإن الـ RPCs اللى بتنادى عليها بقت موجودة.
+
+### Section AK baseline
+- ٨ أعمدة approval موجودة على `manufacturing_routing_versions`
+- ٧ functions موجودة (1 transition helper + 1 guard + 3 RPCs + 2 notify)
+- ٣ triggers موجودة
+- نص `approve_routing_version_atomic` يحتوى على
+  `'owner', 'general_manager'` (role gate)
+- `PERFORM public.assert_baseline_v3_74_437_check()` مضاف لـ assert_baseline
+
 ## AJ. HOTFIX getActiveCompanyId import فى /approvals (v3.74.436)
 
 ### الثغرة
