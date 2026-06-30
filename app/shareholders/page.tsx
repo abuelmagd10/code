@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
+import { getActiveCurrencies, type Currency } from "@/lib/currency-service"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { EquityTransactionService, PendingDividend } from "@/lib/equity-transaction-service"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -134,6 +135,10 @@ export default function ShareholdersPage() {
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [cashBankAccounts, setCashBankAccounts] = useState<AccountOption[]>([]) // الحسابات المصرفية والخزائن
   const [settings, setSettings] = useState<DistributionSettings>({})
+  // v3.74.415 - same source other forms use (purchase orders, invoices, ...)
+  // so the contribution dialog sees every currency the project supports,
+  // not just the ones that happen to have a cash/bank account today.
+  const [activeCurrencies, setActiveCurrencies] = useState<Currency[]>([])
   const [isSavingDefaults, setIsSavingDefaults] = useState<boolean>(false)
 
   // === ERP Governance: Retained Earnings Validation ===
@@ -195,7 +200,16 @@ export default function ShareholdersPage() {
         await Promise.all([
           loadShareholders(cid),
           loadAccounts(cid),
-          loadCashBankAccounts(cid)
+          loadCashBankAccounts(cid),
+          // v3.74.415 - active currencies from the project-wide source
+          (async () => {
+            try {
+              const list = await getActiveCurrencies(supabase, cid)
+              setActiveCurrencies(list || [])
+            } catch (err) {
+              console.warn("Failed to load active currencies", err)
+            }
+          })(),
         ])
 
         // تحميل إعدادات التوزيع مع معالجة أخطاء ERP-grade
@@ -1558,12 +1572,21 @@ export default function ShareholdersPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {(() => {
-                        const available = Array.from(new Set(
-                          cashBankAccounts.map((a) => a.currency || "EGP")
-                        ))
-                        // Keep EGP first if present, then the others.
-                        available.sort((a, b) => a === "EGP" ? -1 : b === "EGP" ? 1 : a.localeCompare(b))
-                        return available.length > 0 ? available : ["EGP"]
+                        // v3.74.415 - use the project-wide active currency list
+                        // so the user sees every supported currency, not just
+                        // the ones that happen to have a bank account already.
+                        // If the list failed to load, fall back to whatever we
+                        // can infer from the existing accounts.
+                        let codes: string[] = []
+                        if (activeCurrencies.length > 0) {
+                          codes = activeCurrencies.map((c) => c.code).filter(Boolean)
+                        } else {
+                          codes = Array.from(new Set(cashBankAccounts.map((a) => a.currency || "EGP")))
+                        }
+                        if (codes.length === 0) codes = ["EGP"]
+                        // EGP first, then the rest alphabetically.
+                        codes.sort((a, b) => a === "EGP" ? -1 : b === "EGP" ? 1 : a.localeCompare(b))
+                        return codes
                       })().map((cur) => (
                         <SelectItem key={cur} value={cur}>{cur}</SelectItem>
                       ))}
@@ -1576,11 +1599,6 @@ export default function ShareholdersPage() {
                     {(hydrated && appLang === 'en') ? 'Payment Account (Bank or Cash)' : 'حساب الدفع (بنك أو خزنة)'} *
                   </Label>
                   {(() => {
-                    // v3.74.412 - filter by selected currency
-                    const selectedCurrency = contributionForm.currency || "EGP"
-                    const filteredAccounts = cashBankAccounts.filter(
-                      (a) => (a.currency || "EGP") === selectedCurrency
-                    )
                     if (cashBankAccounts.length === 0) {
                       return (
                         <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
@@ -1592,28 +1610,38 @@ export default function ShareholdersPage() {
                         </div>
                       )
                     }
-                    if (filteredAccounts.length === 0) {
-                      return (
-                        <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                          <p className="text-sm text-yellow-800 dark:text-yellow-200" suppressHydrationWarning>
-                            {(hydrated && appLang === 'en')
-                              ? `No accounts in ${selectedCurrency}. Add a ${selectedCurrency} bank or cash account in Chart of Accounts first.`
-                              : `لا توجد حسابات بعملة ${selectedCurrency}. أضف حساب بنك أو خزنة بعملة ${selectedCurrency} فى الشجرة المحاسبية أولاً.`}
-                          </p>
-                        </div>
-                      )
-                    }
+                    // v3.74.416 — show all accounts (with currency tag) and
+                    // auto-switch the form currency on pick. Avoids the
+                    // two-step "pick currency, then account" friction.
+                    const selectedCurrency = contributionForm.currency || "EGP"
+                    const sortedAccounts = [...cashBankAccounts].sort((a, b) => {
+                      const aMatch = (a.currency || "EGP") === selectedCurrency ? 0 : 1
+                      const bMatch = (b.currency || "EGP") === selectedCurrency ? 0 : 1
+                      if (aMatch !== bMatch) return aMatch - bMatch
+                      return (a.account_code || "").localeCompare(b.account_code || "")
+                    })
                     return (
                       <Select
                         value={contributionForm.payment_account_id || ""}
-                        onValueChange={(value) => setContributionForm({ ...contributionForm, payment_account_id: value })}
+                        onValueChange={(value) => {
+                          // v3.74.416 — auto-switch transfer currency to the
+                          // chosen account's native currency so the JE posts
+                          // in the right unit.
+                          const picked = cashBankAccounts.find((a) => a.id === value)
+                          const nativeCurrency = picked?.currency || "EGP"
+                          if (nativeCurrency !== contributionForm.currency) {
+                            setContributionForm({ ...contributionForm, payment_account_id: value, currency: nativeCurrency })
+                          } else {
+                            setContributionForm({ ...contributionForm, payment_account_id: value })
+                          }
+                        }}
                         required
                       >
                         <SelectTrigger>
                           <SelectValue placeholder={(hydrated && appLang === 'en') ? 'Select account' : 'اختر حساب الدفع'} />
                         </SelectTrigger>
                         <SelectContent>
-                          {filteredAccounts.map((account) => (
+                          {sortedAccounts.map((account) => (
                             <SelectItem key={account.id} value={account.id}>
                               {account.account_code} - {account.account_name} ({account.currency || "EGP"})
                             </SelectItem>
@@ -1624,8 +1652,8 @@ export default function ShareholdersPage() {
                   })()}
                   <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>
                     {(hydrated && appLang === 'en')
-                      ? 'Only accounts in the selected currency are shown.'
-                      : 'يظهر فقط الحسابات المطابقة للعملة المختارة فوق.'}
+                      ? 'Pick any account — the contribution currency above auto-syncs to match.'
+                      : 'اختر أى حساب — العملة فوق هتتغير تلقائياً للعملة الحساب.'}
                   </p>
                 </div>
                 <div className="space-y-2">
