@@ -64,6 +64,50 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## U. تجميع خصم البنود + خصم المستند (v3.74.421)
+
+### الثغرة
+
+كان `po_request_discount_approval_trg` ينظر إلى `NEW.discount_value`
+(خصم المستند) فقط. مسئول المشتريات كان يقدر يحط 50% خصم على كل بند
+منفرد ويسيب خصم المستند صفر → الـ trigger ما يتفعّلش، الـ PO يبقى
+قابل للاعتماد **بدون** اعتماد خصم. نفس الثغرة كانت موجودة فى
+`sales_orders`. مكتشَفة بسؤال المالك المباشر.
+
+### الحل
+
+دالتان جديدتان `po_evaluate_discount_approval(po_id)` و
+`so_evaluate_discount_approval(so_id)` تحسبان مجموع الخصم الفعّال:
+
+```
+line_total = Σ (qty × unit_price × discount_percent / 100)
+doc_amt    = discount_value                                 if discount_type='amount'
+             else (subtotal - line_total) × discount_value / 100
+total      = line_total + doc_amt
+```
+
+لو `total > 0` → يُفتح صف واحد فى `discount_approvals` بقيمة المجموع
+كاملاً (currency-amount). لو المستخدم عدّل البنود أو شال خصم المستند →
+الدالة تتفعّل تانى، تلغى الصف القديم وتفتح صف جديد بالقيمة الجديدة، أو
+تلغى نهائياً لو المجموع رجع صفر.
+
+الـ triggers الجديدة:
+- `po_item_request_discount_approval` على `purchase_order_items`
+  (INS / UPD على quantity / unit_price / discount_percent / DEL)
+- `so_item_request_discount_approval` على `sales_order_items` (نفس الشيء)
+
+ال triggers القديمة على `purchase_orders` و `sales_orders` بقت رفيعة
+وتنادى الدالة. الـ approve gate الموجود فى `approve_purchase_order_atomic`
+(v3.74.419) بيقرأ نفس الصف، فالحماية تمتد تلقائياً للحالة الجديدة.
+
+### Section U baseline
+- function `po_evaluate_discount_approval` موجودة وتحتوى على
+  `purchase_order_items` و `'approval_request'`
+- function `so_evaluate_discount_approval` موجودة وتحتوى على
+  `sales_order_items` و `'approval_request'`
+- triggers `po_item_request_discount_approval` و
+  `so_item_request_discount_approval` موجودة
+
 ## T. تجربة اعتماد PO + توجيه إشعار الخصم (v3.74.420)
 
 ثلاث تحسينات على دورة الاعتماد:

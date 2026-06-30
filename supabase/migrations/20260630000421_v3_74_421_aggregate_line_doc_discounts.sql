@@ -1,0 +1,39 @@
+-- v3.74.421 — aggregate line + document discounts on PO and SO.
+--
+-- Before: po_request_discount_approval_trg watched only NEW.discount_value
+-- (document-level). A purchasing officer could put 50% discount on every
+-- line, leave the document discount at 0, and the trigger never fired —
+-- the PO became approvable WITHOUT discount approval, fully bypassing the
+-- owner-only gate. The same gap existed on sales_orders.
+--
+-- Now: a pair of evaluator functions (po_evaluate_discount_approval and
+-- so_evaluate_discount_approval) compute the effective total discount as
+--
+--     line_total = Σ (qty * unit_price * discount_percent / 100)
+--     doc_amt   = discount_value if discount_type='amount'
+--                 else (subtotal - line_total) * discount_value / 100
+--     total     = line_total + doc_amt
+--
+-- If total > 0, the evaluator opens a SINGLE discount_approvals row with
+-- discount_value = total (in document currency, type='amount'). If the
+-- user later amends a line discount, removes the document discount, or
+-- adds another item with discount, the evaluator re-runs and:
+--   - cancels the old pending row if value differs
+--   - opens a new pending row with the new total
+--   - cancels (with reason) when total drops to 0
+--
+-- The notification still points at reference_type='approval_request' so
+-- the bell click goes to /approvals (Section T).
+--
+-- Triggers:
+--   po_request_discount_approval        (existed)  AFTER INS/UPD on purchase_orders
+--   po_item_request_discount_approval   (NEW)      AFTER INS/UPD/DEL on purchase_order_items
+--   so_request_discount_approval        (existed)  AFTER INS/UPD on sales_orders
+--   so_item_request_discount_approval   (NEW)      AFTER INS/UPD/DEL on sales_order_items
+--
+-- approve_purchase_order_atomic was already updated in v3.74.419 to read
+-- the latest discount_approval row and block on pending/rejected. Since
+-- the evaluator writes the aggregated total to that same row, the gate
+-- now refuses bypass attempts through line-only discounts too.
+--
+-- Bodies installed via Supabase MCP; this file is the canonical source.
