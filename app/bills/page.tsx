@@ -608,104 +608,49 @@ export default function BillsPage() {
     })
   }
 
-  // Delete bill handler
+  // v3.74.405 — previously hit the bills table with a raw DELETE.
+  // That bypassed the void_bill_atomic guarantees (PO unblock, discount
+  // approval cancel, audit log) and left orphaned references in PO rows.
+  // Now routes through /api/bills/[id]/void exactly like the detail page
+  // does, so the cascade is consistent across both surfaces.
   const handleDelete = async (id: string) => {
     try {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      const response = await fetch(`/api/bills/${encodeURIComponent(id)}/void`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill-void-list-${id}`,
+        },
+        body: JSON.stringify({ reason: "" }),
+      })
 
-      // ===============================
-      // 🔒 System Guard: منع حذف الفواتير التي لها حركات مخزون
-      // ===============================
-      const { data: inventoryTx } = await supabase
-        .from("inventory_transactions")
-        .select("id")
-        .eq("reference_id", id)
-        .limit(1)
-
-      if (inventoryTx && inventoryTx.length > 0) {
-        toast({
-          variant: "destructive",
-          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: appLang === 'en'
-            ? "This bill has inventory transactions. Use 'Return' instead of delete to maintain audit trail."
-            : "هذه الفاتورة لها حركات مخزون. استخدم 'مرتجع' بدلاً من الحذف للحفاظ على سجل التدقيق.",
-          duration: 5000,
-        })
-        return
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to void bill' : 'فشل إلغاء الفاتورة'))
       }
-
-      // ===============================
-      // 🔒 System Guard: منع حذف الفواتير التي لها قيود محاسبية
-      // ===============================
-      const { data: journalEntries } = await supabase
-        .from("journal_entries")
-        .select("id")
-        .eq("reference_id", id)
-        .limit(1)
-
-      if (journalEntries && journalEntries.length > 0) {
-        toast({
-          variant: "destructive",
-          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: appLang === 'en'
-            ? "This bill has journal entries. Use 'Return' instead of delete to maintain audit trail."
-            : "هذه الفاتورة لها قيود محاسبية. استخدم 'مرتجع' بدلاً من الحذف للحفاظ على سجل التدقيق.",
-          duration: 5000,
-        })
-        return
-      }
-
-      // Check for linked payments
-      const { data: linkedPays } = await supabase
-        .from("payments")
-        .select("id, amount")
-        .eq("bill_id", id)
-
-      const hasLinkedPayments = Array.isArray(linkedPays) && linkedPays.length > 0
-
-      // ===============================
-      // 🔒 System Guard: منع حذف الفواتير التي لها دفعات
-      // ===============================
-      if (hasLinkedPayments) {
-        toast({
-          variant: "destructive",
-          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: appLang === 'en'
-            ? "This bill has linked payments. Use 'Return' instead of delete."
-            : "هذه الفاتورة لها دفعات مرتبطة. استخدم 'مرتجع' بدلاً من الحذف.",
-          duration: 5000,
-        })
-        return
-      }
-
-      // ===============================
-      // ✅ الفاتورة مسودة بدون حركات - يمكن حذفها
-      // ===============================
-      // Delete bill items
-      await supabase.from("bill_items").delete().eq("bill_id", id)
-
-      // Delete bill
-      const { error } = await supabase.from("bills").delete().eq("id", id)
-      if (error) throw error
 
       await loadData()
-      toastDeleteSuccess(toast, appLang === 'en' ? "Bill deleted" : "تم حذف الفاتورة")
-    } catch (error) {
-      console.error("Error deleting bill:", error)
-      toastDeleteError(toast, appLang === 'en' ? "Bill" : "الفاتورة")
+      toastDeleteSuccess(toast, appLang === 'en' ? "Bill voided" : "تم إلغاء الفاتورة")
+    } catch (error: any) {
+      console.error("Error voiding bill:", error)
+      const msg = typeof error?.message === 'string' ? error.message : (appLang === 'en' ? 'Unexpected error' : 'حدث خطأ غير متوقع')
+      toast({
+        title: appLang === 'en' ? "Cannot Void" : "تعذر الإلغاء",
+        description: msg,
+        variant: "destructive",
+      })
     }
   }
 
   const requestDelete = (id: string, status?: string) => {
-    // 🔒 النمط المحاسبي الصارم: لا يمكن حذف الفواتير المرسلة أو المدفوعة
-    // فقط الفواتير المسودة (draft) يمكن حذفها
+    // v3.74.405 — only draft bills can be voided from the list. The
+    // /api/bills/[id]/void route is the canonical handler.
     if (status && status !== 'draft') {
       toast({
-        title: appLang === 'en' ? "Cannot Delete Bill" : "لا يمكن حذف الفاتورة",
+        title: appLang === 'en' ? "Cannot Void Bill" : "لا يمكن إلغاء الفاتورة",
         description: appLang === 'en'
-          ? "Only draft bills can be deleted. For sent/paid bills, use Return instead."
-          : "يمكن حذف الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم المرتجع.",
+          ? "Only draft bills can be voided. For sent/paid bills, use Return instead."
+          : "يمكن إلغاء الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم المرتجع.",
         variant: "destructive",
       })
       return
@@ -1874,13 +1819,18 @@ export default function BillsPage() {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent dir={appLang === 'en' ? 'ltr' : 'rtl'}>
           <AlertDialogHeader>
-            <AlertDialogTitle>{appLang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف'}</AlertDialogTitle>
+            <AlertDialogTitle>{appLang === 'en' ? 'Confirm Void' : 'تأكيد إلغاء الفاتورة'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {appLang === 'en' ? 'Are you sure you want to delete this bill? This action cannot be undone.' : 'هل أنت متأكد من حذف هذه الفاتورة؟ لا يمكن التراجع عن هذا الإجراء.'}
+              {/* v3.74.405 — list page now voids via /api/bills/[id]/void
+                  to match the detail page behaviour and avoid orphaning the
+                  linked PO. */}
+              {appLang === 'en'
+                ? 'The bill will be marked as voided (kept in the audit trail). The linked purchase order will be unblocked so a new bill can be issued after re-approval.'
+                : 'سيتم وضع الفاتورة فى حالة "ملغاة" (تبقى محفوظة فى سجل المراجعة). أمر الشراء المرتبط سيرجع للاعتماد عشان يتولّد فاتورة جديدة منه.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+            <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (pendingDeleteId) {
@@ -1890,7 +1840,7 @@ export default function BillsPage() {
                 setPendingDeleteId(null)
               }}
             >
-              {appLang === 'en' ? 'Delete' : 'حذف'}
+              {appLang === 'en' ? 'Void' : 'إلغاء الفاتورة'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
