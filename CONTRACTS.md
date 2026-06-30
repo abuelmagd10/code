@@ -69,6 +69,20 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 Supabase Security Advisor أبلغ عن 12 view من نوع `security_definer_view`.
 كل view بـ SECURITY DEFINER بيقرأ بصلاحية المنشئ (يتجاوز RLS).
 
+### المرحلة 3 — 2 فيوهات حساسة (v3.74.410):
+- `v_erp_integrity_monitor` — بسيط: ALTER VIEW SET security_invoker=true.
+  كل الـ 6 جداول الأصلية عندها RLS.
+- `dashboard_gl_period_summary` — معقد: الجدول الأصلى MATERIALIZED
+  VIEW بدون RLS. تم DROP/CREATE مع فلتر صريح:
+  `WHERE company_id IN (SELECT get_user_company_ids())` + security_invoker=true.
+
+**Section Q fingerprint** بقى يفحص:
+- كل الـ 12 view عندها security_invoker=true
+- نص dashboard_gl_period_summary يحتوى على get_user_company_ids
+  (لو حد بدّل التعريف لاحقاً وفات الفلتر، الـ baseline يفشل)
+
+**Supabase Security Advisor**: 12 ERROR → **0 ERROR** ✓
+
 ### المرحلة 2 — 7 فيوهات تقارير (v3.74.409):
 - `v_bookings_full`
 - `v_service_revenue_summary`
