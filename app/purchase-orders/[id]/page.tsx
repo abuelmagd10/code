@@ -932,6 +932,56 @@ export default function PurchaseOrderDetailPage() {
                       <span className="text-gray-900 dark:text-white">{(po as any).shipping_providers.provider_name}</span>
                     </div>
                   )}
+
+                  {/* v3.74.411 - financial breakdown on the order info card */}
+                  {Number((po as any).subtotal || 0) > 0 && (
+                    <div className="flex justify-between pt-2 border-t dark:border-gray-700">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعى'}</span>
+                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).subtotal).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {Number((po as any).discount_value || 0) > 0 && (
+                    <div className="flex justify-between text-red-600 dark:text-red-400">
+                      <span>
+                        {appLang === 'en' ? 'Discount' : 'الخصم'}
+                        {(po as any).discount_position === 'before_tax'
+                          ? (appLang === 'en' ? ' (before tax)' : ' (قبل الضريبة)')
+                          : (po as any).discount_position === 'after_tax'
+                            ? (appLang === 'en' ? ' (after tax)' : ' (بعد الضريبة)')
+                            : ''}
+                      </span>
+                      <span>
+                        {(po as any).discount_type === 'percent'
+                          ? `${Number((po as any).discount_value).toFixed(2)}%`
+                          : `-${symbol}${Number((po as any).discount_value).toFixed(2)}`}
+                      </span>
+                    </div>
+                  )}
+                  {Number((po as any).tax_amount || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
+                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).tax_amount).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {Number((po as any).shipping || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
+                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).shipping).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {Number((po as any).shipping_tax_rate || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping Tax' : 'ضريبة الشحن'}</span>
+                      <span className="text-gray-900 dark:text-white">{Number((po as any).shipping_tax_rate).toFixed(2)}%</span>
+                    </div>
+                  )}
+                  {Number((po as any).adjustment || 0) !== 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span>
+                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).adjustment).toFixed(2)}</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between pt-2 border-t dark:border-gray-700">
                     <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
                     <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
