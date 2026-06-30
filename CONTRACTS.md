@@ -64,6 +64,44 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## X. فاتورة المشتريات تقرأ اعتماد خصم الـ PO المرتبط (v3.74.424)
+
+### الثغرة
+
+`bill_request_discount_approval_trg` كان يفتح صف اعتماد جديد بـ
+`document_type='purchase_invoice'` لأى فاتورة مشتريات بخصم > 0، حتى لو
+الـ PO المرتبط (`bills.purchase_order_id`) كان عنده صف اعتماد بنفس
+الخصم بحالة `approved` بالفعل. النتيجة: المالك يفتح صندوق الموافقات
+ويلقى نفس الخصم بكارت تانى — مرة كأمر شراء، مرة كفاتورة مشتريات. ومش بس
+إزعاج: لو المالك رفض الفاتورة بنية رفض إعادة الاعتماد، الـ PO نفسه يفضل
+معتمد لكن الفاتورة محظورة من الترحيل، فالدورة المحاسبية تتعطّل بدون
+وضوح للسبب.
+
+برضه `bill_block_post_unapproved_discount_trg` (الـ guard اللى بيمنع
+ترحيل الفاتورة لو الخصم مش معتمد) كان بيدوّر على صف
+`purchase_invoice` فقط، فلو لأى سبب الفاتورة الـ trigger ما فتحلهاش صف
+(مثلاً اتعملت تلقائياً عند اعتماد PO و الـ skip flag كان نشط)، الـ guard
+يرفض الترحيل بالخطأ.
+
+### الحل
+
+`bill_request_discount_approval_trg` بقى يفحص أولاً:
+- لو `NEW.purchase_order_id IS NOT NULL` يقرأ أحدث صف اعتماد على الـ PO
+- لو الـ PO `rejected` → `RAISE` (الفاتورة ما تتحفظش بخصم مرفوض من المصدر)
+- لو الـ PO `approved` ونفس القيمة + النوع → `RETURN NEW` بدون فتح صف جديد
+- غير كده → نزول للمنطق العادى (فتح صف purchase_invoice)
+
+`bill_block_post_unapproved_discount_trg` بنفس المنطق:
+- PO rejected → `RAISE`
+- PO approved بنفس الخصم → `RETURN NEW` (الفاتورة معتمدة الخصم)
+- غير كده → الفحص العادى على صف purchase_invoice
+
+### Section X baseline
+- `bill_request_discount_approval_trg` body يحتوى على `NEW.purchase_order_id`
+- `bill_block_post_unapproved_discount_trg` body يحتوى على `NEW.purchase_order_id`
+
+نظير منطقى لـ v3.74.419 (فى دورة المبيعات: invoice ↔ sales_order).
+
 ## W. إلغاء اعتماد الخصم تلقائياً عند رفض/إلغاء المستند (v3.74.423)
 
 ### الثغرة

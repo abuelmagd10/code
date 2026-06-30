@@ -1,0 +1,23 @@
+-- v3.74.424 — close the bill ↔ PO discount double-cycle gap.
+--
+-- Before:
+--   bill_request_discount_approval_trg only ever read 'purchase_invoice'
+--   approvals. When the bill carried discount that had already been
+--   approved on the linked PO, the trigger opened a SECOND approval row
+--   on top — the owner saw the same discount twice in /approvals.
+--   bill_block_post_unapproved_discount_trg had the same blind spot:
+--   it required a 'purchase_invoice' approval row even when a matching
+--   'purchase_order' approval already covered the discount.
+--
+-- After:
+--   Both triggers consult discount_approvals for the linked
+--   NEW.purchase_order_id first. If the PO approval is approved AND its
+--   value+type match the bill's discount, the trigger treats the bill
+--   as covered (no new row, posting allowed). If the PO approval is
+--   rejected, both triggers RAISE so a rejected discount cannot travel
+--   from a PO into a bill — defence in depth on top of the PO trigger
+--   that already cancels the bill creation path.
+--
+-- Mirrors v3.74.419's invoice ↔ sales_order fix on the purchase side.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
