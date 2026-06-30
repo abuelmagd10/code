@@ -157,7 +157,17 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 - `discount_approvals` (لإلغاء الطلبات الـ pending)
 - `status = 'voided'`
 
-## M. الموافقة على الخصم لأمر الشراء (v3.74.400 → v3.74.401)
+## M. الموافقة على الخصم لأمر الشراء (v3.74.400 → v3.74.401 → v3.74.407)
+
+### v3.74.407 — ثغرة مدير الفرع
+دالة `approve_purchase_order_atomic` كانت تسمح لـ role='manager' (مدير
+الفرع) باعتماد أمر الشراء. السياسة الصحيحة: المالك + المدير العام
+(general_manager) فقط. تم تصحيح:
+- DB function role gate: `IN ('owner', 'general_manager')` بدل `'manager'`
+- UI button فى `purchase-orders/[id]/page.tsx`: نفس التصحيح
+- assert_baseline: يرفض الـ migration لو رجعت الـ string القديم
+
+### v3.74.400 → v3.74.401
 
 **اعتمادان منفصلان لأمر الشراء عند وجود خصم**:
 

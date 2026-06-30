@@ -1,0 +1,5 @@
+-- v3.74.407 — Security fix: branch managers were silently authorised
+-- to approve purchase orders because approve_purchase_order_atomic
+-- used IN ('owner', 'manager'). The 'manager' role is the BRANCH
+-- manager — policy is owner + general_manager only.
+-- See CONTRACTS.md Section M. Body lives in DB (applied via Supabase MCP).
