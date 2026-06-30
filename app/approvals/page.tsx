@@ -50,7 +50,10 @@ interface PendingMaterialIssue {
 // approval row plus the requester's email when available.
 interface PendingDiscountApproval {
   id: string
-  document_type: "sales_invoice" | "purchase_invoice" | "booking"
+  // v3.74.422 — purchase_order + sales_order added (introduced by
+  // v3.74.401/404 triggers and the v3.74.417 enum). Without them in this
+  // union the UI fell back to the booking label / /bookings/<id> route.
+  document_type: "sales_invoice" | "purchase_invoice" | "booking" | "purchase_order" | "sales_order"
   document_id: string
   document_no: string | null
   discount_value: number
@@ -333,14 +336,28 @@ function ApprovalsContent() {
       }).format(n)
     } catch { return String(n) }
   }
-  const docTypeLabel = (d: PendingDiscountApproval["document_type"]) =>
-    d === "sales_invoice"    ? t("فاتورة مبيعات", "Sales Invoice")    :
-    d === "purchase_invoice" ? t("فاتورة مشتريات", "Purchase Invoice") :
-                               t("حجز خدمة", "Booking")
-  const docHref = (item: PendingDiscountApproval) =>
-    item.document_type === "sales_invoice"    ? `/invoices/${item.document_id}` :
-    item.document_type === "purchase_invoice" ? `/bills/${item.document_id}`    :
-                                                `/bookings/${item.document_id}`
+  // v3.74.422 — explicit branches for every document type so unknown
+  // values cannot silently fall through to "Booking".
+  const docTypeLabel = (d: PendingDiscountApproval["document_type"]) => {
+    switch (d) {
+      case "sales_invoice":    return t("فاتورة مبيعات", "Sales Invoice")
+      case "purchase_invoice": return t("فاتورة مشتريات", "Purchase Invoice")
+      case "purchase_order":   return t("أمر شراء", "Purchase Order")
+      case "sales_order":      return t("طلب مبيعات", "Sales Order")
+      case "booking":          return t("حجز خدمة", "Booking")
+      default:                 return t("مستند", "Document")
+    }
+  }
+  const docHref = (item: PendingDiscountApproval) => {
+    switch (item.document_type) {
+      case "sales_invoice":    return `/invoices/${item.document_id}`
+      case "purchase_invoice": return `/bills/${item.document_id}`
+      case "purchase_order":   return `/purchase-orders/${item.document_id}`
+      case "sales_order":      return `/sales-orders/${item.document_id}`
+      case "booking":          return `/bookings/${item.document_id}`
+      default:                 return "#"
+    }
+  }
 
   const BomCard = ({ b }: { b: PendingBomVersion }) => (
     <Card key={b.id} className="border-l-4 border-l-blue-500">

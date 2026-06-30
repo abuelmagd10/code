@@ -64,6 +64,39 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## V. صفحة /approvals تتعامل مع purchase_order و sales_order (v3.74.422 — HOTFIX)
+
+### الثغرة
+
+`app/approvals/page.tsx` كان معرّف الـ TypeScript union لـ `document_type` على
+ثلاث قيم فقط: `"sales_invoice" | "purchase_invoice" | "booking"`. وكان فيه
+fallback صامت داخل `docTypeLabel` و `docHref`:
+
+```ts
+const docTypeLabel = (d) =>
+  d === "sales_invoice"    ? "فاتورة مبيعات" :
+  d === "purchase_invoice" ? "فاتورة مشتريات" :
+                             "حجز خدمة"
+```
+
+النتيجة: أى صف بـ `document_type='purchase_order'` (أُضيف لقاعدة البيانات
+فى v3.74.401 + إصدار الـ enum فى v3.74.417) كان يُعرَض على إنه
+**"حجز خدمة"** ورابط "عرض المستند" يفتح `/bookings/<po-id>` بدلاً من
+`/purchase-orders/<po-id>`. اكتشفها المالك أثناء اختبار v3.74.421 لما
+لقى PO-0001 معروض كحجز.
+
+### الحل
+
+- توسيع الـ union ليشمل `purchase_order` و `sales_order`.
+- استبدال السلاسل الشرطية بـ `switch` فيها branch صريح لكل قيمة وبـ
+  `default` يرجع `"مستند" / "Document"` و `href = "#"` بدلاً من
+  افتراض أنه حجز.
+
+### Section V baseline
+لا تغييرات على الـ DB. فحص ساكن: ملف `app/approvals/page.tsx` يحتوى على
+`"purchase_order"` و `"sales_order"` فى الـ union وكذلك على
+`/purchase-orders/${item.document_id}` و `/sales-orders/${item.document_id}`.
+
 ## U. تجميع خصم البنود + خصم المستند (v3.74.421)
 
 ### الثغرة
