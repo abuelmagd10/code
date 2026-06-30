@@ -64,6 +64,22 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## R'. po/so_request_discount_approval_trg يقرأ NEW.created_by اللى مش موجود (v3.74.418 — HOTFIX)
+
+triggers v3.74.401 و v3.74.404 نسخت من bill trigger السطر التالى:
+```
+v_requester := COALESCE(NEW.created_by_user_id, NEW.created_by);
+```
+`bills` عندها الـ 2 columns. `purchase_orders` و `sales_orders`
+عندهم `created_by_user_id` بس → الـ trigger كان بيرفع exception:
+> record "new" has no field "created_by"
+
+وكل الـ INSERT بيتراجع. ده ظهر للمستخدم كـ "فشل فى إنشاء أمر الشراء"
+بدون سبب واضح.
+
+تم تعديل الـ trigger ليستخدم `NEW.created_by_user_id` مباشرة بدون
+fallback لعمود مش موجود.
+
 ## R. قيم enum discount_document_type (v3.74.417 — HOTFIX)
 
 الـ enum `discount_document_type` كان فيه ٣ قيم بس:

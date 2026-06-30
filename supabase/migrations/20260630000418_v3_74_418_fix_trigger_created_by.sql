@@ -1,0 +1,19 @@
+-- v3.74.418 — HOTFIX. po_request_discount_approval_trg (v3.74.401) and
+-- so_request_discount_approval_trg (v3.74.404) copied this line from
+-- the bill trigger pattern:
+--   v_requester := COALESCE(NEW.created_by_user_id, NEW.created_by);
+-- bills has both columns. purchase_orders and sales_orders only have
+-- created_by_user_id, so the assignment raised
+--   ERROR: record "new" has no field "created_by"
+-- (postgres logs context: PL/pgSQL assignment line 45).
+--
+-- The whole INSERT into purchase_orders / sales_orders rolled back —
+-- which is exactly the HTTP 400 the owner caught after v3.74.417 fixed
+-- the enum (the second blocker in the same trigger).
+--
+-- Fix: drop the NULL fallback to a column that does not exist on the
+-- triggering table. Just use NEW.created_by_user_id directly.
+-- Body is otherwise byte-identical to v3.74.401/404.
+
+-- Bodies installed in DB via Supabase MCP; this file is the canonical
+-- source for rebuild scripts.
