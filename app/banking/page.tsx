@@ -692,9 +692,25 @@ export default function BankingPage() {
                     <select
                       className="w-full border rounded px-2 py-1"
                       value={transfer.from_id}
-                      onChange={(e) =>
-                        setTransfer({ ...transfer, from_id: e.target.value })
-                      }
+                      onChange={(e) => {
+                        // v3.74.414 — auto-switch transfer currency to the
+                        // source account's native currency when the account
+                        // is in a non-base currency. Prevents the user from
+                        // leaving "EGP" selected while transferring out of
+                        // a USD account.
+                        const newFromId = e.target.value
+                        const picked = accounts.find((a) => a.id === newFromId)
+                        const baseCurrency = typeof window !== "undefined"
+                          ? (localStorage.getItem("app_currency") || "EGP")
+                          : "EGP"
+                        const nativeCurrency =
+                          (picked as any)?.original_currency || baseCurrency
+                        if (nativeCurrency && nativeCurrency !== transfer.currency) {
+                          setTransfer({ ...transfer, from_id: newFromId, currency: nativeCurrency })
+                        } else {
+                          setTransfer({ ...transfer, from_id: newFromId })
+                        }
+                      }}
                     >
                       <option value="">
                         {appLang === "en" ? "Select account" : "اختر حسابًا"}
@@ -702,6 +718,7 @@ export default function BankingPage() {
                       {accounts.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.account_code || ""} {a.account_name}
+                          {(a as any).original_currency ? ` (${(a as any).original_currency})` : ""}
                         </option>
                       ))}
                     </select>
@@ -723,6 +740,8 @@ export default function BankingPage() {
                       {accounts.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.account_code || ""} {a.account_name}
+                          {/* v3.74.414 - mirror the currency tag on the "to" dropdown */}
+                          {(a as any).original_currency ? ` (${(a as any).original_currency})` : ""}
                         </option>
                       ))}
                     </select>
