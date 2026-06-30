@@ -64,6 +64,44 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AF. إصلاح focus textarea رفض الخصم (v3.74.432)
+
+### الثغرة
+
+اكتشفها المالك أثناء اختبار رفض اعتماد خصم: textarea سبب الرفض كان
+بيقبل **حرف واحد فقط** كل مرة، وبعدها يفقد الـ focus.
+
+السبب: `DiscountApprovalCard` كانت function معرّفة جوّا
+`ApprovalsContent` (parent component). لما المستخدم يكتب حرف، الـ
+state `rejectReason` يتغيّر، الـ parent يـ re-render، وعلى كل render
+JavaScript يولّد دالة `DiscountApprovalCard` بـ **identity جديدة**.
+React reconciler يقارن أنواع المكونات بالـ identity، فيرى "نوع مختلف"
+ويـ unmount الـ Card كاملة + الـ Textarea بداخلها. الـ focus بيضيع
+لأن الـ DOM node اتمسحت وحلت محلها واحدة جديدة.
+
+### الحل
+
+نقل `DiscountApprovalCard` من جوّا الـ parent إلى **module level** فوق
+`ApprovalsContent`. الـ identity بقت ثابتة عبر الـ renders، React
+يحافظ على الـ subtree، الـ Textarea تبقى focused.
+
+كل القيم اللى كانت متاحة عبر الـ closure (`t`, `appLang`, `fmtMoney`,
+`docTypeLabel`, `rejectId`, `rejectReason`, `setRejectReason`,
+`runningId`, `handleApprove`, `handleReject`, إلخ.) بقت تُمرَّر داخل
+حزمة واحدة اسمها `ctx: CardCtx` للتنظيف.
+
+### تأثير محتمل على الكروت الأخرى
+
+نفس النمط (function داخل function) موجود فى `BomCard`,
+`RoutingCard`, `MaterialIssueCard`, `ProductionOrderCard`. لو حصلت
+نفس المشكلة فى رفضهم، نطبق نفس الإصلاح. الأولوية الآن للخصم لأنه
+الـ flow اللى المالك بيختبره دلوقتى.
+
+### Section AF baseline
+- النص الجوّانى لـ `app/approvals/page.tsx` يحتوى على
+  `const DiscountApprovalCard = ({ d, ctx }` (دلالة على Module-level)
+- لا توجد فحوصات DB لهذا الإصلاح (تعديل واجهة فقط)
+
 ## AE. HOTFIX notifications.category CHECK (v3.74.431)
 
 ### الثغرة

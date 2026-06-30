@@ -77,6 +77,127 @@ type PendingItem =
   | PendingMaterialIssue
   | PendingDiscountApproval
 
+// ── Card components (module-level for stable React identity) ──
+//
+// v3.74.432 — DiscountApprovalCard used to live inside ApprovalsContent.
+// Because the inner function was re-created on every parent render, React
+// saw a NEW component type on each keystroke in the reject textarea, so
+// it unmounted/remounted the entire card subtree → the textarea lost
+// focus after each character. Hoisting the card to module level gives it
+// a stable identity; React reconciler now preserves the subtree.
+
+type CardCtx = {
+  appLang: "ar" | "en"
+  t: (ar: string, en: string) => string
+  fmtMoney: (n: number) => string
+  fmtDate: (s: string) => string
+  docTypeLabel: (d: PendingDiscountApproval["document_type"]) => string
+  docHref: (d: PendingDiscountApproval) => string
+  rejectId: string | null
+  rejectReason: string
+  setRejectReason: (s: string) => void
+  setRejectId: (id: string | null) => void
+  setRejectType: (t: any) => void
+  runningId: string | null
+  handleApprove: (d: PendingDiscountApproval) => void
+  handleReject: () => void
+}
+
+const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: CardCtx }) => {
+  const { appLang, t, fmtMoney, fmtDate, docTypeLabel, docHref,
+          rejectId, rejectReason, setRejectReason, setRejectId, setRejectType,
+          runningId, handleApprove, handleReject } = ctx
+  const discountLabel = d.discount_type === "percent"
+    ? `${fmtMoney(d.discount_value)}%`
+    : `${fmtMoney(d.discount_value)} ${t("ج.م", "EGP")}`
+  const ratio = d.document_total && d.document_total > 0 && d.discount_type === "amount"
+    ? (d.discount_value / d.document_total) * 100
+    : null
+  return (
+    <Card key={d.id} className="border-l-4 border-l-rose-500">
+      <CardContent className="py-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg shrink-0">
+              <Percent className="w-4 h-4 text-rose-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm">
+                {docTypeLabel(d.document_type)} · {d.document_no ?? t("بدون رقم", "(no number)")}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                👤 {d.party_name ?? t("بدون طرف", "(no party)")}
+                {d.document_total != null && (
+                  <> · 💰 {t("إجمالى", "Total")}: {fmtMoney(d.document_total)} {t("ج.م", "EGP")}</>
+                )}
+              </p>
+              <p className="text-xs mt-1">
+                <span className="font-semibold text-rose-700 dark:text-rose-300">
+                  {t("الخصم المطلوب", "Requested discount")}: {discountLabel}
+                </span>
+                {ratio != null && (
+                  <span className="text-muted-foreground"> ({fmtMoney(ratio)}%)</span>
+                )}
+              </p>
+              {d.reason && (
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                  📝 {d.reason}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                🧑 {d.requested_by_email ?? d.requested_by.slice(0, 8)} · 📅 {fmtDate(d.requested_at)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+            </Badge>
+            <Link href={docHref(d)} className="text-xs text-rose-600 hover:underline">
+              {t("عرض المستند", "View document")}
+            </Link>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Button
+            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+            disabled={runningId === d.id}
+            onClick={() => handleApprove(d)}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الخصم", "Approve Discount")}
+          </Button>
+          <Button
+            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+            disabled={runningId === d.id}
+            onClick={() => { setRejectId(d.id); setRejectType("discount_approval"); setRejectReason("") }}
+          >
+            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+          </Button>
+        </div>
+        {rejectId === d.id && (
+          <div className="mt-3 space-y-2">
+            <Textarea
+              placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              rows={2}
+              className="text-sm"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" className="text-xs" disabled={!rejectReason.trim() || runningId === d.id} onClick={handleReject}>
+                {t("تأكيد الرفض", "Confirm Reject")}
+              </Button>
+              <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                {t("إلغاء", "Cancel")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────
 
 function ApprovalsContent() {
@@ -556,99 +677,12 @@ function ApprovalsContent() {
     )
   }
 
-  // v3.74.373 — Discount approval card. Renders one pending request
-  // with the snapshot fields (party, document_no, document_total) so
-  // the approver can decide without leaving the inbox.
-  const DiscountApprovalCard = ({ d }: { d: PendingDiscountApproval }) => {
-    const discountLabel = d.discount_type === "percent"
-      ? `${fmtMoney(d.discount_value)}%`
-      : `${fmtMoney(d.discount_value)} ${t("ج.م", "EGP")}`
-    const ratio = d.document_total && d.document_total > 0 && d.discount_type === "amount"
-      ? (d.discount_value / d.document_total) * 100
-      : null
-    return (
-      <Card key={d.id} className="border-l-4 border-l-rose-500">
-        <CardContent className="py-4">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="flex items-start gap-3 flex-1 min-w-0">
-              <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg shrink-0">
-                <Percent className="w-4 h-4 text-rose-600" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-sm">
-                  {docTypeLabel(d.document_type)} · {d.document_no ?? t("بدون رقم", "(no number)")}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  👤 {d.party_name ?? t("بدون طرف", "(no party)")}
-                  {d.document_total != null && (
-                    <> · 💰 {t("إجمالى", "Total")}: {fmtMoney(d.document_total)} {t("ج.م", "EGP")}</>
-                  )}
-                </p>
-                <p className="text-xs mt-1">
-                  <span className="font-semibold text-rose-700 dark:text-rose-300">
-                    {t("الخصم المطلوب", "Requested discount")}: {discountLabel}
-                  </span>
-                  {ratio != null && (
-                    <span className="text-muted-foreground"> ({fmtMoney(ratio)}%)</span>
-                  )}
-                </p>
-                {d.reason && (
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                    📝 {d.reason}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground mt-1">
-                  🧑 {d.requested_by_email ?? d.requested_by.slice(0, 8)} · 📅 {fmtDate(d.requested_at)}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
-                <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
-              </Badge>
-              <Link href={docHref(d)} className="text-xs text-rose-600 hover:underline">
-                {t("عرض المستند", "View document")}
-              </Link>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <Button
-              size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
-              disabled={runningId === d.id}
-              onClick={() => handleApprove(d)}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الخصم", "Approve Discount")}
-            </Button>
-            <Button
-              size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
-              disabled={runningId === d.id}
-              onClick={() => { setRejectId(d.id); setRejectType("discount_approval"); setRejectReason("") }}
-            >
-              <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
-            </Button>
-          </div>
-          {rejectId === d.id && (
-            <div className="mt-3 space-y-2">
-              <Textarea
-                placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
-                rows={2}
-                className="text-sm"
-              />
-              <div className="flex gap-2">
-                <Button size="sm" variant="destructive" className="text-xs" disabled={!rejectReason.trim() || runningId === d.id} onClick={handleReject}>
-                  {t("تأكيد الرفض", "Confirm Reject")}
-                </Button>
-                <Button size="sm" variant="ghost" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
-                  {t("إلغاء", "Cancel")}
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    )
+  // v3.74.432 — DiscountApprovalCard hoisted to module level (see top
+  // of file). Bundle the closure values into ctx so we pass one prop.
+  const discountCardCtx: CardCtx = {
+    appLang, t, fmtMoney, fmtDate, docTypeLabel, docHref,
+    rejectId, rejectReason, setRejectReason, setRejectId, setRejectType,
+    runningId, handleApprove, handleReject,
   }
 
   const ProductionOrderCard = ({ p }: { p: PendingProductionOrder }) => (
@@ -820,7 +854,7 @@ function ApprovalsContent() {
                   <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
                     <Percent className="w-4 h-4" />{t("اعتمادات الخصم", "Discount Approvals")}
                   </h2>
-                  {discountApprovals.map(d => <DiscountApprovalCard key={d.id} d={d} />)}
+                  {discountApprovals.map(d => <DiscountApprovalCard key={d.id} d={d} ctx={discountCardCtx} />)}
                 </div>
               )}
             </div>
