@@ -64,6 +64,28 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## Q. إصلاح SECURITY DEFINER على الفيوهات (v3.74.408 — المرحلة 1)
+
+Supabase Security Advisor أبلغ عن 12 view من نوع `security_definer_view`.
+كل view بـ SECURITY DEFINER بيقرأ بصلاحية المنشئ (يتجاوز RLS).
+
+### المرحلة 1 — 3 فيوهات منخفضة الخطر (v3.74.408):
+- `inventory_available_balance`
+- `v_inventory_reservation_balances`
+- `v_shared_with_me`
+
+كل واحد منهم بقى `security_invoker = true`. الجداول الأصلية
+(inventory_transactions + permission_sharing) عندها RLS مفعّل بالفعل،
+فالتغيير شفّاف وآمن.
+
+### Section Q fingerprint
+الـ 3 فيوهات لازم يحافظوا على `security_invoker = true` فى reloptions.
+لو DROP / CREATE من غير الـ option، الـ baseline يفشل.
+
+### المراحل القادمة
+المرحلة 2: 7 فيوهات تقارير
+المرحلة 3: 2 فيوهات نظام حساسة
+
 ## P. إلغاء فاتورة المبيعات (v3.74.406)
 
 نفس فكرة v3.74.402 لكن على ناحية المبيعات.
