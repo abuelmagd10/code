@@ -64,6 +64,46 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## W. إلغاء اعتماد الخصم تلقائياً عند رفض/إلغاء المستند (v3.74.423)
+
+### الثغرة
+
+اكتشفها المالك أثناء اختبار v3.74.422: قام برفض PO-0001 مباشرةً من
+صفحة PO قبل ما يتعامل مع اعتماد الخصم. النتيجة:
+- `purchase_orders.status = 'rejected'` ✓
+- `discount_approvals.status` لسه `'pending'` ✗
+- صفحة `/approvals` لسه بتعرض كارت اعتمد/رفض لمستند تم رفضه
+
+السبب: ما فيش trigger يربط الانتقال إلى rejected/cancelled على المستند
+بإلغاء صف الاعتماد المعلّق.
+
+### الحل
+
+triggers جديدة:
+- `po_cancel_discount_on_status` على `purchase_orders` (AFTER UPDATE OF status)
+- `so_cancel_discount_on_status` على `sales_orders` (نفس الشيء)
+
+السلوك: لما الحالة تنتقل لـ `'rejected'` أو `'cancelled'` (وفعلاً
+تتغيّر، مش UPDATE نفس القيمة)، الـ trigger يبحث عن كل صف
+`discount_approvals` بـ `status='pending'` لهذا المستند ويحوّله إلى
+`'cancelled'` مع `decision_note` عربى يشرح السبب.
+
+- الصفوف بحالة `approved` أو `rejected` ما تتغيّرش (audit trail).
+- لو المستخدم رجّع PO من rejected إلى draft وأعاد التعديل، فإن
+  `po_evaluate_discount_approval` (Section U) يفتح صف pending جديد
+  تلقائياً — re-open flow يشتغل بدون كود إضافى.
+
+### Catch-up
+
+الـ migration بيضم UPDATE فورى لتنظيف الصفوف القديمة المعلّقة لمستندات
+مرفوضة/ملغاة. PO-0001 اللى المالك ضرب عليه مثلاً اتنظف فى نفس الـ run.
+
+### Section W baseline
+- function `po_cancel_discount_on_status_trg` موجودة وتشير لـ
+  `'rejected'` و `'cancelled'`
+- function `so_cancel_discount_on_status_trg` نفس الشيء
+- triggers `po_cancel_discount_on_status` و `so_cancel_discount_on_status` موجودة
+
 ## V. صفحة /approvals تتعامل مع purchase_order و sales_order (v3.74.422 — HOTFIX)
 
 ### الثغرة

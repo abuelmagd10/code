@@ -1,0 +1,24 @@
+-- v3.74.423 — cancel pending discount approvals when the parent PO/SO
+-- is rejected or cancelled.
+--
+-- Bug spotted during testing: the owner rejected PO-0001 directly
+-- (without acting on the discount approval first). The PO went to
+-- 'rejected' but the discount_approvals row stayed 'pending', so
+-- /approvals still showed an Approve/Reject card for a dead document.
+--
+-- Two new triggers (po_cancel_discount_on_status and
+-- so_cancel_discount_on_status) fire AFTER UPDATE OF status on
+-- purchase_orders and sales_orders. When the new status is 'rejected'
+-- or 'cancelled' AND it actually changed, they move every 'pending'
+-- discount_approval for that document to 'cancelled' with an Arabic
+-- decision_note explaining why.
+--
+-- Approved and rejected discount rows are left untouched (audit trail).
+-- If the user later re-edits the PO back to draft, the existing
+-- po_evaluate_discount_approval evaluator (Section U) opens a fresh
+-- pending row, so the re-open flow still works.
+--
+-- The migration also includes a one-shot UPDATE to clean up any
+-- already-stale rows (mainly the PO-0001 row the owner caught).
+--
+-- Bodies installed via Supabase MCP; this file is the canonical source.
