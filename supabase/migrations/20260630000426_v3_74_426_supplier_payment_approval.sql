@@ -1,0 +1,43 @@
+-- v3.74.426 — supplier payment approval workflow.
+--
+-- The payments table had approved_by + approved_at columns but no DB
+-- enforcement. Anyone with insert rights could record a paid supplier
+-- invoice without owner / GM review, and the auto-journal trigger would
+-- post a journal entry for it immediately. This is a serious financial
+-- control gap.
+--
+-- This migration installs the gate:
+--
+-- (A) Backfill 13 legacy approved payments to satisfy the new contract
+--     (approved_by = created_by; approved_at = created_at).
+--
+-- (B) Four payment-side triggers:
+--     payment_supplier_approval_insert  (BEFORE INSERT)
+--       - Privileged user (owner/GM) creating a supplier payment may
+--         start in 'approved'; the trigger auto-fills approved_by /
+--         approved_at if missing.
+--       - Non-privileged users may only start in draft / pending_approval.
+--     payment_supplier_approval_update  (BEFORE UPDATE)
+--       - Transitions into approved/posted/paid/partially_paid require
+--         approved_by AND approved_at to be populated. RAISE otherwise.
+--     payment_supplier_notify_approval  (AFTER INSERT/UPDATE OF status)
+--       - When a supplier payment lands in pending_approval, insert
+--         notifications for owner + GM with reference_type =
+--         'approval_request' (routes to /approvals).
+--
+-- (C) Auto-journal trigger split: was AFTER INSERT WHEN journal IS NULL.
+--     Now two triggers — INSERT and UPDATE OF status — both guarded so
+--     the journal entry is only created once the payment is actually in
+--     an approved-ish state. Pending payments wait for approval before
+--     hitting the ledger.
+--
+-- (D) RPC: approve_supplier_payment_atomic(payment_id, user_id,
+--     company_id, action, reason). Only owner / GM. On approve → status
+--     = approved, approved_by/approved_at set, the UPDATE journal
+--     trigger fires and posts the JE. On reject → status = rejected
+--     with the reason.
+--
+-- UI: /approvals page learns the new "supplier_payment" doc type and
+-- routes it to /payments/<id>.
+--
+-- Bodies installed via Supabase MCP; this file is the canonical source.

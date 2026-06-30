@@ -64,6 +64,74 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## Z. دورة اعتماد دفع المورد (v3.74.426)
+
+### الثغرة
+
+جدول `payments` كان عنده `approved_by` و `approved_at` (مع `rejected_*`
+و `current_approval_role`) لكن مفيش حد بيفرضهم. أى مستخدم عنده صلاحية
+كتابة كان يقدر يدخّل دفعة لفاتورة مورد بـ `status='approved'` مباشرةً
+ومش بس كده — الـ trigger `trg_auto_create_payment_journal` كان يطلق
+على الـ INSERT بدون فحص الحالة ويعمل قيد محاسبى فورى. يعنى دفعة بدون
+اعتماد المالك كانت بترحل للأستاذ العام بصمت.
+
+كان فيه ١٣ دفعة legacy بحالة `approved` بدون `approved_by` (مستوردة
+أو أُنشئت قبل سن الـ contract الجديد).
+
+### الحل
+
+**Backfill**: الـ ١٣ دفعة القديمة بقت
+`approved_by = COALESCE(created_by_user_id, created_by)` و
+`approved_at = COALESCE(created_at, NOW())`. مفيش دفعة ضاع منها صف.
+
+**أربع triggers على `payments`**:
+
+١. `payment_supplier_approval_insert` (BEFORE INSERT) — لو دفعة
+   مورد (supplier_id أو bill_id ≠ NULL):
+   - منشئها owner/general_manager → السماح بـ `status='approved'`
+     مع auto-fill لـ `approved_by`/`approved_at` (self-approval).
+   - أى دور تانى → الحالة المسموحة فى الإنشاء `draft` أو
+     `pending_approval` فقط. غير كده → RAISE بالعربى.
+
+٢. `payment_supplier_approval_update` (BEFORE UPDATE) — أى انتقال
+   لحالة (approved/posted/paid/partially_paid) لازم يكون
+   `approved_by` و `approved_at` معبّيين. لو NULL → RAISE.
+
+٣. `payment_supplier_notify_approval` (AFTER INSERT/UPDATE OF status) —
+   أول ما الحالة تبقى `pending_approval`، إشعار للمالك + المدير العام
+   بـ `reference_type='approval_request'` (يوجّه لـ
+   `/approvals?highlight=<id>`).
+
+**Auto-journal split**: الـ trigger القديم
+`trg_auto_create_payment_journal` كان AFTER INSERT بس مع
+`WHEN journal_entry_id IS NULL`. الآن:
+- `trg_auto_create_payment_journal_ins` — INSERT + شرط الحالة مش
+  pending_approval / draft / rejected
+- `trg_auto_create_payment_journal_upd` — UPDATE OF status + شرط الانتقال
+  من حالة غير-معتمدة لمعتمدة
+
+يعنى دفعة جديدة بـ pending_approval ما يُنشأ ليها قيد. لما تتعتمد، الـ
+UPDATE trigger يطلق ويعمل القيد. مفيش double-fire لإن
+`journal_entry_id IS NULL` شرط على الترايجرين.
+
+**RPC `approve_supplier_payment_atomic`**: نقطة دخول الواجهة للاعتماد
+أو الرفض. تفحص الدور (owner/GM فقط) وحالة الدفعة (`pending_approval`)،
+وتحدّث الأعمدة بشكل atomic.
+
+### UI
+
+صفحة `/approvals` بقت تعرف `document_type='supplier_payment'`
+وتوجّهه لـ `/payments/<id>`.
+
+### Section Z baseline
+- functions: `payment_supplier_approval_insert_trg`,
+  `payment_supplier_approval_update_trg`,
+  `payment_supplier_notify_approval_trg`,
+  `approve_supplier_payment_atomic`
+- triggers: نفس الأسماء + `trg_auto_create_payment_journal_ins/upd`
+- legacy `trg_auto_create_payment_journal` لازم يكون اتمسح
+- النصوص الجوّانية للـ triggers تحتوى على invariants الـ contract
+
 ## Y. القفل الصارم على المستندات المعتمدة (v3.74.425)
 
 ### الثغرة

@@ -53,7 +53,8 @@ interface PendingDiscountApproval {
   // v3.74.422 — purchase_order + sales_order added (introduced by
   // v3.74.401/404 triggers and the v3.74.417 enum). Without them in this
   // union the UI fell back to the booking label / /bookings/<id> route.
-  document_type: "sales_invoice" | "purchase_invoice" | "booking" | "purchase_order" | "sales_order"
+  // v3.74.426 — supplier_payment added (introduced by v3.74.426 workflow).
+  document_type: "sales_invoice" | "purchase_invoice" | "booking" | "purchase_order" | "sales_order" | "supplier_payment"
   document_id: string
   document_no: string | null
   discount_value: number
@@ -345,6 +346,7 @@ function ApprovalsContent() {
       case "purchase_order":   return t("أمر شراء", "Purchase Order")
       case "sales_order":      return t("طلب مبيعات", "Sales Order")
       case "booking":          return t("حجز خدمة", "Booking")
+      case "supplier_payment": return t("دفعة مورد", "Supplier Payment")
       default:                 return t("مستند", "Document")
     }
   }
@@ -355,6 +357,7 @@ function ApprovalsContent() {
       case "purchase_order":   return `/purchase-orders/${item.document_id}`
       case "sales_order":      return `/sales-orders/${item.document_id}`
       case "booking":          return `/bookings/${item.document_id}`
+      case "supplier_payment": return `/payments/${item.document_id}`
       default:                 return "#"
     }
   }
