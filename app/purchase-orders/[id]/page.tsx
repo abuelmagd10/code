@@ -823,9 +823,12 @@ export default function PurchaseOrderDetailPage() {
                   </Button>
                 </Link>
               )}
-              {/* Edit button */}
-              {permUpdate && (!linkedBillStatus || linkedBillStatus === 'draft') && (
-                // Show Edit if Privileged OR (Non-Privileged AND status is rejected)
+              {/* Edit button
+                  v3.74.425 — strict lock: PO must be in draft/pending/rejected.
+                  Approved/sent/received POs are locked at DB level too. */}
+              {permUpdate &&
+                ['draft', 'pending_approval', 'rejected'].includes(po.status) &&
+                (!linkedBillStatus || linkedBillStatus === 'draft') && (
                 ((userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') ||
                 (po.status === 'rejected')) && (
                 <Link href={`/purchase-orders/${poId}/edit`}>
@@ -935,6 +938,21 @@ export default function PurchaseOrderDetailPage() {
                       </Button>
                     </Link>
                   )}
+                </div>
+              </div>
+            )}
+            {/* v3.74.425 — strict-lock banner: PO past pending_approval.
+                Tells the user the document is locked and how to re-open it. */}
+            {['approved', 'sent_to_vendor', 'received'].includes(po.status) && (
+              <div className="no-print rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700 p-4 flex items-start gap-3" data-ai-help="purchase_orders.locked_banner">
+                <AlertCircle className="h-5 w-5 text-blue-700 dark:text-blue-300 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 text-sm text-blue-900 dark:text-blue-100">
+                  <div className="font-semibold mb-1">أمر شراء معتمد — مقفول للتعديل</div>
+                  <div>
+                    لا يمكن تعديل خصم أو بنود أو إجماليات أمر شراء معتمد. لو محتاج تغيير،
+                    افتح الفاتورة المرتبطة واعمل لها <span className="font-semibold">"إلغاء (Void)"</span> —
+                    الـ PO يرجع تلقائياً لحالة "بانتظار الاعتماد" وتقدر تعدّل وتعيد الاعتماد.
+                  </div>
                 </div>
               </div>
             )}

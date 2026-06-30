@@ -64,6 +64,70 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## Y. القفل الصارم على المستندات المعتمدة (v3.74.425)
+
+### الثغرة
+
+`po_evaluate_discount_approval` كان عنده guard فى أول سطر:
+```sql
+IF v_po.status NOT IN ('draft', 'pending_approval') THEN RETURN; END IF;
+```
+يعنى لو الـ PO فى حالة approved أو sent_to_vendor أو received وحد عدّل
+`discount_value` أو غيّر بنود، الـ trigger كان بيخرج بصمت ومبيفتحش طلب
+اعتماد جديد للقيمة المعدّلة. التغيير كان يدخل بدون مراجعة.
+
+نفس الفجوة على الفواتير: بعد ما الفاتورة تتنشر، أى تعديل لخصم لا
+يطلق أى دورة موافقة.
+
+### الحل (الصارم)
+
+أربع triggers على مستوى DB، كل واحدة BEFORE event عشان ترفض قبل ما
+التغيير يبقى persistent:
+
+١. `po_protect_approved` BEFORE UPDATE على `purchase_orders` — لو حالة
+   الـ PO فى (approved, sent_to_vendor, received) وحالة الحالة ما اتغيرتش
+   لكن واحد من حقول الخصم/الإجماليات (discount_value, discount_type,
+   discount_position, tax_inclusive, exchange_rate, subtotal,
+   total_amount, tax_amount, shipping) اتغيّر → RAISE.
+
+٢. `po_item_protect_approved` BEFORE INS/UPD/DEL على
+   `purchase_order_items` — لو الـ PO الأب فى الحالات المعتمدة → RAISE.
+   مع honor لـ `app.skip_po_lock` token للسماح بـ flows الـ system
+   الشرعية مستقبلاً.
+
+٣. `bill_protect_posted` BEFORE UPDATE على `bills` — لو الحالة مش
+   draft ولا voided وحد عدّل خصم/إجماليات → RAISE.
+
+٤. `bill_item_protect_posted` BEFORE INS/UPD/DEL على `bill_items` —
+   نفس المنطق على البنود.
+
+كل الـ triggers بتسمح بانتقالات الحالة (status transitions) عشان
+`void_bill_atomic` يقدر يرجّع الـ PO من approved لـ pending_approval
+بدون مشكلة.
+
+### UI
+
+صفحة عرض الـ PO:
+- زر "تعديل" بقى مخفى لو الحالة فى (approved, sent_to_vendor, received)
+- Banner أزرق تفسيرى يظهر فى نفس الحالات: "أمر شراء معتمد — مقفول
+  للتعديل. اعمل void للفاتورة لإعادة فتح الدورة"
+
+### إجراء التعديل بعد القفل
+
+١. افتح الفاتورة المرتبطة  
+٢. اضغط "إلغاء (Void)"  
+٣. الـ PO يرجع تلقائياً لـ pending_approval (من v3.74.402)  
+٤. اعدّل الـ PO (الـ trigger هيشتغل ويفتح طلب اعتماد جديد للخصم لو
+   اتغيّر)  
+٥. اعتمد الـ PO من جديد (الفاتورة الجديدة تتولد تلقائياً)
+
+### Section Y baseline
+- `po_protect_approved_trg` فيها `'approved'` و `discount_value`
+- `po_item_protect_approved_trg` فيها `'approved'`
+- `bill_protect_posted_trg` فيها `discount_value` و `'draft'`
+- `bill_item_protect_posted_trg` فيها `'draft'`
+- triggers الـ 4 موجودة على الجداول الصحيحة
+
 ## X. فاتورة المشتريات تقرأ اعتماد خصم الـ PO المرتبط (v3.74.424)
 
 ### الثغرة

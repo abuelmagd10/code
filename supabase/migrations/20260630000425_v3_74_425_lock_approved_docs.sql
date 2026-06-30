@@ -1,0 +1,30 @@
+-- v3.74.425 — strict lock on approved POs and posted bills.
+--
+-- Before: po_evaluate_discount_approval returned silently when PO status
+-- was past pending_approval, so anyone with edit rights (owner / admin /
+-- general_manager) could change discount or items on an approved PO
+-- without re-opening the approval cycle. Same gap on bills past draft.
+--
+-- After: four BEFORE triggers that RAISE on tampering.
+--
+--   po_protect_approved        on purchase_orders
+--   po_item_protect_approved   on purchase_order_items
+--   bill_protect_posted        on bills
+--   bill_item_protect_posted   on bill_items
+--
+-- Each trigger lets status transitions through (so void_bill_atomic still
+-- works — it moves PO from approved back to pending_approval). It only
+-- refuses changes to discount-affecting fields (discount_value,
+-- discount_type, discount_position, exchange_rate, tax_inclusive,
+-- subtotal, total_amount, tax_amount, shipping) and to items.
+--
+-- A skip token (app.skip_po_lock) is recognized for future void / system
+-- flows that may need to clean up items legitimately. The auto-bill
+-- creation path inside approve_purchase_order_atomic is unaffected
+-- because the bill is created in 'draft' (no lock applies).
+--
+-- UI side: PO view shows a strict-lock banner when status is
+-- approved/sent_to_vendor/received, and the Edit button is hidden for
+-- those states.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
