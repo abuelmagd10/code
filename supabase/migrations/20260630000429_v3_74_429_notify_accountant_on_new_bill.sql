@@ -1,0 +1,15 @@
+-- v3.74.429 — notify the accountant when a new purchase bill appears.
+--
+-- Bills used to land in the system with no signal — the accountant
+-- only found them by polling the bills list. This trigger pushes a
+-- notification to every accountant that should care:
+--   - branch-scoped accountants when at least one exists for the bill's
+--     branch (precise targeting)
+--   - company-wide accountants when no branch-scoped accountant is
+--     configured (fallback so coverage is never zero)
+--
+-- The actor (whoever caused the INSERT) is skipped so an accountant who
+-- creates a bill themselves doesn't get a self-ping. category is set to
+-- 'accountant_action' so the inbox UI can group the items.
+--
+-- Body installed via Supabase MCP. This file is the canonical source.

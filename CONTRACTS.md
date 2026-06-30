@@ -64,6 +64,35 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AC. إشعار المحاسب بفواتير المشتريات الجديدة (v3.74.429)
+
+### الثغرة
+
+الفواتير كانت بتظهر صامتة. لو الـ PO اتعتمد → الفاتورة تتولد تلقائياً
+بحالة draft، لكن المحاسب يكتشفها لما يفتح قائمة الفواتير بنفسه. مفيش
+push يبلّغه إن فيه شغل محاسبى جاى عليه.
+
+### الحل
+
+trigger `bill_notify_accountant` على `bills` بـ AFTER INSERT.
+يبعت إشعار لكل محاسب يخصه:
+
+١. **التفضيل الأول**: المحاسبين بدور `accountant` و
+   `branch_id = NEW.branch_id` (محاسب الفرع تحديداً)
+٢. **Fallback**: لو الفرع ما عندوش محاسب مخصص، الإشعار يروح لكل
+   المحاسبين على مستوى الشركة
+
+الفاعل (اللى عمل الـ INSERT) يستبعد عشان ما يبعتش لنفسه. الإشعار
+بـ `category='accountant_action'` للفلترة فى الـ inbox. الرسالة بتقول
+رقم الفاتورة + المورد + الـ PO المرتبط + الإجمالى + توجيه واضح
+"راجع الفاتورة وحضّر دورة الدفع".
+
+### Section AC baseline
+- function `bill_notify_accountant_trg` موجودة وتستهدف `role='accountant'`
+- trigger `bill_notify_accountant` موجود على bills
+- الـ category `'accountant_action'` مستخدم
+- `PERFORM public.assert_baseline_v3_74_429_check()` مضاف لـ assert_baseline
+
 ## AB. إشعارات نشاط الفرع لمدير الفرع (v3.74.428)
 
 ### الثغرة
