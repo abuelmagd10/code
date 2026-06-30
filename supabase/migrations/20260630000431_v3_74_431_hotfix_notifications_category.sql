@@ -1,0 +1,26 @@
+-- v3.74.431 HOTFIX — extend notifications.category CHECK to cover the
+-- new values introduced by v3.74.428 and v3.74.429.
+--
+-- The owner caught it the moment we cleaned the test company and tried
+-- to create a fresh PO: HTTP 400 with "فشل في إنشاء أمر الشراء".
+-- Postgres logs showed:
+--   ERROR: new row for relation "notifications" violates check
+--   constraint "notifications_category_check"
+--   PL/pgSQL function notify_branch_manager(...) line 13
+-- The FYI insert from po_branch_manager_notify_trg was using
+-- category='branch_activity', which the original CHECK did not allow.
+-- Because the PO INSERT and the FYI INSERT run in the same transaction,
+-- the PO save rolled back.
+--
+-- Original allowed set:
+--   finance, inventory, sales, approvals, system, billing, hr,
+--   manufacturing
+--
+-- New allowed set adds:
+--   branch_activity     -- v3.74.428 (manager FYI on purchase / sales)
+--   accountant_action   -- v3.74.429 (accountant ping on new invoice/bill)
+--
+-- Body installed via Supabase MCP. This file is the canonical source.
+--
+-- Baseline (assert_baseline_v3_74_431_check, wired via PERFORM in
+-- assert_baseline) verifies the CHECK includes both new tokens.

@@ -64,6 +64,50 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AE. HOTFIX notifications.category CHECK (v3.74.431)
+
+### الثغرة
+
+اكتشفها المالك أول لحظة محاولة إنشاء PO بعد تنظيف شركة "تست": HTTP 400
+بـ "فشل في إنشاء أمر الشراء". الـ Postgres logs قالت:
+
+```
+ERROR: new row for relation "notifications" violates check constraint
+"notifications_category_check"
+PL/pgSQL function notify_branch_manager(...) line 13
+```
+
+السبب: الـ FYI insert من `po_branch_manager_notify_trg` بيدخل
+`category='branch_activity'` (مضاف فى v3.74.428)، لكن الـ CHECK
+constraint الأصلى ما كانش يقبل القيمة دى. والـ PO INSERT والـ FYI
+INSERT فى نفس الـ transaction، فالاتنين يتراجعوا.
+
+نفس الموقف هيحصل مع `accountant_action` (v3.74.429) لما فاتورة جديدة
+تتعمل.
+
+### الحل
+
+DROP CONSTRAINT + ADD CONSTRAINT بقيم موسّعة:
+```
+finance, inventory, sales, approvals, system,
+billing, hr, manufacturing,
+branch_activity,    -- v3.74.428
+accountant_action   -- v3.74.429
+```
+
+### Section AE baseline
+- `notifications_category_check` موجود ويحتوى على `branch_activity` و
+  `accountant_action`
+- `PERFORM public.assert_baseline_v3_74_431_check()` مضاف لـ
+  `assert_baseline`
+
+### الدرس المستفاد
+
+لما نضيف trigger يستخدم category جديد، لازم نتأكد إن الـ CHECK
+constraint بيقبله. القاعدة الجديدة فى `assert_baseline`: لو ضفنا
+category جديد فى أى trigger مستقبلاً، الـ baseline يفحص الـ CHECK
+ويرفع failure قبل ما المستخدم يكتشف.
+
 ## AD. نظائر دورة المبيعات (v3.74.430)
 
 ### الثغرة
