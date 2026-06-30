@@ -64,6 +64,120 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AJ. HOTFIX getActiveCompanyId import فى /approvals (v3.74.436)
+
+### الثغرة
+
+v3.74.435 ضافت `loadHistory` تستدعى `getActiveCompanyId(supabase)`
+بدون import — هو helper server-side فى `@/lib/company` ولا يجوز
+import-ه فى client component. الـ tsc رفع:
+```
+error TS2304: Cannot find name 'getActiveCompanyId'.
+```
+
+### الحل
+
+الـ `load()` القديم فى نفس الصفحة بيستخدم cookie parsing:
+```ts
+document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
+```
+
+استخدمت نفس النمط فى `loadHistory` للتناسق وبدون imports
+server-side.
+
+## AI. سجل موحّد لكل أنواع الاعتمادات (v3.74.435)
+
+### التوسعة على v3.74.434
+
+v3.74.434 قدّمت سجل للخصومات فقط. المالك سأل عن سجل لكل أنواع
+الاعتمادات فى صفحة `/approvals`. الإصدار ده يوحّد التاريخ فى feed
+واحد مع فلتر بالنوع.
+
+### الأنواع المدعومة الآن
+- **الخصومات** (`discount_approvals`) — كل الحالات النهائية:
+  approved/rejected/cancelled
+- **قوائم المواد** (`manufacturing_bom_versions`) — approved/rejected
+- **طلبات الصرف** (`manufacturing_material_issue_approvals`) —
+  approved/rejected
+
+### غير مدعوم (سبب)
+- **مسارات التصنيع** (`manufacturing_routing_versions`): الجدول مش
+  عنده أعمدة approval (مفيش `approved_by` / `decided_at`)، والـ
+  fetch الـ pending موجود فى الصفحة كان بيستعلم على
+  `approval_status` عمود غير موجود → الـ approval flow أصلاً مش
+  مكتمل لهذا النوع.
+- **أوامر الإنتاج** (`manufacturing_production_orders`): نفس المشكلة
+  للأعمدة الأساسية. الجدول عنده status بس.
+
+لو احتاج المالك يضيف approval حقيقى لهذه الأنواع لاحقاً، نضيف
+schema migration + loader فى السجل.
+
+### كيفية العمل
+
+**نوع `UnifiedHistoryEntry`** يطبّع كل أنواع القرارات فى shape واحد:
+`category`, `doc_label`, `party_label`, `value_label`, `status`,
+`requested_by_email`, `requested_at`, `decided_by_email`,
+`decided_at`, `decision_note`, `doc_href`.
+
+**`loadHistory()`** يستدعى ٣ مصادر بالتوازى (try/catch مستقل لكل
+واحد فى حالة فشل أحدهم):
+- `/api/discount-approvals?status=all` (الخصومات، مع إيميل القرار)
+- `supabase.from('manufacturing_bom_versions').in('status',...)` (BOM)
+- `supabase.from('manufacturing_material_issue_approvals').in(...)` (MI)
+
+ثم يدمج ويرتب تنازلياً بـ `decided_at` (fallback لـ `requested_at`).
+
+**فلتر بالـ chips فى أعلى السجل**:
+الكل / خصومات / قوائم المواد / طلبات الصرف — كل chip يعرض count.
+
+**`UnifiedHistoryCard`** يرسم القرار مع:
+- Badge بالحالة (أخضر/أحمر/رمادى) + Badge بالنوع
+- Icon مخصصة (Percent/Layers/Package حسب النوع)
+- اسم المنشئ + التاريخ، المعتمد/الرافض + تاريخ القرار
+- السبب لو موجود
+- رابط للمستند الأصلى (لو متاح)
+
+### Section AI baseline
+لا فحوصات DB إضافية. تعديلات UI + API فقط.
+
+## AH. سجل قرارات الخصم فى صندوق الموافقات (v3.74.434)
+
+### الفجوة
+
+صندوق الموافقات `/approvals` كان يعرض الطلبات المعلقة فقط. لما المالك
+يعتمد أو يرفض خصم، الكارت يختفى ويروح بدون أثر مرئى للمراجعة لاحقاً.
+السجل الكامل موجود فى DB (`discount_approvals` بحالاته الـ ٤
+pending/approved/rejected/cancelled) لكن المالك ما عندوش طريقة
+يطّلع عليه من الواجهة.
+
+### الحل
+
+تاب جديد فى الصفحة اسمه **"السجل"** يعرض كل قرارات الخصم السابقة
+(approved/rejected/cancelled) بترتيب تاريخى تنازلى (الأحدث أولاً).
+
+**التغييرات**:
+
+١. **API** (`app/api/discount-approvals/route.ts`):
+   - الـ enrichment الموجود كان بيجيب إيميل `requested_by` فقط
+   - بقى يجيب إيميل `decided_by` كمان (للسجل التاريخى)
+   - الـ status=all موجود من الأصل، تم استخدامه
+
+٢. **UI** (`app/approvals/page.tsx`):
+   - نوع جديد `HistoricalDiscountApproval extends PendingDiscountApproval`
+     يضيف `decided_by`, `decided_at`, `decision_note`, `decided_by_email`
+   - `HistoryCard` component على module-level (لتفادى bug الـ focus
+     فى v3.74.432)
+   - زر تاب جديد "السجل" مع counter
+   - تحميل lazy: السجل ما يتحملش إلا أول ما المستخدم يفتح التاب
+   - زر "تحديث السجل" لإعادة التحميل
+   - الكارت يعرض: نوع المستند، رقمه، الطرف، إجمالى المستند، قيمة الخصم،
+     badge حالة (أخضر معتمد / أحمر مرفوض / رمادى ملغى)، المنشئ + التاريخ،
+     المعتمد/الرافض + التاريخ، السبب لو موجود، رابط للمستند الأصلى
+
+### Section AH baseline
+- لا فحوصات DB إضافية (تعديل UI + API فقط)
+- الـ `decision_note` و `decided_by` كانوا موجودين قبلاً، الإصلاح بيستخدمهم
+
 ## AG. HOTFIX enum coercion فى notify_discount_decision_trg (v3.74.433)
 
 ### الثغرة

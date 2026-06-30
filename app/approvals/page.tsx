@@ -70,6 +70,9 @@ interface PendingDiscountApproval {
   type: "discount_approval"
 }
 
+// v3.74.434 — historical discount approval (kept for reference; the
+// unified history feed in v3.74.435 uses UnifiedHistoryEntry instead).
+
 type PendingItem =
   | PendingBomVersion
   | PendingRoutingVersion
@@ -198,6 +201,102 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
   )
 }
 
+// v3.74.434 → v3.74.435 — UnifiedHistoryEntry is a single shape that
+// covers every approval flow (discounts + BOM versions + material
+// issues so far). Each loader normalizes its source rows into this
+// shape so the renderer + filter is one piece of code, not five.
+type HistoryCategory = "discount" | "bom_version" | "material_issue"
+
+interface UnifiedHistoryEntry {
+  id: string
+  category: HistoryCategory
+  doc_label: string         // "أمر الشراء PO-0001" / "BOM-12 v3" / "MI-42"
+  doc_href: string | null   // optional link to source doc
+  party_label: string | null   // supplier/customer/product name, etc.
+  value_label: string | null   // "10% خصم" / "100 وحدة" — domain-specific summary
+  status: "approved" | "rejected" | "cancelled"
+  requested_by_email: string | null
+  requested_at: string
+  decided_by_email: string | null
+  decided_at: string | null
+  decision_note: string | null
+}
+
+type UnifiedHistoryCtx = {
+  appLang: "ar" | "en"
+  t: (ar: string, en: string) => string
+  fmtDate: (s: string) => string
+}
+
+const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHistoryCtx }) => {
+  const { t, fmtDate } = ctx
+  const statusBadge =
+    h.status === "approved"  ? { color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",  label: t("معتمد", "Approved") } :
+    h.status === "rejected"  ? { color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",         label: t("مرفوض", "Rejected") } :
+                                { color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",       label: t("ملغى", "Cancelled") }
+  const borderColor =
+    h.status === "approved"  ? "border-l-green-500" :
+    h.status === "rejected"  ? "border-l-red-500" :
+                                "border-l-gray-400"
+  const categoryLabel =
+    h.category === "discount"       ? t("خصم", "Discount") :
+    h.category === "bom_version"    ? t("قائمة مواد", "BOM") :
+    h.category === "material_issue" ? t("طلب صرف", "Material Issue") :
+                                       h.category
+  const CategoryIcon =
+    h.category === "discount"       ? Percent :
+    h.category === "bom_version"    ? Layers :
+                                       Package
+  return (
+    <Card key={h.id} className={`border-l-4 ${borderColor}`}>
+      <CardContent className="py-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg shrink-0">
+              <CategoryIcon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm">
+                <Badge variant="outline" className="me-2 text-[10px]">{categoryLabel}</Badge>
+                {h.doc_label}
+              </p>
+              {h.party_label && (
+                <p className="text-xs text-muted-foreground mt-0.5">👤 {h.party_label}</p>
+              )}
+              {h.value_label && (
+                <p className="text-xs mt-1">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">{h.value_label}</span>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                🧑 {t("طلب", "Requested by")}: {h.requested_by_email ?? "—"} · 📅 {fmtDate(h.requested_at)}
+              </p>
+              {h.decided_at && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  ⚖️ {t("القرار", "Decided by")}: {h.decided_by_email ?? "—"} · 📅 {fmtDate(h.decided_at)}
+                </p>
+              )}
+              {h.decision_note && (
+                <p className="text-xs mt-1 p-2 rounded bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700">
+                  📝 {h.decision_note}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge className={`${statusBadge.color} text-xs`}>{statusBadge.label}</Badge>
+            {h.doc_href && (
+              <Link href={h.doc_href} className="text-xs text-rose-600 hover:underline">
+                {t("عرض المستند", "View document")}
+              </Link>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────
 
 function ApprovalsContent() {
@@ -210,7 +309,11 @@ function ApprovalsContent() {
   const [productionOrders, setProductionOrders] = useState<PendingProductionOrder[]>([])
   const [materialIssues, setMaterialIssues] = useState<PendingMaterialIssue[]>([])
   const [discountApprovals, setDiscountApprovals] = useState<PendingDiscountApproval[]>([])
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc">("all")
+  // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "history">("all")
+  const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
   const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | null>(null)
@@ -372,6 +475,145 @@ function ApprovalsContent() {
   }, [supabase])
 
   useEffect(() => { load() }, [load])
+
+  // v3.74.435 — load decided approvals from EVERY supported source
+  // and merge into a single unified feed sorted by decision time.
+  // BOM versions + Material issues are loaded directly from supabase
+  // (no dedicated API). Discounts go through the existing API to
+  // benefit from its email enrichment.
+  const loadHistory = useCallback(async () => {
+    try {
+      // Same cookie-based lookup as load() above (this page is a
+      // client component, so we can't import the server helper).
+      const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
+      if (!cid) { setHistory([]); return }
+
+      const merged: UnifiedHistoryEntry[] = []
+
+      // --- Discounts via API (already enriched with both emails)
+      try {
+        const res = await fetch(`/api/discount-approvals?company_id=${encodeURIComponent(cid)}&status=all`, { cache: "no-store" })
+        if (res.ok) {
+          const json = await res.json()
+          const rows: any[] = Array.isArray(json?.data) ? json.data : []
+          for (const d of rows) {
+            if (d.status === "pending") continue
+            const docLabel =
+              d.document_type === "purchase_order"   ? `أمر شراء ${d.document_no ?? d.document_id.slice(0,6)}` :
+              d.document_type === "sales_order"      ? `طلب مبيعات ${d.document_no ?? d.document_id.slice(0,6)}` :
+              d.document_type === "purchase_invoice" ? `فاتورة مشتريات ${d.document_no ?? d.document_id.slice(0,6)}` :
+              d.document_type === "sales_invoice"    ? `فاتورة مبيعات ${d.document_no ?? d.document_id.slice(0,6)}` :
+              d.document_type === "booking"          ? `حجز ${d.document_no ?? d.document_id.slice(0,6)}` :
+                                                       `${d.document_type} ${d.document_no ?? ""}`
+            const href =
+              d.document_type === "purchase_order"   ? `/purchase-orders/${d.document_id}` :
+              d.document_type === "sales_order"      ? `/sales-orders/${d.document_id}` :
+              d.document_type === "purchase_invoice" ? `/bills/${d.document_id}` :
+              d.document_type === "sales_invoice"    ? `/invoices/${d.document_id}` :
+              d.document_type === "booking"          ? `/bookings/${d.document_id}` :
+                                                       null
+            const valueLabel = d.discount_type === "percent"
+              ? `الخصم: ${d.discount_value}%`
+              : `الخصم: ${d.discount_value} ج.م`
+            merged.push({
+              id: `disc-${d.id}`,
+              category: "discount",
+              doc_label: docLabel,
+              doc_href: href,
+              party_label: d.party_name ?? null,
+              value_label: valueLabel,
+              status: d.status,
+              requested_by_email: d.requested_by_email ?? null,
+              requested_at: d.requested_at,
+              decided_by_email: d.decided_by_email ?? null,
+              decided_at: d.decided_at ?? null,
+              decision_note: d.decision_note ?? null,
+            })
+          }
+        }
+      } catch { /* keep going */ }
+
+      // --- BOM versions (direct from supabase since no API exists)
+      try {
+        const { data: boms } = await supabase
+          .from("manufacturing_bom_versions")
+          .select(`
+            id, version_no, status, submitted_at, submitted_by, approved_by, approved_at,
+            rejected_by, rejected_at, rejection_reason,
+            manufacturing_boms!inner(bom_code, products!inner(name)),
+            branches!inner(name)
+          `)
+          .eq("company_id", cid)
+          .in("status", ["approved", "rejected"])
+          .order("submitted_at", { ascending: false })
+          .limit(200)
+        for (const b of (boms || []) as any[]) {
+          const decided_at = b.status === "approved" ? b.approved_at : b.rejected_at
+          merged.push({
+            id: `bom-${b.id}`,
+            category: "bom_version",
+            doc_label: `${b.manufacturing_boms?.bom_code ?? "BOM"} · إصدار ${b.version_no}`,
+            doc_href: null,
+            party_label: `${b.manufacturing_boms?.products?.name ?? "—"} · ${b.branches?.name ?? "—"}`,
+            value_label: null,
+            status: b.status,
+            requested_by_email: null,
+            requested_at: b.submitted_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: b.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // --- Material issue approvals
+      try {
+        const { data: mis } = await supabase
+          .from("manufacturing_material_issue_approvals")
+          .select(`
+            id, status, requested_by, requested_at, approved_by, approved_at,
+            rejected_by, rejected_at, rejection_reason
+          `)
+          .eq("company_id", cid)
+          .in("status", ["approved", "rejected"])
+          .order("requested_at", { ascending: false })
+          .limit(200)
+        for (const m of (mis || []) as any[]) {
+          const decided_at = m.status === "approved" ? m.approved_at : m.rejected_at
+          merged.push({
+            id: `mi-${m.id}`,
+            category: "material_issue",
+            doc_label: `طلب صرف #${m.id.slice(0, 8)}`,
+            doc_href: null,
+            party_label: null,
+            value_label: null,
+            status: m.status,
+            requested_by_email: null,
+            requested_at: m.requested_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: m.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      merged.sort((a, b) => {
+        const ta = a.decided_at ? new Date(a.decided_at).getTime() : new Date(a.requested_at).getTime()
+        const tb = b.decided_at ? new Date(b.decided_at).getTime() : new Date(b.requested_at).getTime()
+        return tb - ta
+      })
+      setHistory(merged)
+      setHistoryLoaded(true)
+    } catch {
+      setHistory([])
+    }
+  }, [supabase])
+
+  useEffect(() => {
+    if (activeTab === "history" && !historyLoaded) {
+      loadHistory()
+    }
+  }, [activeTab, historyLoaded, loadHistory])
 
   const handleApprove = async (item: PendingItem, stage?: "management" | "warehouse") => {
     setRunningId(item.id)
@@ -793,11 +1035,59 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "disc"    ? "default" : "outline"} onClick={() => setActiveTab("disc")}    className="gap-1">
               <Percent  className="w-3.5 h-3.5" />{t("خصومات", "Discounts")} ({discountApprovals.length})
             </Button>
+            {/* v3.74.434 → v3.74.435 — unified history tab */}
+            <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
+              <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
+            </Button>
           </div>
 
           {/* Content */}
           {isLoading ? (
             <div className="py-16 text-center text-muted-foreground">{t("جاري التحميل…", "Loading…")}</div>
+          ) : activeTab === "history" ? (
+            // v3.74.435 — unified history view across all approval flows
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                  <Clock className="w-4 h-4" />{t("سجل القرارات", "Decision History")}
+                </h2>
+                <Button size="sm" variant="outline" onClick={loadHistory} className="gap-1 text-xs">
+                  <RefreshCw className="w-3.5 h-3.5" />{t("تحديث السجل", "Refresh history")}
+                </Button>
+              </div>
+              {/* Category filter chips */}
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" variant={historyFilter === "all" ? "default" : "outline"} className="text-xs h-7" onClick={() => setHistoryFilter("all")}>
+                  {t("الكل", "All")} ({history.length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "discount" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("discount")}>
+                  <Percent className="w-3 h-3" />{t("خصومات", "Discounts")} ({history.filter(h => h.category === "discount").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "bom_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("bom_version")}>
+                  <Layers className="w-3 h-3" />{t("قوائم المواد", "BOMs")} ({history.filter(h => h.category === "bom_version").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
+                  <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})
+                </Button>
+              </div>
+              {(() => {
+                const filtered = historyFilter === "all" ? history : history.filter(h => h.category === historyFilter)
+                if (filtered.length === 0) {
+                  return (
+                    <Card>
+                      <CardContent className="py-16 text-center">
+                        <Clock className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                        <p className="font-semibold text-lg">{t("لا توجد قرارات سابقة", "No past decisions")}</p>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          {t("ستظهر هنا قرارات الاعتماد أو الرفض بعد اتخاذها", "Approved or rejected decisions will appear here")}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )
+                }
+                return filtered.map(h => <UnifiedHistoryCard key={h.id} h={h} ctx={{ appLang, t, fmtDate }} />)
+              })()}
+            </div>
           ) : totalPending === 0 ? (
             <Card>
               <CardContent className="py-16 text-center">

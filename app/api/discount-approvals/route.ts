@@ -79,25 +79,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: rowsErr.message }, { status: 500 })
     }
 
-    // Enrich with requester email (best-effort, ignore failures so
-    // the inbox never blocks on auth metadata).
-    let requesterMap: Record<string, { email?: string }> = {}
+    // Enrich with requester + decider emails (best-effort).
+    // v3.74.434 — history view needs decided_by email too, so we
+    // build a single lookup that covers both columns.
+    const userMap: Record<string, { email?: string }> = {}
     try {
-      const userIds = Array.from(new Set((rows || []).map(r => r.requested_by).filter(Boolean)))
+      const userIds = Array.from(new Set(
+        (rows || [])
+          .flatMap(r => [r.requested_by, (r as any).decided_by])
+          .filter(Boolean) as string[]
+      ))
       if (userIds.length > 0) {
         const svc = createServiceClient()
         for (const uid of userIds) {
-          const { data: ures } = await svc.auth.admin.getUserById(uid as string)
-          if (ures?.user) requesterMap[uid as string] = { email: ures.user.email || undefined }
+          const { data: ures } = await svc.auth.admin.getUserById(uid)
+          if (ures?.user) userMap[uid] = { email: ures.user.email || undefined }
         }
       }
     } catch {
-      // Non-fatal — proceed without requester email.
+      // Non-fatal — proceed without enrichment.
     }
 
     const enriched = (rows || []).map(r => ({
       ...r,
-      requested_by_email: requesterMap[r.requested_by]?.email ?? null,
+      requested_by_email: userMap[r.requested_by]?.email ?? null,
+      decided_by_email: (r as any).decided_by ? userMap[(r as any).decided_by]?.email ?? null : null,
     }))
 
     return NextResponse.json({ success: true, data: enriched })
