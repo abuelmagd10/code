@@ -1,0 +1,31 @@
+-- v3.74.427 — purchase return approval gates.
+--
+-- The RPC approve_purchase_return_atomic existed already (handles the
+-- approve/reject decision) but there was NO database enforcement
+-- preventing a row from being inserted directly with status='approved'.
+-- A non-privileged user could bypass the RPC, write the row, the
+-- auto-lock trigger would mark it locked, the warehouse stock movement
+-- and any vendor credit logic would run — and the owner would never
+-- know.
+--
+-- Same pattern as v3.74.426 (supplier payments):
+--   purchase_return_approval_insert   BEFORE INSERT
+--     privileged users (owner / GM) may start in approved /
+--     sent_to_vendor with auto-filled approved_by/approved_at; other
+--     users may only start in draft / pending_approval.
+--   purchase_return_approval_update   BEFORE UPDATE
+--     transitions to approved / sent_to_vendor must have approved_by
+--     AND approved_at populated.
+--   purchase_return_notify_approval   AFTER INSERT/UPDATE OF status
+--     when the return lands in pending_approval, notify owner + GM
+--     with reference_type='approval_request' (routes to /approvals).
+--
+-- The RPC was left untouched.
+--
+-- UI: /approvals page learns the new "purchase_return" doc type and
+-- routes it to /purchase-returns/<id>.
+--
+-- sales_returns lacks approved_by/at/rejected_by columns, so its
+-- approval gate is deferred to v3.74.430 (sales-side equivalent).
+--
+-- Bodies installed via Supabase MCP; this file is the canonical source.

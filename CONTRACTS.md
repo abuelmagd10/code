@@ -64,6 +64,57 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AA. دورة اعتماد مرتجعات المشتريات (v3.74.427)
+
+### الثغرة
+
+جدول `purchase_returns` كان عنده الأعمدة الكاملة
+(`approved_by`, `approved_at`, `rejected_by`, `rejected_at`,
+`rejection_reason`) والـ RPC `approve_purchase_return_atomic` كانت
+موجودة وشغالة، **لكن مفيش enforcement على DB level**. أى مستخدم عنده
+صلاحية كتابة كان يقدر يدخّل صف مرتجع بـ `status='approved'` مباشرة
+متجاوزاً الـ RPC. الـ trigger القديم `purchase_return_auto_lock` كان
+يقفل الصف فوراً، فالمرتجع يبقى مُلزم محاسبياً ومخزنياً بدون مراجعة من
+المالك.
+
+### الحل
+
+نفس النمط المعمول لدفع المورد فى Section Z. ثلاث triggers جديدة:
+
+١. `purchase_return_approval_insert` (BEFORE INSERT) — لو منشئ المرتجع
+   owner/general_manager → السماح بـ approved/sent_to_vendor مع
+   auto-fill لـ approved_by/at. غيرهم → الحالة المسموحة فى الإنشاء
+   draft / pending_approval فقط. أى محاولة لتجاوز ده → RAISE بالعربى.
+
+٢. `purchase_return_approval_update` (BEFORE UPDATE) — أى انتقال إلى
+   approved أو sent_to_vendor لازم يكون approved_by + approved_at
+   معبّيين. لو NULL → RAISE مع توجيه لاستخدام الـ RPC.
+
+٣. `purchase_return_notify_approval` (AFTER INSERT/UPDATE OF status) —
+   أول ما الحالة تبقى pending_approval، إشعار للمالك + المدير العام
+   بـ reference_type='approval_request' يوجّه لـ
+   `/approvals?highlight=<id>`.
+
+الـ RPC `approve_purchase_return_atomic` كان موجود من قبل ولم يُمَس،
+هو نقطة الدخول الشرعية الوحيدة لاعتماد/رفض المرتجع.
+
+### UI
+
+صفحة `/approvals` بقت تعرف `document_type='purchase_return'` وتوجّهه
+لـ `/purchase-returns/<id>`.
+
+### Section AA baseline
+- functions: `purchase_return_approval_insert_trg`,
+  `purchase_return_approval_update_trg`,
+  `purchase_return_notify_approval_trg`,
+  `approve_purchase_return_atomic`
+- triggers الثلاث موجودة على purchase_returns
+- النصوص الجوّانية للـ triggers تحتوى على invariants الـ contract
+
+ملاحظة: `sales_returns` ما عندوش أعمدة approved_by/at/rejected_by،
+فمن غير الممكن تطبيق نفس النمط بدون migration هيكلى أولاً. ده مؤجل
+لـ v3.74.430 (المبيعات).
+
 ## Z. دورة اعتماد دفع المورد (v3.74.426)
 
 ### الثغرة
