@@ -1,0 +1,28 @@
+-- v3.74.430 — sales-side equivalents of the purchase workflow.
+--
+-- Closes the symmetry gap left by v3.74.426..429. The purchase cycle
+-- now has approval gates, branch-manager FYIs and accountant pings.
+-- The sales cycle still missed: a return approval gate, branch-manager
+-- FYI for sales activity, and an accountant ping for new invoices.
+--
+-- Part A — schema
+--   sales_returns gains the same five columns as purchase_returns:
+--   approved_by, approved_at, rejected_by, rejected_at, rejection_reason.
+--
+-- Part B — sales_returns approval gates (mirrors v3.74.427)
+--   sales_return_approval_insert   BEFORE INSERT
+--     non-privileged users may only start in draft / pending_approval
+--   sales_return_approval_update   BEFORE UPDATE
+--     transitions to approved require approved_by + approved_at
+--   sales_return_notify_approval   AFTER INSERT/UPDATE OF status
+--     when status = pending_approval, notify owner + GM
+--   approve_sales_return_atomic    RPC for owner/GM
+--
+-- Part C — branch manager FYI and accountant ping (mirrors v3.74.428/9)
+--   so_branch_manager_notify                     on sales_orders
+--   invoice_branch_manager_notify                on invoices
+--   payment_customer_branch_manager_notify       on payments (customer)
+--   sales_return_branch_manager_notify           on sales_returns
+--   invoice_notify_accountant                    on invoices
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

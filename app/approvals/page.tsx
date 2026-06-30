@@ -54,8 +54,8 @@ interface PendingDiscountApproval {
   // v3.74.401/404 triggers and the v3.74.417 enum). Without them in this
   // union the UI fell back to the booking label / /bookings/<id> route.
   // v3.74.426 — supplier_payment added (introduced by v3.74.426 workflow).
-  // v3.74.427 — purchase_return added.
-  document_type: "sales_invoice" | "purchase_invoice" | "booking" | "purchase_order" | "sales_order" | "supplier_payment" | "purchase_return"
+  // v3.74.427 — purchase_return added. v3.74.430 — sales_return added.
+  document_type: "sales_invoice" | "purchase_invoice" | "booking" | "purchase_order" | "sales_order" | "supplier_payment" | "purchase_return" | "sales_return"
   document_id: string
   document_no: string | null
   discount_value: number
@@ -349,6 +349,7 @@ function ApprovalsContent() {
       case "booking":          return t("حجز خدمة", "Booking")
       case "supplier_payment": return t("دفعة مورد", "Supplier Payment")
       case "purchase_return":  return t("مرتجع مشتريات", "Purchase Return")
+      case "sales_return":     return t("مرتجع مبيعات", "Sales Return")
       default:                 return t("مستند", "Document")
     }
   }
@@ -361,6 +362,7 @@ function ApprovalsContent() {
       case "booking":          return `/bookings/${item.document_id}`
       case "supplier_payment": return `/payments/${item.document_id}`
       case "purchase_return":  return `/purchase-returns/${item.document_id}`
+      case "sales_return":     return `/sales-returns/${item.document_id}`
       default:                 return "#"
     }
   }

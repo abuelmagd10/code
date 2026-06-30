@@ -64,6 +64,65 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AD. نظائر دورة المبيعات (v3.74.430)
+
+### الثغرة
+
+بعد v3.74.426..429 المشتريات بقت كاملة (اعتماد دفع المورد، اعتماد
+مرتجعات، إشعارات لمدير الفرع والمحاسب). لكن دورة المبيعات لسة ناقصها:
+- مرتجع المبيعات بدون أعمدة اعتماد ولا triggers تفرضها
+- مدير الفرع أعمى عن نشاط البيع (طلب مبيعات، فاتورة، تحصيل، مرتجع)
+- المحاسب ما بيُبَلَّغش بفواتير المبيعات الجديدة
+
+### الحل
+
+**(أ) إضافة أعمدة لـ `sales_returns`**:
+`approved_by`, `approved_at`, `rejected_by`, `rejected_at`,
+`rejection_reason` — نفس الـ schema بتاع `purchase_returns`.
+
+**(ب) دورة اعتماد مرتجع المبيعات** — نظير v3.74.427:
+- `sales_return_approval_insert` BEFORE INSERT — non-privileged ما يقدروش
+  يدخّلوا بحالة approved مباشرة
+- `sales_return_approval_update` BEFORE UPDATE — الانتقال لـ approved
+  يتطلب approved_by + approved_at
+- `sales_return_notify_approval` AFTER — إشعار للمالك + GM فى
+  pending_approval
+- `approve_sales_return_atomic` — RPC للاعتماد/الرفض
+
+**(ج) إشعارات نشاط الفرع للمبيعات** — نظائر v3.74.428:
+- `so_branch_manager_notify` على `sales_orders`
+- `invoice_branch_manager_notify` على `invoices`
+- `payment_customer_branch_manager_notify` على `payments` (للعميل فقط،
+  بيستبعد دفعات الموردين عشان trigger المشتريات يتولاها)
+- `sales_return_branch_manager_notify` على `sales_returns`
+
+**(د) إشعار المحاسب بفواتير المبيعات الجديدة** — نظير v3.74.429:
+- `invoice_notify_accountant` AFTER INSERT على `invoices`، يبعت لمحاسبى
+  الفرع (أو محاسبى الشركة كـ fallback)، الفاعل مستبعد
+
+### UI
+صفحة `/approvals` بقت تعرف `document_type='sales_return'` وتوجّهه لـ
+`/sales-returns/<id>`.
+
+### Section AD baseline
+- sales_returns عندها كل الـ 5 أعمدة approval
+- ٩ trigger functions موجودة (٤ للمرتجع + ٤ للـ FYI + ١ للمحاسب)
+- ٨ triggers موجودة على الجداول الصحيحة (sales_returns 3، sales_orders 1،
+  invoices 2، payments 1، sales_returns FYI 1)
+- المنطق فى `sales_return_approval_insert_trg` بيشتمل على
+  `'owner', 'general_manager'`
+- `invoice_notify_accountant_trg` بيستهدف `role='accountant'` و
+  `category='accountant_action'`
+- `PERFORM public.assert_baseline_v3_74_430_check()` مضاف لـ
+  `assert_baseline`
+
+### اكتمال الخطة
+
+بكده الـ ٥ خطوات (v3.74.426..430) المطلوبة فى مراجعة دورة الأعمال
+كاملة على المشتريات + المبيعات + الإشعارات الإدارية. كل اللى وصفتى
+بـ "هذا ما يوجد فى دورة المشتريات ليس على سبيل الحصر" أصبح متطبّقاً
+بقاعدة بيانات تفرضه + إشعارات تعرضه.
+
 ## AC. إشعار المحاسب بفواتير المشتريات الجديدة (v3.74.429)
 
 ### الثغرة
