@@ -64,6 +64,21 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## R. قيم enum discount_document_type (v3.74.417 — HOTFIX)
+
+الـ enum `discount_document_type` كان فيه ٣ قيم بس:
+`booking, sales_invoice, purchase_invoice`
+
+triggers v3.74.401 و v3.74.404 بتدخل بقيمتين جديدتين:
+`purchase_order, sales_order` — ودى مكنش موجودة فى الـ enum، فأى
+insert من triggers دى كان بيفشل بـ HTTP 400 من Supabase REST.
+
+اكتشف المالك المشكلة لما مسئول المشتريات حاول يعمل أمر شراء بخصم
+بعد التنظيف، وقام الـ form بـ POST مباشر لـ /rest/v1/purchase_orders.
+
+تم إضافة القيمتين بـ ALTER TYPE ADD VALUE IF NOT EXISTS.
+**Section R** assert_baseline يفحص دلوقتى إن الـ 5 قيم موجودة كلها.
+
 ## Q. إصلاح SECURITY DEFINER على الفيوهات (v3.74.408 — المرحلة 1)
 
 Supabase Security Advisor أبلغ عن 12 view من نوع `security_definer_view`.
