@@ -64,6 +64,68 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AM. جدول approval_history + RPCs (v3.74.439)
+
+### الفجوة
+
+`lib/manufacturing/approval-history.ts` بينادى على:
+- RPC `record_approval_action` (لتسجيل كل approve/reject/submit)
+- RPC `get_approval_history` (لعرض الـ timeline على صفحات BOM/Routing/PO/MI)
+- Direct query على جدول `approval_history` (فى `getNextCycleNo`)
+
+**كل ده غير موجود فى DB**. الـ helper عنده try/catch صامت
+فالاستدعاءات كانت بتفشل فى الخفاء — كل operation محاسبى مرّ بدون
+audit trail.
+
+### الحل
+
+**جدول `approval_history`**:
+```sql
+id uuid PK
+company_id uuid FK companies
+reference_type text CHECK (bom_version/routing/production_order/material_issue/product_receive)
+reference_id uuid
+cycle_no int CHECK >= 1
+action text CHECK (submitted/re_submitted/approved/approved_management/
+                   approved_warehouse/rejected/rejected_management/
+                   edit_triggered_reapproval/cancelled)
+actor_id uuid FK auth.users (ON DELETE SET NULL)
+actor_role text
+reason text
+snapshot_data jsonb
+branch_id uuid FK branches
+created_at timestamptz DEFAULT NOW()
+```
+
+**Indexes**:
+- `(company_id, reference_type, reference_id, cycle_no)` — primary lookup
+- `(company_id, reference_type, reference_id, cycle_no DESC)` — لـ getNextCycleNo
+- `(company_id, created_at DESC)` — لـ audit feeds مستقبلاً
+
+**RLS**: أعضاء الشركة يقرأوا ويكتبوا (الـ RPCs SECURITY DEFINER فيكتبوا
+تحت service role، لكن `getNextCycleNo` يستعلم مباشرة). ما فيش
+UPDATE/DELETE policies — events خالدة.
+
+**RPCs**:
+- `record_approval_action(company_id, ref_type, ref_id, cycle_no, action, actor_id, actor_role, reason, snapshot_data, branch_id)` → `uuid`
+- `get_approval_history(company_id, ref_type, ref_id)` → `TABLE(...)`
+
+### النتيجة
+
+الـ API routes فى التصنيع (`bom-versions/[id]/approve`,
+`routing-versions/[id]/reject`, `production-orders/[id]/submit-approval`،
+إلخ.) كلها بتنادى `recordApprovalAction(...)` بعد كل operation. دلوقتى
+الـ RPC حقيقى — كل قرار تصنيع له سجل مرئى.
+
+صفحة `/api/manufacturing/approval-history?reference_type=...&reference_id=...`
+بقت ترجع البيانات الحقيقية بدل array فاضى.
+
+### Section AM baseline
+- جدول `approval_history` موجود بكل أعمدته الـ ١١
+- RPCs `record_approval_action` و `get_approval_history` موجودين
+- RLS policy `approval_history_select` مفعّل
+- `PERFORM public.assert_baseline_v3_74_439_check()` مضاف لـ assert_baseline
+
 ## AL. دورة اعتماد أوامر الإنتاج (v3.74.438)
 
 ### الفجوة

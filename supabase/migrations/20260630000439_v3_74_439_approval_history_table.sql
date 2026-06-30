@@ -1,0 +1,35 @@
+-- v3.74.439 — approval_history table + record/get RPCs.
+--
+-- lib/manufacturing/approval-history.ts has been calling
+-- record_approval_action and get_approval_history (and querying the
+-- approval_history table directly for getNextCycleNo) since the
+-- manufacturing approval routes were first wired. None of these existed
+-- in the DB. Every approve/reject/submit through a manufacturing API
+-- route lost its audit breadcrumb silently (the helper has try/catch).
+--
+-- This release creates the table + RPCs to make those calls real.
+--
+-- Schema
+--   approval_history(id, company_id, reference_type, reference_id,
+--                    cycle_no, action, actor_id, actor_role, reason,
+--                    snapshot_data jsonb, branch_id, created_at)
+--   CHECK constraints pin the enums for reference_type
+--   (bom_version, routing, production_order, material_issue,
+--    product_receive) and for action (the 9 lifecycle values the
+--    helper documents).
+--   Indexes: by (company, ref, ref_id, cycle_no) for the standard
+--   lookup; by cycle_no DESC for getNextCycleNo; by (company,
+--   created_at DESC) for audit feeds.
+--   RLS: members of the company can SELECT and INSERT (RPCs run
+--   SECURITY DEFINER so they write under service role anyway, but
+--   the direct-query path in getNextCycleNo needs SELECT).
+--
+-- RPCs
+--   record_approval_action(...) RETURNS uuid
+--     -- Atomic insert. Returns the new row id.
+--   get_approval_history(...) RETURNS TABLE
+--     -- All cycles for a given record, oldest first.
+--
+-- Baseline (Section AM) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
