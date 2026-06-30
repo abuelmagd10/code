@@ -205,7 +205,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -244,12 +244,14 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "material_issue"   ? t("طلب صرف", "Material Issue") :
     h.category === "routing_version"  ? t("مسار تصنيع", "Routing") :
     h.category === "production_order" ? t("أمر إنتاج", "Production Order") :
+    h.category === "product_receive"  ? t("استلام منتج", "Product Receive") :
                                          h.category
   const CategoryIcon =
     h.category === "discount"         ? Percent :
     h.category === "bom_version"      ? Layers :
     h.category === "routing_version"  ? GitMerge :
     h.category === "production_order" ? Factory :
+    h.category === "product_receive"  ? CheckCircle2 :
                                          Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
@@ -632,6 +634,38 @@ function ApprovalsContent() {
             decided_by_email: null,
             decided_at,
             decision_note: p.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // --- Product receive approvals (v3.74.440)
+      try {
+        const { data: prs } = await supabase
+          .from("manufacturing_product_receive_approvals")
+          .select(`
+            id, status, requested_by, requested_at, proposed_quantity,
+            approved_by, approved_at, rejected_by, rejected_at, rejection_reason,
+            manufacturing_production_orders!inner(order_no, products!inner(name))
+          `)
+          .eq("company_id", cid)
+          .in("status", ["approved", "rejected"])
+          .order("requested_at", { ascending: false })
+          .limit(200)
+        for (const r of (prs || []) as any[]) {
+          const decided_at = r.status === "approved" ? r.approved_at : r.rejected_at
+          merged.push({
+            id: `pr-${r.id}`,
+            category: "product_receive",
+            doc_label: `استلام إنتاج · أمر ${r.manufacturing_production_orders?.order_no ?? "—"}`,
+            doc_href: null,
+            party_label: r.manufacturing_production_orders?.products?.name ?? "—",
+            value_label: `الكمية: ${r.proposed_quantity}`,
+            status: r.status,
+            requested_by_email: null,
+            requested_at: r.requested_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: r.rejection_reason ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -1141,6 +1175,9 @@ function ApprovalsContent() {
                 </Button>
                 <Button size="sm" variant={historyFilter === "production_order" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("production_order")}>
                   <Factory className="w-3 h-3" />{t("أوامر الإنتاج", "Production Orders")} ({history.filter(h => h.category === "production_order").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "product_receive" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("product_receive")}>
+                  <CheckCircle2 className="w-3 h-3" />{t("استلام إنتاج", "Product Receive")} ({history.filter(h => h.category === "product_receive").length})
                 </Button>
                 <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
                   <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})

@@ -1,0 +1,24 @@
+-- v3.74.440 — manufacturing_product_receive_approvals notifications.
+--
+-- The table existed with the full approval column set (status,
+-- approved/rejected by/at, rejection_reason) and the API routes
+-- (approve, reject, request-product-receive) were complete. But the
+-- table had no notification triggers, so:
+--   1) Owner/GM only learned about a new request by polling.
+--   2) Branch manager had zero visibility into product-receive
+--      activity in their branch.
+--   3) The unified history feed on /approvals had no entry for these
+--      decisions.
+--
+-- This release adds:
+--   product_receive_notify_approval        owner + GM on status=pending
+--   product_receive_branch_manager_notify  branch manager FYI on
+--                                          create + on approve/reject
+--
+-- UI: the unified history loader in /approvals now reads product
+-- receive approvals with status in (approved, rejected) and renders
+-- them under a filter chip "استلام إنتاج" with a CheckCircle2 icon.
+--
+-- Baseline (Section AN) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

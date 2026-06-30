@@ -64,6 +64,40 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AN. استكمال manufacturing_product_receive_approvals (v3.74.440)
+
+### الفجوة
+
+الجدول كان عنده schema كامل (status, approved/rejected by/at,
+rejection_reason) والـ API routes تشتغل (approve, reject،
+request-product-receive). لكن:
+
+- مفيش triggers على الجدول → الـ owner/GM ما يعرفوش بأى طلب جديد
+- مدير الفرع أعمى عن نشاط استلام الإنتاج فى فرعه
+- مفيش حضور لقرارات الـ product_receive فى السجل الموحد
+
+### الحل
+
+**Trigger إشعار اعتماد** `product_receive_notify_approval`:
+يبعت إشعار للمالك + GM عند طلب جديد بحالة `pending`، يوجّه لـ
+/approvals بـ reference_type='approval_request'.
+
+**Trigger FYI لمدير الفرع** `product_receive_branch_manager_notify`:
+- عند إنشاء طلب جديد
+- عند تغيير الحالة لـ approved أو rejected
+
+**UI**: السجل الموحد فى /approvals (v3.74.435) دلوقتى يقرأ
+`manufacturing_product_receive_approvals` بحالة approved/rejected
+ويعرضها تحت chip فلتر **"استلام إنتاج"** بأيقونة CheckCircle2.
+
+### Section AN baseline
+- function `product_receive_notify_approval_trg` موجودة
+- function `product_receive_branch_manager_notify_trg` موجودة
+- trigger `product_receive_notify_approval` موجود على الجدول
+- trigger `product_receive_branch_manager_notify` موجود على الجدول
+- `PERFORM public.assert_baseline_v3_74_440_check()` مضاف لـ
+  `assert_baseline`
+
 ## AM. جدول approval_history + RPCs (v3.74.439)
 
 ### الفجوة
