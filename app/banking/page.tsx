@@ -615,9 +615,21 @@ export default function BankingPage() {
       // تحديث الأرصدة + التحويلات السابقة بعد التحويل
       await loadData();
       await loadRecentTransfers();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error recording transfer:", err);
-      toastActionError(toast, appLang === "en" ? "Transfer" : "التحويل");
+      // v3.74.413 — surface the real reason. The error usually carries a
+      // bilingual CashOverdraftError text ("❌ لا يمكن السحب: رصيد الحساب
+      // ... غير كافٍ. الرصيد الحالى ... المطلوب سحبه ...") that the user
+      // needs to see; before this fix the toast just said "فشل التحويل".
+      const reason = typeof err?.message === "string" && err.message.trim().length > 0
+        ? err.message
+        : (appLang === "en" ? "Unexpected error" : "حدث خطأ غير متوقع")
+      toastActionError(
+        toast,
+        appLang === "en" ? "Transfer" : "التحويل",
+        undefined,
+        reason
+      );
     } finally {
       setSaving(false);
     }
