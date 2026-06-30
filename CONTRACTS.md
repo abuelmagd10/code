@@ -64,6 +64,27 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## S. سد ٤ ثغرات فى دورة اعتماد الخصم (v3.74.419)
+
+١. **اعتماد PO بعد رفض الخصم**: كان النظام يسمح. دلوقتى:
+   - الخصم pending → يرفض الاعتماد ويقول "اعتمد الخصم أولاً"
+   - الخصم rejected → يرفض ويقول "عدّل أمر الشراء"
+   - الخصم approved → يسمح
+٢. **اعتماد مزدوج للخصم على SO→Invoice**: دلوقتى trigger الفاتورة بيقرأ
+   اعتماد الخصم على الـ SO المرتبط:
+   - approved → ما يفتحش دورة ثانية
+   - rejected → يرفض إنشاء الفاتورة بـ exception
+٣. **إشعار رفض الخصم للمنشئ**: trigger جديد
+   `discount_approval_notify_decision` على discount_approvals بيرسل
+   إشعار للى عمل المستند مع السبب لما يتم الاعتماد أو الرفض.
+٤. **Block فاتورة المبيعات من خصم مرفوض**: نفس الـ trigger فى (٢).
+
+### Section S baseline
+- function `notify_discount_decision_trg` موجود
+- trigger `discount_approval_notify_decision` موجود
+- `approve_purchase_order_atomic` فيه `v_last_disc_status` + يفحص rejected
+- `inv_request_discount_approval_trg` يقرأ `NEW.sales_order_id`
+
 ## R'. po/so_request_discount_approval_trg يقرأ NEW.created_by اللى مش موجود (v3.74.418 — HOTFIX)
 
 triggers v3.74.401 و v3.74.404 نسخت من bill trigger السطر التالى:
