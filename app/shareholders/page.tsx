@@ -39,6 +39,9 @@ interface ContributionForm {
   amount: number
   notes?: string
   payment_account_id?: string // الحساب المصرفي أو الخزنة
+  // v3.74.412 — pick the contribution currency so the payment-account
+  // dropdown gets filtered to accounts of the same currency.
+  currency?: string
 }
 
 interface AccountOption {
@@ -46,6 +49,9 @@ interface AccountOption {
   account_code: string
   account_name: string
   account_type: string
+  // v3.74.412 - native currency of the cash/bank account; used to
+  // filter the payment-account dropdown by the contribution currency
+  currency?: string | null
 }
 
 interface DistributionSettings {
@@ -279,12 +285,18 @@ export default function ShareholdersPage() {
   const loadCashBankAccounts = async (company_id: string) => {
     const { data } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_name, account_type, sub_type, parent_id")
+      .select("id, account_code, account_name, account_type, sub_type, parent_id, original_currency")
       .eq("company_id", company_id)
       .order("account_code", { ascending: true })
     const list = (data || []) as any
     const cashBankOnly = filterCashBankAccounts(list, true) // leaf accounts only
-    setCashBankAccounts(cashBankOnly as AccountOption[])
+    // v3.74.412 - normalise currency onto the AccountOption shape so the
+    // contribution form can filter the dropdown by currency.
+    const withCurrency = (cashBankOnly as any[]).map((a: any) => ({
+      ...a,
+      currency: a.original_currency || null,
+    }))
+    setCashBankAccounts(withCurrency as AccountOption[])
   }
 
   const loadDistributionSettings = async (company_id: string) => {
@@ -779,6 +791,9 @@ export default function ShareholdersPage() {
       contribution_date: new Date().toISOString().slice(0, 10),
       notes: "",
       payment_account_id: "", // سيتم اختياره من المستخدم
+      // v3.74.412 — defaults to EGP; the user can switch to USD / SAR
+      // / etc. which immediately re-filters the payment-account dropdown.
+      currency: "EGP",
     })
     setIsContributionOpen(true)
 
@@ -1528,40 +1543,89 @@ export default function ShareholdersPage() {
                     required
                   />
                 </div>
+                {/* v3.74.412 — currency selector. Picking USD will filter
+                    the payment-account dropdown to USD accounts only, etc. */}
+                <div className="space-y-2">
+                  <Label htmlFor="contribution_currency" suppressHydrationWarning>
+                    {(hydrated && appLang === 'en') ? 'Currency' : 'العملة'} *
+                  </Label>
+                  <Select
+                    value={contributionForm.currency || "EGP"}
+                    onValueChange={(value) => setContributionForm({ ...contributionForm, currency: value, payment_account_id: "" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(() => {
+                        const available = Array.from(new Set(
+                          cashBankAccounts.map((a) => a.currency || "EGP")
+                        ))
+                        // Keep EGP first if present, then the others.
+                        available.sort((a, b) => a === "EGP" ? -1 : b === "EGP" ? 1 : a.localeCompare(b))
+                        return available.length > 0 ? available : ["EGP"]
+                      })().map((cur) => (
+                        <SelectItem key={cur} value={cur}>{cur}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="payment_account_id" suppressHydrationWarning>
                     {(hydrated && appLang === 'en') ? 'Payment Account (Bank or Cash)' : 'حساب الدفع (بنك أو خزنة)'} *
                   </Label>
-                  {cashBankAccounts.length === 0 ? (
-                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                      <p className="text-sm text-yellow-800 dark:text-yellow-200" suppressHydrationWarning>
-                        {(hydrated && appLang === 'en')
-                          ? 'No bank or cash accounts found. Please create bank or cash accounts in Chart of Accounts first.'
-                          : 'لا توجد حسابات بنكية أو خزائن. يرجى إنشاء حسابات بنكية أو خزائن في الشجرة المحاسبية أولاً.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <Select
-                      value={contributionForm.payment_account_id || ""}
-                      onValueChange={(value) => setContributionForm({ ...contributionForm, payment_account_id: value })}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={(hydrated && appLang === 'en') ? 'Select account' : 'اختر حساب الدفع'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cashBankAccounts.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.account_code} - {account.account_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                  {(() => {
+                    // v3.74.412 - filter by selected currency
+                    const selectedCurrency = contributionForm.currency || "EGP"
+                    const filteredAccounts = cashBankAccounts.filter(
+                      (a) => (a.currency || "EGP") === selectedCurrency
+                    )
+                    if (cashBankAccounts.length === 0) {
+                      return (
+                        <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200" suppressHydrationWarning>
+                            {(hydrated && appLang === 'en')
+                              ? 'No bank or cash accounts found. Please create bank or cash accounts in Chart of Accounts first.'
+                              : 'لا توجد حسابات بنكية أو خزائن. يرجى إنشاء حسابات بنكية أو خزائن في الشجرة المحاسبية أولاً.'}
+                          </p>
+                        </div>
+                      )
+                    }
+                    if (filteredAccounts.length === 0) {
+                      return (
+                        <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200" suppressHydrationWarning>
+                            {(hydrated && appLang === 'en')
+                              ? `No accounts in ${selectedCurrency}. Add a ${selectedCurrency} bank or cash account in Chart of Accounts first.`
+                              : `لا توجد حسابات بعملة ${selectedCurrency}. أضف حساب بنك أو خزنة بعملة ${selectedCurrency} فى الشجرة المحاسبية أولاً.`}
+                          </p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <Select
+                        value={contributionForm.payment_account_id || ""}
+                        onValueChange={(value) => setContributionForm({ ...contributionForm, payment_account_id: value })}
+                        required
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={(hydrated && appLang === 'en') ? 'Select account' : 'اختر حساب الدفع'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.account_code} - {account.account_name} ({account.currency || "EGP"})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )
+                  })()}
                   <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>
                     {(hydrated && appLang === 'en')
-                      ? 'Select the bank account or cash account where the contribution will be received'
-                      : 'اختر الحساب المصرفي أو الخزنة التي سيتم استلام المساهمة فيها'}
+                      ? 'Only accounts in the selected currency are shown.'
+                      : 'يظهر فقط الحسابات المطابقة للعملة المختارة فوق.'}
                   </p>
                 </div>
                 <div className="space-y-2">
