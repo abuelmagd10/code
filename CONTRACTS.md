@@ -64,6 +64,36 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## P. إلغاء فاتورة المبيعات (v3.74.406)
+
+نفس فكرة v3.74.402 لكن على ناحية المبيعات.
+
+**عمود جديد**: `invoices.voided_by, voided_at, voided_reason`
+
+**RPC جديدة**: `void_invoice_atomic(invoice_id, user_id, company_id, reason)`
+- الشروط: status='draft' + لا مدفوعات + لا قيود محاسبية + لا حركات مخزون
+- الصلاحية: owner / admin / general_manager / accountant
+- الإجراءات:
+  - الفاتورة تصبح `voided`
+  - أى pending discount_approvals عليها يتلغى
+  - **`sales_orders.invoice_id` يتمسح** لطلب المبيعات المرتبط
+  - SO **status ما يتغيرش** (لإن مفيش approval workflow على SO)
+  - audit log
+
+**API**: `/api/invoices/[id]/void`
+
+**UI**:
+- زر "إلغاء" على `invoices/[id]/page.tsx` (صفحة التفاصيل)
+- `app/invoices/page.tsx` (القائمة): handleDelete بقى يستدعى `/void` بدل `/delete`
+- نص الـ confirm dialog محدّث
+
+### Section P fingerprint
+`void_invoice_atomic` body لازم يحتوى:
+- `invoice_id = NULL` (لتحرير طلب المبيعات)
+- `sales_order` (المرجع للجدول)
+- `discount_approvals` (إلغاء الـ pending)
+- `status = 'voided'`
+
 ## O. الموافقة على الخصم لطلب المبيعات (v3.74.404)
 
 نفس فكرة v3.74.401 لكن على ناحية المبيعات:

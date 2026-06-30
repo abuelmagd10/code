@@ -1562,31 +1562,35 @@ export default function InvoicesPage() {
     !!searchQuery
   ].filter(Boolean).length
 
+  // v3.74.406 — routes through /api/invoices/[id]/void instead of the
+  // legacy /delete endpoint. Matches the bills surface (v3.74.402/405):
+  // invoice becomes voided, sales_order link is cleared, audit trail
+  // preserved.
   const handleDelete = async (id: string) => {
     try {
-      const response = await fetch(`/api/invoices/${id}/delete`, {
+      const response = await fetch(`/api/invoices/${encodeURIComponent(id)}/void`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `invoice-delete-${id}-${Date.now()}`,
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `invoice-void-list-${id}`,
         },
-        body: JSON.stringify({ uiSurface: "invoices_page" }),
+        body: JSON.stringify({ reason: "" }),
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) {
         toast({
           variant: "destructive",
-          title: appLang === 'en' ? "Cannot Delete" : "لا يمكن الحذف",
-          description: result.error || (appLang === 'en' ? "Invoice deletion failed" : "تعذر حذف الفاتورة"),
+          title: appLang === 'en' ? "Cannot Void" : "تعذر الإلغاء",
+          description: result.error || (appLang === 'en' ? "Invoice void failed" : "تعذر إلغاء الفاتورة"),
           duration: 5000,
         })
         return
       }
 
       await loadInvoices()
-      toastDeleteSuccess(toast, appLang === 'en' ? "Invoice deleted" : "تم حذف الفاتورة")
+      toastDeleteSuccess(toast, appLang === 'en' ? "Invoice voided" : "تم إلغاء الفاتورة")
     } catch (error) {
-      console.error("Error deleting invoice:", error)
+      console.error("Error voiding invoice:", error)
       toastDeleteError(toast, "الفاتورة")
     }
   }
@@ -1596,10 +1600,10 @@ export default function InvoicesPage() {
     // فقط الفواتير المسودة (draft) يمكن حذفها
     if (status && status !== 'draft') {
       toast({
-        title: appLang === 'en' ? "Cannot Delete Invoice" : "لا يمكن حذف الفاتورة",
+        title: appLang === 'en' ? "Cannot Void Invoice" : "لا يمكن إلغاء الفاتورة",
         description: appLang === 'en'
-          ? "Only draft invoices can be deleted. For sent/paid invoices, use Return instead."
-          : "يمكن حذف الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم المرتجع.",
+          ? "Only draft invoices can be voided. For sent/paid invoices, use Return instead."
+          : "يمكن إلغاء الفواتير المسودة فقط. للفواتير المرسلة/المدفوعة، استخدم المرتجع.",
         variant: "destructive",
       })
       return
@@ -2937,19 +2941,19 @@ export default function InvoicesPage() {
 
               {/* ===== DIALOGS ===== */}
 
-              {/* Dialog: Delete Confirmation */}
+              {/* Dialog: Void Confirmation (v3.74.406) */}
               <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>{appLang === 'en' ? 'Delete Invoice' : 'حذف الفاتورة'}</AlertDialogTitle>
+                    <AlertDialogTitle>{appLang === 'en' ? 'Void Invoice' : 'إلغاء الفاتورة'}</AlertDialogTitle>
                     <AlertDialogDescription>
                       {appLang === 'en'
-                        ? 'Are you sure you want to delete this invoice? This action cannot be undone and will reverse all related accounting entries.'
-                        : 'هل أنت متأكد من حذف هذه الفاتورة؟ هذا الإجراء لا يمكن التراجع عنه وسيتم عكس جميع القيود المحاسبية المرتبطة.'}
+                        ? 'The invoice will be marked as voided (kept in the audit trail). The linked sales order will be unlinked so a new invoice can be issued.'
+                        : 'سيتم وضع الفاتورة فى حالة "ملغاة" (تبقى محفوظة فى سجل المراجعة). طلب المبيعات المرتبط سيتم تحريره عشان تتعمل فاتورة جديدة منه.'}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'إلغاء'}</AlertDialogCancel>
+                    <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={() => {
                         if (pendingDeleteId) {
@@ -2960,7 +2964,7 @@ export default function InvoicesPage() {
                       }}
                       className="bg-red-600 hover:bg-red-700"
                     >
-                      {appLang === 'en' ? 'Delete' : 'حذف'}
+                      {appLang === 'en' ? 'Void' : 'إلغاء الفاتورة'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

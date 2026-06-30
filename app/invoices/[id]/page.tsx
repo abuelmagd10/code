@@ -18,7 +18,18 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { DollarSign, CreditCard, Banknote, FileText, CheckCircle, AlertCircle, RotateCcw, Package, Truck, MapPin, Phone, User, ExternalLink } from "lucide-react"
+import { DollarSign, CreditCard, Banknote, FileText, CheckCircle, AlertCircle, RotateCcw, Package, Truck, MapPin, Phone, User, ExternalLink, Trash2 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
@@ -1018,6 +1029,33 @@ export default function InvoiceDetailPage() {
 
   const handlePrint = () => {
     handleDownloadPDF()
+  }
+
+  // v3.74.406 — soft-cancel via /api/invoices/[id]/void. The cascade
+  // (status=voided, discount approvals cancelled, sales_order
+  // unlinked, audit log) lives in void_invoice_atomic.
+  const handleVoid = async () => {
+    if (!invoice) return
+    try {
+      const response = await fetch(`/api/invoices/${encodeURIComponent(invoice.id)}/void`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `invoice-void-${invoice.id}`,
+        },
+        body: JSON.stringify({ reason: "" }),
+      })
+      const result = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || (appLang === 'en' ? 'Failed to void invoice' : 'فشل إلغاء الفاتورة'))
+      }
+      toastActionSuccess(toast, appLang === 'en' ? "Void" : "الإلغاء", appLang === 'en' ? "Invoice" : "الفاتورة")
+      router.push('/invoices')
+    } catch (err: any) {
+      const msg = typeof err?.message === 'string' ? err.message : (appLang === 'en' ? 'Unexpected error' : 'حدث خطأ غير متوقع')
+      toastActionError(toast, appLang === 'en' ? "Void" : "الإلغاء", appLang === 'en' ? "Invoice" : "الفاتورة", msg)
+      console.error("Error voiding invoice:", err)
+    }
   }
 
   const handleDownloadPDF = async () => {
@@ -2634,6 +2672,34 @@ export default function InvoiceDetailPage() {
                 <Button onClick={handleDownloadPDF} variant="outline" size="sm" data-ai-help="invoices.download_pdf_button">
                   {appLang === 'en' ? 'Download PDF' : 'تنزيل PDF'}
                 </Button>
+
+                {/* v3.74.406 - Void button (mirrors bills/[id]/page.tsx).
+                    Draft only + no payments / JE / inventory tx. The full
+                    cascade lives in void_invoice_atomic. */}
+                {invoice.status === 'draft' && permDelete && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm">
+                        <Trash2 className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{appLang === 'en' ? 'Void' : 'إلغاء'}</span>
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{appLang === 'en' ? 'Confirm Void Invoice' : 'تأكيد إلغاء الفاتورة'}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {appLang === 'en'
+                            ? 'The invoice will be marked as voided (kept in the audit trail). The linked sales order will be unlinked so a new invoice can be issued.'
+                            : 'سيتم وضع الفاتورة فى حالة "ملغاة" (تبقى محفوظة فى سجل المراجعة). طلب المبيعات المرتبط سيتم تحريره عشان تتعمل فاتورة جديدة منه.'}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{appLang === 'en' ? 'Cancel' : 'تراجع'}</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleVoid}>{appLang === 'en' ? 'Void' : 'إلغاء الفاتورة'}</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </div>
             }
           />
