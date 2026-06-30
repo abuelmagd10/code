@@ -1,0 +1,12 @@
+-- v3.74.404 — Stage C: discount approval for sales orders.
+-- See CONTRACTS.md Section O. Body lives in DB (applied via Supabase MCP).
+--
+-- Adds:
+--   - so_request_discount_approval trigger on sales_orders. Creates
+--     discount_approvals row of type 'sales_order' + dispatches
+--     notification rows to owner / general_manager / admin.
+--   - Updates inv_request_discount_approval_trg to honor any
+--     non-empty app.skip_discount_approval token (was: only 'booking').
+--     So an invoice auto-created from a SO with an approved discount
+--     can set the flag to skip a redundant invoice-level approval.
+-- Section O added to assert_baseline().

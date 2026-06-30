@@ -64,6 +64,29 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## O. الموافقة على الخصم لطلب المبيعات (v3.74.404)
+
+نفس فكرة v3.74.401 لكن على ناحية المبيعات:
+
+- **Trigger** `so_request_discount_approval` على `sales_orders`:
+  - يُنشئ صف `discount_approvals` بنوع `sales_order` لما الطلب فيه
+    خصم > 0
+  - يُدخل صفوف `notifications` للمالك + المدير العام + admin مباشرة
+    (نفس النمط — DB trigger يدبّ الإشعارات بدون انتظار API)
+- **Bypass** فى `inv_request_discount_approval_trg`:
+  - يحترم أى قيمة فى `app.skip_discount_approval` (مش بس 'booking')
+  - الفاتورة الـ auto-created من SO معتمد تقدر تتجنب الاعتماد المزدوج
+    لو فيه RPC مستقبلى يحطّ flag = 'so'
+
+### Section O baseline
+- trigger `so_request_discount_approval` موجود على sales_orders
+- نص `inv_request_discount_approval_trg` فيه `COALESCE(current_setting('app.skip_discount_approval...))` (يحترم non-empty bypass)
+
+### الفجوة المتبقية
+حالياً مفيش `approve_sales_order_atomic` RPC — يعنى مفيش gate يمنع
+تحويل SO إلى Invoice قبل اعتماد الخصم. ده ممكن يتعمل فى مرحلة د
+(SO → Invoice carryover) لو ظهر صراحة فى الـ flow.
+
 ## N. إلغاء الفاتورة بدل حذفها (v3.74.402)
 
 أى hard-delete لفاتورة بيكسر العلاقات الـ downstream:
