@@ -64,6 +64,56 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AL. دورة اعتماد أوامر الإنتاج (v3.74.438)
+
+### الفجوة
+
+نفس فجوة v3.74.437 لكن على `manufacturing_production_orders`. الكود
+كان بيستعلم على `approval_status` غير موجود، وبينادى ٣ RPCs
+(`submit_production_order_for_approval_atomic`,
+`approve_production_order_atomic`, `reject_production_order_atomic`)
+كلها غير موجودة فى DB.
+
+### الحل
+
+نفس النمط بالظبط:
+
+١. **Schema**: ٨ أعمدة + CHECK constraint
+   (`draft/pending_approval/approved/rejected`) + backfill: أى أمر
+   إنتاج قديم بحالة released/in_progress/completed/cancelled بقى
+   `approval_status='approved'` (grandfathered).
+
+٢. **Transition helper** `mpo_is_order_approval_transition_allowed` +
+   **Guard trigger** `mpo_guard_production_order_approval_transition`:
+   - يرفض الانتقالات الغير مسموحة
+   - **يفرض إن `status='released'`** (من 'draft') لا يمكن إلا لو
+     `approval_status='approved'`
+
+٣. **٣ RPCs** بـ signatures مطابقة للـ API routes:
+   - `submit_production_order_for_approval_atomic` (أى عضو شركة)
+   - `approve_production_order_atomic` (owner / general_manager)
+   - `reject_production_order_atomic` (owner / general_manager)
+
+٤. **Triggers إشعارات**:
+   - `production_order_notify_approval` — owner + GM لما الأمر يدخل
+     pending_approval
+   - `production_order_branch_manager_notify` — مدير الفرع FYI عند
+     الإنشاء + عند القرار
+
+### UI
+
+السجل الموحد فى /approvals بقى يجمع أوامر الإنتاج تحت chip "أوامر
+الإنتاج" بـ Factory icon. الـ /approvals tab "أوامر الإنتاج" (الـ
+pending) هيشتغل الآن بعد ما كان بيرجع 400.
+
+### Section AL baseline
+- ٨ أعمدة approval موجودة
+- ٧ functions موجودة (helper + guard + 3 RPCs + 2 notify)
+- ٣ triggers موجودة
+- نص `approve_production_order_atomic` يحتوى على
+  `'owner', 'general_manager'`
+- `PERFORM public.assert_baseline_v3_74_438_check()` مضاف لـ assert_baseline
+
 ## AK. دورة اعتماد مسارات التصنيع (v3.74.437)
 
 ### الفجوة

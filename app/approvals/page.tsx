@@ -205,7 +205,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -239,16 +239,18 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.status === "rejected"  ? "border-l-red-500" :
                                 "border-l-gray-400"
   const categoryLabel =
-    h.category === "discount"        ? t("خصم", "Discount") :
-    h.category === "bom_version"     ? t("قائمة مواد", "BOM") :
-    h.category === "material_issue"  ? t("طلب صرف", "Material Issue") :
-    h.category === "routing_version" ? t("مسار تصنيع", "Routing") :
-                                        h.category
+    h.category === "discount"         ? t("خصم", "Discount") :
+    h.category === "bom_version"      ? t("قائمة مواد", "BOM") :
+    h.category === "material_issue"   ? t("طلب صرف", "Material Issue") :
+    h.category === "routing_version"  ? t("مسار تصنيع", "Routing") :
+    h.category === "production_order" ? t("أمر إنتاج", "Production Order") :
+                                         h.category
   const CategoryIcon =
-    h.category === "discount"        ? Percent :
-    h.category === "bom_version"     ? Layers :
-    h.category === "routing_version" ? GitMerge :
-                                        Package
+    h.category === "discount"         ? Percent :
+    h.category === "bom_version"      ? Layers :
+    h.category === "routing_version"  ? GitMerge :
+    h.category === "production_order" ? Factory :
+                                         Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
       <CardContent className="py-4">
@@ -597,6 +599,39 @@ function ApprovalsContent() {
             decided_by_email: null,
             decided_at,
             decision_note: r.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // --- Production orders (v3.74.438 added the approval columns)
+      try {
+        const { data: pos } = await supabase
+          .from("manufacturing_production_orders")
+          .select(`
+            id, order_no, approval_status, submitted_at, submitted_by, planned_quantity,
+            approved_by, approved_at, rejected_by, rejected_at, rejection_reason,
+            products!inner(name),
+            branches(name)
+          `)
+          .eq("company_id", cid)
+          .in("approval_status", ["approved", "rejected"])
+          .order("submitted_at", { ascending: false })
+          .limit(200)
+        for (const p of (pos || []) as any[]) {
+          const decided_at = p.approval_status === "approved" ? p.approved_at : p.rejected_at
+          merged.push({
+            id: `po-${p.id}`,
+            category: "production_order",
+            doc_label: `أمر إنتاج ${p.order_no}`,
+            doc_href: null,
+            party_label: `${p.products?.name ?? "—"}${p.branches?.name ? " · " + p.branches.name : ""}`,
+            value_label: `الكمية المخططة: ${p.planned_quantity}`,
+            status: p.approval_status,
+            requested_by_email: null,
+            requested_at: p.submitted_at ?? p.approved_at ?? p.rejected_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: p.rejection_reason ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -1103,6 +1138,9 @@ function ApprovalsContent() {
                 </Button>
                 <Button size="sm" variant={historyFilter === "routing_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("routing_version")}>
                   <GitMerge className="w-3 h-3" />{t("مسارات التصنيع", "Routings")} ({history.filter(h => h.category === "routing_version").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "production_order" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("production_order")}>
+                  <Factory className="w-3 h-3" />{t("أوامر الإنتاج", "Production Orders")} ({history.filter(h => h.category === "production_order").length})
                 </Button>
                 <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
                   <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})

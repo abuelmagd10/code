@@ -1,0 +1,36 @@
+-- v3.74.438 — production order approval workflow.
+-- Same shape as v3.74.437 (routing versions), applied to
+-- manufacturing_production_orders.
+--
+-- Schema (A): add approval_status, submitted_by/at, approved_by/at,
+--   rejected_by/at, rejection_reason. CHECK pins vocabulary.
+--   Backfill: any existing order with status in
+--   (released, in_progress, completed, cancelled) is grandfathered as
+--   approval_status='approved' so the new activation gate doesn't lock
+--   historical data.
+--
+-- Helpers + guard (B):
+--   mpo_is_order_approval_transition_allowed: encodes
+--     draft → pending_approval → approved/rejected (re-submit allowed).
+--   mpo_guard_production_order_approval_transition: trigger refusing
+--     illegal hops AND refusing status=released when approval_status
+--     is anything other than 'approved'.
+--
+-- RPCs (C): signatures match the existing API routes.
+--   submit_production_order_for_approval_atomic
+--   approve_production_order_atomic  (owner / general_manager)
+--   reject_production_order_atomic   (owner / general_manager)
+--
+-- Notifications (D):
+--   production_order_notify_approval — owner + GM ping on
+--     pending_approval transition (routes to /approvals).
+--   production_order_branch_manager_notify — FYI for the branch manager
+--     on create and on approved/rejected (uses notify_branch_manager
+--     helper from v3.74.428).
+--
+-- UI: unified history (v3.74.435) now includes production orders under
+--   a Factory-icon chip filter "أوامر الإنتاج".
+--
+-- Baseline (Section AL) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
