@@ -69,6 +69,19 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 Supabase Security Advisor أبلغ عن 12 view من نوع `security_definer_view`.
 كل view بـ SECURITY DEFINER بيقرأ بصلاحية المنشئ (يتجاوز RLS).
 
+### المرحلة 2 — 7 فيوهات تقارير (v3.74.409):
+- `v_bookings_full`
+- `v_service_revenue_summary`
+- `v_staff_performance`
+- `v_branch_occupancy_rate`
+- `v_commission_summary_by_employee`
+- `v_invoices_with_cogs`
+- `v_cogs_journal_entries`
+
+كل واحد منهم بقى `security_invoker = true`. كل الجداول الأصلية
+(bookings, invoices, services, branches, employees, journal_entries,
+commission_*) عندها RLS مفعّل.
+
 ### المرحلة 1 — 3 فيوهات منخفضة الخطر (v3.74.408):
 - `inventory_available_balance`
 - `v_inventory_reservation_balances`
