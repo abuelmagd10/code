@@ -64,6 +64,60 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AG. HOTFIX enum coercion فى notify_discount_decision_trg (v3.74.433)
+
+### الثغرة
+
+اكتشفها المالك على أول رفض اعتماد خصم بعد التنظيف: HTTP 500. الـ
+Postgres logs:
+
+```
+ERROR: invalid input value for enum discount_document_type: "bill"
+PL/pgSQL function notify_discount_decision_trg() line 40
+```
+
+ال trigger كان بيبنى `reference_type` بـ CASE:
+```sql
+CASE NEW.document_type
+  WHEN 'purchase_order'   THEN 'purchase_order'
+  WHEN 'sales_order'      THEN 'sales_order'
+  WHEN 'purchase_invoice' THEN 'bill'      -- ليست قيمة enum
+  WHEN 'sales_invoice'    THEN 'invoice'   -- ليست قيمة enum
+  WHEN 'booking'          THEN 'booking'
+  ELSE NEW.document_type                   -- enum
+END
+```
+
+لأن الـ ELSE بيرجع enum، Postgres استنتج إن نوع نتيجة الـ CASE هو
+`discount_document_type`، فحاول يحوّل كل THEN literal لقيمة enum
+صحيحة. `'bill'` و `'invoice'` مش أعضاء فى الـ enum → الـ planner رفض
+الـ INSERT كاملاً، حتى لو الـ branch المُطابق كان `'purchase_order'`
+بس.
+
+### الحل
+
+cast كل من الـ input والـ ELSE لـ `text`:
+```sql
+CASE NEW.document_type::text
+  WHEN 'purchase_order'   THEN 'purchase_order'
+  ...
+  ELSE NEW.document_type::text
+END
+```
+
+دلوقتى نتيجة الـ CASE نص (text)، المقارنات نص-لـ-نص، ومفيش enum
+coercion.
+
+### الدرس المستفاد
+
+لما تستخدم CASE على عمود enum وتحب ترجّع نص مختلف، **اعمل cast للنص
+من البداية** (`enum_col::text`) فى الـ CASE input وفى الـ ELSE. وإلا
+الـ planner هيتعامل مع المخرج كـ enum ويحاول يحوّل القيم اللى مش جزء
+من الـ enum مما يفشل قبل ما يصل لـ runtime.
+
+### Section AG baseline
+- لا فحص جديد لازم — السلوك يفشل صراحةً عند الاختبار لو الإصلاح اتراجع
+
 ## AF. إصلاح focus textarea رفض الخصم (v3.74.432)
 
 ### الثغرة

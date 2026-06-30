@@ -1,0 +1,22 @@
+-- v3.74.433 HOTFIX — fix enum coercion in notify_discount_decision_trg.
+--
+-- Owner hit it on the FIRST discount rejection in the cleaned test
+-- environment. HTTP 500 with no obvious cause in the UI. Postgres logs:
+--   ERROR: invalid input value for enum discount_document_type: "bill"
+--   PL/pgSQL function notify_discount_decision_trg() line 40
+--
+-- The trigger built notifications.reference_type with a CASE that
+-- mapped enum document_type to a string. The original CASE expression
+-- mixed enum-valid THEN values ('purchase_order', 'sales_order',
+-- 'booking') with non-enum strings ('bill', 'invoice'), and the ELSE
+-- returned the enum itself. Postgres inferred the CASE result type as
+-- discount_document_type and tried to coerce every THEN literal to the
+-- enum domain. 'bill' is not a member of the enum → planner rejected
+-- the whole INSERT even though only the 'purchase_order' branch was
+-- matched at runtime.
+--
+-- Fix: cast the CASE input (NEW.document_type::text) and the ELSE
+-- (NEW.document_type::text). The CASE result is now text, the
+-- comparisons are text-to-text, and no enum coercion happens.
+--
+-- Body installed via Supabase MCP. This file is the canonical source.
