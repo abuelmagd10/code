@@ -1,0 +1,37 @@
+-- v3.74.428 — branch manager activity notifications.
+--
+-- The branch manager (role='manager' with a branch_id) was effectively
+-- invisible in the purchase cycle. Discount approval triggers explicitly
+-- excluded managers, the PO approval notifications went to owner/GM
+-- only, and no separate "FYI" channel existed. Branch managers had to
+-- discover events in their branch by polling list pages.
+--
+-- This migration installs a central helper plus four triggers:
+--
+--   notify_branch_manager(company_id, branch_id, ref_type, ref_id,
+--                         actor_id, title, message, [severity, priority])
+--     — single insertion point. Finds all role='manager' users on the
+--     given branch, skips the actor themselves, and writes one row per
+--     manager into notifications with category='branch_activity'.
+--
+--   po_branch_manager_notify (AFTER INSERT, AFTER UPDATE OF status)
+--     — FYI on PO creation, approval, and rejection.
+--   bill_branch_manager_notify (AFTER INSERT, AFTER UPDATE OF status)
+--     — FYI on bill creation and on transitions to paid /
+--     partially_paid / voided.
+--   payment_branch_manager_notify (AFTER INSERT, AFTER UPDATE OF status)
+--     — supplier payments only; FYI on creation and on transitions to
+--     approved / rejected / posted / paid.
+--   purchase_return_branch_manager_notify (AFTER INSERT, AFTER UPDATE)
+--     — FYI on return creation and on transitions to approved /
+--     rejected / sent_to_vendor.
+--
+-- All notifications use reference_type = the document type (so the
+-- existing notification routing map sends the manager to the right
+-- page). category='branch_activity' lets the inbox UI group / filter
+-- them away from approval requests.
+--
+-- The helper safely returns when branch_id is null, so company-level
+-- documents (rare in current data) won't error.
+--
+-- Bodies installed via Supabase MCP; this file is the canonical source.

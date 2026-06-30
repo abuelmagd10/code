@@ -64,6 +64,52 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AB. إشعارات نشاط الفرع لمدير الفرع (v3.74.428)
+
+### الثغرة
+
+مدير الفرع (role='manager' وعنده branch_id) كان أعمى تماماً عن نشاط
+فرعه. ترايجرات اعتماد الخصم كانت بتستبعد دور `manager` صراحة، وإشعارات
+اعتماد الـ PO كانت بتروح للمالك والمدير العام فقط. مفيش قناة "للعلم
+فقط" تخلّى مدير الفرع يعرف ايه اللى بيحصل فى فرعه. كان لازم يفتح
+القوائم بنفسه يكتشف.
+
+### الحل
+
+دالة مركزية + ٤ triggers:
+
+**`notify_branch_manager(company_id, branch_id, ref_type, ref_id,
+actor_id, title, message, [severity, priority])`** — نقطة دخول واحدة.
+بتدوّر على كل المستخدمين بدور `manager` و `branch_id` المحدد فى نفس
+الشركة، بتستبعد الـ actor (لو هو نفسه مدير الفرع)، وبتدخّل صف للكل فى
+notifications بـ `category='branch_activity'`.
+
+**الـ triggers**:
+- `po_branch_manager_notify` على `purchase_orders` — إشعار FYI عند
+  الإنشاء + عند الاعتماد/الرفض
+- `bill_branch_manager_notify` على `bills` — FYI عند الإنشاء + عند
+  الانتقال لـ paid / partially_paid / voided
+- `payment_branch_manager_notify` على `payments` (للموردين فقط) —
+  FYI عند الإنشاء + عند الانتقال لـ approved/rejected/posted/paid
+- `purchase_return_branch_manager_notify` على `purchase_returns` —
+  FYI عند الإنشاء + عند الانتقال لـ approved/rejected/sent_to_vendor
+
+`reference_type` بيبقى نوع المستند الأصلى (purchase_order, bill,
+payment, purchase_return) عشان الـ routing map الموجودة توجّه مدير
+الفرع لصفحة المستند. `category='branch_activity'` يخلّى الـ inbox UI
+يقدر يفلتر النشاط الفرعى عن طلبات الاعتماد.
+
+الـ helper بيرجع بصمت لو branch_id بـ NULL.
+
+### Section AB baseline
+- function `notify_branch_manager` موجودة وبتستهدف role=manager
+  وفلتر branch_id وتستخدم category='branch_activity'
+- functions الـ ٤ trigger functions موجودة
+- triggers الـ ٤ موجودة على الجداول الصحيحة
+
+أُضيف `PERFORM public.assert_baseline_v3_74_428_check()` لـ
+`assert_baseline` ليفحص هذه الـ contracts فى كل run.
+
 ## AA. دورة اعتماد مرتجعات المشتريات (v3.74.427)
 
 ### الثغرة
