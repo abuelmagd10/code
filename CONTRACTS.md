@@ -64,6 +64,44 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## T. تجربة اعتماد PO + توجيه إشعار الخصم (v3.74.420)
+
+ثلاث تحسينات على دورة الاعتماد:
+
+١. **إشعار طلب اعتماد الخصم يفتح صندوق الموافقات**:
+   triggers `po_request_discount_approval_trg` و
+   `so_request_discount_approval_trg` كانت تنشئ الإشعار بـ
+   `reference_type='purchase_order'` (أو `'sales_order'`) +
+   `reference_id=<doc_id>`. الراوتر فى `lib/notification-routing.ts` كان
+   يوجّه ده لصفحة المستند.
+   الآن: `reference_type='approval_request'` +
+   `reference_id=<discount_approval.id>` → الراوتر يوجّه لـ
+   `/approvals?highlight=<id>` (صندوق الموافقات).
+
+   إشعار **القرار** (`notify_discount_decision_trg`) لسه يوجّه لصفحة
+   المستند عمداً — المنشئ مش بيعتمد، هو بيقرأ النتيجة ويمكن يحتاج يعدّل
+   المستند فوراً.
+
+٢. **Banner تحذيرى على صفحة PO**: لما `discount_value > 0` و آخر
+   `discount_approval` بـ `status='pending'` أو `'rejected'`:
+   - **pending** → banner أصفر مع زر "فتح صندوق الموافقات"
+   - **rejected** → banner أحمر مع السبب + زر "تعديل أمر الشراء"
+   - **PO بدون خصم (discount_value=0 أو null)** → ما يظهرش banner أصلاً
+     (الحقل يُتجاهل والصفحة تشتغل عادى)
+
+٣. **تعطيل زر "اعتماد"**: لو الخصم pending/rejected، الزر `disabled`
+   مع `title` يشرح السبب بالعربى. زر "رفض" لسه يشتغل عادى لإن المالك
+   ممكن يحب يرفض الـ PO بدون انتظار اعتماد الخصم.
+   - **PO بدون خصم** → الزر شغّال عادى بدون أى تأثير.
+
+### Section T baseline
+- `po_request_discount_approval_trg` بيدخل
+  `reference_type = 'approval_request'`
+  (يفحص محتوى الـ function body فى `pg_proc`)
+- `so_request_discount_approval_trg` نفس الشيء
+- `app/purchase-orders/[id]/page.tsx` فيه `discountApproval` state +
+  المرجع لـ `/approvals?highlight=` (push script grep)
+
 ## S. سد ٤ ثغرات فى دورة اعتماد الخصم (v3.74.419)
 
 ١. **اعتماد PO بعد رفض الخصم**: كان النظام يسمح. دلوقتى:

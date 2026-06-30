@@ -1,0 +1,22 @@
+-- v3.74.420 — discount-approval request notifications now route to the
+-- /approvals page instead of the document page.
+--
+-- The two trigger functions po_request_discount_approval_trg and
+-- so_request_discount_approval_trg used to insert notifications with
+-- reference_type='purchase_order'/'sales_order' and reference_id=<doc id>,
+-- which the routing map (lib/notification-routing.ts) sends to the
+-- document page. When the approver clicked the bell, they landed on the
+-- PO/SO view — they then had to find the approvals link manually.
+--
+-- New behaviour: both triggers insert with reference_type='approval_request'
+-- and reference_id=<the discount_approval row id>. The routing map sends
+-- this to /approvals?highlight=<id>, which is the "صندوق الموافقات" page
+-- the owner expects.
+--
+-- The decision notification (notify_discount_decision_trg) still routes
+-- to the document so the requester can see/edit the affected document
+-- immediately. That is intentional — they are not approving anything,
+-- they are reading the outcome.
+--
+-- Bodies applied via Supabase MCP. This file is the canonical source for
+-- rebuilds.

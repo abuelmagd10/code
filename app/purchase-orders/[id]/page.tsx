@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
-import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban, Printer } from "lucide-react"
+import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban, Printer, XCircle } from "lucide-react"
 import { type UserContext, validatePurchaseOrderAction, canViewPurchasePrices } from "@/lib/validation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -35,6 +35,12 @@ export default function PurchaseOrderDetailPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const poId = params.id as string
   const [po, setPo] = useState<PO | null>(null)
+  // v3.74.420 — discount approval state, used for banner + button gating
+  const [discountApproval, setDiscountApproval] = useState<{
+    id: string; status: 'pending' | 'approved' | 'rejected' | 'cancelled' | string;
+    discount_value: number; discount_type: 'amount' | 'percent';
+    decision_note: string | null; decided_at: string | null
+  } | null>(null)
   const [items, setItems] = useState<POItem[]>([])
   const [linkedBills, setLinkedBills] = useState<LinkedBill[]>([])
   const [linkedPayments, setLinkedPayments] = useState<LinkedPayment[]>([])
@@ -174,6 +180,23 @@ export default function PurchaseOrderDetailPage() {
         }
 
         setPo(poData)
+
+        // v3.74.420 — pull the latest discount-approval row for this PO
+        // so the view can show a banner + disable/enable the approve
+        // button based on the approval state.
+        if (Number((poData as any).discount_value || 0) > 0) {
+          const { data: discRow } = await supabase
+            .from("discount_approvals")
+            .select("id, status, discount_value, discount_type, decision_note, decided_at")
+            .eq("document_type", "purchase_order")
+            .eq("document_id", poId)
+            .order("requested_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          setDiscountApproval(discRow as any)
+        } else {
+          setDiscountApproval(null)
+        }
 
         // 🔐 تحديث صلاحيات الإرسال والاستلام
         // purchase_orders لا يحتوي على created_by - تمرير null
@@ -834,22 +857,87 @@ export default function PurchaseOrderDetailPage() {
                   same gate, so a stale UI cannot escape it either. */}
               {/* v3.74.407 — was: role==='manager' which let BRANCH managers approve.
                   Policy: only المالك + المدير العام. The DB RPC enforces this too. */}
-              {po.status === "pending_approval" && (userContext?.role === 'owner' || userContext?.role === 'general_manager') && (
-                <>
-                  <Button onClick={handleApprovePO} className="bg-green-600 hover:bg-green-700 text-white" disabled={isSending} data-ai-help="purchase_orders.approve_button">
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    {appLang === 'en' ? 'Approve' : 'اعتماد'}
-                  </Button>
-                  <Button onClick={() => setIsRejectDialogOpen(true)} variant="destructive" disabled={isSending} data-ai-help="purchase_orders.reject_button">
-                    <Ban className="h-4 w-4 mr-1" />
-                    {appLang === 'en' ? 'Reject' : 'رفض'}
-                  </Button>
-                </>
-              )}
+              {po.status === "pending_approval" && (userContext?.role === 'owner' || userContext?.role === 'general_manager') && (() => {
+                // v3.74.420 — gate approval button when discount approval is pending/rejected.
+                // POs without discount (discount_value = 0 or null) work as before.
+                const hasDiscount = Number(po.discount_value || 0) > 0
+                const blockedByDiscount = hasDiscount && discountApproval &&
+                  (discountApproval.status === 'pending' || discountApproval.status === 'rejected')
+                const blockTitle = blockedByDiscount
+                  ? (discountApproval?.status === 'rejected'
+                      ? 'لا يمكن اعتماد أمر الشراء — الخصم مرفوض. عدّل أمر الشراء أو ألغ الخصم أولاً.'
+                      : 'لا يمكن اعتماد أمر الشراء — الخصم بانتظار الاعتماد من صندوق الموافقات.')
+                  : undefined
+                return (
+                  <>
+                    <Button
+                      onClick={handleApprovePO}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      disabled={isSending || !!blockedByDiscount}
+                      title={blockTitle}
+                      data-ai-help="purchase_orders.approve_button"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      {appLang === 'en' ? 'Approve' : 'اعتماد'}
+                    </Button>
+                    <Button onClick={() => setIsRejectDialogOpen(true)} variant="destructive" disabled={isSending} data-ai-help="purchase_orders.reject_button">
+                      <Ban className="h-4 w-4 mr-1" />
+                      {appLang === 'en' ? 'Reject' : 'رفض'}
+                    </Button>
+                  </>
+                )
+              })()}
             </div>
           </div>
 
           <div ref={printContentRef} className="space-y-6">
+            {/* v3.74.420 — discount approval banner.
+                Shows for POs with a discount that is pending or rejected.
+                POs without discount do not see this banner at all. */}
+            {Number(po.discount_value || 0) > 0 && discountApproval && discountApproval.status === 'pending' && (
+              <div className="no-print rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-700 p-4 flex items-start gap-3" data-ai-help="purchase_orders.discount_pending_banner">
+                <Clock className="h-5 w-5 text-yellow-700 dark:text-yellow-300 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-yellow-900 dark:text-yellow-100">
+                    خصم أمر الشراء بانتظار الاعتماد
+                  </div>
+                  <div className="text-sm text-yellow-800 dark:text-yellow-200 mt-1">
+                    يحتوي هذا الأمر على خصم بقيمة {discountApproval.discount_value}
+                    {discountApproval.discount_type === 'percent' ? '%' : ` ${po.currency || 'EGP'}`}
+                    {' '}يحتاج إلى موافقة المالك / المدير العام من صندوق الموافقات قبل أن يمكن اعتماد أمر الشراء.
+                  </div>
+                  <Link href={`/approvals?highlight=${discountApproval.id}`} className="inline-block mt-2">
+                    <Button size="sm" variant="outline" className="border-yellow-400 text-yellow-900 dark:text-yellow-100 hover:bg-yellow-100 dark:hover:bg-yellow-900/40">
+                      فتح صندوق الموافقات
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+            {Number(po.discount_value || 0) > 0 && discountApproval && discountApproval.status === 'rejected' && (
+              <div className="no-print rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 p-4 flex items-start gap-3" data-ai-help="purchase_orders.discount_rejected_banner">
+                <XCircle className="h-5 w-5 text-red-700 dark:text-red-300 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-red-900 dark:text-red-100">
+                    خصم أمر الشراء مرفوض
+                  </div>
+                  <div className="text-sm text-red-800 dark:text-red-200 mt-1">
+                    تم رفض خصم بقيمة {discountApproval.discount_value}
+                    {discountApproval.discount_type === 'percent' ? '%' : ` ${po.currency || 'EGP'}`}
+                    {discountApproval.decision_note ? ` — السبب: ${discountApproval.decision_note}` : ''}
+                    {'. '}عدّل أمر الشراء (غيّر الخصم أو احذفه) ثم سيُفتح طلب اعتماد جديد تلقائياً.
+                  </div>
+                  {permUpdate && (
+                    <Link href={`/purchase-orders/${poId}/edit`} className="inline-block mt-2">
+                      <Button size="sm" variant="outline" className="border-red-400 text-red-900 dark:text-red-100 hover:bg-red-100 dark:hover:bg-red-900/40">
+                        <Pencil className="h-3.5 w-3.5 ml-1" />
+                        تعديل أمر الشراء
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
             {/* Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 no-print" data-ai-help="purchase_orders.summary_cards">
               <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
