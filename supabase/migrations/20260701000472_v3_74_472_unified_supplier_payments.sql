@@ -1,0 +1,23 @@
+-- v3.74.472 — Supplier payments awaiting approval now appear as a
+-- new tab on /approvals, consolidating the inbox pattern started
+-- for discounts and manufacturing approvals.
+--
+-- Owner asked: consolidate approval pages into صندوق الموافقات while
+-- preserving governance. This release starts with supplier payments
+-- (v3.74.426 flow) since the next test step is bill posted → payment
+-- → owner approves.
+--
+-- UI-only. No DB changes.
+--
+-- New shape: PendingSupplierPayment (payment row + supplier + branch
+-- + warehouse + bill). Loader reads payments where status =
+-- 'pending_approval' + payment_type = 'supplier_payment'.
+--
+-- Actions call the existing
+-- /api/supplier-payments/[id]/approve endpoint with
+-- action=APPROVE|REJECT. That endpoint runs the
+-- SupplierPaymentCommandService which invokes
+-- approve_supplier_payment_atomic — full governance (role check,
+-- SoD, JE creation on approve) is preserved end to end.
+--
+-- The existing /payments page continues to work; this is additive.

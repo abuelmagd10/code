@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   CheckCircle2, XCircle, Clock, Layers, GitMerge,
   RefreshCw, AlertCircle, ChevronDown, ChevronUp, Factory, Package,
-  Percent,
+  Percent, Wallet,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
@@ -43,6 +43,26 @@ interface PendingMaterialIssue {
   order_no: string; product_name: string; branch_name: string
   warehouse_name: string
   type: "material_issue"
+}
+
+// v3.74.472 — supplier payment approval. Loaded from the payments
+// table with status='pending_approval'. Uses the existing
+// /api/supplier-payments/[id]/approve endpoint for actions so the
+// governance layer (SupplierPaymentCommandService + JE creation)
+// stays intact.
+interface PendingSupplierPayment {
+  id: string
+  payment_no: string | null
+  supplier_name: string | null
+  amount: number
+  currency: string
+  bill_id: string | null
+  bill_no: string | null
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  requested_by_email: string | null
+  type: "supplier_payment"
 }
 
 // v3.74.373 — discount approvals (Stage 2 of 5). Shape mirrors what
@@ -116,6 +136,7 @@ type PendingItem =
   | PendingProductionOrder
   | PendingMaterialIssue
   | PendingDiscountApproval
+  | PendingSupplierPayment
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -665,14 +686,15 @@ function ApprovalsContent() {
   const [productionOrders, setProductionOrders] = useState<PendingProductionOrder[]>([])
   const [materialIssues, setMaterialIssues] = useState<PendingMaterialIssue[]>([])
   const [discountApprovals, setDiscountApprovals] = useState<PendingDiscountApproval[]>([])
+  const [supplierPayments, setSupplierPayments] = useState<PendingSupplierPayment[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -836,6 +858,45 @@ function ApprovalsContent() {
         }
       } catch {
         setDiscountApprovals([])
+      }
+
+      // v3.74.472 — supplier payments awaiting owner/GM approval.
+      // Direct table read (no dedicated inbox API yet). The RPC
+      // approve_supplier_payment_atomic behind /api/supplier-payments/[id]/approve
+      // enforces role + branch checks on decision, so read-side RLS
+      // is sufficient here.
+      try {
+        const { data: pays } = await supabase
+          .from("payments")
+          .select(`
+            id, payment_no, amount, currency_code, original_currency, created_at, created_by,
+            supplier_id, branch_id, warehouse_id, bill_id,
+            suppliers(name),
+            branches(name),
+            warehouses(name),
+            bills(bill_number)
+          `)
+          .eq("company_id", cid)
+          .eq("status", "pending_approval")
+          .eq("payment_type", "supplier_payment")
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setSupplierPayments((pays || []).map((p: any) => ({
+          id: p.id,
+          payment_no: p.payment_no ?? null,
+          supplier_name: p.suppliers?.name ?? null,
+          amount: Number(p.amount || 0),
+          currency: String(p.original_currency || p.currency_code || "EGP"),
+          bill_id: p.bill_id ?? null,
+          bill_no: p.bills?.bill_number ?? null,
+          branch_name: p.branches?.name ?? null,
+          warehouse_name: p.warehouses?.name ?? null,
+          requested_at: p.created_at,
+          requested_by_email: null,
+          type: "supplier_payment" as const,
+        })))
+      } catch {
+        setSupplierPayments([])
       }
     } finally {
       setIsLoading(false)
@@ -1200,7 +1261,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -1543,6 +1604,10 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "disc"    ? "default" : "outline"} onClick={() => setActiveTab("disc")}    className="gap-1">
               <Percent  className="w-3.5 h-3.5" />{t("خصومات", "Discounts")} ({discountApprovals.length})
             </Button>
+            {/* v3.74.472 — supplier payments awaiting owner approval */}
+            <Button size="sm" variant={activeTab === "pay" ? "default" : "outline"} onClick={() => setActiveTab("pay")} className="gap-1">
+              <Wallet className="w-3.5 h-3.5" />{t("دفعات موردين", "Supplier Payments")} ({supplierPayments.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -1662,6 +1727,144 @@ function ApprovalsContent() {
                     <Percent className="w-4 h-4" />{t("اعتمادات الخصم", "Discount Approvals")}
                   </h2>
                   {discountApprovals.map(d => <DiscountApprovalCard key={d.id} d={d} ctx={discountCardCtx} />)}
+                </div>
+              )}
+
+              {/* v3.74.472 — Supplier payments awaiting owner/GM approval. */}
+              {(activeTab === "all" || activeTab === "pay") && supplierPayments.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Wallet className="w-4 h-4" />{t("اعتمادات دفعات الموردين", "Supplier Payment Approvals")}
+                  </h2>
+                  {supplierPayments.map(p => (
+                    <Card key={p.id} className="border-l-4 border-l-indigo-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg shrink-0">
+                              <Wallet className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("دفعة مورد", "Supplier Payment")} · {p.payment_no ?? t("بدون رقم", "(no number)")}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                👤 {p.supplier_name ?? "—"}
+                                {p.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: {p.bill_no}</>}
+                              </p>
+                              <p className="text-xs mt-1">
+                                <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                                  {t("القيمة", "Amount")}: {fmtMoney(p.amount)} {p.currency}
+                                </span>
+                              </p>
+                              {p.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {p.branch_name}{p.warehouse_name && <> · 🏬 {p.warehouse_name}</>}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">
+                                📅 {fmtDate(p.requested_at)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                            </Badge>
+                            {p.bill_id && (
+                              <Link href={`/bills/${p.bill_id}`} className="text-xs text-indigo-600 hover:underline">
+                                {t("عرض الفاتورة", "View bill")}
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === p.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(p.id)
+                                const res = await fetch(`/api/supplier-payments/${encodeURIComponent(p.id)}/approve`, {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `pay:${p.id}:approve:${Date.now()}`,
+                                  },
+                                  body: JSON.stringify({ action: "APPROVE", uiSurface: "approvals_inbox", appLang }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok || j.success === false) {
+                                  throw new Error(j.error || (appLang === 'en' ? 'Approve failed' : 'تعذر اعتماد الدفعة'))
+                                }
+                                toast({ title: t("تم الاعتماد", "Approved"), description: t("تم اعتماد الدفعة بنجاح", "Payment approved") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الدفعة", "Approve Payment")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === p.id}
+                            onClick={() => { setRejectId(p.id); setRejectType("supplier_payment"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                          </Button>
+                        </div>
+                        {rejectId === p.id && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب الرفض...", "Rejection reason...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === p.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(p.id)
+                                    const res = await fetch(`/api/supplier-payments/${encodeURIComponent(p.id)}/approve`, {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `pay:${p.id}:reject:${Date.now()}`,
+                                      },
+                                      body: JSON.stringify({ action: "REJECT", rejectionReason: rejectReason, uiSurface: "approvals_inbox", appLang }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok || j.success === false) {
+                                      throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر رفض الدفعة'))
+                                    }
+                                    toast({ title: t("تم الرفض", "Rejected"), description: t("تم رفض الدفعة", "Payment rejected") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >
+                                {t("تأكيد الرفض", "Confirm Reject")}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                                {t("إلغاء", "Cancel")}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               )}
             </div>

@@ -64,6 +64,40 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BS. صندوق موحّد للموافقات — دفعات الموردين (v3.74.472)
+
+### القرار
+
+المالك طلب توحيد صفحات الاعتماد فى `/approvals` (Approvals Inbox).
+نبدأ بدفعات الموردين لأن السيناريو الجارى (bill → payment → approve)
+يستفيد فوراً.
+
+### التنفيذ
+
+- Tab جديد "دفعات موردين" على `/approvals`
+- Loader يقرأ `payments` بشرط `status='pending_approval' AND
+  payment_type='supplier_payment'`
+- Card تصميم مماثل للـ Discount card:
+  - رقم الدفعة، اسم المورد، القيمة + العملة، رقم الفاتورة المرتبطة،
+    الفرع والمخزن، تاريخ الطلب
+  - Badge "انتظار اعتماد"
+  - أزرار: اعتماد الدفعة + رفض (مع سبب الرفض)
+- الإجراءات تستدعى `/api/supplier-payments/[id]/approve`
+  بـ `action=APPROVE|REJECT`
+
+### الحوكمة المحفوظة
+
+- `SupplierPaymentCommandService.processDecision` بيستدعى الـ RPC
+  `approve_supplier_payment_atomic`:
+  - Role check
+  - SoD (approver ≠ creator)
+  - JE creation on approve
+- Notification service بيرسل approved / rejected notifications
+- الصفحة القديمة `/payments` مش هتتشال — الميزة إضافية فقط
+
+### Section BS baseline
+- UI-only (loader + card + tab)
+
 ## BR. سجل الاعتمادات يعرض DiffCard كامل (v3.74.471)
 
 ### المطلوب
