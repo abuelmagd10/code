@@ -1,0 +1,17 @@
+-- v3.74.477 — Dispatch approvals (invoices awaiting warehouse
+-- stage-2) join the unified approvals inbox.
+--
+-- UI-only, additive. Existing /inventory/dispatch-approvals page still
+-- works. The card links to /inventory/dispatch-approvals/[id] for
+-- advanced actions (approve-with-shipping etc.).
+--
+-- Loader reads invoices where warehouse_status='pending' AND status IN
+-- ('sent','paid','partially_paid'). Actions POST to
+-- /api/invoices/[id]/warehouse-approve and warehouse-reject.
+--
+-- Governance preserved:
+--   API enforces warehouse role + warehouse gate + branch fallback via
+--   the same predicates get_user_approval_badges uses for the
+--   dispatch_approval badge.
+--
+-- Sidebar rolls up dispatch_approval into pendingInboxCount.

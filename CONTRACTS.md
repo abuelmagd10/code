@@ -64,6 +64,19 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BX. صندوق موحّد — Dispatch (warehouse stage 2) (v3.74.477)
+
+Tab "موافقات الإرسال" يعرض فواتير المبيعات بحالة
+`warehouse_status='pending'` (بعد إرسال الفاتورة). الكارت يعرض
+customer + total + branch/warehouse. الأزرار:
+- **اعتماد الصرف** → `/api/invoices/[id]/warehouse-approve`
+- **رفض** (مع سبب) → `/api/invoices/[id]/warehouse-reject`
+- **[عرض التفاصيل]** → لينك للـ dispatch page (advanced actions:
+  approve-with-shipping، إلخ)
+
+Governance: warehouse role + warehouse gate + branch fallback مطابق
+لبريدكيت `get_user_approval_badges`.
+
 ## BW. صندوق موحّد — استرداد العملاء + تصحيح دفعات الموردين (v3.74.476)
 
 Tabs جديدة: **استرداد عملاء** + **تصحيح دفعات موردين**. الاتنين

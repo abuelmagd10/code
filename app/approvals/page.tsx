@@ -97,6 +97,20 @@ interface PendingCustomerRefund {
   type: "customer_refund"
 }
 
+// v3.74.477 — dispatch approval for sales invoices. Warehouse Stage 2:
+// invoice.warehouse_status='pending' after the invoice was sent.
+// Uses /api/invoices/[id]/{warehouse-approve, warehouse-reject}.
+interface PendingDispatch {
+  id: string
+  invoice_no: string | null
+  customer_name: string | null
+  total: number
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  type: "dispatch"
+}
+
 // v3.74.476 — vendor payment correction request. Same two-phase
 // pattern as customer refund.
 interface PendingVendorPaymentCorrection {
@@ -206,6 +220,7 @@ type PendingItem =
   | PendingSalesReturnRequest
   | PendingCustomerRefund
   | PendingVendorPaymentCorrection
+  | PendingDispatch
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -770,14 +785,15 @@ function ApprovalsContent() {
   const [salesReturnRequests, setSalesReturnRequests] = useState<PendingSalesReturnRequest[]>([])
   const [customerRefunds, setCustomerRefunds] = useState<PendingCustomerRefund[]>([])
   const [vendorPaymentCorrections, setVendorPaymentCorrections] = useState<PendingVendorPaymentCorrection[]>([])
+  const [dispatches, setDispatches] = useState<PendingDispatch[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -1113,6 +1129,39 @@ function ApprovalsContent() {
         })))
       } catch {
         setVendorPaymentCorrections([])
+      }
+
+      // v3.74.477 — dispatch approvals (invoices awaiting warehouse
+      // stage-2). Governance:
+      // /api/invoices/[id]/warehouse-approve enforces warehouse role
+      // + warehouse gate.
+      try {
+        const { data: invs } = await supabase
+          .from("invoices")
+          .select(`
+            id, invoice_number, total_amount, warehouse_status, status,
+            created_at, customer_id, branch_id, warehouse_id,
+            customers(name),
+            branches(name),
+            warehouses(name)
+          `)
+          .eq("company_id", cid)
+          .eq("warehouse_status", "pending")
+          .in("status", ["sent", "paid", "partially_paid"])
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setDispatches((invs || []).map((i: any) => ({
+          id: i.id,
+          invoice_no: i.invoice_number ?? null,
+          customer_name: i.customers?.name ?? null,
+          total: Number(i.total_amount || 0),
+          branch_name: i.branches?.name ?? null,
+          warehouse_name: i.warehouses?.name ?? null,
+          requested_at: i.created_at,
+          type: "dispatch" as const,
+        })))
+      } catch {
+        setDispatches([])
       }
     } finally {
       setIsLoading(false)
@@ -1636,7 +1685,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -1999,6 +2048,10 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "vcor" ? "default" : "outline"} onClick={() => setActiveTab("vcor")} className="gap-1">
               <Wallet className="w-3.5 h-3.5" />{t("تصحيح دفعات موردين", "Vendor Corrections")} ({vendorPaymentCorrections.length})
             </Button>
+            {/* v3.74.477 — dispatch approvals (warehouse stage 2) */}
+            <Button size="sm" variant={activeTab === "disp" ? "default" : "outline"} onClick={() => setActiveTab("disp")} className="gap-1">
+              <Package className="w-3.5 h-3.5" />{t("موافقات الإرسال", "Dispatch")} ({dispatches.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -2268,6 +2321,125 @@ function ApprovalsContent() {
                               <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>
                                 {t("إلغاء", "Cancel")}
                               </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* v3.74.477 — Dispatch approvals (invoices awaiting warehouse stage 2). */}
+              {(activeTab === "all" || activeTab === "disp") && dispatches.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Package className="w-4 h-4" />{t("موافقات الإرسال والصرف المخزنى", "Dispatch Approvals")}
+                  </h2>
+                  {dispatches.map(d => (
+                    <Card key={d.id} className="border-l-4 border-l-sky-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg shrink-0">
+                              <Package className="w-4 h-4 text-sky-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("فاتورة مبيعات", "Sales Invoice")} · {d.invoice_no ?? d.id.slice(0, 6)}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                👤 {d.customer_name ?? "—"}
+                              </p>
+                              <p className="text-xs mt-1">
+                                <span className="font-semibold text-sky-700 dark:text-sky-300">
+                                  {t("قيمة الفاتورة", "Invoice total")}: {fmtMoney(d.total)}
+                                </span>
+                              </p>
+                              {d.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {d.branch_name}{d.warehouse_name && <> · 🏬 {d.warehouse_name}</>}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(d.requested_at)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار الصرف", "Awaiting Dispatch")}
+                            </Badge>
+                            <Link href={`/inventory/dispatch-approvals/${d.id}`} className="text-xs text-sky-600 hover:underline">
+                              {t("عرض التفاصيل", "View details")}
+                            </Link>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === d.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(d.id)
+                                const res = await fetch(`/api/invoices/${encodeURIComponent(d.id)}/warehouse-approve`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ ui_surface: "approvals_inbox" }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Dispatch failed' : 'تعذر اعتماد الصرف'))
+                                toast({ title: t("تم اعتماد الصرف", "Dispatch approved") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الصرف", "Approve Dispatch")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === d.id}
+                            onClick={() => { setRejectId(d.id); setRejectType("dispatch"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                          </Button>
+                        </div>
+                        {rejectId === d.id && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب الرفض...", "Rejection reason...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === d.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(d.id)
+                                    const res = await fetch(`/api/invoices/${encodeURIComponent(d.id)}/warehouse-reject`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ reason: rejectReason, rejection_reason: rejectReason }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                    toast({ title: t("تم الرفض", "Rejected") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
                             </div>
                           </div>
                         )}
