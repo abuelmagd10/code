@@ -64,6 +64,39 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BP. تفاصيل شاملة للبنود المضافة/المحذوفة (منتج/خدمة، خصم، ضريبة) (v3.74.469)
+
+### التغطية
+
+المالك سأل عن: إضافة صنف/خدمة، تعديل سعر الوحدة، تعديل كمية.
+- تعديل السعر والكمية موجود من v3.74.467 (فى قسم "بنود معدلة")
+- إضافة صنف/خدمة موجود من v3.74.461 (فى قسم "بنود مضافة")
+
+اللى كان ناقص: **تفصيل كافى** فى البنود المضافة والمحذوفة.
+
+### التحسينات
+
+**١. Triggers**:
+`items_snapshot` دلوقتى يشمل:
+- `item_type` (منتج/خدمة)
+- `description` (كـ fallback للاسم لو مفيش product_id)
+
+طبّق على bill + invoice + item variants (٤ triggers).
+
+**٢. DiffCard**:
+البنود المضافة/المحذوفة تعرض:
+- 🏷️ Badge للنوع: [منتج] أو [خدمة]
+- الاسم من product_name أو description
+- كمية × سعر
+- خصم % (لو موجود)
+- ضريبة % (لو موجودة)
+- الإجمالى النهائى
+
+**٣. نظير المبيعات كامل** — invoice + invoice_items نفس الشى.
+
+### Section BP baseline
+- 4 function rewrites + UI additions
+
 ## BO. DiffCard يعرض أى تعديل + نظير كامل على المبيعات (v3.74.468)
 
 ### الفجوة

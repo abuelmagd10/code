@@ -1,0 +1,24 @@
+-- v3.74.469 — items_snapshot now captures item_type + description
+-- so services (non-inventory line items) and miscellaneous items
+-- (description only, no product_id) render correctly in the DiffCard.
+--
+-- Owner asked: what about adding items/services, or changing unit
+-- price / quantity? Quantity + price changes were already surfaced
+-- in the modified-items list (v3.74.467). This release adds:
+--   - service vs product distinction (item_type)
+--   - description fallback for lines with no product_id
+--
+-- All four amendment triggers (bill / invoice + item variants) now
+-- write both fields into items_snapshot.
+--
+-- UI: added / removed / modified item entries now show:
+--   - a small [منتج / Product] or [خدمة / Service] badge
+--   - name from product_name or description
+--   - quantity × unit price
+--   - discount % (if any)
+--   - tax rate % (if any)
+--   - line total
+--
+-- Full parity across purchase invoices and sales invoices.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

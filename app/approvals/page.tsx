@@ -316,9 +316,24 @@ const AmendmentDiffCard = ({
                 ➕ {t("بنود مضافة", "Added items")} ({added.length})
               </p>
               <ul className="text-xs ms-4 list-disc text-muted-foreground">
-                {added.map((it, i) => (
-                  <li key={i}>{it.product_name ?? "?"} · {num(it.quantity)} × {fmtMoney(num(it.unit_price))} = {fmtMoney(num(it.total))}</li>
-                ))}
+                {added.map((it, i) => {
+                  // v3.74.469 — show item_type badge (product / service),
+                  // description fallback, and every financial field
+                  const typeLbl = it.item_type === "service" ? t("خدمة", "Service") : t("منتج", "Product")
+                  const name = it.product_name ?? it.description ?? "?"
+                  const disc = num(it.discount_percent)
+                  const tax = num(it.tax_rate)
+                  return (
+                    <li key={i}>
+                      <span className="inline-block px-1 me-1 text-[10px] rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">{typeLbl}</span>
+                      <strong>{name}</strong>
+                      {" · "}{t("كمية","qty")} {num(it.quantity)} × {fmtMoney(num(it.unit_price))}
+                      {disc > 0 && <> · {t("خصم","disc")} {disc}%</>}
+                      {tax > 0 && <> · {t("ضريبة","tax")} {tax}%</>}
+                      {" = "}<strong>{fmtMoney(num(it.total))}</strong>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           )}
@@ -328,9 +343,22 @@ const AmendmentDiffCard = ({
                 ➖ {t("بنود محذوفة", "Removed items")} ({removed.length})
               </p>
               <ul className="text-xs ms-4 list-disc text-muted-foreground">
-                {removed.map((it, i) => (
-                  <li key={i}>{it.product_name ?? "?"} · {num(it.quantity)} × {fmtMoney(num(it.unit_price))} = {fmtMoney(num(it.total))}</li>
-                ))}
+                {removed.map((it, i) => {
+                  const typeLbl = it.item_type === "service" ? t("خدمة", "Service") : t("منتج", "Product")
+                  const name = it.product_name ?? it.description ?? "?"
+                  const disc = num(it.discount_percent)
+                  const tax = num(it.tax_rate)
+                  return (
+                    <li key={i}>
+                      <span className="inline-block px-1 me-1 text-[10px] rounded bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{typeLbl}</span>
+                      <strong>{name}</strong>
+                      {" · "}{t("كمية","qty")} {num(it.quantity)} × {fmtMoney(num(it.unit_price))}
+                      {disc > 0 && <> · {t("خصم","disc")} {disc}%</>}
+                      {tax > 0 && <> · {t("ضريبة","tax")} {tax}%</>}
+                      {" = "}<strong>{fmtMoney(num(it.total))}</strong>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           )}
