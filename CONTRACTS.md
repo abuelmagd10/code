@@ -64,6 +64,23 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CF. تدقيق صلاحية اعتماد الاستلام حسب متطلبات المالك (v3.74.485)
+
+**المصفوفة الجديدة**:
+- **يعتمد**: owner، admin، general_manager، store_manager (على مستوى مخزنه)
+- **للاطلاع فقط**: manager (فرعه)، accountant (فرعه)، purchasing_officer (فرعه)
+
+**Server-side**: `RECEIPT_ROLES` فى `confirm-receipt/route.ts` اتشال منها
+`manager`. الـ workflow service بالفعل بدون `manager`، فما فيش تغيير على
+reject-receipt.
+
+**Client-side**: صفحة `/approvals` بتحمل دور المستخدم من `company_members`
+عند المونت. الأدوار **view-only** بتشوف الكارت + بنود الفاتورة + Badge
+"👁️ للاطلاع فقط" لكن **بدون** أزرار الاعتماد/الرفض. رسالة أسفل الكارت
+بتوضح: "الاعتماد لمسئول المخزن / المدير العام / المالك فقط".
+
+الـ Row visibility محفوظ عبر RLS على `bills`.
+
 ## CE. الإشعارات المخزنية توجّه لصندوق الموافقات + إتاحته لأدوار المخزن (v3.74.484)
 
 ### التوجيه

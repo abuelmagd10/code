@@ -871,6 +871,21 @@ function ApprovalsContent() {
   const [goodsReceipts, setGoodsReceipts] = useState<PendingGoodsReceipt[]>([])
   // v3.74.483 — tracks which goods-receipt card has its items panel expanded.
   const [receiptExpandedId, setReceiptExpandedId] = useState<string | null>(null)
+  // v3.74.485 — user's own role so the UI can hide the approve button for
+  // roles that server-side will refuse (manager, accountant, purchasing_officer).
+  const [myRole, setMyRole] = useState<string | null>(null)
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
+      if (!cid) return
+      const { data } = await supabase.from("company_members").select("role").eq("company_id", cid).eq("user_id", user.id).maybeSingle()
+      setMyRole((data as any)?.role ?? null)
+    })()
+  }, [supabase])
+  // The four canonical "receipt approvers" per owner spec:
+  const canApproveReceipt = myRole !== null && ["owner","admin","general_manager","store_manager"].includes(myRole)
   const [writeOffs, setWriteOffs] = useState<PendingWriteOff[]>([])
   const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
   const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
@@ -3107,6 +3122,14 @@ function ApprovalsContent() {
                             <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
                               <Clock className="w-3 h-3 me-1" />{t("انتظار الاستلام", "Awaiting Receipt")}
                             </Badge>
+                            {/* v3.74.485 — badge for view-only roles so it's clear
+                                they see the pending item for information but
+                                cannot decide. */}
+                            {!canApproveReceipt && myRole && (
+                              <Badge className="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 text-xs">
+                                👁️ {t("للاطلاع فقط", "View only")}
+                              </Badge>
+                            )}
                             <Link href={`/bills/${b.id}`} className="text-xs text-lime-600 hover:underline">
                               {t("عرض الفاتورة", "View bill")}
                             </Link>
@@ -3158,39 +3181,52 @@ function ApprovalsContent() {
                             )}
                           </div>
                         )}
-                        <div className="flex gap-2 mt-3">
-                          <Button
-                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
-                            disabled={runningId === b.id}
-                            onClick={async () => {
-                              try {
-                                setRunningId(b.id)
-                                const res = await fetch(`/api/bills/${encodeURIComponent(b.id)}/confirm-receipt`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ ui_surface: "approvals_inbox" }),
-                                })
-                                const j = await res.json().catch(() => ({}))
-                                if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Confirm failed' : 'تعذر تأكيد الاستلام'))
-                                toast({ title: t("تم تأكيد الاستلام", "Receipt confirmed") })
-                                await load()
-                              } catch (e: any) {
-                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
-                              } finally {
-                                setRunningId(null)
-                              }
-                            }}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />{t("تأكيد الاستلام", "Confirm Receipt")}
-                          </Button>
-                          <Button
-                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
-                            disabled={runningId === b.id}
-                            onClick={() => { setRejectId(b.id); setRejectType("goods_receipt"); setRejectReason("") }}
-                          >
-                            <XCircle className="w-3.5 h-3.5" />{t("رفض الاستلام", "Reject Receipt")}
-                          </Button>
-                        </div>
+                        {/* v3.74.485 — approve/reject buttons only for roles the
+                            server accepts (owner/admin/general_manager/store_manager).
+                            manager, accountant, purchasing_officer see the card
+                            but no action buttons — matches API-side gate. */}
+                        {canApproveReceipt ? (
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                              disabled={runningId === b.id}
+                              onClick={async () => {
+                                try {
+                                  setRunningId(b.id)
+                                  const res = await fetch(`/api/bills/${encodeURIComponent(b.id)}/confirm-receipt`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ ui_surface: "approvals_inbox" }),
+                                  })
+                                  const j = await res.json().catch(() => ({}))
+                                  if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Confirm failed' : 'تعذر تأكيد الاستلام'))
+                                  toast({ title: t("تم تأكيد الاستلام", "Receipt confirmed") })
+                                  await load()
+                                } catch (e: any) {
+                                  toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                } finally {
+                                  setRunningId(null)
+                                }
+                              }}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />{t("تأكيد الاستلام", "Confirm Receipt")}
+                            </Button>
+                            <Button
+                              size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                              disabled={runningId === b.id}
+                              onClick={() => { setRejectId(b.id); setRejectType("goods_receipt"); setRejectReason("") }}
+                            >
+                              <XCircle className="w-3.5 h-3.5" />{t("رفض الاستلام", "Reject Receipt")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400 italic">
+                            {t(
+                              "الاعتماد لمسئول المخزن / المدير العام / المالك فقط.",
+                              "Approval is limited to the store manager, GM, or owner."
+                            )}
+                          </p>
+                        )}
                         {rejectId === b.id && (
                           <div className="mt-3 space-y-2">
                             <textarea

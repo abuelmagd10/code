@@ -11,7 +11,12 @@ import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-noti
 
 const BILL_RECEIPT_EVENT = "bill_receipt_posting"
 const BILL_RECEIPT_REPLAY_PAYLOAD_VERSION = "bill_receipt_v1"
-const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "manager", "store_manager"])
+// v3.74.485 — owner tightened the receipt approval matrix:
+//   Approve: owner, admin, general_manager, store_manager (warehouse-scoped)
+//   View-only: manager, accountant, purchasing_officer (branch-scoped)
+// Removed 'manager' from the approver set — they only view their branch's
+// pending receipts now.
+const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manager"])
 
 type BillReceiptRecord = {
   id: string
@@ -640,9 +645,9 @@ export async function POST(
 
     const bill = billData as BillReceiptRecord
 
-    if (role === "manager" && context.member.branch_id && bill.branch_id !== context.member.branch_id) {
-      return NextResponse.json({ success: false, error: "Bill is outside your branch scope" }, { status: 403 })
-    }
+    // v3.74.485 — manager no longer approves receipts; the RECEIPT_ROLES
+    // guard above already blocks them, so this branch scope check is
+    // now dead code. Left for symmetry with the reject-receipt route.
 
     if (role === "store_manager") {
       if (context.member.branch_id && bill.branch_id !== context.member.branch_id) {

@@ -1,0 +1,26 @@
+-- v3.74.485 — Tighten the goods-receipt approval role matrix and mirror
+-- it in the inbox UI.
+--
+-- Owner spec:
+--   Approve : owner, admin, general_manager, store_manager (branch +
+--             warehouse scoped)
+--   View-only: manager, accountant, purchasing_officer (branch scoped)
+--
+-- Server-side change:
+--   app/api/bills/[id]/confirm-receipt/route.ts
+--     RECEIPT_ROLES = {owner, admin, general_manager, store_manager}
+--     (removed 'manager')
+--   BillReceiptWorkflowService already excluded 'manager', so the
+--     reject-receipt route needs no change.
+--
+-- Client-side change (app/approvals/page.tsx):
+--   Load company_members.role once on mount.
+--   canApproveReceipt = role ∈ {owner, admin, general_manager, store_manager}.
+--   When canApproveReceipt is false:
+--     - Show a slate "View only" badge next to the pending chip.
+--     - Hide the Confirm / Reject buttons; render an italic hint
+--       instead: "Approval is limited to the store manager, GM, or owner."
+--
+-- The card itself still renders for view-only roles so branch/purchasing
+-- staff can see the pending workload of their branch. Row visibility is
+-- controlled by RLS on `bills` (each user only sees bills they can read).
