@@ -184,6 +184,11 @@ const AmendmentDiffCard = ({
 
   const anyChanged = rows.some(r => !same(r.a, r.b)) || added.length + removed.length + changed.length > 0
 
+  // v3.74.466 — surface the previous rejection so the owner sees
+  // "you rejected X for reason Y — accountant now proposes Z".
+  const priorWasRejected = prior.status === "rejected"
+  const priorNote = (prior as any).decision_note as string | undefined
+
   return (
     <div className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 p-3">
       <div className="flex items-center gap-2 mb-2">
@@ -191,6 +196,21 @@ const AmendmentDiffCard = ({
           ⚠️ {t("تعديلات على الفاتورة تحتاج مراجعتك", "Amendments requiring your review")}
         </span>
       </div>
+      {priorWasRejected && (
+        <div className="mb-3 rounded border border-red-300 bg-red-50 dark:bg-red-900/20 p-2 text-xs">
+          <p className="font-bold text-red-800 dark:text-red-300">
+            🚫 {t("سبق رفض تعديل قبل هذا", "A previous amendment was rejected")}
+          </p>
+          {priorNote && (
+            <p className="mt-1 text-red-700 dark:text-red-400">
+              {t("سبب الرفض", "Reason")}: <span className="font-semibold">{priorNote}</span>
+            </p>
+          )}
+          <p className="mt-1 text-red-700 dark:text-red-400">
+            {t("قيمة التعديل المرفوض", "Rejected total")}: {fmtMoney(num(prior.document_total))}
+          </p>
+        </div>
+      )}
       {!anyChanged ? (
         <p className="text-xs text-muted-foreground">
           {t("لا يوجد فروق ملموسة عن الاعتماد السابق.", "No material differences from the prior approval.")}

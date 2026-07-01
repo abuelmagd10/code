@@ -1,0 +1,24 @@
+-- v3.74.466 — the amendment trigger's baseline lookup now includes
+-- 'rejected' status so a re-amendment after a rejection supersedes
+-- the rejected row (not the older approved PO baseline).
+--
+-- Scenario owner asked about:
+--   1. Accountant amends BILL-0001, opens pending approval
+--   2. Owner rejects
+--   3. Accountant re-edits without any owner approval in between
+-- Before this release: the new amendment's supersedes_approval_id
+-- pointed at the PARENT PO's approved row. The DiffCard showed
+-- "PO 4.83 -> new proposal", losing the context that the previous
+-- amendment was rejected. Owner had no visibility into what they
+-- had just rejected.
+--
+-- After: baseline lookup uses status IN (approved, pending, rejected)
+-- for the bill-level row. The rejected row becomes the baseline for
+-- the next amendment. DiffCard reads that + surfaces:
+--   - a red "A previous amendment was rejected" banner
+--   - the rejection reason (decision_note)
+--   - the rejected total
+--
+-- Same treatment for the sales side (invoice + SO parent).
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

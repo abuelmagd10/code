@@ -64,6 +64,38 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BM. baseline يشمل rejected + عرض الرفض السابق فى DiffCard (v3.74.466)
+
+### السيناريو
+
+المالك سأل: لو رفض المالك أمندمنت والمحاسب يعدّل تانى قبل أى اعتماد
+من المالك، ايه اللى يحصل؟
+
+**السلوك السابق**:
+- الأمندمنت الجديد يربط بـ **PO baseline** (لأن الـ query تشمل
+  approved/pending فقط)
+- الـ DiffCard يعرض: 4.83 → التعديل الجديد
+- **يفقد سياق الرفض**: المالك ما يشوفش إن أمندمنت 8.53 اترفض قبل كده
+
+### الحل
+
+**١. baseline lookup يشمل `rejected`**:
+- `bill_amendment_reset_approval_trg` +
+  `invoice_amendment_reset_approval_trg`
+- الآن: `status IN ('approved','pending','rejected')`
+- لو آخر واحد rejected → الأمندمنت الجديد يربط بيه
+
+**٢. AmendmentDiffCard**:
+- لو prior_approval.status = 'rejected':
+  - يعرض صندوق **أحمر** فوق: "🚫 سبق رفض تعديل قبل هذا"
+  - سبب الرفض (decision_note)
+  - قيمة التعديل المرفوض
+- ثم الجدول diff من الرفض إلى الاقتراح الجديد
+
+### Section BM baseline
+- 2 function rewrites (bill + invoice amendment)
+- UI change فى AmendmentDiffCard
+
 ## BL. HOTFIX: أولوية bill/invoice approval على PO/SO فى الـ gate (v3.74.465)
 
 ### الفجوة
