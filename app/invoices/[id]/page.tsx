@@ -3822,11 +3822,32 @@ export default function InvoiceDetailPage() {
           <div className="flex gap-3 print:hidden mt-4">
             {invoice.status !== "paid" && (
               <>
-                {/* ✅ زر تحديد كمرسلة يظهر للفواتير draft أو invoiced (المحولة من أمر بيع) */}
+                {/* ✅ زر تحديد كمرسلة يظهر للفواتير draft أو invoiced (المحولة من أمر بيع)
+                    v3.74.464 — نمط PO: الزر يقفل لما discount_approval فى حالة
+                    pending/blocked. الاعتماد يمر عبر /approvals ليشوف الـ diff card. */}
                 {(invoice.status === "draft" || invoice.status === "invoiced") && permUpdate ? (
-                  <Button onClick={() => handleChangeStatus("sent")} className="bg-blue-600 hover:bg-blue-700" disabled={changingStatus || isPending} data-ai-help="invoices.mark_sent_button">
-                    {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسلة')}
-                  </Button>
+                  <div className="flex flex-col">
+                    <Button
+                      onClick={() => handleChangeStatus("sent")}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                      disabled={changingStatus || isPending || discountGate !== "open"}
+                      data-ai-help="invoices.mark_sent_button"
+                      title={discountGate !== "open"
+                        ? (appLang === 'en'
+                          ? "Approve the discount from /approvals first"
+                          : "اعتمد الخصم أولاً من صفحة الموافقات")
+                        : undefined}
+                    >
+                      {changingStatus || isPending ? (appLang === 'en' ? 'Updating...' : 'جاري التحديث...') : (appLang === 'en' ? 'Mark as Sent' : 'تحديد كمرسلة')}
+                    </Button>
+                    {discountGate !== "open" && (
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-1 max-w-[200px] leading-tight">
+                        {appLang === 'en'
+                          ? "Approve the discount from /approvals first"
+                          : "اعتمد الخصم أولاً من صفحة الموافقات"}
+                      </p>
+                    )}
+                  </div>
                 ) : null}
                 {/* 🔒 زر الدفع يظهر فقط للفواتير المنفذة (sent/partially_paid) - ليس للمسودات */}
                 {netRemainingAmount > 0 && permPayWrite && invoice.status !== "draft" && invoice.status !== "invoiced" && invoice.status !== "cancelled" ? (

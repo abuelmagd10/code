@@ -1,0 +1,34 @@
+-- v3.74.464 — Unify the amendment approval path so it matches the
+-- purchase-order approval pattern.
+--
+-- Before: after an amendment on a bill/invoice, TWO approval buttons
+-- existed:
+--   1. /approvals — approve the discount_approval row
+--   2. bill view — approve the bill.status transition
+-- These were independent. Owner could approve one without the other,
+-- leaving the document in an inconsistent state.
+--
+-- After (matches PO flow):
+--   * The bill/invoice view "اعتماد" button is DISABLED while the
+--     discount_approval is pending or blocked. Tooltip + hint text
+--     tells the owner to approve the discount from /approvals first.
+--   * When the owner approves the discount_approval from /approvals,
+--     a new trigger sync_bill_status_on_discount_decision fires and
+--     transitions the bill/invoice back to 'draft' automatically.
+--     Accountant then posts as usual.
+--   * On reject, the bill stays 'pending_approval' with a rejection
+--     note and the accountant must re-edit to reopen the cycle.
+--
+-- Trigger installed on discount_approvals AFTER UPDATE. Handles both
+-- purchase_invoice + sales_invoice document_types.
+--
+-- API changes: /api/bills/[id]/discount-approval and the invoice
+-- mirror now compute the gate for both status='draft' AND
+-- status='pending_approval'. Previously only draft was gated so the
+-- bill view saw gate='open' while the amendment was still pending.
+--
+-- UI changes: bill view and invoice view disable the primary approve /
+-- mark-sent button when discountGate !== 'open', and show a small
+-- hint pointing to /approvals.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

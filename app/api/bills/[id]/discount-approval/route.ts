@@ -84,7 +84,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     let gate: "open" | "blocked_no_request" | "blocked_pending" | "blocked_rejected" = "open"
     let effectiveApproval = approval
 
-    if (amount > 0 && bill.status === "draft") {
+    // v3.74.464 — extend the gate to 'pending_approval' too. On an
+    // amended bill (status=pending_approval), the owner is deciding
+    // whether to approve the amendment — so the same discount gate
+    // that controls posting also controls the amendment approval.
+    if (amount > 0 && (bill.status === "draft" || bill.status === "pending_approval")) {
       // v3.74.456 — if the parent PO's discount was approved, the bill
       // inherits that approval. The evaluator stores approvals as
       // 'amount', but the bill/PO row keeps its original type — so we

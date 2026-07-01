@@ -1428,51 +1428,68 @@ export default function BillViewPage() {
                   </Button>
                 )}
 
-                {/* ✅ زر الاعتماد الإداري (يظهر بعد تعديل الفاتورة) */}
+                {/* ✅ زر الاعتماد الإداري (يظهر بعد تعديل الفاتورة).
+                    v3.74.464 — نمط PO: الزر يقفل لما discount_approval
+                    فى حالة pending/blocked. الاعتماد لازم يمر عبر
+                    /approvals عشان يشوف الـ diff card كامل. */}
                 {bill.status === "pending_approval" && canApproveAdmin && (
-                  <Button
-                    onClick={async () => {
-                      try {
-                        setPosting(true)
-                        const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/approve`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill:${bill.id}:approve:${Date.now()}`,
-                          },
-                          body: JSON.stringify({
-                            ui_surface: "bill_detail",
-                            app_lang: appLang,
-                          }),
-                        })
+                  <div className="flex flex-col">
+                    <Button
+                      onClick={async () => {
+                        try {
+                          setPosting(true)
+                          const response = await fetch(`/api/bills/${encodeURIComponent(bill.id)}/approve`, {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `bill:${bill.id}:approve:${Date.now()}`,
+                            },
+                            body: JSON.stringify({
+                              ui_surface: "bill_detail",
+                              app_lang: appLang,
+                            }),
+                          })
 
-                        const result = await response.json().catch(() => ({}))
-                        if (!response.ok || !result.success) {
-                          throw new Error(
-                            result.error ||
-                            (appLang === 'en' ? 'Failed to approve bill' : 'تعذر اعتماد الفاتورة')
-                          )
+                          const result = await response.json().catch(() => ({}))
+                          if (!response.ok || !result.success) {
+                            throw new Error(
+                              result.error ||
+                              (appLang === 'en' ? 'Failed to approve bill' : 'تعذر اعتماد الفاتورة')
+                            )
+                          }
+
+                          toastActionSuccess(toast, "الاعتماد", "تعديلات الفاتورة", appLang)
+                          await loadData()
+                        } catch (err) {
+                          console.error("Error approving bill:", err)
+                          toastActionError(toast, "الاعتماد", "الفاتورة", "تعذر اعتماد الفاتورة", appLang)
+                        } finally {
+                          setPosting(false)
                         }
-
-                        toastActionSuccess(toast, "الاعتماد", "تعديلات الفاتورة", appLang)
-                        await loadData()
-                      } catch (err) {
-                        console.error("Error approving bill:", err)
-                        toastActionError(toast, "الاعتماد", "الفاتورة", "تعذر اعتماد الفاتورة", appLang)
-                      } finally {
-                        setPosting(false)
-                      }
-                    }}
-                    disabled={posting}
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                    data-ai-help="bills.approve_button"
-                  >
-                    <CheckCircle className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">
-                      {appLang === 'en' ? 'Approve' : 'اعتماد'}
-                    </span>
-                  </Button>
+                      }}
+                      disabled={posting || discountGate !== "open"}
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                      data-ai-help="bills.approve_button"
+                      title={discountGate !== "open"
+                        ? (appLang === 'en'
+                          ? "Approve the discount from /approvals first"
+                          : "اعتمد الخصم أولاً من صفحة الموافقات")
+                        : undefined}
+                    >
+                      <CheckCircle className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">
+                        {appLang === 'en' ? 'Approve' : 'اعتماد'}
+                      </span>
+                    </Button>
+                    {discountGate !== "open" && (
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-1 max-w-[200px] leading-tight">
+                        {appLang === 'en'
+                          ? "Approve the discount from /approvals first"
+                          : "اعتمد الخصم أولاً من صفحة الموافقات"}
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {/* 🔴 زر رفض الاعتماد الإداري */}

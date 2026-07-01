@@ -92,7 +92,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     // Discounts on already-posted invoices don't need a gate any
     // more — the posting decision is sealed. Surface "open" so the
     // banner stays out of the way.
-    if (amount > 0 && invoice.status === "draft") {
+    // v3.74.464 — extend the gate to 'pending_approval' too. Same
+    // reason as on the bill side: an amended invoice awaits the owner's
+    // decision on the amendment, and the discount gate mirrors that.
+    if (amount > 0 && (invoice.status === "draft" || invoice.status === "pending_approval")) {
       if (soApproval && soApproval.status === "approved") {
         gate = "open"
         if (!effectiveApproval) effectiveApproval = soApproval

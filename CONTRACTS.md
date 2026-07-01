@@ -64,6 +64,43 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BK. توحيد نمط اعتماد الأمندمنت مع أمر الشراء (v3.74.464)
+
+### الفجوة
+
+بعد أمندمنت الفاتورة، كان فيه **مسارين اعتماد منفصلين**:
+1. `/approvals` — اعتماد صف `discount_approval`
+2. عرض الفاتورة — اعتماد `bill.status` من pending_approval → approved
+
+المالك ممكن يضغط أى واحد منهم بدون الآخر، والفاتورة تفضل معلقة.
+
+### الحل — نفس نمط PO
+
+**UI**:
+- عرض الفاتورة/الفاتورة المبيعات: زر "اعتماد" مقفول لما
+  `discountGate !== 'open'` + hint text "اعتمد الخصم أولاً من صفحة
+  الموافقات"
+- الاعتماد الفعلى يمر عبر `/approvals` عشان المالك يشوف الـ diff card
+
+**DB**:
+- Trigger جديد `sync_bill_status_on_discount_decision_trg` على
+  `discount_approvals AFTER UPDATE`:
+  - `discount_approval` بيتحول لـ approved
+    → bill.status = 'draft' + approval_status='approved'
+  - `discount_approval` بيتحول لـ rejected
+    → bill.status يفضل pending_approval + approval_status='rejected'
+- نفس الآلية للـ invoice (sales_invoice document_type)
+
+**API**:
+- `/api/bills/[id]/discount-approval` +
+  `/api/invoices/[id]/discount-approval` بيحسبوا الـ gate لحالتين:
+  `draft` OR `pending_approval` (كان `draft` فقط)
+
+### Section BK baseline
+- 1 function + 1 trigger على discount_approvals
+- 2 API endpoint changes
+- 2 UI page changes (bill view + invoice view)
+
 ## BJ. amendment trigger يفتح approval row دائماً + إصلاح أعمدة items_snapshot (v3.74.463)
 
 ### الفجوة المكتشفة أثناء الاختبار
