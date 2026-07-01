@@ -64,6 +64,66 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AS. Billing E2E fixes + docs (v3.74.446)
+
+### الغرض
+
+آخر إصدار فى سلسلة الـ billing. تنفيذ 7-scenario walkthrough على DB
+كشف baguen، وتوثيق شامل فى `docs/billing.md`.
+
+### الـ Bugs المكتشفة والمُصلحة
+
+**Bug A**: `notifications.created_by` هو NOT NULL، لكن
+`notify_company_billing_owner` (v3.74.442) كان بيمرر NULL. أول ما cron
+اشتغل، الـ INSERT بيفشل. **Fix**: قراءة `companies.user_id` (المالك)
+واستخدامه كـ created_by. لو المالك NULL، fallback للـ receiver.
+
+**Bug B**: trigger `company_seat_license_auto_reactivate` (v3.74.443)
+كان يشترط `OLD.expires_at <= NOW()` قبل ما ينادى الـ reactivate. لو
+Paymob جدّد مقعد ما زال فيه صلاحية (تجديد قبل ٤٨ ساعة من الانتهاء،
+coupon grant على مقعد فعّال...) الـ trigger ما يشتغلش، والشركة تفضل
+payment_failed. **Fix**: يشتغل لما expires_at يتحرك للأمام (أى مقدار)،
+مش لازم OLD يكون منتهى.
+
+### التحقق
+
+E2E walkthrough سبع سيناريوهات على شركة تست:
+
+```
+PASS 1/7: T-7 reminder sent
+PASS 2/7: T-3 reminder sent
+PASS 3/7: T-1 reminder sent
+PASS 4/7: past_due auto-transition + past_due_at auto-stamped
+PASS 5/7: suspended after grace + suspended_at auto-stamped
+PASS 6/7: write gate refused new PO with Arabic message
+PASS 7/7: seat renewal auto-reactivated the company
+```
+
+snapshot بيترجع تلقائياً فى نهاية الاختبار — الشركة تست ما بيتأثر عليها.
+
+### التوثيق
+
+`docs/billing.md` — reference كامل للـ lifecycle:
+- خريطة الحالات والوصول والانتقالات
+- شرح الـ cron والـ ٥ خطوات
+- الـ write gate آلية عمله
+- Payment flow الكامل (Paymob → webhook → seats → auto-reactivate)
+- Manual reactivation fallback
+- قائمة "ما ممكن يغلط" مع الـ fixes التاريخية
+
+### Section AS baseline
+لا فحوصات إضافية — الفحوصات الموجودة فى AO/AP/AQ/AR تغطى الإصلاحات.
+
+### اكتمال سلسلة الـ billing
+
+`v3.74.442 → v3.74.446` كاملة. النظام دلوقتى production-ready:
+- ✓ إشعارات تلقائية قبل الانتهاء (7/3/1 يوم)
+- ✓ Grace period حقيقى (7 أيام قابل للتخصيص لكل plan)
+- ✓ Read-only mode بدل الحظر الكامل
+- ✓ Auto-reactivation عبر paymob webhook أو manual
+- ✓ E2E verified
+- ✓ Documentation
+
 ## AR. Paymob audit fixes (v3.74.445)
 
 ### الفجوتان

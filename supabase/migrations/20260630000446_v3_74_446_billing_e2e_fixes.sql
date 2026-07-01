@@ -1,0 +1,20 @@
+-- v3.74.446 — final billing round: E2E test surfaced two bugs that
+-- would have hit production the first time the cron ran.
+--
+-- Bug A: notifications.created_by is NOT NULL, but
+--   notify_company_billing_owner (v3.74.442) was passing NULL. Every
+--   daily_billing_check run that tried to send a reminder crashed.
+--   Fix: pull the company owner's user_id and use it as created_by.
+--
+-- Bug B: company_seat_license_auto_reactivate (v3.74.443) required
+--   OLD.expires_at <= NOW() before it would call
+--   reactivate_company_subscription. A paymob renewal on a seat that
+--   still had time left (renewed 2 days early, coupon grant on an
+--   active seat, ...) never triggered reactivation. The company
+--   stayed payment_failed.
+--   Fix: fire whenever expires_at moves further into the future.
+--
+-- Both fixes verified by the 7-scenario E2E walkthrough documented
+-- in docs/billing.md, executed on the test company and restored.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
