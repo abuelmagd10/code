@@ -64,6 +64,37 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CE. الإشعارات المخزنية توجّه لصندوق الموافقات + إتاحته لأدوار المخزن (v3.74.484)
+
+### التوجيه
+
+`lib/notification-routing.ts`:
+- **bill + receipt-pending** → `/approvals?tab=recv&highlight=<id>`
+  (كان `/inventory/goods-receipt?billId=...`)
+- **invoice + dispatch-pending** → `/approvals?tab=disp&highlight=<id>`
+  (كان `/inventory/dispatch-approvals?invoiceId=...`)
+
+الصفحات المخصصة تفضل موجودة كـ URL للحالات المتقدمة
+(approve-with-shipping، partial receipt).
+
+### الصفحة تدعم `?tab=`
+
+`app/approvals/page.tsx` بيقرأ الـ query param ويفتح الـ tab
+المناسب مباشرة.
+
+### الصلاحيات الافتراضية
+
+`app/settings/users/page.tsx` — الـ role_defaults اتوسعت:
+- `store_manager`, `accountant`, `purchasing_officer` كلهم دلوقتى
+  يحتوى الـ default template على `approvals`
+- الشركات الحالية اتباك-فيلد عبر INSERT فى `company_role_permissions`
+
+### الفلترة محفوظة
+
+- RLS على bills/invoices/write_offs/transfers بيقيّد النتائج للـ
+  warehouse/branch للمستخدم
+- `get_user_approval_badges` بنفس البريدكيت للـ badge counts
+
 ## CD. عرض بنود الفاتورة على كارت اعتماد الاستلام (v3.74.483)
 
 المالك لاحظ إن صفحة `/inventory/goods-receipt` بتعرض جدول المنتجات

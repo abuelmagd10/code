@@ -1,0 +1,37 @@
+-- v3.74.484 — Warehouse-role users now land on the unified approvals
+-- inbox (not the dedicated goods-receipt / dispatch pages) when they
+-- click a receipt/dispatch notification, and see /approvals in their
+-- sidebar by default.
+--
+-- Changes
+--   1. Notification routing (lib/notification-routing.ts):
+--        bill  + receipt-pending event → /approvals?tab=recv&highlight=<id>
+--        invoice + dispatch-pending event → /approvals?tab=disp&highlight=<id>
+--      The dedicated /inventory/goods-receipt and
+--      /inventory/dispatch-approvals pages remain reachable via URL for
+--      the advanced flows (approve-with-shipping, partial receipt).
+--
+--   2. /approvals page: honors ?tab=... on mount so the notification
+--      routes land on the matching tab directly.
+--
+--   3. Default role-permission template (app/settings/users/page.tsx):
+--        store_manager        → gains 'approvals'
+--        accountant           → gains 'approvals'
+--        purchasing_officer   → gains 'approvals'
+--      These roles will show the /approvals sidebar link out of the
+--      box for new companies.
+--
+--   4. Existing companies backfilled via SQL:
+--        INSERT ... approvals into company_role_permissions for every
+--        (company, role) where the role above exists and doesn't
+--        already have an approvals row.
+--
+-- Row filtering (branch/warehouse) is preserved end-to-end:
+--   - RLS on bills / invoices / write_offs / transfers limits what
+--     the loader returns to the user's warehouse/branch.
+--   - get_user_approval_badges (the sidebar count) has the same
+--     warehouse/branch predicates for every badge key.
+--
+-- Governance is unchanged — actions still call the same server
+-- endpoints (confirm-receipt, warehouse-approve, etc.) with the same
+-- apiGuard + role checks + JE creation.

@@ -1585,8 +1585,11 @@ export default function UsersSettingsPage() {
     // 1. الموظف (sales rep) — 4 pages verbatim
     staff: ['customers', 'estimates', 'sales_orders', 'inventory'],
     // 2. المحاسب — 17 pages (dashboard explicit in spec)
+    // v3.74.484 — 'approvals' added so accountant can act on discount
+    // + payment + bill amendment approvals directly from the unified inbox.
     accountant: [
       'dashboard',
+      'approvals',
       'invoices', 'sales_returns', 'customer_credits',
       'bills', 'purchase_returns',
       'products', 'services',
@@ -1595,7 +1598,10 @@ export default function UsersSettingsPage() {
       'payments', 'expenses', 'banking',
     ],
     // 3. مسؤول المشتريات — 5 pages verbatim
+    // v3.74.484 — 'approvals' added so purchasing officer sees
+    // purchase-request + PO discount approvals in the inbox.
     purchasing_officer: [
+      'approvals',
       'suppliers', 'purchase_orders', 'inventory',
       'dispatch_approvals', 'inventory_goods_receipt',
     ],
@@ -1604,7 +1610,12 @@ export default function UsersSettingsPage() {
     // 5. مسؤول التصنيع — 2 entries verbatim (umbrella covers 7 sub-pages)
     manufacturing_officer: ['manufacturing_boms', 'approvals'],
     // 6. مسؤول المخزن — 6 pages verbatim
+    // v3.74.484 — 'approvals' added so warehouse notifications
+    // (goods receipt, dispatch, inventory transfers, write-offs) land
+    // on the unified inbox with the store manager's warehouse filter
+    // preserved via RLS + get_user_approval_badges.
     store_manager: [
+      'approvals',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
       'dispatch_approvals', 'inventory_goods_receipt',
     ],

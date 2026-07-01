@@ -876,6 +876,18 @@ function ApprovalsContent() {
   const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
   const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "misc" | "history">("all")
+  // v3.74.484 — honor ?tab=... from notification routing so warehouse
+  // manager clicking a dispatch/receipt notification lands on the
+  // matching tab.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    const initialTab = params.get("tab")
+    const valid = ["all","bom","routing","po","mi","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc","history"] as const
+    if (initialTab && (valid as readonly string[]).includes(initialTab)) {
+      setActiveTab(initialTab as any)
+    }
+  }, [])
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")

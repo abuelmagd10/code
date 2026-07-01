@@ -64,16 +64,16 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
 
   // المبيعات
   'invoice': (id, eventKey) => {
-    // ✅ إذا كان الإشعار خاص بموافقة إرسال المخزن، نوجه لصفحة موافقات الإرسال
-    // يدعم event_keys مختلفة:
-    //   - الإصدار القديم: ':sent:'
-    //   - sales-invoice-posting service: 'warehouse_dispatch_pending'
+    // v3.74.484 — dispatch pending notifications now route to the
+    // unified approvals inbox (tab=dispatch). The dedicated
+    // /inventory/dispatch-approvals page stays reachable via URL for
+    // the advanced approve-with-shipping flow.
     if (eventKey && (
       eventKey.includes(':sent:') ||
       eventKey.includes('warehouse_dispatch_pending') ||
       eventKey.includes('dispatch_pending')
     )) {
-      return `/inventory/dispatch-approvals?invoiceId=${id}`
+      return `/approvals?tab=disp&highlight=${id}`
     }
     return `/invoices/${id}`
   },
@@ -86,11 +86,14 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
 
   // المشتريات
   'bill': (id, eventKey, _category) => {
-    // ✅ إذا كان الإشعار خاص باعتماد الاستلام (sent_pending_receipt أو approved_waiting_receipt أو warehouse_receipt_pending)، نوجه إلى صفحة اعتماد الاستلام مع معرف الفاتورة
+    // v3.74.484 — goods receipt pending notifications now route to
+    // the unified approvals inbox (tab=recv). Warehouse manager sees
+    // the receipt card with items panel (v3.74.483) and confirms
+    // without leaving the inbox. The dedicated
+    // /inventory/goods-receipt page stays reachable via URL.
     if (eventKey && (eventKey.includes('approved_waiting_receipt') || eventKey.includes('sent_pending_receipt') || eventKey.includes('warehouse_receipt_pending'))) {
-      return `/inventory/goods-receipt?billId=${id}`
+      return `/approvals?tab=recv&highlight=${id}`
     }
-    // وإلا نوجه إلى صفحة الفاتورة العادية
     return `/bills/${id}`
   },
   'purchase_order': (id) => `/purchase-orders/${id}`,
