@@ -1,0 +1,22 @@
+-- v3.74.470 — Approvals history entries now surface the amendment
+-- context (badge + before/after totals) so the record reflects what
+-- was actually decided instead of just the static discount value.
+--
+-- Owner opened /approvals → history tab after approving the
+-- amendment. Saw only "الخصم: 10%" with no indication that:
+--   1. This was a re-approval after an earlier rejection
+--   2. The bill's total moved from 8.53 to 8.73
+--   3. Line items had changed (ماتور item discount 10% -> 5%)
+--
+-- UI-only fix. No DB changes.
+--
+-- UnifiedHistoryEntry now carries:
+--   is_amendment   — supersedes_approval_id is set
+--   amendment_delta — "before -> after (±delta)" over document_total
+--   prior_status   — "rejected" / "approved" / null
+--
+-- UnifiedHistoryCard shows:
+--   🔄 تعديل badge (with "بعد رفض" tail when prior_status=rejected)
+--   💰 Total: 8.53 → 8.73 (+0.20) line
+--
+-- Same rendering for both purchase and sales side history rows.

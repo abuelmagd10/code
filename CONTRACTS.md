@@ -64,6 +64,34 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BQ. سجل الاعتمادات يعرض سياق التعديل (v3.74.470)
+
+### الفجوة
+
+المالك اعتمد الأمندمنت. فتح السجل، لقى:
+> خصم فاتورة مشتريات BILL-0001
+> الخصم: 10%
+> معتمد
+
+**اللى ناقص**:
+- إن ده كان **تعديل** (مش أول طلب)
+- إن قبله كان **رفض**
+- إن الإجمالى اتحوّل من 8.53 → 8.73
+
+### الحل (UI فقط، لا DB)
+
+**UnifiedHistoryEntry** اتوسع بحقلين:
+- `is_amendment` — supersedes_approval_id موجود
+- `amendment_delta` — "قبل → بعد (±فرق)" على `document_total`
+- `prior_status` — لو كان rejected/approved
+
+**UnifiedHistoryCard**:
+- **Badge كهرمانى "🔄 تعديل"** مع "· بعد رفض" لو ينطبق
+- سطر: "💰 الإجمالى: 8.53 → 8.73 (+0.20)"
+
+### Section BQ baseline
+- UI-only تعديل
+
 ## BP. تفاصيل شاملة للبنود المضافة/المحذوفة (منتج/خدمة، خصم، ضريبة) (v3.74.469)
 
 ### التغطية

@@ -520,6 +520,12 @@ interface UnifiedHistoryEntry {
   decided_by_email: string | null
   decided_at: string | null
   decision_note: string | null
+  // v3.74.470 — amendment context so the history row reflects what
+  // was actually decided (a re-approval after an edit), not just the
+  // static discount value.
+  is_amendment?: boolean
+  amendment_delta?: string | null   // e.g. "8.53 → 8.73 (+0.20)"
+  prior_status?: string | null      // "rejected" / "approved" (what was superseded)
 }
 
 type UnifiedHistoryCtx = {
@@ -564,8 +570,21 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
             <div className="min-w-0">
               <p className="font-semibold text-sm">
                 <Badge variant="outline" className="me-2 text-[10px]">{categoryLabel}</Badge>
+                {/* v3.74.470 — mark amendments so history shows this
+                    was a re-approval, not the original discount request. */}
+                {h.is_amendment && (
+                  <Badge className="me-2 text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    🔄 {t("تعديل", "Amendment")}
+                    {h.prior_status === "rejected" && <> · {t("بعد رفض", "after rejection")}</>}
+                  </Badge>
+                )}
                 {h.doc_label}
               </p>
+              {h.is_amendment && h.amendment_delta && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 font-mono">
+                  💰 {t("الإجمالى","Total")}: {h.amendment_delta}
+                </p>
+              )}
               {h.party_label && (
                 <p className="text-xs text-muted-foreground mt-0.5">👤 {h.party_label}</p>
               )}
@@ -833,6 +852,17 @@ function ApprovalsContent() {
             const valueLabel = d.discount_type === "percent"
               ? `الخصم: ${d.discount_value}%`
               : `الخصم: ${d.discount_value} ج.م`
+            // v3.74.470 — build amendment context from the prior
+            // approval when supersedes_approval_id is set.
+            const isAmend = Boolean(d.supersedes_approval_id && d.prior_approval)
+            let delta: string | null = null
+            if (isAmend && d.prior_approval) {
+              const before = Number(d.prior_approval.document_total ?? 0)
+              const after  = Number(d.document_total ?? 0)
+              const diff = after - before
+              const sign = diff > 0 ? "+" : ""
+              delta = `${before.toFixed(2)} → ${after.toFixed(2)} (${sign}${diff.toFixed(2)})`
+            }
             merged.push({
               id: `disc-${d.id}`,
               category: "discount",
@@ -846,6 +876,9 @@ function ApprovalsContent() {
               decided_by_email: d.decided_by_email ?? null,
               decided_at: d.decided_at ?? null,
               decision_note: d.decision_note ?? null,
+              is_amendment: isAmend,
+              amendment_delta: delta,
+              prior_status: d.prior_approval?.status ?? null,
             })
           }
         }
