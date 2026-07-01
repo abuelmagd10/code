@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     const { data: bill, error: bErr } = await supabase
       .from("bills")
-      .select("id, discount_value, discount_type, status")
+      .select("id, discount_value, discount_type, status, purchase_order_id")
       .eq("id", billId)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -61,12 +61,47 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ success: false, error: aErr.message }, { status: 500 })
     }
 
+    // v3.74.456 — for an auto-created bill that inherits its discount
+    // from a PO, there is no bill-level discount_approval row. The
+    // parent PO's approval is the source of truth. Look it up.
+    let poApproval: any = null
+    if ((bill as any).purchase_order_id) {
+      const { data } = await supabase
+        .from("discount_approvals")
+        .select(`id, status, discount_value, discount_type, document_total,
+                 party_name, reason, requested_by, requested_at,
+                 decided_by, decided_at, decision_note`)
+        .eq("document_type", "purchase_order")
+        .eq("document_id", (bill as any).purchase_order_id)
+        .order("requested_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      poApproval = data ?? null
+    }
+
     const amount = Number(bill.discount_value || 0)
     const typ = bill.discount_type || "amount"
     let gate: "open" | "blocked_no_request" | "blocked_pending" | "blocked_rejected" = "open"
+    let effectiveApproval = approval
 
     if (amount > 0 && bill.status === "draft") {
-      if (!approval) {
+      // v3.74.456 — if the parent PO's discount was approved, the bill
+      // inherits that approval. The evaluator stores approvals as
+      // 'amount', but the bill/PO row keeps its original type — so we
+      // do NOT compare the type/value here, only require that the PO
+      // discount is approved. bill_request_discount_approval_trg
+      // (v3.74.424) already enforces PO-approval matching at write
+      // time; the banner just needs to reflect the current state.
+      if (poApproval && poApproval.status === "approved") {
+        gate = "open"
+        if (!effectiveApproval) effectiveApproval = poApproval
+      } else if (poApproval && poApproval.status === "rejected") {
+        gate = "blocked_rejected"
+        effectiveApproval = poApproval
+      } else if (poApproval && poApproval.status === "pending") {
+        gate = "blocked_pending"
+        effectiveApproval = poApproval
+      } else if (!approval) {
         gate = "blocked_no_request"
       } else if (
         approval.status === "approved"
@@ -89,7 +124,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       discount_type: typ,
       bill_status: bill.status,
       gate,
-      approval: approval ?? null,
+      // v3.74.456 — expose whichever approval determined the gate so
+      // the banner can show decided_at / decision_note when it came
+      // from the PO.
+      approval: effectiveApproval ?? null,
     })
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || "Internal error" }, { status: 500 })

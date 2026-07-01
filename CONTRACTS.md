@@ -64,6 +64,48 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BC. Bill/Invoice discount API يفحص linked PO/SO approval (v3.74.456)
+
+### الفجوة
+
+المحاسب فتح BILL-0001 (متولّد تلقائياً من PO معتمد الخصم) ووجد
+warning:
+```
+هذا الخصم يحتاج اعتماد ولم يتم إرساله بعد
+قيمة الخصم: 10.00%
+احفظ الفاتورة مرة أخرى لإرسال طلب الاعتماد تلقائياً.
+```
+
+**السبب**: `/api/bills/[id]/discount-approval` كان يستعلم فقط على
+`discount_approvals` بـ `document_type='purchase_invoice'`. لما الفاتورة
+تُنشأ من PO عبر `approve_purchase_order_atomic`، بيتم set skip flag
+وما بينشأش صف approval على مستوى الفاتورة (لأن الـ PO مغطى بالفعل).
+النتيجة: الـ API يرجع `gate='blocked_no_request'` والـ banner يفصح
+عن warning خطأ.
+
+نفس الفجوة موجودة فى `/api/invoices/[id]/discount-approval` للفواتير
+المتولّدة من SO.
+
+### الحل
+
+الـ API يفحص الـ parent (PO أو SO):
+- لو `bill.purchase_order_id` موجود، اجلب آخر `discount_approval`
+  للـ PO
+- **PO approved** → `gate='open'` + عرض معلومات الاعتماد من الـ PO
+- **PO rejected** → `gate='blocked_rejected'`
+- **PO pending** → `gate='blocked_pending'`
+- غير كده → الرجوع للمنطق القديم على مستوى الفاتورة
+
+نفس المنطق للـ invoice ↔ SO.
+
+**مش بنقارن type/value**: لأن الـ evaluator بيخزّن كـ 'amount' بينما
+الـ bill/PO row بيحتفظ بـ 'percent'. الـ `bill_request_discount_approval_trg`
+(v3.74.424) بيفرض المطابقة عند الكتابة، والـ banner يعكس الحالة الحالية
+فقط.
+
+### Section BC baseline
+لا فحوصات DB. تعديل API فقط.
+
 ## BB. أرشفة broadcast لما يوصل targeted accountant_action (v3.74.455)
 
 بعد v3.74.454، المحاسب لسه كان بيشوف كارتين للـ BILL-0001:
