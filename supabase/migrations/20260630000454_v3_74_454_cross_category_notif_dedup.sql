@@ -1,0 +1,23 @@
+-- v3.74.454 — cross-category dedup on notifications for a specific
+-- user.
+--
+-- Accountant saw two notifications for the same bill:
+--   "فاتورة مشتريات جديدة — تَنتَظِر اعتمادك"   category=approvals
+--   "فاتورة مشتريات جديدة تحتاج إجراء"        category=accountant_action
+-- The v3.74.452 supersede rule matched category exactly, so these two
+-- coexisted even though they point at the same document and target
+-- the same user.
+--
+-- This release relaxes the match for user-assigned notifications:
+--   assigned_to_user IS NOT NULL → dedup across ('approvals',
+--     'accountant_action', 'branch_activity') by (reference_type,
+--     reference_id, assigned_to_user).
+--   assigned_to_user IS NULL     → keep category in the match so a
+--     new approvals broadcast doesn't wipe an unrelated
+--     branch_activity broadcast.
+--
+-- One-shot UPDATE cleans up the pre-existing stack in test data.
+--
+-- Baseline (Section BA) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

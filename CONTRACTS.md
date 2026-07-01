@@ -64,6 +64,40 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BA. Cross-category dedup لإشعارات المستخدم الواحد (v3.74.454)
+
+### الحدث
+
+بعد اعتماد PO-0001، المحاسب استقبل ٢ إشعار عن نفس الفاتورة:
+1. **"فاتورة مشتريات جديدة — تَنتَظِر اعتمادك"** — category=`approvals`
+   (broadcast من app-side بعد اعتماد PO)
+2. **"فاتورة مشتريات جديدة تحتاج إجراء"** — category=`accountant_action`
+   (من `bill_notify_accountant_trg` فى v3.74.429)
+
+الاتنين عن نفس الـ bill وعن نفس المحاسب. v3.74.452 كانت بتـ match
+بالـ category بالظبط، فالاتنين تعايشوا معاً.
+
+### الحل
+
+`notification_supersede_older_approval_trg` أصبح:
+- **لو assigned_to_user موجود**: dedup **cross-category** بين
+  `approvals` + `accountant_action` + `branch_activity` لنفس الـ
+  (reference_type, reference_id, assigned_to_user). المستخدم يشوف
+  كارت واحد لكل مستند.
+- **لو broadcast (null)**: dedup داخل نفس الـ category فقط. فبرودكاست
+  approval جديد ما يمسحش برودكاست branch_activity منفصل.
+
+### One-shot cleanup
+
+طبّق cross-category dedup على الإشعارات الموجودة. المحاسب دلوقتى
+كارت واحد فقط.
+
+### Section BA baseline
+- نص `notification_supersede_older_approval_trg` يحتوى على
+  `accountant_action` و `branch_activity`
+- `PERFORM public.assert_baseline_v3_74_454_check()` مضاف لـ
+  `assert_baseline`
+
 ## AZ. عرض خصم البنود منفصلاً فى بطاقة معلومات PO **و SO** (v3.74.453)
 
 ### الفجوة
