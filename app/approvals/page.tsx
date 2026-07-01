@@ -886,6 +886,38 @@ function ApprovalsContent() {
   }, [supabase])
   // The four canonical "receipt approvers" per owner spec:
   const canApproveReceipt = myRole !== null && ["owner","admin","general_manager","store_manager"].includes(myRole)
+
+  // v3.74.486 — Role-scoped tab visibility. Each role only sees the
+  // tabs relevant to the workflows they participate in. Owner / admin /
+  // general_manager see everything.
+  type TabKey = "bom"|"routing"|"po"|"mi"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"misc"
+  const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
+    // Warehouse: dispatch, receipt, write-offs, transfers, sales-return warehouse stage
+    store_manager:      ["recv","disp","wo","tr","sret"],
+    warehouse_manager:  ["recv","disp","wo","tr","sret"],
+    // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
+    accountant:         ["pay","pret","disc","sret","cref","vcor","misc"],
+    // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
+    purchasing_officer: ["pret","disc","misc"],
+    // Manufacturing officer: BOM/routing/production/material issue
+    manufacturing_officer: ["bom","routing","po","mi"],
+    // Branch manager: broad view but read-only most places (visibility only)
+    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"],
+    // Sales staff & bookings: no approvals to act on today
+    staff:              [],
+    booking_officer:    [],
+  }
+  const isAdminLike = !!myRole && ["owner","admin","general_manager"].includes(myRole)
+  const visibleTabs: ReadonlyArray<TabKey> =
+    isAdminLike || !myRole
+      ? (["bom","routing","po","mi","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"] as const)
+      : (roleTabs[myRole] ?? [])
+  const canShow = (t: TabKey) => visibleTabs.includes(t)
+  // v3.74.486 — staff / booking_officer have no approval workflows at
+  // all. The sidebar link is hidden for them (their default pages
+  // template excludes 'approvals'), but if they navigate here directly
+  // we show a friendly "no access" message instead of an empty tab bar.
+  const hasNoApprovalRole = !!myRole && ["staff","booking_officer"].includes(myRole)
   const [writeOffs, setWriteOffs] = useState<PendingWriteOff[]>([])
   const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
   const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
@@ -2552,66 +2584,108 @@ function ApprovalsContent() {
             }
           />
 
+          {/* v3.74.486 — friendly gate for roles with no approval workflows */}
+          {hasNoApprovalRole ? (
+            <Card>
+              <CardContent className="py-10 text-center">
+                <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
+                  <CheckCircle2 className="w-6 h-6 text-slate-500" />
+                </div>
+                <p className="font-semibold text-sm mb-1">
+                  {t("لا توجد اعتمادات لدورك", "No approvals for your role")}
+                </p>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  {t(
+                    "دورك الحالى لا يشارك فى أى دورة اعتماد. راجع مدير النظام إذا كنت تحتاج صلاحيات إضافية.",
+                    "Your current role does not participate in any approval workflows. Contact your admin if you need extra permissions."
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+          <>
           {/* Tabs */}
           <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant={activeTab === "all"     ? "default" : "outline"} onClick={() => setActiveTab("all")}     className="gap-1">
               {t("الكل", "All")} ({totalPending})
             </Button>
-            <Button size="sm" variant={activeTab === "bom"     ? "default" : "outline"} onClick={() => setActiveTab("bom")}     className="gap-1">
-              <Layers   className="w-3.5 h-3.5" />{t("قوائم المواد", "BOMs")} ({bomVersions.length})
-            </Button>
-            <Button size="sm" variant={activeTab === "routing" ? "default" : "outline"} onClick={() => setActiveTab("routing")} className="gap-1">
-              <GitMerge className="w-3.5 h-3.5" />{t("مسارات التصنيع", "Routings")} ({routingVersions.length})
-            </Button>
-            <Button size="sm" variant={activeTab === "po"      ? "default" : "outline"} onClick={() => setActiveTab("po")}      className="gap-1">
-              <Factory  className="w-3.5 h-3.5" />{t("أوامر الإنتاج", "Production Orders")} ({productionOrders.length})
-            </Button>
-            <Button size="sm" variant={activeTab === "mi"      ? "default" : "outline"} onClick={() => setActiveTab("mi")}      className="gap-1">
-              <Package  className="w-3.5 h-3.5" />{t("طلبات الصرف", "Material Issues")} ({materialIssues.length})
-            </Button>
-            <Button size="sm" variant={activeTab === "disc"    ? "default" : "outline"} onClick={() => setActiveTab("disc")}    className="gap-1">
-              <Percent  className="w-3.5 h-3.5" />{t("خصومات", "Discounts")} ({discountApprovals.length})
-            </Button>
-            {/* v3.74.472 — supplier payments awaiting owner approval */}
-            <Button size="sm" variant={activeTab === "pay" ? "default" : "outline"} onClick={() => setActiveTab("pay")} className="gap-1">
-              <Wallet className="w-3.5 h-3.5" />{t("دفعات موردين", "Supplier Payments")} ({supplierPayments.length})
-            </Button>
-            {/* v3.74.473 — purchase returns awaiting admin approval */}
-            <Button size="sm" variant={activeTab === "pret" ? "default" : "outline"} onClick={() => setActiveTab("pret")} className="gap-1">
-              <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مشتريات", "Purchase Returns")} ({purchaseReturns.length})
-            </Button>
-            {/* v3.74.475 — sales return requests (dual-stage) */}
-            <Button size="sm" variant={activeTab === "sret" ? "default" : "outline"} onClick={() => setActiveTab("sret")} className="gap-1">
-              <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مبيعات", "Sales Returns")} ({salesReturnRequests.length})
-            </Button>
-            {/* v3.74.476 — customer refund requests */}
-            <Button size="sm" variant={activeTab === "cref" ? "default" : "outline"} onClick={() => setActiveTab("cref")} className="gap-1">
-              <Wallet className="w-3.5 h-3.5" />{t("استرداد عملاء", "Customer Refunds")} ({customerRefunds.length})
-            </Button>
-            {/* v3.74.476 — vendor payment correction requests */}
-            <Button size="sm" variant={activeTab === "vcor" ? "default" : "outline"} onClick={() => setActiveTab("vcor")} className="gap-1">
-              <Wallet className="w-3.5 h-3.5" />{t("تصحيح دفعات موردين", "Vendor Corrections")} ({vendorPaymentCorrections.length})
-            </Button>
-            {/* v3.74.477 — dispatch approvals (warehouse stage 2) */}
-            <Button size="sm" variant={activeTab === "disp" ? "default" : "outline"} onClick={() => setActiveTab("disp")} className="gap-1">
-              <Package className="w-3.5 h-3.5" />{t("موافقات الإرسال", "Dispatch")} ({dispatches.length})
-            </Button>
-            {/* v3.74.478 — goods receipt approvals */}
-            <Button size="sm" variant={activeTab === "recv" ? "default" : "outline"} onClick={() => setActiveTab("recv")} className="gap-1">
-              <Package className="w-3.5 h-3.5" />{t("الاستلام المخزنى", "Goods Receipt")} ({goodsReceipts.length})
-            </Button>
-            {/* v3.74.479 — write-offs (details page for approve) */}
-            <Button size="sm" variant={activeTab === "wo" ? "default" : "outline"} onClick={() => setActiveTab("wo")} className="gap-1">
-              <XCircle className="w-3.5 h-3.5" />{t("إهلاك المخزون", "Write-offs")} ({writeOffs.length})
-            </Button>
-            {/* v3.74.479 — inventory transfers */}
-            <Button size="sm" variant={activeTab === "tr" ? "default" : "outline"} onClick={() => setActiveTab("tr")} className="gap-1">
-              <GitMerge className="w-3.5 h-3.5" />{t("تحويلات المخزون", "Transfers")} ({inventoryTransfers.length})
-            </Button>
-            {/* v3.74.480 — misc (PR + Vouchers + Expenses + CDN + Permission Transfers) */}
-            <Button size="sm" variant={activeTab === "misc" ? "default" : "outline"} onClick={() => setActiveTab("misc")} className="gap-1">
-              <AlertCircle className="w-3.5 h-3.5" />{t("طلبات متنوعة", "Other Requests")} ({miscApprovals.length})
-            </Button>
+            {/* v3.74.486 — tabs filtered by role. Owner/admin/GM see all;
+                every other role only sees the workflows they participate in. */}
+            {canShow("bom") && (
+              <Button size="sm" variant={activeTab === "bom"     ? "default" : "outline"} onClick={() => setActiveTab("bom")}     className="gap-1">
+                <Layers   className="w-3.5 h-3.5" />{t("قوائم المواد", "BOMs")} ({bomVersions.length})
+              </Button>
+            )}
+            {canShow("routing") && (
+              <Button size="sm" variant={activeTab === "routing" ? "default" : "outline"} onClick={() => setActiveTab("routing")} className="gap-1">
+                <GitMerge className="w-3.5 h-3.5" />{t("مسارات التصنيع", "Routings")} ({routingVersions.length})
+              </Button>
+            )}
+            {canShow("po") && (
+              <Button size="sm" variant={activeTab === "po"      ? "default" : "outline"} onClick={() => setActiveTab("po")}      className="gap-1">
+                <Factory  className="w-3.5 h-3.5" />{t("أوامر الإنتاج", "Production Orders")} ({productionOrders.length})
+              </Button>
+            )}
+            {canShow("mi") && (
+              <Button size="sm" variant={activeTab === "mi"      ? "default" : "outline"} onClick={() => setActiveTab("mi")}      className="gap-1">
+                <Package  className="w-3.5 h-3.5" />{t("طلبات الصرف", "Material Issues")} ({materialIssues.length})
+              </Button>
+            )}
+            {canShow("disc") && (
+              <Button size="sm" variant={activeTab === "disc"    ? "default" : "outline"} onClick={() => setActiveTab("disc")}    className="gap-1">
+                <Percent  className="w-3.5 h-3.5" />{t("خصومات", "Discounts")} ({discountApprovals.length})
+              </Button>
+            )}
+            {canShow("pay") && (
+              <Button size="sm" variant={activeTab === "pay" ? "default" : "outline"} onClick={() => setActiveTab("pay")} className="gap-1">
+                <Wallet className="w-3.5 h-3.5" />{t("دفعات موردين", "Supplier Payments")} ({supplierPayments.length})
+              </Button>
+            )}
+            {canShow("pret") && (
+              <Button size="sm" variant={activeTab === "pret" ? "default" : "outline"} onClick={() => setActiveTab("pret")} className="gap-1">
+                <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مشتريات", "Purchase Returns")} ({purchaseReturns.length})
+              </Button>
+            )}
+            {canShow("sret") && (
+              <Button size="sm" variant={activeTab === "sret" ? "default" : "outline"} onClick={() => setActiveTab("sret")} className="gap-1">
+                <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مبيعات", "Sales Returns")} ({salesReturnRequests.length})
+              </Button>
+            )}
+            {canShow("cref") && (
+              <Button size="sm" variant={activeTab === "cref" ? "default" : "outline"} onClick={() => setActiveTab("cref")} className="gap-1">
+                <Wallet className="w-3.5 h-3.5" />{t("استرداد عملاء", "Customer Refunds")} ({customerRefunds.length})
+              </Button>
+            )}
+            {canShow("vcor") && (
+              <Button size="sm" variant={activeTab === "vcor" ? "default" : "outline"} onClick={() => setActiveTab("vcor")} className="gap-1">
+                <Wallet className="w-3.5 h-3.5" />{t("تصحيح دفعات موردين", "Vendor Corrections")} ({vendorPaymentCorrections.length})
+              </Button>
+            )}
+            {canShow("disp") && (
+              <Button size="sm" variant={activeTab === "disp" ? "default" : "outline"} onClick={() => setActiveTab("disp")} className="gap-1">
+                <Package className="w-3.5 h-3.5" />{t("موافقات الإرسال", "Dispatch")} ({dispatches.length})
+              </Button>
+            )}
+            {canShow("recv") && (
+              <Button size="sm" variant={activeTab === "recv" ? "default" : "outline"} onClick={() => setActiveTab("recv")} className="gap-1">
+                <Package className="w-3.5 h-3.5" />{t("الاستلام المخزنى", "Goods Receipt")} ({goodsReceipts.length})
+              </Button>
+            )}
+            {canShow("wo") && (
+              <Button size="sm" variant={activeTab === "wo" ? "default" : "outline"} onClick={() => setActiveTab("wo")} className="gap-1">
+                <XCircle className="w-3.5 h-3.5" />{t("إهلاك المخزون", "Write-offs")} ({writeOffs.length})
+              </Button>
+            )}
+            {canShow("tr") && (
+              <Button size="sm" variant={activeTab === "tr" ? "default" : "outline"} onClick={() => setActiveTab("tr")} className="gap-1">
+                <GitMerge className="w-3.5 h-3.5" />{t("تحويلات المخزون", "Transfers")} ({inventoryTransfers.length})
+              </Button>
+            )}
+            {canShow("misc") && (
+              <Button size="sm" variant={activeTab === "misc" ? "default" : "outline"} onClick={() => setActiveTab("misc")} className="gap-1">
+                <AlertCircle className="w-3.5 h-3.5" />{t("طلبات متنوعة", "Other Requests")} ({miscApprovals.length})
+              </Button>
+            )}
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -3916,6 +3990,8 @@ function ApprovalsContent() {
                 </div>
               )}
             </div>
+          )}
+          </>
           )}
 
         </div>

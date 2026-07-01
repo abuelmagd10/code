@@ -1,0 +1,36 @@
+-- v3.74.486 — Role-scoped tab visibility on the unified approvals inbox.
+--
+-- Owner reviewed the empty tab bar the warehouse manager saw and asked
+-- for tabs to be filtered by role. Approved matrix:
+--
+--   owner / admin / general_manager
+--     → every tab (system-wide visibility)
+--
+--   store_manager (warehouse scope via RLS)
+--     → recv (goods receipt), disp (dispatch), wo (write-offs),
+--       tr (transfers), sret (sales returns — warehouse stage)
+--
+--   manufacturing_officer
+--     → bom, routing, po (production orders), mi (material issues)
+--
+--   accountant (branch scope via RLS)
+--     → disc, pay, pret, sret, cref, vcor, misc
+--
+--   purchasing_officer (branch scope via RLS)
+--     → pret, disc, misc
+--
+--   manager (branch scope, view-only per the receipt-role matrix)
+--     → disc, pay, pret, sret, cref, vcor, disp, recv, wo, tr, misc
+--
+--   staff, booking_officer
+--     → no approval workflows. The sidebar link is hidden by their
+--       default permissions template, and the /approvals page itself
+--       renders a friendly "no approvals for your role" gate if they
+--       navigate directly.
+--
+-- No DB changes. UI-only.
+--
+-- Row filtering (branch/warehouse) continues to run at the DB layer:
+--   RLS on bills, invoices, write_offs, transfers restricts what each
+--   loader can even read. get_user_approval_badges uses the same
+--   predicates for sidebar badge counts.

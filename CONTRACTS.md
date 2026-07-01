@@ -64,6 +64,31 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CG. Tabs محدودة حسب الدور فى صندوق الموافقات (v3.74.486)
+
+المصفوفة المعتمدة من المالك:
+
+| Tab | owner/admin/GM | store_manager | manager | accountant | purchasing_officer | manufacturing_officer | staff/booking |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| BOM/Routing/PO/MI | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
+| خصومات | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| دفعات موردين | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| مرتجعات مشتريات | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| مرتجعات مبيعات | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| استرداد عملاء | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| تصحيح دفعات | ✓ | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| موافقات إرسال | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| استلام مخزنى | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| إهلاك | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| تحويلات | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| متنوعة | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ | ✗ |
+
+**staff + booking_officer**: مافيش صلاحية. السايدبار مخفى (via default
+template) + الصفحة تعرض "لا توجد اعتمادات لدورك" لو حد فتح URL مباشر.
+
+Row-level filtering يفضل عبر RLS على الجداول +
+`get_user_approval_badges` بنفس البريدكيت للـ counts.
+
 ## CF. تدقيق صلاحية اعتماد الاستلام حسب متطلبات المالك (v3.74.485)
 
 **المصفوفة الجديدة**:
