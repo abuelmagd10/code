@@ -54,6 +54,7 @@ import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
 import { validateBillMatching } from "@/lib/three-way-matching"
 // v3.74.376 — discount approval banner + gate state for bill posting.
 import { BillDiscountApprovalBanner, type BillDiscountGate } from "@/components/bills/BillDiscountApprovalBanner"
+import { BillAmendmentBanner } from "@/components/bills/BillAmendmentBanner"
 
 type Bill = {
   id: string
@@ -1288,6 +1289,13 @@ export default function BillViewPage() {
               billId={bill.id}
               lang={appLang as "ar" | "en"}
               onGateChange={setDiscountGate}
+            />
+            {/* v3.74.462 — amendment banner. Shows who edited + delta
+                summary + link to the full diff card on /approvals. */}
+            <BillAmendmentBanner
+              documentId={bill.id}
+              kind="bill"
+              lang={appLang as "ar" | "en"}
             />
             {/* ==================== Header Section ==================== */}
             <div className="flex flex-col gap-4">

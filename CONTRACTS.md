@@ -64,6 +64,45 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BI. اسم المعدّل فى إشعار reapproval + Amendment Banner على عرض المستند (v3.74.462)
+
+### الفجوة
+
+الإشعار "فاتورة مشتريات بانتظار الاعتماد الإدارى — BILL-0001 تحتاج
+إعادة اعتماد" ما بيقولش:
+- **مين عدّل**
+- **ايه اللى اتغيّر**
+
+ولما المالك يفتح الإشعار → عرض الفاتورة، مفيش سياق تعديل أصلاً.
+
+### الحل
+
+**١. Trigger `enforce_governance_on_insert`**:
+- يحلّ اسم المعدّل: `last_edited_by_user_id → employees.full_name →
+  auth.users.email → uuid prefix`
+- يبنى ملخّص التغييرات: الإجمالى قبل/بعد، الشحن قبل/بعد، الخصم اتغيّر،
+  شاملة الضريبة، موضع الخصم
+- ينتج رسالة زى:
+  > قام foodcana1976@gmail.com بتعديل فاتورة مشتريات رقم BILL-0001
+  > وتحتاج إلى إعادة اعتماد إداري.
+  > التغييرات: الإجمالى 45.60 → 145.60، الشحن 0.00 → 100.00
+
+**٢. الـ trigger اتضاف كمان على `invoices`** (كان bills فقط) — نظير
+كامل للمبيعات.
+
+**٣. UI**: مكوّن `BillAmendmentBanner`:
+- بيقرأ `/api/discount-approvals?document_id=` (فلتر جديد v3.74.462)
+- بيلاقى آخر pending approval فيه `supersedes_approval_id`
+- بيعرض: **مين عدّل، متى، الفرق فى الإجمالى + بنود مضافة/محذوفة/معدلة
+  + لينك للـ /approvals**
+- بيتخفى تلقائياً لو المستخدم مش approver
+- بيتركّب على `bills/[id]/page.tsx` + `invoices/[id]/page.tsx`
+
+### Section BI baseline
+- `enforce_governance_on_insert` rewrite
+- `governance_trigger_invoices` — trigger جديد
+- API filter جديد `document_id`
+
 ## BH. Amendment Diff Card على كارت الاعتمادات (v3.74.461)
 
 ### المشكلة اللى بيحلّها

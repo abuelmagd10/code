@@ -1,0 +1,26 @@
+-- v3.74.462 — Editor identity + short change summary in the
+-- "reapproval needed" notification, plus a matching amendment banner
+-- on the bill/invoice view pages.
+--
+-- Owner asked: "the reapproval notification says 'BILL-0001 was
+-- edited' but does not say WHO edited it or WHAT changed. When I
+-- open the notification it takes me to the bill view and there is no
+-- context there either."
+--
+-- Trigger enforce_governance_on_insert now:
+--   - resolves the editor via last_edited_by_user_id ->
+--     employees.full_name -> auth.users.email -> uuid prefix
+--   - builds a short delta line summarizing which fields changed
+--     (total, shipping, discount, tax_inclusive, discount_position)
+--   - includes the editor name and the delta line in the message
+--
+-- Also attached the same trigger to `invoices` (was bills-only), so
+-- sales-side amendments produce identical notifications.
+--
+-- UI: new BillAmendmentBanner component rendered on the bill view
+-- and the invoice view. It fetches /api/discount-approvals?document_id=
+-- returns the latest pending amendment approval, and displays who
+-- edited + before/after totals + item counts + link to /approvals.
+-- Falls back silently when the viewer is not an approver (403).
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

@@ -51,6 +51,7 @@ import {
 } from "@/lib/sales-return-requests"
 // v3.74.375 — discount approval banner + gate state for invoice posting.
 import { InvoiceDiscountApprovalBanner, type InvoiceDiscountGate } from "@/components/invoices/InvoiceDiscountApprovalBanner"
+import { BillAmendmentBanner } from "@/components/bills/BillAmendmentBanner"
 
 interface Invoice {
   id: string
@@ -2590,6 +2591,14 @@ export default function InvoiceDetailPage() {
             invoiceId={invoiceId}
             lang={appLang as "ar" | "en"}
             onGateChange={setDiscountGate}
+          />
+          {/* v3.74.462 — amendment banner. Reuses the BillAmendmentBanner
+              component with kind="invoice" so bill and invoice views
+              stay in sync. */}
+          <BillAmendmentBanner
+            documentId={invoiceId}
+            kind="invoice"
+            lang={appLang as "ar" | "en"}
           />
           {/* ✅ Unified Page Header */}
           <ERPPageHeader

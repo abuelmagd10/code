@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const companyIdParam = searchParams.get("company_id")
     const statusParam = (searchParams.get("status") || "pending").toLowerCase()
+    // v3.74.462 — optional document_id filter so the bill/invoice
+    // view pages can fetch just the approvals attached to the current
+    // document without pulling the whole inbox.
+    const documentIdParam = searchParams.get("document_id")
     const companyId = companyIdParam || await getActiveCompanyId(supabase)
     if (!companyId) {
       return NextResponse.json({ success: false, error: "No active company" }, { status: 404 })
@@ -74,9 +78,14 @@ export async function GET(request: NextRequest) {
       .order("requested_at", { ascending: true })
       .limit(200)
 
+    // v3.74.462 — optional document_id narrows to a single document.
+    const scopedQuery = documentIdParam
+      ? baseQuery.eq("document_id", documentIdParam)
+      : baseQuery
+
     const { data: rows, error: rowsErr } = statusParam === "all"
-      ? await baseQuery
-      : await baseQuery.eq("status", statusParam)
+      ? await scopedQuery
+      : await scopedQuery.eq("status", statusParam)
 
     if (rowsErr) {
       return NextResponse.json({ success: false, error: rowsErr.message }, { status: 500 })
