@@ -96,7 +96,24 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     // reason as on the bill side: an amended invoice awaits the owner's
     // decision on the amendment, and the discount gate mirrors that.
     if (amount > 0 && (invoice.status === "draft" || invoice.status === "pending_approval")) {
-      if (soApproval && soApproval.status === "approved") {
+      // v3.74.465 — invoice-level approval takes precedence over the
+      // parent SO's. Mirrors the bill side. Order: invoice approval
+      // (if any) → SO approval fallback.
+      if (approval) {
+        if (
+          approval.status === "approved"
+          && Number(approval.discount_value) === amount
+          && (approval.discount_type || "amount") === typ
+        ) {
+          gate = "open"
+        } else if (approval.status === "pending") {
+          gate = "blocked_pending"
+        } else if (approval.status === "rejected") {
+          gate = "blocked_rejected"
+        } else {
+          gate = "blocked_no_request"
+        }
+      } else if (soApproval && soApproval.status === "approved") {
         gate = "open"
         if (!effectiveApproval) effectiveApproval = soApproval
       } else if (soApproval && soApproval.status === "rejected") {
@@ -105,18 +122,6 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       } else if (soApproval && soApproval.status === "pending") {
         gate = "blocked_pending"
         effectiveApproval = soApproval
-      } else if (!approval) {
-        gate = "blocked_no_request"
-      } else if (
-        approval.status === "approved"
-        && Number(approval.discount_value) === amount
-        && (approval.discount_type || "amount") === typ
-      ) {
-        gate = "open"
-      } else if (approval.status === "pending") {
-        gate = "blocked_pending"
-      } else if (approval.status === "rejected") {
-        gate = "blocked_rejected"
       } else {
         gate = "blocked_no_request"
       }

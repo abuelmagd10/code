@@ -89,14 +89,27 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     // whether to approve the amendment — so the same discount gate
     // that controls posting also controls the amendment approval.
     if (amount > 0 && (bill.status === "draft" || bill.status === "pending_approval")) {
-      // v3.74.456 — if the parent PO's discount was approved, the bill
-      // inherits that approval. The evaluator stores approvals as
-      // 'amount', but the bill/PO row keeps its original type — so we
-      // do NOT compare the type/value here, only require that the PO
-      // discount is approved. bill_request_discount_approval_trg
-      // (v3.74.424) already enforces PO-approval matching at write
-      // time; the banner just needs to reflect the current state.
-      if (poApproval && poApproval.status === "approved") {
+      // v3.74.465 — bill-level approval takes precedence when it
+      // exists. Previously we checked the parent PO first, which meant
+      // an amended bill with a pending bill-level approval was
+      // wrongly reported as 'open' because the parent PO was still
+      // approved. Order: bill approval (if any) → PO approval fallback.
+      if (approval) {
+        if (
+          approval.status === "approved"
+          && Number(approval.discount_value) === amount
+          && (approval.discount_type || "amount") === typ
+        ) {
+          gate = "open"
+        } else if (approval.status === "pending") {
+          gate = "blocked_pending"
+        } else if (approval.status === "rejected") {
+          gate = "blocked_rejected"
+        } else {
+          gate = "blocked_no_request"
+        }
+      } else if (poApproval && poApproval.status === "approved") {
+        // No bill-level approval; fall back to the PO's approval.
         gate = "open"
         if (!effectiveApproval) effectiveApproval = poApproval
       } else if (poApproval && poApproval.status === "rejected") {
@@ -105,18 +118,6 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       } else if (poApproval && poApproval.status === "pending") {
         gate = "blocked_pending"
         effectiveApproval = poApproval
-      } else if (!approval) {
-        gate = "blocked_no_request"
-      } else if (
-        approval.status === "approved"
-        && Number(approval.discount_value) === amount
-        && (approval.discount_type || "amount") === typ
-      ) {
-        gate = "open"
-      } else if (approval.status === "pending") {
-        gate = "blocked_pending"
-      } else if (approval.status === "rejected") {
-        gate = "blocked_rejected"
       } else {
         gate = "blocked_no_request"
       }

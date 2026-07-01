@@ -1,0 +1,18 @@
+-- v3.74.465 — HOTFIX: bill/invoice-level approval takes precedence
+-- over the parent PO/SO's approval when computing the discount gate.
+--
+-- Symptom: owner opened BILL-0001 (status=pending_approval, has a
+-- pending bill-level discount_approval, parent PO discount was
+-- already approved). Expected: approve button locked with hint
+-- "approve the discount first". Actual: approve button was OPEN.
+--
+-- Root cause: the API in /api/bills/[id]/discount-approval and the
+-- invoice mirror checked the parent PO/SO approval FIRST. If the PO
+-- was approved (which it always is at this point in the flow), it
+-- returned gate='open' regardless of the bill-level pending amendment.
+--
+-- Fix: swap the order. Bill-level approval, if it exists, wins the
+-- gate. PO's approval is only the fallback when there is no bill
+-- approval row at all (fresh auto-created bill).
+--
+-- No DB body changes. API-only fix.

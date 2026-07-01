@@ -64,6 +64,31 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BL. HOTFIX: أولوية bill/invoice approval على PO/SO فى الـ gate (v3.74.465)
+
+### الفجوة
+
+بعد v3.74.464، المالك فتح BILL-0001 (pending_approval + bill approval
+pending + PO approval approved). زر "اعتماد" كان مفتوح رغم إن
+الأمندمنت ينتظر اعتماد.
+
+**السبب**: الـ API كان بيفحص الـ PO approval **قبل** الـ bill approval.
+PO=approved → gate='open' فوراً، حتى لو bill=pending.
+
+### الحل
+
+قلب الأولوية:
+1. **الأول**: bill-level approval (لو موجود)
+   - approved + matches → open
+   - pending → blocked_pending
+   - rejected → blocked_rejected
+2. **fallback**: PO approval (فقط لو مفيش bill approval row أصلاً)
+
+نفس الإصلاح على `/api/invoices/[id]/discount-approval`.
+
+### Section BL baseline
+- API-only fix. لا تعديلات على DB.
+
 ## BK. توحيد نمط اعتماد الأمندمنت مع أمر الشراء (v3.74.464)
 
 ### الفجوة
