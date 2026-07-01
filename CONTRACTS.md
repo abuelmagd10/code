@@ -64,6 +64,64 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AQ. Read-only mode للاشتراك الموقوف (v3.74.444)
+
+### الفجوة
+
+الحالة القديمة: `subscription_status='payment_failed'` = شاشة كاملة
+"مقعدك غير مدفوع" — بدون أى وصول لبيانات الشركة، ولا يقدر يصدّر، ولا
+يقدر يراجع الفواتير القديمة. الطريقة الوحيدة للخروج = ticket دعم.
+
+سيئ للثقة، خصوصاً فى فترة السماح لما المالك بيعمل دفع.
+
+### الحل
+
+خريطة جديدة للحالات:
+
+| subscription_status | الوصول |
+| --- | --- |
+| `active` | كامل read/write |
+| `past_due` | كامل + reminders + banner (فترة السماح) |
+| `payment_failed` | **read-only**: SELECTs تشتغل، INSERTs جديدة ترفض |
+| `cancelled` | نفس payment_failed |
+
+### التطبيق
+
+**Helper** `can_write_to_company(company_id)`: يرجع `false` لـ
+payment_failed و cancelled.
+
+**Trigger مشترك** `subscription_write_gate` (BEFORE INSERT) مرفق على
+كل الجداول الحركية الرئيسية:
+- purchase_orders, sales_orders
+- bills, invoices
+- payments
+- purchase_returns, sales_returns
+- manufacturing_production_orders, manufacturing_bom_versions,
+  manufacturing_routing_versions
+- manufacturing_material_issue_approvals,
+  manufacturing_product_receive_approvals
+
+جداول البنود (items) محمية ضمنياً — الأب لو اترفض، البنود ما يوصلوش.
+
+**UPDATE على الصفوف الموجودة مسموح**: المالك يقدر يخلص شغله الجارى.
+INSERTs جديدة فقط اللى محظورة.
+
+### الرسالة
+
+```
+الاشتراك موقوف بسبب فشل الدفع. الوصول للقراءة فقط.
+جدّد الاشتراك من /settings/billing لاستعادة الوصول الكامل.
+```
+
+الـ trigger من v3.74.443 يفعّل الشركة تلقائياً بعد تجديد المقاعد،
+وبكده الـ gate يبطل يُطلق تلقائياً.
+
+### Section AQ baseline
+- function `can_write_to_company` موجودة وتفحص payment_failed + cancelled
+- function `subscription_write_gate_trg` موجودة
+- trigger `subscription_write_gate` مفعّل على كل الـ 12 جدول
+- `PERFORM public.assert_baseline_v3_74_444_check()` مضاف لـ assert_baseline
+
 ## AP. Self-service reactivation (v3.74.443)
 
 ### الفجوة

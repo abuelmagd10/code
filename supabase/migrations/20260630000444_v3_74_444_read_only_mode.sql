@@ -1,0 +1,33 @@
+-- v3.74.444 — read-only mode when a subscription is suspended.
+--
+-- Before: 'payment_failed' meant total lockout — "your seat is unpaid"
+-- screen with no way to see, verify, or export the company's own data.
+-- Support tickets were the only escape hatch. Bad for trust, especially
+-- during grace periods where the owner is actively working on the
+-- payment.
+--
+-- After: subscription state maps to access mode:
+--   active         → full read/write
+--   past_due       → full read/write + reminders + banner (grace period)
+--   payment_failed → read-only: SELECTs still work everywhere, INSERTs
+--                    into the top-level transactional tables are refused
+--                    with a clear Arabic pointer at /settings/billing.
+--                    UPDATEs on existing rows are allowed so owners can
+--                    wind down in-flight work.
+--   cancelled      → same as payment_failed for now.
+--
+-- Implementation
+--   can_write_to_company(company_id) helper returns false when status
+--   is payment_failed or cancelled.
+--   subscription_write_gate_trg — one shared trigger function attached
+--   BEFORE INSERT on every top-level transactional table. Item /
+--   detail tables inherit the guard because the parent INSERT is
+--   refused. RAISE returns error P0001 with an Arabic message.
+--
+-- Reactivation path (v3.74.443) still works transparently: once seats
+-- are renewed, the auto-reactivate trigger flips status to 'active'
+-- and this gate stops firing.
+--
+-- Baseline (Section AQ) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
