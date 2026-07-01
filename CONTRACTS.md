@@ -64,6 +64,20 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BW. صندوق موحّد — استرداد العملاء + تصحيح دفعات الموردين (v3.74.476)
+
+Tabs جديدة: **استرداد عملاء** + **تصحيح دفعات موردين**. الاتنين
+two-phase (approve → execute):
+- الكارت يعرض stage badge (انتظار اعتماد / جاهز للتنفيذ)
+- الزر الرئيسى: "اعتماد" (لو pending) أو "تنفيذ" (لو approved)
+- زر رفض (لو pending فقط)
+
+Endpoints:
+- `/api/customer-refund-requests/[id]/{approve|reject|execute}`
+- `/api/vendor-payment-correction-requests/[id]/{approve|reject|execute}`
+
+SoD محفوظ على DB layer: الـ executor ≠ approver.
+
 ## BV. صندوق موحّد — مرتجعات المبيعات (dual-stage) (v3.74.475)
 
 Tab جديد "مرتجعات مبيعات" يعرض `sales_return_requests` بحالات

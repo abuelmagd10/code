@@ -1,0 +1,17 @@
+-- v3.74.476 — Customer refund requests + Vendor payment correction
+-- requests join the unified approvals inbox. Both share the same
+-- two-phase pattern: approve → execute (with reject at approve stage).
+--
+-- UI-only, additive. Existing pages still work.
+--
+-- Endpoints:
+--   /api/customer-refund-requests/[id]/{approve,reject,execute}   [POST]
+--   /api/vendor-payment-correction-requests/[id]/{approve,reject,execute}
+--
+-- SoD preserved by the DB routine invoked by /execute — the executor
+-- must be different from the approver. The inbox does not weaken this;
+-- it just surfaces the pending → approved rows so the same buttons
+-- are one click away.
+--
+-- Sidebar rolls up customer_refund_request + vendor_refund_request.
+-- History carries both categories with their filter buttons.

@@ -81,6 +81,37 @@ interface PendingSalesReturnRequest {
   type: "sales_return_request"
 }
 
+// v3.74.476 — customer refund request. Two-phase workflow:
+// approve → execute. This tab surfaces both phases; the card renders
+// stage-aware buttons (Approve for 'pending', Execute for 'approved').
+interface PendingCustomerRefund {
+  id: string
+  customer_name: string | null
+  invoice_no: string | null
+  amount: number
+  status: string      // 'pending' | 'approved'
+  notes: string | null
+  requested_at: string
+  requested_by: string | null
+  approved_by: string | null
+  type: "customer_refund"
+}
+
+// v3.74.476 — vendor payment correction request. Same two-phase
+// pattern as customer refund.
+interface PendingVendorPaymentCorrection {
+  id: string
+  supplier_name: string | null
+  bill_no: string | null
+  amount: number
+  status: string      // 'pending' | 'approved'
+  notes: string | null
+  requested_at: string
+  requested_by: string | null
+  approved_by: string | null
+  type: "vendor_payment_correction"
+}
+
 // v3.74.473 — purchase return approval. Uses the existing
 // /api/purchase-returns/[id]/approve endpoint so
 // PurchaseReturnCommandService and its atomic RPC preserve full
@@ -173,6 +204,8 @@ type PendingItem =
   | PendingSupplierPayment
   | PendingPurchaseReturn
   | PendingSalesReturnRequest
+  | PendingCustomerRefund
+  | PendingVendorPaymentCorrection
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -562,7 +595,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -616,6 +649,8 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "supplier_payment" ? t("دفعة مورد", "Supplier Payment") :
     h.category === "purchase_return"  ? t("مرتجع مشتريات", "Purchase Return") :
     h.category === "sales_return_request" ? t("مرتجع مبيعات", "Sales Return") :
+    h.category === "customer_refund" ? t("استرداد عميل", "Customer Refund") :
+    h.category === "vendor_payment_correction" ? t("تصحيح دفعة مورد", "Vendor Correction") :
     h.category === "product_receive"  ? t("استلام منتج", "Product Receive") :
                                          h.category
   const CategoryIcon =
@@ -627,6 +662,8 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "supplier_payment" ? Wallet :
     h.category === "purchase_return"  ? RefreshCw :
     h.category === "sales_return_request" ? RefreshCw :
+    h.category === "customer_refund" ? Wallet :
+    h.category === "vendor_payment_correction" ? Wallet :
                                          Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
@@ -731,14 +768,16 @@ function ApprovalsContent() {
   const [supplierPayments, setSupplierPayments] = useState<PendingSupplierPayment[]>([])
   const [purchaseReturns, setPurchaseReturns] = useState<PendingPurchaseReturn[]>([])
   const [salesReturnRequests, setSalesReturnRequests] = useState<PendingSalesReturnRequest[]>([])
+  const [customerRefunds, setCustomerRefunds] = useState<PendingCustomerRefund[]>([])
+  const [vendorPaymentCorrections, setVendorPaymentCorrections] = useState<PendingVendorPaymentCorrection[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -1012,6 +1051,68 @@ function ApprovalsContent() {
         })))
       } catch {
         setSalesReturnRequests([])
+      }
+
+      // v3.74.476 — customer refund requests (pending + approved).
+      // Governance: /api/customer-refund-requests/[id]/{approve,reject,execute}
+      // enforces SoD (approver ≠ executor).
+      try {
+        const { data: crs } = await supabase
+          .from("customer_refund_requests")
+          .select(`
+            id, amount, status, notes, created_at,
+            customer_id, requested_by, approved_by, approved_at,
+            customers(name),
+            invoice_id, invoices(invoice_number)
+          `)
+          .eq("company_id", cid)
+          .in("status", ["pending", "approved"])
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setCustomerRefunds((crs || []).map((r: any) => ({
+          id: r.id,
+          customer_name: r.customers?.name ?? null,
+          invoice_no: r.invoices?.invoice_number ?? null,
+          amount: Number(r.amount || 0),
+          status: r.status,
+          notes: r.notes ?? null,
+          requested_at: r.created_at,
+          requested_by: r.requested_by ?? null,
+          approved_by: r.approved_by ?? null,
+          type: "customer_refund" as const,
+        })))
+      } catch {
+        setCustomerRefunds([])
+      }
+
+      // v3.74.476 — vendor payment correction requests.
+      try {
+        const { data: vpc } = await supabase
+          .from("vendor_payment_correction_requests")
+          .select(`
+            id, amount, status, notes, created_at,
+            supplier_id, requested_by, approved_by, approved_at,
+            suppliers(name),
+            bill_id, bills(bill_number)
+          `)
+          .eq("company_id", cid)
+          .in("status", ["pending", "approved"])
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setVendorPaymentCorrections((vpc || []).map((r: any) => ({
+          id: r.id,
+          supplier_name: r.suppliers?.name ?? null,
+          bill_no: r.bills?.bill_number ?? null,
+          amount: Number(r.amount || 0),
+          status: r.status,
+          notes: r.notes ?? null,
+          requested_at: r.created_at,
+          requested_by: r.requested_by ?? null,
+          approved_by: r.approved_by ?? null,
+          type: "vendor_payment_correction" as const,
+        })))
+      } catch {
+        setVendorPaymentCorrections([])
       }
     } finally {
       setIsLoading(false)
@@ -1315,6 +1416,62 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // v3.74.476 — customer refund history.
+      try {
+        const { data: crs } = await supabase
+          .from("customer_refund_requests")
+          .select(`id, status, amount, created_at, executed_at, approved_at, notes, customer_id, customers(name)`)
+          .eq("company_id", cid)
+          .in("status", ["executed", "rejected", "cancelled"])
+          .order("created_at", { ascending: false })
+          .limit(100)
+        for (const r of (crs || []) as any[]) {
+          const status = r.status === "rejected" ? "rejected" : (r.status === "cancelled" ? "cancelled" : "approved")
+          merged.push({
+            id: `cref-${r.id}`,
+            category: "customer_refund",
+            doc_label: `استرداد عميل · ${r.id.slice(0, 8)}`,
+            doc_href: "/customer-refund-requests",
+            party_label: r.customers?.name ?? null,
+            value_label: `${Number(r.amount).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at: r.executed_at ?? r.approved_at ?? null,
+            decision_note: r.notes ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // v3.74.476 — vendor payment correction history.
+      try {
+        const { data: vpc } = await supabase
+          .from("vendor_payment_correction_requests")
+          .select(`id, status, amount, created_at, executed_at, approved_at, rejection_reason, notes, supplier_id, suppliers(name)`)
+          .eq("company_id", cid)
+          .in("status", ["executed", "rejected", "cancelled"])
+          .order("created_at", { ascending: false })
+          .limit(100)
+        for (const r of (vpc || []) as any[]) {
+          const status = r.status === "rejected" ? "rejected" : (r.status === "cancelled" ? "cancelled" : "approved")
+          merged.push({
+            id: `vcor-${r.id}`,
+            category: "vendor_payment_correction",
+            doc_label: `تصحيح دفعة مورد · ${r.id.slice(0, 8)}`,
+            doc_href: "/vendor-payment-correction-requests",
+            party_label: r.suppliers?.name ?? null,
+            value_label: `${Number(r.amount).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at: r.executed_at ?? r.approved_at ?? null,
+            decision_note: r.rejection_reason ?? r.notes ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
       // v3.74.475 — sales return requests history (decided rows).
       try {
         const { data: srs } = await supabase
@@ -1479,7 +1636,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -1834,6 +1991,14 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "sret" ? "default" : "outline"} onClick={() => setActiveTab("sret")} className="gap-1">
               <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مبيعات", "Sales Returns")} ({salesReturnRequests.length})
             </Button>
+            {/* v3.74.476 — customer refund requests */}
+            <Button size="sm" variant={activeTab === "cref" ? "default" : "outline"} onClick={() => setActiveTab("cref")} className="gap-1">
+              <Wallet className="w-3.5 h-3.5" />{t("استرداد عملاء", "Customer Refunds")} ({customerRefunds.length})
+            </Button>
+            {/* v3.74.476 — vendor payment correction requests */}
+            <Button size="sm" variant={activeTab === "vcor" ? "default" : "outline"} onClick={() => setActiveTab("vcor")} className="gap-1">
+              <Wallet className="w-3.5 h-3.5" />{t("تصحيح دفعات موردين", "Vendor Corrections")} ({vendorPaymentCorrections.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -1887,6 +2052,13 @@ function ApprovalsContent() {
                 {/* v3.74.475 */}
                 <Button size="sm" variant={historyFilter === "sales_return_request" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("sales_return_request")}>
                   <RefreshCw className="w-3 h-3" />{t("مرتجعات مبيعات", "Sales Returns")} ({history.filter(h => h.category === "sales_return_request").length})
+                </Button>
+                {/* v3.74.476 */}
+                <Button size="sm" variant={historyFilter === "customer_refund" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("customer_refund")}>
+                  <Wallet className="w-3 h-3" />{t("استرداد عملاء", "Customer Refunds")} ({history.filter(h => h.category === "customer_refund").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "vendor_payment_correction" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("vendor_payment_correction")}>
+                  <Wallet className="w-3 h-3" />{t("تصحيح دفعات", "Vendor Corrections")} ({history.filter(h => h.category === "vendor_payment_correction").length})
                 </Button>
               </div>
               {(() => {
@@ -2102,6 +2274,258 @@ function ApprovalsContent() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              )}
+
+              {/* v3.74.476 — Customer refund requests (two-phase: approve → execute). */}
+              {(activeTab === "all" || activeTab === "cref") && customerRefunds.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Wallet className="w-4 h-4" />{t("طلبات استرداد العملاء", "Customer Refund Requests")}
+                  </h2>
+                  {customerRefunds.map(r => {
+                    const isApproved = r.status === "approved"
+                    return (
+                      <Card key={r.id} className="border-l-4 border-l-cyan-500">
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg shrink-0">
+                                <Wallet className="w-4 h-4 text-cyan-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">{t("طلب استرداد عميل", "Customer Refund Request")}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  👤 {r.customer_name ?? "—"}
+                                  {r.invoice_no && <> · 🧾 {t("فاتورة", "Invoice")}: {r.invoice_no}</>}
+                                </p>
+                                <p className="text-xs mt-1">
+                                  <span className="font-semibold text-cyan-700 dark:text-cyan-300">
+                                    {t("قيمة الاسترداد", "Refund amount")}: {fmtMoney(r.amount)}
+                                  </span>
+                                </p>
+                                {r.notes && (
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {r.notes}</p>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className={isApproved
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-xs"
+                                : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs"}>
+                                <Clock className="w-3 h-3 me-1" />
+                                {isApproved ? t("جاهز للتنفيذ", "Ready to execute") : t("انتظار اعتماد", "Pending approval")}
+                              </Badge>
+                              <Link href="/customer-refund-requests" className="text-xs text-cyan-600 hover:underline">
+                                {t("عرض القائمة", "View list")}
+                              </Link>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                              disabled={runningId === r.id}
+                              onClick={async () => {
+                                try {
+                                  setRunningId(r.id)
+                                  const endpoint = isApproved ? "execute" : "approve"
+                                  const res = await fetch(`/api/customer-refund-requests/${encodeURIComponent(r.id)}/${endpoint}`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({}),
+                                  })
+                                  const j = await res.json().catch(() => ({}))
+                                  if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Failed' : 'تعذر التنفيذ'))
+                                  toast({ title: isApproved ? t("تم التنفيذ", "Executed") : t("تم الاعتماد", "Approved") })
+                                  await load()
+                                } catch (e: any) {
+                                  toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                } finally {
+                                  setRunningId(null)
+                                }
+                              }}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isApproved ? t("تنفيذ الاسترداد", "Execute Refund") : t("اعتماد", "Approve")}
+                            </Button>
+                            {!isApproved && (
+                              <Button
+                                size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                                disabled={runningId === r.id}
+                                onClick={() => { setRejectId(r.id); setRejectType("customer_refund"); setRejectReason("") }}
+                              >
+                                <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                              </Button>
+                            )}
+                          </div>
+                          {rejectId === r.id && (
+                            <div className="mt-3 space-y-2">
+                              <textarea
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                placeholder={t("سبب الرفض...", "Rejection reason...")}
+                                rows={2}
+                                className="w-full text-sm p-2 border rounded"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm" variant="destructive"
+                                  disabled={!rejectReason.trim() || runningId === r.id}
+                                  onClick={async () => {
+                                    try {
+                                      setRunningId(r.id)
+                                      const res = await fetch(`/api/customer-refund-requests/${encodeURIComponent(r.id)}/reject`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ reason: rejectReason, rejection_reason: rejectReason }),
+                                      })
+                                      const j = await res.json().catch(() => ({}))
+                                      if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                      toast({ title: t("تم الرفض", "Rejected") })
+                                      setRejectId(null); setRejectReason("")
+                                      await load()
+                                    } catch (e: any) {
+                                      toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                    } finally {
+                                      setRunningId(null)
+                                    }
+                                  }}
+                                >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                                <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* v3.74.476 — Vendor payment correction requests (two-phase). */}
+              {(activeTab === "all" || activeTab === "vcor") && vendorPaymentCorrections.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Wallet className="w-4 h-4" />{t("طلبات تصحيح دفعات موردين", "Vendor Payment Correction Requests")}
+                  </h2>
+                  {vendorPaymentCorrections.map(r => {
+                    const isApproved = r.status === "approved"
+                    return (
+                      <Card key={r.id} className="border-l-4 border-l-violet-500">
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg shrink-0">
+                                <Wallet className="w-4 h-4 text-violet-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">{t("طلب تصحيح دفعة مورد", "Vendor Payment Correction")}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  👤 {r.supplier_name ?? "—"}
+                                  {r.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: {r.bill_no}</>}
+                                </p>
+                                <p className="text-xs mt-1">
+                                  <span className="font-semibold text-violet-700 dark:text-violet-300">
+                                    {t("قيمة التصحيح", "Correction amount")}: {fmtMoney(r.amount)}
+                                  </span>
+                                </p>
+                                {r.notes && (
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {r.notes}</p>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className={isApproved
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 text-xs"
+                                : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs"}>
+                                <Clock className="w-3 h-3 me-1" />
+                                {isApproved ? t("جاهز للتنفيذ", "Ready to execute") : t("انتظار اعتماد", "Pending approval")}
+                              </Badge>
+                              <Link href="/vendor-payment-correction-requests" className="text-xs text-violet-600 hover:underline">
+                                {t("عرض القائمة", "View list")}
+                              </Link>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                              disabled={runningId === r.id}
+                              onClick={async () => {
+                                try {
+                                  setRunningId(r.id)
+                                  const endpoint = isApproved ? "execute" : "approve"
+                                  const res = await fetch(`/api/vendor-payment-correction-requests/${encodeURIComponent(r.id)}/${endpoint}`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({}),
+                                  })
+                                  const j = await res.json().catch(() => ({}))
+                                  if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Failed' : 'تعذر التنفيذ'))
+                                  toast({ title: isApproved ? t("تم التنفيذ", "Executed") : t("تم الاعتماد", "Approved") })
+                                  await load()
+                                } catch (e: any) {
+                                  toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                } finally {
+                                  setRunningId(null)
+                                }
+                              }}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isApproved ? t("تنفيذ التصحيح", "Execute Correction") : t("اعتماد", "Approve")}
+                            </Button>
+                            {!isApproved && (
+                              <Button
+                                size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                                disabled={runningId === r.id}
+                                onClick={() => { setRejectId(r.id); setRejectType("vendor_payment_correction"); setRejectReason("") }}
+                              >
+                                <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                              </Button>
+                            )}
+                          </div>
+                          {rejectId === r.id && (
+                            <div className="mt-3 space-y-2">
+                              <textarea
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                placeholder={t("سبب الرفض...", "Rejection reason...")}
+                                rows={2}
+                                className="w-full text-sm p-2 border rounded"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm" variant="destructive"
+                                  disabled={!rejectReason.trim() || runningId === r.id}
+                                  onClick={async () => {
+                                    try {
+                                      setRunningId(r.id)
+                                      const res = await fetch(`/api/vendor-payment-correction-requests/${encodeURIComponent(r.id)}/reject`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ reason: rejectReason, rejection_reason: rejectReason }),
+                                      })
+                                      const j = await res.json().catch(() => ({}))
+                                      if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                      toast({ title: t("تم الرفض", "Rejected") })
+                                      setRejectId(null); setRejectReason("")
+                                      await load()
+                                    } catch (e: any) {
+                                      toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                    } finally {
+                                      setRunningId(null)
+                                    }
+                                  }}
+                                >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                                <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               )}
 
