@@ -65,6 +65,24 @@ interface PendingSupplierPayment {
   type: "supplier_payment"
 }
 
+// v3.74.473 — purchase return approval. Uses the existing
+// /api/purchase-returns/[id]/approve endpoint so
+// PurchaseReturnCommandService and its atomic RPC preserve full
+// governance (role check, warehouse gate, JE creation).
+interface PendingPurchaseReturn {
+  id: string
+  return_no: string | null
+  supplier_name: string | null
+  bill_id: string | null
+  bill_no: string | null
+  total: number
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  workflow_status: string | null
+  type: "purchase_return"
+}
+
 // v3.74.373 — discount approvals (Stage 2 of 5). Shape mirrors what
 // GET /api/discount-approvals returns: snapshot fields on the
 // approval row plus the requester's email when available.
@@ -137,6 +155,7 @@ type PendingItem =
   | PendingMaterialIssue
   | PendingDiscountApproval
   | PendingSupplierPayment
+  | PendingPurchaseReturn
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -687,14 +706,15 @@ function ApprovalsContent() {
   const [materialIssues, setMaterialIssues] = useState<PendingMaterialIssue[]>([])
   const [discountApprovals, setDiscountApprovals] = useState<PendingDiscountApproval[]>([])
   const [supplierPayments, setSupplierPayments] = useState<PendingSupplierPayment[]>([])
+  const [purchaseReturns, setPurchaseReturns] = useState<PendingPurchaseReturn[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -897,6 +917,43 @@ function ApprovalsContent() {
         })))
       } catch {
         setSupplierPayments([])
+      }
+
+      // v3.74.473 — purchase returns awaiting admin approval.
+      // Governance: /api/purchase-returns/[id]/approve runs
+      // PurchaseReturnCommandService → approve_purchase_return_atomic
+      // (role check + JE creation on approve).
+      try {
+        const { data: prs } = await supabase
+          .from("purchase_returns")
+          .select(`
+            id, return_number, total_amount, status, workflow_status,
+            created_at, created_by,
+            supplier_id, branch_id, warehouse_id, bill_id,
+            suppliers(name),
+            branches(name),
+            warehouses(name),
+            bills(bill_number)
+          `)
+          .eq("company_id", cid)
+          .in("workflow_status", ["pending_admin_approval", "pending_approval"])
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setPurchaseReturns((prs || []).map((r: any) => ({
+          id: r.id,
+          return_no: r.return_number ?? null,
+          supplier_name: r.suppliers?.name ?? null,
+          bill_id: r.bill_id ?? null,
+          bill_no: r.bills?.bill_number ?? null,
+          total: Number(r.total_amount || 0),
+          branch_name: r.branches?.name ?? null,
+          warehouse_name: r.warehouses?.name ?? null,
+          requested_at: r.created_at,
+          workflow_status: r.workflow_status ?? null,
+          type: "purchase_return" as const,
+        })))
+      } catch {
+        setPurchaseReturns([])
       }
     } finally {
       setIsLoading(false)
@@ -1261,7 +1318,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -1608,6 +1665,10 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "pay" ? "default" : "outline"} onClick={() => setActiveTab("pay")} className="gap-1">
               <Wallet className="w-3.5 h-3.5" />{t("دفعات موردين", "Supplier Payments")} ({supplierPayments.length})
             </Button>
+            {/* v3.74.473 — purchase returns awaiting admin approval */}
+            <Button size="sm" variant={activeTab === "pret" ? "default" : "outline"} onClick={() => setActiveTab("pret")} className="gap-1">
+              <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مشتريات", "Purchase Returns")} ({purchaseReturns.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -1845,6 +1906,142 @@ function ApprovalsContent() {
                                       throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر رفض الدفعة'))
                                     }
                                     toast({ title: t("تم الرفض", "Rejected"), description: t("تم رفض الدفعة", "Payment rejected") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >
+                                {t("تأكيد الرفض", "Confirm Reject")}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                                {t("إلغاء", "Cancel")}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* v3.74.473 — Purchase returns awaiting admin approval. */}
+              {(activeTab === "all" || activeTab === "pret") && purchaseReturns.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <RefreshCw className="w-4 h-4" />{t("اعتمادات مرتجعات المشتريات", "Purchase Return Approvals")}
+                  </h2>
+                  {purchaseReturns.map(r => (
+                    <Card key={r.id} className="border-l-4 border-l-orange-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg shrink-0">
+                              <RefreshCw className="w-4 h-4 text-orange-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("مرتجع مشتريات", "Purchase Return")} · {r.return_no ?? t("بدون رقم", "(no number)")}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                👤 {r.supplier_name ?? "—"}
+                                {r.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: {r.bill_no}</>}
+                              </p>
+                              <p className="text-xs mt-1">
+                                <span className="font-semibold text-orange-700 dark:text-orange-300">
+                                  {t("قيمة المرتجع", "Return amount")}: {fmtMoney(r.total)}
+                                </span>
+                              </p>
+                              {r.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {r.branch_name}{r.warehouse_name && <> · 🏬 {r.warehouse_name}</>}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">
+                                📅 {fmtDate(r.requested_at)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                            </Badge>
+                            <Link href={`/purchase-returns/${r.id}`} className="text-xs text-orange-600 hover:underline">
+                              {t("عرض المستند", "View document")}
+                            </Link>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === r.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(r.id)
+                                const res = await fetch(`/api/purchase-returns/${encodeURIComponent(r.id)}/approve`, {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `pret:${r.id}:approve:${Date.now()}`,
+                                  },
+                                  body: JSON.stringify({ action: "APPROVE", uiSurface: "approvals_inbox", appLang }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok || j.success === false) {
+                                  throw new Error(j.error || (appLang === 'en' ? 'Approve failed' : 'تعذر اعتماد المرتجع'))
+                                }
+                                toast({ title: t("تم الاعتماد", "Approved"), description: t("تم اعتماد المرتجع بنجاح", "Return approved") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد المرتجع", "Approve Return")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === r.id}
+                            onClick={() => { setRejectId(r.id); setRejectType("purchase_return"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                          </Button>
+                        </div>
+                        {rejectId === r.id && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب الرفض...", "Rejection reason...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === r.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(r.id)
+                                    const res = await fetch(`/api/purchase-returns/${encodeURIComponent(r.id)}/approve`, {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `pret:${r.id}:reject:${Date.now()}`,
+                                      },
+                                      body: JSON.stringify({ action: "REJECT", rejectionReason: rejectReason, uiSurface: "approvals_inbox", appLang }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok || j.success === false) {
+                                      throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر رفض المرتجع'))
+                                    }
+                                    toast({ title: t("تم الرفض", "Rejected"), description: t("تم رفض المرتجع", "Return rejected") })
                                     setRejectId(null); setRejectReason("")
                                     await load()
                                   } catch (e: any) {

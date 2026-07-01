@@ -1,0 +1,13 @@
+-- v3.74.473 — Purchase returns awaiting admin approval now surface
+-- on /approvals as a new tab.
+--
+-- UI-only, additive. The existing /purchase-returns page and
+-- workflow are untouched.
+--
+-- Loader queries purchase_returns where workflow_status IN
+-- ('pending_admin_approval','pending_approval'). Actions call the
+-- existing /api/purchase-returns/[id]/approve endpoint which runs
+-- PurchaseReturnCommandService.processDecision →
+-- approve_purchase_return_atomic. Governance (role + branch +
+-- warehouse checks + JE creation + notifications) is preserved end
+-- to end.
