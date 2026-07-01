@@ -64,6 +64,19 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CD. عرض بنود الفاتورة على كارت اعتماد الاستلام (v3.74.483)
+
+المالك لاحظ إن صفحة `/inventory/goods-receipt` بتعرض جدول المنتجات
+قبل زر التأكيد، بينما كارت الصندوق كان بيعرض الإجمالى فقط. تم إضافة
+قسم expandable على كارت اعتماد الاستلام يعرض:
+- المنتج (مع badge "خدمة" لو خدمة)
+- الكمية
+- سعر الوحدة
+- إجمالى البند
+
+الـ loader يجيب `bill_items` مع join على `products (name, product_type)`
+فى query تانى. مفيش تغيير على DB أو APIs.
+
 ## CC. نقل صندوق الموافقات + إصلاح صلاحيات الأدوار + ترتيب قائمة المشتريات (v3.74.482)
 
 ### تغييرات UI

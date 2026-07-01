@@ -146,6 +146,8 @@ interface PendingInventoryTransfer {
 // v3.74.478 — goods receipt approval for purchase bills. Warehouse
 // stage: bills.receipt_status='pending' after the bill was submitted
 // for receipt. Uses /api/bills/[id]/{confirm-receipt, reject-receipt}.
+// v3.74.483 — added bill_items so the warehouse manager can review
+// products + quantities inline before confirming.
 interface PendingGoodsReceipt {
   id: string
   bill_no: string | null
@@ -154,6 +156,12 @@ interface PendingGoodsReceipt {
   branch_name: string | null
   warehouse_name: string | null
   requested_at: string
+  items: Array<{
+    product_name: string
+    product_type: string | null
+    quantity: number
+    unit_price: number
+  }>
   type: "goods_receipt"
 }
 
@@ -861,6 +869,8 @@ function ApprovalsContent() {
   const [vendorPaymentCorrections, setVendorPaymentCorrections] = useState<PendingVendorPaymentCorrection[]>([])
   const [dispatches, setDispatches] = useState<PendingDispatch[]>([])
   const [goodsReceipts, setGoodsReceipts] = useState<PendingGoodsReceipt[]>([])
+  // v3.74.483 — tracks which goods-receipt card has its items panel expanded.
+  const [receiptExpandedId, setReceiptExpandedId] = useState<string | null>(null)
   const [writeOffs, setWriteOffs] = useState<PendingWriteOff[]>([])
   const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
   const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
@@ -1242,9 +1252,11 @@ function ApprovalsContent() {
         setDispatches([])
       }
 
-      // v3.74.478 — goods receipt approvals (bills awaiting warehouse
-      // confirmation). Governance: /api/bills/[id]/confirm-receipt
+      // v3.74.478+v3.74.483 — goods receipt approvals (bills awaiting
+      // warehouse confirmation). Governance: /api/bills/[id]/confirm-receipt
       // enforces warehouse role + warehouse gate.
+      // v3.74.483 — fetch bill_items in a second query so the warehouse
+      // manager can review products + quantities inline.
       try {
         const { data: bills } = await supabase
           .from("bills")
@@ -1260,6 +1272,26 @@ function ApprovalsContent() {
           .not("status", "in", "(cancelled,draft)")
           .order("created_at", { ascending: true })
           .limit(100)
+
+        const itemsByBill = new Map<string, PendingGoodsReceipt["items"]>()
+        const billIds = (bills || []).map((b: any) => b.id)
+        if (billIds.length > 0) {
+          const { data: items } = await supabase
+            .from("bill_items")
+            .select("bill_id, quantity, unit_price, description, products(name, product_type)")
+            .in("bill_id", billIds)
+          for (const it of (items || []) as any[]) {
+            const key = String(it.bill_id)
+            if (!itemsByBill.has(key)) itemsByBill.set(key, [])
+            itemsByBill.get(key)!.push({
+              product_name: it.products?.name ?? it.description ?? "—",
+              product_type: it.products?.product_type ?? null,
+              quantity: Number(it.quantity || 0),
+              unit_price: Number(it.unit_price || 0),
+            })
+          }
+        }
+
         setGoodsReceipts((bills || []).map((b: any) => ({
           id: b.id,
           bill_no: b.bill_number ?? null,
@@ -1268,6 +1300,7 @@ function ApprovalsContent() {
           branch_name: b.branches?.name ?? null,
           warehouse_name: b.warehouses?.name ?? null,
           requested_at: b.created_at,
+          items: itemsByBill.get(b.id) ?? [],
           type: "goods_receipt" as const,
         })))
       } catch {
@@ -3067,6 +3100,52 @@ function ApprovalsContent() {
                             </Link>
                           </div>
                         </div>
+                        {/* v3.74.483 — expandable items panel so the warehouse
+                            manager can review the line items before confirming,
+                            without leaving the inbox. */}
+                        {b.items.length > 0 && (
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={() => setReceiptExpandedId(receiptExpandedId === b.id ? null : b.id)}
+                              className="text-xs text-lime-700 dark:text-lime-300 hover:underline inline-flex items-center gap-1"
+                            >
+                              {receiptExpandedId === b.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              {t(`عرض بنود الفاتورة (${b.items.length})`, `View items (${b.items.length})`)}
+                            </button>
+                            {receiptExpandedId === b.id && (
+                              <div className="mt-2 rounded border bg-white dark:bg-slate-900/60 overflow-hidden">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-slate-100 dark:bg-slate-800 text-muted-foreground">
+                                    <tr>
+                                      <th className="text-start p-2 font-normal">{t("المنتج", "Product")}</th>
+                                      <th className="text-end p-2 font-normal">{t("الكمية", "Qty")}</th>
+                                      <th className="text-end p-2 font-normal">{t("سعر الوحدة", "Unit price")}</th>
+                                      <th className="text-end p-2 font-normal">{t("الإجمالى", "Line total")}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {b.items.map((it, i) => (
+                                      <tr key={i} className="border-t">
+                                        <td className="p-2">
+                                          {it.product_type === "service" && (
+                                            <span className="inline-block px-1 me-1 text-[10px] rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                              {t("خدمة", "Service")}
+                                            </span>
+                                          )}
+                                          {it.product_name}
+                                        </td>
+                                        <td className="p-2 text-end">{it.quantity}</td>
+                                        <td className="p-2 text-end">{fmtMoney(it.unit_price)}</td>
+                                        <td className="p-2 text-end font-medium">{fmtMoney(it.quantity * it.unit_price)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"

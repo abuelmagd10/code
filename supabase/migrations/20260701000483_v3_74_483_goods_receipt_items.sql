@@ -1,0 +1,15 @@
+-- v3.74.483 — Goods receipt cards on /approvals now show the bill's
+-- line items in an expandable panel, matching what the dedicated
+-- /inventory/goods-receipt page shows on its confirmation form.
+--
+-- Owner tested v3.74.478 and observed: the dedicated page renders a
+-- product table (VitaSlims 4×1.00, ماتور 2×2.00) before the confirm
+-- button, but the inbox card shows only the total. Warehouse manager
+-- had to leave the inbox to see what the bill contained.
+--
+-- Change: loader also fetches bill_items joined on products (name +
+-- product_type). The card gets a "عرض بنود الفاتورة (N)" toggle. When
+-- expanded, a small table lists product name (with a خدمة/Service
+-- badge when applicable), quantity, unit price, and line total.
+--
+-- No DB or API changes. UI-only + a second read query.
