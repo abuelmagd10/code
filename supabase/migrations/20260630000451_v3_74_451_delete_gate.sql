@@ -1,0 +1,21 @@
+-- v3.74.451 — block delete on non-draft transactional documents +
+-- cascade-clean discount approvals and notifications on legal deletes.
+--
+-- Owner caught the purchasing officer deleting a PO that had already
+-- been through the discount rejection flow. The DELETE succeeded and
+-- left one orphaned discount_approvals row + four orphaned notifications
+-- pointing at a document that no longer exists. In production this
+-- would corrupt the audit trail and break the /approvals list.
+--
+-- Fix in three layers:
+--   1. Clean up all existing orphans.
+--   2. BEFORE DELETE trigger on the 4 transactional heads:
+--        purchase_orders, sales_orders, bills, invoices
+--      - status='draft'  → cascade-delete related discount_approvals
+--                          and notifications, then allow the DELETE
+--      - anything else   → RAISE Arabic message pointing at void/cancel
+--   3. UI hides the delete button on non-draft rows (list pages).
+--
+-- Baseline (Section AX) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

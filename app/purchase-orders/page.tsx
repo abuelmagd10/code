@@ -800,7 +800,10 @@ export default function PurchaseOrdersPage() {
             permissions={{
               canView: permRead,
               canEdit: permUpdate,
-              canDelete: permDelete,
+              // v3.74.451 — delete is allowed only on draft. The DB
+              // gate already refuses non-draft deletes; this hides the
+              // button so users don't try.
+              canDelete: permDelete && row.status === 'draft',
               canCreate: permWrite
             }}
           />

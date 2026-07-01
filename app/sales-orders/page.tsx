@@ -686,7 +686,8 @@ function SalesOrdersContent() {
             permissions={{
               canView: permRead,
               canEdit: permUpdate,
-              canDelete: permDelete,
+              // v3.74.451 — draft-only delete. DB gate enforces same.
+              canDelete: permDelete && row.status === 'draft',
               canCreate: permWrite
             }}
           />

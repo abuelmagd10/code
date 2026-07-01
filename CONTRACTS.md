@@ -64,6 +64,49 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AX. منع حذف المستندات الحركية المُعتمَدة + cleanup الأيتام (v3.74.451)
+
+### الحدث
+
+مسئول المشتريات ضغط زر الحذف من قائمة أوامر الشراء على PO كان دخل
+دورة اعتماد + خصم مرفوض → الحذف نجح. النتائج:
+- 1 صف `discount_approvals` يشير لـ PO مش موجود
+- 4 إشعارات يتيمة (reference_id لـ PO محذوف)
+- audit_logs عنده سجل الحذف (بس الوحيد اللى نجى)
+
+هذا لو حصل فى الإنتاج بيكسر:
+- صفحة `/approvals` (الكارت بيشير لمستند مش موجود)
+- الـ history (لا يمكن تتبع القرار)
+- reports وترابط البيانات
+
+### الحل
+
+**Cleanup فورى**: DELETE للـ orphans (discount_approvals + notifications
+اللى reference_id بيشير لمستند غير موجود).
+
+**Trigger `transactional_document_delete_gate`** BEFORE DELETE على
+٤ جداول: `purchase_orders`, `sales_orders`, `bills`, `invoices`:
+- **status = 'draft'** → cascade-delete الـ discount_approvals
+  والـ notifications المرتبطة بالمستند، بعدها يسمح بالـ DELETE
+- **أى حالة أخرى** → RAISE بالعربية:
+  ```
+  لا يمكن حذف [أمر الشراء/طلب المبيعات/فاتورة المورد/فاتورة العميل]
+  بحالة "[status]". استخدم "إلغاء" أو "void" بدلاً من الحذف للحفاظ
+  على سجل التدقيق.
+  ```
+
+**UI**: الـ `canDelete` prop على `<OrderActions>` بقى:
+```
+canDelete: permDelete && row.status === 'draft'
+```
+زر الحذف يختفى تماماً على المستندات غير draft. للـ /purchase-orders
+و /sales-orders.
+
+### Section AX baseline
+- function `transactional_document_delete_gate_trg` موجودة
+- trigger `transactional_document_delete_gate` على الجداول الـ ٤
+- `PERFORM public.assert_baseline_v3_74_451_check()` مضاف لـ assert_baseline
+
 ## AW. مؤشر رفض/انتظار الخصم فى قائمة أوامر البيع (v3.74.450)
 
 ### الغرض
