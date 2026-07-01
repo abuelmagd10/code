@@ -64,6 +64,46 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BJ. amendment trigger يفتح approval row دائماً + إصلاح أعمدة items_snapshot (v3.74.463)
+
+### الفجوة المكتشفة أثناء الاختبار
+
+BILL-0001 اتوّلدت من PO معتمد الخصم (skip flag من v3.74.424). المحاسب
+عدّل الشحن — مش الخصم. الـ triggers:
+- `bill_amendment_reset_approval_trg` حاول يلغى صف approval غير موجود
+- `bill_request_discount_approval_trg` سكت لأن قيمة الخصم ما اتغيّرتش
+- **النتيجة**: صفر صفوف approval للفاتورة، banner ما بيلاقيش داتا،
+  Diff Card ما بيظهرش، الدورة تشتغل بالـ status flag فقط
+
+### الحل
+
+`bill_amendment_reset_approval_trg` دلوقتى:
+1. يكتشف تعديل material
+2. يلغى الـ approval bill-level الحالى (لو موجود)
+3. يحدّد baseline يربط بيه: bill-level → parent-PO approved
+4. **يـ INSERT صف approval جديد pending** بـ items + financial
+   snapshots + `supersedes_approval_id`
+5. يضع `app.amendment_inserted='1'` عشان `bill_request` يتخطى
+
+الـ `bill_request` يقرأ الـ session var ويرجع لو الـ amendment
+عمل insert.
+
+نظير كامل على `invoice_amendment_reset_approval_trg` +
+`inv_request_discount_approval_trg`.
+
+### إصلاح ثانوى: أعمدة items_snapshot
+
+كان بيقرأ `bi.tax_amount` و `bi.total` بينما الأعمدة الحقيقية
+`bi.tax_rate` و `bi.line_total`. نفس الشى فى invoice_items.
+
+### Backfill
+
+BILL-0001 اتعمله backfill يدوى بصف approval الآن — الـ banner و
+Diff Card يشتغلوا فوراً بدون تعديل جديد.
+
+### Section BJ baseline
+- 4 function rewrites
+
 ## BI. اسم المعدّل فى إشعار reapproval + Amendment Banner على عرض المستند (v3.74.462)
 
 ### الفجوة

@@ -1,0 +1,43 @@
+-- v3.74.463 — amendment trigger always creates a bill/invoice-level
+-- discount_approval row so amendments are trackable even when the
+-- discount value itself did not change.
+--
+-- Symptom: BILL-0001 was created from an approved PO; accountant
+-- amended (changed shipping), owner rejected the reapproval, accountant
+-- re-edited, owner approved. Owner opened the bill view expecting to
+-- see the amendment banner and diff — nothing appeared.
+--
+-- Root cause: BILL-0001 had ZERO discount_approvals rows. The bill
+-- inherited its discount from the parent PO (v3.74.424 skip flag),
+-- and every subsequent amendment only touched shipping (not discount
+-- value). bill_amendment_reset_approval_trg cancelled non-existent
+-- rows; bill_request_discount_approval_trg took the "discount didn't
+-- change" shortcut and inserted nothing. Reapproval ran on the status
+-- flag only, with no discount_approval row → no diff card, no banner.
+--
+-- Fix:
+--   bill_amendment_reset_approval_trg now:
+--     1. Detects the same material fields as before (shipping,
+--        adjustment, tax, subtotal, total, currency, supplier)
+--     2. Cancels the current bill-level approved/pending row
+--     3. Determines a baseline to supersede: latest bill-level, else
+--        latest parent-PO approved
+--     4. INSERTS a fresh pending bill-level approval with items +
+--        financial snapshots, linked to the baseline via
+--        supersedes_approval_id
+--     5. Sets app.amendment_inserted='1' so bill_request skips
+--
+--   bill_request_discount_approval_trg reads the session var and
+--   skips when the amendment trigger already inserted.
+--
+--   Same treatment for invoice_amendment_reset_approval_trg +
+--   inv_request_discount_approval_trg on the sales side.
+--
+-- Also fixed the items_snapshot builders to use bill_items.tax_rate +
+-- bill_items.line_total (the actual columns), and same for
+-- invoice_items.
+--
+-- Manual backfill run for BILL-0001 so the owner sees the banner +
+-- diff card immediately without a fresh amendment.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
