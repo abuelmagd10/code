@@ -1125,6 +1125,18 @@ export function Sidebar() {
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
               const groups: Array<{ key: string; icon: any; label: string; badge?: number; items: Array<{ label: string; href: string; icon: any; badge?: number }> }> = [
                 { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
+                // v3.74.482 — Approval Inbox moved out of the Manufacturing
+                // group into its own tile right below Dashboard, since it
+                // now unifies EVERY workflow across the system (v3.74.472
+                // → v3.74.481), not just manufacturing.
+                {
+                  key: 'approvals', icon: CheckCircle,
+                  label: (lang === 'en' ? '🔔 Approvals' : '🔔 صندوق الموافقات'),
+                  badge: pendingInboxCount,
+                  items: [
+                    { label: (lang === 'en' ? '🔔 Approval Inbox' : '🔔 صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle, badge: pendingInboxCount },
+                  ]
+                },
                 {
                   key: 'sales', icon: FileText, label: (lang === 'en' ? 'Sales' : 'المبيعات'), items: [
                     { label: (lang === 'en' ? 'Customers' : 'العملاء'), href: `/customers${q}`, icon: Users },
@@ -1144,17 +1156,31 @@ export function Sidebar() {
                   ]
                 },
                 {
+                  // v3.74.482 — Purchases group ordered along the natural
+                  // workflow: masters → planning → order → receipt/bill →
+                  // returns → credit notes → corrections.
                   key: 'purchases', icon: ShoppingCart, label: (lang === 'en' ? 'Purchases' : 'المشتريات'), items: [
+                    // ── Masters ──
                     { label: (lang === 'en' ? 'Suppliers' : 'الموردين'), href: `/suppliers${q}`, icon: ShoppingCart },
-                    { label: (lang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart, badge: approvalBadges['purchase_request'] || 0 },
+                    // ── Planning ──
+                    // v3.74.482 — Purchase Requests were missing from the
+                    // sidebar even though they had a badge in the RPC and
+                    // a full page at /purchase-requests. Added.
+                    { label: (lang === 'en' ? 'Purchase Requests' : 'طلبات الشراء'), href: `/purchase-requests${q}`, icon: ClipboardList, badge: approvalBadges['purchase_request'] || 0 },
+                    // ── Ordering ──
+                    // v3.74.482 — the previous badge here was 'purchase_request'
+                    // which is the PR key, not POs. Cleared so this link no
+                    // longer double-counts pending PRs.
+                    { label: (lang === 'en' ? 'Purchase Orders' : 'أوامر الشراء'), href: `/purchase-orders${q}`, icon: ShoppingCart },
+                    // ── Receipt + invoice ──
                     { label: (lang === 'en' ? 'Purchase Bills' : 'فواتير المشتريات'), href: `/bills${q}`, icon: FileText, badge: approvalBadges['bill_receipt'] || 0 },
+                    // ── Returns ──
                     { label: (lang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'), href: `/purchase-returns${q}`, icon: FileText, badge: sumBadges(approvalBadges, ['purchase_return_admin','purchase_return_warehouse']) },
+                    // ── Credit notes + corrections ──
                     { label: (lang === 'en' ? 'Vendor Credits' : 'إشعارات دائن الموردين'), href: `/vendor-credits${q}`, icon: FileText, badge: approvalBadges['vendor_refund_request'] || 0 },
                     // v3.74.128 - vendor payment correction workflow entry. Mirrors customer-refund-requests
-                    // placement under Sales. Governance is page-key based: allowed_pages must include
-                    // 'vendor_payment_correction_requests' for the entry to show (owner+general_manager get
-                    // full board view; any company member can also reach the page to see their own requests).
-                    { label: (lang === 'en' ? 'Vendor Payment Corrections' : 'طلبات تصحيح مدفوعات الموردين'), href: `/vendor-payment-correction-requests${q}`, icon: RefreshCw, badge: approvalBadges['vendor_payment_correction_request'] || 0 },
+                    // placement under Sales.
+                    { label: (lang === 'en' ? 'Vendor Payment Corrections' : 'طلبات تصحيح مدفوعات الموردين'), href: `/vendor-payment-correction-requests${q}`, icon: RefreshCw, badge: approvalBadges['vendor_refund_request'] || 0 },
                   ]
                 },
                 {
@@ -1175,8 +1201,9 @@ export function Sidebar() {
                   key: 'manufacturing', icon: Factory, label: (lang === 'en' ? '🏭 Manufacturing' : '🏭 التصنيع'), badge: pendingApprovalsCount, items: [
                     // v3.74.265 — Hub link first so the user always has a "home" for the module
                     { label: (lang === 'en' ? '🗺️ Manufacturing Home' : '🗺️ صفحة التصنيع الرئيسية'), href: `/manufacturing${q}`, icon: Factory },
-                    // ── الموافقات (مَنقولة من top-level — كلها خاصة بالتَصنيع) ──
-                    { label: (lang === 'en' ? '🔔 Approval Inbox' : '🔔 صندوق الموافقات'), href: `/approvals${q}`, icon: CheckCircle, badge: pendingInboxCount },
+                    // v3.74.482 — The Approval Inbox was moved out of this
+                    // group (it now unifies EVERY workflow, not just
+                    // manufacturing). See the top-level "approvals" group.
                     // ── الهندسة والإعداد ──
                     { label: (lang === 'en' ? 'Engineering Setup' : 'الهندسة والإعداد'), href: `#`, icon: Factory },
                     { label: (lang === 'en' ? 'Work Centers' : 'مراكز العمل'), href: `/manufacturing/work-centers${q}`, icon: Cpu },

@@ -1,0 +1,41 @@
+-- v3.74.482 — Sidebar reorganization + role-permissions grid + purchases
+-- menu cleanup, after the /approvals unification (v3.74.472 → v3.74.481).
+--
+-- Owner asked three things:
+--   1. Why do the individual approval pages still live in the sidebar?
+--      Are there functions we did NOT migrate?
+--   2. The Approval Inbox is no longer manufacturing-specific — move
+--      it out of the Manufacturing group into its own tile right below
+--      Dashboard.
+--   3. When making any changes, don't forget the role-permissions page
+--      under Settings > Users AND the arrangement of the purchases /
+--      supplier menu.
+--
+-- Answers + changes:
+--
+-- (1) Keep the individual pages. They have real functionality outside
+--     approve/reject: create, edit, delete, list, filter, void, link,
+--     bulk actions, advanced modes (approve-with-shipping etc.). The
+--     /approvals inbox is the *decision surface* — one-click approve
+--     or reject, plus visibility. The individual pages are the *full
+--     CRUD surface*. Both stay.
+--
+-- (2) sidebar.tsx: the /approvals link is moved out of the Manufacturing
+--     group and gets its own top-level "🔔 Approvals" tile directly
+--     below Dashboard.
+--
+-- (3a) settings/users/page.tsx: the 'approvals' resource is moved out
+--      of the "🏭 التصنيع" group into its own "🔔 صندوق الموافقات"
+--      group, and the label is expanded to list every category the
+--      inbox now surfaces.
+--
+-- (3b) Purchases group in the sidebar was re-ordered to match the
+--      natural workflow (Suppliers → Purchase Requests → Purchase
+--      Orders → Bills → Returns → Vendor Credits → Corrections). Two
+--      bugs fixed on the way:
+--        - Purchase Requests was missing from the sidebar even though
+--          the page and badge existed. Added.
+--        - Purchase Orders was displaying the 'purchase_request'
+--          badge, double-counting pending PRs on POs. Cleared.
+--
+-- No DB changes. UI-only.

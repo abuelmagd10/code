@@ -1487,7 +1487,14 @@ export default function UsersSettingsPage() {
       label: '🏭 التصنيع',
       resources: [
         { value: 'manufacturing_boms', label: 'التصنيع (هياكل المواد، مسارات التشغيل، أوامر الإنتاج)' },
-        { value: 'approvals', label: 'صندوق الموافقات (إنتاج، BOM، صرف المواد)' },
+      ]
+    },
+    // v3.74.482 — Approvals is now cross-cutting (not manufacturing-only),
+    // so it gets its own top-level group in the role permissions grid.
+    approvals: {
+      label: '🔔 صندوق الموافقات',
+      resources: [
+        { value: 'approvals', label: 'صندوق الموافقات (كل الفئات: تصنيع، خصومات، دفعات موردين، مرتجعات مشتريات ومبيعات، استرداد، تصحيح، صرف، استلام، إهلاك، تحويلات، وطلبات متنوعة)' },
       ]
     },
     finance: {
