@@ -1,0 +1,32 @@
+-- v3.74.443 — self-service reactivation of a suspended company.
+--
+-- Before this release, the existing renew_seat_licenses RPC extended
+-- seat expiry but left companies.subscription_status untouched. Owners
+-- who paid via paymob to renew their seats stayed locked out because
+-- the company stayed at past_due / payment_failed.
+--
+-- Two mechanisms fix that:
+--
+-- (1) RPC reactivate_company_subscription(company_id, performed_by)
+--     - Requires at least one seat_license.expires_at > NOW().
+--     - Flips subscription_status to 'active', clears suspended_at
+--       and past_due_at, refreshes current_period_end to the furthest
+--       active-seat expiry, resets the three reminder_*_sent_at.
+--     - Reactivates company_seats.status.
+--     - Notifies owner + GM + admin with billing category.
+--
+-- (2) Trigger company_seat_license_auto_reactivate on
+--     company_seat_licenses AFTER UPDATE OF expires_at.
+--     - When a license's expires_at moves from <= NOW() to > NOW() and
+--       the company is past_due or payment_failed, PERFORMs the RPC.
+--     - Covers the paymob happy path: webhook calls renew_seat_licenses
+--       → trigger reactivates without any webhook code change.
+--
+-- API surface
+--   POST /api/billing/reactivate (owner-only) — manual invocation for
+--   edge cases: coupon grants that predate this release, direct DB
+--   fixes, admin support actions.
+--
+-- Baseline (Section AP) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

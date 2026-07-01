@@ -64,6 +64,45 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AP. Self-service reactivation (v3.74.443)
+
+### الفجوة
+
+`renew_seat_licenses` كان بيمدد صلاحية المقاعد لكن ما بيلمسش
+`companies.subscription_status`. المالك اللى دفع لتجديد مقاعده كان
+يفضل معلّق (past_due أو payment_failed) بدون طريقة يرجع بها للحالة
+النشطة إلا بتدخل يدوى من الدعم.
+
+### الحل
+
+**RPC `reactivate_company_subscription(company_id, performed_by)`**:
+- يشترط مقعد فعّال واحد على الأقل (expires_at > NOW())
+- يحوّل `subscription_status='active'`، يمسح `suspended_at` و
+  `past_due_at`، يمدّد `current_period_end` لأبعد expires_at بين
+  المقاعد الفعّالة
+- يعيد ضبط الـ `reminder_*_sent_at` عشان الدورة الجديدة تبدأ نظيفة
+- يعيد `company_seats.status='active'`
+- يبعت إشعار للمالك بـ category=billing
+
+**Trigger `company_seat_license_auto_reactivate`** على
+`company_seat_licenses` AFTER UPDATE OF expires_at:
+- لما expires_at ينتقل من الماضى للمستقبل والشركة past_due/payment_failed
+  → ينادى الـ RPC تلقائياً
+- **بهذا الشكل paymob webhook يشتغل بدون تعديل**: webhook يستدعى
+  renew_seat_licenses → الـ trigger يفعّل الشركة بدون كود إضافى
+
+**API endpoint `POST /api/billing/reactivate`** (owner only):
+Manual fallback للحالات الاستثنائية (coupon grants قبل الإصدار،
+تدخلات DB مباشرة، إجراءات الدعم).
+
+### Section AP baseline
+- function `reactivate_company_subscription` موجودة ومحتوية على
+  فحص `no_active_seats`
+- function `company_seat_license_auto_reactivate_trg` موجودة
+- trigger `company_seat_license_auto_reactivate` مفعّل على الجدول
+- `PERFORM public.assert_baseline_v3_74_443_check()` مضاف لـ
+  assert_baseline
+
 ## AO. Grace period + auto reminders للاشتراك (v3.74.442)
 
 ### الفجوة
