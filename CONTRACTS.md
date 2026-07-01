@@ -64,6 +64,31 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BR. سجل الاعتمادات يعرض DiffCard كامل (v3.74.471)
+
+### المطلوب
+
+المالك: "اريد ان يعرض كما كان معروض عند طلب الاعتماد بالتعديلات
+التى تمت من منذ اول اعتماد على امر الشراء الى اخر تعديل".
+
+Badge + delta السابق (v3.74.470) مش كفاية. المالك يريد الـ DiffCard
+الكامل عشان يعرف دورة الفاتورة.
+
+### الحل
+
+**UnifiedHistoryEntry** اتوسع بحقلين:
+- `raw_current`: صف الـ discount_approval الحالى مع snapshots
+- `raw_prior`: الـ approval السابق (لو موجود)
+
+**UnifiedHistoryCard** ترسم `AmendmentDiffCard` inline لأى entry فيه
+`is_amendment=true`، يعرض نفس ما شافه المالك عند الاعتماد:
+- Banner الرفض السابق (لو ينطبق)
+- جدول قبل/بعد لكل الحقول
+- البنود المضافة/المحذوفة/المعدلة بالتفصيل
+
+### Section BR baseline
+- UI-only
+
 ## BQ. سجل الاعتمادات يعرض سياق التعديل (v3.74.470)
 
 ### الفجوة

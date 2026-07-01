@@ -1,0 +1,21 @@
+-- v3.74.471 — Approvals history entries for amendment discount
+-- approvals now embed the full AmendmentDiffCard, so opening the
+-- history shows exactly what the owner saw when approving.
+--
+-- Owner asked: I want the history entry to show what was shown at
+-- approval time, with the modifications from the original PO
+-- approval to the last edit — so I know the bill's full cycle.
+--
+-- UI-only. No DB changes.
+--
+-- UnifiedHistoryEntry carries the raw current + prior approval rows
+-- (including snapshots). UnifiedHistoryCard renders AmendmentDiffCard
+-- inline for is_amendment=true entries.
+--
+-- The DiffCard already shows:
+--   - rejection banner from prior (if superseded a rejected row)
+--   - discount value/type, subtotal, shipping, shipping tax,
+--     tax_amount, adjustment, total (before / after)
+--   - discount_position, tax_inclusive, party (when they changed)
+--   - added / removed / modified line items with full detail
+--     (item_type, name, qty, price, discount %, tax %, total)

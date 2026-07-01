@@ -526,12 +526,18 @@ interface UnifiedHistoryEntry {
   is_amendment?: boolean
   amendment_delta?: string | null   // e.g. "8.53 → 8.73 (+0.20)"
   prior_status?: string | null      // "rejected" / "approved" (what was superseded)
+  // v3.74.471 — full snapshot data so history can render the same
+  // diff card the owner saw when approving.
+  raw_current?: PendingDiscountApproval | null
+  raw_prior?: NonNullable<PendingDiscountApproval["prior_approval"]> | null
 }
 
 type UnifiedHistoryCtx = {
   appLang: "ar" | "en"
   t: (ar: string, en: string) => string
   fmtDate: (s: string) => string
+  // v3.74.471 — used by the embedded AmendmentDiffCard on history rows
+  fmtMoney: (n: number) => string
 }
 
 const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHistoryCtx }) => {
@@ -605,6 +611,31 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
                 <p className="text-xs mt-1 p-2 rounded bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700">
                   📝 {h.decision_note}
                 </p>
+              )}
+              {/* v3.74.471 — same DiffCard as the pending inbox, so
+                  the owner sees the full "before/after" they approved.
+                  Renders only for amendment entries that have snapshots. */}
+              {h.is_amendment && h.raw_current && h.raw_prior && (
+                <AmendmentDiffCard
+                  current={h.raw_current}
+                  prior={h.raw_prior}
+                  ctx={{
+                    appLang: ctx.appLang,
+                    t: ctx.t,
+                    fmtMoney: ctx.fmtMoney,
+                    fmtDate: ctx.fmtDate,
+                    docTypeLabel: () => "",
+                    docHref: () => "",
+                    rejectId: null,
+                    rejectReason: "",
+                    setRejectReason: () => {},
+                    setRejectId: () => {},
+                    setRejectType: () => {},
+                    runningId: null,
+                    handleApprove: () => {},
+                    handleReject: () => {},
+                  } as any}
+                />
               )}
             </div>
           </div>
@@ -879,6 +910,34 @@ function ApprovalsContent() {
               is_amendment: isAmend,
               amendment_delta: delta,
               prior_status: d.prior_approval?.status ?? null,
+              // v3.74.471 — pass snapshots through so UnifiedHistoryCard
+              // can render the same diff card as the pending inbox.
+              raw_current: isAmend ? {
+                id: d.id,
+                document_type: d.document_type,
+                document_id: d.document_id,
+                document_no: d.document_no ?? null,
+                discount_value: Number(d.discount_value ?? 0),
+                discount_type: d.discount_type,
+                document_total: d.document_total != null ? Number(d.document_total) : null,
+                party_name: d.party_name ?? null,
+                reason: d.reason ?? null,
+                status: d.status,
+                requested_by: d.requested_by,
+                requested_at: d.requested_at,
+                requested_by_email: d.requested_by_email ?? null,
+                type: "discount_approval",
+                items_snapshot: Array.isArray(d.items_snapshot) ? d.items_snapshot : null,
+                shipping_snapshot: d.shipping_snapshot != null ? Number(d.shipping_snapshot) : null,
+                adjustment_snapshot: d.adjustment_snapshot != null ? Number(d.adjustment_snapshot) : null,
+                tax_amount_snapshot: d.tax_amount_snapshot != null ? Number(d.tax_amount_snapshot) : null,
+                subtotal_snapshot: d.subtotal_snapshot != null ? Number(d.subtotal_snapshot) : null,
+                shipping_tax_rate_snapshot: d.shipping_tax_rate_snapshot != null ? Number(d.shipping_tax_rate_snapshot) : null,
+                discount_position_snapshot: d.discount_position_snapshot ?? null,
+                tax_inclusive_snapshot: d.tax_inclusive_snapshot ?? null,
+                supplier_name_snapshot: d.supplier_name_snapshot ?? null,
+              } as PendingDiscountApproval : null,
+              raw_prior: (isAmend && d.prior_approval) ? d.prior_approval : null,
             })
           }
         }
@@ -1543,7 +1602,7 @@ function ApprovalsContent() {
                     </Card>
                   )
                 }
-                return filtered.map(h => <UnifiedHistoryCard key={h.id} h={h} ctx={{ appLang, t, fmtDate }} />)
+                return filtered.map(h => <UnifiedHistoryCard key={h.id} h={h} ctx={{ appLang, t, fmtDate, fmtMoney }} />)
               })()}
             </div>
           ) : totalPending === 0 ? (
