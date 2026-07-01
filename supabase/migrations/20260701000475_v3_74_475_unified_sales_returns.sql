@@ -1,0 +1,24 @@
+-- v3.74.475 — Sales return requests (dual-stage) join the unified
+-- approvals inbox with their history and sidebar coverage.
+--
+-- UI-only, additive. Existing /sales-return-requests page still works.
+--
+-- Loader reads sales_return_requests where status IN ('pending',
+-- 'pending_approval_level_1', 'pending_warehouse_approval'). The card
+-- shows a stage badge and calls one of four PATCH endpoints:
+--   /api/sales-return-requests/[id]/approve            (management)
+--   /api/sales-return-requests/[id]/reject             (management)
+--   /api/sales-return-requests/[id]/warehouse-approve  (warehouse)
+--   /api/sales-return-requests/[id]/warehouse-reject   (warehouse)
+--
+-- Governance preserved end to end: each endpoint runs secureApiRequest
+-- (permission=invoices:write) + role check against
+-- SALES_RETURN_LEVEL1_APPROVER_ROLES /
+-- SALES_RETURN_WAREHOUSE_APPROVER_ROLES + branch/warehouse gate.
+-- Notifications sent via notifySalesReturn* helpers.
+--
+-- Sidebar: pendingInboxCount rolls up sales_return_request_l1 +
+-- sales_return_request_warehouse.
+--
+-- History: sales_return_request category with decided rows +
+-- filter button.

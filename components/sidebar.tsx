@@ -186,12 +186,15 @@ export function Sidebar() {
   // /approvals.
   //   v3.74.472 → supplier payments (badge key: payment_approval)
   //   v3.74.473 → purchase returns admin stage (purchase_return_admin)
+  //   v3.74.475 → sales return requests l1 + warehouse
   const pendingInboxCount =
     pendingApprovalsCount
     + sumBadges(approvalBadges, [
         "discount_approval",
         "payment_approval",
         "purchase_return_admin",
+        "sales_return_request_l1",
+        "sales_return_request_warehouse",
       ])
 
 

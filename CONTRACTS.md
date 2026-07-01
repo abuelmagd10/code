@@ -64,6 +64,20 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BV. صندوق موحّد — مرتجعات المبيعات (dual-stage) (v3.74.475)
+
+Tab جديد "مرتجعات مبيعات" يعرض `sales_return_requests` بحالات
+`pending`, `pending_approval_level_1`, `pending_warehouse_approval`.
+الكارت يعرض stage badge (اعتماد إدارى / اعتماد مخزن) ويوجه للـ
+endpoint الصحيح:
+- `/approve` + `/reject` للمستوى الأول (إدارى)
+- `/warehouse-approve` + `/warehouse-reject` للمخزن
+
+الحوكمة عبر `secureApiRequest` (permission=`invoices:write`) +
+`SALES_RETURN_LEVEL1_APPROVER_ROLES` /
+`SALES_RETURN_WAREHOUSE_APPROVER_ROLES` + branch/warehouse gate.
+سايدبار + سجل بيشملوا الاتنين.
+
 ## BU. سايدبار + سجل يشمل الفئات الجديدة (v3.74.474)
 
 - **سايدبار**: `pendingInboxCount` يشمل `payment_approval` +

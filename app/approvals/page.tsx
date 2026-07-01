@@ -65,6 +65,22 @@ interface PendingSupplierPayment {
   type: "supplier_payment"
 }
 
+// v3.74.475 — sales return request (dual-stage: management + warehouse).
+// Uses /api/sales-return-requests/[id]/{approve|reject|warehouse-approve|
+// warehouse-reject}.
+interface PendingSalesReturnRequest {
+  id: string
+  customer_name: string | null
+  invoice_no: string | null
+  total: number
+  status: string   // 'pending_approval_level_1' or 'pending_warehouse_approval'
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  stage: "level_1" | "warehouse"
+  type: "sales_return_request"
+}
+
 // v3.74.473 — purchase return approval. Uses the existing
 // /api/purchase-returns/[id]/approve endpoint so
 // PurchaseReturnCommandService and its atomic RPC preserve full
@@ -156,6 +172,7 @@ type PendingItem =
   | PendingDiscountApproval
   | PendingSupplierPayment
   | PendingPurchaseReturn
+  | PendingSalesReturnRequest
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -545,7 +562,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -598,6 +615,7 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "production_order" ? t("أمر إنتاج", "Production Order") :
     h.category === "supplier_payment" ? t("دفعة مورد", "Supplier Payment") :
     h.category === "purchase_return"  ? t("مرتجع مشتريات", "Purchase Return") :
+    h.category === "sales_return_request" ? t("مرتجع مبيعات", "Sales Return") :
     h.category === "product_receive"  ? t("استلام منتج", "Product Receive") :
                                          h.category
   const CategoryIcon =
@@ -608,6 +626,7 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "product_receive"  ? CheckCircle2 :
     h.category === "supplier_payment" ? Wallet :
     h.category === "purchase_return"  ? RefreshCw :
+    h.category === "sales_return_request" ? RefreshCw :
                                          Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
@@ -711,14 +730,15 @@ function ApprovalsContent() {
   const [discountApprovals, setDiscountApprovals] = useState<PendingDiscountApproval[]>([])
   const [supplierPayments, setSupplierPayments] = useState<PendingSupplierPayment[]>([])
   const [purchaseReturns, setPurchaseReturns] = useState<PendingPurchaseReturn[]>([])
+  const [salesReturnRequests, setSalesReturnRequests] = useState<PendingSalesReturnRequest[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -958,6 +978,40 @@ function ApprovalsContent() {
         })))
       } catch {
         setPurchaseReturns([])
+      }
+
+      // v3.74.475 — sales return requests (dual-stage: management +
+      // warehouse). Governance: /api/sales-return-requests/[id]/*
+      // enforces role + branch/warehouse gate.
+      try {
+        const { data: srs } = await supabase
+          .from("sales_return_requests")
+          .select(`
+            id, status, total_return_amount, created_at,
+            invoice_id, customer_id, branch_id, warehouse_id,
+            customers(name),
+            invoices(invoice_number),
+            branches(name),
+            warehouses(name)
+          `)
+          .eq("company_id", cid)
+          .in("status", ["pending", "pending_approval_level_1", "pending_warehouse_approval"])
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setSalesReturnRequests((srs || []).map((s: any) => ({
+          id: s.id,
+          customer_name: s.customers?.name ?? null,
+          invoice_no: s.invoices?.invoice_number ?? null,
+          total: Number(s.total_return_amount || 0),
+          status: s.status,
+          branch_name: s.branches?.name ?? null,
+          warehouse_name: s.warehouses?.name ?? null,
+          requested_at: s.created_at,
+          stage: s.status === "pending_warehouse_approval" ? ("warehouse" as const) : ("level_1" as const),
+          type: "sales_return_request" as const,
+        })))
+      } catch {
+        setSalesReturnRequests([])
       }
     } finally {
       setIsLoading(false)
@@ -1261,6 +1315,42 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // v3.74.475 — sales return requests history (decided rows).
+      try {
+        const { data: srs } = await supabase
+          .from("sales_return_requests")
+          .select(`
+            id, status, total_return_amount, created_at,
+            level_1_reviewed_at, warehouse_reviewed_at,
+            level_1_rejection_reason, warehouse_rejection_reason,
+            executed_at, rejection_reason,
+            customer_id, customers(name), invoice_id, invoices(invoice_number)
+          `)
+          .eq("company_id", cid)
+          .in("status", ["approved", "rejected", "executed", "completed"])
+          .order("created_at", { ascending: false })
+          .limit(100)
+        for (const r of (srs || []) as any[]) {
+          const status = r.status === "rejected" ? "rejected" : "approved"
+          const decided_at = r.executed_at ?? r.warehouse_reviewed_at ?? r.level_1_reviewed_at ?? null
+          const note = r.rejection_reason ?? r.warehouse_rejection_reason ?? r.level_1_rejection_reason ?? null
+          merged.push({
+            id: `sret-${r.id}`,
+            category: "sales_return_request",
+            doc_label: `مرتجع مبيعات · ${r.id.slice(0, 8)}`,
+            doc_href: `/sales-return-requests/${r.id}`,
+            party_label: r.customers?.name ?? null,
+            value_label: `${Number(r.total_return_amount).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: note,
+          })
+        }
+      } catch { /* keep going */ }
+
       // v3.74.474 — purchase returns history (decided rows).
       try {
         const { data: prs } = await supabase
@@ -1389,7 +1479,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -1740,6 +1830,10 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "pret" ? "default" : "outline"} onClick={() => setActiveTab("pret")} className="gap-1">
               <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مشتريات", "Purchase Returns")} ({purchaseReturns.length})
             </Button>
+            {/* v3.74.475 — sales return requests (dual-stage) */}
+            <Button size="sm" variant={activeTab === "sret" ? "default" : "outline"} onClick={() => setActiveTab("sret")} className="gap-1">
+              <RefreshCw className="w-3.5 h-3.5" />{t("مرتجعات مبيعات", "Sales Returns")} ({salesReturnRequests.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -1789,6 +1883,10 @@ function ApprovalsContent() {
                 </Button>
                 <Button size="sm" variant={historyFilter === "purchase_return" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("purchase_return")}>
                   <RefreshCw className="w-3 h-3" />{t("مرتجعات مشتريات", "Purchase Returns")} ({history.filter(h => h.category === "purchase_return").length})
+                </Button>
+                {/* v3.74.475 */}
+                <Button size="sm" variant={historyFilter === "sales_return_request" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("sales_return_request")}>
+                  <RefreshCw className="w-3 h-3" />{t("مرتجعات مبيعات", "Sales Returns")} ({history.filter(h => h.category === "sales_return_request").length})
                 </Button>
               </div>
               {(() => {
@@ -2004,6 +2102,145 @@ function ApprovalsContent() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              )}
+
+              {/* v3.74.475 — Sales return requests (dual-stage). */}
+              {(activeTab === "all" || activeTab === "sret") && salesReturnRequests.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <RefreshCw className="w-4 h-4" />{t("اعتمادات مرتجعات المبيعات", "Sales Return Approvals")}
+                  </h2>
+                  {salesReturnRequests.map(s => {
+                    const isWh = s.stage === "warehouse"
+                    const approveUrl = isWh
+                      ? `/api/sales-return-requests/${encodeURIComponent(s.id)}/warehouse-approve`
+                      : `/api/sales-return-requests/${encodeURIComponent(s.id)}/approve`
+                    const rejectUrl = isWh
+                      ? `/api/sales-return-requests/${encodeURIComponent(s.id)}/warehouse-reject`
+                      : `/api/sales-return-requests/${encodeURIComponent(s.id)}/reject`
+                    return (
+                      <Card key={s.id} className="border-l-4 border-l-pink-500">
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 bg-pink-100 dark:bg-pink-900/30 rounded-lg shrink-0">
+                                <RefreshCw className="w-4 h-4 text-pink-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">
+                                  {t("طلب مرتجع مبيعات", "Sales Return Request")}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  👤 {s.customer_name ?? "—"}
+                                  {s.invoice_no && <> · 🧾 {t("فاتورة", "Invoice")}: {s.invoice_no}</>}
+                                </p>
+                                <p className="text-xs mt-1">
+                                  <span className="font-semibold text-pink-700 dark:text-pink-300">
+                                    {t("قيمة المرتجع", "Return amount")}: {fmtMoney(s.total)}
+                                  </span>
+                                </p>
+                                {s.branch_name && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    🏢 {s.branch_name}{s.warehouse_name && <> · 🏬 {s.warehouse_name}</>}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  📅 {fmtDate(s.requested_at)}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className={isWh
+                                ? "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300 text-xs"
+                                : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs"}>
+                                <Clock className="w-3 h-3 me-1" />
+                                {isWh ? t("اعتماد المخزن", "Warehouse stage") : t("اعتماد إدارى", "Management stage")}
+                              </Badge>
+                              <Link href={`/sales-return-requests/${s.id}`} className="text-xs text-pink-600 hover:underline">
+                                {t("عرض المستند", "View document")}
+                              </Link>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                              disabled={runningId === s.id}
+                              onClick={async () => {
+                                try {
+                                  setRunningId(s.id)
+                                  const res = await fetch(approveUrl, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({}),
+                                  })
+                                  const j = await res.json().catch(() => ({}))
+                                  if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Approve failed' : 'تعذر الاعتماد'))
+                                  toast({ title: t("تم الاعتماد", "Approved"), description: t("تم اعتماد مرتجع المبيعات", "Sales return approved") })
+                                  await load()
+                                } catch (e: any) {
+                                  toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                } finally {
+                                  setRunningId(null)
+                                }
+                              }}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isWh ? t("اعتماد المخزن", "Approve (Warehouse)") : t("اعتماد إدارى", "Approve (Management)")}
+                            </Button>
+                            <Button
+                              size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                              disabled={runningId === s.id}
+                              onClick={() => { setRejectId(s.id); setRejectType("sales_return_request"); setRejectReason("") }}
+                            >
+                              <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                            </Button>
+                          </div>
+                          {rejectId === s.id && (
+                            <div className="mt-3 space-y-2">
+                              <textarea
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                placeholder={t("سبب الرفض (٥ أحرف على الأقل)...", "Rejection reason (min 5 chars)...")}
+                                rows={2}
+                                className="w-full text-sm p-2 border rounded"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm" variant="destructive"
+                                  disabled={rejectReason.trim().length < 5 || runningId === s.id}
+                                  onClick={async () => {
+                                    try {
+                                      setRunningId(s.id)
+                                      const res = await fetch(rejectUrl, {
+                                        method: "PATCH",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ rejection_reason: rejectReason }),
+                                      })
+                                      const j = await res.json().catch(() => ({}))
+                                      if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                      toast({ title: t("تم الرفض", "Rejected"), description: t("تم رفض المرتجع", "Return rejected") })
+                                      setRejectId(null); setRejectReason("")
+                                      await load()
+                                    } catch (e: any) {
+                                      toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                    } finally {
+                                      setRunningId(null)
+                                    }
+                                  }}
+                                >
+                                  {t("تأكيد الرفض", "Confirm Reject")}
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                                  {t("إلغاء", "Cancel")}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               )}
 
