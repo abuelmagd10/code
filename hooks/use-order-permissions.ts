@@ -35,6 +35,22 @@ export const useOrderPermissions = () => {
         }
       }
 
+      // v3.74.448 — نفس منطق الـ PO: SO فى pending_approval مع خصم مرفوض
+      // يتعامل كـ rejected لأغراض التعديل.
+      if (order.status === 'pending_approval') {
+        const { data: latestDiscount } = await supabase
+          .from('discount_approvals')
+          .select('status')
+          .eq('document_type', 'sales_order')
+          .eq('document_id', orderId)
+          .order('requested_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (latestDiscount?.status === 'rejected') {
+          (order as any).status = 'rejected'
+        }
+      }
+
       // جلب الفاتورة المرتبطة إذا وجدت
       let invoice: any = null
       let totalPaid = 0
@@ -155,6 +171,23 @@ export const useOrderPermissions = () => {
           reason: 'Order not found',
           status: 'unknown',
           syncDirection: 'locked'
+        }
+      }
+
+      // v3.74.448 — إذا الـ PO فى pending_approval لكن الخصم مرفوض،
+      // نعامل حالته كـ 'rejected' لأغراض التعديل. المنشئ يحتاج يعدّل
+      // ويعيد التقديم بدل ما يقعد يستنى.
+      if (order.status === 'pending_approval') {
+        const { data: latestDiscount } = await supabase
+          .from('discount_approvals')
+          .select('status')
+          .eq('document_type', 'purchase_order')
+          .eq('document_id', orderId)
+          .order('requested_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (latestDiscount?.status === 'rejected') {
+          (order as any).status = 'rejected'
         }
       }
 

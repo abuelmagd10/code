@@ -64,6 +64,42 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AU. HOTFIX تعديل PO/SO بعد رفض الخصم (v3.74.448)
+
+### الفجوة
+
+المالك اكتشف السيناريو أثناء الاختبار: مسئول المشتريات أنشأ PO بخصم →
+بعت للاعتماد → المالك رفض الخصم → إشعار للمنشئ "عدّل المستند لفتح
+دورة موافقة جديدة" → لكن لما ضغط "تعديل أمر الشراء"، الصفحة ظهرت
+**"وضع القراءة فقط"** ومفيش تعديل ممكن.
+
+**السبب**: الـ hook `checkPurchaseOrderPermissions` كان بيسمح
+بالتعديل بس لما `status` هو `'draft'` أو `'rejected'`. لكن الـ PO
+عنده status = `'pending_approval'` (الخصم اللى مرفوض، مش الـ PO
+نفسه). فمسئول المشتريات معلّق فى halt state — لا يقدر يعدّل ولا يقدر
+يعيد التقديم.
+
+### الحل
+
+`checkPurchaseOrderPermissions` و `checkSalesOrderPermissions` بقوا
+يفحصوا آخر `discount_approval` للمستند لما الحالة `pending_approval`.
+لو آخر قرار خصم = `rejected`، الـ hook يعامل المستند كـ `rejected`
+لأغراض التعديل — يسمح للمنشئ يعدّل ويحفظ.
+
+عند الحفظ:
+- `po_evaluate_discount_approval` (v3.74.421) بيفتح دورة اعتماد خصم
+  جديدة تلقائياً
+- المالك يراجع الخصم الجديد → يعتمد → يقدر يعتمد الـ PO كامل
+
+### لماذا فى الـ hook فقط (وليس DB)
+
+الـ DB triggers من v3.74.425 (`po_protect_approved`) ما بترفضش تعديل
+`pending_approval` — بس تحمى `approved` و ما فوق. فالمشكلة كانت UI-only.
+الـ hook هى source of truth للـ `canEdit` state.
+
+### Section AU baseline
+لا فحوصات DB (تعديل UI فقط). التحقق يحصل يدوياً فى الاختبار.
+
 ## AT. Sync member.seat_number مع seat_license.assigned_user_id (v3.74.447)
 
 ### الفجوة
