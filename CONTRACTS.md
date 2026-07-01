@@ -64,6 +64,36 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BF. sync_bill/invoice ما يعدلش totals على PO/SO المعتمد (v3.74.459)
+
+### الفجوة
+
+المحاسب حاول يعدّل BILL-0001 draft (اختبار v3.74.458). الحفظ رفض بـ:
+> "لا يمكن تعديل الخصم أو الإجماليات على أمر شراء معتمد. اعمل void
+> للفاتورة المرتبطة لإعادة فتح الدورة."
+
+**السبب**: `sync_bill_to_purchase_order_safe` كان بيحاول يـ UPDATE على
+`purchase_orders.subtotal / tax_amount / total` كل ما الفاتورة تتعدل.
+الـ `po_protect_approved_trg` (v3.74.425) رفض التعديل — وده الصح.
+
+### مبدأ التصميم
+
+الـ PO/SO totals هى baseline اعتمدها المالك. تعديلات الفاتورة/الفاتورة
+مبيعات ما تنقلش للـ parent. لو الفاتورة نفسها اتعدلت، v3.74.458 بيلغى
+approval الفاتورة ويفتح دورة جديدة. الـ PO يفضل زى ما اعتمده المالك.
+
+### الحل
+
+`sync_bill_to_purchase_order_safe` + `sync_invoice_to_sales_order_safe`
+اتعادلوا ليعكسوا فقط:
+- `status` (مسار الفوترة/الدفع)
+- `returned_amount` / `return_status` (من المرتجعات)
+
+**اتشال**: subtotal + tax_amount + total.
+
+### Section BF baseline
+- 2 function rewrites
+
 ## BE. حماية شاملة لتعديل الفاتورة draft — أى تعديل يفتح دورة اعتماد (v3.74.458)
 
 ### الفجوة الأوسع

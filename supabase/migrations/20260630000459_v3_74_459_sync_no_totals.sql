@@ -1,0 +1,22 @@
+-- v3.74.459 — sync_bill_to_purchase_order_safe and
+-- sync_invoice_to_sales_order_safe no longer mirror totals from the
+-- child document back to the parent.
+--
+-- Symptom: accountant edited a draft bill (testing v3.74.458 amendment
+-- guard) and the save failed with:
+--   "لا يمكن تعديل الخصم أو الإجماليات على أمر شراء معتمد.
+--    اعمل void للفاتورة المرتبطة لإعادة فتح الدورة."
+-- The sync trigger tried to write NEW.subtotal / tax_amount / total
+-- onto the parent PO, which po_protect_approved_trg (v3.74.425) rightly
+-- refuses on an approved PO.
+--
+-- Architectural fix: the parent PO / SO's financial totals are the
+-- baseline the owner approved. Child-document edits must not propagate
+-- back. Both sync functions now mirror only:
+--   - status (billing / shipping progress)
+--   - returned_amount / return_status (from returns lifecycle)
+-- The bill/invoice can still amend its own totals — the v3.74.458
+-- amendment guard cancels the child-level discount_approval and
+-- opens a fresh cycle. The parent stays untouched.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
