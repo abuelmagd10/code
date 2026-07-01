@@ -1,0 +1,35 @@
+-- v3.74.452 — auto-archive stale approval notifications so the inbox
+-- shows one actionable card per document per approver.
+--
+-- Owner saw 10 stacked "طلب اعتماد" cards for the same PO after the
+-- purchasing officer had edited it several times. Every edit opened a
+-- new discount_approval and a new re-approval request; the old cards
+-- were left at status='unread' and clogged the inbox.
+--
+-- Two triggers + one BEFORE-DELETE trigger fix the mess:
+--
+-- (A) discount_approval_archive_notifications
+--     AFTER UPDATE OF status on discount_approvals. When a discount
+--     leaves 'pending' (to approved/rejected/cancelled), archive
+--     every unread notification with reference_type='approval_request'
+--     and reference_id = this discount id.
+--
+-- (B) notification_supersede_older_approval
+--     AFTER INSERT on notifications. When a new approvals-category
+--     notification lands for a (reference_type, reference_id,
+--     assigned_to_user) tuple, archive every older unread one for
+--     the same tuple. Broadcast notifications (assigned_to_user IS
+--     NULL) are handled by the IS NOT DISTINCT FROM null-safe check.
+--
+-- (C) discount_approval_cascade_notifications
+--     BEFORE DELETE on discount_approvals. When a discount_approval
+--     is deleted (cascade cleanup from PO delete, admin action, etc.)
+--     drop every notification that points at it — no more orphans.
+--
+-- One-shot UPDATEs archive already-stacked stale notifications and
+-- DELETEs the orphans in the test company. The order matters: kill
+-- orphan notifications first, then the trigger prevents fresh ones.
+--
+-- Baseline (Section AY) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

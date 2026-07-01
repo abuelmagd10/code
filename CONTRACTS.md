@@ -64,6 +64,52 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AY. أرشفة إشعارات الاعتماد المتراكمة (v3.74.452)
+
+### الحدث
+
+المالك شاف ١٠ إشعارات "طلب اعتماد" لنفس PO. مسئول المشتريات كان
+بيعدّل الـ PO عدة مرات، كل تعديل بيفتح دورة خصم جديدة + بيبعت
+notification لإعادة الاعتماد. الإشعارات القديمة كانت بتفضل عند
+`status='unread'` وتراكمت.
+
+### الحل — ٣ triggers
+
+**(A) `discount_approval_archive_notifications`** على `discount_approvals`
+AFTER UPDATE OF status:
+- لما discount_approval يخرج من pending (لـ approved/rejected/cancelled)
+- كل الإشعارات الخاصة بيه (reference_type='approval_request') بتتحول
+  لـ status='archived'
+
+**(B) `notification_supersede_older_approval`** على `notifications`
+AFTER INSERT:
+- لما إشعار approvals-category جديد يوصل لـ tuple:
+  `(company_id, reference_type, reference_id, assigned_to_user)`
+- كل إشعار أقدم (unread) بنفس الـ tuple يتحول لـ archived
+- Broadcasts (assigned_to_user NULL) متعامل معاها بـ IS NOT DISTINCT FROM
+
+**(C) `discount_approval_cascade_notifications`** على
+`discount_approvals` BEFORE DELETE:
+- لو discount_approval اتحذف (cascade من PO delete، admin، ...)،
+  الإشعارات المرتبطة بتنمحى
+- يمنع الأيتام (اللى ظهرت مع v3.74.451 لسبب ترتيب DELETE)
+
+### One-shot cleanup
+
+- أرشفت الإشعارات القديمة لـ discount_approvals non-pending
+- أرشفت الـ stacked approval notifications (احتفظت بأحدث واحد لكل tuple)
+- مسحت الأيتام (notifications بدون discount_approval صالح)
+
+### النتيجة العملية
+
+المالك دلوقتى بيشوف **إشعار واحد فقط** لكل PO يحتاج اتخاذ قرار.
+لا تراكم لا حيرة.
+
+### Section AY baseline
+- functions الـ 3 موجودين
+- triggers الـ 3 مفعّلين على `discount_approvals` (2) و `notifications` (1)
+- `PERFORM public.assert_baseline_v3_74_452_check()` مضاف لـ assert_baseline
+
 ## AX. منع حذف المستندات الحركية المُعتمَدة + cleanup الأيتام (v3.74.451)
 
 ### الحدث
