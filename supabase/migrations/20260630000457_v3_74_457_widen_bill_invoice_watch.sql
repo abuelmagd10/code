@@ -1,0 +1,14 @@
+-- v3.74.457 — widen bill_request_discount_approval_trg and
+-- inv_request_discount_approval_trg change detection to include
+-- discount_position and tax_inclusive.
+--
+-- Before: the "no change" shortcut inside both triggers compared only
+-- discount_value and discount_type. An accountant editing a draft bill
+-- could flip "شاملة الضريبة" or move the discount from before-tax to
+-- after-tax without any approval cycle firing. Same on the sales side.
+--
+-- After: the shortcut also compares discount_position and tax_inclusive.
+-- Any change to either falls through and opens a new pending
+-- discount_approval for the bill or invoice.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

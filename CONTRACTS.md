@@ -64,6 +64,68 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BE. حماية شاملة لتعديل الفاتورة draft — أى تعديل يفتح دورة اعتماد (v3.74.458)
+
+### الفجوة الأوسع
+
+بعد v3.74.457 (position + tax_inclusive)، لسه فيه ثغرات كتير:
+| الحقل | كان محمى؟ |
+| --- | --- |
+| shipping | ❌ |
+| shipping_tax_rate | ❌ |
+| adjustment | ❌ |
+| tax_amount | ❌ |
+| subtotal | ❌ |
+| total_amount | ❌ |
+| currency_code / exchange_rate | ❌ |
+| supplier_id / customer_id | ❌ |
+| bill_items / invoice_items | ❌ |
+
+المحاسب يقدر يفتح فاتورة draft مربوطة بـ PO معتمد، يغيّر الشحن من
+0 لـ 500، يحفظ، ويرحّل — بدون اعتماد. الإجمالى النهائى مختلف عن اللى
+المالك وافق عليه.
+
+### الحل
+
+**4 triggers جديدة**:
+
+1. `bill_amendment_reset_approval` (BEFORE UPDATE bills)
+   - يتحقق من الـ 9 حقول المذكورة أعلاه
+   - أى change → يلغى الـ discount_approval الحالى (approved أو pending)
+2. `invoice_amendment_reset_approval` (BEFORE UPDATE invoices) — نفس
+   الشى للمبيعات
+3. `bill_item_amendment_reset_approval` (AFTER INS/UPD/DEL bill_items)
+   - أى تعديل بند فى bill draft → إلغاء approval
+4. `invoice_item_amendment_reset_approval` (AFTER INS/UPD/DEL invoice_items)
+
+بعد الـ cancel، الـ `bill_request_discount_approval_trg` (v3.74.424 +
+v3.74.457) بيفتح approval جديد pending تلقائياً على الـ save التالى.
+الـ post-gate (v3.74.424) بيرفض الترحيل لحد ما الجديد يعتمد.
+
+### skip flag
+
+الـ auto-create path من `approve_purchase_order_atomic` بيسِت
+`app.skip_discount_approval='po'` فترة الإنشاء. كل الـ 4 triggers
+بتحترم الـ flag، فالإنشاء التلقائى مش هيتأثر.
+
+### Section BE baseline
+- 4 functions + 4 triggers على bills/invoices/bill_items/invoice_items
+
+## BD. توسيع change detection لـ discount_position + tax_inclusive (v3.74.457)
+
+### الفجوة
+
+المحاسب يقدر يفتح فاتورة draft ويقلب "شاملة الضريبة" أو ينقل الخصم
+من قبل الضريبة لبعدها بدون دورة اعتماد. الـ "no change" shortcut فى
+`bill_request_discount_approval_trg` كان يقارن `discount_value` و
+`discount_type` فقط.
+
+### الحل
+
+الـ shortcut اتوسع ليقارن `discount_position` و `tax_inclusive` كمان.
+أى تعديل فى الاتنين يخرج من الـ shortcut ويفتح دورة اعتماد جديدة. نفس
+الشى فى `inv_request_discount_approval_trg` للمبيعات.
+
 ## BC. Bill/Invoice discount API يفحص linked PO/SO approval (v3.74.456)
 
 ### الفجوة

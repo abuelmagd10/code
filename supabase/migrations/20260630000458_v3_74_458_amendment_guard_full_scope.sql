@@ -1,0 +1,32 @@
+-- v3.74.458 — comprehensive amendment guard for draft bills and
+-- invoices.
+--
+-- Owner asked: what happens if the accountant edits ANY field on the
+-- bill or invoice? v3.74.457 covered discount_position and tax_inclusive.
+-- This release closes every remaining hole for the draft window.
+--
+-- Threat model: an accountant editing an auto-created draft bill can
+-- silently:
+--   - shift shipping cost or the shipping tax rate
+--   - add/change adjustment
+--   - modify tax_amount, subtotal, total_amount
+--   - flip currency or exchange_rate
+--   - swap the supplier
+--   - add/edit/remove line items (bill_items)
+-- Any of these changes the total the owner originally approved on the
+-- parent PO. Same picture on the sales side.
+--
+-- Strategy: two BEFORE UPDATE triggers on bills / invoices detect a
+-- material change and cancel the current approved (or pending) bill /
+-- invoice-level discount_approval. Two AFTER INS/UPD/DEL triggers on
+-- bill_items / invoice_items do the same for line-level edits. The
+-- existing bill_request_discount_approval_trg then fires on the same
+-- transaction (or the next save) and opens a fresh pending row. The
+-- post-gate (bill_block_post_unapproved_discount_trg from v3.74.424)
+-- refuses to post until the fresh approval lands.
+--
+-- Auto-create path is unaffected — the app.skip_discount_approval flag
+-- is set during approve_purchase_order_atomic and both amendment
+-- triggers honor it.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
