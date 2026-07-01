@@ -64,6 +64,54 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AO. Grace period + auto reminders للاشتراك (v3.74.442)
+
+### الفجوة
+
+المالك اكتشف إن شركة تست انعلّقت (suspended) لما الدفعة فشلت — بدون
+تنبيه سابق، بدون grace period، وبدون طريقة self-service للتجديد. لو
+ده حصل لعميل حقيقى، هيقعد يوم كامل بدون وصول لبياناته.
+
+الحالة قبل الإصلاح:
+- `renewal_reminder_sent_at` عمود موجود لكن مفيش حاجة تعبّيه
+- `mark_subscription_past_due` و `suspend_subscription` موجودين
+  لكن كانوا يُستدعوا يدوياً (مفيش cron)
+- مفيش grace period بين past_due والتعليق
+- المالك ما بيعرفش الاشتراك قرّب ينتهى إلا لما يتعلّق فعلاً
+
+### الحل
+
+**Schema**: 5 أعمدة جديدة:
+- `companies.past_due_at` — timestamp دخول past_due
+- `companies.reminder_7d_sent_at` / `_3d_` / `_1d_` — منع تكرار الإرسال
+- `subscription_plans.grace_period_days` (افتراضى 7)
+
+**Helper `notify_company_billing_owner`**: يبعت إشعار `billing` category
+لكل owner/GM/admin للشركة. reference_type='subscription'.
+
+**Cron `daily_billing_check()`**:
+يشتغل يومياً 06:00 UTC (09:00 Cairo) عبر pg_cron. يعالج ٥ transitions:
+
+١. **T-7**: `subscription_status='active'` و`period_end` بعد 6-8 أيام
+   و `reminder_7d_sent_at IS NULL` → إشعار "سينتهى بعد ٧ أيام"
+٢. **T-3**: نفس المنطق لـ 2-4 أيام → إشعار "بعد ٣ أيام"
+٣. **T-1**: 0-30 ساعة → إشعار "غداً"
+٤. **Mark past_due**: `period_end < NOW()` و status='active' → UPDATE
+   `subscription_status='past_due'`, `past_due_at=NOW()`,
+   يبعت إشعار "دخلت فترة السماح"
+٥. **Suspend**: `status='past_due'` و
+   `past_due_at + grace_period_days < NOW()` → استدعاء
+   `suspend_subscription()`، إشعار "تم تعليق الاشتراك"
+
+كل الـ transitions idempotent (الـ *_sent_at columns تمنع التكرار).
+
+### Section AO baseline
+- ٤ أعمدة reminder على companies + past_due_at
+- عمود grace_period_days على subscription_plans
+- functions `daily_billing_check` و `notify_company_billing_owner` موجودين
+- cron job `daily_billing_check` مفعّل
+- `PERFORM public.assert_baseline_v3_74_442_check()` مضاف لـ assert_baseline
+
 ## AN. استكمال manufacturing_product_receive_approvals (v3.74.440)
 
 ### الفجوة

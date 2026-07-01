@@ -1,0 +1,30 @@
+-- v3.74.442 — grace period + automated subscription reminders.
+--
+-- Owner discovered the test company had been silently suspended after a
+-- payment failure with no advance warning, no grace period, and no way
+-- to self-service reactivate. This release fixes the "silently
+-- suspended" problem.
+--
+-- Schema
+--   companies gains past_due_at, reminder_7d/3d/1d_sent_at.
+--   subscription_plans gains grace_period_days (default 7).
+--
+-- Helper
+--   notify_company_billing_owner(company_id, title, message, severity,
+--   priority) — writes a billing-category notification to every owner
+--   /GM/admin of the company.
+--
+-- Cron
+--   daily_billing_check() runs once a day at 06:00 UTC (~09:00 Cairo)
+--   via pg_cron. Handles five idempotent transitions:
+--     (1) T-7 reminder for active companies
+--     (2) T-3 reminder
+--     (3) T-1 reminder
+--     (4) mark past_due when period_end < now
+--     (5) suspend after past_due + grace_period_days
+--   Notification is sent on every transition. The *_sent_at columns
+--   keep reminders idempotent within one billing cycle.
+--
+-- Baseline (Section AO) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
