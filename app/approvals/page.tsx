@@ -112,6 +112,21 @@ interface PendingWriteOff {
   type: "write_off"
 }
 
+// v3.74.488 — manufacturing product receive pending approval.
+// Reads manufacturing_product_receive_approvals (status='pending').
+// Actions call
+// /api/manufacturing/product-receive-approvals/[id]/{approve,reject}.
+interface PendingProductReceive {
+  id: string
+  order_no: string | null
+  product_name: string | null
+  proposed_quantity: number
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  type: "product_receive_pending"
+}
+
 // v3.74.480 — generic misc pending approval item. Used for the
 // remaining categories whose actions require dedicated pages
 // (purchase requests, bank vouchers, expenses, customer debit notes,
@@ -293,6 +308,7 @@ type PendingItem =
   | PendingWriteOff
   | PendingInventoryTransfer
   | PendingMiscApproval
+  | PendingProductReceive
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -890,19 +906,20 @@ function ApprovalsContent() {
   // v3.74.486 — Role-scoped tab visibility. Each role only sees the
   // tabs relevant to the workflows they participate in. Owner / admin /
   // general_manager see everything.
-  type TabKey = "bom"|"routing"|"po"|"mi"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"misc"
+  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"misc"
   const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
-    // Warehouse: dispatch, receipt, write-offs, transfers, sales-return warehouse stage
-    store_manager:      ["recv","disp","wo","tr","sret"],
-    warehouse_manager:  ["recv","disp","wo","tr","sret"],
+    // Warehouse: dispatch, receipt, write-offs, transfers, sales-return
+    // warehouse stage, AND pending mfg product receive (v3.74.488).
+    store_manager:      ["recv","disp","wo","tr","sret","pr"],
+    warehouse_manager:  ["recv","disp","wo","tr","sret","pr"],
     // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
     accountant:         ["pay","pret","disc","sret","cref","vcor","misc"],
     // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
     purchasing_officer: ["pret","disc","misc"],
-    // Manufacturing officer: BOM/routing/production/material issue
-    manufacturing_officer: ["bom","routing","po","mi"],
+    // Manufacturing officer: BOM/routing/production/material issue/product receive
+    manufacturing_officer: ["bom","routing","po","mi","pr"],
     // Branch manager: broad view but read-only most places (visibility only)
-    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"],
+    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc","pr"],
     // Sales staff & bookings: no approvals to act on today
     staff:              [],
     booking_officer:    [],
@@ -910,7 +927,7 @@ function ApprovalsContent() {
   const isAdminLike = !!myRole && ["owner","admin","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
-      ? (["bom","routing","po","mi","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"] as const)
+      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"] as const)
       : (roleTabs[myRole] ?? [])
   const canShow = (t: TabKey) => visibleTabs.includes(t)
   // v3.74.487 — Mirror the tab visibility onto the history filter row.
@@ -922,7 +939,7 @@ function ApprovalsContent() {
     routing_version: "routing",
     production_order: "po",
     material_issue: "mi",
-    product_receive: "po",              // manufacturing hub
+    product_receive: "pr",              // v3.74.488 own tab
     supplier_payment: "pay",
     purchase_return: "pret",
     sales_return_request: "sret",
@@ -946,8 +963,9 @@ function ApprovalsContent() {
   const [writeOffs, setWriteOffs] = useState<PendingWriteOff[]>([])
   const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
   const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
+  const [productReceivePending, setProductReceivePending] = useState<PendingProductReceive[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "misc" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "misc" | "history">("all")
   // v3.74.484 — honor ?tab=... from notification routing so warehouse
   // manager clicking a dispatch/receipt notification lands on the
   // matching tab.
@@ -955,7 +973,7 @@ function ApprovalsContent() {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
     const initialTab = params.get("tab")
-    const valid = ["all","bom","routing","po","mi","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc","history"] as const
+    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc","history"] as const
     if (initialTab && (valid as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as any)
     }
@@ -965,7 +983,7 @@ function ApprovalsContent() {
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "product_receive" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -1081,6 +1099,38 @@ function ApprovalsContent() {
         warehouse_name: m.warehouses?.name ?? "—",
         type: "material_issue" as const,
       })))
+
+      // v3.74.488 — Manufacturing product receive pending approvals.
+      // Loader mirrors the material-issue pattern. Governance:
+      // /api/manufacturing/product-receive-approvals/[id]/approve|reject
+      // enforces the same role + scope checks the goods-receipt page
+      // used before consolidation.
+      try {
+        const { data: prs } = await supabase
+          .from("manufacturing_product_receive_approvals")
+          .select(`
+            id, status, requested_at, proposed_quantity, branch_id, warehouse_id,
+            manufacturing_production_orders(order_no, products(name)),
+            branches(name),
+            warehouses(name)
+          `)
+          .eq("company_id", cid)
+          .eq("status", "pending")
+          .order("requested_at", { ascending: true })
+          .limit(50)
+        setProductReceivePending((prs || []).map((r: any) => ({
+          id: r.id,
+          order_no: r.manufacturing_production_orders?.order_no ?? null,
+          product_name: r.manufacturing_production_orders?.products?.name ?? null,
+          proposed_quantity: Number(r.proposed_quantity || 0),
+          branch_name: r.branches?.name ?? null,
+          warehouse_name: r.warehouses?.name ?? null,
+          requested_at: r.requested_at,
+          type: "product_receive_pending" as const,
+        })))
+      } catch {
+        setProductReceivePending([])
+      }
 
       // v3.74.373 — Discount approvals (Stage 2).
       // We deliberately go through the API route rather than a
@@ -2286,7 +2336,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -2654,6 +2704,12 @@ function ApprovalsContent() {
             {canShow("mi") && (
               <Button size="sm" variant={activeTab === "mi"      ? "default" : "outline"} onClick={() => setActiveTab("mi")}      className="gap-1">
                 <Package  className="w-3.5 h-3.5" />{t("طلبات الصرف", "Material Issues")} ({materialIssues.length})
+              </Button>
+            )}
+            {/* v3.74.488 — manufacturing product receive pending */}
+            {canShow("pr") && (
+              <Button size="sm" variant={activeTab === "pr" ? "default" : "outline"} onClick={() => setActiveTab("pr")} className="gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />{t("استلام إنتاج", "Product Receive")} ({productReceivePending.length})
               </Button>
             )}
             {canShow("disc") && (
@@ -3215,6 +3271,122 @@ function ApprovalsContent() {
                       </Card>
                     )
                   })}
+                </div>
+              )}
+
+              {/* v3.74.488 — Manufacturing product receive pending approvals. */}
+              {(activeTab === "all" || activeTab === "pr") && productReceivePending.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" />{t("اعتمادات استلام منتجات التصنيع", "Manufacturing Product Receive Approvals")}
+                  </h2>
+                  {productReceivePending.map(r => (
+                    <Card key={r.id} className="border-l-4 border-l-cyan-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg shrink-0">
+                              <CheckCircle2 className="w-4 h-4 text-cyan-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("طلب استلام منتج", "Product Receive")} · {t("أمر", "Order")} {r.order_no ?? "—"}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                🏭 {r.product_name ?? "—"}
+                              </p>
+                              <p className="text-xs mt-1">
+                                <span className="font-semibold text-cyan-700 dark:text-cyan-300">
+                                  {t("الكمية المقترحة", "Proposed quantity")}: {r.proposed_quantity}
+                                </span>
+                              </p>
+                              {r.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {r.branch_name}{r.warehouse_name && <> · 🏬 {r.warehouse_name}</>}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === r.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(r.id)
+                                const res = await fetch(`/api/manufacturing/product-receive-approvals/${encodeURIComponent(r.id)}/approve`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({}),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok || j.success === false) throw new Error(j.error || (appLang === 'en' ? 'Approve failed' : 'تعذر الاعتماد'))
+                                toast({ title: t("تم الاعتماد", "Approved"), description: t("تم اعتماد استلام المنتج", "Product receive approved") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الاستلام", "Approve Receipt")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === r.id}
+                            onClick={() => { setRejectId(r.id); setRejectType("product_receive"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                          </Button>
+                        </div>
+                        {rejectId === r.id && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب الرفض...", "Rejection reason...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === r.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(r.id)
+                                    const res = await fetch(`/api/manufacturing/product-receive-approvals/${encodeURIComponent(r.id)}/reject`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ rejection_reason: rejectReason }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok || j.success === false) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                    toast({ title: t("تم الرفض", "Rejected") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               )}
 

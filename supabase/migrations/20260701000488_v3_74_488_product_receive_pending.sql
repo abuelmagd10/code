@@ -1,0 +1,26 @@
+-- v3.74.488 — Manufacturing product receive PENDING approvals join
+-- the unified approvals inbox as their own tab "استلام إنتاج".
+--
+-- After the evidence-based audit of /inventory/goods-receipt the owner
+-- flagged this as the biggest gap: the dedicated page had two flows
+-- (purchase-bill receipt + manufacturing product receive) and the inbox
+-- only surfaced the first. Manufacturing pending items were reachable
+-- only from the goods-receipt page's "🏭 استلام تصنيع" toggle.
+--
+-- Loader reads manufacturing_product_receive_approvals where
+-- status='pending'. Card renders order_no + product_name +
+-- proposed_quantity + branch/warehouse + Approve / Reject buttons.
+--
+-- Actions call the same endpoints the goods-receipt page called:
+--   POST /api/manufacturing/product-receive-approvals/[id]/approve
+--   POST /api/manufacturing/product-receive-approvals/[id]/reject
+-- (which run the assertProductReceiveApprovalScope guard + the
+-- production-order finalize routine). Governance unchanged.
+--
+-- Tab visibility (v3.74.486 matrix) extended:
+--   store_manager, warehouse_manager, manufacturing_officer, manager
+--   all see the "pr" tab (their role scope is enforced by RLS +
+--   the API-side guard).
+--
+-- History still uses product_receive category but now maps to the
+-- new "pr" tab.

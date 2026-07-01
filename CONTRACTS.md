@@ -64,6 +64,23 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CI. tab pending استلام منتجات التصنيع (v3.74.488)
+
+بعد الفحص الموثق لـ `/inventory/goods-receipt` تبيّن إن الصفحة كان لها
+اتنين flow: فواتير المشتريات (المنقولة) واستلام منتجات التصنيع (المُغفولة).
+تم إضافة tab جديد "**استلام إنتاج**" لـ pending manufacturing product
+receive approvals.
+
+- Loader يقرأ `manufacturing_product_receive_approvals.status='pending'`
+- Card يعرض: أمر الإنتاج + المنتج + الكمية المقترحة + الفرع/المخزن
+- Actions تستدعى:
+  - `POST /api/manufacturing/product-receive-approvals/[id]/approve`
+  - `POST /api/manufacturing/product-receive-approvals/[id]/reject`
+- Tab key: `pr`
+- roleTabs: store_manager, warehouse_manager, manufacturing_officer,
+  manager كلهم يشوفوا الـ tab (الـ scope عبر RLS + API guard)
+- سجل `product_receive` بيربط بالـ tab الجديد
+
 ## CH. سجل الاعتمادات يتفلتر بالدور مطابق للـ tabs (v3.74.487)
 
 المالك لاحظ إن السجل ما اتفلترش مع الـ tabs فى v3.74.486. نضيف الفلتر
