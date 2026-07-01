@@ -1,0 +1,20 @@
+-- v3.74.487 — Role-scoped history filter row on /approvals.
+--
+-- Owner spotted that v3.74.486 filtered the pending inbox tabs by role
+-- but left the history filter chips wide open — a store manager still
+-- saw خصومات / قوائم المواد / أوامر الإنتاج / دفعات موردين and every
+-- other filter chip, all with counts of zero.
+--
+-- Fix (UI-only):
+--   - historyCategoryToTab maps each HistoryCategory to a TabKey.
+--     Manufacturing sub-categories (bom_version, routing_version,
+--     production_order, material_issue, product_receive) map into
+--     their manufacturing tab keys.
+--   - canShowHistory(category) returns whether the current role's
+--     visibleTabs contains the mapped tab.
+--   - Each history filter chip is wrapped in {canShowHistory(...) && ...}.
+--   - The "الكل" (All) view now filters history entries down to
+--     categories the role can see, so aggregate counts and lists
+--     match the visible chips.
+--
+-- No DB changes.

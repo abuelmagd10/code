@@ -913,6 +913,31 @@ function ApprovalsContent() {
       ? (["bom","routing","po","mi","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"] as const)
       : (roleTabs[myRole] ?? [])
   const canShow = (t: TabKey) => visibleTabs.includes(t)
+  // v3.74.487 — Mirror the tab visibility onto the history filter row.
+  // Each HistoryCategory maps to a TabKey (many-to-one for the
+  // manufacturing subcategories that share a single tab).
+  const historyCategoryToTab: Partial<Record<HistoryCategory, TabKey>> = {
+    discount: "disc",
+    bom_version: "bom",
+    routing_version: "routing",
+    production_order: "po",
+    material_issue: "mi",
+    product_receive: "po",              // manufacturing hub
+    supplier_payment: "pay",
+    purchase_return: "pret",
+    sales_return_request: "sret",
+    customer_refund: "cref",
+    vendor_payment_correction: "vcor",
+    dispatch: "disp",
+    goods_receipt: "recv",
+    write_off: "wo",
+    inventory_transfer: "tr",
+    misc: "misc",
+  }
+  const canShowHistory = (c: HistoryCategory) => {
+    const tabKey = historyCategoryToTab[c]
+    return tabKey ? canShow(tabKey) : false
+  }
   // v3.74.486 — staff / booking_officer have no approval workflows at
   // all. The sidebar link is hidden for them (their default pages
   // template excludes 'approvals'), but if they navigate here directly
@@ -2711,61 +2736,96 @@ function ApprovalsContent() {
                 <Button size="sm" variant={historyFilter === "all" ? "default" : "outline"} className="text-xs h-7" onClick={() => setHistoryFilter("all")}>
                   {t("الكل", "All")} ({history.length})
                 </Button>
-                <Button size="sm" variant={historyFilter === "discount" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("discount")}>
-                  <Percent className="w-3 h-3" />{t("خصومات", "Discounts")} ({history.filter(h => h.category === "discount").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "bom_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("bom_version")}>
-                  <Layers className="w-3 h-3" />{t("قوائم المواد", "BOMs")} ({history.filter(h => h.category === "bom_version").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "routing_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("routing_version")}>
-                  <GitMerge className="w-3 h-3" />{t("مسارات التصنيع", "Routings")} ({history.filter(h => h.category === "routing_version").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "production_order" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("production_order")}>
-                  <Factory className="w-3 h-3" />{t("أوامر الإنتاج", "Production Orders")} ({history.filter(h => h.category === "production_order").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "product_receive" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("product_receive")}>
-                  <CheckCircle2 className="w-3 h-3" />{t("استلام إنتاج", "Product Receive")} ({history.filter(h => h.category === "product_receive").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
-                  <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})
-                </Button>
-                {/* v3.74.474 — history filters for new categories */}
-                <Button size="sm" variant={historyFilter === "supplier_payment" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("supplier_payment")}>
-                  <Wallet className="w-3 h-3" />{t("دفعات موردين", "Supplier Payments")} ({history.filter(h => h.category === "supplier_payment").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "purchase_return" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("purchase_return")}>
-                  <RefreshCw className="w-3 h-3" />{t("مرتجعات مشتريات", "Purchase Returns")} ({history.filter(h => h.category === "purchase_return").length})
-                </Button>
-                {/* v3.74.475 */}
-                <Button size="sm" variant={historyFilter === "sales_return_request" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("sales_return_request")}>
-                  <RefreshCw className="w-3 h-3" />{t("مرتجعات مبيعات", "Sales Returns")} ({history.filter(h => h.category === "sales_return_request").length})
-                </Button>
-                {/* v3.74.476 */}
-                <Button size="sm" variant={historyFilter === "customer_refund" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("customer_refund")}>
-                  <Wallet className="w-3 h-3" />{t("استرداد عملاء", "Customer Refunds")} ({history.filter(h => h.category === "customer_refund").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "vendor_payment_correction" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("vendor_payment_correction")}>
-                  <Wallet className="w-3 h-3" />{t("تصحيح دفعات", "Vendor Corrections")} ({history.filter(h => h.category === "vendor_payment_correction").length})
-                </Button>
-                {/* v3.74.481 — remaining history filters */}
-                <Button size="sm" variant={historyFilter === "dispatch" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("dispatch")}>
-                  <Package className="w-3 h-3" />{t("موافقات الإرسال", "Dispatch")} ({history.filter(h => h.category === "dispatch").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "goods_receipt" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("goods_receipt")}>
-                  <Package className="w-3 h-3" />{t("استلام مخزنى", "Goods Receipt")} ({history.filter(h => h.category === "goods_receipt").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "write_off" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("write_off")}>
-                  <XCircle className="w-3 h-3" />{t("إهلاك المخزون", "Write-offs")} ({history.filter(h => h.category === "write_off").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "inventory_transfer" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("inventory_transfer")}>
-                  <GitMerge className="w-3 h-3" />{t("تحويلات المخزون", "Transfers")} ({history.filter(h => h.category === "inventory_transfer").length})
-                </Button>
-                <Button size="sm" variant={historyFilter === "misc" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("misc")}>
-                  <AlertCircle className="w-3 h-3" />{t("طلبات متنوعة", "Other")} ({history.filter(h => h.category === "misc").length})
-                </Button>
+                {/* v3.74.487 — history filter chips filtered by role,
+                    same matrix as the pending inbox tabs. */}
+                {canShowHistory("discount") && (
+                  <Button size="sm" variant={historyFilter === "discount" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("discount")}>
+                    <Percent className="w-3 h-3" />{t("خصومات", "Discounts")} ({history.filter(h => h.category === "discount").length})
+                  </Button>
+                )}
+                {canShowHistory("bom_version") && (
+                  <Button size="sm" variant={historyFilter === "bom_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("bom_version")}>
+                    <Layers className="w-3 h-3" />{t("قوائم المواد", "BOMs")} ({history.filter(h => h.category === "bom_version").length})
+                  </Button>
+                )}
+                {canShowHistory("routing_version") && (
+                  <Button size="sm" variant={historyFilter === "routing_version" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("routing_version")}>
+                    <GitMerge className="w-3 h-3" />{t("مسارات التصنيع", "Routings")} ({history.filter(h => h.category === "routing_version").length})
+                  </Button>
+                )}
+                {canShowHistory("production_order") && (
+                  <Button size="sm" variant={historyFilter === "production_order" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("production_order")}>
+                    <Factory className="w-3 h-3" />{t("أوامر الإنتاج", "Production Orders")} ({history.filter(h => h.category === "production_order").length})
+                  </Button>
+                )}
+                {canShowHistory("product_receive") && (
+                  <Button size="sm" variant={historyFilter === "product_receive" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("product_receive")}>
+                    <CheckCircle2 className="w-3 h-3" />{t("استلام إنتاج", "Product Receive")} ({history.filter(h => h.category === "product_receive").length})
+                  </Button>
+                )}
+                {canShowHistory("material_issue") && (
+                  <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
+                    <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})
+                  </Button>
+                )}
+                {canShowHistory("supplier_payment") && (
+                  <Button size="sm" variant={historyFilter === "supplier_payment" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("supplier_payment")}>
+                    <Wallet className="w-3 h-3" />{t("دفعات موردين", "Supplier Payments")} ({history.filter(h => h.category === "supplier_payment").length})
+                  </Button>
+                )}
+                {canShowHistory("purchase_return") && (
+                  <Button size="sm" variant={historyFilter === "purchase_return" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("purchase_return")}>
+                    <RefreshCw className="w-3 h-3" />{t("مرتجعات مشتريات", "Purchase Returns")} ({history.filter(h => h.category === "purchase_return").length})
+                  </Button>
+                )}
+                {canShowHistory("sales_return_request") && (
+                  <Button size="sm" variant={historyFilter === "sales_return_request" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("sales_return_request")}>
+                    <RefreshCw className="w-3 h-3" />{t("مرتجعات مبيعات", "Sales Returns")} ({history.filter(h => h.category === "sales_return_request").length})
+                  </Button>
+                )}
+                {canShowHistory("customer_refund") && (
+                  <Button size="sm" variant={historyFilter === "customer_refund" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("customer_refund")}>
+                    <Wallet className="w-3 h-3" />{t("استرداد عملاء", "Customer Refunds")} ({history.filter(h => h.category === "customer_refund").length})
+                  </Button>
+                )}
+                {canShowHistory("vendor_payment_correction") && (
+                  <Button size="sm" variant={historyFilter === "vendor_payment_correction" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("vendor_payment_correction")}>
+                    <Wallet className="w-3 h-3" />{t("تصحيح دفعات", "Vendor Corrections")} ({history.filter(h => h.category === "vendor_payment_correction").length})
+                  </Button>
+                )}
+                {canShowHistory("dispatch") && (
+                  <Button size="sm" variant={historyFilter === "dispatch" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("dispatch")}>
+                    <Package className="w-3 h-3" />{t("موافقات الإرسال", "Dispatch")} ({history.filter(h => h.category === "dispatch").length})
+                  </Button>
+                )}
+                {canShowHistory("goods_receipt") && (
+                  <Button size="sm" variant={historyFilter === "goods_receipt" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("goods_receipt")}>
+                    <Package className="w-3 h-3" />{t("استلام مخزنى", "Goods Receipt")} ({history.filter(h => h.category === "goods_receipt").length})
+                  </Button>
+                )}
+                {canShowHistory("write_off") && (
+                  <Button size="sm" variant={historyFilter === "write_off" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("write_off")}>
+                    <XCircle className="w-3 h-3" />{t("إهلاك المخزون", "Write-offs")} ({history.filter(h => h.category === "write_off").length})
+                  </Button>
+                )}
+                {canShowHistory("inventory_transfer") && (
+                  <Button size="sm" variant={historyFilter === "inventory_transfer" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("inventory_transfer")}>
+                    <GitMerge className="w-3 h-3" />{t("تحويلات المخزون", "Transfers")} ({history.filter(h => h.category === "inventory_transfer").length})
+                  </Button>
+                )}
+                {canShowHistory("misc") && (
+                  <Button size="sm" variant={historyFilter === "misc" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("misc")}>
+                    <AlertCircle className="w-3 h-3" />{t("طلبات متنوعة", "Other")} ({history.filter(h => h.category === "misc").length})
+                  </Button>
+                )}
               </div>
               {(() => {
-                const filtered = historyFilter === "all" ? history : history.filter(h => h.category === historyFilter)
+                // v3.74.487 — "All" respects role visibility: only
+                // include categories this role can see, so a store
+                // manager clicking "الكل" doesn't get payment or
+                // discount rows in their history.
+                const roleScoped = history.filter(h => canShowHistory(h.category))
+                const filtered = historyFilter === "all" ? roleScoped : roleScoped.filter(h => h.category === historyFilter)
                 if (filtered.length === 0) {
                   return (
                     <Card>
