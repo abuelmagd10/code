@@ -61,9 +61,33 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
+    // v3.74.450 — mirror v3.74.449 on the sales side: enrich each SO
+    // with the status of its latest discount_approval so the list
+    // shows a "discount rejected" badge without opening the SO.
+    let enrichedOrders: any[] = orders || []
+    if (enrichedOrders.length > 0) {
+      const soIds = enrichedOrders.map((o: any) => o.id)
+      const { data: discountRows } = await supabase
+        .from("discount_approvals")
+        .select("document_id, status, requested_at")
+        .eq("document_type", "sales_order")
+        .in("document_id", soIds)
+        .order("requested_at", { ascending: false })
+      const latestByDoc: Record<string, string> = {}
+      for (const r of (discountRows || []) as any[]) {
+        if (!(r.document_id in latestByDoc)) {
+          latestByDoc[r.document_id] = r.status
+        }
+      }
+      enrichedOrders = enrichedOrders.map((o: any) => ({
+        ...o,
+        discount_approval_status: latestByDoc[o.id] ?? null,
+      }))
+    }
+
     return NextResponse.json({
       success: true,
-      data: orders || [],
+      data: enrichedOrders,
       meta: {
         total: (orders || []).length,
         role: governance.role,

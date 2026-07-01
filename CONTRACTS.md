@@ -64,6 +64,29 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AW. مؤشر رفض/انتظار الخصم فى قائمة أوامر البيع (v3.74.450)
+
+### الغرض
+
+نظير v3.74.449 على `/sales-orders`. المالك ذكّر: "لا ننسى أوامر
+البيع أيضاً".
+
+### الحل
+
+**API** (`app/api/sales-orders/route.ts`): بعد جلب الـ SOs، batch
+query لـ `discount_approvals` بـ document_type='sales_order' و
+`document_id IN (soIds)`. آخر قرار خصم يضاف كـ
+`discount_approval_status` على كل صف.
+
+**قائمة `/sales-orders`**: نفس badges v3.74.449:
+- rejected → أحمر "⚠ الخصم مرفوض"
+- pending → أصفر "الخصم قيد الاعتماد"
+
+يظهر فى الحالتين: SO بفاتورة أو بدون.
+
+### Section AW baseline
+لا فحوصات DB. تعديل UI + enrichment API فقط.
+
 ## AV. مؤشر رفض/انتظار الخصم فى قائمة أوامر الشراء (v3.74.449)
 
 ### الفجوة
