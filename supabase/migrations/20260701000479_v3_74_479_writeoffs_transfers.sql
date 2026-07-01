@@ -1,0 +1,16 @@
+-- v3.74.479 — Inventory write-offs + inventory transfers surface in
+-- the unified approvals inbox.
+--
+-- Different from earlier tabs: both types have complex actions that
+-- can't be reduced to a single "approve" button:
+--   - Write-offs need expense_account + inventory_account selection
+--     before /api/write-offs/approve accepts the request.
+--   - Inventory transfers cascade through three stages
+--     (pending_approval → pending source → in_transit → received)
+--     each with a different actor.
+--
+-- The cards therefore show the pending item + stage + a link to the
+-- dedicated page for the stage-appropriate action. Governance stays
+-- 100% on the existing pages/APIs — nothing is bypassed.
+--
+-- Sidebar rolls up inventory_write_off + inventory_transfer.

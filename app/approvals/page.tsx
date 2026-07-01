@@ -97,6 +97,34 @@ interface PendingCustomerRefund {
   type: "customer_refund"
 }
 
+// v3.74.479 — inventory write-off pending approval. The approve
+// endpoint takes complex parameters (expense + inventory accounts),
+// so this tab surfaces the pending item as a read-only card with a
+// "Approve on details page" link.
+interface PendingWriteOff {
+  id: string
+  write_off_no: string | null
+  total_cost: number
+  reason: string | null
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  type: "write_off"
+}
+
+// v3.74.479 — inventory transfer pending approval. The workflow has
+// three stages (source manager approve → in-transit → destination
+// manager receive). Each stage lives on the transfer's own page.
+interface PendingInventoryTransfer {
+  id: string
+  transfer_no: string | null
+  status: string
+  from_warehouse: string | null
+  to_warehouse: string | null
+  requested_at: string
+  type: "inventory_transfer"
+}
+
 // v3.74.478 — goods receipt approval for purchase bills. Warehouse
 // stage: bills.receipt_status='pending' after the bill was submitted
 // for receipt. Uses /api/bills/[id]/{confirm-receipt, reject-receipt}.
@@ -236,6 +264,8 @@ type PendingItem =
   | PendingVendorPaymentCorrection
   | PendingDispatch
   | PendingGoodsReceipt
+  | PendingWriteOff
+  | PendingInventoryTransfer
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -802,8 +832,10 @@ function ApprovalsContent() {
   const [vendorPaymentCorrections, setVendorPaymentCorrections] = useState<PendingVendorPaymentCorrection[]>([])
   const [dispatches, setDispatches] = useState<PendingDispatch[]>([])
   const [goodsReceipts, setGoodsReceipts] = useState<PendingGoodsReceipt[]>([])
+  const [writeOffs, setWriteOffs] = useState<PendingWriteOff[]>([])
+  const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
@@ -1210,6 +1242,62 @@ function ApprovalsContent() {
         })))
       } catch {
         setGoodsReceipts([])
+      }
+
+      // v3.74.479 — inventory write-offs (approve requires account
+      // selection → link to details page).
+      try {
+        const { data: wos } = await supabase
+          .from("inventory_write_offs")
+          .select(`
+            id, write_off_number, total_cost, reason, status,
+            created_at, branch_id, warehouse_id,
+            branches(name), warehouses(name)
+          `)
+          .eq("company_id", cid)
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setWriteOffs((wos || []).map((w: any) => ({
+          id: w.id,
+          write_off_no: w.write_off_number ?? null,
+          total_cost: Number(w.total_cost || 0),
+          reason: w.reason ?? null,
+          branch_name: w.branches?.name ?? null,
+          warehouse_name: w.warehouses?.name ?? null,
+          requested_at: w.created_at,
+          type: "write_off" as const,
+        })))
+      } catch {
+        setWriteOffs([])
+      }
+
+      // v3.74.479 — inventory transfers (multi-stage workflow — link
+      // to details page for the stage-appropriate action).
+      try {
+        const { data: its } = await supabase
+          .from("inventory_transfers")
+          .select(`
+            id, transfer_number, status, created_at,
+            source_warehouse_id, destination_warehouse_id,
+            source_warehouse:warehouses!inventory_transfers_source_warehouse_id_fkey(name),
+            destination_warehouse:warehouses!inventory_transfers_destination_warehouse_id_fkey(name)
+          `)
+          .eq("company_id", cid)
+          .in("status", ["pending_approval", "pending", "in_transit"])
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setInventoryTransfers((its || []).map((it: any) => ({
+          id: it.id,
+          transfer_no: it.transfer_number ?? null,
+          status: it.status,
+          from_warehouse: it.source_warehouse?.name ?? null,
+          to_warehouse: it.destination_warehouse?.name ?? null,
+          requested_at: it.created_at,
+          type: "inventory_transfer" as const,
+        })))
+      } catch {
+        setInventoryTransfers([])
       }
     } finally {
       setIsLoading(false)
@@ -1733,7 +1821,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -2104,6 +2192,14 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "recv" ? "default" : "outline"} onClick={() => setActiveTab("recv")} className="gap-1">
               <Package className="w-3.5 h-3.5" />{t("الاستلام المخزنى", "Goods Receipt")} ({goodsReceipts.length})
             </Button>
+            {/* v3.74.479 — write-offs (details page for approve) */}
+            <Button size="sm" variant={activeTab === "wo" ? "default" : "outline"} onClick={() => setActiveTab("wo")} className="gap-1">
+              <XCircle className="w-3.5 h-3.5" />{t("إهلاك المخزون", "Write-offs")} ({writeOffs.length})
+            </Button>
+            {/* v3.74.479 — inventory transfers */}
+            <Button size="sm" variant={activeTab === "tr" ? "default" : "outline"} onClick={() => setActiveTab("tr")} className="gap-1">
+              <GitMerge className="w-3.5 h-3.5" />{t("تحويلات المخزون", "Transfers")} ({inventoryTransfers.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -2379,6 +2475,112 @@ function ApprovalsContent() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              )}
+
+              {/* v3.74.479 — Inventory write-offs (link out to details page). */}
+              {(activeTab === "all" || activeTab === "wo") && writeOffs.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <XCircle className="w-4 h-4" />{t("اعتمادات إهلاك المخزون", "Inventory Write-off Approvals")}
+                  </h2>
+                  {writeOffs.map(w => (
+                    <Card key={w.id} className="border-l-4 border-l-rose-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg shrink-0">
+                              <XCircle className="w-4 h-4 text-rose-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("طلب إهلاك مخزون", "Inventory Write-off")} · {w.write_off_no ?? w.id.slice(0, 6)}
+                              </p>
+                              <p className="text-xs mt-1">
+                                <span className="font-semibold text-rose-700 dark:text-rose-300">
+                                  {t("قيمة الإهلاك", "Write-off cost")}: {fmtMoney(w.total_cost)}
+                                </span>
+                              </p>
+                              {w.reason && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {w.reason}</p>}
+                              {w.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {w.branch_name}{w.warehouse_name && <> · 🏬 {w.warehouse_name}</>}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(w.requested_at)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <Link href={`/inventory/write-offs`} className="inline-block">
+                            <Button size="sm" className="gap-1 bg-rose-600 hover:bg-rose-700 text-white text-xs">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {t("اعتماد من صفحة التفاصيل", "Approve on details page")}
+                            </Button>
+                          </Link>
+                          <p className="text-xs text-muted-foreground self-center">
+                            {t("(يتطلب اختيار حسابات المصروف والمخزون)", "(requires account selection)")}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* v3.74.479 — Inventory transfers (multi-stage — details page). */}
+              {(activeTab === "all" || activeTab === "tr") && inventoryTransfers.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <GitMerge className="w-4 h-4" />{t("اعتمادات تحويلات المخزون", "Inventory Transfer Approvals")}
+                  </h2>
+                  {inventoryTransfers.map(it => {
+                    const stageLabel =
+                      it.status === "pending_approval" ? t("اعتماد إدارى", "Management approval") :
+                      it.status === "pending" ? t("موافقة مصدر المخزون", "Source warehouse") :
+                      it.status === "in_transit" ? t("استلام وجهة", "Destination receive") :
+                      it.status
+                    return (
+                      <Card key={it.id} className="border-l-4 border-l-blue-500">
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
+                                <GitMerge className="w-4 h-4 text-blue-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">
+                                  {t("تحويل مخزون", "Inventory Transfer")} · {it.transfer_no ?? it.id.slice(0, 6)}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {it.from_warehouse ?? "—"} → {it.to_warehouse ?? "—"}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(it.requested_at)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">
+                                <Clock className="w-3 h-3 me-1" />{stageLabel}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <Link href={`/inventory-transfers/${it.id}`} className="inline-block">
+                              <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                {t("فتح صفحة التحويل", "Open transfer")}
+                              </Button>
+                            </Link>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               )}
 

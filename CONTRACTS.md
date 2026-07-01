@@ -64,6 +64,18 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BZ. صندوق موحّد — Write-offs + Inventory Transfers (link-out) (v3.74.479)
+
+Tabs جديدة:
+- **إهلاك المخزون** (rose): يعرض `inventory_write_offs.status='pending'`
+  مع لينك للـ `/inventory/write-offs` لأن الاعتماد يحتاج اختيار حسابات
+- **تحويلات المخزون** (blue): `inventory_transfers` بحالات pending_approval /
+  pending / in_transit مع stage badge ولينك للـ `/inventory-transfers/[id]`
+
+الحوكمة كاملة على الصفحات الأصلية. الـ inbox بس بيرصد.
+
+سايدبار: `inventory_write_off` + `inventory_transfer` مضافين.
+
 ## BY. صندوق موحّد — Goods Receipt (استلام مخزنى) (v3.74.478)
 
 Tab "الاستلام المخزنى" يعرض فواتير المشتريات بحالة

@@ -190,6 +190,7 @@ export function Sidebar() {
   //   v3.74.476 → customer refund + vendor payment correction
   //   v3.74.477 → dispatch approvals (invoices warehouse stage 2)
   //   v3.74.478 → goods receipt approvals (bills warehouse confirm)
+  //   v3.74.479 → write-offs + inventory transfers
   const pendingInboxCount =
     pendingApprovalsCount
     + sumBadges(approvalBadges, [
@@ -202,6 +203,8 @@ export function Sidebar() {
         "vendor_refund_request",
         "dispatch_approval",
         "bill_receipt",
+        "inventory_write_off",
+        "inventory_transfer",
       ])
 
 
