@@ -64,6 +64,19 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CB. السجل الموحّد يشمل كل الفئات (v3.74.481)
+
+بعد اكتمال pending inbox فى v3.74.480، السجل كان لسه ناقص ٩ فئات.
+هذا الـ release يضيف history loaders + filter buttons لكل من:
+- Dispatch (invoices بـ warehouse_status)
+- Goods Receipt (bills بـ receipt_status)
+- Write-offs (inventory_write_offs)
+- Inventory Transfers (inventory_transfers)
+- Misc: Purchase Requests, Bank Vouchers, Expenses, Customer Debit
+  Notes, Permission Transfers (فئة موحّدة "misc")
+
+بعد v3.74.481 السجل الموحّد يعرض **كل** قرارات الاعتماد على النظام.
+
 ## CA. صندوق موحّد — الفئات المتبقية (طلبات متنوعة) (v3.74.480)
 
 Tab أخير "طلبات متنوعة" يجمع الفئات المتبقية بتصميم link-out:

@@ -674,7 +674,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "misc"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -730,6 +730,11 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "sales_return_request" ? t("مرتجع مبيعات", "Sales Return") :
     h.category === "customer_refund" ? t("استرداد عميل", "Customer Refund") :
     h.category === "vendor_payment_correction" ? t("تصحيح دفعة مورد", "Vendor Correction") :
+    h.category === "dispatch" ? t("موافقة إرسال", "Dispatch") :
+    h.category === "goods_receipt" ? t("استلام مخزنى", "Goods Receipt") :
+    h.category === "write_off" ? t("إهلاك", "Write-off") :
+    h.category === "inventory_transfer" ? t("تحويل مخزون", "Inv. Transfer") :
+    h.category === "misc" ? t("طلب متنوع", "Misc") :
     h.category === "product_receive"  ? t("استلام منتج", "Product Receive") :
                                          h.category
   const CategoryIcon =
@@ -743,6 +748,11 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "sales_return_request" ? RefreshCw :
     h.category === "customer_refund" ? Wallet :
     h.category === "vendor_payment_correction" ? Wallet :
+    h.category === "dispatch" ? Package :
+    h.category === "goods_receipt" ? Package :
+    h.category === "write_off" ? XCircle :
+    h.category === "inventory_transfer" ? GitMerge :
+    h.category === "misc" ? AlertCircle :
                                          Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
@@ -1832,6 +1842,205 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // v3.74.481 — dispatch history (invoices with warehouse_status
+      // = approved / rejected).
+      try {
+        const { data: invs } = await supabase
+          .from("invoices")
+          .select(`id, invoice_number, total_amount, warehouse_status,
+                   created_at, warehouse_approved_at, warehouse_rejected_at,
+                   warehouse_rejection_reason,
+                   customer_id, customers(name)`)
+          .eq("company_id", cid)
+          .in("warehouse_status", ["approved", "rejected"])
+          .order("created_at", { ascending: false })
+          .limit(50)
+        for (const r of (invs || []) as any[]) {
+          const status = r.warehouse_status === "rejected" ? "rejected" : "approved"
+          merged.push({
+            id: `disp-${r.id}`,
+            category: "dispatch",
+            doc_label: `موافقة إرسال · ${r.invoice_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/invoices/${r.id}`,
+            party_label: r.customers?.name ?? null,
+            value_label: `${Number(r.total_amount).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at: r.warehouse_approved_at ?? r.warehouse_rejected_at ?? null,
+            decision_note: r.warehouse_rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // v3.74.481 — goods receipt history (bills with receipt_status
+      // = approved / rejected).
+      try {
+        const { data: bills } = await supabase
+          .from("bills")
+          .select(`id, bill_number, total_amount, receipt_status,
+                   created_at, receipt_approved_at, receipt_rejected_at,
+                   receipt_rejection_reason,
+                   supplier_id, suppliers(name)`)
+          .eq("company_id", cid)
+          .in("receipt_status", ["approved", "rejected"])
+          .order("created_at", { ascending: false })
+          .limit(50)
+        for (const r of (bills || []) as any[]) {
+          const status = r.receipt_status === "rejected" ? "rejected" : "approved"
+          merged.push({
+            id: `recv-${r.id}`,
+            category: "goods_receipt",
+            doc_label: `استلام مخزنى · ${r.bill_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/bills/${r.id}`,
+            party_label: r.suppliers?.name ?? null,
+            value_label: `${Number(r.total_amount).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at: r.receipt_approved_at ?? r.receipt_rejected_at ?? null,
+            decision_note: r.receipt_rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // v3.74.481 — inventory write-offs history.
+      try {
+        const { data: wos } = await supabase
+          .from("inventory_write_offs")
+          .select(`id, write_off_number, total_cost, status, reason,
+                   created_at, approved_at, rejected_at, rejection_reason`)
+          .eq("company_id", cid)
+          .in("status", ["approved", "rejected", "posted"])
+          .order("created_at", { ascending: false })
+          .limit(50)
+        for (const r of (wos || []) as any[]) {
+          const status = r.status === "rejected" ? "rejected" : "approved"
+          merged.push({
+            id: `wo-${r.id}`,
+            category: "write_off",
+            doc_label: `إهلاك · ${r.write_off_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/inventory/write-offs`,
+            party_label: null,
+            value_label: `${Number(r.total_cost).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at: r.approved_at ?? r.rejected_at ?? null,
+            decision_note: r.rejection_reason ?? r.reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // v3.74.481 — inventory transfers history.
+      try {
+        const { data: its } = await supabase
+          .from("inventory_transfers")
+          .select(`id, transfer_number, status, created_at,
+                   source_warehouse_id, destination_warehouse_id,
+                   source_warehouse:warehouses!inventory_transfers_source_warehouse_id_fkey(name),
+                   destination_warehouse:warehouses!inventory_transfers_destination_warehouse_id_fkey(name)`)
+          .eq("company_id", cid)
+          .in("status", ["received", "cancelled", "rejected"])
+          .order("created_at", { ascending: false })
+          .limit(50)
+        for (const r of (its || []) as any[]) {
+          const status = r.status === "cancelled" ? "cancelled" : (r.status === "rejected" ? "rejected" : "approved")
+          merged.push({
+            id: `tr-${r.id}`,
+            category: "inventory_transfer",
+            doc_label: `تحويل مخزون · ${r.transfer_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/inventory-transfers/${r.id}`,
+            party_label: `${r.source_warehouse?.name ?? "—"} → ${r.destination_warehouse?.name ?? "—"}`,
+            value_label: null,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at: null,
+            decision_note: null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // v3.74.481 — misc history (purchase_requests, bank_vouchers,
+      // expenses, customer_debit_notes, permission_transfers).
+      try {
+        const [prR, bvR, exR, cdnR, ptR] = await Promise.all([
+          supabase.from("purchase_requests").select(`id, request_number, total_estimated, status, created_at, approved_at, rejected_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("bank_voucher_requests").select(`id, voucher_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("expenses").select(`id, expense_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("customer_debit_notes").select(`id, note_number, total_amount, approval_status, created_at, approved_at, rejected_at, rejection_reason, customer_id, customers(name)`).eq("company_id", cid).in("approval_status", ["approved", "rejected"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("permission_transfers").select(`id, status, created_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+        ])
+        for (const r of (prR.data || []) as any[]) {
+          const status = r.status === "cancelled" ? "cancelled" : r.status
+          merged.push({
+            id: `pr-${r.id}`, category: "misc",
+            doc_label: `طلب شراء · ${r.request_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/purchase-requests/${r.id}`, party_label: null,
+            value_label: `${Number(r.total_estimated).toFixed(2)}`,
+            status: status as any, requested_by_email: null,
+            requested_at: r.created_at, decided_by_email: null,
+            decided_at: r.approved_at ?? r.rejected_at ?? null, decision_note: null,
+          })
+        }
+        for (const r of (bvR.data || []) as any[]) {
+          const status = r.status === "cancelled" ? "cancelled" : r.status
+          merged.push({
+            id: `bv-${r.id}`, category: "misc",
+            doc_label: `سند بنكى · ${r.voucher_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/bank-vouchers/${r.id}`, party_label: null,
+            value_label: `${Number(r.amount).toFixed(2)}`,
+            status: status as any, requested_by_email: null,
+            requested_at: r.created_at, decided_by_email: null,
+            decided_at: r.approved_at ?? r.rejected_at ?? null,
+            decision_note: r.rejection_reason ?? null,
+          })
+        }
+        for (const r of (exR.data || []) as any[]) {
+          const status = r.status === "cancelled" ? "cancelled" : r.status
+          merged.push({
+            id: `ex-${r.id}`, category: "misc",
+            doc_label: `مصروف · ${r.expense_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/expenses/${r.id}`, party_label: null,
+            value_label: `${Number(r.amount).toFixed(2)}`,
+            status: status as any, requested_by_email: null,
+            requested_at: r.created_at, decided_by_email: null,
+            decided_at: r.approved_at ?? r.rejected_at ?? null,
+            decision_note: r.rejection_reason ?? null,
+          })
+        }
+        for (const r of (cdnR.data || []) as any[]) {
+          merged.push({
+            id: `cdn-${r.id}`, category: "misc",
+            doc_label: `إشعار مدين عميل · ${r.note_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/customer-debit-notes/${r.id}`,
+            party_label: r.customers?.name ?? null,
+            value_label: `${Number(r.total_amount).toFixed(2)}`,
+            status: r.approval_status as any, requested_by_email: null,
+            requested_at: r.created_at, decided_by_email: null,
+            decided_at: r.approved_at ?? r.rejected_at ?? null,
+            decision_note: r.rejection_reason ?? null,
+          })
+        }
+        for (const r of (ptR.data || []) as any[]) {
+          const status = r.status === "cancelled" ? "cancelled" : r.status
+          merged.push({
+            id: `pt-${r.id}`, category: "misc",
+            doc_label: `نقل صلاحيات · ${r.id.slice(0, 8)}`,
+            doc_href: `/permissions/transfers`, party_label: null,
+            value_label: null,
+            status: status as any, requested_by_email: null,
+            requested_at: r.created_at, decided_by_email: null,
+            decided_at: null, decision_note: null,
+          })
+        }
+      } catch { /* keep going */ }
+
       // v3.74.474 — purchase returns history (decided rows).
       try {
         const { data: prs } = await supabase
@@ -2403,6 +2612,22 @@ function ApprovalsContent() {
                 </Button>
                 <Button size="sm" variant={historyFilter === "vendor_payment_correction" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("vendor_payment_correction")}>
                   <Wallet className="w-3 h-3" />{t("تصحيح دفعات", "Vendor Corrections")} ({history.filter(h => h.category === "vendor_payment_correction").length})
+                </Button>
+                {/* v3.74.481 — remaining history filters */}
+                <Button size="sm" variant={historyFilter === "dispatch" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("dispatch")}>
+                  <Package className="w-3 h-3" />{t("موافقات الإرسال", "Dispatch")} ({history.filter(h => h.category === "dispatch").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "goods_receipt" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("goods_receipt")}>
+                  <Package className="w-3 h-3" />{t("استلام مخزنى", "Goods Receipt")} ({history.filter(h => h.category === "goods_receipt").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "write_off" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("write_off")}>
+                  <XCircle className="w-3 h-3" />{t("إهلاك المخزون", "Write-offs")} ({history.filter(h => h.category === "write_off").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "inventory_transfer" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("inventory_transfer")}>
+                  <GitMerge className="w-3 h-3" />{t("تحويلات المخزون", "Transfers")} ({history.filter(h => h.category === "inventory_transfer").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "misc" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("misc")}>
+                  <AlertCircle className="w-3 h-3" />{t("طلبات متنوعة", "Other")} ({history.filter(h => h.category === "misc").length})
                 </Button>
               </div>
               {(() => {

@@ -1,0 +1,18 @@
+-- v3.74.481 — the unified /approvals history tab now includes every
+-- category the pending inbox surfaces.
+--
+-- Added loaders (all read-only, no schema changes):
+--   dispatch          — invoices with warehouse_status in (approved,
+--                       rejected)
+--   goods_receipt     — bills with receipt_status in (approved,
+--                       rejected)
+--   write_off         — inventory_write_offs (approved / rejected /
+--                       posted)
+--   inventory_transfer— inventory_transfers (received / cancelled /
+--                       rejected)
+--   misc              — purchase_requests + bank_voucher_requests +
+--                       expenses + customer_debit_notes +
+--                       permission_transfers, decided rows
+--
+-- Filter buttons on the history tab now cover the same set as the
+-- pending inbox tabs.
