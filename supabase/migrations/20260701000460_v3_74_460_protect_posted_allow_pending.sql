@@ -1,0 +1,19 @@
+-- v3.74.460 — bill/invoice edit-lock triggers were too strict. They
+-- refused any edit to a document whose status was not exactly 'draft'
+-- or 'voided'. But 'pending_approval' is a PRE-posted state: the
+-- accountant saved the bill, the v3.74.458 amendment guard opened a
+-- discount approval, and the owner hasn't approved yet. Nothing has
+-- been posted to the ledger. The accountant is legitimately still
+-- editing.
+--
+-- Symptom: accountant tried to edit BILL-0001 (status pending_approval)
+-- after v3.74.458 amendments. Save failed with:
+--   "لا يمكن تعديل بنود فاتورة منشورة. اعمل void للفاتورة أولاً."
+-- Origin: bill_item_protect_posted_trg (checked status NOT IN
+-- ('draft','voided')).
+--
+-- Fix: widen the editable whitelist on all four triggers to include
+-- 'pending_approval' and 'rejected'. Only truly posted states
+-- (posted, paid, partially_paid, sent) remain locked.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

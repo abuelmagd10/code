@@ -64,6 +64,32 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BG. قبول pending_approval + rejected كحالات قابلة للتعديل (v3.74.460)
+
+### الفجوة
+
+الـ 4 triggers `bill/invoice_(item_)protect_posted_trg` كانت رافضة
+أى تعديل على مستند حالته مش بالظبط `draft` أو `voided`. لكن
+`pending_approval` معناها "المحاسب حفظ، الـ v3.74.458 amendment guard
+فتح دورة اعتماد، والمالك لسه ما اعتمدش". ولا حاجة اترحلت للـ ledger.
+
+**السيناريو المكسور**: المحاسب عدّل الشحن فى BILL-0001 (draft) → save
+نجح، لكن الـ status اتحول pending_approval. حاول يعدّل تانى → **رفض**
+"لا يمكن تعديل بنود فاتورة منشورة".
+
+### الحل
+
+الـ editable whitelist اتوسع فى الـ 4 triggers:
+- **قبل**: `('draft', 'voided')`
+- **بعد**: `('draft', 'voided', 'pending_approval', 'rejected')`
+- الـ invoice كمان يقبل `'cancelled'`
+
+الحالات المقفولة فعلاً: `posted`, `paid`, `partially_paid`, `sent`.
+
+### Section BG baseline
+- 4 function rewrites: bill_protect_posted, bill_item_protect_posted,
+  invoice_protect_posted, invoice_item_protect_posted
+
 ## BF. sync_bill/invoice ما يعدلش totals على PO/SO المعتمد (v3.74.459)
 
 ### الفجوة
