@@ -112,6 +112,24 @@ interface PendingWriteOff {
   type: "write_off"
 }
 
+// v3.74.480 — generic misc pending approval item. Used for the
+// remaining categories whose actions require dedicated pages
+// (purchase requests, bank vouchers, expenses, customer debit notes,
+// permission transfers). One shape covers all: doc_no + party + amount
+// + branch/warehouse + link to the dedicated page for actioning.
+interface PendingMiscApproval {
+  id: string
+  kind: "purchase_request" | "bank_voucher" | "expense" | "customer_debit_note" | "permission_transfer"
+  doc_no: string | null
+  party_or_label: string | null
+  amount: number
+  branch_name: string | null
+  warehouse_name: string | null
+  href: string
+  requested_at: string
+  type: "misc_approval"
+}
+
 // v3.74.479 — inventory transfer pending approval. The workflow has
 // three stages (source manager approve → in-transit → destination
 // manager receive). Each stage lives on the transfer's own page.
@@ -266,6 +284,7 @@ type PendingItem =
   | PendingGoodsReceipt
   | PendingWriteOff
   | PendingInventoryTransfer
+  | PendingMiscApproval
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -834,8 +853,9 @@ function ApprovalsContent() {
   const [goodsReceipts, setGoodsReceipts] = useState<PendingGoodsReceipt[]>([])
   const [writeOffs, setWriteOffs] = useState<PendingWriteOff[]>([])
   const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
+  const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "misc" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
@@ -1298,6 +1318,125 @@ function ApprovalsContent() {
         })))
       } catch {
         setInventoryTransfers([])
+      }
+
+      // v3.74.480 — collect misc pending items (purchase requests,
+      // bank vouchers, expenses, customer debit notes, permission
+      // transfers). All are link-out cards; the dedicated pages hold
+      // the actual approve/reject flows with their full governance.
+      try {
+        const misc: PendingMiscApproval[] = []
+        // Purchase Requests
+        const { data: prs } = await supabase
+          .from("purchase_requests")
+          .select(`id, request_number, total_estimated, status, created_at,
+                   branch_id, warehouse_id, branches(name), warehouses(name)`)
+          .eq("company_id", cid)
+          .eq("status", "pending_approval")
+          .order("created_at", { ascending: true })
+          .limit(50)
+        for (const r of (prs || []) as any[]) {
+          misc.push({
+            id: `pr-${r.id}`, kind: "purchase_request",
+            doc_no: r.request_number ?? null,
+            party_or_label: null,
+            amount: Number(r.total_estimated || 0),
+            branch_name: r.branches?.name ?? null,
+            warehouse_name: r.warehouses?.name ?? null,
+            href: `/purchase-requests/${r.id}`,
+            requested_at: r.created_at,
+            type: "misc_approval",
+          })
+        }
+        // Bank Voucher Requests
+        const { data: bvs } = await supabase
+          .from("bank_voucher_requests")
+          .select(`id, voucher_number, amount, status, created_at, branch_id, branches(name)`)
+          .eq("company_id", cid)
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .limit(50)
+        for (const r of (bvs || []) as any[]) {
+          misc.push({
+            id: `bv-${r.id}`, kind: "bank_voucher",
+            doc_no: r.voucher_number ?? null,
+            party_or_label: null,
+            amount: Number(r.amount || 0),
+            branch_name: r.branches?.name ?? null,
+            warehouse_name: null,
+            href: `/bank-vouchers/${r.id}`,
+            requested_at: r.created_at,
+            type: "misc_approval",
+          })
+        }
+        // Expenses
+        const { data: exs } = await supabase
+          .from("expenses")
+          .select(`id, expense_number, amount, status, created_at, branch_id, branches(name)`)
+          .eq("company_id", cid)
+          .eq("status", "pending_approval")
+          .order("created_at", { ascending: true })
+          .limit(50)
+        for (const r of (exs || []) as any[]) {
+          misc.push({
+            id: `ex-${r.id}`, kind: "expense",
+            doc_no: r.expense_number ?? null,
+            party_or_label: null,
+            amount: Number(r.amount || 0),
+            branch_name: r.branches?.name ?? null,
+            warehouse_name: null,
+            href: `/expenses/${r.id}`,
+            requested_at: r.created_at,
+            type: "misc_approval",
+          })
+        }
+        // Customer Debit Notes
+        const { data: cdns } = await supabase
+          .from("customer_debit_notes")
+          .select(`id, note_number, total_amount, approval_status, created_at,
+                   customer_id, customers(name),
+                   branch_id, branches(name)`)
+          .eq("company_id", cid)
+          .eq("approval_status", "pending_approval")
+          .order("created_at", { ascending: true })
+          .limit(50)
+        for (const r of (cdns || []) as any[]) {
+          misc.push({
+            id: `cdn-${r.id}`, kind: "customer_debit_note",
+            doc_no: r.note_number ?? null,
+            party_or_label: r.customers?.name ?? null,
+            amount: Number(r.total_amount || 0),
+            branch_name: r.branches?.name ?? null,
+            warehouse_name: null,
+            href: `/customer-debit-notes/${r.id}`,
+            requested_at: r.created_at,
+            type: "misc_approval",
+          })
+        }
+        // Permission Transfers
+        const { data: pts } = await supabase
+          .from("permission_transfers")
+          .select(`id, status, created_at, transferred_by, target_user_id`)
+          .eq("company_id", cid)
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .limit(50)
+        for (const r of (pts || []) as any[]) {
+          misc.push({
+            id: `pt-${r.id}`, kind: "permission_transfer",
+            doc_no: r.id.slice(0, 8),
+            party_or_label: null,
+            amount: 0,
+            branch_name: null,
+            warehouse_name: null,
+            href: `/permissions/transfers`,
+            requested_at: r.created_at,
+            type: "misc_approval",
+          })
+        }
+        setMiscApprovals(misc)
+      } catch {
+        setMiscApprovals([])
       }
     } finally {
       setIsLoading(false)
@@ -1821,7 +1960,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -2200,6 +2339,10 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "tr" ? "default" : "outline"} onClick={() => setActiveTab("tr")} className="gap-1">
               <GitMerge className="w-3.5 h-3.5" />{t("تحويلات المخزون", "Transfers")} ({inventoryTransfers.length})
             </Button>
+            {/* v3.74.480 — misc (PR + Vouchers + Expenses + CDN + Permission Transfers) */}
+            <Button size="sm" variant={activeTab === "misc" ? "default" : "outline"} onClick={() => setActiveTab("misc")} className="gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />{t("طلبات متنوعة", "Other Requests")} ({miscApprovals.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -2475,6 +2618,78 @@ function ApprovalsContent() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              )}
+
+              {/* v3.74.480 — Misc pending approvals (link-out). */}
+              {(activeTab === "all" || activeTab === "misc") && miscApprovals.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <AlertCircle className="w-4 h-4" />{t("طلبات اعتماد متنوعة", "Other Pending Approvals")}
+                  </h2>
+                  {miscApprovals.map(m => {
+                    const kindLabel =
+                      m.kind === "purchase_request" ? t("طلب شراء", "Purchase Request") :
+                      m.kind === "bank_voucher" ? t("سند بنكى", "Bank Voucher") :
+                      m.kind === "expense" ? t("مصروف", "Expense") :
+                      m.kind === "customer_debit_note" ? t("إشعار مدين عميل", "Customer Debit Note") :
+                      m.kind === "permission_transfer" ? t("نقل صلاحيات", "Permission Transfer") :
+                      m.kind
+                    const color =
+                      m.kind === "purchase_request" ? "border-l-purple-500 bg-purple-100 dark:bg-purple-900/30 text-purple-600" :
+                      m.kind === "bank_voucher" ? "border-l-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600" :
+                      m.kind === "expense" ? "border-l-yellow-500 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600" :
+                      m.kind === "customer_debit_note" ? "border-l-fuchsia-500 bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-600" :
+                      "border-l-gray-500 bg-gray-100 dark:bg-gray-800 text-gray-600"
+                    const [borderColor, bgColor, textColor] = color.split(" ")
+                    return (
+                      <Card key={m.id} className={`border-l-4 ${borderColor}`}>
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className={`p-2 rounded-lg shrink-0 ${bgColor}`}>
+                                <AlertCircle className={`w-4 h-4 ${textColor}`} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">
+                                  {kindLabel} · {m.doc_no ?? m.id.slice(0, 6)}
+                                </p>
+                                {m.party_or_label && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">👤 {m.party_or_label}</p>
+                                )}
+                                {m.amount > 0 && (
+                                  <p className="text-xs mt-1">
+                                    <span className={`font-semibold ${textColor}`}>
+                                      {t("القيمة", "Amount")}: {fmtMoney(m.amount)}
+                                    </span>
+                                  </p>
+                                )}
+                                {m.branch_name && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    🏢 {m.branch_name}{m.warehouse_name && <> · 🏬 {m.warehouse_name}</>}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(m.requested_at)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                                <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <Link href={m.href} className="inline-block">
+                              <Button size="sm" className="gap-1 bg-slate-700 hover:bg-slate-800 text-white text-xs">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                {t("فتح صفحة المستند", "Open document")}
+                              </Button>
+                            </Link>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               )}
 

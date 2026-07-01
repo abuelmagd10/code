@@ -64,6 +64,26 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CA. صندوق موحّد — الفئات المتبقية (طلبات متنوعة) (v3.74.480)
+
+Tab أخير "طلبات متنوعة" يجمع الفئات المتبقية بتصميم link-out:
+- طلبات الشراء (`purchase_requests`)
+- سندات بنكية (`bank_voucher_requests`)
+- المصروفات (`expenses`)
+- إشعارات مدين العملاء (`customer_debit_notes`)
+- نقل الصلاحيات (`permission_transfers`)
+
+**تصميم**: لون مختلف لكل نوع، badge موحّد، لينك للصفحة الأصلية.
+
+**الحوكمة**: كل الإجراءات على الصفحات المخصصة. الـ inbox بس رصد.
+
+سايدبار: كل الـ badges مضافة إلى pendingInboxCount.
+
+---
+
+**بعد v3.74.480**: `/approvals` بيوحّد **كل** الـ pending-approval flows
+الموجودة فى `get_user_approval_badges`.
+
 ## BZ. صندوق موحّد — Write-offs + Inventory Transfers (link-out) (v3.74.479)
 
 Tabs جديدة:

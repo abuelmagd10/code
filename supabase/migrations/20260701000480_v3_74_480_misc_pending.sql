@@ -1,0 +1,23 @@
+-- v3.74.480 — Final batch. The remaining pending workflows surface
+-- in the unified approvals inbox as a single "طلبات متنوعة" tab.
+--
+-- Covered:
+--   purchase_requests           status='pending_approval'
+--   bank_voucher_requests       status='pending'
+--   expenses                    status='pending_approval'
+--   customer_debit_notes        approval_status='pending_approval'
+--   permission_transfers        status='pending'
+--
+-- Each item is a link-out card. Actions stay on the dedicated pages
+-- where the full context (line items, approvers, SoD checks) already
+-- lives. The inbox provides visibility + navigation, not bypass.
+--
+-- Sidebar rolls up all five badge keys into pendingInboxCount.
+--
+-- After this release the /approvals page unifies every pending-
+-- approval flow that has a badge in get_user_approval_badges:
+--   discount_approval + payment_approval + purchase/sales returns
+--   + refunds/corrections + dispatch + bill_receipt + write-offs
+--   + inventory_transfer + the misc five above + manufacturing
+--   (bom_version, routing, production_order, material_issue,
+--   product_receive).

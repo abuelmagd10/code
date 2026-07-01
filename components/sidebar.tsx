@@ -191,6 +191,8 @@ export function Sidebar() {
   //   v3.74.477 → dispatch approvals (invoices warehouse stage 2)
   //   v3.74.478 → goods receipt approvals (bills warehouse confirm)
   //   v3.74.479 → write-offs + inventory transfers
+  //   v3.74.480 → misc: purchase_request, expense, bank_voucher_request,
+  //              customer_debit_note, permission_transfer
   const pendingInboxCount =
     pendingApprovalsCount
     + sumBadges(approvalBadges, [
@@ -205,6 +207,11 @@ export function Sidebar() {
         "bill_receipt",
         "inventory_write_off",
         "inventory_transfer",
+        "purchase_request",
+        "expense",
+        "bank_voucher_request",
+        "customer_debit_note",
+        "permission_transfer",
       ])
 
 
