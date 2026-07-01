@@ -1,0 +1,35 @@
+-- v3.74.445 — close two Paymob-webhook audit gaps at DB level.
+--
+-- Audit found:
+--
+-- (1) handlePaymentFailed (lib/billing/subscription-service.ts) flips
+--     companies.subscription_status to 'past_due' but does not stamp
+--     past_due_at. Without that timestamp, daily_billing_check from
+--     v3.74.442 cannot compute grace-period end and companies would
+--     stay in past_due forever. Same for handleSuspend / manual sets
+--     to payment_failed (suspended_at missing).
+--
+-- (2) The TS code uses spelling 'canceled' (US). can_write_to_company
+--     from v3.74.444 was checking 'cancelled' (UK). A cancelled
+--     company would keep write access because the check mismatched.
+--
+-- Both fixed at DB level so the webhook path does not need a redeploy.
+--
+-- Trigger companies_subscription_status_transitions
+--   BEFORE UPDATE OF subscription_status:
+--     'past_due'       → auto-set past_due_at  if null
+--     'payment_failed' → auto-set suspended_at if null
+--     'active'         → clear past_due_at + suspended_at,
+--                        stamp reactivated_at
+--   Fires from the webhook path, the cron path, and any manual
+--   admin action.
+--
+-- can_write_to_company now blocks both 'cancelled' and 'canceled'.
+--
+-- Baseline (Section AR) wired via PERFORM in assert_baseline.
+--
+-- Round-trip smoke test passed in DB:
+--   past_due_at NULL → status='past_due' → past_due_at auto-filled;
+--   status='active' → past_due_at cleared + reactivated_at stamped.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

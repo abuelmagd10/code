@@ -64,6 +64,50 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AR. Paymob audit fixes (v3.74.445)
+
+### الفجوتان
+
+**١. past_due_at ما بيتعبيش**: الـ webhook TS code
+(`handlePaymentFailed`) بيحوّل status لـ past_due لكن **بدون تعبية**
+past_due_at. النتيجة: `daily_billing_check` من v3.74.442 محتاج
+past_due_at ليحسب نهاية فترة السماح — لو مش موجود، الشركة تفضل
+past_due للأبد ومطلقاً ما تنتقل لـ suspended.
+
+**٢. Spelling mismatch**: الـ TS بيكتب `'canceled'` (US)،
+`can_write_to_company` من v3.74.444 بيفحص `'cancelled'` (UK). شركة
+كنسل ستفضل عندها write access لأن الفحص خطأ.
+
+### الحل (DB level بدون تعديل الـ TS)
+
+**Trigger `companies_subscription_status_transitions`** على
+`companies` BEFORE UPDATE OF subscription_status:
+- انتقال لـ `past_due` والـ past_due_at NULL → يتعبى بـ NOW()
+- انتقال لـ `payment_failed` والـ suspended_at NULL → يتعبى بـ NOW()
+- انتقال لـ `active` → مسح past_due_at و suspended_at + تسجيل
+  reactivated_at
+
+يشتغل من كل المسارات: webhook TS، cron، admin يدوى.
+
+**can_write_to_company** بقى يقبل الـ ٢ spellings
+(`'cancelled'` و `'canceled'`).
+
+### التحقق
+
+Round-trip test فى DB:
+```
+1. Set status='past_due' (بدون past_due_at)
+   → trigger يعبى past_due_at تلقائياً ✓
+2. Set status='active'
+   → past_due_at و suspended_at اتمسحوا + reactivated_at اتسجل ✓
+```
+
+### Section AR baseline
+- function `companies_subscription_status_transitions_trg` موجودة
+- trigger `companies_subscription_status_transitions` مفعّل
+- `can_write_to_company` يحتوى على `'cancelled'` و `'canceled'`
+- `PERFORM public.assert_baseline_v3_74_445_check()` مضاف لـ assert_baseline
+
 ## AQ. Read-only mode للاشتراك الموقوف (v3.74.444)
 
 ### الفجوة
