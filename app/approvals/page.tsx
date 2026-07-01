@@ -97,6 +97,20 @@ interface PendingCustomerRefund {
   type: "customer_refund"
 }
 
+// v3.74.478 — goods receipt approval for purchase bills. Warehouse
+// stage: bills.receipt_status='pending' after the bill was submitted
+// for receipt. Uses /api/bills/[id]/{confirm-receipt, reject-receipt}.
+interface PendingGoodsReceipt {
+  id: string
+  bill_no: string | null
+  supplier_name: string | null
+  total: number
+  branch_name: string | null
+  warehouse_name: string | null
+  requested_at: string
+  type: "goods_receipt"
+}
+
 // v3.74.477 — dispatch approval for sales invoices. Warehouse Stage 2:
 // invoice.warehouse_status='pending' after the invoice was sent.
 // Uses /api/invoices/[id]/{warehouse-approve, warehouse-reject}.
@@ -221,6 +235,7 @@ type PendingItem =
   | PendingCustomerRefund
   | PendingVendorPaymentCorrection
   | PendingDispatch
+  | PendingGoodsReceipt
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -786,14 +801,15 @@ function ApprovalsContent() {
   const [customerRefunds, setCustomerRefunds] = useState<PendingCustomerRefund[]>([])
   const [vendorPaymentCorrections, setVendorPaymentCorrections] = useState<PendingVendorPaymentCorrection[]>([])
   const [dispatches, setDispatches] = useState<PendingDispatch[]>([])
+  const [goodsReceipts, setGoodsReceipts] = useState<PendingGoodsReceipt[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "history">("all")
   const [history, setHistory] = useState<UnifiedHistoryEntry[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -1162,6 +1178,38 @@ function ApprovalsContent() {
         })))
       } catch {
         setDispatches([])
+      }
+
+      // v3.74.478 — goods receipt approvals (bills awaiting warehouse
+      // confirmation). Governance: /api/bills/[id]/confirm-receipt
+      // enforces warehouse role + warehouse gate.
+      try {
+        const { data: bills } = await supabase
+          .from("bills")
+          .select(`
+            id, bill_number, total_amount, receipt_status, status,
+            created_at, supplier_id, branch_id, warehouse_id,
+            suppliers(name),
+            branches(name),
+            warehouses(name)
+          `)
+          .eq("company_id", cid)
+          .eq("receipt_status", "pending")
+          .not("status", "in", "(cancelled,draft)")
+          .order("created_at", { ascending: true })
+          .limit(100)
+        setGoodsReceipts((bills || []).map((b: any) => ({
+          id: b.id,
+          bill_no: b.bill_number ?? null,
+          supplier_name: b.suppliers?.name ?? null,
+          total: Number(b.total_amount || 0),
+          branch_name: b.branches?.name ?? null,
+          warehouse_name: b.warehouses?.name ?? null,
+          requested_at: b.created_at,
+          type: "goods_receipt" as const,
+        })))
+      } catch {
+        setGoodsReceipts([])
       }
     } finally {
       setIsLoading(false)
@@ -1685,7 +1733,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -2052,6 +2100,10 @@ function ApprovalsContent() {
             <Button size="sm" variant={activeTab === "disp" ? "default" : "outline"} onClick={() => setActiveTab("disp")} className="gap-1">
               <Package className="w-3.5 h-3.5" />{t("موافقات الإرسال", "Dispatch")} ({dispatches.length})
             </Button>
+            {/* v3.74.478 — goods receipt approvals */}
+            <Button size="sm" variant={activeTab === "recv" ? "default" : "outline"} onClick={() => setActiveTab("recv")} className="gap-1">
+              <Package className="w-3.5 h-3.5" />{t("الاستلام المخزنى", "Goods Receipt")} ({goodsReceipts.length})
+            </Button>
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
@@ -2321,6 +2373,125 @@ function ApprovalsContent() {
                               <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>
                                 {t("إلغاء", "Cancel")}
                               </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* v3.74.478 — Goods Receipt approvals (bills awaiting warehouse confirmation). */}
+              {(activeTab === "all" || activeTab === "recv") && goodsReceipts.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Package className="w-4 h-4" />{t("موافقات الاستلام المخزنى", "Goods Receipt Approvals")}
+                  </h2>
+                  {goodsReceipts.map(b => (
+                    <Card key={b.id} className="border-l-4 border-l-lime-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-lime-100 dark:bg-lime-900/30 rounded-lg shrink-0">
+                              <Package className="w-4 h-4 text-lime-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("فاتورة مشتريات للاستلام", "Bill Awaiting Receipt")} · {b.bill_no ?? b.id.slice(0, 6)}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                👤 {b.supplier_name ?? "—"}
+                              </p>
+                              <p className="text-xs mt-1">
+                                <span className="font-semibold text-lime-700 dark:text-lime-300">
+                                  {t("قيمة الفاتورة", "Bill total")}: {fmtMoney(b.total)}
+                                </span>
+                              </p>
+                              {b.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {b.branch_name}{b.warehouse_name && <> · 🏬 {b.warehouse_name}</>}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(b.requested_at)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار الاستلام", "Awaiting Receipt")}
+                            </Badge>
+                            <Link href={`/bills/${b.id}`} className="text-xs text-lime-600 hover:underline">
+                              {t("عرض الفاتورة", "View bill")}
+                            </Link>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === b.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(b.id)
+                                const res = await fetch(`/api/bills/${encodeURIComponent(b.id)}/confirm-receipt`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ ui_surface: "approvals_inbox" }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Confirm failed' : 'تعذر تأكيد الاستلام'))
+                                toast({ title: t("تم تأكيد الاستلام", "Receipt confirmed") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("تأكيد الاستلام", "Confirm Receipt")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === b.id}
+                            onClick={() => { setRejectId(b.id); setRejectType("goods_receipt"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("رفض الاستلام", "Reject Receipt")}
+                          </Button>
+                        </div>
+                        {rejectId === b.id && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب رفض الاستلام...", "Rejection reason...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === b.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(b.id)
+                                    const res = await fetch(`/api/bills/${encodeURIComponent(b.id)}/reject-receipt`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ reason: rejectReason, rejection_reason: rejectReason }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                    toast({ title: t("تم الرفض", "Rejected") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
                             </div>
                           </div>
                         )}

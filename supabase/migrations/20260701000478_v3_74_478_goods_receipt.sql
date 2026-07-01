@@ -1,0 +1,14 @@
+-- v3.74.478 — Goods receipt approvals (purchase bills awaiting
+-- warehouse confirmation) join the unified approvals inbox.
+--
+-- UI-only, additive. Existing /inventory/goods-receipt page still
+-- works.
+--
+-- Loader reads bills where receipt_status='pending' AND status NOT IN
+-- ('cancelled','draft'). Actions POST to
+-- /api/bills/[id]/confirm-receipt and reject-receipt.
+--
+-- Governance preserved: warehouse role + warehouse gate identical to
+-- the bill_receipt predicate in get_user_approval_badges.
+--
+-- Sidebar rolls up bill_receipt into pendingInboxCount.

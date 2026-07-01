@@ -64,6 +64,18 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BY. صندوق موحّد — Goods Receipt (استلام مخزنى) (v3.74.478)
+
+Tab "الاستلام المخزنى" يعرض فواتير المشتريات بحالة
+`receipt_status='pending'` (بعد تقديمها للاستلام). الأزرار:
+- **تأكيد الاستلام** → `/api/bills/[id]/confirm-receipt`
+- **رفض الاستلام** (مع سبب) → `/api/bills/[id]/reject-receipt`
+- **[عرض الفاتورة]** → `/bills/[id]`
+
+Governance: warehouse role + warehouse gate مطابق لـ `bill_receipt`
+predicate فى `get_user_approval_badges`. سايدبار يشمله فى
+pendingInboxCount.
+
 ## BX. صندوق موحّد — Dispatch (warehouse stage 2) (v3.74.477)
 
 Tab "موافقات الإرسال" يعرض فواتير المبيعات بحالة
