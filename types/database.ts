@@ -82,6 +82,9 @@ export interface PurchaseOrder {
   // Relations (joined from Supabase)
   suppliers?: Supplier
   branches?: Pick<Branch, 'name'>
+  // v3.74.449 — computed on the /api/v2/purchase-orders response so
+  // the list can show a "discount rejected" badge without opening the PO.
+  discount_approval_status?: 'pending' | 'approved' | 'rejected' | 'cancelled' | null
 }
 
 /**

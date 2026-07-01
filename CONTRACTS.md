@@ -64,6 +64,40 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AV. مؤشر رفض/انتظار الخصم فى قائمة أوامر الشراء (v3.74.449)
+
+### الفجوة
+
+بعد v3.74.448 (تعديل PO مع خصم مرفوض ممكن)، المالك اقترح: عند رفض
+الخصم، القائمة `/purchase-orders` لسه بتعرض الحالة كـ "قيد الموافقة"
+فقط. مسئول المشتريات والمالك محتاجين يشوفوا **من القائمة** إن الخصم
+مرفوض (أو قيد الاعتماد) عشان يعرفوا يفتحوا أى PO يحتاج إجراء بدون
+فتح كل واحد لوحده.
+
+### الحل
+
+**API** (`app/api/v2/purchase-orders/route.ts`): بعد جلب الـ POs،
+batch query لـ `discount_approvals` بـ document_type='purchase_order' و
+`document_id IN (poIds)`. آخر قرار خصم لكل PO يضاف كـ
+`discount_approval_status` (pending / approved / rejected / cancelled / null).
+
+**نوع `PurchaseOrder`** فى `types/database.ts` يضم الحقل الجديد.
+
+**قائمة `/purchase-orders`**: تحت الـ StatusBadge (فى الصف):
+- `discount_approval_status === 'rejected'` → badge أحمر **"⚠ الخصم مرفوض"**
+- `discount_approval_status === 'pending'` → badge أصفر **"الخصم قيد الاعتماد"**
+- غير كده (null / approved / cancelled) → لا badge إضافى
+
+الـ indicator يظهر فى الحالتين — مع الفاتورة المرتبطة أو بدونها.
+
+### قائمة المبيعات
+
+المبيعات ما عندهاش API v2 مماثل، فمؤجل. لو المالك احتاج نفس الـ
+indicator فى `/sales-orders`، نعمله فى إصدار لاحق.
+
+### Section AV baseline
+لا فحوصات DB. تعديل UI + enrichment API فقط.
+
 ## AU. HOTFIX تعديل PO/SO بعد رفض الخصم (v3.74.448)
 
 ### الفجوة

@@ -738,6 +738,17 @@ export default function PurchaseOrdersPage() {
           return (
             <div className="flex flex-col items-center gap-0.5">
               <StatusBadge status={orderStatus} lang={appLang} />
+              {/* v3.74.449 — surface a rejected discount even when a bill is linked */}
+              {(row as any).discount_approval_status === 'rejected' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 font-medium">
+                  {appLang === 'en' ? '⚠ Discount rejected' : '⚠ الخصم مرفوض'}
+                </span>
+              )}
+              {(row as any).discount_approval_status === 'pending' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200 font-medium">
+                  {appLang === 'en' ? 'Discount pending' : 'الخصم قيد الاعتماد'}
+                </span>
+              )}
               {linkedBill && (
                 <span className="text-[10px] text-gray-500 dark:text-gray-400">
                   {appLang === 'en' ? 'Bill:' : 'الفاتورة:'}
@@ -749,7 +760,22 @@ export default function PurchaseOrdersPage() {
             </div>
           );
         }
-        return <StatusBadge status={row.status} lang={appLang} />;
+        // v3.74.449 — same discount indicator for the no-bill path
+        return (
+          <div className="flex flex-col items-center gap-0.5">
+            <StatusBadge status={row.status} lang={appLang} />
+            {(row as any).discount_approval_status === 'rejected' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 font-medium">
+                {appLang === 'en' ? '⚠ Discount rejected' : '⚠ الخصم مرفوض'}
+              </span>
+            )}
+            {(row as any).discount_approval_status === 'pending' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200 font-medium">
+                {appLang === 'en' ? 'Discount pending' : 'الخصم قيد الاعتماد'}
+              </span>
+            )}
+          </div>
+        );
       }
     },
     {
