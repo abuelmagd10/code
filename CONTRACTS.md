@@ -64,6 +64,49 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## AT. Sync member.seat_number مع seat_license.assigned_user_id (v3.74.447)
+
+### الفجوة
+
+نفس المعلومة مسجّلة فى مكانين:
+- `company_seat_licenses.assigned_user_id` — المستخدم على المقعد ده
+- `company_members.seat_number` — المقعد اللى الموظف قاعد عليه
+
+الاتنين المفروض mirror. لما تخصيص يحصل عن طريق واحد من المسارات
+غير-الرسمية (admin SQL، migration، coupon، تدخل يدوى)، الاتنين
+يخرجوا من التزامن. الـ UI بيقرأ من `company_members.seat_number`
+ولو NULL بيعرض الموظف "على مقعد -1 / محظور" حتى لو الـ license
+مخصصة له فعلاً.
+
+اكتشفها المالك على شركة تست: بعد إعادة التفعيل اليدوى، مسئول
+المشتريات كان بيظهر مقعد -1 + مقعد 1 فى نفس الوقت.
+
+### الحل
+
+**Trigger `sync_company_member_seat_number`** على
+`company_seat_licenses`:
+- AFTER INSERT / UPDATE OF assigned_user_id / DELETE
+- عند تغيير `assigned_user_id`: يمسح seat_number للأسّائى القديم،
+  يضبطه للجديد
+- عند الحذف: يمسح seat_number للأسّائى السابق
+
+**One-shot reconciliation**: UPDATE يعالج أى drift موجود قبل تركيب
+الـ trigger (بما فيه drift شركة تست).
+
+### التحقق (round-trip)
+
+```
+1) unassign seat #1 → member.seat_number becomes NULL ✓
+2) reassign seat #1 → member.seat_number becomes 1    ✓
+```
+
+### Section AT baseline
+- function `sync_company_member_seat_number_trg` موجودة
+- trigger `sync_company_member_seat_number` مفعّل على
+  `company_seat_licenses`
+- `PERFORM public.assert_baseline_v3_74_447_check()` مضاف لـ
+  `assert_baseline`
+
 ## AS. Billing E2E fixes + docs (v3.74.446)
 
 ### الغرض

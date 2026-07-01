@@ -1,0 +1,29 @@
+-- v3.74.447 — keep company_members.seat_number in sync with
+-- company_seat_licenses.assigned_user_id.
+--
+-- The seat system stores the same fact twice. When only one side is
+-- updated (admin SQL, migration, coupon flow, direct fix) the other
+-- drifts, and the seat management UI shows the affected member on
+-- "seat -1 / blocked" even though the license row is correctly
+-- assigned. Owner hit exactly this on شركة تست today: the manual
+-- reactivation reassigned assigned_user_id on seat #1 but left
+-- company_members.seat_number NULL, so the UI kept showing the
+-- purchasing officer as blocked on seat -1.
+--
+-- Trigger sync_company_member_seat_number
+--   AFTER INSERT OR UPDATE OF assigned_user_id OR DELETE
+--   on company_seat_licenses.
+--   INSERT/UPDATE: clears the old assignee's seat_number if the
+--     assigned_user_id changed, then stamps NEW.seat_number on the
+--     current assignee.
+--   DELETE: clears seat_number on the previous assignee.
+--
+-- One-shot reconciliation UPDATE catches any pre-existing drift.
+--
+-- Round-trip test in DB:
+--   1) unassign seat #1 → member.seat_number becomes NULL ✓
+--   2) reassign seat #1 → member.seat_number becomes 1  ✓
+--
+-- Baseline (Section AT) wired via PERFORM in assert_baseline.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
