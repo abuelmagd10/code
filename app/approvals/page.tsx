@@ -83,6 +83,11 @@ interface PendingDiscountApproval {
   adjustment_snapshot?: number | null
   tax_amount_snapshot?: number | null
   subtotal_snapshot?: number | null
+  // v3.74.467+ — extra fields so DiffCard can surface every possible edit
+  shipping_tax_rate_snapshot?: number | null
+  discount_position_snapshot?: string | null
+  tax_inclusive_snapshot?: boolean | null
+  supplier_name_snapshot?: string | null
   prior_approval?: {
     id: string
     discount_value: number | null
@@ -93,6 +98,10 @@ interface PendingDiscountApproval {
     adjustment_snapshot: number | null
     tax_amount_snapshot: number | null
     subtotal_snapshot: number | null
+    shipping_tax_rate_snapshot?: number | null
+    discount_position_snapshot?: string | null
+    tax_inclusive_snapshot?: boolean | null
+    supplier_name_snapshot?: string | null
     decided_at: string | null
     status: string | null
   } | null
@@ -166,7 +175,8 @@ const AmendmentDiffCard = ({
     if (!p) { added.push(curr); continue }
     if (!same(p.quantity, curr.quantity)
         || !same(p.unit_price, curr.unit_price)
-        || !same(p.discount_percent, curr.discount_percent)) {
+        || !same(p.discount_percent, curr.discount_percent)
+        || !same(p.tax_rate, curr.tax_rate)) {
       changed.push({ from: p, to: curr })
     }
   }
@@ -174,13 +184,37 @@ const AmendmentDiffCard = ({
     if (!currMap.has(k)) removed.push(p)
   }
 
+  // v3.74.467 — include document-level discount in the diff table
+  // so the owner sees the discount value change explicitly.
+  const priorDiscLabel = prior.discount_type === "percent"
+    ? `${num(prior.discount_value).toFixed(2)}%`
+    : fmtMoney(num(prior.discount_value))
+  const currDiscLabel = current.discount_type === "percent"
+    ? `${num(current.discount_value).toFixed(2)}%`
+    : fmtMoney(num(current.discount_value))
+  const discChanged = priorDiscLabel !== currDiscLabel
+
   const rows: Array<{ label: string; a: number; b: number }> = [
     { label: t("المجموع الفرعى", "Subtotal"), a: num(prior.subtotal_snapshot), b: num(current.subtotal_snapshot) },
     { label: t("الشحن", "Shipping"), a: num(prior.shipping_snapshot), b: num(current.shipping_snapshot) },
+    { label: t("نسبة ضريبة الشحن", "Shipping tax rate"), a: num((prior as any).shipping_tax_rate_snapshot), b: num((current as any).shipping_tax_rate_snapshot) },
     { label: t("قيمة الضريبة", "Tax amount"), a: num(prior.tax_amount_snapshot), b: num(current.tax_amount_snapshot) },
     { label: t("التعديل", "Adjustment"), a: num(prior.adjustment_snapshot), b: num(current.adjustment_snapshot) },
     { label: t("الإجمالى", "Total"), a: num(prior.document_total), b: num(current.document_total) },
   ]
+
+  // v3.74.467 — categorical rows (non-numeric): discount position,
+  // tax inclusive, supplier/customer name.
+  const priorPos = String((prior as any).discount_position_snapshot ?? "")
+  const currPos = String((current as any).discount_position_snapshot ?? "")
+  const priorInc = Boolean((prior as any).tax_inclusive_snapshot)
+  const currInc = Boolean((current as any).tax_inclusive_snapshot)
+  const priorParty = String((prior as any).supplier_name_snapshot ?? (prior as any).party_name ?? "")
+  const currParty = String((current as any).supplier_name_snapshot ?? (current as any).party_name ?? "")
+  const posChanged = priorPos !== currPos && (priorPos || currPos)
+  const incChanged = priorInc !== currInc
+  const partyChanged = priorParty !== currParty && (priorParty || currParty)
+  const posLabel = (v: string) => v === "before_tax" ? t("قبل الضريبة","before tax") : v === "after_tax" ? t("بعد الضريبة","after tax") : v || "—"
 
   const anyChanged = rows.some(r => !same(r.a, r.b)) || added.length + removed.length + changed.length > 0
 
@@ -226,6 +260,42 @@ const AmendmentDiffCard = ({
               </tr>
             </thead>
             <tbody>
+              {/* v3.74.467 — document-level discount row */}
+              <tr className={discChanged ? "font-semibold" : "text-muted-foreground"}>
+                <td className="py-1">{t("خصم الفاتورة", "Document discount")}</td>
+                <td className="py-1 text-end">{priorDiscLabel}</td>
+                <td className={"py-1 text-end " + (discChanged ? "text-amber-700 dark:text-amber-300" : "")}>
+                  {currDiscLabel}
+                </td>
+              </tr>
+              {/* v3.74.467 — categorical fields */}
+              {(posChanged || (priorPos && currPos)) && (
+                <tr className={posChanged ? "font-semibold" : "text-muted-foreground"}>
+                  <td className="py-1">{t("موضع الخصم", "Discount position")}</td>
+                  <td className="py-1 text-end">{posLabel(priorPos)}</td>
+                  <td className={"py-1 text-end " + (posChanged ? "text-amber-700 dark:text-amber-300" : "")}>
+                    {posLabel(currPos)}
+                  </td>
+                </tr>
+              )}
+              {incChanged && (
+                <tr className="font-semibold">
+                  <td className="py-1">{t("شاملة الضريبة", "Tax inclusive")}</td>
+                  <td className="py-1 text-end">{priorInc ? t("نعم","yes") : t("لا","no")}</td>
+                  <td className="py-1 text-end text-amber-700 dark:text-amber-300">
+                    {currInc ? t("نعم","yes") : t("لا","no")}
+                  </td>
+                </tr>
+              )}
+              {partyChanged && (
+                <tr className="font-semibold">
+                  <td className="py-1">{t("المورد/العميل", "Party")}</td>
+                  <td className="py-1 text-end">{priorParty || "—"}</td>
+                  <td className="py-1 text-end text-amber-700 dark:text-amber-300">
+                    {currParty || "—"}
+                  </td>
+                </tr>
+              )}
               {rows.map((r, i) => {
                 const diff = !same(r.a, r.b)
                 return (
@@ -270,12 +340,28 @@ const AmendmentDiffCard = ({
                 ✏️ {t("بنود معدلة", "Modified items")} ({changed.length})
               </p>
               <ul className="text-xs ms-4 list-disc text-muted-foreground">
-                {changed.map((c, i) => (
-                  <li key={i}>
-                    {c.to.product_name ?? c.from.product_name ?? "?"}:
-                    {" "}{num(c.from.quantity)}×{fmtMoney(num(c.from.unit_price))} → {num(c.to.quantity)}×{fmtMoney(num(c.to.unit_price))}
-                  </li>
-                ))}
+                {changed.map((c, i) => {
+                  // v3.74.467 — surface each field that changed on the item
+                  const parts: string[] = []
+                  if (!same(c.from.quantity, c.to.quantity)) {
+                    parts.push(`${t("كمية","qty")} ${num(c.from.quantity)}→${num(c.to.quantity)}`)
+                  }
+                  if (!same(c.from.unit_price, c.to.unit_price)) {
+                    parts.push(`${t("سعر","price")} ${fmtMoney(num(c.from.unit_price))}→${fmtMoney(num(c.to.unit_price))}`)
+                  }
+                  if (!same(c.from.discount_percent, c.to.discount_percent)) {
+                    parts.push(`${t("خصم","disc")} ${num(c.from.discount_percent)}%→${num(c.to.discount_percent)}%`)
+                  }
+                  if (!same(c.from.tax_rate, c.to.tax_rate)) {
+                    parts.push(`${t("ضريبة","tax")} ${num(c.from.tax_rate)}%→${num(c.to.tax_rate)}%`)
+                  }
+                  return (
+                    <li key={i}>
+                      <strong>{c.to.product_name ?? c.from.product_name ?? "?"}</strong>
+                      {parts.length > 0 && <>: {parts.join(" · ")}</>}
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           )}
@@ -660,6 +746,10 @@ function ApprovalsContent() {
             adjustment_snapshot: d.adjustment_snapshot != null ? Number(d.adjustment_snapshot) : null,
             tax_amount_snapshot: d.tax_amount_snapshot != null ? Number(d.tax_amount_snapshot) : null,
             subtotal_snapshot: d.subtotal_snapshot != null ? Number(d.subtotal_snapshot) : null,
+            shipping_tax_rate_snapshot: d.shipping_tax_rate_snapshot != null ? Number(d.shipping_tax_rate_snapshot) : null,
+            discount_position_snapshot: d.discount_position_snapshot ?? null,
+            tax_inclusive_snapshot: d.tax_inclusive_snapshot ?? null,
+            supplier_name_snapshot: d.supplier_name_snapshot ?? null,
             prior_approval: d.prior_approval ?? null,
           })))
         } else {

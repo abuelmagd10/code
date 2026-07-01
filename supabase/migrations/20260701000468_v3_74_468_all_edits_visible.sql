@@ -1,0 +1,37 @@
+-- v3.74.468 — DiffCard now surfaces EVERY possible edit on the
+-- amended bill / invoice, plus full parity on the sales side.
+--
+-- Owner said: يعرض اى تعديل — the diff card must show any change,
+-- not just the ones we thought of.
+--
+-- Schema additions on discount_approvals
+--   shipping_tax_rate_snapshot numeric
+--   discount_position_snapshot text          -- 'before_tax' / 'after_tax'
+--   tax_inclusive_snapshot     boolean
+--   supplier_name_snapshot     text          -- captured party name at approval time
+--
+-- Trigger changes (bill + invoice, and the item variants)
+--   All four amendment triggers now:
+--     - detect changes in discount_value, discount_type,
+--       discount_position, tax_inclusive (previously only shipping /
+--       total / tax / subtotal etc.)
+--     - populate the four new snapshot columns on INSERT/refresh
+--
+-- API changes
+--   /api/discount-approvals selects the four new columns and includes
+--   them in the prior_approval subquery so the DiffCard has full
+--   before/after context in one round trip.
+--
+-- UI changes (AmendmentDiffCard)
+--   New rows in the diff table (only shown when they changed):
+--     - نسبة ضريبة الشحن  (shipping tax rate)
+--     - موضع الخصم         (discount position: before/after tax)
+--     - شاملة الضريبة      (tax inclusive)
+--     - المورد/العميل       (party)
+--   Modified item entries now show every field that changed:
+--     quantity, unit price, discount %, tax rate.
+--
+-- All the above is fully mirrored on the sales side (invoices +
+-- invoice_items). No feature is bills-only.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

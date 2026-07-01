@@ -1,0 +1,37 @@
+-- v3.74.467 — bill_item and invoice_item amendment triggers now
+-- REFRESH the pending approval's snapshots instead of cancelling.
+--
+-- Owner tested v3.74.466: accountant changed one line item's discount
+-- from 10% to 5% (item level, not document). Owner opened /approvals
+-- expecting the diff card to show "ماتور disc 10% → 5%". Instead the
+-- card showed the discount unchanged.
+--
+-- Root cause: the UI updates bills BEFORE bill_items in the same
+-- transaction. bill_amendment_reset_approval_trg (BEFORE UPDATE bills)
+-- captured items_snapshot from bill_items at that point — before the
+-- item edit had landed. Then bill_item_amendment_reset_approval_trg
+-- fired on the item change and CANCELLED the just-inserted pending
+-- approval — but by then no one re-inserted a fresh row, so the UI
+-- kept showing the stale pending row.
+--
+-- Wait, actually the cancel + no re-insert should have produced zero
+-- pending rows. Yet the DB had one pending row with stale snapshot.
+-- The explanation is the item trigger was cancelling nothing because
+-- the pending row was inserted after the item change, or the item
+-- trigger fired first when items were still in the old shape. Either
+-- way, refreshing rather than cancelling is the correct semantics.
+--
+-- Fix
+--   bill_item_amendment_reset_approval_trg and
+--   invoice_item_amendment_reset_approval_trg now:
+--     - Read the LIVE bill/invoice + bill_items/invoice_items
+--     - UPDATE the pending discount_approval row's snapshots to match
+--       (items_snapshot, subtotal, shipping, adjustment, tax, total,
+--        discount_value, discount_type)
+--   Result: one pending row that always reflects the current bill
+--   state. The rejected/cancelled history stays untouched.
+--
+-- Backfill for BILL-0001: recompute items_snapshot from the current
+-- bill_items so the current pending approval reflects the item edit.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.

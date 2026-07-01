@@ -64,6 +64,96 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BO. DiffCard يعرض أى تعديل + نظير كامل على المبيعات (v3.74.468)
+
+### الفجوة
+
+المالك: **"يعرض اى تعديل"** — الـ DiffCard كان بيعرض ٥ حقول مالية فقط
++ البنود بـ qty/price/disc. حقول كتيرة أخرى ممكن تتغيّر ما كانتش تظهر:
+- خصم الفاتورة (value/type)
+- موضع الخصم (قبل/بعد الضريبة)
+- شاملة الضريبة
+- نسبة ضريبة الشحن
+- اسم المورد/العميل
+- الضريبة على مستوى البند
+
+### DB — أعمدة snapshot جديدة
+
+`discount_approvals`:
+- `shipping_tax_rate_snapshot` numeric
+- `discount_position_snapshot` text
+- `tax_inclusive_snapshot` boolean
+- `supplier_name_snapshot` text
+
+### Triggers — الأربعة معاً
+
+`bill_amendment` + `invoice_amendment` + `bill_item_amendment` +
+`invoice_item_amendment` كلهم:
+- يفحصوا التغيير على `discount_value/type/position` + `tax_inclusive`
+  (بالإضافة للقديم)
+- يلقطوا الأربعة أعمدة الجديدة
+
+### DiffCard
+
+صفوف جديدة (تظهر بس لما تتغيّر):
+- خصم الفاتورة (النسبة/القيمة)
+- نسبة ضريبة الشحن
+- موضع الخصم (قبل/بعد الضريبة)
+- شاملة الضريبة (نعم/لا)
+- المورد/العميل
+
+البنود المعدلة: بيعرض كل حقل اتغيّر — كمية · سعر · خصم% · ضريبة%
+
+### نظير المبيعات
+
+كل التغييرات مطبّقة بالتساوى على `invoice_amendment_reset_approval_trg` +
+`invoice_item_amendment_reset_approval_trg`. المبيعات و المشتريات
+لهم نفس المستوى بالضبط.
+
+### Section BO baseline
+- 4 columns + 4 function rewrites + UI additions
+
+## BN. item trigger يحدّث snapshot بدل يلغى + DiffCard مفصل للخصم والبنود (v3.74.467)
+
+### الفجوة
+
+المحاسب غيّر خصم بند "ماتور" من 10% → 5%. المالك فتح /approvals،
+لكن الـ DiffCard **ما عرضش تغيير خصم البند** لأن snapshot كان قديم.
+
+**السبب**: الـ UI بيحدّث الفاتورة **قبل** البنود فى نفس الـ transaction.
+- `bill_amendment_reset_approval_trg` (BEFORE UPDATE bills) قرأ
+  bill_items وقت التنفيذ → البنود لسه بالقيم القديمة
+- الـ snapshot اتخزن قديم
+- `bill_item_amendment_reset_approval_trg` كان بيلغى الـ approval بدل
+  يحدّثها
+
+### الحل
+
+**١. Item triggers دلوقتى يحدّثوا (refresh) بدل ما يلغوا**:
+- `bill_item_amendment_reset_approval_trg` +
+  `invoice_item_amendment_reset_approval_trg`
+- كل INSERT/UPDATE/DELETE على bill_items/invoice_items بيحدّث:
+  - `items_snapshot` (لقطة جديدة)
+  - `subtotal_snapshot`, `shipping_snapshot`, `adjustment_snapshot`,
+    `tax_amount_snapshot`, `document_total`
+  - `discount_value` + `discount_type`
+- يشتغل على الـ pending row الحالى فقط
+
+**٢. AmendmentDiffCard مفصل**:
+- صف جديد "خصم الفاتورة" (document discount) — يعرض قيمة/نسبة قبل → بعد
+- البنود المعدلة: بدل ما تعرض qty×price فقط، دلوقتى تفصّل:
+  - الكمية قبل → بعد
+  - السعر قبل → بعد
+  - **الخصم % قبل → بعد** ← اللى كان ناقص
+
+### backfill
+
+BILL-0001 pending approval اتحدّث snapshot يدوياً بالبنود الحية.
+
+### Section BN baseline
+- 2 function rewrites (bill_item + invoice_item)
+- 3 UI additions فى AmendmentDiffCard
+
 ## BM. baseline يشمل rejected + عرض الرفض السابق فى DiffCard (v3.74.466)
 
 ### السيناريو

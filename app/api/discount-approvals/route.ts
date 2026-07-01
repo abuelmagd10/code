@@ -72,7 +72,9 @@ export async function GET(request: NextRequest) {
         decided_by, decided_at, decision_note,
         supersedes_approval_id, items_snapshot,
         shipping_snapshot, adjustment_snapshot,
-        tax_amount_snapshot, subtotal_snapshot
+        tax_amount_snapshot, subtotal_snapshot,
+        shipping_tax_rate_snapshot, discount_position_snapshot,
+        tax_inclusive_snapshot, supplier_name_snapshot
       `)
       .eq("company_id", companyId)
       .order("requested_at", { ascending: true })
@@ -106,7 +108,9 @@ export async function GET(request: NextRequest) {
         .select(`id, discount_value, discount_type, document_total,
                  items_snapshot, shipping_snapshot, adjustment_snapshot,
                  tax_amount_snapshot, subtotal_snapshot,
-                 decided_at, decision_note, status`)
+                 shipping_tax_rate_snapshot, discount_position_snapshot,
+                 tax_inclusive_snapshot, supplier_name_snapshot,
+                 decided_at, decision_note, status, party_name`)
         .in("id", supersededIds)
       for (const p of priorRows || []) priorMap[p.id] = p
     }
