@@ -545,7 +545,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -596,6 +596,8 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "material_issue"   ? t("طلب صرف", "Material Issue") :
     h.category === "routing_version"  ? t("مسار تصنيع", "Routing") :
     h.category === "production_order" ? t("أمر إنتاج", "Production Order") :
+    h.category === "supplier_payment" ? t("دفعة مورد", "Supplier Payment") :
+    h.category === "purchase_return"  ? t("مرتجع مشتريات", "Purchase Return") :
     h.category === "product_receive"  ? t("استلام منتج", "Product Receive") :
                                          h.category
   const CategoryIcon =
@@ -604,6 +606,8 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
     h.category === "routing_version"  ? GitMerge :
     h.category === "production_order" ? Factory :
     h.category === "product_receive"  ? CheckCircle2 :
+    h.category === "supplier_payment" ? Wallet :
+    h.category === "purchase_return"  ? RefreshCw :
                                          Package
   return (
     <Card key={h.id} className={`border-l-4 ${borderColor}`}>
@@ -1223,6 +1227,73 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // v3.74.474 — supplier payments history (approved / rejected /
+      // completed). The pending inbox tab handles pending rows.
+      try {
+        const { data: pays } = await supabase
+          .from("payments")
+          .select(`
+            id, payment_no, amount, currency_code, original_currency, status,
+            created_at, approved_at, approved_by, rejection_reason,
+            supplier_id, suppliers(name), branches(name)
+          `)
+          .eq("company_id", cid)
+          .eq("payment_type", "supplier_payment")
+          .in("status", ["approved", "rejected", "completed", "paid"])
+          .order("approved_at", { ascending: false })
+          .limit(100)
+        for (const p of (pays || []) as any[]) {
+          const status = p.status === "rejected" ? "rejected" : "approved"
+          merged.push({
+            id: `pay-${p.id}`,
+            category: "supplier_payment",
+            doc_label: `دفعة مورد · ${p.payment_no ?? p.id.slice(0, 8)}`,
+            doc_href: null,
+            party_label: p.suppliers?.name ?? null,
+            value_label: `${Number(p.amount).toFixed(2)} ${p.original_currency || p.currency_code || "EGP"}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: p.created_at,
+            decided_by_email: null,
+            decided_at: p.approved_at ?? null,
+            decision_note: p.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      // v3.74.474 — purchase returns history (decided rows).
+      try {
+        const { data: prs } = await supabase
+          .from("purchase_returns")
+          .select(`
+            id, return_number, total_amount, workflow_status, status,
+            created_at, approved_at, rejected_at, rejection_reason,
+            supplier_id, suppliers(name), branches(name)
+          `)
+          .eq("company_id", cid)
+          .in("workflow_status", ["approved", "rejected", "posted", "completed"])
+          .order("created_at", { ascending: false })
+          .limit(100)
+        for (const r of (prs || []) as any[]) {
+          const status = r.workflow_status === "rejected" ? "rejected" : "approved"
+          const decided_at = r.approved_at ?? r.rejected_at ?? null
+          merged.push({
+            id: `pret-${r.id}`,
+            category: "purchase_return",
+            doc_label: `مرتجع مشتريات · ${r.return_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/purchase-returns/${r.id}`,
+            party_label: r.suppliers?.name ?? null,
+            value_label: `${Number(r.total_amount).toFixed(2)}`,
+            status: status as any,
+            requested_by_email: null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_at,
+            decision_note: r.rejection_reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
       merged.sort((a, b) => {
         const ta = a.decided_at ? new Date(a.decided_at).getTime() : new Date(a.requested_at).getTime()
         const tb = b.decided_at ? new Date(b.decided_at).getTime() : new Date(b.requested_at).getTime()
@@ -1711,6 +1782,13 @@ function ApprovalsContent() {
                 </Button>
                 <Button size="sm" variant={historyFilter === "material_issue" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("material_issue")}>
                   <Package className="w-3 h-3" />{t("طلبات الصرف", "Material Issues")} ({history.filter(h => h.category === "material_issue").length})
+                </Button>
+                {/* v3.74.474 — history filters for new categories */}
+                <Button size="sm" variant={historyFilter === "supplier_payment" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("supplier_payment")}>
+                  <Wallet className="w-3 h-3" />{t("دفعات موردين", "Supplier Payments")} ({history.filter(h => h.category === "supplier_payment").length})
+                </Button>
+                <Button size="sm" variant={historyFilter === "purchase_return" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("purchase_return")}>
+                  <RefreshCw className="w-3 h-3" />{t("مرتجعات مشتريات", "Purchase Returns")} ({history.filter(h => h.category === "purchase_return").length})
                 </Button>
               </div>
               {(() => {

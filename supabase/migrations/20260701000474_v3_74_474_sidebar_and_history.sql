@@ -1,0 +1,22 @@
+-- v3.74.474 — Sidebar count and /approvals history reflect the
+-- consolidated inbox additions from v3.74.472 (supplier payments)
+-- and v3.74.473 (purchase returns).
+--
+-- UI-only. No DB changes.
+--
+-- Sidebar
+--   components/sidebar.tsx: pendingInboxCount now includes
+--   payment_approval + purchase_return_admin badge keys from the
+--   existing get_user_approval_badges RPC — no RPC change needed.
+--
+-- History
+--   app/approvals/page.tsx: HistoryCategory union expanded with
+--   'supplier_payment' + 'purchase_return'. loadHistory pulls
+--   decided rows from payments (payment_type=supplier_payment,
+--   status IN approved/rejected/completed/paid) and purchase_returns
+--   (workflow_status IN approved/rejected/posted/completed).
+--   Filter buttons on the history tab surface the new categories.
+--
+-- No new permissions. Both categories inherit permission from the
+-- server-side actions (SupplierPaymentCommandService /
+-- PurchaseReturnCommandService) already in use.

@@ -64,6 +64,18 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BU. سايدبار + سجل يشمل الفئات الجديدة (v3.74.474)
+
+- **سايدبار**: `pendingInboxCount` يشمل `payment_approval` +
+  `purchase_return_admin` بالإضافة للـ `discount_approval` + manufacturing.
+  الـ get_user_approval_badges RPC بالفعل بيرجع الأربعة، فما فيش تعديل DB.
+- **/approvals السجل**:
+  - `HistoryCategory` أضيف عليه `supplier_payment` + `purchase_return`
+  - loadHistory بيسحب decided rows من `payments` و `purchase_returns`
+  - Filter buttons جديدة على تبويب السجل
+- **صلاحيات**: لا تغيير — الأزرار على السجل بس بتقرأ، والأزرار على
+  الـ pending tabs بتستدعى نفس الـ endpoints مع apiGuard.
+
 ## BT. صندوق موحّد — مرتجعات المشتريات (v3.74.473)
 
 Tab جديد "مرتجعات مشتريات". Loader يقرأ `purchase_returns` بـ

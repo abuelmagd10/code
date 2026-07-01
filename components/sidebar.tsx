@@ -180,12 +180,19 @@ export function Sidebar() {
       "sales_return_request_l1",
       "sales_return_request_warehouse",
     ])
-  // v3.74.373 — Inbox tile rolls up everything the /approvals page
-  // can act on. Today that's manufacturing approvals + discount
-  // approvals; future stages add nothing else here because each new
-  // workflow gets its own sumBadges() roll-up.
+  // v3.74.373 → v3.74.474 — Inbox tile rolls up everything the
+  // /approvals page can act on. Each new consolidation step adds its
+  // badge key here so the sidebar count matches the tabs shown on
+  // /approvals.
+  //   v3.74.472 → supplier payments (badge key: payment_approval)
+  //   v3.74.473 → purchase returns admin stage (purchase_return_admin)
   const pendingInboxCount =
-    pendingApprovalsCount + sumBadges(approvalBadges, ["discount_approval"])
+    pendingApprovalsCount
+    + sumBadges(approvalBadges, [
+        "discount_approval",
+        "payment_approval",
+        "purchase_return_admin",
+      ])
 
 
   // الحفاظ على التوافق مع النظام القديم (fallback)
