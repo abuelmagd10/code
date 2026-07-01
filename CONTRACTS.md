@@ -64,6 +64,48 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BH. Amendment Diff Card على كارت الاعتمادات (v3.74.461)
+
+### المشكلة اللى بيحلّها
+
+بعد v3.74.458، أى تعديل material على فاتورة draft بيلغى الـ approval
+ويفتح جديد. لكن المالك على /approvals كان بيشوف الإجمالى الجديد فقط —
+مش بيشوف قبل ولا بعد بالتفصيل. ثغرة أخيرة قبل production: ممكن المحاسب
+يغيّر بند بأسعار مختلفة والمالك يعتقد إنه تعديل شحن فقط.
+
+### التغييرات على DB
+
+على `discount_approvals`:
+- `supersedes_approval_id` — ربط الطلب الجديد بالسابق
+- `items_snapshot` jsonb — لقطة البنود عند الاعتماد
+- `shipping_snapshot / adjustment_snapshot / tax_amount_snapshot / subtotal_snapshot` numeric
+
+Triggers:
+- `bill_amendment_reset_approval_trg` (v3.74.458) — يلقط id السابق فى
+  `app.superseded_approval_id` قبل الإلغاء
+- `bill_request_discount_approval_trg` — يقرأ الـ session var ويلقط
+  الـ snapshots من `bill_items` + الحقول المالية
+- نفس الاتنين على `invoice_amendment_reset_approval_trg` +
+  `inv_request_discount_approval_trg`
+
+### API
+
+`/api/discount-approvals` GET يرجع:
+- الأعمدة الجديدة كلها
+- `prior_approval` (لو `supersedes_approval_id` موجود) — snapshots
+  الطلب السابق
+
+### UI
+
+component جديد `AmendmentDiffCard` على `/approvals/page.tsx`:
+- جدول قبل/بعد لـ subtotal, shipping, tax, adjustment, total
+- قوائم منفصلة: بنود مضافة (أخضر)، محذوفة (أحمر)، معدلة (كهرمانى)
+- الحقول اللى ما تغيرتش تظهر باهتة، اللى اتغيرت highlighted
+
+### Section BH baseline
+- 4 columns + 1 index على discount_approvals
+- 4 function bodies (bill amendment + request, invoice amendment + request)
+
 ## BG. قبول pending_approval + rejected كحالات قابلة للتعديل (v3.74.460)
 
 ### الفجوة

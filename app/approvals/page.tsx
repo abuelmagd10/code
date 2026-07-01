@@ -68,6 +68,34 @@ interface PendingDiscountApproval {
   requested_at: string
   requested_by_email: string | null
   type: "discount_approval"
+  // v3.74.461 — amendment tracking
+  supersedes_approval_id?: string | null
+  items_snapshot?: Array<{
+    product_id: string | null
+    product_name: string | null
+    quantity: number | null
+    unit_price: number | null
+    discount_percent: number | null
+    tax_amount: number | null
+    total: number | null
+  }> | null
+  shipping_snapshot?: number | null
+  adjustment_snapshot?: number | null
+  tax_amount_snapshot?: number | null
+  subtotal_snapshot?: number | null
+  prior_approval?: {
+    id: string
+    discount_value: number | null
+    discount_type: "percent" | "amount" | null
+    document_total: number | null
+    items_snapshot: any[] | null
+    shipping_snapshot: number | null
+    adjustment_snapshot: number | null
+    tax_amount_snapshot: number | null
+    subtotal_snapshot: number | null
+    decided_at: string | null
+    status: string | null
+  } | null
 }
 
 // v3.74.434 — historical discount approval (kept for reference; the
@@ -104,6 +132,137 @@ type CardCtx = {
   runningId: string | null
   handleApprove: (d: PendingDiscountApproval) => void
   handleReject: () => void
+}
+
+// v3.74.461 — Renders a side-by-side "before / after" comparison
+// when an approval supersedes an earlier one. Highlights every field
+// the accountant changed since the last owner-approved snapshot:
+// financial totals + line items (added, removed, modified).
+const AmendmentDiffCard = ({
+  current,
+  prior,
+  ctx,
+}: {
+  current: PendingDiscountApproval
+  prior: NonNullable<PendingDiscountApproval["prior_approval"]>
+  ctx: CardCtx
+}) => {
+  const { t, fmtMoney } = ctx
+  const num = (x: any) => Number(x ?? 0)
+  const same = (a: any, b: any) => Math.abs(num(a) - num(b)) < 0.01
+
+  const priorItems: any[] = Array.isArray(prior.items_snapshot) ? prior.items_snapshot : []
+  const currItems: any[] = Array.isArray(current.items_snapshot) ? current.items_snapshot : []
+  const keyOf = (r: any) => String(r?.product_id ?? r?.product_name ?? Math.random())
+
+  const priorMap = new Map(priorItems.map(r => [keyOf(r), r]))
+  const currMap = new Map(currItems.map(r => [keyOf(r), r]))
+
+  const added: any[] = []
+  const removed: any[] = []
+  const changed: Array<{ from: any; to: any }> = []
+  for (const [k, curr] of currMap.entries()) {
+    const p = priorMap.get(k)
+    if (!p) { added.push(curr); continue }
+    if (!same(p.quantity, curr.quantity)
+        || !same(p.unit_price, curr.unit_price)
+        || !same(p.discount_percent, curr.discount_percent)) {
+      changed.push({ from: p, to: curr })
+    }
+  }
+  for (const [k, p] of priorMap.entries()) {
+    if (!currMap.has(k)) removed.push(p)
+  }
+
+  const rows: Array<{ label: string; a: number; b: number }> = [
+    { label: t("المجموع الفرعى", "Subtotal"), a: num(prior.subtotal_snapshot), b: num(current.subtotal_snapshot) },
+    { label: t("الشحن", "Shipping"), a: num(prior.shipping_snapshot), b: num(current.shipping_snapshot) },
+    { label: t("قيمة الضريبة", "Tax amount"), a: num(prior.tax_amount_snapshot), b: num(current.tax_amount_snapshot) },
+    { label: t("التعديل", "Adjustment"), a: num(prior.adjustment_snapshot), b: num(current.adjustment_snapshot) },
+    { label: t("الإجمالى", "Total"), a: num(prior.document_total), b: num(current.document_total) },
+  ]
+
+  const anyChanged = rows.some(r => !same(r.a, r.b)) || added.length + removed.length + changed.length > 0
+
+  return (
+    <div className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-bold text-amber-800 dark:text-amber-300">
+          ⚠️ {t("تعديلات على الفاتورة تحتاج مراجعتك", "Amendments requiring your review")}
+        </span>
+      </div>
+      {!anyChanged ? (
+        <p className="text-xs text-muted-foreground">
+          {t("لا يوجد فروق ملموسة عن الاعتماد السابق.", "No material differences from the prior approval.")}
+        </p>
+      ) : (
+        <>
+          <table className="w-full text-xs mb-2">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="text-start font-normal py-1">{t("الحقل", "Field")}</th>
+                <th className="text-end font-normal py-1">{t("قبل", "Before")}</th>
+                <th className="text-end font-normal py-1">{t("بعد", "After")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const diff = !same(r.a, r.b)
+                return (
+                  <tr key={i} className={diff ? "font-semibold" : "text-muted-foreground"}>
+                    <td className="py-1">{r.label}</td>
+                    <td className="py-1 text-end">{fmtMoney(r.a)}</td>
+                    <td className={"py-1 text-end " + (diff ? "text-amber-700 dark:text-amber-300" : "")}>
+                      {fmtMoney(r.b)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {added.length > 0 && (
+            <div className="mb-1">
+              <p className="text-xs font-semibold text-green-700 dark:text-green-400">
+                ➕ {t("بنود مضافة", "Added items")} ({added.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-muted-foreground">
+                {added.map((it, i) => (
+                  <li key={i}>{it.product_name ?? "?"} · {num(it.quantity)} × {fmtMoney(num(it.unit_price))} = {fmtMoney(num(it.total))}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {removed.length > 0 && (
+            <div className="mb-1">
+              <p className="text-xs font-semibold text-red-700 dark:text-red-400">
+                ➖ {t("بنود محذوفة", "Removed items")} ({removed.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-muted-foreground">
+                {removed.map((it, i) => (
+                  <li key={i}>{it.product_name ?? "?"} · {num(it.quantity)} × {fmtMoney(num(it.unit_price))} = {fmtMoney(num(it.total))}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {changed.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                ✏️ {t("بنود معدلة", "Modified items")} ({changed.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-muted-foreground">
+                {changed.map((c, i) => (
+                  <li key={i}>
+                    {c.to.product_name ?? c.from.product_name ?? "?"}:
+                    {" "}{num(c.from.quantity)}×{fmtMoney(num(c.from.unit_price))} → {num(c.to.quantity)}×{fmtMoney(num(c.to.unit_price))}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
 }
 
 const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: CardCtx }) => {
@@ -161,6 +320,13 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
             </Link>
           </div>
         </div>
+        {/* v3.74.461 — Amendment diff card. Shown when this approval
+            supersedes an earlier one, so the owner sees exactly what
+            the accountant changed (shipping, tax, adjustment, items)
+            before approving the amended bill/invoice. */}
+        {d.prior_approval && (
+          <AmendmentDiffCard current={d} prior={d.prior_approval} ctx={ctx} />
+        )}
         <div className="flex gap-2 mt-3">
           <Button
             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -467,6 +633,14 @@ function ApprovalsContent() {
             requested_at: d.requested_at,
             requested_by_email: d.requested_by_email ?? null,
             type: "discount_approval",
+            // v3.74.461 — amendment tracking
+            supersedes_approval_id: d.supersedes_approval_id ?? null,
+            items_snapshot: Array.isArray(d.items_snapshot) ? d.items_snapshot : null,
+            shipping_snapshot: d.shipping_snapshot != null ? Number(d.shipping_snapshot) : null,
+            adjustment_snapshot: d.adjustment_snapshot != null ? Number(d.adjustment_snapshot) : null,
+            tax_amount_snapshot: d.tax_amount_snapshot != null ? Number(d.tax_amount_snapshot) : null,
+            subtotal_snapshot: d.subtotal_snapshot != null ? Number(d.subtotal_snapshot) : null,
+            prior_approval: d.prior_approval ?? null,
           })))
         } else {
           // 403 = caller isn't an approver; leave the list empty.

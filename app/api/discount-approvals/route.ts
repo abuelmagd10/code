@@ -65,7 +65,10 @@ export async function GET(request: NextRequest) {
         id, company_id, document_type, document_id, document_no,
         discount_value, discount_type, document_total, party_name,
         reason, status, requested_by, requested_at,
-        decided_by, decided_at, decision_note
+        decided_by, decided_at, decision_note,
+        supersedes_approval_id, items_snapshot,
+        shipping_snapshot, adjustment_snapshot,
+        tax_amount_snapshot, subtotal_snapshot
       `)
       .eq("company_id", companyId)
       .order("requested_at", { ascending: true })
@@ -77,6 +80,26 @@ export async function GET(request: NextRequest) {
 
     if (rowsErr) {
       return NextResponse.json({ success: false, error: rowsErr.message }, { status: 500 })
+    }
+
+    // v3.74.461 — for rows that supersede a prior approval, fetch
+    // the prior row's snapshots so the diff card can render "before"
+    // side-by-side with "after" without a second round trip.
+    const supersededIds = Array.from(new Set(
+      (rows || [])
+        .map((r: any) => r.supersedes_approval_id)
+        .filter(Boolean) as string[]
+    ))
+    const priorMap: Record<string, any> = {}
+    if (supersededIds.length > 0) {
+      const { data: priorRows } = await supabase
+        .from("discount_approvals")
+        .select(`id, discount_value, discount_type, document_total,
+                 items_snapshot, shipping_snapshot, adjustment_snapshot,
+                 tax_amount_snapshot, subtotal_snapshot,
+                 decided_at, decision_note, status`)
+        .in("id", supersededIds)
+      for (const p of priorRows || []) priorMap[p.id] = p
     }
 
     // Enrich with requester + decider emails (best-effort).
@@ -104,6 +127,11 @@ export async function GET(request: NextRequest) {
       ...r,
       requested_by_email: userMap[r.requested_by]?.email ?? null,
       decided_by_email: (r as any).decided_by ? userMap[(r as any).decided_by]?.email ?? null : null,
+      // v3.74.461 — attach prior approval snapshots so the UI can
+      // render the diff card without a second API round trip.
+      prior_approval: (r as any).supersedes_approval_id
+        ? priorMap[(r as any).supersedes_approval_id] ?? null
+        : null,
     }))
 
     return NextResponse.json({ success: true, data: enriched })

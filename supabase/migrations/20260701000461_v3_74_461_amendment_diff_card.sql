@@ -1,0 +1,43 @@
+-- v3.74.461 — Amendment Diff Card. When the accountant amends a
+-- draft bill/invoice (v3.74.458 opens a new discount approval), the
+-- owner previously saw only the new total on the approval card — with
+-- no visibility into WHAT changed. This release captures a snapshot
+-- of the bill/invoice state on every new discount_approval, and links
+-- amendment approvals to the ones they supersede via a new column.
+-- The UI then renders a side-by-side "before / after" diff card.
+--
+-- Owner's own concern verbatim: "المالك بيوقّع أعمى على الإجمالى
+-- الجديد — ممكن المحاسب يغيّر بند بأسعار مختلفة والمالك يعتقد إنه
+-- تعديل شحن". Diff card closes this final gap before production.
+--
+-- Schema additions on discount_approvals
+--   supersedes_approval_id uuid REFERENCES discount_approvals(id)
+--       — set when this row was opened by an amendment trigger.
+--   items_snapshot jsonb
+--       — [{product_id, product_name, quantity, unit_price,
+--          discount_percent, tax_amount, total}], captured at INSERT.
+--   shipping_snapshot / adjustment_snapshot / tax_amount_snapshot /
+--   subtotal_snapshot numeric — bill/invoice financials at INSERT.
+--
+-- Trigger changes
+--   bill_amendment_reset_approval_trg  (v3.74.458)
+--     Now captures the id of the cancelled approval into session var
+--     app.superseded_approval_id BEFORE cancelling it.
+--   bill_request_discount_approval_trg (v3.74.424 + .457)
+--     Reads app.superseded_approval_id, aggregates bill_items into
+--     items_snapshot, and populates all new columns on INSERT.
+--   Same pair for the sales side (invoice / invoice_items).
+--
+-- API changes
+--   /api/discount-approvals GET
+--     Selects the new columns and, when supersedes_approval_id is
+--     set, joins in the prior approval's snapshots as prior_approval.
+--
+-- UI changes
+--   /approvals page
+--     New AmendmentDiffCard component. Rendered on any card whose
+--     approval has a prior_approval attached. Shows shipping /
+--     adjustment / tax / subtotal / total side-by-side and lists
+--     added / removed / modified line items.
+--
+-- Bodies installed via Supabase MCP. This file is the canonical source.
