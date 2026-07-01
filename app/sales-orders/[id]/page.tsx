@@ -551,6 +551,57 @@ export default function SalesOrderDetailPage() {
                         <span className="text-gray-900 dark:text-white">{(order as any).shipping_providers.provider_name}</span>
                       </div>
                     )}
+                    {/* v3.74.453 — financial breakdown: subtotal, line discount,
+                        overall discount, tax, shipping. Mirrors the PO view. */}
+                    {Number((order as any).subtotal || 0) > 0 && (
+                      <div className="flex justify-between pt-2 border-t dark:border-gray-700">
+                        <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعى'}</span>
+                        <span className="text-gray-900 dark:text-white">{symbol}{Number((order as any).subtotal).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {(() => {
+                      const lineDiscount = items.reduce((sum: number, it: any) => {
+                        const qty = Number(it.quantity || 0)
+                        const price = Number(it.unit_price || 0)
+                        const pct = Number(it.discount_percent || 0)
+                        return sum + (qty * price * pct / 100)
+                      }, 0)
+                      return lineDiscount > 0 ? (
+                        <div className="flex justify-between text-red-600 dark:text-red-400">
+                          <span>{appLang === 'en' ? 'Line discount (items)' : 'خصم البنود (على كل صنف)'}</span>
+                          <span>-{symbol}{lineDiscount.toFixed(2)}</span>
+                        </div>
+                      ) : null
+                    })()}
+                    {Number((order as any).discount_value || 0) > 0 && (
+                      <div className="flex justify-between text-red-600 dark:text-red-400">
+                        <span>
+                          {appLang === 'en' ? 'Overall discount' : 'الخصم العام'}
+                          {(order as any).discount_position === 'before_tax'
+                            ? (appLang === 'en' ? ' (before tax)' : ' (قبل الضريبة)')
+                            : (order as any).discount_position === 'after_tax'
+                              ? (appLang === 'en' ? ' (after tax)' : ' (بعد الضريبة)')
+                              : ''}
+                        </span>
+                        <span>
+                          {(order as any).discount_type === 'percent'
+                            ? `${Number((order as any).discount_value).toFixed(2)}%`
+                            : `-${symbol}${Number((order as any).discount_value).toFixed(2)}`}
+                        </span>
+                      </div>
+                    )}
+                    {Number((order as any).tax_amount || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
+                        <span className="text-gray-900 dark:text-white">{symbol}{Number((order as any).tax_amount).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {Number((order as any).shipping || (order as any).shipping_charge || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
+                        <span className="text-gray-900 dark:text-white">{symbol}{Number((order as any).shipping || (order as any).shipping_charge).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-2 border-t dark:border-gray-700">
                       <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
                       <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>

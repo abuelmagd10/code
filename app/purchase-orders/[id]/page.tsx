@@ -1046,10 +1046,27 @@ export default function PurchaseOrderDetailPage() {
                       <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).subtotal).toFixed(2)}</span>
                     </div>
                   )}
+                  {/* v3.74.453 — surface line-level discount (per-item %) so
+                      the owner sees the full discount picture, not only
+                      the document-level one. */}
+                  {(() => {
+                    const lineDiscount = items.reduce((sum, it: any) => {
+                      const qty = Number(it.quantity || 0)
+                      const price = Number(it.unit_price || 0)
+                      const pct = Number(it.discount_percent || 0)
+                      return sum + (qty * price * pct / 100)
+                    }, 0)
+                    return lineDiscount > 0 ? (
+                      <div className="flex justify-between text-red-600 dark:text-red-400">
+                        <span>{appLang === 'en' ? 'Line discount (items)' : 'خصم البنود (على كل صنف)'}</span>
+                        <span>-{symbol}{lineDiscount.toFixed(2)}</span>
+                      </div>
+                    ) : null
+                  })()}
                   {Number((po as any).discount_value || 0) > 0 && (
                     <div className="flex justify-between text-red-600 dark:text-red-400">
                       <span>
-                        {appLang === 'en' ? 'Discount' : 'الخصم'}
+                        {appLang === 'en' ? 'Overall discount' : 'الخصم العام'}
                         {(po as any).discount_position === 'before_tax'
                           ? (appLang === 'en' ? ' (before tax)' : ' (قبل الضريبة)')
                           : (po as any).discount_position === 'after_tax'
