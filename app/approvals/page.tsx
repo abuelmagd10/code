@@ -719,6 +719,11 @@ interface UnifiedHistoryEntry {
   is_amendment?: boolean
   amendment_delta?: string | null   // e.g. "8.53 → 8.73 (+0.20)"
   prior_status?: string | null      // "rejected" / "approved" (what was superseded)
+  // v3.74.489 — branch + warehouse of the source document so the
+  // history can be filtered (owner/GM widen or narrow; other roles
+  // are locked to their own scope by RLS on the underlying tables).
+  branch_id?: string | null
+  warehouse_id?: string | null
   // v3.74.471 — full snapshot data so history can render the same
   // diff card the owner saw when approving.
   raw_current?: PendingDiscountApproval | null
@@ -889,15 +894,38 @@ function ApprovalsContent() {
   const [receiptExpandedId, setReceiptExpandedId] = useState<string | null>(null)
   // v3.74.485 — user's own role so the UI can hide the approve button for
   // roles that server-side will refuse (manager, accountant, purchasing_officer).
+  // v3.74.489 — also store branch/warehouse so we can lock the history
+  // filter to the user's scope when they are not owner/admin/GM.
   const [myRole, setMyRole] = useState<string | null>(null)
+  const [myBranchId, setMyBranchId] = useState<string | null>(null)
+  const [myWarehouseId, setMyWarehouseId] = useState<string | null>(null)
+  // Branch + warehouse master lists for the history filter dropdowns.
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([])
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string; branch_id: string | null }>>([])
+  // Currently-selected filter values on the history tab.
+  const [historyBranchFilter, setHistoryBranchFilter] = useState<string>("all")
+  const [historyWarehouseFilter, setHistoryWarehouseFilter] = useState<string>("all")
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
       if (!cid) return
-      const { data } = await supabase.from("company_members").select("role").eq("company_id", cid).eq("user_id", user.id).maybeSingle()
-      setMyRole((data as any)?.role ?? null)
+      const { data: member } = await supabase
+        .from("company_members")
+        .select("role, branch_id, warehouse_id")
+        .eq("company_id", cid).eq("user_id", user.id).maybeSingle()
+      const m: any = member
+      setMyRole(m?.role ?? null)
+      setMyBranchId(m?.branch_id ?? null)
+      setMyWarehouseId(m?.warehouse_id ?? null)
+      // Load master lists (branches + warehouses).
+      const [{ data: brs }, { data: whs }] = await Promise.all([
+        supabase.from("branches").select("id, name").eq("company_id", cid).order("name"),
+        supabase.from("warehouses").select("id, name, branch_id").eq("company_id", cid).order("name"),
+      ])
+      setBranches((brs || []) as any[])
+      setWarehouses((whs || []) as any[])
     })()
   }, [supabase])
   // The four canonical "receipt approvers" per owner spec:
@@ -1642,6 +1670,34 @@ function ApprovalsContent() {
         if (res.ok) {
           const json = await res.json()
           const rows: any[] = Array.isArray(json?.data) ? json.data : []
+          // v3.74.489 — fetch document rows in a second pass to attach
+          // branch_id + warehouse_id so the branch filter can act on
+          // discount history. Fine to run a small IN-batch since we
+          // already have the ids in memory.
+          const idsByType: Record<string, string[]> = {}
+          for (const d of rows) {
+            const t = d.document_type as string
+            if (!idsByType[t]) idsByType[t] = []
+            idsByType[t].push(d.document_id)
+          }
+          const scopeByDoc = new Map<string, { branch_id: string|null; warehouse_id: string|null }>()
+          for (const t of Object.keys(idsByType)) {
+            const table = t === "purchase_invoice" ? "bills"
+              : t === "sales_invoice" ? "invoices"
+              : t === "purchase_order" ? "purchase_orders"
+              : t === "sales_order" ? "sales_orders"
+              : null
+            if (!table) continue
+            try {
+              const { data: scopeRows } = await supabase
+                .from(table)
+                .select("id, branch_id, warehouse_id")
+                .in("id", idsByType[t])
+              for (const r of (scopeRows || []) as any[]) {
+                scopeByDoc.set(`${t}:${r.id}`, { branch_id: r.branch_id ?? null, warehouse_id: r.warehouse_id ?? null })
+              }
+            } catch { /* keep going */ }
+          }
           for (const d of rows) {
             if (d.status === "pending") continue
             const docLabel =
@@ -1663,6 +1719,7 @@ function ApprovalsContent() {
               : `الخصم: ${d.discount_value} ج.م`
             // v3.74.470 — build amendment context from the prior
             // approval when supersedes_approval_id is set.
+            const scope = scopeByDoc.get(`${d.document_type}:${d.document_id}`) ?? { branch_id: null, warehouse_id: null }
             const isAmend = Boolean(d.supersedes_approval_id && d.prior_approval)
             let delta: string | null = null
             if (isAmend && d.prior_approval) {
@@ -1688,6 +1745,8 @@ function ApprovalsContent() {
               is_amendment: isAmend,
               amendment_delta: delta,
               prior_status: d.prior_approval?.status ?? null,
+              branch_id: scope.branch_id,
+              warehouse_id: scope.warehouse_id,
               // v3.74.471 — pass snapshots through so UnifiedHistoryCard
               // can render the same diff card as the pending inbox.
               raw_current: isAmend ? {
@@ -1891,6 +1950,7 @@ function ApprovalsContent() {
           .select(`
             id, payment_no, amount, currency_code, original_currency, status,
             created_at, approved_at, approved_by, rejection_reason,
+            branch_id, warehouse_id,
             supplier_id, suppliers(name), branches(name)
           `)
           .eq("company_id", cid)
@@ -2016,7 +2076,7 @@ function ApprovalsContent() {
           .from("invoices")
           .select(`id, invoice_number, total_amount, warehouse_status,
                    created_at, warehouse_approved_at, warehouse_rejected_at,
-                   warehouse_rejection_reason,
+                   warehouse_rejection_reason, branch_id, warehouse_id,
                    customer_id, customers(name)`)
           .eq("company_id", cid)
           .in("warehouse_status", ["approved", "rejected"])
@@ -2037,6 +2097,8 @@ function ApprovalsContent() {
             decided_by_email: null,
             decided_at: r.warehouse_approved_at ?? r.warehouse_rejected_at ?? null,
             decision_note: r.warehouse_rejection_reason ?? null,
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -2048,7 +2110,7 @@ function ApprovalsContent() {
           .from("bills")
           .select(`id, bill_number, total_amount, receipt_status,
                    created_at, receipt_approved_at, receipt_rejected_at,
-                   receipt_rejection_reason,
+                   receipt_rejection_reason, branch_id, warehouse_id,
                    supplier_id, suppliers(name)`)
           .eq("company_id", cid)
           .in("receipt_status", ["approved", "rejected"])
@@ -2069,6 +2131,8 @@ function ApprovalsContent() {
             decided_by_email: null,
             decided_at: r.receipt_approved_at ?? r.receipt_rejected_at ?? null,
             decision_note: r.receipt_rejection_reason ?? null,
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -2215,6 +2279,7 @@ function ApprovalsContent() {
           .select(`
             id, return_number, total_amount, workflow_status, status,
             created_at, approved_at, rejected_at, rejection_reason,
+            branch_id, warehouse_id,
             supplier_id, suppliers(name), branches(name)
           `)
           .eq("company_id", cid)
@@ -2237,6 +2302,8 @@ function ApprovalsContent() {
             decided_by_email: null,
             decided_at,
             decision_note: r.rejection_reason ?? null,
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -2787,6 +2854,58 @@ function ApprovalsContent() {
                   <RefreshCw className="w-3.5 h-3.5" />{t("تحديث السجل", "Refresh history")}
                 </Button>
               </div>
+              {/* v3.74.489 — branch + warehouse filter row. Owner/admin/GM
+                  choose freely; other roles see a read-only chip that
+                  reflects their scope so they know what's being shown. */}
+              {isAdminLike ? (
+                <div className="flex gap-2 flex-wrap items-center mb-3">
+                  <span className="text-xs text-muted-foreground">{t("فلترة السجل:", "Filter history:")}</span>
+                  <select
+                    className="text-xs border rounded px-2 py-1 bg-white dark:bg-slate-900"
+                    value={historyBranchFilter}
+                    onChange={e => { setHistoryBranchFilter(e.target.value); setHistoryWarehouseFilter("all") }}
+                  >
+                    <option value="all">🏢 {t("كل الفروع", "All branches")}</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>🏢 {b.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    className="text-xs border rounded px-2 py-1 bg-white dark:bg-slate-900"
+                    value={historyWarehouseFilter}
+                    onChange={e => setHistoryWarehouseFilter(e.target.value)}
+                  >
+                    <option value="all">🏬 {t("كل المخازن", "All warehouses")}</option>
+                    {warehouses
+                      .filter(w => historyBranchFilter === "all" || w.branch_id === historyBranchFilter)
+                      .map(w => (
+                        <option key={w.id} value={w.id}>🏬 {w.name}</option>
+                      ))}
+                  </select>
+                  {(historyBranchFilter !== "all" || historyWarehouseFilter !== "all") && (
+                    <button
+                      className="text-xs text-slate-500 hover:text-slate-700 underline"
+                      onClick={() => { setHistoryBranchFilter("all"); setHistoryWarehouseFilter("all") }}
+                    >
+                      {t("مسح الفلاتر", "Clear filters")}
+                    </button>
+                  )}
+                </div>
+              ) : (myBranchId || myWarehouseId) && (
+                <div className="flex gap-2 flex-wrap items-center mb-3 text-xs">
+                  <span className="text-muted-foreground">{t("العرض مقيّد بنطاقك:", "View limited to your scope:")}</span>
+                  {myBranchId && (
+                    <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      🏢 {branches.find(b => b.id === myBranchId)?.name ?? myBranchId.slice(0,8)}
+                    </Badge>
+                  )}
+                  {myWarehouseId && (
+                    <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      🏬 {warehouses.find(w => w.id === myWarehouseId)?.name ?? myWarehouseId.slice(0,8)}
+                    </Badge>
+                  )}
+                </div>
+              )}
               {/* Category filter chips */}
               <div className="flex gap-2 flex-wrap">
                 <Button size="sm" variant={historyFilter === "all" ? "default" : "outline"} className="text-xs h-7" onClick={() => setHistoryFilter("all")}>
@@ -2881,7 +3000,24 @@ function ApprovalsContent() {
                 // manager clicking "الكل" doesn't get payment or
                 // discount rows in their history.
                 const roleScoped = history.filter(h => canShowHistory(h.category))
-                const filtered = historyFilter === "all" ? roleScoped : roleScoped.filter(h => h.category === historyFilter)
+                // v3.74.489 — apply branch + warehouse filter. For
+                // owner/admin/GM the filter is user-controlled; for
+                // any other role it is locked to their own scope
+                // (RLS on the source tables already filters out
+                // rows outside their reach; the ==== forces the
+                // filter to also match on the client so a wider RLS
+                // scope wouldn't leak data).
+                const scopedByBranch = roleScoped.filter(h => {
+                  if (isAdminLike) {
+                    if (historyBranchFilter !== "all" && h.branch_id && h.branch_id !== historyBranchFilter) return false
+                    if (historyWarehouseFilter !== "all" && h.warehouse_id && h.warehouse_id !== historyWarehouseFilter) return false
+                    return true
+                  }
+                  if (myBranchId && h.branch_id && h.branch_id !== myBranchId) return false
+                  if (myWarehouseId && h.warehouse_id && h.warehouse_id !== myWarehouseId) return false
+                  return true
+                })
+                const filtered = historyFilter === "all" ? scopedByBranch : scopedByBranch.filter(h => h.category === historyFilter)
                 if (filtered.length === 0) {
                   return (
                     <Card>

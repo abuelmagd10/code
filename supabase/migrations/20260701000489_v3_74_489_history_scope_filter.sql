@@ -1,0 +1,36 @@
+-- v3.74.489 — Branch + warehouse filter on the approvals history tab.
+--
+-- Owner spec: owner + general_manager pick any branch/warehouse and
+-- narrow the whole history down to that scope. Every other role is
+-- locked to their assigned branch (and warehouse when set) so they
+-- only see rows that fall inside their governance perimeter.
+--
+-- Implementation
+--   UnifiedHistoryEntry now carries optional branch_id + warehouse_id.
+--   The history loaders that read from tables with these columns
+--   attach them onto the entry:
+--     - discount approvals (via a secondary lookup on the source
+--       bills / invoices / purchase_orders / sales_orders row)
+--     - supplier payments (from payments.branch_id / warehouse_id)
+--     - purchase returns (from purchase_returns.branch_id / warehouse_id)
+--     - dispatch (from invoices.branch_id / warehouse_id)
+--     - goods receipt (from bills.branch_id / warehouse_id)
+--
+--   Remaining loaders (sales-return-request, refund requests, misc,
+--   write-offs, transfers, product receive, manufacturing subtrees)
+--   currently pass through without a scope tag; they will be
+--   filtered at the DB layer by RLS and can be tagged in follow-up
+--   releases if the owner spots gaps.
+--
+-- UI on the history tab
+--   - owner / admin / general_manager: two <select> dropdowns above
+--     the category chips (branch + warehouse). "All branches" +
+--     "All warehouses" restores the wide view. Clearing the filters
+--     is a single click. Warehouse options are auto-narrowed to
+--     match the picked branch.
+--   - Every other role: a read-only pair of chips showing the
+--     branch (+ warehouse when their record has one), so the user
+--     understands why the counts are smaller than a superuser
+--     would see.
+--
+-- No DB changes.

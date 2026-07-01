@@ -64,6 +64,20 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CJ. فلتر الفرع والمخزن على سجل الموافقات (v3.74.489)
+
+**owner / admin / general_manager**: dropdown للفرع + المخزن فوق
+category chips. تختار كل الفروع + كل المخازن بشكل حر. المخازن
+تتفلتر تلقائياً بالفرع المختار.
+
+**باقى الأدوار**: chips للقراءة فقط تعرض الفرع (+ المخزن لو موجود
+فى قيد الدور). Filter لايت-فورس فى الـ client بالإضافة للـ RLS.
+
+**Loaders**: `UnifiedHistoryEntry` اتوسّع بـ `branch_id + warehouse_id`.
+Loaders الرئيسية اتحدّثت لتضيف الحقلين (discount + supplier_payment
++ purchase_return + dispatch + goods_receipt). الباقى بيمرّ بدون
+scope tag ويتفلتر عبر RLS.
+
 ## CI. tab pending استلام منتجات التصنيع (v3.74.488)
 
 بعد الفحص الموثق لـ `/inventory/goods-receipt` تبيّن إن الصفحة كان لها
