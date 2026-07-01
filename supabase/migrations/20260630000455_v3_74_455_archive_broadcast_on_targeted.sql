@@ -1,0 +1,26 @@
+-- v3.74.455 — archive the generic approvals broadcast about a bill/
+-- invoice when a targeted accountant_action lands for the same doc.
+--
+-- After v3.74.454's cross-category dedup, the accountant still saw
+-- two cards for the same BILL-0001:
+--   "فاتورة مشتريات جديدة — تَنتَظِر اعتمادك"  (broadcast, approvals)
+--   "فاتورة مشتريات جديدة تحتاج إجراء"         (targeted, accountant_action)
+-- The dedup rule requires equal (or null-safe) assigned_to_user, so
+-- one broadcast + one targeted don't merge. And the app-side path
+-- creates the broadcast right after PO approval creates the bill —
+-- exactly when the targeted accountant_action is going to fire from
+-- bill_notify_accountant_trg (v3.74.429). Both hit the accountant's
+-- inbox seconds apart.
+--
+-- Fix: when the targeted accountant_action arrives, also archive any
+-- lingering broadcast (null assignee) in the approvals category about
+-- the same document. Broadcasts are meant as "someone deal with this"
+-- pings; once the specific someone has been pinged directly, the
+-- broadcast is noise for every approver.
+--
+-- The one-shot UPDATE catches the pre-existing test-company backlog.
+--
+-- No new baseline check; v3.74.454's Section BA already verifies the
+-- trigger body.
+--
+-- Body installed via Supabase MCP. This file is the canonical source.

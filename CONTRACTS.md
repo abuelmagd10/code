@@ -64,6 +64,27 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## BB. أرشفة broadcast لما يوصل targeted accountant_action (v3.74.455)
+
+بعد v3.74.454، المحاسب لسه كان بيشوف كارتين للـ BILL-0001:
+- broadcast "تنتظر اعتمادك" (approvals, null assignee)
+- targeted "تحتاج إجراء" (accountant_action, assigned)
+
+الـ dedup فى v3.74.454 يشترط `assigned_to_user` متطابق (أو
+null-safe)، فالاتنين ما اتدمجوش.
+
+**الإصلاح**: `notification_supersede_older_approval_trg` بقى، لما
+targeted `accountant_action` يوصل لـ bill/invoice، يؤرشف كمان أى
+broadcast لسه unread فى category `approvals` عن نفس المستند.
+
+منطقياً: الـ broadcast معناه "حد يهتم بالفاتورة دى". لما المحاسب
+اتاجرلوه إشعار مخصص، الـ broadcast بيبقى noise لكل approver — مش
+محتاجينه.
+
+One-shot UPDATE أرشف الـ backlog الموجود فى شركة تست.
+
+مفيش baseline check جديد — Section BA بيفحص نص الـ trigger كامل.
+
 ## BA. Cross-category dedup لإشعارات المستخدم الواحد (v3.74.454)
 
 ### الحدث
