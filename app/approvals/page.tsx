@@ -1228,7 +1228,7 @@ function ApprovalsContent() {
         const { data: pays } = await supabase
           .from("payments")
           .select(`
-            id, payment_no, amount, currency_code, original_currency, created_at, created_by,
+            id, reference_number, amount, currency_code, original_currency, created_at, created_by,
             supplier_id, branch_id, warehouse_id, bill_id,
             suppliers(name),
             branches(name),
@@ -1237,12 +1237,12 @@ function ApprovalsContent() {
           `)
           .eq("company_id", cid)
           .eq("status", "pending_approval")
-          .eq("payment_type", "supplier_payment")
+          .not("supplier_id", "is", null)
           .order("created_at", { ascending: true })
           .limit(100)
         setSupplierPayments((pays || []).map((p: any) => ({
           id: p.id,
-          payment_no: p.payment_no ?? null,
+          payment_no: p.reference_number ?? null,
           supplier_name: p.suppliers?.name ?? null,
           amount: Number(p.amount || 0),
           currency: String(p.original_currency || p.currency_code || "EGP"),
@@ -1497,8 +1497,8 @@ function ApprovalsContent() {
           .from("inventory_write_offs")
           .select(`
             id, write_off_number, total_cost, reason, status,
-            created_at, branch_id, warehouse_id,
-            branches(name), warehouses(name)
+            created_at, branch_id, warehouse_id, warehouse_name,
+            branches(name)
           `)
           .eq("company_id", cid)
           .eq("status", "pending")
@@ -1510,7 +1510,7 @@ function ApprovalsContent() {
           total_cost: Number(w.total_cost || 0),
           reason: w.reason ?? null,
           branch_name: w.branches?.name ?? null,
-          warehouse_name: w.warehouses?.name ?? null,
+          warehouse_name: w.warehouse_name ?? null,
           requested_at: w.created_at,
           type: "write_off" as const,
         })))
@@ -1555,7 +1555,7 @@ function ApprovalsContent() {
         // Purchase Requests
         const { data: prs } = await supabase
           .from("purchase_requests")
-          .select(`id, request_number, total_estimated, status, created_at,
+          .select(`id, request_number, total_estimated_cost, status, created_at,
                    branch_id, warehouse_id, branches(name), warehouses(name)`)
           .eq("company_id", cid)
           .eq("status", "pending_approval")
@@ -1566,7 +1566,7 @@ function ApprovalsContent() {
             id: `pr-${r.id}`, kind: "purchase_request",
             doc_no: r.request_number ?? null,
             party_or_label: null,
-            amount: Number(r.total_estimated || 0),
+            amount: Number(r.total_estimated_cost || 0),
             branch_name: r.branches?.name ?? null,
             warehouse_name: r.warehouses?.name ?? null,
             href: `/purchase-requests/${r.id}`,
@@ -1577,7 +1577,7 @@ function ApprovalsContent() {
         // Bank Voucher Requests
         const { data: bvs } = await supabase
           .from("bank_voucher_requests")
-          .select(`id, voucher_number, amount, status, created_at, branch_id, branches(name)`)
+          .select(`id, reference_number, amount, status, created_at, branch_id, branches(name)`)
           .eq("company_id", cid)
           .eq("status", "pending")
           .order("created_at", { ascending: true })
@@ -1585,7 +1585,7 @@ function ApprovalsContent() {
         for (const r of (bvs || []) as any[]) {
           misc.push({
             id: `bv-${r.id}`, kind: "bank_voucher",
-            doc_no: r.voucher_number ?? null,
+            doc_no: r.reference_number ?? null,
             party_or_label: null,
             amount: Number(r.amount || 0),
             branch_name: r.branches?.name ?? null,
@@ -1619,7 +1619,7 @@ function ApprovalsContent() {
         // Customer Debit Notes
         const { data: cdns } = await supabase
           .from("customer_debit_notes")
-          .select(`id, note_number, total_amount, approval_status, created_at,
+          .select(`id, debit_note_number, total_amount, approval_status, created_at,
                    customer_id, customers(name),
                    branch_id, branches(name)`)
           .eq("company_id", cid)
@@ -1629,7 +1629,7 @@ function ApprovalsContent() {
         for (const r of (cdns || []) as any[]) {
           misc.push({
             id: `cdn-${r.id}`, kind: "customer_debit_note",
-            doc_no: r.note_number ?? null,
+            doc_no: r.debit_note_number ?? null,
             party_or_label: r.customers?.name ?? null,
             amount: Number(r.total_amount || 0),
             branch_name: r.branches?.name ?? null,
@@ -1642,7 +1642,7 @@ function ApprovalsContent() {
         // Permission Transfers
         const { data: pts } = await supabase
           .from("permission_transfers")
-          .select(`id, status, created_at, transferred_by, target_user_id`)
+          .select(`id, status, created_at, transferred_by, to_user_id`)
           .eq("company_id", cid)
           .eq("status", "pending")
           .order("created_at", { ascending: true })
@@ -1969,13 +1969,13 @@ function ApprovalsContent() {
         const { data: pays } = await supabase
           .from("payments")
           .select(`
-            id, payment_no, amount, currency_code, original_currency, status,
+            id, reference_number, amount, currency_code, original_currency, status,
             created_at, approved_at, approved_by, rejection_reason,
             branch_id, warehouse_id,
             supplier_id, suppliers(name), branches(name)
           `)
           .eq("company_id", cid)
-          .eq("payment_type", "supplier_payment")
+          .not("supplier_id", "is", null)
           .in("status", ["approved", "rejected", "completed", "paid"])
           .order("approved_at", { ascending: false })
           .limit(100)
@@ -1984,7 +1984,7 @@ function ApprovalsContent() {
           merged.push({
             id: `pay-${p.id}`,
             category: "supplier_payment",
-            doc_label: `دفعة مورد · ${p.payment_no ?? p.id.slice(0, 8)}`,
+            doc_label: `دفعة مورد · ${p.reference_number ?? p.id.slice(0, 8)}`,
             doc_href: null,
             party_label: p.suppliers?.name ?? null,
             value_label: `${Number(p.amount).toFixed(2)} ${p.original_currency || p.currency_code || "EGP"}`,
@@ -2222,10 +2222,10 @@ function ApprovalsContent() {
       // expenses, customer_debit_notes, permission_transfers).
       try {
         const [prR, bvR, exR, cdnR, ptR] = await Promise.all([
-          supabase.from("purchase_requests").select(`id, request_number, total_estimated, status, created_at, approved_at, rejected_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
-          supabase.from("bank_voucher_requests").select(`id, voucher_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("purchase_requests").select(`id, request_number, total_estimated_cost, status, created_at, approved_at, rejected_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("bank_voucher_requests").select(`id, reference_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
           supabase.from("expenses").select(`id, expense_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
-          supabase.from("customer_debit_notes").select(`id, note_number, total_amount, approval_status, created_at, approved_at, rejected_at, rejection_reason, customer_id, customers(name)`).eq("company_id", cid).in("approval_status", ["approved", "rejected"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("customer_debit_notes").select(`id, debit_note_number, total_amount, approval_status, created_at, approved_at, rejected_at, rejection_reason, customer_id, customers(name)`).eq("company_id", cid).in("approval_status", ["approved", "rejected"]).order("created_at", { ascending: false }).limit(30),
           supabase.from("permission_transfers").select(`id, status, created_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
         ])
         for (const r of (prR.data || []) as any[]) {
@@ -2234,7 +2234,7 @@ function ApprovalsContent() {
             id: `pr-${r.id}`, category: "misc",
             doc_label: `طلب شراء · ${r.request_number ?? r.id.slice(0, 8)}`,
             doc_href: `/purchase-requests/${r.id}`, party_label: null,
-            value_label: `${Number(r.total_estimated).toFixed(2)}`,
+            value_label: `${Number(r.total_estimated_cost).toFixed(2)}`,
             status: status as any, requested_by_email: null,
             requested_at: r.created_at, decided_by_email: null,
             decided_at: r.approved_at ?? r.rejected_at ?? null, decision_note: null,
@@ -2244,7 +2244,7 @@ function ApprovalsContent() {
           const status = r.status === "cancelled" ? "cancelled" : r.status
           merged.push({
             id: `bv-${r.id}`, category: "misc",
-            doc_label: `سند بنكى · ${r.voucher_number ?? r.id.slice(0, 8)}`,
+            doc_label: `سند بنكى · ${r.reference_number ?? r.id.slice(0, 8)}`,
             doc_href: `/bank-vouchers/${r.id}`, party_label: null,
             value_label: `${Number(r.amount).toFixed(2)}`,
             status: status as any, requested_by_email: null,
@@ -2269,7 +2269,7 @@ function ApprovalsContent() {
         for (const r of (cdnR.data || []) as any[]) {
           merged.push({
             id: `cdn-${r.id}`, category: "misc",
-            doc_label: `إشعار مدين عميل · ${r.note_number ?? r.id.slice(0, 8)}`,
+            doc_label: `إشعار مدين عميل · ${r.debit_note_number ?? r.id.slice(0, 8)}`,
             doc_href: `/customer-debit-notes/${r.id}`,
             party_label: r.customers?.name ?? null,
             value_label: `${Number(r.total_amount).toFixed(2)}`,
