@@ -565,6 +565,10 @@ export default function EditBillPage() {
           display_subtotal: updatedSubtotalForFx,
           original_total: updatedTotalForFx,
           original_subtotal: updatedSubtotalForFx,
+          // v3.74.500 — original_tax_amount كان الحقل الوحيد الذى لا يُحدَّث،
+          // فيظل trigger إعادة الاعتماد يرى فرقاً ضريبياً دائماً ويعيد الفاتورة
+          // لحالة pending_approval فى حلقة لا تنتهى حتى بعد اعتماد الإدارة.
+          original_tax_amount: Number(totals.tax) || 0,
           discount_type: discountType,
           discount_value: discountValue,
           discount_position: discountPosition,

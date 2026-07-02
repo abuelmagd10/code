@@ -200,6 +200,19 @@ export class BillReceiptWorkflowService {
     const alreadyApproved = bill.approval_status === "approved" && bill.status === "draft"
 
     if (!alreadyApproved) {
+      // v3.74.500 — Baseline refresh: the admin is approving the bill's
+      // CURRENT numbers, so they become the new reference snapshot. Without
+      // this, `bills_force_reapproval_on_edit` keeps comparing against the
+      // stale PO-conversion snapshot and flips the bill back to
+      // pending_approval on every submit-for-receipt — an infinite loop
+      // (PO-0001: original_tax_amount stayed 0.59 while tax_amount was 1.43).
+      const { data: amounts } = await this.adminSupabase
+        .from("bills")
+        .select("total_amount, subtotal, tax_amount")
+        .eq("company_id", actor.companyId)
+        .eq("id", billId)
+        .maybeSingle()
+
       const { error } = await this.adminSupabase
         .from("bills")
         .update({
@@ -210,6 +223,13 @@ export class BillReceiptWorkflowService {
           rejection_reason: null,
           rejected_by: null,
           rejected_at: null,
+          ...(amounts
+            ? {
+                original_total: amounts.total_amount,
+                original_subtotal: amounts.subtotal,
+                original_tax_amount: amounts.tax_amount,
+              }
+            : {}),
         })
         .eq("company_id", actor.companyId)
         .eq("id", billId)
@@ -374,6 +394,16 @@ export class BillReceiptWorkflowService {
     const bill = await this.loadBill(billId, actor.companyId)
     this.assertBranchScope(actor, bill.branch_id)
 
+    // v3.74.500 — Gate: a bill sitting in the admin-approval queue can NOT be
+    // sent to the warehouse. Previously this path silently "auto-approved"
+    // the bill, letting an accountant bypass the owner/GM approval that a
+    // material amendment demands (PO-0001 incident).
+    if (bill.status === "pending_approval") {
+      throw new Error(
+        "الفاتورة بانتظار الاعتماد الإداري (المالك / المدير العام). لا يمكن إرسالها للاستلام المخزني قبل اعتمادها من صندوق الموافقات."
+      )
+    }
+
     const alreadyPending = bill.status === "sent" && bill.receipt_status === "pending"
     if (!alreadyPending) {
       if (bill.status === "rejected" && bill.receipt_status === "rejected") {
@@ -414,6 +444,25 @@ export class BillReceiptWorkflowService {
     }
 
     const refreshedBill = alreadyPending ? bill : await this.loadBill(billId, actor.companyId)
+
+    // v3.74.500 — Post-update verification: the BEFORE-UPDATE trigger
+    // `bills_force_reapproval_on_edit` can rewrite our status='sent' to
+    // 'pending_approval' when the bill's amounts differ from the approved
+    // baseline. In that case the warehouse must NOT be notified — the bill
+    // just re-entered the admin approval queue. We roll back the stray
+    // receipt_status and surface a clear message instead. (PO-0001: the
+    // store manager was pinged for a bill the owner had not approved yet.)
+    if (!alreadyPending && refreshedBill.status !== "sent") {
+      await this.adminSupabase
+        .from("bills")
+        .update({ receipt_status: null })
+        .eq("company_id", actor.companyId)
+        .eq("id", billId)
+
+      throw new Error(
+        "تعذر الإرسال للاستلام: الفاتورة تحتاج إعادة اعتماد إداري بسبب تعديل مالي عليها. تم إرسالها لصندوق الموافقات — بعد الاعتماد يمكنك الإرسال للاستلام."
+      )
+    }
 
     const traceId = await this.createTrace({
       companyId: actor.companyId,
