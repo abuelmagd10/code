@@ -62,6 +62,34 @@ export class SalesInvoicePostingCommandService {
       }
     }
 
+    // v3.74.501 — نفس بوابة المشتريات (v3.74.500): فاتورة بانتظار الاعتماد
+    // الإداري لا تُرحَّل ولا يُخطَر المخزن بها. بدون هذه البوابة كان مسار
+    // إعادة الترحيل (isRepost) يفرض status='sent' ويرسل "فاتورة جاهزة
+    // للشحن" لمسؤول المخزن متجاوزاً اعتماد المالك للتعديل المعلق.
+    if (invoice.status === "pending_approval") {
+      throw new SalesInvoicePostingCommandError(
+        "الفاتورة بانتظار الاعتماد الإداري (المالك / المدير العام). لا يمكن ترحيلها أو إخطار المخزن قبل اعتمادها من صندوق الموافقات.",
+        409
+      )
+    }
+
+    const { data: pendingAmendment } = await this.supabase
+      .from("discount_approvals")
+      .select("id")
+      .eq("company_id", actor.companyId)
+      .eq("document_type", "sales_invoice")
+      .eq("document_id", command.invoiceId)
+      .eq("status", "pending")
+      .limit(1)
+      .maybeSingle()
+
+    if (pendingAmendment) {
+      throw new SalesInvoicePostingCommandError(
+        "يوجد تعديل/خصم معلق على الفاتورة بانتظار اعتماد الإدارة. لا يمكن الترحيل قبل البت فيه من صندوق الموافقات.",
+        409
+      )
+    }
+
     if (invoice.invoice_date) {
       try {
         await requireOpenFinancialPeriod(actor.companyId, invoice.invoice_date)

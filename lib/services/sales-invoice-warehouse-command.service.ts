@@ -46,8 +46,34 @@ export class SalesInvoiceWarehouseCommandService {
   constructor(private readonly supabase: SupabaseLike) {}
 
   async approveDelivery(actor: SalesInvoiceWarehouseActor, command: SalesInvoiceWarehouseCommand): Promise<SalesInvoiceWarehouseResult> {
-    const invoice = await this.loadInvoice(actor.companyId, command.invoiceId, "invoice_number, branch_id, cost_center_id, warehouse_status, approval_status, created_by_user_id, posted_by_user_id")
+    const invoice = await this.loadInvoice(actor.companyId, command.invoiceId, "invoice_number, branch_id, cost_center_id, status, warehouse_status, approval_status, created_by_user_id, posted_by_user_id")
     const invoiceSenderId = invoice.posted_by_user_id || invoice.created_by_user_id || null
+
+    // v3.74.501 — نفس بوابة استلام المشتريات (v3.74.499): لا يُعتمد إخراج
+    // بضاعة لفاتورة بانتظار الاعتماد الإداري أو عليها تعديل/خصم معلق.
+    if (invoice.status === "pending_approval") {
+      throw new SalesInvoiceWarehouseCommandError(
+        "يجب اعتماد الفاتورة إدارياً أولاً (المالك / المدير العام) قبل اعتماد إخراج البضاعة من المخزن.",
+        409
+      )
+    }
+
+    const { data: pendingAmendment } = await this.supabase
+      .from("discount_approvals")
+      .select("id")
+      .eq("company_id", actor.companyId)
+      .eq("document_type", "sales_invoice")
+      .eq("document_id", command.invoiceId)
+      .eq("status", "pending")
+      .limit(1)
+      .maybeSingle()
+
+    if (pendingAmendment) {
+      throw new SalesInvoiceWarehouseCommandError(
+        "يوجد تعديل/خصم معلق على الفاتورة بانتظار اعتماد الإدارة. لا يمكن اعتماد إخراج البضاعة قبل البت فيه.",
+        409
+      )
+    }
 
     const idempotencyKey = resolveFinancialIdempotencyKey(
       command.idempotencyKey || null,
