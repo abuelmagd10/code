@@ -1,0 +1,30 @@
+-- v3.74.492 — Retire /inventory/dispatch-approvals and
+-- /sales-return-requests from active navigation.
+--
+-- After v3.74.491 sealed the two remaining gaps
+-- (approve-with-shipping + material issue Stage 2), the unified
+-- /approvals inbox covers everything the dispatch page did:
+--   disp tab   → sales invoice warehouse dispatch (incl. shipping)
+--   mi tab     → material issue Stage 1 + Stage 2
+--   tr tab     → inventory transfer dispatch
+-- And v3.74.475 dual-stage sret tab already covered every sales
+-- return request flow.
+--
+-- Changes
+--   sidebar.tsx: the "Dispatch Approvals" and "Sales Return
+--     Approvals" entries under the Inventory group are removed.
+--   settings/users/page.tsx:
+--     - dispatch_approvals resource removed from the role
+--       permissions grid.
+--     - sales_return_requests resource removed from the grid.
+--     - Role defaults stop seeding dispatch_approvals for
+--       accountant, purchasing_officer, store_manager, and manager.
+--
+-- Kept for safety
+--   app/inventory/dispatch-approvals/page.tsx and
+--   app/sales-return-requests/page.tsx remain as URL fallbacks so
+--   bookmarks and existing links keep working while we watch for
+--   any usage. A follow-up release can delete the files once we're
+--   sure nothing external references them.
+--
+-- No DB changes.

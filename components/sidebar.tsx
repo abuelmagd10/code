@@ -1191,15 +1191,19 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Inventory Transfers' : 'نقل المخزون'), href: `/inventory-transfers${q}`, icon: ArrowLeftRight, badge: approvalBadges['inventory_transfer'] || 0 },
                     { label: (lang === 'en' ? 'Third Party Goods' : 'بضائع لدى الغير'), href: `/inventory/third-party${q}`, icon: Truck },
                     { label: (lang === 'en' ? 'Write-offs' : 'إهلاك المخزون'), href: `/inventory/write-offs${q}`, icon: AlertTriangle, badge: approvalBadges['inventory_write_off'] || 0 },
-                    { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle, badge: pendingDispatchCount },
-                    // v3.74.14 — Sales Return Requests workflow page
-                    { label: (lang === 'en' ? 'Sales Return Approvals' : 'موافقات مرتجعات المبيعات'), href: `/sales-return-requests${q}`, icon: CheckCircle, badge: pendingSalesReturnRequestsCount },
                     // v3.74.490 — Goods receipt approvals page removed from
                     // the sidebar. Its two flows (bill receipt + mfg product
                     // receive) both live in the unified inbox now (recv +
                     // pr tabs). The physical page at /inventory/goods-receipt
                     // still exists as a URL fallback but no longer surfaces
                     // in navigation.
+                    // v3.74.492 — Dispatch Approvals and Sales Return
+                    // Approvals pages also retired from the sidebar. Their
+                    // flows live in the unified inbox: disp tab covers
+                    // /inventory/dispatch-approvals (v3.74.477 + v3.74.491
+                    // approve-with-shipping); sret tab covers
+                    // /sales-return-requests (v3.74.475 dual-stage). The
+                    // physical files remain as URL fallbacks.
                   ]
                 },
                 {

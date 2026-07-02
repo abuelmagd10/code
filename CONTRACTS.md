@@ -64,6 +64,24 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CM. سحب dispatch-approvals + sales-return-requests من التنقل (v3.74.492)
+
+بعد v3.74.491، الـ inbox يغطى الاتنين بالكامل:
+- **موافقات الإرسال** → tab disp (+ approve-with-shipping من v3.74.491)
+- **material issue Stage 2** → tab mi (v3.74.491 stage-aware)
+- **مرتجعات المبيعات (dual-stage)** → tab sret (v3.74.475)
+
+**التغييرات**:
+- sidebar.tsx: "موافقات الإرسال" و "موافقات مرتجعات المبيعات"
+  اتشالوا من مجموعة المخزون.
+- settings/users/page.tsx:
+  - `dispatch_approvals` resource اتشال من الـ grid
+  - `sales_return_requests` resource اتشال من الـ grid
+  - role defaults ما بيبذّرش `dispatch_approvals` لأى دور
+
+**Safety net**: الصفحات الفعلية (`app/inventory/dispatch-approvals/` +
+`app/sales-return-requests/`) لسه موجودة كـ URL fallback.
+
 ## CL. approve-with-shipping + material issue Stage 2 على الـ inbox (v3.74.491)
 
 قبل سحب صفحة `/inventory/dispatch-approvals`، سُدّت الفجوتان اللى

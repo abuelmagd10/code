@@ -1445,7 +1445,9 @@ export default function UsersSettingsPage() {
         { value: 'sent_invoice_returns', label: 'مرتجعات الفواتير المرسلة' },
         { value: 'customer_debit_notes', label: 'إشعارات دائن العملاء' },
         { value: 'customer_credits', label: 'الأرصدة الدائنة للعملاء' },
-        { value: 'sales_return_requests', label: 'طلبات مرتجعات المبيعات' },
+        // v3.74.492 — sales_return_requests resource retired. The
+        // approval workflow now lives in the unified /approvals inbox
+        // (resource: 'approvals').
         { value: 'customer_refund_requests', label: 'طلبات استرداد العملاء' },
       ]
     },
@@ -1477,8 +1479,10 @@ export default function UsersSettingsPage() {
         { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
         // صفحة توفر المنتجات في الفروع
         { value: 'product_availability', label: 'توفر المنتجات في الفروع' },
-        // اعتماد إرسال فواتير المبيعات من المخزن (workflow جديد)
-        { value: 'dispatch_approvals', label: 'موافقات إرسال المبيعات' },
+        // v3.74.492 — dispatch_approvals resource retired. The
+        // warehouse dispatch flow (including approve-with-shipping
+        // for API-integrated providers) lives in the unified
+        // /approvals inbox now (resource: 'approvals', tab: disp).
         // v3.74.490 — inventory_goods_receipt resource retired.
         // Bill receipt + manufacturing product receive both live in
         // the unified /approvals inbox now (resource: 'approvals').
@@ -1595,8 +1599,7 @@ export default function UsersSettingsPage() {
       'bills', 'purchase_returns',
       'products', 'services',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals',
-      'payments', 'expenses', 'banking',
+            'payments', 'expenses', 'banking',
     ],
     // 3. مسؤول المشتريات — 5 pages verbatim
     // v3.74.484 — 'approvals' added so purchasing officer sees
@@ -1604,8 +1607,7 @@ export default function UsersSettingsPage() {
     purchasing_officer: [
       'approvals',
       'suppliers', 'purchase_orders', 'inventory',
-      'dispatch_approvals',
-    ],
+          ],
     // 4. مسؤول الحجوزات — 2 pages verbatim
     booking_officer: ['bookings', 'customers'],
     // 5. مسؤول التصنيع — 2 entries verbatim (umbrella covers 7 sub-pages)
@@ -1618,8 +1620,7 @@ export default function UsersSettingsPage() {
     store_manager: [
       'approvals',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals',
-    ],
+          ],
     // 7. المدير (branch manager) — 25 pages, union, ALL READ-ONLY
     manager: [
       'dashboard',
@@ -1628,8 +1629,7 @@ export default function UsersSettingsPage() {
       'bills', 'purchase_returns',
       'products', 'services',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals',
-      'payments', 'expenses', 'banking',
+            'payments', 'expenses', 'banking',
       'suppliers', 'purchase_orders',
       'bookings',
       'manufacturing_boms', 'approvals',
