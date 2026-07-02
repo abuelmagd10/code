@@ -878,6 +878,11 @@ export class AccountingTransactionService {
             subtotal: number
             taxAmount: number
             totalAmount: number
+            // v3.74.499 — surface shipping + adjustment so the receipt JE
+            // includes them on the debit side. Without them a bill with
+            // shipping produced ACCOUNTING_BALANCE_VIOLATION on commit.
+            shipping?: number
+            adjustment?: number
             status: string
             receiptStatus?: string
             receivedBy?: string
@@ -1010,7 +1015,7 @@ export class AccountingTransactionService {
 
             return {
                 success: true,
-                journalEntryIds: rpcResult?.journal_entry_id ? [rpcResult.journal_entry_id] : [],
+                    journalEntryIds: rpcResult?.journal_entry_id ? [rpcResult.journal_entry_id] : [],
             }
 
         } catch (error: any) {
@@ -1019,4 +1024,3 @@ export class AccountingTransactionService {
         }
     }
 }
-

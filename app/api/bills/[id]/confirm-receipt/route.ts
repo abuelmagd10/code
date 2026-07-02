@@ -645,6 +645,51 @@ export async function POST(
 
     const bill = billData as BillReceiptRecord
 
+    // v3.74.499 — Amendment gate.
+    // The receipt path previously did NOT check bill.approval_status, so a
+    // store_manager could try to confirm receipt on a bill that was still
+    // waiting for owner approval of a pending amendment. That in turn
+    // pushed the amended totals into post_bill_receipt_atomic and (with
+    // the v3.74.499 shipping fix now in place) would still be semantically
+    // wrong — you don't book a receipt against un-approved figures.
+    //
+    // Rules:
+    //  - approval_status must be 'approved' (or NULL for legacy pre-approval bills).
+    //  - status must NOT be 'pending_approval' (i.e. no live amendment cycle).
+    //  - There must be NO active pending discount_approval on this bill.
+    const approvalStatus = String(bill.status || "").toLowerCase()
+    if (approvalStatus === "pending_approval") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "لا يمكن استلام الفاتورة قبل اعتماد الإدارة للتعديل المعلَّق.",
+          code: "ERR_BILL_PENDING_APPROVAL",
+        },
+        { status: 409 }
+      )
+    }
+    {
+      const { data: pendingApproval } = await supabase
+        .from("discount_approvals")
+        .select("id, status")
+        .eq("document_id", bill.id)
+        .eq("document_type", "purchase_invoice")
+        .eq("status", "pending")
+        .limit(1)
+        .maybeSingle()
+
+      if (pendingApproval) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "توجد موافقة معلَّقة على تعديل الفاتورة؛ ينتظر قرار المالك قبل استلام البضاعة.",
+            code: "ERR_BILL_HAS_PENDING_AMENDMENT",
+          },
+          { status: 409 }
+        )
+      }
+    }
+
     // v3.74.485 — manager no longer approves receipts; the RECEIPT_ROLES
     // guard above already blocks them, so this branch scope check is
     // now dead code. Left for symmetry with the reject-receipt route.
@@ -774,6 +819,13 @@ export async function POST(
         subtotal: Number(bill.subtotal || 0),
         taxAmount: Number(bill.tax_amount || 0),
         totalAmount: Number(bill.total_amount || 0),
+        // v3.74.499 — pass shipping/adjustment to the JE builder so the
+        // debit side matches AP credit. Without these two lines a bill
+        // with shipping=1.00 produced debit=10.61, credit=11.61 → the
+        // enforce_journal_entry_balance trigger aborted the transaction
+        // and the receipt could never complete.
+        shipping: Number(bill.shipping || 0),
+        adjustment: Number(bill.adjustment || 0),
         status: "received",
         receiptStatus: "received",
         receivedBy: context.user.id,

@@ -20,6 +20,20 @@ export interface BillPostingParams {
     subtotal: number
     taxAmount: number
     totalAmount: number
+    /**
+     * v3.74.499 — shipping cost captured on the bill header. Was previously
+     * ignored by the JE builder, so a bill with shipping produced an
+     * unbalanced entry (debit short by `shipping`). Now capitalized as a
+     * separate debit to Inventory (landed cost). Optional for backward
+     * compatibility with older callers.
+     */
+    shipping?: number
+    /**
+     * v3.74.499 — bill.adjustment goes into totalAmount but was likewise
+     * missing from the debit side. Positive adjustment adds to inventory,
+     * negative subtracts (contra credit line).
+     */
+    adjustment?: number
     status: string
     receiptStatus?: string
     receivedBy?: string
@@ -241,6 +255,9 @@ export async function prepareBillPosting(
             receivedBy,
             receivedAt
         } = params
+        // v3.74.499 — defensive coercion; older callers may omit these.
+        const shipping = Number(params.shipping || 0)
+        const adjustment = Number(params.adjustment || 0)
 
         // Validation
         if (!accountMapping.ap || (!accountMapping.inventory && !accountMapping.purchases)) {
@@ -293,6 +310,46 @@ export async function prepareBillPosting(
             branch_id: branchId,
             cost_center_id: costCenterId
         })
+
+        // v3.74.499 — Debit: Freight-in capitalized to inventory.
+        // Without this line the JE was short by exactly `shipping`, tripping
+        // enforce_journal_entry_balance and rolling back the whole receipt.
+        // Sales side already books shipping as Cr Sales Revenue for symmetry
+        // (see prepareInvoiceRevenueJournal), we mirror that by adding it to
+        // the debit side of the purchase receipt.
+        const inventoryAccountId = accountMapping.inventory || accountMapping.purchases!
+        if (shipping > 0) {
+            journalLines.push({
+                account_id: inventoryAccountId,
+                description: 'شحن مضاف لتكلفة المخزون',
+                debit_amount: shipping,
+                credit_amount: 0,
+                branch_id: branchId,
+                cost_center_id: costCenterId
+            })
+        }
+
+        // v3.74.499 — Debit/Credit: Adjustment. Positive adjustment adds
+        // to inventory landed cost; negative reduces it (contra line).
+        if (adjustment > 0) {
+            journalLines.push({
+                account_id: inventoryAccountId,
+                description: 'تسوية إضافية على المخزون',
+                debit_amount: adjustment,
+                credit_amount: 0,
+                branch_id: branchId,
+                cost_center_id: costCenterId
+            })
+        } else if (adjustment < 0) {
+            journalLines.push({
+                account_id: inventoryAccountId,
+                description: 'تسوية تخفيض على المخزون',
+                debit_amount: 0,
+                credit_amount: -adjustment,
+                branch_id: branchId,
+                cost_center_id: costCenterId
+            })
+        }
 
         // Debit: VAT Input (if applicable)
         if (accountMapping.vatInput && taxAmount > 0) {
@@ -447,6 +504,12 @@ export function prepareBillPostingFromPayload(payload: BillReceiptReplayPayload)
         const subtotal = Number(payload.monetary_snapshot.subtotal || bill.subtotal || 0)
         const taxAmount = Number(payload.monetary_snapshot.tax_amount || bill.tax_amount || 0)
         const totalAmount = Number(payload.monetary_snapshot.total_amount || bill.total_amount || 0)
+        // v3.74.499 — replay path must produce the same balanced JE as the
+        // live path, otherwise a replay would silently drift from the
+        // original posting. monetary_snapshot already captures shipping
+        // and adjustment, so we just consume them here.
+        const shipping = Number(payload.monetary_snapshot.shipping || 0)
+        const adjustment = Number(payload.monetary_snapshot.adjustment || 0)
 
         const journalLines: Array<{
             account_id: string
@@ -465,6 +528,38 @@ export function prepareBillPostingFromPayload(payload: BillReceiptReplayPayload)
                 cost_center_id: bill.cost_center_id
             }
         ]
+
+        // v3.74.499 — mirror the live path: capitalize shipping + adjustment
+        // as debits (or contra credits for a negative adjustment).
+        if (shipping > 0) {
+            journalLines.push({
+                account_id: inventoryAccount,
+                description: 'شحن مضاف لتكلفة المخزون',
+                debit_amount: shipping,
+                credit_amount: 0,
+                branch_id: bill.branch_id,
+                cost_center_id: bill.cost_center_id
+            })
+        }
+        if (adjustment > 0) {
+            journalLines.push({
+                account_id: inventoryAccount,
+                description: 'تسوية إضافية على المخزون',
+                debit_amount: adjustment,
+                credit_amount: 0,
+                branch_id: bill.branch_id,
+                cost_center_id: bill.cost_center_id
+            })
+        } else if (adjustment < 0) {
+            journalLines.push({
+                account_id: inventoryAccount,
+                description: 'تسوية تخفيض على المخزون',
+                debit_amount: 0,
+                credit_amount: -adjustment,
+                branch_id: bill.branch_id,
+                cost_center_id: bill.cost_center_id
+            })
+        }
 
         if (mapping.vat_input && taxAmount > 0) {
             journalLines.push({

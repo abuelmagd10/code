@@ -1,0 +1,47 @@
+-- v3.74.499 — Two purchase-receipt bugs discovered during BILL-0001 test:
+--
+-- BUG A (JE unbalanced by exactly `shipping`)
+--   BILL-0001 had subtotal=9.18, tax_amount=1.43, shipping=1.00, total=11.61.
+--   The store_manager tried to confirm receipt; post_bill_receipt_atomic
+--   raised: ACCOUNTING_BALANCE_VIOLATION debit=10.61 credit=11.61 diff=1.00
+--
+--   Root cause: prepareBillPosting (lib/purchase-posting.ts) and its replay
+--   twin prepareBillPostingFromPayload only debited subtotal + VAT input
+--   while crediting the full total_amount to AP. Shipping (and any header
+--   adjustment) went straight into AP but had no matching debit — so
+--   every bill with shipping > 0 aborted the receipt.
+--
+--   Fix: capitalize shipping and adjustment as extra debits to the
+--   Inventory account (landed cost).
+--     - shipping > 0  → +Dr Inventory
+--     - adjustment > 0 → +Dr Inventory
+--     - adjustment < 0 → +Cr Inventory (contra)
+--   AP credit stays at total_amount; balance now holds:
+--     subtotal + shipping + adjustment(+/-) + tax = total_amount ✅
+--
+--   Mirror check: sales revenue journal already routes shipping to
+--   Cr Sales Revenue (prepareInvoiceRevenueJournal), so the sales side
+--   was NOT affected by the same class of bug.
+--
+-- BUG B (Amendment gate missing on confirm-receipt)
+--   The route /api/bills/[id]/confirm-receipt did not check
+--   bill.approval_status nor scan discount_approvals for a pending row.
+--   That let a store_manager attempt receipt on a bill still in the
+--   `pending_approval` state — reading amended totals before the owner
+--   had approved them. Even with BUG A fixed the semantics would be
+--   wrong: you cannot book a receipt against un-approved figures.
+--
+--   Fix: block confirm-receipt with 409 in two cases:
+--     1. bill.status == 'pending_approval'
+--     2. an active discount_approvals row exists with status='pending'
+--        for this bill (document_type='purchase_invoice')
+--
+--   Error messages are Arabic-first so the store_manager sees a clear
+--   reason ("انتظر اعتماد الإدارة للتعديل المعلَّق").
+--
+-- No DB schema change — this migration is a documentation stamp for the
+-- code-only fix so the release script's version-grep check still finds
+-- a matching migration file. All logic lives in:
+--   - lib/purchase-posting.ts (prepareBillPosting + FromPayload)
+--   - lib/accounting-transaction-service.ts (postBillAtomic signature)
+--   - app/api/bills/[id]/confirm-receipt/route.ts (gate + passthrough)
