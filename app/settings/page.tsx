@@ -1366,6 +1366,20 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </Link>
+          {/* v3.74.498: كارت المخازن — بديل رابط القائمة الجانبية */}
+          <Link href="/warehouses" className="group">
+            <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-amber-200 dark:group-hover:border-amber-800">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg group-hover:scale-110 transition-transform">
+                  <Package className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{language === 'en' ? 'Warehouses' : 'المخازن'}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-amber-500 transition-colors" />
+              </CardContent>
+            </Card>
+          </Link>
           <Link href="/settings/users" className="group">
             <Card className="bg-white dark:bg-slate-900 border-0 shadow-sm hover:shadow-md transition-all cursor-pointer group-hover:border-blue-200 dark:group-hover:border-blue-800">
               <CardContent className="p-4 flex items-center gap-3">

@@ -1262,9 +1262,8 @@ export function Sidebar() {
                 {
                   key: 'settings', icon: Settings, label: (lang === 'en' ? 'Settings' : 'الإعدادات'), items: [
                     { label: (lang === 'en' ? 'General Settings' : 'الإعدادات العامة'), href: `/settings${q}`, icon: Settings },
-                    { label: (lang === 'en' ? 'Branches' : 'الفروع'), href: `/branches${q}`, icon: Building2 },
-                    { label: (lang === 'en' ? 'Cost Centers' : 'مراكز التكلفة'), href: `/cost-centers${q}`, icon: DollarSign },
-                    { label: (lang === 'en' ? 'Warehouses' : 'المخازن'), href: `/warehouses${q}`, icon: Package },
+                    // v3.74.498: أزيلت روابط الفروع/مراكز التكلفة/المخازن من هنا —
+                    // يُكتفى بالكروت داخل صفحة الإعدادات (نفس الوظيفة، والصفحات لا تزال تعمل عبر الروابط المباشرة)
                     { label: (lang === 'en' ? 'My Profile' : 'ملفي الشخصي'), href: `/settings/profile${q}`, icon: Users },
                   ]
                 },
