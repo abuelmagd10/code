@@ -1,0 +1,22 @@
+-- v3.74.494 — Fix the notify_discount_decision_trg wording so an
+-- amendment approval / rejection no longer masquerades as a discount
+-- decision.
+--
+-- Symptom the owner spotted: the accountant increased a bill line
+-- quantity (no discount touched). v3.74.463 opens a discount_approvals
+-- row for every material amendment, so once the owner approved, the
+-- decision trigger fired and sent the recipient:
+--   Title  : تم اعتماد الخصم
+--   Body   : تم اعتماد طلب الخصم على فاتورة المشتريات BILL-0001 ...
+-- The wording is wrong — the change was a quantity edit, not a
+-- discount request.
+--
+-- Fix: the trigger now distinguishes the two paths via
+-- supersedes_approval_id.
+--   supersedes_approval_id IS NULL      → fresh discount request
+--     → noun stays "الخصم" (the historic message).
+--   supersedes_approval_id IS NOT NULL  → amendment cycle
+--     → noun becomes "التعديل"; rejection hint asks the accountant
+--       to edit the bill (not just the discount) to reopen approval.
+--
+-- Body installed via Supabase MCP. This file is the canonical source.

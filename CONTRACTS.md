@@ -64,6 +64,18 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CO. تصحيح نص إشعار قرار اعتماد/رفض الأمندمنت (v3.74.494)
+
+بعد v3.74.463، جدول `discount_approvals` أصبح الـ hub لكل تعديل
+material على الفاتورة (كميات، شحن، ضريبة، خصم). الـ trigger
+`notify_discount_decision_trg` كان بيرسل "تم اعتماد الخصم" حتى لو
+التعديل مالوش علاقة بالخصم.
+
+**الإصلاح**: الـ trigger يفرّق بحسب `supersedes_approval_id`:
+- **NULL** → طلب خصم أصلى → nowin يفضل "الخصم" (السلوك السابق)
+- **NOT NULL** → أمندمنت → nowin يبقى "التعديل"، وسبب-الرفض hint
+  يقول "عدّل الفاتورة لفتح دورة اعتماد جديدة".
+
 ## CN. توجيه الإشعارات لـ /approvals + تنظيف الـ grid + DB (v3.74.493)
 
 **notification-routing.ts**:
