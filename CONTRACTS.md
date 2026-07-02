@@ -64,6 +64,26 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CL. approve-with-shipping + material issue Stage 2 على الـ inbox (v3.74.491)
+
+قبل سحب صفحة `/inventory/dispatch-approvals`، سُدّت الفجوتان اللى
+كانوا حصريين عليها:
+
+**١. Approve + create shipment**:
+Loader بيجيب `shipping_providers` مع كل فاتورة dispatch. لو
+`provider_code IN (bosta, aramex)` وله `auth_type`، بيظهر زر كهرمانى
+🚚 "**اعتماد + إرسال لـ [Provider]**". يستدعى نفس endpoint
+(`/warehouse-approve-with-shipping`) اللى الصفحة القديمة كانت
+تستخدمه. toast بيعرض tracking number لو رجع.
+
+**٢. Material issue Stage 2**:
+Loader تبويب `mi` اتوسع ليشمل `status IN (pending, management_approved)`.
+الكارت stage-aware:
+- **pending** → badge أصفر "انتظار الإدارة" + زر أزرق "اعتماد الإدارة"
+  (calls `/management-approve`)
+- **management_approved** → badge سماوى "استكمال صرف المخزن" + زر
+  سماوى "تنفيذ صرف المخزن" (calls `/approve`)
+
 ## CK. سحب صفحة "اعتماد الاستلام" من التنقل (v3.74.490)
 
 بعد إن الـ inbox اتغطى بالكامل بـ:

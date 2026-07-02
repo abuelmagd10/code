@@ -183,6 +183,9 @@ interface PendingGoodsReceipt {
 // v3.74.477 — dispatch approval for sales invoices. Warehouse Stage 2:
 // invoice.warehouse_status='pending' after the invoice was sent.
 // Uses /api/invoices/[id]/{warehouse-approve, warehouse-reject}.
+// v3.74.491 — attach shipping_provider so cards can offer the
+// approve-with-shipping button when the provider is API-integrated
+// (bosta / aramex with auth_type set), matching the dispatch page.
 interface PendingDispatch {
   id: string
   invoice_no: string | null
@@ -191,6 +194,9 @@ interface PendingDispatch {
   branch_name: string | null
   warehouse_name: string | null
   requested_at: string
+  shipping_provider_name: string | null
+  shipping_provider_code: string | null
+  shipping_provider_has_api: boolean
   type: "dispatch"
 }
 
@@ -1102,8 +1108,12 @@ function ApprovalsContent() {
         type: "production_order" as const,
       })))
 
-      // Material issue approvals — pending management approval only (Stage 1)
-      // management_approved goes to /inventory/dispatch-approvals for warehouse staff (Stage 2)
+      // v3.74.491 — Material issue approvals now include BOTH stages:
+      //   Stage 1 (management approval) : status='pending'
+      //   Stage 2 (warehouse dispatch)   : status='management_approved'
+      // The dispatch-approvals page carried Stage 2 separately; folding it
+      // into this tab means warehouse staff can finish the dispatch from
+      // the inbox after management approves.
       const { data: mis } = await supabase
         .from("manufacturing_material_issue_approvals")
         .select(`
@@ -1113,7 +1123,7 @@ function ApprovalsContent() {
           warehouses(name)
         `)
         .eq("company_id", cid)
-        .eq("status", "pending")
+        .in("status", ["pending", "management_approved"])
         .order("requested_at", { ascending: true })
         .limit(50)
 
@@ -1391,25 +1401,36 @@ function ApprovalsContent() {
           .select(`
             id, invoice_number, total_amount, warehouse_status, status,
             created_at, customer_id, branch_id, warehouse_id,
+            shipping_provider_id,
             customers(name),
             branches(name),
-            warehouses(name)
+            warehouses(name),
+            shipping_providers:shipping_provider_id(provider_name, provider_code, auth_type)
           `)
           .eq("company_id", cid)
           .eq("warehouse_status", "pending")
           .in("status", ["sent", "paid", "partially_paid"])
           .order("created_at", { ascending: true })
           .limit(100)
-        setDispatches((invs || []).map((i: any) => ({
-          id: i.id,
-          invoice_no: i.invoice_number ?? null,
-          customer_name: i.customers?.name ?? null,
-          total: Number(i.total_amount || 0),
-          branch_name: i.branches?.name ?? null,
-          warehouse_name: i.warehouses?.name ?? null,
-          requested_at: i.created_at,
-          type: "dispatch" as const,
-        })))
+        setDispatches((invs || []).map((i: any) => {
+          const sp = i.shipping_providers
+          const code = String(sp?.provider_code || "").toLowerCase()
+          return {
+            id: i.id,
+            invoice_no: i.invoice_number ?? null,
+            customer_name: i.customers?.name ?? null,
+            total: Number(i.total_amount || 0),
+            branch_name: i.branches?.name ?? null,
+            warehouse_name: i.warehouses?.name ?? null,
+            requested_at: i.created_at,
+            shipping_provider_name: sp?.provider_name ?? null,
+            shipping_provider_code: sp?.provider_code ?? null,
+            // v3.74.491 — API-integrated providers can do
+            // approve-with-shipping in one click.
+            shipping_provider_has_api: ["bosta","aramex"].includes(code) && !!sp?.auth_type,
+            type: "dispatch" as const,
+          }
+        }))
       } catch {
         setDispatches([])
       }
@@ -2567,6 +2588,9 @@ function ApprovalsContent() {
   )
 
   const MaterialIssueCard = ({ m }: { m: PendingMaterialIssue }) => {
+    // v3.74.491 — Stage-aware: pending = management stage,
+    // management_approved = warehouse dispatch stage.
+    const isWarehouseStage = m.status === "management_approved"
     return (
       <Card key={m.id} className="border-l-4 border-l-teal-500">
         <CardContent className="py-4">
@@ -2584,19 +2608,23 @@ function ApprovalsContent() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Badge className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                <Clock className="w-3 h-3 me-1" />{t("انتظار الإدارة", "Pending Management")}
+              <Badge className={isWarehouseStage
+                ? "text-xs bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300"
+                : "text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"}>
+                <Clock className="w-3 h-3 me-1" />
+                {isWarehouseStage ? t("استكمال صرف المخزن", "Warehouse Dispatch") : t("انتظار الإدارة", "Pending Management")}
               </Badge>
               <Link href={`/manufacturing/production-orders`} className="text-xs text-teal-600 hover:underline">{t("عرض", "View")}</Link>
             </div>
           </div>
           <div className="flex gap-2 mt-3 flex-wrap">
             <Button
-              size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+              size="sm" className={isWarehouseStage ? "gap-1 bg-cyan-600 hover:bg-cyan-700 text-white text-xs" : "gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"}
               disabled={runningId === m.id}
-              onClick={() => handleApprove(m, "management")}
+              onClick={() => handleApprove(m, isWarehouseStage ? "warehouse" : "management")}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الإدارة", "Management Approve")}
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {isWarehouseStage ? t("تنفيذ صرف المخزن", "Approve Warehouse Dispatch") : t("اعتماد الإدارة", "Management Approve")}
             </Button>
             <Button
               size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
@@ -3780,6 +3808,39 @@ function ApprovalsContent() {
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الصرف", "Approve Dispatch")}
                           </Button>
+                          {/* v3.74.491 — Approve + create shipment. Visible only when the
+                              invoice targets an API-integrated provider (bosta / aramex).
+                              The classic Approve button stays as a fallback if the provider
+                              call fails. Same endpoint the dispatch-approvals page used. */}
+                          {d.shipping_provider_has_api && (
+                            <Button
+                              size="sm" variant="outline" className="gap-1 text-cyan-600 border-cyan-300 hover:bg-cyan-50 text-xs"
+                              disabled={runningId === d.id}
+                              onClick={async () => {
+                                try {
+                                  setRunningId(d.id)
+                                  const res = await fetch(`/api/invoices/${encodeURIComponent(d.id)}/warehouse-approve-with-shipping`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ notes: null }),
+                                  })
+                                  const j = await res.json().catch(() => ({}))
+                                  if (!res.ok || j.success === false) throw new Error(j.error || (appLang === 'en' ? 'Shipment creation failed' : 'تعذر إنشاء الشحنة'))
+                                  toast({
+                                    title: t("تم الاعتماد + إنشاء الشحنة", "Approved + shipment created"),
+                                    description: j?.shipment?.tracking_number ? t(`رقم التتبع: ${j.shipment.tracking_number}`, `Tracking: ${j.shipment.tracking_number}`) : undefined,
+                                  })
+                                  await load()
+                                } catch (e: any) {
+                                  toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                } finally {
+                                  setRunningId(null)
+                                }
+                              }}
+                            >
+                              🚚 {t(`اعتماد + إرسال لـ ${d.shipping_provider_name}`, `Approve + send to ${d.shipping_provider_name}`)}
+                            </Button>
+                          )}
                           <Button
                             size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
                             disabled={runningId === d.id}

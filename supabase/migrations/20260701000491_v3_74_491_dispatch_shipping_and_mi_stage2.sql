@@ -1,0 +1,29 @@
+-- v3.74.491 — Feature parity with /inventory/dispatch-approvals before
+-- retirement. Two gaps found in the evidence-based audit:
+--
+-- 1. approve-with-shipping button on dispatch cards
+--    The dispatch page rendered a cyan "Approve + send to <provider>"
+--    button when the invoice targeted an API-integrated shipping
+--    provider (bosta or aramex with auth_type set). Same button now
+--    appears on the recv/disp card in the unified inbox. Calls the
+--    same endpoint the dispatch page called
+--    (/api/invoices/[id]/warehouse-approve-with-shipping) so the
+--    server-side flow — including the shipment creation via provider
+--    integration and the toast surfacing the tracking number — stays
+--    identical.
+--
+-- 2. Material issue Stage 2 (warehouse dispatch)
+--    The dispatch page listed material_issue_approvals with status
+--    IN (management_approved, partially_approved) so warehouse staff
+--    could complete the dispatch after management approved Stage 1.
+--    The inbox mi tab used to load only status='pending' (Stage 1).
+--    It now loads both stages; the MaterialIssueCard reads the row's
+--    status and renders:
+--      Stage 1 (pending)              → blue "Management Approve"
+--                                       calls /management-approve
+--      Stage 2 (management_approved)  → cyan "Approve Warehouse Dispatch"
+--                                       calls /approve
+--    Stage 2 shows a cyan "Warehouse Dispatch" badge so staff know
+--    which action they're taking.
+--
+-- No DB changes. UI + loader only.
