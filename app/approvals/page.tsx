@@ -1230,24 +1230,36 @@ function ApprovalsContent() {
           .select(`
             id, reference_number, amount, currency_code, original_currency, created_at, created_by,
             supplier_id, branch_id, warehouse_id, bill_id,
-            suppliers(name),
             branches(name),
-            warehouses(name),
-            bills(bill_number)
+            warehouses(name)
           `)
           .eq("company_id", cid)
           .eq("status", "pending_approval")
           .not("supplier_id", "is", null)
           .order("created_at", { ascending: true })
           .limit(100)
+        // v3.74.503 — payments has NO FK to suppliers/bills, so PostgREST
+        // embeds fail with 400. Batch-fetch the names in a second pass.
+        const paySupplierIds = Array.from(new Set((pays || []).map((p: any) => p.supplier_id).filter(Boolean)))
+        const payBillIds = Array.from(new Set((pays || []).map((p: any) => p.bill_id).filter(Boolean)))
+        const [paySupsRes, payBillsRes] = await Promise.all([
+          paySupplierIds.length
+            ? supabase.from("suppliers").select("id, name").in("id", paySupplierIds)
+            : Promise.resolve({ data: [] as any[] }),
+          payBillIds.length
+            ? supabase.from("bills").select("id, bill_number").in("id", payBillIds)
+            : Promise.resolve({ data: [] as any[] }),
+        ])
+        const paySupMap = new Map(((paySupsRes.data || []) as any[]).map((s: any) => [s.id, s.name]))
+        const payBillMap = new Map(((payBillsRes.data || []) as any[]).map((b: any) => [b.id, b.bill_number]))
         setSupplierPayments((pays || []).map((p: any) => ({
           id: p.id,
           payment_no: p.reference_number ?? null,
-          supplier_name: p.suppliers?.name ?? null,
+          supplier_name: paySupMap.get(p.supplier_id) ?? null,
           amount: Number(p.amount || 0),
           currency: String(p.original_currency || p.currency_code || "EGP"),
           bill_id: p.bill_id ?? null,
-          bill_no: p.bills?.bill_number ?? null,
+          bill_no: payBillMap.get(p.bill_id) ?? null,
           branch_name: p.branches?.name ?? null,
           warehouse_name: p.warehouses?.name ?? null,
           requested_at: p.created_at,
@@ -1972,13 +1984,19 @@ function ApprovalsContent() {
             id, reference_number, amount, currency_code, original_currency, status,
             created_at, approved_at, approved_by, rejection_reason,
             branch_id, warehouse_id,
-            supplier_id, suppliers(name), branches(name)
+            supplier_id, branches(name)
           `)
           .eq("company_id", cid)
           .not("supplier_id", "is", null)
           .in("status", ["approved", "rejected", "completed", "paid"])
           .order("approved_at", { ascending: false })
           .limit(100)
+        // v3.74.503 — no FK payments→suppliers; fetch names separately.
+        const histSupIds = Array.from(new Set((pays || []).map((p: any) => p.supplier_id).filter(Boolean)))
+        const histSupsRes = histSupIds.length
+          ? await supabase.from("suppliers").select("id, name").in("id", histSupIds)
+          : { data: [] as any[] }
+        const histSupMap = new Map(((histSupsRes.data || []) as any[]).map((s: any) => [s.id, s.name]))
         for (const p of (pays || []) as any[]) {
           const status = p.status === "rejected" ? "rejected" : "approved"
           merged.push({
@@ -1986,7 +2004,7 @@ function ApprovalsContent() {
             category: "supplier_payment",
             doc_label: `دفعة مورد · ${p.reference_number ?? p.id.slice(0, 8)}`,
             doc_href: null,
-            party_label: p.suppliers?.name ?? null,
+            party_label: histSupMap.get(p.supplier_id) ?? null,
             value_label: `${Number(p.amount).toFixed(2)} ${p.original_currency || p.currency_code || "EGP"}`,
             status: status as any,
             requested_by_email: null,
