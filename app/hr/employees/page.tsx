@@ -159,9 +159,16 @@ export default function EmployeesPage() {
                           <td className="p-2" data-ai-help="employees.department">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
                           <td className="p-2" data-ai-help="employees.joined_date">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
                           <td className="p-2" data-ai-help="employees.base_salary">{editingId === e.id ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
-                          {/* v3.74.506 — عمود الفرع (مدير الفرع لا يستطيع تغييره) */}
+                          {/* v3.74.507 — عمود الفرع: الموظف المرتبط بمستخدم يُستمد فرعه
+                              تلقائياً من الإعدادات ← المستخدمين (أعضاء الشركة) ولا يُعدل هنا؛
+                              الإدخال اليدوى للموظفين غير المستخدمين فقط. */}
                           <td className="p-2" data-ai-help="employees.branch">
-                            {editingId === e.id && myRole !== 'manager' ? (
+                            {e.user_id ? (
+                              <span title={t('Derived from Settings → Users', 'مستمد من الإعدادات ← المستخدمين')} className="inline-flex items-center gap-1">
+                                {branches.find(b => b.id === e.branch_id)?.name || '—'}
+                                <span className="text-[10px] px-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">{t('from Users', 'من المستخدمين')}</span>
+                              </span>
+                            ) : editingId === e.id && myRole !== 'manager' ? (
                               <Select value={editForm.branch_id || "none"} onValueChange={(v) => setEditForm({ ...editForm, branch_id: v === "none" ? "" : v })}>
                                 <SelectTrigger className="min-w-[120px]"><SelectValue /></SelectTrigger>
                                 <SelectContent>
