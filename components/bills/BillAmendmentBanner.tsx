@@ -45,6 +45,15 @@ interface ChangedItem {
   discBefore: number
   discAfter: number
 }
+// v3.74.504 — document-level changes (general discount, shipping,
+// adjustment, tax) so the owner sees EVERYTHING that moved, not just
+// item lines. Owner spotted: an amendment that changed the general
+// discount only surfaced through the total delta.
+interface HeaderChange {
+  key: "discount" | "shipping" | "shipping_tax" | "adjustment" | "tax"
+  before: string
+  after: string
+}
 interface AmendmentInfo {
   approvalId: string
   editorEmail: string | null
@@ -62,6 +71,7 @@ interface AmendmentInfo {
   added: ItemLine[]
   removed: ItemLine[]
   changed: ChangedItem[]
+  headerChanges: HeaderChange[]
 }
 
 export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
@@ -120,6 +130,50 @@ export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
         }
         for (const [k, p] of priorMap.entries()) if (!currMap.has(k)) removed.push(toLine(p))
 
+        // v3.74.504 — document-level diff (general discount, shipping,
+        // shipping tax rate, adjustment, tax amount).
+        const headerChanges: HeaderChange[] = []
+        const fmtDiscount = (v: any, dt: any) =>
+          String(dt ?? "amount") === "percent" ? `${num(v)}%` : num(v).toFixed(2)
+        const discountChanged =
+          !same(prior.discount_value, latest.discount_value) ||
+          String(prior.discount_type ?? "amount") !== String(latest.discount_type ?? "amount")
+        if (discountChanged) {
+          headerChanges.push({
+            key: "discount",
+            before: fmtDiscount(prior.discount_value, prior.discount_type),
+            after: fmtDiscount(latest.discount_value, latest.discount_type),
+          })
+        }
+        if (!same(prior.shipping_snapshot, latest.shipping_snapshot)) {
+          headerChanges.push({
+            key: "shipping",
+            before: num(prior.shipping_snapshot).toFixed(2),
+            after: num(latest.shipping_snapshot).toFixed(2),
+          })
+        }
+        if (!same(prior.shipping_tax_rate_snapshot, latest.shipping_tax_rate_snapshot)) {
+          headerChanges.push({
+            key: "shipping_tax",
+            before: `${num(prior.shipping_tax_rate_snapshot)}%`,
+            after: `${num(latest.shipping_tax_rate_snapshot)}%`,
+          })
+        }
+        if (!same(prior.adjustment_snapshot, latest.adjustment_snapshot)) {
+          headerChanges.push({
+            key: "adjustment",
+            before: num(prior.adjustment_snapshot).toFixed(2),
+            after: num(latest.adjustment_snapshot).toFixed(2),
+          })
+        }
+        if (!same(prior.tax_amount_snapshot, latest.tax_amount_snapshot)) {
+          headerChanges.push({
+            key: "tax",
+            before: num(prior.tax_amount_snapshot).toFixed(2),
+            after: num(latest.tax_amount_snapshot).toFixed(2),
+          })
+        }
+
         if (cancelled) return
         setInfo({
           approvalId: latest.id,
@@ -138,6 +192,7 @@ export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
           added,
           removed,
           changed,
+          headerChanges,
         })
       } catch {
         // 403 = viewer isn't an approver — banner stays hidden.
@@ -179,6 +234,30 @@ export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
               ({deltaSign}{fmt(totalDelta)})
             </span>
           </p>
+          {/* v3.74.504 — document-level changes (general discount, shipping,
+              adjustment, tax) so nothing moves silently. */}
+          {info.headerChanges.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+                🧾 {t("تغييرات عامة على الفاتورة", "Document-level changes")} ({info.headerChanges.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-amber-800 dark:text-amber-300">
+                {info.headerChanges.map((h, i) => {
+                  const label =
+                    h.key === "discount" ? t("الخصم العام", "General discount")
+                    : h.key === "shipping" ? t("الشحن", "Shipping")
+                    : h.key === "shipping_tax" ? t("ضريبة الشحن", "Shipping tax")
+                    : h.key === "adjustment" ? t("التسوية", "Adjustment")
+                    : t("الضريبة", "Tax amount")
+                  return (
+                    <li key={i}>
+                      <strong>{label}</strong>: {h.before} → <span className="font-bold">{h.after}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
           {/* v3.74.495 — spell out every item edit under the banner header.
               Owner asked for detail equal to what the /approvals DiffCard
               shows, not just counts. */}
