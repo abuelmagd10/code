@@ -1,0 +1,25 @@
+-- v3.74.495 — Amendment banner on the bill / invoice view now spells
+-- out every added / removed / modified item, matching the depth of
+-- the /approvals DiffCard.
+--
+-- Owner spotted: the banner said "✏️ 1 بند معدل" without saying which
+-- item or what changed. The DiffCard on /approvals had the full
+-- "VitaSlims: كمية 4→5" line. Both surfaces should carry the same
+-- level of detail.
+--
+-- Change (UI-only, no DB):
+--   AmendmentInfo now stores `added: ItemLine[]`, `removed: ItemLine[]`
+--   and `changed: ChangedItem[]` instead of just three counters.
+--   ItemLine keeps name + qty + price + discount%.
+--   ChangedItem keeps qty/price/discount before + after per line.
+--
+--   The banner renders:
+--     ➕ بنود مضافة (N)     : bullet list, each item with qty × price
+--                            and discount% when > 0
+--     ➖ بنود محذوفة (N)    : bullet list of what was dropped
+--     ✏️ بنود معدلة (N)     : bullet list showing exactly which fields
+--                            changed per line — qty, price, discount%
+--
+-- BillAmendmentBanner is used by both bills/[id]/page.tsx and
+-- invoices/[id]/page.tsx (with kind="invoice"), so the sales side
+-- inherits the same detail automatically.

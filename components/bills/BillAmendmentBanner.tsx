@@ -28,6 +28,23 @@ interface Props {
   lang?: "ar" | "en"
 }
 
+interface ItemLine {
+  product_name: string | null
+  quantity: number
+  unit_price: number
+  discount_percent: number
+}
+// v3.74.495 — carry the full added/removed/modified item lists so the
+// banner can spell out what changed instead of just counting them.
+interface ChangedItem {
+  name: string
+  qtyBefore: number
+  qtyAfter: number
+  priceBefore: number
+  priceAfter: number
+  discBefore: number
+  discAfter: number
+}
 interface AmendmentInfo {
   approvalId: string
   editorEmail: string | null
@@ -42,9 +59,9 @@ interface AmendmentInfo {
     shipping: number | null
     subtotal: number | null
   }
-  itemsChanged: number
-  itemsAdded: number
-  itemsRemoved: number
+  added: ItemLine[]
+  removed: ItemLine[]
+  changed: ChangedItem[]
 }
 
 export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
@@ -72,19 +89,36 @@ export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
         const latest = amendments.sort((a, b) => (b.requested_at || "").localeCompare(a.requested_at || ""))[0]
         const prior = latest.prior_approval ?? {}
 
-        // Compute simple item diff (best-effort — approvals page has full breakdown)
+        // v3.74.495 — full item diff so the banner can list each edit
+        // instead of just showing a count.
         const priorItems: any[] = Array.isArray(prior.items_snapshot) ? prior.items_snapshot : []
         const currItems: any[] = Array.isArray(latest.items_snapshot) ? latest.items_snapshot : []
         const priorMap = new Map(priorItems.map(r => [String(r?.product_id ?? r?.product_name), r]))
         const currMap = new Map(currItems.map(r => [String(r?.product_id ?? r?.product_name), r]))
-        let added = 0, removed = 0, changed = 0
+        const num = (x: any) => Number(x ?? 0)
+        const same = (a: any, b: any) => Math.abs(num(a) - num(b)) < 0.01
+        const toLine = (r: any): ItemLine => ({
+          product_name: r?.product_name ?? r?.description ?? null,
+          quantity: num(r?.quantity),
+          unit_price: num(r?.unit_price),
+          discount_percent: num(r?.discount_percent),
+        })
+        const added: ItemLine[] = []
+        const removed: ItemLine[] = []
+        const changed: ChangedItem[] = []
         for (const [k, c] of currMap.entries()) {
           const p = priorMap.get(k) as any
-          if (!p) { added++; continue }
-          const same = (a: any, b: any) => Math.abs(Number(a ?? 0) - Number(b ?? 0)) < 0.01
-          if (!same(p.quantity, c.quantity) || !same(p.unit_price, c.unit_price) || !same(p.discount_percent, c.discount_percent)) changed++
+          if (!p) { added.push(toLine(c)); continue }
+          if (!same(p.quantity, c.quantity) || !same(p.unit_price, c.unit_price) || !same(p.discount_percent, c.discount_percent)) {
+            changed.push({
+              name: String(c?.product_name ?? p?.product_name ?? "?"),
+              qtyBefore: num(p.quantity), qtyAfter: num(c.quantity),
+              priceBefore: num(p.unit_price), priceAfter: num(c.unit_price),
+              discBefore: num(p.discount_percent), discAfter: num(c.discount_percent),
+            })
+          }
         }
-        for (const [k] of priorMap.entries()) if (!currMap.has(k)) removed++
+        for (const [k, p] of priorMap.entries()) if (!currMap.has(k)) removed.push(toLine(p))
 
         if (cancelled) return
         setInfo({
@@ -101,9 +135,9 @@ export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
             shipping: latest.shipping_snapshot != null ? Number(latest.shipping_snapshot) : null,
             subtotal: latest.subtotal_snapshot != null ? Number(latest.subtotal_snapshot) : null,
           },
-          itemsChanged: changed,
-          itemsAdded: added,
-          itemsRemoved: removed,
+          added,
+          removed,
+          changed,
         })
       } catch {
         // 403 = viewer isn't an approver — banner stays hidden.
@@ -145,12 +179,58 @@ export function BillAmendmentBanner({ documentId, kind, lang = "ar" }: Props) {
               ({deltaSign}{fmt(totalDelta)})
             </span>
           </p>
-          {(info.itemsAdded + info.itemsRemoved + info.itemsChanged > 0) && (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-              {info.itemsAdded > 0 && <>➕ {info.itemsAdded} {t("بند مضاف", "added")} </>}
-              {info.itemsRemoved > 0 && <>➖ {info.itemsRemoved} {t("بند محذوف", "removed")} </>}
-              {info.itemsChanged > 0 && <>✏️ {info.itemsChanged} {t("بند معدل", "modified")}</>}
-            </p>
+          {/* v3.74.495 — spell out every item edit under the banner header.
+              Owner asked for detail equal to what the /approvals DiffCard
+              shows, not just counts. */}
+          {info.added.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs font-semibold text-green-700 dark:text-green-400">
+                ➕ {t("بنود مضافة", "Added items")} ({info.added.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-amber-800 dark:text-amber-300">
+                {info.added.map((it, i) => (
+                  <li key={i}>
+                    {it.product_name ?? "?"} · {t("كمية","qty")} {it.quantity} × {it.unit_price.toFixed(2)}
+                    {it.discount_percent > 0 && <> · {t("خصم","disc")} {it.discount_percent}%</>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {info.removed.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs font-semibold text-red-700 dark:text-red-400">
+                ➖ {t("بنود محذوفة", "Removed items")} ({info.removed.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-amber-800 dark:text-amber-300">
+                {info.removed.map((it, i) => (
+                  <li key={i}>
+                    {it.product_name ?? "?"} · {t("كمية","qty")} {it.quantity} × {it.unit_price.toFixed(2)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {info.changed.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                ✏️ {t("بنود معدلة", "Modified items")} ({info.changed.length})
+              </p>
+              <ul className="text-xs ms-4 list-disc text-amber-800 dark:text-amber-300">
+                {info.changed.map((c, i) => {
+                  const parts: string[] = []
+                  const same = (a: number, b: number) => Math.abs(a - b) < 0.01
+                  if (!same(c.qtyBefore, c.qtyAfter)) parts.push(`${t("كمية","qty")} ${c.qtyBefore}→${c.qtyAfter}`)
+                  if (!same(c.priceBefore, c.priceAfter)) parts.push(`${t("سعر","price")} ${c.priceBefore.toFixed(2)}→${c.priceAfter.toFixed(2)}`)
+                  if (!same(c.discBefore, c.discAfter)) parts.push(`${t("خصم","disc")} ${c.discBefore}%→${c.discAfter}%`)
+                  return (
+                    <li key={i}>
+                      <strong>{c.name}</strong>{parts.length > 0 && <>: {parts.join(" · ")}</>}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
           )}
           <Link
             href="/approvals"
