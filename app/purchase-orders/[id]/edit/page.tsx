@@ -36,6 +36,7 @@ interface Product {
   sku?: string
   item_type?: 'product' | 'service'
   quantity_on_hand?: number
+  image_urls?: string[] | null
 }
 
 interface POItem {
@@ -224,7 +225,7 @@ export default function EditPurchaseOrderPage() {
       setSuppliers(suppData || [])
 
       // Load products
-      let prodQuery = supabase.from("products").select("id, name, cost_price, sku, item_type").eq("company_id", activeCompanyId).order("name")
+      let prodQuery = supabase.from("products").select("id, name, cost_price, sku, item_type, image_urls").eq("company_id", activeCompanyId).order("name")
       if (!adminCheck && currentUserBranchId) {
         prodQuery = prodQuery.or(`branch_id.eq.${currentUserBranchId},branch_id.is.null`)
       }

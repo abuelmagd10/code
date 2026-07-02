@@ -11,6 +11,28 @@ export interface ProductOption {
   unit_price?: number
   item_type?: 'product' | 'service'
   quantity_on_hand?: number
+  /** v3.74.497: صور الصنف — تُعرض أول صورة كمصغرة في القائمة */
+  image_urls?: string[] | null
+}
+
+/** v3.74.497: مصغرة الصنف — صورة أولى إن وجدت، وإلا أيقونة النوع */
+function ProductThumb({ product, size = 24 }: { product: ProductOption; size?: number }) {
+  const firstImage = product.image_urls?.[0]
+  if (firstImage) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={firstImage}
+        alt={product.name}
+        width={size}
+        height={size}
+        loading="lazy"
+        className="rounded object-cover flex-shrink-0 border border-gray-200 dark:border-slate-700"
+        style={{ width: size, height: size }}
+      />
+    )
+  }
+  return <span className="flex-shrink-0">{product.item_type === 'service' ? '🔧' : '📦'}</span>
 }
 
 interface ProductSearchSelectProps {
@@ -130,8 +152,8 @@ export function ProductSearchSelect({
       <SelectTrigger className={`w-full ${className}`}>
         <SelectValue placeholder={placeholder || labels.placeholder}>
           {selectedProduct ? (
-            <span className="flex items-center gap-1">
-              {selectedProduct.item_type === 'service' ? '🔧' : '📦'}
+            <span className="flex items-center gap-1.5">
+              <ProductThumb product={selectedProduct} size={20} />
               {selectedProduct.name}
             </span>
           ) : (placeholder || labels.placeholder)}
@@ -199,8 +221,8 @@ export function ProductSearchSelect({
               <SelectItem key={product.id} value={product.id}>
                 <div className="flex flex-col w-full">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium flex items-center gap-1">
-                      {product.item_type === 'service' ? '🔧' : '📦'}
+                    <span className="font-medium flex items-center gap-1.5">
+                      <ProductThumb product={product} size={28} />
                       {product.name}
                     </span>
                     {showPrice && product.unit_price !== undefined && (

@@ -21,7 +21,7 @@ import { computeDocumentTotals } from "@/lib/document-totals"
 import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 
 type Supplier = { id: string; name: string }
-type Product = { id: string; name: string; cost_price: number | null; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number }
+type Product = { id: string; name: string; cost_price: number | null; sku?: string | null; item_type?: 'product' | 'service'; quantity_on_hand?: number; image_urls?: string[] | null }
 type Account = { id: string; account_code: string | null; account_name: string; account_type: string }
 type TaxRate = { id: string; name: string; rate: number; scope?: string }
 
@@ -128,7 +128,7 @@ export default function NewVendorCreditPage() {
       const { data: sups } = await suppQueryVC
       setSuppliers((sups || []) as any)
 
-      let prodsQueryVC = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", loadedCompanyId)
+      let prodsQueryVC = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand, image_urls").eq("company_id", loadedCompanyId)
       if (!isAdminVC && userBranchIdVC) {
         prodsQueryVC = prodsQueryVC.or(`branch_id.eq.${userBranchIdVC},branch_id.is.null`)
       }

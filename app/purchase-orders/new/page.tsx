@@ -26,7 +26,7 @@ import { computeDocumentTotals } from "@/lib/document-totals"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string; phone?: string | null }
-interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service'; quantity_on_hand?: number }
+interface Product { id: string; name: string; cost_price: number | null; sku: string; item_type?: 'product' | 'service'; quantity_on_hand?: number; image_urls?: string[] | null }
 interface POItem {
   product_id: string;
   quantity: number;
@@ -289,7 +289,7 @@ export default function NewPurchaseOrderPage() {
         setSuppliers(suppData || [])
       }
 
-      let prodQuery = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand").eq("company_id", companyId).order("name")
+      let prodQuery = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand, image_urls").eq("company_id", companyId).order("name")
       if (!isCurrentUserAdmin && currentUserBranchId) {
         prodQuery = prodQuery.or(`branch_id.eq.${currentUserBranchId},branch_id.is.null`)
       }

@@ -82,6 +82,7 @@ interface Product {
   sku: string
   item_type?: 'product' | 'service'
   quantity_on_hand?: number
+  image_urls?: string[] | null
 }
 
 interface SOItem {
@@ -418,7 +419,7 @@ export default function NewSalesOrderPage() {
 
       let productsQuery = supabase
         .from("products")
-        .select("id, name, unit_price, sku, item_type, quantity_on_hand")
+        .select("id, name, unit_price, sku, item_type, quantity_on_hand, image_urls")
         .eq("company_id", companyId)
 
       if (!adminCheck && userBranchId) {

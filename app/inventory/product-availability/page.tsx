@@ -83,7 +83,7 @@ export default function ProductAvailabilityPage() {
         // الهدف: تمكين جميع الأعضاء من البحث عن توفر المنتج في جميع الفروع
         const { data: productsData, error: productsError } = await supabase
           .from("products")
-          .select("id, name, sku, item_type, unit_price")
+          .select("id, name, sku, item_type, unit_price, image_urls")
           .eq("company_id", activeCompanyId)
           .eq("is_active", true)
           .order("name")
@@ -108,7 +108,8 @@ export default function ProductAvailabilityPage() {
             name: p.name,
             sku: p.sku,
             item_type: p.item_type || 'product',
-            unit_price: p.unit_price || 0
+            unit_price: p.unit_price || 0,
+            image_urls: p.image_urls || []
           }))
         )
       } catch (error) {

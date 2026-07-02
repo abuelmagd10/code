@@ -861,6 +861,34 @@ export default function ProductsPage() {
   const tableColumns: DataTableColumn<Product>[] = useMemo(() => {
     const columns: DataTableColumn<Product>[] = [
       {
+        key: 'image_urls',
+        header: appLang === 'en' ? 'Image' : 'الصورة',
+        type: 'custom',
+        align: 'center',
+        width: 'w-14',
+        format: (_, row) => {
+          const firstImage = row.image_urls?.[0]
+          if (firstImage) {
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={firstImage}
+                alt={row.name}
+                loading="lazy"
+                className="w-10 h-10 rounded-md object-cover border border-gray-200 dark:border-slate-700 mx-auto"
+              />
+            )
+          }
+          return (
+            <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center mx-auto">
+              {row.item_type === 'service'
+                ? <Wrench className="w-4 h-4 text-gray-400" />
+                : <Package className="w-4 h-4 text-gray-400" />}
+            </div>
+          )
+        }
+      },
+      {
         key: 'item_type',
         header: appLang === 'en' ? 'Type' : 'النوع',
         type: 'custom',
