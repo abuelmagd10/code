@@ -300,7 +300,7 @@ export default function BankingPage() {
             // Filter out accounts clearly not in this user's branch for normal roles
             const isNormalRole =
               currentUserContext?.role &&
-              !["admin", "owner", "manager"].includes(currentUserContext.role);
+              !["admin", "owner"].includes(currentUserContext.role);
             if (isNormalRole && currentUserContext?.branch_id) {
               leaf = leaf.filter(
                 (a: any) => a.branch_id === currentUserContext.branch_id,
@@ -353,7 +353,7 @@ export default function BankingPage() {
         // Filter if userContext is a normal role
         const isNormalRole =
           currentUserContext?.role &&
-          !["admin", "owner", "manager"].includes(currentUserContext.role);
+          !["admin", "owner"].includes(currentUserContext.role);
         if (isNormalRole && currentUserContext?.branch_id) {
           leafCashBankAccounts = leafCashBankAccounts.filter(
             (a: any) => a.branch_id === currentUserContext.branch_id,
@@ -490,7 +490,7 @@ export default function BankingPage() {
     let filtered = accounts;
     const isNormalRole =
       userContext?.role &&
-      !["admin", "owner", "manager"].includes(userContext.role);
+      !["admin", "owner"].includes(userContext.role);
     const effectiveBranch =
       isNormalRole && userContext?.branch_id
         ? userContext.branch_id
@@ -522,7 +522,7 @@ export default function BankingPage() {
   const filteredCostCenters = useMemo(() => {
     const isNormalRole =
       userContext?.role &&
-      !["admin", "owner", "manager"].includes(userContext.role);
+      !["admin", "owner"].includes(userContext.role);
     const effectiveBranch =
       isNormalRole && userContext?.branch_id
         ? userContext.branch_id
@@ -655,7 +655,7 @@ export default function BankingPage() {
             ) : undefined
           }
           extra={
-            (userContext?.role === "admin" || userContext?.role === "owner" || userContext?.role === "manager") ? (
+            (userContext?.role === "admin" || userContext?.role === "owner") ? (
               <p className="text-xs text-green-600 dark:text-green-400">
                 {appLang === "en"
                   ? "👑 Company-wide accounts - All bank accounts visible"
@@ -673,8 +673,7 @@ export default function BankingPage() {
 
         {/* Transfer Feature - ONLY for Higher Roles */}
         {(userContext?.role === "admin" ||
-          userContext?.role === "owner" ||
-          userContext?.role === "manager") && (
+          userContext?.role === "owner") && (
             <Card>
               <CardContent className="pt-6 space-y-6">
                 <h2 className="text-xl font-semibold" suppressHydrationWarning>
@@ -953,7 +952,7 @@ export default function BankingPage() {
           )}
 
         {/* v3.13.0 — Recent Transfers history (FX-aware) */}
-        {(userContext?.role === "admin" || userContext?.role === "owner" || userContext?.role === "manager") && (
+        {(userContext?.role === "admin" || userContext?.role === "owner") && (
           <Card>
             <CardContent className="pt-6 space-y-4">
               <div className="flex items-center justify-between">
@@ -1043,15 +1042,13 @@ export default function BankingPage() {
             {showFilters && (
               <div
                 className={`bg-gray-50 dark:bg-slate-800 p-4 rounded-lg grid grid-cols-1 gap-4 ${userContext?.role === "admin" ||
-                  userContext?.role === "owner" ||
-                  userContext?.role === "manager"
+                  userContext?.role === "owner"
                   ? "sm:grid-cols-2"
                   : ""
                   }`}
               >
                 {(userContext?.role === "admin" ||
-                  userContext?.role === "owner" ||
-                  userContext?.role === "manager") && (
+                  userContext?.role === "owner") && (
                     <div>
                       <Label className="mb-1 block">
                         {appLang === "en" ? "Branch" : "الفرع"}

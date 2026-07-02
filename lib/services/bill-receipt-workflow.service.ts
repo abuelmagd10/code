@@ -9,13 +9,19 @@ const BILL_ADMIN_APPROVAL_EVENT = "bill_admin_approval"
 const BILL_ADMIN_REJECTION_EVENT = "bill_admin_rejection"
 const BILL_DRAFT_DELETE_EVENT = "bill_draft_delete"
 
-const SUBMISSION_ROLES = new Set(["owner", "admin", "general_manager", "manager", "accountant"])
+// v3.74.505 — governance: branch manager ("manager") is a VIEW-ONLY role.
+// Removed from SUBMISSION_ROLES (was able to send bills to the warehouse).
+const SUBMISSION_ROLES = new Set(["owner", "admin", "general_manager", "accountant"])
 const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manager"])
-// v3.74.132 — bill edit re-approval is restricted to owner + manager only
-// (المالك + المدير العام) so it mirrors the PO approval gate from v3.74.131.
-// admin used to be in this list; it is no longer trusted to approve a
-// modified bill against the original PO.
-const ADMIN_APPROVAL_ROLES = new Set(["owner", "manager"])
+// v3.74.132 — bill edit re-approval is restricted to owner + general
+// manager only (المالك + المدير العام) so it mirrors the PO approval gate
+// from v3.74.131. admin used to be in this list; it is no longer trusted
+// to approve a modified bill against the original PO.
+// v3.74.505 — BUGFIX: the intended role was the GENERAL manager, but the
+// key used was "manager" (branch manager — a VIEW-ONLY role). Branch
+// managers could admin-approve bills while real general managers were
+// rejected. Corrected to "general_manager".
+const ADMIN_APPROVAL_ROLES = new Set(["owner", "general_manager"])
 
 type ActorContext = {
   companyId: string

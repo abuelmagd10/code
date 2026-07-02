@@ -167,6 +167,8 @@ export default function BillViewPage() {
   const [permPayView, setPermPayView] = useState(false)
   const [posting, setPosting] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
+  // v3.74.505 — صلاحية تنفيذ المرتجعات (اطلاع فقط لمدير الفرع)
+  const [permReturn, setPermReturn] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>("")
   const [nextBillId, setNextBillId] = useState<string | null>(null)
@@ -293,6 +295,9 @@ export default function BillViewPage() {
         try {
           setPermUpdate(await canAction(supabase, 'bills', 'update'))
           setPermDelete(await canAction(supabase, 'bills', 'delete'))
+          // v3.74.505 — أزرار المرتجعات كانت بلا أى فحص صلاحية، فكانت تظهر
+          // لمدير الفرع (دور اطلاع فقط). تُربط الآن بصلاحية كتابة المرتجعات.
+          setPermReturn(await canAction(supabase, 'purchase_returns', 'write'))
           const payView = await canAction(supabase, 'payments', 'read')
           setPermPayView(!!payView)
 
@@ -314,7 +319,9 @@ export default function BillViewPage() {
               setCanSubmitForApproval(role.length > 0) // أي مستخدم له دور في الشركة يمكنه طلب الاعتماد
 
               // من يمكنه الاعتماد الإداري؟
-              setCanApproveAdmin(["owner", "admin", "general_manager"].includes(role))
+              // v3.74.505 — مواءمة مع ADMIN_APPROVAL_ROLES فى الخادم:
+              // admin كان يرى الزر ثم يُرفض من الـ API (v3.74.132 استبعدته).
+              setCanApproveAdmin(["owner", "general_manager"].includes(role))
 
               // من يمكنه اعتماد الاستلام؟ (مسؤول المخزن + الإدارة العليا)
               setCanApproveReceipt(["owner", "admin", "general_manager", "store_manager"].includes(role))
@@ -1590,7 +1597,9 @@ export default function BillViewPage() {
                     لذا نسمح بالمرتجعات فقط للحالات: received / partially_paid / paid.
                 */}
                 {/* ✅ المرتجعات تُسمح فقط للفواتير التي اعتُمد استلام بضاعتها فعلياً */}
-                {bill.receipt_status === 'received' &&
+                {/* v3.74.505 — permReturn: مخفية عن أدوار الاطلاع (مدير الفرع) */}
+                {permReturn &&
+                  bill.receipt_status === 'received' &&
                   ["received", "partially_paid", "paid"].includes(bill.status) &&
                   items.some(it => (it.quantity - (it.returned_quantity || 0)) > 0) && (
                     <>

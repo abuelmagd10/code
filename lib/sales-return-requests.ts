@@ -45,11 +45,14 @@ export type SalesReturnRequestItemPayload = {
 //
 // Strict v3.69.0 spec: management decisions stay with owner / admin /
 // general_manager (company-wide) and the branch manager (branch-scoped).
+// v3.74.505 — OWNER SPEC CHANGE: the branch manager ("manager") is now a
+// VIEW-ONLY role across the system. Moved from the approver list to the
+// viewer tier below: keeps the page + notifications, loses the
+// Approve/Reject buttons and gets 403 at the action APIs.
 export const SALES_RETURN_LEVEL1_APPROVER_ROLES = [
   'owner',
   'admin',
   'general_manager',
-  'manager',
 ] as const
 
 // v3.74.26 — New viewer tier. These roles can navigate to
@@ -60,6 +63,8 @@ export const SALES_RETURN_LEVEL1_APPROVER_ROLES = [
 // without touching the approver list.
 export const SALES_RETURN_VIEWER_ROLES = [
   'accountant',
+  // v3.74.505 — branch manager: view-only (owner spec)
+  'manager',
 ] as const
 
 export const SALES_RETURN_WAREHOUSE_ROLES = [
