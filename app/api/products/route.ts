@@ -154,6 +154,19 @@ export async function POST(req: Request) {
       return ErrorHandler.handle(new ERPError('ERR_SYSTEM', 'فشل في إنشاء المنتج', 500))
     }
 
+    // v3.74.496: حفظ صور الصنف (بحد أقصى 3) — الـ RPC لا يستقبلها، لذا نحدثها بعد الإنشاء
+    if (Array.isArray(body.image_urls)) {
+      const imageUrls = body.image_urls
+        .filter((u: unknown): u is string => typeof u === 'string' && u.length > 0)
+        .slice(0, 3)
+      const { error: imgErr } = await supabase
+        .from('products')
+        .update({ image_urls: imageUrls })
+        .eq('id', rpcResult.product_id)
+        .eq('company_id', companyId)
+      if (imgErr) console.error('Failed to save product images:', imgErr)
+    }
+
     // 4️⃣ Async Audit Logging (Fire and Forget)
     asyncAuditLog({
       companyId,

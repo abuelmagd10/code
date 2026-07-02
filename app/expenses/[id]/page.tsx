@@ -49,6 +49,8 @@ type Expense = {
   cost_center_id?: string
   warehouse_id?: string
   created_at: string
+  /** v3.74.496: مرفقات سند الصرف */
+  attachments?: { path: string; name?: string; mime?: string; size?: number }[]
 }
 
 type Account = {
@@ -73,6 +75,8 @@ export default function ExpenseDetailPage() {
   const [rejectionReason, setRejectionReason] = useState("")
   const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [paymentReference, setPaymentReference] = useState("")
+  // v3.74.496: روابط موقعة مؤقتة لعرض مرفقات سند الصرف (bucket خاص)
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({})
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
     try {
@@ -169,6 +173,28 @@ export default function ExpenseDetailPage() {
   useEffect(() => {
     loadExpense()
   }, [params.id])
+
+  // v3.74.496: توليد روابط موقعة (ساعة واحدة) لعرض المرفقات من الـ bucket الخاص
+  useEffect(() => {
+    const atts = expense?.attachments
+    if (!atts || atts.length === 0) return
+    let cancelled = false
+    const loadSignedUrls = async () => {
+      const urls: Record<string, string> = {}
+      for (const att of atts) {
+        if (!att?.path) continue
+        try {
+          const { data } = await supabase.storage
+            .from('expense-attachments')
+            .createSignedUrl(att.path, 3600)
+          if (data?.signedUrl) urls[att.path] = data.signedUrl
+        } catch { /* skip */ }
+      }
+      if (!cancelled) setAttachmentUrls(urls)
+    }
+    loadSignedUrls()
+    return () => { cancelled = true }
+  }, [expense?.attachments])
 
   const loadExpenseRef = useRef(loadExpense)
   loadExpenseRef.current = loadExpense
@@ -840,6 +866,45 @@ export default function ExpenseDetailPage() {
                     {appLang === 'en' ? 'Notes' : 'ملاحظات'}
                   </Label>
                   <p className="text-gray-700 dark:text-gray-300">{expense.notes}</p>
+                </div>
+              )}
+
+              {/* v3.74.496: مرفقات سند الصرف */}
+              {expense.attachments && expense.attachments.length > 0 && (
+                <div>
+                  <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                    {appLang === 'en' ? 'Payment Voucher Attachments' : 'مرفقات سند الصرف'}
+                  </Label>
+                  <div className="flex flex-wrap gap-3 mt-2">
+                    {expense.attachments.map((att, idx) => {
+                      const signedUrl = attachmentUrls[att.path]
+                      const isPdf = att.mime === 'application/pdf'
+                      return (
+                        <a
+                          key={att.path || idx}
+                          href={signedUrl || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`relative w-24 h-24 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-hidden flex items-center justify-center hover:ring-2 hover:ring-blue-400 transition ${!signedUrl ? 'pointer-events-none opacity-60' : ''}`}
+                          title={att.name || ''}
+                        >
+                          {isPdf ? (
+                            <div className="flex flex-col items-center gap-1 p-1 text-center">
+                              <FileText className="w-7 h-7 text-red-500" />
+                              <span className="text-[9px] leading-tight text-gray-600 dark:text-gray-300 break-all line-clamp-2">
+                                {att.name || 'PDF'}
+                              </span>
+                            </div>
+                          ) : signedUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={signedUrl} alt={att.name || 'attachment'} className="w-full h-full object-cover" loading="lazy" />
+                          ) : (
+                            <FileText className="w-7 h-7 text-gray-400" />
+                          )}
+                        </a>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 

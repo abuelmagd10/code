@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "components/attachments-uploader.tsx",
+    "app/products/page.tsx",
+    "app/expenses/new/page.tsx",
+    "app/expenses/[id]/page.tsx",
+    "app/api/products/route.ts",
+    "global.d.ts",
+    "next-env.d.ts",
+    "types/**/*.ts"
+  ]
+}

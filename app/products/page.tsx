@@ -37,6 +37,7 @@ import {
   type ProductAccountingAccount,
 } from "@/lib/product-accounting"
 import type { ProductType } from "@/lib/product-type"
+import { AttachmentUploader, uploadAttachmentItems, publicUrlToPath, type AttachmentItem } from "@/components/attachments-uploader"
 
 interface Product {
   id: string
@@ -64,6 +65,8 @@ interface Product {
   warehouse_id?: string | null
   tax_code_id?: string | null
   selling_price?: number | null
+  /** v3.74.496: صور الصنف (بحد أقصى 3) */
+  image_urls?: string[] | null
 }
 
 interface Branch {
@@ -140,6 +143,9 @@ export default function ProductsPage() {
     warehouse_id: "",
     tax_code_id: "",
   })
+  // v3.74.496: صور الصنف (بحد أقصى 3) + تتبع الصور الأصلية عند التعديل لحذف المحذوف من التخزين
+  const [productImages, setProductImages] = useState<AttachmentItem[]>([])
+  const originalImageUrlsRef = useRef<string[]>([])
   const [taxCodes, setTaxCodes] = useState<{ id: string; name: string; rate: number; scope: string }[]>([])
   const [productTaxDefaults, setProductTaxDefaults] = useState<Record<string, string>>({})
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -549,6 +555,20 @@ export default function ProductsPage() {
         ? localStorage.getItem('original_system_currency') || 'EGP'
         : 'EGP'
 
+      // v3.74.496: رفع صور الصنف إلى التخزين (مضغوطة WebP) قبل الحفظ — بحد أقصى 3
+      let finalImageUrls: string[] = []
+      try {
+        const cid = await getActiveCompanyId(supabase)
+        if (!cid) throw new Error(appLang === 'en' ? 'Company not found' : 'لم يتم العثور على الشركة')
+        const uploadedItems = await uploadAttachmentItems(supabase, 'product-images', cid, productImages)
+        finalImageUrls = uploadedItems.map(i => i.url).filter((u): u is string => !!u).slice(0, 3)
+      } catch (imgError: any) {
+        console.error('Error uploading product images:', imgError)
+        toastActionError(toast, appLang === 'en' ? 'Failed to upload images' : 'فشل في رفع الصور')
+        setIsSaving(false)
+        return
+      }
+
       // Prepare data based on item type
       const saveData = {
         ...formData,
@@ -567,6 +587,8 @@ export default function ProductsPage() {
         original_cost_price: formData.cost_price,
         original_currency: systemCurrency,
         exchange_rate_used: 1,
+        // v3.74.496: صور الصنف
+        image_urls: finalImageUrls,
       }
 
       // 🔐 Enterprise-Level: استخدام API endpoint مع Backend validation
@@ -601,6 +623,17 @@ export default function ProductsPage() {
         }
         toastActionSuccess(toast, appLang === 'en' ? 'Item added successfully' : 'تمت إضافة الصنف بنجاح')
       }
+
+      // v3.74.496: حذف الصور التي أزالها المستخدم من التخزين (best-effort)
+      try {
+        const removedPaths = originalImageUrlsRef.current
+          .filter(u => !finalImageUrls.includes(u))
+          .map(u => publicUrlToPath(u, 'product-images'))
+          .filter((p): p is string => !!p)
+        if (removedPaths.length > 0) {
+          await supabase.storage.from('product-images').remove(removedPaths)
+        }
+      } catch { /* non-blocking cleanup */ }
 
       setIsDialogOpen(false)
       setEditingId(null)
@@ -644,6 +677,9 @@ export default function ProductsPage() {
       tax_code_id: "",
     })
     setFormErrors({})
+    // v3.74.496: تفريغ صور الصنف
+    setProductImages([])
+    originalImageUrlsRef.current = []
   }
 
   const handleEdit = (product: Product) => {
@@ -673,6 +709,16 @@ export default function ProductsPage() {
     }
 
     setFormData(editData)
+    // v3.74.496: تحميل صور الصنف الحالية
+    const existingUrls = (product.image_urls || []).filter(Boolean)
+    originalImageUrlsRef.current = existingUrls
+    setProductImages(existingUrls.map((url) => ({
+      id: url,
+      url,
+      previewUrl: url,
+      name: url.split('/').pop() || 'image',
+      mime: 'image/webp',
+    })))
     setEditingId(product.id)
     setIsDialogOpen(true)
   }
@@ -1232,6 +1278,18 @@ export default function ProductsPage() {
                           id="description"
                           value={formData.description}
                           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        />
+                      </div>
+
+                      {/* v3.74.496: صور الصنف (بحد أقصى 3) */}
+                      <div className="space-y-2">
+                        <Label>{appLang === 'en' ? 'Item Images (up to 3)' : 'صور الصنف (بحد أقصى 3)'}</Label>
+                        <AttachmentUploader
+                          items={productImages}
+                          onChange={setProductImages}
+                          maxFiles={3}
+                          accept="image/jpeg,image/png,image/webp"
+                          lang={appLang}
                         />
                       </div>
 
