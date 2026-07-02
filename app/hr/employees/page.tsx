@@ -8,6 +8,7 @@ import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { Users } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function EmployeesPage() {
   const supabase = useSupabase()
@@ -16,9 +17,12 @@ export default function EmployeesPage() {
   const [companyId, setCompanyId] = useState<string>("")
   const [employees, setEmployees] = useState<any[]>([])
   const [editingId, setEditingId] = useState<string>("")
-  const [editForm, setEditForm] = useState<{ full_name: string; email?: string; phone?: string; job_title?: string; department?: string; joined_date?: string; base_salary: number }>({ full_name: "", base_salary: 0 })
-  const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0 })
+  const [editForm, setEditForm] = useState<{ full_name: string; email?: string; phone?: string; job_title?: string; department?: string; joined_date?: string; base_salary: number; branch_id?: string }>({ full_name: "", base_salary: 0 })
+  const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0, branch_id: "" })
   const [loading, setLoading] = useState(false)
+  // v3.74.506 — ربط الموظف بالفرع (مرتبات مدير الفرع محصورة بفرعه)
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [myRole, setMyRole] = useState<string>("")
 
   useEffect(() => {
     const handler = () => {
@@ -33,7 +37,24 @@ export default function EmployeesPage() {
   }, [])
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
-  useEffect(() => { (async () => { const cid = await getActiveCompanyId(supabase); if (cid) { setCompanyId(cid); await loadEmployees(cid) } })() }, [supabase])
+  useEffect(() => { (async () => {
+    const cid = await getActiveCompanyId(supabase)
+    if (!cid) return
+    setCompanyId(cid)
+    await loadEmployees(cid)
+    // v3.74.506 — الفروع + دور المستخدم (مدير الفرع لا يختار الفرع؛ يُفرض فرعه من الخادم)
+    try {
+      const [{ data: brs }, { data: { user } }] = await Promise.all([
+        supabase.from("branches").select("id, name").eq("company_id", cid).order("name"),
+        supabase.auth.getUser(),
+      ])
+      setBranches((brs || []) as any[])
+      if (user) {
+        const { data: member } = await supabase.from("company_members").select("role").eq("company_id", cid).eq("user_id", user.id).maybeSingle()
+        setMyRole(String(member?.role || ""))
+      }
+    } catch { }
+  })() }, [supabase])
 
   const loadEmployees = async (cid: string) => {
     try {
@@ -48,11 +69,11 @@ export default function EmployeesPage() {
     setLoading(true)
     try {
       const res = await fetch('/api/hr/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, employee: form }) })
-      if (res.ok) { await loadEmployees(companyId); setForm({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0 }); toast({ title: t('Employee added', 'تم إضافة الموظف') }) } else { const j = await res.json(); toast({ title: t('Error', 'خطأ'), description: j?.error || t('Failed to add', 'فشل الإضافة') }) }
+      if (res.ok) { await loadEmployees(companyId); setForm({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0, branch_id: "" }); toast({ title: t('Employee added', 'تم إضافة الموظف') }) } else { const j = await res.json(); toast({ title: t('Error', 'خطأ'), description: j?.error || t('Failed to add', 'فشل الإضافة') }) }
     } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
   }
 
-  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), email: e.email || '', phone: e.phone || '', job_title: e.job_title || '', department: e.department || '', joined_date: e.joined_date || '', base_salary: Number(e.base_salary || 0) }) }
+  const startEdit = (e: any) => { setEditingId(String(e.id)); setEditForm({ full_name: String(e.full_name || ''), email: e.email || '', phone: e.phone || '', job_title: e.job_title || '', department: e.department || '', joined_date: e.joined_date || '', base_salary: Number(e.base_salary || 0), branch_id: e.branch_id || '' }) }
   const cancelEdit = () => { setEditingId(""); setEditForm({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: "", base_salary: 0 }) }
   const saveEdit = async () => {
     if (!companyId || !editingId) return
@@ -104,6 +125,19 @@ export default function EmployeesPage() {
               <div data-ai-help="employees.department"><Label>{t('Department', 'القسم')}</Label><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
               <div data-ai-help="employees.joined_date"><Label>{t('Joined Date', 'تاريخ التعيين')}</Label><Input type="date" value={form.joined_date} onChange={(e) => setForm({ ...form, joined_date: e.target.value })} /></div>
               <div data-ai-help="employees.base_salary"><Label>{t('Base Salary', 'الراتب الأساسي')}</Label><Input type="number" inputMode="decimal" step="0.01" min="0" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: Number(e.target.value) })} /></div>
+              {/* v3.74.506 — الفرع: مخفى لمدير الفرع (يُفرض فرعه تلقائياً من الخادم) */}
+              {myRole !== 'manager' && (
+                <div data-ai-help="employees.branch">
+                  <Label>{t('Branch', 'الفرع')}</Label>
+                  <Select value={form.branch_id || "none"} onValueChange={(v) => setForm({ ...form, branch_id: v === "none" ? "" : v })}>
+                    <SelectTrigger><SelectValue placeholder={t('Select branch', 'اختر الفرع')} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t('No branch', 'بدون فرع')}</SelectItem>
+                      {branches.map((b) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="md:col-span-3"><Button disabled={loading} onClick={addEmployee} data-ai-help="employees.add_button">{t('Add', 'إضافة')}</Button></div>
             </CardContent>
           </Card>
@@ -114,7 +148,7 @@ export default function EmployeesPage() {
               {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400" data-ai-help="employees.no_employees_message">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right" data-ai-help="employees.full_name">{t('Name', 'الاسم')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Email', 'البريد')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right" data-ai-help="employees.job_title">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right" data-ai-help="employees.department">{t('Department', 'القسم')}</th><th className="p-2 text-right" data-ai-help="employees.joined_date">{t('Joined Date', 'تاريخ التعيين')}</th><th className="p-2 text-right" data-ai-help="employees.base_salary">{t('Salary', 'الراتب')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
+                    <thead className="border-b"><tr><th className="p-2 text-right" data-ai-help="employees.full_name">{t('Name', 'الاسم')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Email', 'البريد')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right" data-ai-help="employees.job_title">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right" data-ai-help="employees.department">{t('Department', 'القسم')}</th><th className="p-2 text-right" data-ai-help="employees.joined_date">{t('Joined Date', 'تاريخ التعيين')}</th><th className="p-2 text-right" data-ai-help="employees.base_salary">{t('Salary', 'الراتب')}</th><th className="p-2 text-right" data-ai-help="employees.branch">{t('Branch', 'الفرع')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
                     <tbody>
                       {employees.map((e) => (
                         <tr key={e.id} className="border-b">
@@ -125,6 +159,18 @@ export default function EmployeesPage() {
                           <td className="p-2" data-ai-help="employees.department">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
                           <td className="p-2" data-ai-help="employees.joined_date">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
                           <td className="p-2" data-ai-help="employees.base_salary">{editingId === e.id ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
+                          {/* v3.74.506 — عمود الفرع (مدير الفرع لا يستطيع تغييره) */}
+                          <td className="p-2" data-ai-help="employees.branch">
+                            {editingId === e.id && myRole !== 'manager' ? (
+                              <Select value={editForm.branch_id || "none"} onValueChange={(v) => setEditForm({ ...editForm, branch_id: v === "none" ? "" : v })}>
+                                <SelectTrigger className="min-w-[120px]"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">{t('No branch', 'بدون فرع')}</SelectItem>
+                                  {branches.map((b) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}
+                                </SelectContent>
+                              </Select>
+                            ) : (branches.find(b => b.id === e.branch_id)?.name || '—')}
+                          </td>
                           <td className="p-2">
                             {editingId === e.id ? (
                               <div className="flex gap-2">

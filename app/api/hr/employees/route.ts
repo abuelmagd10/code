@@ -31,10 +31,20 @@ export async function GET(req: NextRequest) {
     const cid = companyId
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let { data, error: dbError } = await client.from("employees").select("*").eq("company_id", cid).order("full_name")
+    // v3.74.506 — مدير الفرع يرى موظفى فرعه فقط (owner spec)
+    const isBranchManager = String(member?.role || '') === 'manager'
+    const managerBranchId = isBranchManager ? (member?.branch_id || null) : null
+    let q = client.from("employees").select("*").eq("company_id", cid)
+    if (isBranchManager) {
+      if (!managerBranchId) return apiSuccess([])
+      q = q.eq("branch_id", managerBranchId)
+    }
+    let { data, error: dbError } = await q.order("full_name")
     if (useHr && dbError && ((dbError as any).code === "PGRST205" || String(dbError.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      const res = await clientHr.from("employees").select("*").eq("company_id", cid).order("full_name")
+      let qHr = clientHr.from("employees").select("*").eq("company_id", cid)
+      if (isBranchManager && managerBranchId) qHr = qHr.eq("branch_id", managerBranchId)
+      const res = await qHr.order("full_name")
       data = res.data as any
       dbError = res.error as any
     }
@@ -72,6 +82,11 @@ export async function POST(req: NextRequest) {
       return badRequestError("اسم الموظف مطلوب", ["employee.full_name"])
     }
 
+    // v3.74.506 — ربط الموظف بالفرع. مدير الفرع يُجبَر على فرعه هو.
+    const isBranchManager = String(member?.role || '') === 'manager'
+    if (isBranchManager && !member?.branch_id) {
+      return apiError(HTTP_STATUS.FORBIDDEN, "مدير الفرع بدون فرع محدد — يرجى مراجعة المسؤول", "Branch manager has no branch assigned")
+    }
     const payload: Record<string, any> = {
       company_id: companyId,
       full_name: String(employee.full_name || ''),
@@ -81,6 +96,7 @@ export async function POST(req: NextRequest) {
       job_title: employee.job_title ? String(employee.job_title) : null,
       department: employee.department ? String(employee.department) : null,
       joined_date: employee.joined_date ? String(employee.joined_date) : new Date().toISOString().split('T')[0],
+      branch_id: isBranchManager ? (member?.branch_id ?? null) : (employee.branch_id ? String(employee.branch_id) : null),
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
@@ -136,13 +152,26 @@ export async function PUT(req: NextRequest) {
     if (typeof update.job_title !== 'undefined') safeUpdate.job_title = update.job_title ? String(update.job_title) : null
     if (typeof update.department !== 'undefined') safeUpdate.department = update.department ? String(update.department) : null
     if (typeof update.joined_date !== 'undefined') safeUpdate.joined_date = update.joined_date ? String(update.joined_date) : null
+    // v3.74.506 — الفرع: مدير الفرع لا يستطيع نقل موظف لفرع آخر،
+    // وتعديلاته محصورة فى موظفى فرعه فقط.
+    const isBranchManagerUpd = String(member?.role || '') === 'manager'
+    if (typeof update.branch_id !== 'undefined' && !isBranchManagerUpd) {
+      safeUpdate.branch_id = update.branch_id ? String(update.branch_id) : null
+    }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let upd = await client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
+    let updQuery = client.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
+    if (isBranchManagerUpd) {
+      if (!member?.branch_id) return apiError(HTTP_STATUS.FORBIDDEN, "مدير الفرع بدون فرع محدد", "Branch manager has no branch assigned")
+      updQuery = updQuery.eq("branch_id", member.branch_id)
+    }
+    let upd = await updQuery
     if (useHr && upd.error && ((upd.error as any).code === "PGRST205" || String(upd.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
       // ✅ استخدام safeUpdate المعقم بدلاً من update غير المعقم
-      upd = await clientHr.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
+      let updHr = clientHr.from("employees").update(safeUpdate).eq("company_id", companyId).eq("id", id)
+      if (isBranchManagerUpd && member?.branch_id) updHr = updHr.eq("branch_id", member.branch_id)
+      upd = await updHr
     }
     const { error: updateError } = upd
     if (updateError) {
@@ -181,10 +210,19 @@ export async function DELETE(req: NextRequest) {
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
-    let del = await client.from("employees").delete().eq("company_id", companyId).eq("id", id)
+    // v3.74.506 — مدير الفرع: حذف موظفى فرعه فقط
+    const isBranchManagerDel = String(member?.role || '') === 'manager'
+    if (isBranchManagerDel && !member?.branch_id) {
+      return apiError(HTTP_STATUS.FORBIDDEN, "مدير الفرع بدون فرع محدد", "Branch manager has no branch assigned")
+    }
+    let delQuery = client.from("employees").delete().eq("company_id", companyId).eq("id", id)
+    if (isBranchManagerDel) delQuery = delQuery.eq("branch_id", member?.branch_id as string)
+    let del = await delQuery
     if (useHr && del.error && ((del.error as any).code === "PGRST205" || String(del.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      del = await clientHr.from("employees").delete().eq("company_id", companyId).eq("id", id)
+      let delHr = clientHr.from("employees").delete().eq("company_id", companyId).eq("id", id)
+      if (isBranchManagerDel) delHr = delHr.eq("branch_id", member?.branch_id as string)
+      del = await delHr
     }
     const { error: deleteError } = del
     if (deleteError) {

@@ -19,7 +19,8 @@ import { User } from "@supabase/supabase-js"
 export interface SecureApiResult {
   user: User | null
   companyId: string | null
-  member: { role: string; id: string } | null
+  // v3.74.506 — branch_id مضافة لدعم التقييد بالفرع (مدير الفرع ينفذ لفرعه فقط)
+  member: { role: string; id: string; branch_id: string | null } | null
   error: NextResponse | null
 }
 
@@ -135,12 +136,12 @@ export async function secureApiRequest(
 
   const admin = createClient(url, serviceKey, { global: { headers: { apikey: serviceKey } } })
 
-  let member: { role: string; id: string } | null = null
+  let member: { role: string; id: string; branch_id: string | null } | null = null
 
   if (requireCompany && companyId) {
     const { data: memberData, error: memberError } = await admin
       .from("company_members")
-      .select("id, role")
+      .select("id, role, branch_id")
       .eq("company_id", companyId)
       .eq("user_id", user.id)
       .maybeSingle()
@@ -162,7 +163,8 @@ export async function secureApiRequest(
 
     member = {
       role: memberData.role,
-      id: memberData.id
+      id: memberData.id,
+      branch_id: (memberData as any).branch_id ?? null
     }
 
     // 4. التحقق من الأدوار المسموحة

@@ -13,7 +13,7 @@ async function getAdmin() {
 export async function POST(req: NextRequest) {
   try {
     // ✅ تحصين موحد: إنشاء وتشغيل دفعة المرتبات
-    const { user, companyId, error } = await secureApiRequest(req, {
+    const { user, companyId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requirePermission: { resource: "payroll", action: "write" },
@@ -59,10 +59,22 @@ export async function POST(req: NextRequest) {
       runId = (insRun.data as any)?.id
     }
 
-    let { data: emps, error: empErr } = await client.from('employees').select('id, base_salary').eq('company_id', companyId)
+    // v3.74.506 — owner spec: مدير الفرع يشغّل المرتبات لموظفى فرعه فقط.
+    // بدون هذا كان يعالج (ويحذف ويعيد) كشوف الشركة كلها.
+    const isBranchManager = String(member?.role || '') === 'manager'
+    const managerBranchId = member?.branch_id || null
+    if (isBranchManager && !managerBranchId) {
+      return apiError(HTTP_STATUS.FORBIDDEN, "مدير الفرع بدون فرع محدد — يرجى مراجعة المسؤول", "Branch manager has no branch assigned")
+    }
+
+    let empQuery = client.from('employees').select('id, base_salary').eq('company_id', companyId)
+    if (isBranchManager) empQuery = empQuery.eq('branch_id', managerBranchId)
+    let { data: emps, error: empErr } = await empQuery
     if (useHr && empErr && ((empErr as any).code === 'PGRST205' || String(empErr.message || '').toUpperCase().includes('PGRST205'))) {
       const clientHr = (client as any).schema ? (client as any).schema('hr') : client
-      const res = await clientHr.from('employees').select('id, base_salary').eq('company_id', companyId)
+      let empQueryHr = clientHr.from('employees').select('id, base_salary').eq('company_id', companyId)
+      if (isBranchManager) empQueryHr = empQueryHr.eq('branch_id', managerBranchId)
+      const res = await empQueryHr
       emps = res.data as any
       empErr = res.error as any
     }
@@ -226,10 +238,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (rows.length > 0) {
-      let del = await client.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
+      // v3.74.506 — مدير الفرع: يحذف/يعيد كشوف موظفى فرعه فقط داخل الدفعة،
+      // ولا يمس كشوف باقى الفروع فى نفس الشهر.
+      const scopedEmployeeIds = rows.map(r => String(r.employee_id))
+      let delQuery = client.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
+      if (isBranchManager) delQuery = delQuery.in('employee_id', scopedEmployeeIds)
+      let del = await delQuery
       if (useHr && del.error && ((del.error as any).code === 'PGRST205' || String(del.error.message || '').toUpperCase().includes('PGRST205'))) {
         const clientHr = (client as any).schema ? (client as any).schema('hr') : client
-        del = await clientHr.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
+        let delQueryHr = clientHr.from('payslips').delete().eq('company_id', companyId).eq('payroll_run_id', runId)
+        if (isBranchManager) delQueryHr = delQueryHr.in('employee_id', scopedEmployeeIds)
+        del = await delQueryHr
       }
       if (del.error) {
         return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف كشوف المرتبات السابقة", del.error.message)

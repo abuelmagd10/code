@@ -13,7 +13,7 @@ async function getAdmin() {
 export async function PUT(req: NextRequest) {
   try {
     // ✅ تحصين موحد: تعديل payslip واحد
-    const { user, companyId, error } = await secureApiRequest(req, {
+    const { user, companyId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requirePermission: { resource: "payroll", action: "update" },
@@ -37,6 +37,17 @@ export async function PUT(req: NextRequest) {
       return badRequestError("بيانات ناقصة: runId و employeeId و update مطلوبة", ["runId", "employeeId", "update"])
     }
     const client = admin || ssr
+
+    // v3.74.506 — مدير الفرع: تعديل كشوف موظفى فرعه فقط (owner spec)
+    if (String(member?.role || '') === 'manager') {
+      if (!member?.branch_id) {
+        return apiError(HTTP_STATUS.FORBIDDEN, "مدير الفرع بدون فرع محدد", "Branch manager has no branch assigned")
+      }
+      const { data: emp } = await client.from('employees').select('branch_id').eq('company_id', companyId).eq('id', employeeId).maybeSingle()
+      if (!emp || emp.branch_id !== member.branch_id) {
+        return apiError(HTTP_STATUS.FORBIDDEN, "لا يمكنك تعديل كشوف مرتبات موظفى فروع أخرى", "Payslip belongs to another branch")
+      }
+    }
 
     const { data: pays } = await client
       .from('journal_entries')
@@ -90,7 +101,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     // ✅ تحصين موحد: حذف payslip واحد
-    const { user, companyId, error } = await secureApiRequest(req, {
+    const { user, companyId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requirePermission: { resource: "payroll", action: "delete" },
@@ -114,6 +125,17 @@ export async function DELETE(req: NextRequest) {
       return badRequestError("بيانات ناقصة: runId و employeeId مطلوبة", ["runId", "employeeId"])
     }
     const client = admin || ssr
+
+    // v3.74.506 — مدير الفرع: حذف كشوف موظفى فرعه فقط (owner spec)
+    if (String(member?.role || '') === 'manager') {
+      if (!member?.branch_id) {
+        return apiError(HTTP_STATUS.FORBIDDEN, "مدير الفرع بدون فرع محدد", "Branch manager has no branch assigned")
+      }
+      const { data: emp } = await client.from('employees').select('branch_id').eq('company_id', companyId).eq('id', employeeId).maybeSingle()
+      if (!emp || emp.branch_id !== member.branch_id) {
+        return apiError(HTTP_STATUS.FORBIDDEN, "لا يمكنك حذف كشوف مرتبات موظفى فروع أخرى", "Payslip belongs to another branch")
+      }
+    }
 
     const { data: pays } = await client
       .from('journal_entries')

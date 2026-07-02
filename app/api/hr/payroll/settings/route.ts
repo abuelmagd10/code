@@ -40,11 +40,13 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
     try {
+        // v3.74.506 — إعدادات المرتبات إعداد على مستوى الشركة كلها،
+        // فلا تُترك لمدير الفرع (تنفيذه محصور بمرتبات فرعه فقط).
         const { user, companyId, error } = await secureApiRequest(req, {
             requireAuth: true,
             requireCompany: true,
             requirePermission: { resource: "hr", action: "write" },
-            allowRoles: ["owner", "admin", "manager"]
+            allowRoles: ["owner", "admin"]
         })
 
         if (error) return error
