@@ -78,7 +78,10 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
     return `/invoices/${id}`
   },
   'sales_order': (id) => `/sales-orders/${id}`,
-  'sales_return_request': (id) => `/sales-return-requests?highlight=${id}`, // ✅ طلب مرتجع مبيعات
+  // v3.74.493 — sales return request notifications now route to the
+  // unified approvals inbox (tab=sret). The dedicated
+  // /sales-return-requests page is reachable via URL as a fallback.
+  'sales_return_request': (id) => `/approvals?tab=sret&highlight=${id}`,
   'sales_return': (id) => `/sales-returns/${id}`,                           // ✅ مرتجع مبيعات مؤكد
   'customer_debit_note': (id) => `/customer-debit-notes?highlight=${id}`,
   'customer_credit_refund': (id) => `/customers?highlight=refund-${id}`,
@@ -160,12 +163,17 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'booking': (id) => `/bookings/${id}`,
 
   // التصنيع
+  // v3.74.493 — material issue notifications (Stage 1 or Stage 2) all
+  // land on the unified inbox mi tab. The card is stage-aware
+  // (v3.74.491) so it renders "Management Approve" or "Approve
+  // Warehouse Dispatch" based on the row's status.
   'manufacturing_material_issue_approval': (id, eventKey) => {
     const approvalId = getMaterialIssueApprovalIdFromEventKey(eventKey) || id
-    return `/inventory/dispatch-approvals/${approvalId}`
+    return `/approvals?tab=mi&highlight=${approvalId}`
   },
+  // v3.74.493 — product receive pending has its own tab now (pr).
   'manufacturing_product_receive_approval': (id) => {
-    return `/inventory/goods-receipt?type=manufacturing&approvalId=${id}`
+    return `/approvals?tab=pr&highlight=${id}`
   },
   'manufacturing_production_order': (id) => `/manufacturing/production-orders/${id}`,
 }

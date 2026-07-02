@@ -64,6 +64,25 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CN. توجيه الإشعارات لـ /approvals + تنظيف الـ grid + DB (v3.74.493)
+
+**notification-routing.ts**:
+- `sales_return_request` → `/approvals?tab=sret&highlight=<id>`
+  (كان `/sales-return-requests`)
+- `manufacturing_material_issue_approval` → `/approvals?tab=mi&highlight=<approvalId>`
+  (كان `/inventory/dispatch-approvals/<approvalId>`). الكارت stage-aware
+  يفتح Stage 1 أو Stage 2 حسب status.
+- `manufacturing_product_receive_approval` → `/approvals?tab=pr&highlight=<id>`
+  (كان `/inventory/goods-receipt`)
+- (bill + invoice كانوا اتحدثوا فى v3.74.484.)
+
+**DB cleanup**: صفوف company_role_permissions للـ resources المسحوبة
+(`inventory_goods_receipt`, `dispatch_approvals`, `sales_return_requests`)
+اتشالت كلها. لا orphans متبقية.
+
+**Grid**: settings/users بقى نظيف من الـ 3 resources، بس التعليقات
+"retired" باقية للسياق.
+
 ## CM. سحب dispatch-approvals + sales-return-requests من التنقل (v3.74.492)
 
 بعد v3.74.491، الـ inbox يغطى الاتنين بالكامل:

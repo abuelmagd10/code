@@ -1,0 +1,33 @@
+-- v3.74.493 — Point every notification at the unified inbox and clean
+-- up the retired permission rows on the DB.
+--
+-- Notification routing (lib/notification-routing.ts)
+--   sales_return_request   → /approvals?tab=sret&highlight=<id>
+--     was /sales-return-requests?highlight=<id>. Recipients now land on
+--     the dual-stage card in the inbox instead of the retired page.
+--
+--   manufacturing_material_issue_approval
+--     → /approvals?tab=mi&highlight=<approvalId>
+--     was /inventory/dispatch-approvals/<approvalId>. The MI card in
+--     the inbox reads the row status and renders Stage 1 or Stage 2
+--     actions (v3.74.491), so a single tab handles both hops.
+--
+--   manufacturing_product_receive_approval
+--     → /approvals?tab=pr&highlight=<id>
+--     was /inventory/goods-receipt?type=manufacturing&approvalId=<id>.
+--     The pr tab (v3.74.488) surfaces pending items directly.
+--
+--   (bill + invoice routes were already redirected in v3.74.484.)
+--
+-- Grid + DB cleanup
+--   The settings/users grid retired inventory_goods_receipt,
+--   dispatch_approvals, and sales_return_requests in v3.74.490 /
+--   v3.74.492. Existing DB rows for those resources in
+--   company_role_permissions are removed here so they no longer show
+--   up in exports or joins.
+--
+-- Kept for safety
+--   The physical retired pages still exist as URL fallbacks. A future
+--   release can delete the page files after we've watched notifications
+--   in production for a while and confirmed nothing external links to
+--   them.
