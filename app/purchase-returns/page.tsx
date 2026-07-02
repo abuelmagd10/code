@@ -80,6 +80,8 @@ export default function PurchaseReturnsPage() {
   const { toast } = useToast()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [currentUserRole, setCurrentUserRole] = useState<string>('viewer')
+  // v3.74.508 — صلاحية إنشاء المرتجع من الجدول المركزى (أدوار الاطلاع لا ترى الزر)
+  const [permCreateReturn, setPermCreateReturn] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentWarehouseId, setCurrentWarehouseId] = useState<string | null>(null)
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
@@ -169,6 +171,11 @@ export default function PurchaseReturnsPage() {
         const isOwner = companyData?.user_id === user.id
         role = isOwner ? "owner" : (memberData?.role || "viewer")
         setCurrentUserRole(role)
+        // v3.74.508 — زر "مرتجع جديد" مربوط بصلاحية الكتابة المركزية
+        try {
+          const { canAction } = await import("@/lib/authz")
+          setPermCreateReturn(await canAction(supabase, "purchase_returns", "write"))
+        } catch { setPermCreateReturn(false) }
         userWarehouseId = memberData?.warehouse_id || null
         setCurrentWarehouseId(userWarehouseId)
         setCurrentBranchId(memberData?.branch_id || null)
@@ -1020,10 +1027,12 @@ export default function PurchaseReturnsPage() {
             variant="list"
             lang={appLang}
             actions={
-              <Button onClick={() => router.push("/purchase-returns/new")} className="gap-2" data-ai-help="purchase_returns.new_return_button">
-                <Plus className="w-4 h-4" />
-                {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}
-              </Button>
+              permCreateReturn ? (
+                <Button onClick={() => router.push("/purchase-returns/new")} className="gap-2" data-ai-help="purchase_returns.new_return_button">
+                  <Plus className="w-4 h-4" />
+                  {appLang === 'en' ? 'New Return' : 'مرتجع جديد'}
+                </Button>
+              ) : undefined
             }
             extra={
               <>

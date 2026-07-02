@@ -16,6 +16,31 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // v3.74.508 — بوابة صلاحية صريحة: إنشاء مرتجع مشتريات يتطلب can_write
+    // على purchase_returns من جدول الصلاحيات المركزى (مالك/أدمن تجاوز).
+    // بدون هذا كانت أدوار الاطلاع (مدير الفرع) تستطيع الإنشاء عبر الـ API.
+    {
+      const role = String(context.member.role || "")
+      if (!["owner", "admin"].includes(role)) {
+        const adminDb = createServiceClient()
+        const { data: perm } = await adminDb
+          .from("company_role_permissions")
+          .select("can_write, all_access, allowed_actions")
+          .eq("company_id", context.companyId)
+          .eq("role", role)
+          .eq("resource", "purchase_returns")
+          .maybeSingle()
+        const allowed = Boolean(
+          perm && (perm.all_access || perm.can_write || (perm.allowed_actions || []).includes("*"))
+        )
+        if (!allowed) {
+          return NextResponse.json(
+            { success: false, error: "ليست لديك صلاحية إنشاء مرتجع مشتريات — هذه الصلاحية لمسؤول المشتريات والمحاسب والإدارة." },
+            { status: 403 }
+          )
+        }
+      }
+    }
     const body = await request.json()
     const mode = asString(body?.mode || "create").toLowerCase() === "resubmit" ? "resubmit" : "create"
     const strategy = Array.isArray(body?.warehouseGroups || body?.warehouse_groups) && (body?.warehouseGroups || body?.warehouse_groups).length > 1

@@ -164,6 +164,17 @@ export default function NewPurchaseReturnPage() {
       if (!loadedCompanyId) return
       setCompanyId(loadedCompanyId)
 
+      // v3.74.508 — حارس صلاحية: صفحة إنشاء المرتجع لأصحاب صلاحية الكتابة فقط
+      // (أدوار الاطلاع مثل مدير الفرع تُعاد لقائمة المرتجعات)
+      try {
+        const { canAction } = await import("@/lib/authz")
+        const canCreate = await canAction(supabase, "purchase_returns", "write")
+        if (!canCreate) {
+          router.push("/purchase-returns")
+          return
+        }
+      } catch { }
+
       // v3.21.1: Load company base currency (authoritative — not localStorage)
       try {
         const { data: companyBC } = await supabase
