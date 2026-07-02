@@ -1479,8 +1479,9 @@ export default function UsersSettingsPage() {
         { value: 'product_availability', label: 'توفر المنتجات في الفروع' },
         // اعتماد إرسال فواتير المبيعات من المخزن (workflow جديد)
         { value: 'dispatch_approvals', label: 'موافقات إرسال المبيعات' },
-        // اعتماد استلام فواتير المشتريات من المخزن (workflow جديد)
-        { value: 'inventory_goods_receipt', label: 'اعتماد استلام فواتير المشتريات' },
+        // v3.74.490 — inventory_goods_receipt resource retired.
+        // Bill receipt + manufacturing product receive both live in
+        // the unified /approvals inbox now (resource: 'approvals').
       ]
     },
     manufacturing: {
@@ -1594,7 +1595,7 @@ export default function UsersSettingsPage() {
       'bills', 'purchase_returns',
       'products', 'services',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals', 'inventory_goods_receipt',
+      'dispatch_approvals',
       'payments', 'expenses', 'banking',
     ],
     // 3. مسؤول المشتريات — 5 pages verbatim
@@ -1603,7 +1604,7 @@ export default function UsersSettingsPage() {
     purchasing_officer: [
       'approvals',
       'suppliers', 'purchase_orders', 'inventory',
-      'dispatch_approvals', 'inventory_goods_receipt',
+      'dispatch_approvals',
     ],
     // 4. مسؤول الحجوزات — 2 pages verbatim
     booking_officer: ['bookings', 'customers'],
@@ -1617,7 +1618,7 @@ export default function UsersSettingsPage() {
     store_manager: [
       'approvals',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals', 'inventory_goods_receipt',
+      'dispatch_approvals',
     ],
     // 7. المدير (branch manager) — 25 pages, union, ALL READ-ONLY
     manager: [
@@ -1627,7 +1628,7 @@ export default function UsersSettingsPage() {
       'bills', 'purchase_returns',
       'products', 'services',
       'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-      'dispatch_approvals', 'inventory_goods_receipt',
+      'dispatch_approvals',
       'payments', 'expenses', 'banking',
       'suppliers', 'purchase_orders',
       'bookings',

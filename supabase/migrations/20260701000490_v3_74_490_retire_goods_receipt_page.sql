@@ -1,0 +1,31 @@
+-- v3.74.490 — Retire the /inventory/goods-receipt page from active
+-- navigation.
+--
+-- Owner's call after the evidence-based audit: with v3.74.478
+-- (bill receipt tab), v3.74.483 (expandable items panel), v3.74.488
+-- (manufacturing product receive pending tab), and v3.74.489 (branch +
+-- warehouse filter on history), the unified inbox covers every real
+-- flow the goods-receipt page had. Time to unify navigation.
+--
+-- Changes
+--   sidebar.tsx: the "اعتماد الاستلام" entry inside the Inventory group
+--     is removed. A comment marks the retirement so nobody re-adds it
+--     without reading the CONTRACTS section.
+--   settings/users/page.tsx:
+--     - The 'inventory_goods_receipt' resource is removed from the
+--       role-permissions grid (nothing to grant anymore).
+--     - The role defaults template stops seeding
+--       'inventory_goods_receipt' for accountant, purchasing_officer,
+--       store_manager, and manager. Warehouse/receipt actions run
+--       through resource 'approvals' now.
+--
+-- Kept for safety
+--   The physical page at app/inventory/goods-receipt/page.tsx is left
+--   in place as a URL fallback so a mid-session bookmark still opens.
+--   Only navigation + defaults are retired here. A follow-up release
+--   can delete the file once we're sure nothing external links to it.
+--
+-- No DB changes. Existing custom company_role_permissions rows for
+-- 'inventory_goods_receipt' are harmless (no page consumes them from
+-- the sidebar anymore); an operator can clean them up manually if
+-- desired.

@@ -64,6 +64,25 @@ SELECT * FROM baseline_report();   -- جدول صفوف بحالة كل عقد
 | `can_modify_data` يتضمن كل الأدوار الحديثة (`purchasing_officer`, `general_manager`, `booking_officer`, `manufacturing_officer`, `hr_officer`, `store_manager`) | v3.74.390 | لو حد عدّل الدالة وحذف دور، تتكسر سيناريوهات اضافة موردين/POs/payments |
 | `can_manage_supplier_row` يحتوى على شرط `p_row_branch_id = v_user_branch_id` | v3.74.391 | لو حد بسّط الدالة وشال التحقق، الفروع تقدر تعدّل موردين فروع تانية |
 
+## CK. سحب صفحة "اعتماد الاستلام" من التنقل (v3.74.490)
+
+بعد إن الـ inbox اتغطى بالكامل بـ:
+- v3.74.478 — bill receipt tab
+- v3.74.483 — expandable items panel
+- v3.74.488 — manufacturing product receive pending tab
+- v3.74.489 — branch + warehouse filter على السجل
+
+الصفحة القديمة `/inventory/goods-receipt` مش محتاجينها فى التنقل.
+
+**التغييرات**:
+- **sidebar.tsx**: بند "اعتماد الاستلام" اتشال من مجموعة المخزون
+- **settings/users**: `inventory_goods_receipt` resource اتشال من الجدول
+- **role defaults**: أدوار accountant/purchasing_officer/store_manager/manager
+  لم يعد يُبذر لهم `inventory_goods_receipt` كصلاحية افتراضية
+
+**Safety net**: الصفحة الفعلية `app/inventory/goods-receipt/page.tsx` لسه
+موجودة كـ URL fallback. release لاحق ممكن يشيل الملف بعد التأكد.
+
 ## CJ. فلتر الفرع والمخزن على سجل الموافقات (v3.74.489)
 
 **owner / admin / general_manager**: dropdown للفرع + المخزن فوق

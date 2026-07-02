@@ -1194,7 +1194,12 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Dispatch Approvals' : 'موافقات الإرسال'), href: `/inventory/dispatch-approvals${q}`, icon: CheckCircle, badge: pendingDispatchCount },
                     // v3.74.14 — Sales Return Requests workflow page
                     { label: (lang === 'en' ? 'Sales Return Approvals' : 'موافقات مرتجعات المبيعات'), href: `/sales-return-requests${q}`, icon: CheckCircle, badge: pendingSalesReturnRequestsCount },
-                    { label: (lang === 'en' ? 'Goods Receipt Approvals' : 'اعتماد الاستلام'), href: `/inventory/goods-receipt${q}`, icon: CheckCircle },
+                    // v3.74.490 — Goods receipt approvals page removed from
+                    // the sidebar. Its two flows (bill receipt + mfg product
+                    // receive) both live in the unified inbox now (recv +
+                    // pr tabs). The physical page at /inventory/goods-receipt
+                    // still exists as a URL fallback but no longer surfaces
+                    // in navigation.
                   ]
                 },
                 {
