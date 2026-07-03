@@ -226,6 +226,9 @@ interface PendingPurchaseReturn {
   bill_id: string | null
   bill_no: string | null
   total: number
+  // v3.74.513 — لنطاق الفرع/المخزن لأدوار المخازن
+  branch_id: string | null
+  warehouse_id: string | null
   branch_name: string | null
   warehouse_name: string | null
   requested_at: string
@@ -966,8 +969,10 @@ function ApprovalsContent() {
   const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
     // Warehouse: dispatch, receipt, write-offs, transfers, sales-return
     // warehouse stage, AND pending mfg product receive (v3.74.488).
-    store_manager:      ["recv","disp","wo","tr","sret","pr"],
-    warehouse_manager:  ["recv","disp","wo","tr","sret","pr"],
+    // v3.74.513 — "pret" مضافة: مرحلة إخراج مرتجعات المشتريات من المخزن
+    // منوطة بمسؤول المخزن (تأكيد الإخراج) + يرى سجلها
+    store_manager:      ["recv","disp","wo","tr","sret","pr","pret"],
+    warehouse_manager:  ["recv","disp","wo","tr","sret","pr","pret"],
     // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
     accountant:         ["pay","pret","disc","sret","cref","vcor","misc"],
     // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
@@ -1312,7 +1317,8 @@ function ApprovalsContent() {
             bills(bill_number)
           `)
           .eq("company_id", cid)
-          .in("workflow_status", ["pending_admin_approval", "pending_approval"])
+          // v3.74.513 — تشمل مرحلة إخراج المخزن حتى تظهر فى صندوق مسؤول المخزن
+          .in("workflow_status", ["pending_admin_approval", "pending_approval", "pending_warehouse"])
           .order("created_at", { ascending: true })
           .limit(100)
         setPurchaseReturns((prs || []).map((r: any) => ({
@@ -1322,6 +1328,8 @@ function ApprovalsContent() {
           bill_id: r.bill_id ?? null,
           bill_no: r.bills?.bill_number ?? null,
           total: Number(r.total_amount || 0),
+          branch_id: r.branch_id ?? null,
+          warehouse_id: r.warehouse_id ?? null,
           branch_name: r.branches?.name ?? null,
           warehouse_name: r.warehouses?.name ?? null,
           requested_at: r.created_at,
@@ -2607,6 +2615,8 @@ function ApprovalsContent() {
             <Link href={`/manufacturing/boms`} className="text-xs text-blue-600 hover:underline">{t("عرض", "View")}</Link>
           </div>
         </div>
+        {/* v3.74.513 — قرار BOM للإدارة فقط؛ مسؤول التصنيع يتابع بلا أزرار */}
+        {isAdminLike && (
         <div className="flex gap-2 mt-3">
           <Button
             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -2623,8 +2633,9 @@ function ApprovalsContent() {
             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
           </Button>
         </div>
+        )}
         {/* Reject reason input */}
-        {rejectId === b.id && (
+        {isAdminLike && rejectId === b.id && (
           <div className="mt-3 space-y-2">
             <Textarea
               placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
@@ -2670,6 +2681,8 @@ function ApprovalsContent() {
             <Link href={`/manufacturing/routings`} className="text-xs text-purple-600 hover:underline">{t("عرض", "View")}</Link>
           </div>
         </div>
+        {/* v3.74.513 — قرار مسار التصنيع للإدارة فقط */}
+        {isAdminLike && (
         <div className="flex gap-2 mt-3">
           <Button
             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -2686,7 +2699,8 @@ function ApprovalsContent() {
             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
           </Button>
         </div>
-        {rejectId === r.id && (
+        )}
+        {isAdminLike && rejectId === r.id && (
           <div className="mt-3 space-y-2">
             <Textarea
               placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
@@ -2739,6 +2753,9 @@ function ApprovalsContent() {
               <Link href={`/manufacturing/production-orders`} className="text-xs text-teal-600 hover:underline">{t("عرض", "View")}</Link>
             </div>
           </div>
+          {/* v3.74.513 — مرحلة الإدارة: مالك/أدمن/مدير عام؛ مرحلة الصرف:
+              مسؤولو المخازن + الإدارة (مطابق لأدوار الخادم) */}
+          {(isWarehouseStage ? (canApproveReceipt || myRole === 'warehouse_manager') : isAdminLike) && (
           <div className="flex gap-2 mt-3 flex-wrap">
             <Button
               size="sm" className={isWarehouseStage ? "gap-1 bg-cyan-600 hover:bg-cyan-700 text-white text-xs" : "gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"}
@@ -2756,7 +2773,8 @@ function ApprovalsContent() {
               <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
             </Button>
           </div>
-          {rejectId === m.id && (
+          )}
+          {(isWarehouseStage ? (canApproveReceipt || myRole === 'warehouse_manager') : isAdminLike) && rejectId === m.id && (
             <div className="mt-3 space-y-2">
               <Textarea
                 placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
@@ -2813,6 +2831,8 @@ function ApprovalsContent() {
             <Link href={`/manufacturing/production-orders`} className="text-xs text-orange-600 hover:underline">{t("عرض", "View")}</Link>
           </div>
         </div>
+        {/* v3.74.513 — قرار أمر الإنتاج للإدارة فقط */}
+        {isAdminLike && (
         <div className="flex gap-2 mt-3">
           <Button
             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -2829,7 +2849,8 @@ function ApprovalsContent() {
             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
           </Button>
         </div>
-        {rejectId === p.id && (
+        )}
+        {isAdminLike && rejectId === p.id && (
           <div className="mt-3 space-y-2">
             <Textarea
               placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
@@ -4435,7 +4456,18 @@ function ApprovalsContent() {
                   <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
                     <RefreshCw className="w-4 h-4" />{t("اعتمادات مرتجعات المشتريات", "Purchase Return Approvals")}
                   </h2>
-                  {purchaseReturns.map(r => (
+                  {purchaseReturns
+                    // v3.74.513 — أدوار المخازن ترى مرتجعات مخزنها/فرعها فقط
+                    .filter(r => isAdminLike
+                      ? true
+                      : myWarehouseId
+                        ? r.warehouse_id === myWarehouseId
+                        : myBranchId
+                          ? r.branch_id === myBranchId
+                          : true)
+                    .map(r => {
+                    const isWarehouseStage = r.workflow_status === "pending_warehouse"
+                    return (
                     <Card key={r.id} className="border-l-4 border-l-orange-500">
                       <CardContent className="py-4">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -4467,18 +4499,56 @@ function ApprovalsContent() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
-                              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                            {/* v3.74.513 — الشارة حسب المرحلة */}
+                            <Badge className={isWarehouseStage
+                              ? "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300 text-xs"
+                              : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs"}>
+                              <Clock className="w-3 h-3 me-1" />
+                              {isWarehouseStage ? t("بانتظار إخراج المخزن", "Awaiting warehouse") : t("انتظار اعتماد", "Pending Approval")}
                             </Badge>
                             <Link href={`/purchase-returns/${r.id}`} className="text-xs text-orange-600 hover:underline">
                               {t("عرض المستند", "View document")}
                             </Link>
                           </div>
                         </div>
+                        {/* v3.74.513 — مرحلة المخزن: زر تأكيد إخراج البضاعة لمسؤولى المخازن */}
+                        {isWarehouseStage && (canApproveReceipt || myRole === 'warehouse_manager') && (
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white text-xs"
+                              disabled={runningId === r.id}
+                              onClick={async () => {
+                                try {
+                                  setRunningId(r.id)
+                                  const res = await fetch(`/api/purchase-returns/${encodeURIComponent(r.id)}/confirm-delivery`, {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `pret:${r.id}:confirm:${Date.now()}`,
+                                    },
+                                    body: JSON.stringify({ uiSurface: "approvals_inbox", appLang }),
+                                  })
+                                  const j = await res.json().catch(() => ({}))
+                                  if (!res.ok || j.success === false) {
+                                    throw new Error(j.error || (appLang === 'en' ? 'Confirmation failed' : 'تعذر تأكيد الإخراج'))
+                                  }
+                                  toast({ title: t("تم الإخراج", "Delivered"), description: t("تم تأكيد إخراج بضاعة المرتجع", "Return goods-out confirmed") })
+                                  await load()
+                                } catch (e: any) {
+                                  toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                } finally {
+                                  setRunningId(null)
+                                }
+                              }}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />{t("تأكيد إخراج البضاعة", "Confirm Goods-Out")}
+                            </Button>
+                          </div>
+                        )}
                         {/* v3.74.509 — أزرار قرار الاعتماد للمخوّلين فقط (مالك/أدمن/مدير عام).
                             الخادم كان يرفض غيرهم أصلاً؛ الأزرار كانت تظهر خطأً للمحاسب
                             الذى يرى التبويب للمتابعة فقط. */}
-                        {isAdminLike && (
+                        {!isWarehouseStage && isAdminLike && (
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -4566,7 +4636,7 @@ function ApprovalsContent() {
                         )}
                       </CardContent>
                     </Card>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>
