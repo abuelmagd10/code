@@ -191,6 +191,10 @@ export default function PaymentsPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   // v3.26.0: account balances cache for available-balance display + overdraft warning
   const [accountBalances, setAccountBalances] = useState<Record<string, number>>({})
+  // v3.74.516 — مطابقة عملة الدفع مع عملة الحساب (owner spec):
+  // القائمة تُفلتر تلقائياً لحسابات نفس العملة؛ "إظهار الكل" استثناء بتأكيد صريح
+  const [showAllPayAccounts, setShowAllPayAccounts] = useState(false)
+  const accountCurrencyOf = (a: any) => (String(a?.original_currency || '').toUpperCase() || (baseCurrency || 'EGP').toUpperCase())
   const [accounts, setAccounts] = useState<Account[]>([])
   const [customerPayments, setCustomerPayments] = useState<Payment[]>([])
   const [supplierPayments, setSupplierPayments] = useState<Payment[]>([])
@@ -1180,6 +1184,20 @@ export default function PaymentsPage() {
       if (!newCustPayment.customer_id || newCustPayment.amount <= 0) return
       if (!companyId) return
 
+      // v3.74.516 — تأكيد صريح عند اختلاف عملة الدفع عن عملة الحساب (استثناء واعٍ)
+      {
+        const selAcc = accounts.find((a) => a.id === newCustPayment.account_id) as any
+        const accCcy = accountCurrencyOf(selAcc)
+        const payCcy = paymentCurrency.toUpperCase()
+        if (selAcc && accCcy !== payCcy) {
+          const equiv = (Number(newCustPayment.amount || 0) * (exchangeRate || 0)).toFixed(2)
+          const ok = window.confirm(appLang === 'en'
+            ? `Exception: payment currency (${payCcy}) differs from the account "${selAcc.account_name}" currency (${accCcy}).\nThe account will be affected by the equivalent ${equiv} ${baseCurrency}. Continue?`
+            : `تأكيد استثنائى: عملة الدفع (${payCcy}) تختلف عن عملة الحساب "${selAcc.account_name}" (${accCcy}).\nسيتأثر الحساب بالمعادل ${equiv} ${baseCurrency} بسعر الصرف المختار. هل تريد المتابعة؟`)
+          if (!ok) { setSaving(false); return }
+        }
+      }
+
       // ✅ دفعات العملاء هي مقبوضات (مدخلات) - لا نحتاج للتحقق من الرصيد
       // المال يدخل للحساب، لذا لا يوجد مشكلة في الرصيد
 
@@ -1310,6 +1328,20 @@ export default function PaymentsPage() {
         })
         setSaving(false)
         return
+      }
+
+      // v3.74.516 — تأكيد صريح عند اختلاف عملة الدفع عن عملة الحساب (استثناء واعٍ)
+      {
+        const selAcc = accounts.find((a) => a.id === newSuppPayment.account_id) as any
+        const accCcy = accountCurrencyOf(selAcc)
+        const payCcy = paymentCurrency.toUpperCase()
+        if (selAcc && accCcy !== payCcy) {
+          const equiv = (Number(newSuppPayment.amount || 0) * (exchangeRate || 0)).toFixed(2)
+          const ok = window.confirm(appLang === 'en'
+            ? `Exception: payment currency (${payCcy}) differs from the account "${selAcc.account_name}" currency (${accCcy}).\nThe account will be affected by the equivalent ${equiv} ${baseCurrency}. Continue?`
+            : `تأكيد استثنائى: عملة الدفع (${payCcy}) تختلف عن عملة الحساب "${selAcc.account_name}" (${accCcy}).\nسيتأثر الحساب بالمعادل ${equiv} ${baseCurrency} بسعر الصرف المختار. هل تريد المتابعة؟`)
+          if (!ok) { setSaving(false); return }
+        }
       }
 
       // 🔍 التحقق من كفاية الرصيد قبل إنشاء الدفعة
@@ -2220,16 +2252,28 @@ export default function PaymentsPage() {
                   onChange={(e) => {
                     const accId = e.target.value;
                     const cashOnly = isCashAccount(accId);
-                    setNewCustPayment({ 
-                      ...newCustPayment, 
+                    setNewCustPayment({
+                      ...newCustPayment,
                       account_id: accId,
                       method: cashOnly && newCustPayment.method !== 'cash' ? 'cash' : newCustPayment.method
                     });
+                    // v3.74.516 — اختيار الحساب يضبط عملة الدفع لعملته تلقائياً
+                    // (إلا فى وضع الاستثناء حيث الاختلاف مقصود)
+                    if (!showAllPayAccounts && accId) {
+                      const acc = accounts.find((a) => a.id === accId)
+                      const accCcy = accountCurrencyOf(acc)
+                      if (accCcy !== paymentCurrency.toUpperCase()) {
+                        setPaymentCurrency(accCcy)
+                        if (accCcy === baseCurrency.toUpperCase()) {
+                          setExchangeRate(1); setExchangeRateId(undefined); setRateSource('same_currency')
+                        }
+                      }
+                    }
                   }}
                 >
                   <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب الدفع'}</option>
-                  {accounts.map((a) => {
-                    // v3.25.3: surface the account's native currency in the option label
+                  {/* v3.74.516 — الحسابات المطابقة لعملة الدفع فقط (إلا فى وضع الاستثناء) */}
+                  {(showAllPayAccounts ? accounts : accounts.filter((a: any) => accountCurrencyOf(a) === paymentCurrency.toUpperCase())).map((a) => {
                     const ccy = String((a as any).original_currency || '').toUpperCase()
                     const ccySuffix = ccy && ccy !== baseCurrency.toUpperCase() ? ` — ${ccy}` : ''
                     return (
@@ -2237,6 +2281,12 @@ export default function PaymentsPage() {
                     )
                   })}
                 </select>
+                {/* v3.74.516 — رابط الاستثناء الواعى */}
+                {!showAllPayAccounts && accounts.some((a: any) => accountCurrencyOf(a) !== paymentCurrency.toUpperCase()) && (
+                  <button type="button" className="text-[11px] text-blue-600 hover:underline mt-0.5" onClick={() => setShowAllPayAccounts(true)}>
+                    {appLang === 'en' ? 'Show accounts in other currencies (exception)' : 'إظهار الحسابات بعملات أخرى (استثناء)'}
+                  </button>
+                )}
                 {/* v3.25.3: warn when account currency ≠ payment currency */}
                 {(() => {
                   const selectedAcc = accounts.find((a) => a.id === newCustPayment.account_id) as any
@@ -2289,6 +2339,19 @@ export default function PaymentsPage() {
                     setExchangeRateId(undefined)
                     setRateSource('same_currency')
                   }
+                  // v3.74.516 — تغيير عملة الدفع يعيد ضبط الحساب تلقائياً
+                  // لأول حساب بنفس العملة (ويغلق وضع الاستثناء)
+                  setShowAllPayAccounts(false)
+                  const vU = v.toUpperCase()
+                  const firstMatchedId = (accounts.find((a: any) => accountCurrencyOf(a) === vU) as any)?.id || ''
+                  const custAcc = accounts.find((a) => a.id === newCustPayment.account_id)
+                  if (!custAcc || accountCurrencyOf(custAcc) !== vU) {
+                    setNewCustPayment((p: any) => ({ ...p, account_id: firstMatchedId }))
+                  }
+                  const suppAcc = accounts.find((a) => a.id === newSuppPayment.account_id)
+                  if (!suppAcc || accountCurrencyOf(suppAcc) !== vU) {
+                    setNewSuppPayment((p: any) => ({ ...p, account_id: firstMatchedId }))
+                  }
                 }}>
                   {currencies.length > 0 ? (
                     currencies.map((c) => (
@@ -2315,6 +2378,7 @@ export default function PaymentsPage() {
                     }}
                     hideLabel
                     showPreview
+                    amount={Number(newCustPayment.amount || 0)}
                   />
                 </div>
               )}
@@ -2747,16 +2811,28 @@ export default function PaymentsPage() {
                   onChange={(e) => {
                     const accId = e.target.value;
                     const cashOnly = isCashAccount(accId);
-                    setNewSuppPayment({ 
-                      ...newSuppPayment, 
+                    setNewSuppPayment({
+                      ...newSuppPayment,
                       account_id: accId,
                       method: cashOnly && newSuppPayment.method !== 'cash' ? 'cash' : newSuppPayment.method
                     });
+                    // v3.74.516 — اختيار الحساب يضبط عملة الدفع لعملته تلقائياً
+                    // (إلا فى وضع الاستثناء حيث الاختلاف مقصود)
+                    if (!showAllPayAccounts && accId) {
+                      const acc = accounts.find((a) => a.id === accId)
+                      const accCcy = accountCurrencyOf(acc)
+                      if (accCcy !== paymentCurrency.toUpperCase()) {
+                        setPaymentCurrency(accCcy)
+                        if (accCcy === baseCurrency.toUpperCase()) {
+                          setExchangeRate(1); setExchangeRateId(undefined); setRateSource('same_currency')
+                        }
+                      }
+                    }
                   }}
                 >
                   <option value="">{appLang === 'en' ? 'Select payment account' : 'اختر حساب السداد'}</option>
-                  {accounts.map((a) => {
-                    // v3.25.3: surface account currency in label
+                  {/* v3.74.516 — الحسابات المطابقة لعملة الدفع فقط (إلا فى وضع الاستثناء) */}
+                  {(showAllPayAccounts ? accounts : accounts.filter((a: any) => accountCurrencyOf(a) === paymentCurrency.toUpperCase())).map((a) => {
                     const ccy = String((a as any).original_currency || '').toUpperCase()
                     const ccySuffix = ccy && ccy !== baseCurrency.toUpperCase() ? ` — ${ccy}` : ''
                     return (
@@ -2764,6 +2840,12 @@ export default function PaymentsPage() {
                     )
                   })}
                 </select>
+                {/* v3.74.516 — رابط الاستثناء الواعى */}
+                {!showAllPayAccounts && accounts.some((a: any) => accountCurrencyOf(a) !== paymentCurrency.toUpperCase()) && (
+                  <button type="button" className="text-[11px] text-blue-600 hover:underline mt-0.5" onClick={() => setShowAllPayAccounts(true)}>
+                    {appLang === 'en' ? 'Show accounts in other currencies (exception)' : 'إظهار الحسابات بعملات أخرى (استثناء)'}
+                  </button>
+                )}
                 {/* v3.25.3: hint when account currency ≠ payment currency */}
                 {(() => {
                   const selectedAcc = accounts.find((a) => a.id === newSuppPayment.account_id) as any
@@ -2779,13 +2861,16 @@ export default function PaymentsPage() {
                   )
                 })()}
                 {/* v3.26.0: show available balance + overdraft warning for SUPPLIER (cash outflow) */}
+                {/* v3.74.516 — المقارنة بعملة الأساس الموحدة: الرصيد محسوب بالأساس،
+                    والمبلغ يُحوَّل بسعر الصرف قبل المقارنة (كانت تقارن عملتين مختلفتين) */}
                 {(() => {
                   const selectedAcc = accounts.find((a) => a.id === newSuppPayment.account_id) as any
                   if (!selectedAcc) return null
                   const accBal = accountBalances[newSuppPayment.account_id] ?? 0
-                  const accCcy = String(selectedAcc?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
-                  const accSymbol = currencySymbols[accCcy] || accCcy
-                  const willOverdraft = Number(newSuppPayment.amount || 0) > 0 && (accBal - Number(newSuppPayment.amount || 0)) < -0.01
+                  const baseCcy = baseCurrency.toUpperCase()
+                  const accSymbol = currencySymbols[baseCcy] || baseCcy
+                  const amountBase = Number(newSuppPayment.amount || 0) * (paymentCurrency.toUpperCase() === baseCcy ? 1 : (exchangeRate || 0))
+                  const willOverdraft = amountBase > 0 && (accBal - amountBase) < -0.01
                   return (
                     <div className={`text-[11px] mt-1 px-2 py-1 rounded border ${willOverdraft ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'}`}>
                       💰 {appLang === 'en' ? 'Available' : 'الرصيد المتاح'}:{' '}
@@ -2836,6 +2921,19 @@ export default function PaymentsPage() {
                     setExchangeRateId(undefined)
                     setRateSource('same_currency')
                   }
+                  // v3.74.516 — تغيير عملة الدفع يعيد ضبط الحساب تلقائياً
+                  // لأول حساب بنفس العملة (ويغلق وضع الاستثناء)
+                  setShowAllPayAccounts(false)
+                  const vU = v.toUpperCase()
+                  const firstMatchedId = (accounts.find((a: any) => accountCurrencyOf(a) === vU) as any)?.id || ''
+                  const custAcc = accounts.find((a) => a.id === newCustPayment.account_id)
+                  if (!custAcc || accountCurrencyOf(custAcc) !== vU) {
+                    setNewCustPayment((p: any) => ({ ...p, account_id: firstMatchedId }))
+                  }
+                  const suppAcc = accounts.find((a) => a.id === newSuppPayment.account_id)
+                  if (!suppAcc || accountCurrencyOf(suppAcc) !== vU) {
+                    setNewSuppPayment((p: any) => ({ ...p, account_id: firstMatchedId }))
+                  }
                 }}>
                   {currencies.length > 0 ? (
                     currencies.map((c) => (
@@ -2862,6 +2960,7 @@ export default function PaymentsPage() {
                     }}
                     hideLabel
                     showPreview
+                    amount={Number(newSuppPayment.amount || 0)}
                   />
                 </div>
               )}

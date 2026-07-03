@@ -68,6 +68,9 @@ export interface ExchangeRateSelectorProps {
   hideLabel?: boolean
   /** Show small "current selection" preview under the dropdown */
   showPreview?: boolean
+  /** v3.74.516 — المبلغ المُدخل: يعرض سطر "المبلغ × السعر = المعادل"
+      تحت المعاينة (مثال: 3 USD = 147.84 EGP) */
+  amount?: number
 }
 
 export function ExchangeRateSelector(props: ExchangeRateSelectorProps) {
@@ -83,6 +86,7 @@ export function ExchangeRateSelector(props: ExchangeRateSelectorProps) {
     className,
     hideLabel,
     showPreview,
+    amount,
   } = props
 
   const supabase = useSupabase()
@@ -221,6 +225,12 @@ export function ExchangeRateSelector(props: ExchangeRateSelectorProps) {
                 `1 ${fc} = ${value.toFixed(4)} ${base}`,
                 `1 ${fc} = ${value.toFixed(4)} ${base}`
               )}
+            </div>
+          )}
+          {/* v3.74.516 — معادل المبلغ المُدخل بسعر الصرف المختار */}
+          {showPreview && Number(amount || 0) > 0 && value > 0 && (
+            <div className="text-[11px] font-semibold text-blue-700 dark:text-blue-300">
+              {`${Number(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${fc} = ${(Number(amount) * value).toFixed(2)} ${base}`}
             </div>
           )}
         </>

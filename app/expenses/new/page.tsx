@@ -501,6 +501,7 @@ export default function NewExpensePage() {
                     }}
                     hideLabel
                     showPreview
+                    amount={Number(amount || 0)}
                   />
                 </div>
               </div>

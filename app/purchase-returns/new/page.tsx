@@ -1721,6 +1721,7 @@ export default function NewPurchaseReturnPage() {
                     })}
                     hideLabel
                     showPreview
+                    amount={Number((isPrivileged ? allocTotal : total) || 0)}
                   />
                 </div>
               )}

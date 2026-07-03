@@ -820,6 +820,7 @@ export default function BankingPage() {
                         }}
                         hideLabel
                         showPreview
+                        amount={Number(transfer.amount || 0)}
                       />
                     </div>
                   )}

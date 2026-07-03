@@ -343,6 +343,7 @@ export default function NewVendorCreditPage() {
                     })}
                     hideLabel
                     showPreview
+                    amount={Number(total || 0)}
                   />
                   {total > 0 && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded text-sm">

@@ -264,6 +264,7 @@ export default function NewDrawingPage() {
                                         onChange={setExchangeRate}
                                         hideLabel
                                         showPreview
+                                        amount={Number(amount || 0)}
                                     />
                                 </div>
                                 <div className="space-y-2">
