@@ -340,6 +340,8 @@ type CardCtx = {
   runningId: string | null
   handleApprove: (d: PendingDiscountApproval) => void
   handleReject: () => void
+  /** v3.74.509 — أزرار القرار تظهر لمن يملك حق القرار فقط (الخادم كان يحمى أصلاً) */
+  canDecide: boolean
 }
 
 // v3.74.461 — Renders a side-by-side "before / after" comparison
@@ -601,7 +603,7 @@ const AmendmentDiffCard = ({
 const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: CardCtx }) => {
   const { appLang, t, fmtMoney, fmtDate, docTypeLabel, docHref,
           rejectId, rejectReason, setRejectReason, setRejectId, setRejectType,
-          runningId, handleApprove, handleReject } = ctx
+          runningId, handleApprove, handleReject, canDecide } = ctx
   const discountLabel = d.discount_type === "percent"
     ? `${fmtMoney(d.discount_value)}%`
     : `${fmtMoney(d.discount_value)} ${t("ج.م", "EGP")}`
@@ -660,6 +662,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
         {d.prior_approval && (
           <AmendmentDiffCard current={d} prior={d.prior_approval} ctx={ctx} />
         )}
+        {canDecide && (
         <div className="flex gap-2 mt-3">
           <Button
             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -676,7 +679,8 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
           </Button>
         </div>
-        {rejectId === d.id && (
+        )}
+        {canDecide && rejectId === d.id && (
           <div className="mt-3 space-y-2">
             <Textarea
               placeholder={t("سبب الرفض (مطلوب)…", "Rejection reason (required)…")}
@@ -959,6 +963,9 @@ function ApprovalsContent() {
     booking_officer:    [],
   }
   const isAdminLike = !!myRole && ["owner","admin","general_manager"].includes(myRole)
+  // v3.74.509 — قرارات محصورة بالمالك/المدير العام فقط (دفعات الموردين،
+  // استرداد العملاء، تصحيحات دفعات الموردين) مطابقة لبوابات الخادم
+  const isOwnerOrGm = !!myRole && ["owner","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
       ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"] as const)
@@ -2682,6 +2689,8 @@ function ApprovalsContent() {
     appLang, t, fmtMoney, fmtDate, docTypeLabel, docHref,
     rejectId, rejectReason, setRejectReason, setRejectId, setRejectType,
     runningId, handleApprove, handleReject,
+    // v3.74.509 — قرار الخصم: مالك/أدمن/مدير عام (مطابق لبوابة الخادم can_approve_discount)
+    canDecide: isAdminLike,
   }
 
   const ProductionOrderCard = ({ p }: { p: PendingProductionOrder }) => (
@@ -3188,6 +3197,8 @@ function ApprovalsContent() {
                             )}
                           </div>
                         </div>
+                        {/* v3.74.509 — قرار الدفعة للمالك/المدير العام فقط (مطابق للـ RPC) */}
+                        {isOwnerOrGm && (
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -3226,7 +3237,8 @@ function ApprovalsContent() {
                             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
                           </Button>
                         </div>
-                        {rejectId === p.id && (
+                        )}
+                        {isOwnerOrGm && rejectId === p.id && (
                           <div className="mt-3 space-y-2">
                             <textarea
                               value={rejectReason}
@@ -3496,6 +3508,8 @@ function ApprovalsContent() {
                             </Badge>
                           </div>
                         </div>
+                        {/* v3.74.509 — قرار استلام التصنيع لمسؤولى المخازن والإدارة فقط */}
+                        {canApproveReceipt && (
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -3529,7 +3543,8 @@ function ApprovalsContent() {
                             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
                           </Button>
                         </div>
-                        {rejectId === r.id && (
+                        )}
+                        {canApproveReceipt && rejectId === r.id && (
                           <div className="mt-3 space-y-2">
                             <textarea
                               value={rejectReason}
@@ -3801,6 +3816,8 @@ function ApprovalsContent() {
                             </Link>
                           </div>
                         </div>
+                        {/* v3.74.509 — قرار الصرف لمسؤولى المخازن والإدارة فقط (مدير الفرع اطلاع) */}
+                        {canApproveReceipt && (
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -3867,7 +3884,8 @@ function ApprovalsContent() {
                             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
                           </Button>
                         </div>
-                        {rejectId === d.id && (
+                        )}
+                        {canApproveReceipt && rejectId === d.id && (
                           <div className="mt-3 space-y-2">
                             <textarea
                               value={rejectReason}
@@ -3955,6 +3973,8 @@ function ApprovalsContent() {
                               </Link>
                             </div>
                           </div>
+                          {/* v3.74.509 — قرار الاسترداد للمالك/المدير العام فقط */}
+                          {isOwnerOrGm && (
                           <div className="flex gap-2 mt-3">
                             <Button
                               size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -3992,7 +4012,8 @@ function ApprovalsContent() {
                               </Button>
                             )}
                           </div>
-                          {rejectId === r.id && (
+                          )}
+                          {isOwnerOrGm && rejectId === r.id && (
                             <div className="mt-3 space-y-2">
                               <textarea
                                 value={rejectReason}
@@ -4081,6 +4102,8 @@ function ApprovalsContent() {
                               </Link>
                             </div>
                           </div>
+                          {/* v3.74.509 — قرار التصحيح للمالك/المدير العام فقط */}
+                          {isOwnerOrGm && (
                           <div className="flex gap-2 mt-3">
                             <Button
                               size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -4118,7 +4141,8 @@ function ApprovalsContent() {
                               </Button>
                             )}
                           </div>
-                          {rejectId === r.id && (
+                          )}
+                          {isOwnerOrGm && rejectId === r.id && (
                             <div className="mt-3 space-y-2">
                               <textarea
                                 value={rejectReason}
@@ -4176,6 +4200,11 @@ function ApprovalsContent() {
                     const rejectUrl = isWh
                       ? `/api/sales-return-requests/${encodeURIComponent(s.id)}/warehouse-reject`
                       : `/api/sales-return-requests/${encodeURIComponent(s.id)}/reject`
+                    // v3.74.509 — المرحلة الإدارية: مالك/أدمن/مدير عام؛
+                    // مرحلة المخزن: مسؤولو المخازن + الإدارة (مطابق لبوابات الخادم)
+                    const canDecideSret = isWh
+                      ? (canApproveReceipt || myRole === 'warehouse_manager')
+                      : isAdminLike
                     return (
                       <Card key={s.id} className="border-l-4 border-l-pink-500">
                         <CardContent className="py-4">
@@ -4219,6 +4248,7 @@ function ApprovalsContent() {
                               </Link>
                             </div>
                           </div>
+                          {canDecideSret && (
                           <div className="flex gap-2 mt-3">
                             <Button
                               size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -4253,7 +4283,8 @@ function ApprovalsContent() {
                               <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
                             </Button>
                           </div>
-                          {rejectId === s.id && (
+                          )}
+                          {canDecideSret && rejectId === s.id && (
                             <div className="mt-3 space-y-2">
                               <textarea
                                 value={rejectReason}
@@ -4347,6 +4378,10 @@ function ApprovalsContent() {
                             </Link>
                           </div>
                         </div>
+                        {/* v3.74.509 — أزرار قرار الاعتماد للمخوّلين فقط (مالك/أدمن/مدير عام).
+                            الخادم كان يرفض غيرهم أصلاً؛ الأزرار كانت تظهر خطأً للمحاسب
+                            الذى يرى التبويب للمتابعة فقط. */}
+                        {isAdminLike && (
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -4385,7 +4420,8 @@ function ApprovalsContent() {
                             <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
                           </Button>
                         </div>
-                        {rejectId === r.id && (
+                        )}
+                        {isAdminLike && rejectId === r.id && (
                           <div className="mt-3 space-y-2">
                             <textarea
                               value={rejectReason}
