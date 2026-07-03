@@ -742,6 +742,9 @@ interface UnifiedHistoryEntry {
   // /api/members-emails بعد تجميع السجل (كانت "—" فى كل الأقسام عدا الخصومات)
   requested_by_id?: string | null
   decided_by_id?: string | null
+  // v3.74.512 — سطور تفصيلية للمستند (بنود المرتجع مثلاً) على غرار
+  // التفصيل المتاح فى سجل الخصومات
+  detail_lines?: string[] | null
 }
 
 type UnifiedHistoryCtx = {
@@ -843,6 +846,17 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
                 <p className="text-xs mt-1 p-2 rounded bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700">
                   📝 {h.decision_note}
                 </p>
+              )}
+              {/* v3.74.512 — سطور تفصيل المستند (بنود المرتجع...) */}
+              {h.detail_lines && h.detail_lines.length > 0 && (
+                <div className="mt-1 p-2 rounded bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    📦 {t("البنود", "Items")} ({h.detail_lines.length})
+                  </p>
+                  <ul className="text-xs ms-4 list-disc text-muted-foreground mt-0.5">
+                    {h.detail_lines.map((l, i) => (<li key={i}>{l}</li>))}
+                  </ul>
+                </div>
               )}
               {/* v3.74.471 — same DiffCard as the pending inbox, so
                   the owner sees the full "before/after" they approved.
@@ -2357,6 +2371,27 @@ function ApprovalsContent() {
           .or("approved_at.not.is.null,rejected_at.not.is.null")
           .order("created_at", { ascending: false })
           .limit(100)
+
+        // v3.74.512 — بنود المرتجع (دفعة واحدة لكل المرتجعات) لعرض
+        // تفصيل "ماذا أُرجع" على غرار تفصيل الخصومات.
+        const pretIds = (prs || []).map((r: any) => r.id)
+        const pretItemsMap = new Map<string, string[]>()
+        if (pretIds.length > 0) {
+          try {
+            const { data: pretItems } = await supabase
+              .from("purchase_return_items")
+              .select("purchase_return_id, description, quantity, unit_price, line_total, products(name)")
+              .in("purchase_return_id", pretIds)
+            for (const it of (pretItems || []) as any[]) {
+              const name = it.products?.name ?? it.description ?? "?"
+              const line = `${name} · ${Number(it.quantity)} × ${Number(it.unit_price).toFixed(2)} = ${Number(it.line_total).toFixed(2)}`
+              const arr = pretItemsMap.get(it.purchase_return_id) || []
+              arr.push(line)
+              pretItemsMap.set(it.purchase_return_id, arr)
+            }
+          } catch { /* items are best-effort */ }
+        }
+
         for (const r of (prs || []) as any[]) {
           const status = r.workflow_status === "rejected" ? "rejected"
             : (r.rejected_at && !r.approved_at) ? "rejected" : "approved"
@@ -2378,6 +2413,7 @@ function ApprovalsContent() {
             decision_note: r.rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
             warehouse_id: r.warehouse_id ?? null,
+            detail_lines: pretItemsMap.get(r.id) ?? null,
           })
         }
       } catch { /* keep going */ }
@@ -2405,12 +2441,15 @@ function ApprovalsContent() {
           if (res.ok) {
             const j = await res.json().catch(() => ({}))
             const emailMap: Record<string, string> = j?.map || {}
+            // v3.74.512 — الاسم أولاً (موظف مرتبط/اسم الحساب) والإيميل fallback
+            const nameMap: Record<string, string> = j?.names || {}
+            const label = (id: string) => nameMap[id] || emailMap[id] || null
             for (const m of merged) {
-              if (!m.requested_by_email && m.requested_by_id && emailMap[m.requested_by_id]) {
-                m.requested_by_email = emailMap[m.requested_by_id]
+              if (!m.requested_by_email && m.requested_by_id) {
+                m.requested_by_email = label(m.requested_by_id)
               }
-              if (!m.decided_by_email && m.decided_by_id && emailMap[m.decided_by_id]) {
-                m.decided_by_email = emailMap[m.decided_by_id]
+              if (!m.decided_by_email && m.decided_by_id) {
+                m.decided_by_email = label(m.decided_by_id)
               }
             }
           }

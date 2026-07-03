@@ -32,13 +32,33 @@ export async function POST(req: NextRequest) {
     // === نهاية الإصلاح الأمني ===
 
     const map: Record<string, string> = {}
+    const names: Record<string, string> = {}
+
+    // v3.74.512 — أسماء العرض: اسم الموظف المرتبط بالحساب أولاً
+    // (جدول الموظفين عبر user_id)، ثم اسم الحساب من بياناته الوصفية،
+    // والإيميل يبقى fallback فى الواجهة.
+    if (companyId) {
+      try {
+        const { data: emps } = await admin
+          .from("employees")
+          .select("user_id, full_name")
+          .eq("company_id", companyId)
+          .in("user_id", userIds)
+        for (const e of (emps || []) as any[]) {
+          if (e.user_id && e.full_name) names[e.user_id] = e.full_name
+        }
+      } catch {}
+    }
+
     for (const id of userIds) {
       try {
         const { data: user } = await (admin as any).auth.admin.getUserById(id)
         if (user?.user?.email) map[id] = user.user.email
+        const metaName = user?.user?.user_metadata?.full_name || user?.user?.user_metadata?.name
+        if (!names[id] && metaName) names[id] = String(metaName)
       } catch {}
     }
-    return NextResponse.json({ map }, { status: 200 })
+    return NextResponse.json({ map, names }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
   }
