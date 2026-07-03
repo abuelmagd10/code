@@ -255,11 +255,18 @@ export default function PaymentsPage() {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
   }
-  const currencySymbol = currencySymbols[paymentCurrency] || paymentCurrency
+  // v3.74.518 — فصل عملة العرض (الجدول/الأرصدة) عن عملة نموذج الدفع:
+  // كان اختيار الدولار فى النموذج يقلب رمز الجدول كله إلى $ بينما
+  // الأرقام معادلات بالعملة الأساسية.
+  const [displayCurrency, setDisplayCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const currencySymbol = currencySymbols[displayCurrency] || displayCurrency
 
   // Helper: Get display amount (use converted if available)
   const getDisplayAmount = (payment: Payment): number => {
-    if (payment.display_currency === paymentCurrency && payment.display_amount != null) {
+    if (payment.display_currency === displayCurrency && payment.display_amount != null) {
       return payment.display_amount
     }
     // v3.11.0: For FX payments, prefer base_currency_amount (the correct EGP value)
@@ -438,6 +445,8 @@ export default function PaymentsPage() {
         // ✅ تحديث العملة فقط بدون إعادة تحميل كامل للصفحة
         // البيانات ستُحدث تلقائياً عند تغيير paymentCurrency
       }
+      // v3.74.518 — عملة عرض الجدول تتبع عملة التطبيق فقط (لا النموذج)
+      setDisplayCurrency(newCurrency)
       
       // إعادة تعيين flag بعد تأخير قصير
       setTimeout(() => {
@@ -2476,7 +2485,7 @@ export default function PaymentsPage() {
                           {(p.invoice_id && invoiceBranchMap[p.invoice_id] ? branchNames[invoiceBranchMap[p.invoice_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                         </span>
                       </td>
-                      <td className="px-2 py-2">{renderPaymentAmount(p, paymentCurrency)}</td>
+                      <td className="px-2 py-2">{renderPaymentAmount(p, baseCurrency)}</td>
                       <td className="px-2 py-2 text-xs text-gray-700 dark:text-gray-300">{accountLabel}</td>
                       <td className="px-2 py-2">{p.reference_number || "-"}</td>
                       <td className="px-2 py-2">
@@ -3134,7 +3143,7 @@ export default function PaymentsPage() {
                       {/* ✅ Paid Amount with Overpayment badge — v3.11.0 FX-aware */}
                       <td className="px-2 py-2">
                         <div className="flex flex-col gap-0.5 items-end">
-                          {renderPaymentAmount(p, paymentCurrency)}
+                          {renderPaymentAmount(p, baseCurrency)}
                           {isOverpayment && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
                               +{advanceAmt.toFixed(2)} {currencySymbol} {appLang === 'en' ? 'Advance' : 'سلفة'}
