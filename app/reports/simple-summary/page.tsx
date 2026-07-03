@@ -45,6 +45,13 @@ export default function SimpleSummaryReport() {
 
   useEffect(() => { setHydrated(true); setAppLang((localStorage.getItem("app-language") as 'ar' | 'en') || 'ar') }, [])
   const t = (en: string, ar: string) => (hydrated && appLang === 'en') ? en : ar
+  // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه
+  const baseCode = (() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })()
+  const ccy = baseCode === 'EGP' ? t('EGP', 'ج.م') : baseCode
+  const ccyAr = baseCode === 'EGP' ? 'ج.م' : baseCode
 
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', {
     minimumFractionDigits: 0,
@@ -96,7 +103,7 @@ export default function SimpleSummaryReport() {
   const handlePrint = () => window.print()
   const handleExport = () => {
     if (!data) return
-    const content = `تقرير ملخص النشاط المالي\n\nالفترة: ${fromDate} إلى ${toDate}\n\nرأس المال: ${numberFmt.format(data.capital.total)} ج.م\nالمشتريات: ${numberFmt.format(data.purchases.total)} ج.م\nالمصروفات: ${numberFmt.format(data.expenses.total)} ج.م\nإهلاك المخزون: ${numberFmt.format(data.depreciation.total)} ج.م\nالمبيعات: ${numberFmt.format(data.sales.total)} ج.م\nتكلفة البضاعة: ${numberFmt.format(data.cogs.total)} ج.م\nمجمل الربح: ${numberFmt.format(data.profit.gross)} ج.م\nصافي الربح: ${numberFmt.format(data.profit.net)} ج.م`
+    const content = `تقرير ملخص النشاط المالي\n\nالفترة: ${fromDate} إلى ${toDate}\n\nرأس المال: ${numberFmt.format(data.capital.total)} ${ccyAr}\nالمشتريات: ${numberFmt.format(data.purchases.total)} ${ccyAr}\nالمصروفات: ${numberFmt.format(data.expenses.total)} ${ccyAr}\nإهلاك المخزون: ${numberFmt.format(data.depreciation.total)} ${ccyAr}\nالمبيعات: ${numberFmt.format(data.sales.total)} ${ccyAr}\nتكلفة البضاعة: ${numberFmt.format(data.cogs.total)} ${ccyAr}\nمجمل الربح: ${numberFmt.format(data.profit.gross)} ${ccyAr}\nصافي الربح: ${numberFmt.format(data.profit.net)} ${ccyAr}`
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -224,7 +231,7 @@ export default function SimpleSummaryReport() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                        {numberFmt.format(data.capital.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                        {numberFmt.format(data.capital.total)} <span className="text-lg">{ccy}</span>
                       </p>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                         💡 {t('This amount is the foundation used to buy inventory and pay operating expenses.',
@@ -262,7 +269,7 @@ export default function SimpleSummaryReport() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-3xl font-bold text-green-600 dark:text-green-400">
-                        {numberFmt.format(data.purchases.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                        {numberFmt.format(data.purchases.total)} <span className="text-lg">{ccy}</span>
                       </p>
                       <p className="text-sm text-gray-500 mt-1">
                         📦 {data.purchases.count} {t('purchase orders', 'فاتورة شراء')}
@@ -305,7 +312,7 @@ export default function SimpleSummaryReport() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mb-4">
-                    {numberFmt.format(data.expenses.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                    {numberFmt.format(data.expenses.total)} <span className="text-lg">{ccy}</span>
                   </p>
                   {data.expenses.items.length > 0 && (
                     <div className="bg-white dark:bg-slate-800 rounded-lg p-4 border">
@@ -314,7 +321,7 @@ export default function SimpleSummaryReport() {
                         {data.expenses.items.map((item, idx) => (
                           <div key={idx} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700 last:border-0">
                             <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
-                            <span className="font-medium">{numberFmt.format(item.amount)} {t('EGP', 'ج.م')}</span>
+                            <span className="font-medium">{numberFmt.format(item.amount)} {ccy}</span>
                           </div>
                         ))}
                       </div>
@@ -353,7 +360,7 @@ export default function SimpleSummaryReport() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold text-red-600 dark:text-red-400">
-                      {numberFmt.format(data.depreciation.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                      {numberFmt.format(data.depreciation.total)} <span className="text-lg">{ccy}</span>
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                       ⚠️ {t('Inventory depreciation is a loss from expired or damaged products.',
@@ -392,14 +399,14 @@ export default function SimpleSummaryReport() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                    {numberFmt.format(data.sales.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                    {numberFmt.format(data.sales.total)} <span className="text-lg">{ccy}</span>
                   </p>
                   <p className="text-sm text-gray-500 mt-1">
                     🧾 {data.sales.count} {t('sales invoices', 'فاتورة مبيعات')}
                   </p>
                   {data.sales.pending > 0 && (
                     <p className="text-sm text-amber-600 mt-1">
-                      ⏳ {t('Pending sales:', 'مبيعات معلقة:')} {numberFmt.format(data.sales.pending)} {t('EGP', 'ج.م')}
+                      ⏳ {t('Pending sales:', 'مبيعات معلقة:')} {numberFmt.format(data.sales.pending)} {ccy}
                     </p>
                   )}
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
@@ -435,7 +442,7 @@ export default function SimpleSummaryReport() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold text-cyan-600 dark:text-cyan-400 mb-4">
-                      {numberFmt.format(data.assets.total)} <span className="text-lg">{t('EGP', 'ج.م')}</span>
+                      {numberFmt.format(data.assets.total)} <span className="text-lg">{ccy}</span>
                     </p>
                     <div className="bg-white dark:bg-slate-800 rounded-lg p-4 border">
                       <p className="font-semibold mb-3">{t('Asset Details:', 'تفصيل الأصول:')}</p>
@@ -447,7 +454,7 @@ export default function SimpleSummaryReport() {
                               <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
                             </div>
                             <span className={`font-medium ${item.amount >= 0 ? 'text-cyan-600' : 'text-red-600'}`}>
-                              {numberFmt.format(item.amount)} {t('EGP', 'ج.م')}
+                              {numberFmt.format(item.amount)} {ccy}
                             </span>
                           </div>
                         ))}
@@ -508,7 +515,7 @@ export default function SimpleSummaryReport() {
                       <div className="border-t pt-2 flex justify-between font-bold text-lg">
                         <span>{t('Net Profit', 'صافي الربح')}</span>
                         <span className={data.profit.net >= 0 ? 'text-green-600' : 'text-red-600'}>
-                          {numberFmt.format(data.profit.net)} {t('EGP', 'ج.م')}
+                          {numberFmt.format(data.profit.net)} {ccy}
                         </span>
                       </div>
                     </div>
@@ -520,14 +527,14 @@ export default function SimpleSummaryReport() {
                         <>
                           <TrendingUp className="w-5 h-5 text-green-600" />
                           <span className="text-green-700 dark:text-green-400">
-                            {t('Project Profit:', 'أرباح المشروع:')} {numberFmt.format(data.profit.net)} {t('EGP', 'ج.م')} ✅
+                            {t('Project Profit:', 'أرباح المشروع:')} {numberFmt.format(data.profit.net)} {ccy} ✅
                           </span>
                         </>
                       ) : (
                         <>
                           <TrendingDown className="w-5 h-5 text-red-600" />
                           <span className="text-red-700 dark:text-red-400">
-                            {t('Project Loss:', 'خسارة المشروع:')} {numberFmt.format(Math.abs(data.profit.net))} {t('EGP', 'ج.م')} ❌
+                            {t('Project Loss:', 'خسارة المشروع:')} {numberFmt.format(Math.abs(data.profit.net))} {ccy} ❌
                           </span>
                         </>
                       )}
@@ -548,7 +555,7 @@ export default function SimpleSummaryReport() {
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="name" />
                         <YAxis />
-                        <Tooltip formatter={(value: number) => numberFmt.format(value) + ' ج.م'} />
+                        <Tooltip formatter={(value: number) => numberFmt.format(value) + ' ' + ccyAr} />
                         <Bar dataKey="value" fill="#3b82f6">
                           {chartData.map((entry, index) => (
                             <Cell key={index} fill={entry.color} />
@@ -579,7 +586,7 @@ export default function SimpleSummaryReport() {
                             <Cell key={index} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: number) => numberFmt.format(value) + ' ج.م'} />
+                        <Tooltip formatter={(value: number) => numberFmt.format(value) + ' ' + ccyAr} />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -619,8 +626,8 @@ export default function SimpleSummaryReport() {
                     <div className="mt-4 bg-white/10 rounded-lg p-3">
                       <p className="text-sm">
                         💡 {t(
-                          `Difference between Capital and Assets: ${numberFmt.format(data.assets.total - data.capital.total)} EGP (${data.assets.total >= data.capital.total ? 'Gain' : 'Loss'})`,
-                          `الفرق بين رأس المال والأصول: ${numberFmt.format(data.assets.total - data.capital.total)} ج.م (${data.assets.total >= data.capital.total ? 'ربح' : 'خسارة'})`
+                          `Difference between Capital and Assets: ${numberFmt.format(data.assets.total - data.capital.total)} ${baseCode} (${data.assets.total >= data.capital.total ? 'Gain' : 'Loss'})`,
+                          `الفرق بين رأس المال والأصول: ${numberFmt.format(data.assets.total - data.capital.total)} ${ccyAr} (${data.assets.total >= data.capital.total ? 'ربح' : 'خسارة'})`
                         )}
                       </p>
                     </div>

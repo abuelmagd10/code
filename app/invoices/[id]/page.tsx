@@ -2194,9 +2194,10 @@ export default function InvoiceDetailPage() {
               reference_type: "payment_reversal",
               reference_id: invoice.id,
               entry_date: new Date().toISOString().slice(0, 10),
+              // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه فى الوصف المخزن
               description: appLang === 'en'
-                ? `${isBank ? 'Bank transfer' : 'Cash'} refund for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} EGP)`
-                : `استرداد ${isBank ? 'بنكي' : 'نقدي'} للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} جنيه)`,
+                ? `${isBank ? 'Bank transfer' : 'Cash'} refund for return - Invoice ${invoice.invoice_number} (${excessPayment.toLocaleString()} ${appCurrency})`
+                : `استرداد ${isBank ? 'بنكي' : 'نقدي'} للمرتجع - الفاتورة ${invoice.invoice_number} (${excessPayment.toLocaleString()} ${appCurrency === 'EGP' ? 'جنيه' : appCurrency})`,
               status: "draft",
             })
             .select()

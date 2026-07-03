@@ -721,20 +721,29 @@ export function CustomerFormDialog({
                           : `${activeInvoicesCount} فاتورة نشطة`}
                       </li>
                     )}
-                    {hasReceivable && (
-                      <li>
-                        {appLang === 'en'
-                          ? `Receivable balance: ${receivableAmount.toFixed(2)} EGP`
-                          : `ذمم مدينة بقيمة: ${receivableAmount.toFixed(2)} ج.م`}
-                      </li>
-                    )}
-                    {hasCreditBalance && (
-                      <li>
-                        {appLang === 'en'
-                          ? `Credit balance: ${creditBalanceAmount.toFixed(2)} EGP`
-                          : `رصيد دائن بقيمة: ${creditBalanceAmount.toFixed(2)} ج.م`}
-                      </li>
-                    )}
+                    {/* v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه */}
+                    {(() => {
+                      const bc = (() => { try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' } })()
+                      const ccyAr = bc === 'EGP' ? 'ج.م' : bc
+                      return (
+                        <>
+                          {hasReceivable && (
+                            <li>
+                              {appLang === 'en'
+                                ? `Receivable balance: ${receivableAmount.toFixed(2)} ${bc}`
+                                : `ذمم مدينة بقيمة: ${receivableAmount.toFixed(2)} ${ccyAr}`}
+                            </li>
+                          )}
+                          {hasCreditBalance && (
+                            <li>
+                              {appLang === 'en'
+                                ? `Credit balance: ${creditBalanceAmount.toFixed(2)} ${bc}`
+                                : `رصيد دائن بقيمة: ${creditBalanceAmount.toFixed(2)} ${ccyAr}`}
+                            </li>
+                          )}
+                        </>
+                      )
+                    })()}
                   </ul>
                   <p className="text-yellow-700 dark:text-yellow-300 mt-2 pt-2 border-t border-yellow-300 dark:border-yellow-700">
                     {appLang === 'en'

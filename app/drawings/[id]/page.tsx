@@ -217,7 +217,8 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                                 </div>
                                 <div>
                                     <Label className="text-muted-foreground">{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
-                                    <p className="font-medium">{Number(drawing.amount).toLocaleString()} EGP</p>
+                                    {/* v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه */}
+                                    <p className="font-medium">{Number(drawing.amount).toLocaleString()} {(() => { try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' } })()}</p>
                                 </div>
                                 {drawing.journal_entry_id && drawing.journal_entry && drawing.journal_entry.entry_number != null && (
                                     <div>

@@ -607,9 +607,12 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
   const { appLang, t, fmtMoney, fmtDate, docTypeLabel, docHref,
           rejectId, rejectReason, setRejectReason, setRejectId, setRejectType,
           runningId, handleApprove, handleReject, canDecide } = ctx
+  // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه
+  const baseCcy = (() => { try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' } })()
+  const ccyLbl = baseCcy === 'EGP' ? t("ج.م", "EGP") : baseCcy
   const discountLabel = d.discount_type === "percent"
     ? `${fmtMoney(d.discount_value)}%`
-    : `${fmtMoney(d.discount_value)} ${t("ج.م", "EGP")}`
+    : `${fmtMoney(d.discount_value)} ${ccyLbl}`
   const ratio = d.document_total && d.document_total > 0 && d.discount_type === "amount"
     ? (d.discount_value / d.document_total) * 100
     : null
@@ -628,7 +631,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
               <p className="text-xs text-muted-foreground mt-0.5">
                 👤 {d.party_name ?? t("بدون طرف", "(no party)")}
                 {d.document_total != null && (
-                  <> · 💰 {t("إجمالى", "Total")}: {fmtMoney(d.document_total)} {t("ج.م", "EGP")}</>
+                  <> · 💰 {t("إجمالى", "Total")}: {fmtMoney(d.document_total)} {ccyLbl}</>
                 )}
               </p>
               <p className="text-xs mt-1">
@@ -1782,7 +1785,8 @@ function ApprovalsContent() {
                                                        null
             const valueLabel = d.discount_type === "percent"
               ? `الخصم: ${d.discount_value}%`
-              : `الخصم: ${d.discount_value} ج.م`
+              // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه
+              : `الخصم: ${d.discount_value} ${(() => { try { const c = localStorage.getItem('app_currency') || 'EGP'; return c === 'EGP' ? 'ج.م' : c } catch { return 'ج.م' } })()}`
             // v3.74.470 — build amendment context from the prior
             // approval when supersedes_approval_id is set.
             const scope = scopeByDoc.get(`${d.document_type}:${d.document_id}`) ?? { branch_id: null, warehouse_id: null }

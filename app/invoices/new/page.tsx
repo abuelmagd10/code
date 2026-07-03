@@ -1189,7 +1189,7 @@ export default function NewInvoicePage() {
                             <div className="flex flex-col">
                               <span className="font-medium">{so.so_number}</span>
                               <span className="text-xs text-gray-500">
-                                {(so.customers as any)?.name} • {so.so_date} • {so.total || so.total_amount} {appLang === 'en' ? 'EGP' : 'جنيه'}
+                                {(so.customers as any)?.name} • {so.so_date} • {so.total || so.total_amount} {baseCurrency === 'EGP' ? (appLang === 'en' ? 'EGP' : 'جنيه') : baseCurrency}
                               </span>
                             </div>
                           </SelectItem>
@@ -1219,7 +1219,7 @@ export default function NewInvoicePage() {
                         <p><strong>{appLang === 'en' ? 'Order #:' : 'رقم الأمر:'}</strong> {selectedSalesOrder.so_number}</p>
                         <p><strong>{appLang === 'en' ? 'Customer:' : 'العميل:'}</strong> {(selectedSalesOrder.customers as any)?.name}</p>
                         <p><strong>{appLang === 'en' ? 'Date:' : 'التاريخ:'}</strong> {selectedSalesOrder.so_date}</p>
-                        <p><strong>{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</strong> {selectedSalesOrder.total || selectedSalesOrder.total_amount} {appLang === 'en' ? 'EGP' : 'جنيه'}</p>
+                        <p><strong>{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</strong> {selectedSalesOrder.total || selectedSalesOrder.total_amount} {baseCurrency === 'EGP' ? (appLang === 'en' ? 'EGP' : 'جنيه') : baseCurrency}</p>
                       </div>
                     </div>
                   )}
