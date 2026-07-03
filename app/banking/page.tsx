@@ -561,6 +561,21 @@ export default function BankingPage() {
           ? localStorage.getItem("app_currency") || "EGP"
           : "EGP";
 
+      // v3.74.517 — تأكيد صريح عند اختلاف عملة التحويل عن عملة حساب المصدر
+      // (المصدر يخرج منه المال بعملته؛ الاختلاف استثناء يجب الوعى به)
+      {
+        const fromAcc: any = accounts.find((a) => a.id === transfer.from_id)
+        const fromCcy = String(fromAcc?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+        const trCcy = String(transfer.currency || '').toUpperCase()
+        if (fromAcc && fromCcy !== trCcy) {
+          const equiv = (Number(transfer.amount || 0) * (exchangeRate || 1)).toFixed(2)
+          const ok = window.confirm(appLang === "en"
+            ? `Exception: transfer currency (${trCcy}) differs from the source account "${fromAcc.account_name}" currency (${fromCcy}).\nThe source will be affected by the equivalent ${equiv} ${baseCurrency}. Continue?`
+            : `تأكيد استثنائى: عملة التحويل (${trCcy}) تختلف عن عملة حساب المصدر "${fromAcc.account_name}" (${fromCcy}).\nسيتأثر المصدر بالمعادل ${equiv} ${baseCurrency} بسعر الصرف المختار. هل تريد المتابعة؟`)
+          if (!ok) { setSaving(false); return }
+        }
+      }
+
       // Calculate base amount if different currency
       const finalBaseAmount =
         transfer.currency === baseCurrency ? transfer.amount : baseAmount;
@@ -766,9 +781,19 @@ export default function BankingPage() {
                     <select
                       className="w-full border rounded px-2 py-1"
                       value={transfer.currency}
-                      onChange={(e) =>
-                        setTransfer({ ...transfer, currency: e.target.value })
-                      }
+                      onChange={(e) => {
+                        // v3.74.517 — تغيير العملة يفحص حساب المصدر: إن خالف
+                        // العملة الجديدة يُصفَّر ليعيد المستخدم اختياره صحيحاً
+                        const v = e.target.value
+                        const baseCur = typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"
+                        const fromAcc: any = accounts.find((a) => a.id === transfer.from_id)
+                        const fromCcy = String(fromAcc?.original_currency || '').toUpperCase() || baseCur.toUpperCase()
+                        if (fromAcc && fromCcy !== v.toUpperCase()) {
+                          setTransfer({ ...transfer, currency: v, from_id: "" })
+                        } else {
+                          setTransfer({ ...transfer, currency: v })
+                        }
+                      }}
                     >
                       {currencies.length > 0 ? (
                         currencies.map((c) => (

@@ -256,7 +256,8 @@ export default function NewPurchaseReturnPage() {
       // v3.74.42: branch-scope filter for non-privileged users + is_active filter
       let acctQuery = supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, sub_type, branch_id")
+        // v3.74.517 — original_currency لمطابقة عملة حساب الاسترداد
+        .select("id, account_code, account_name, sub_type, branch_id, original_currency")
         .eq("company_id", loadedCompanyId)
         .in("sub_type", ["cash", "bank"])
         .eq("is_active", true)
@@ -1745,13 +1746,25 @@ export default function NewPurchaseReturnPage() {
                     onChange={e => setSelectedRefundAccountId(e.target.value)}
                   >
                     <option value="">{appLang === 'en' ? '-- Select account --' : '-- اختر الحساب --'}</option>
+                    {/* v3.74.517 — أولوية للحسابات المطابقة لعملة المرتجع؛
+                        غير المطابق يظهر بلاحقة عملته للتمييز */}
                     {cashBankAccounts
                       .filter(a => form.settlement_method === 'cash' ? a.sub_type === 'cash' : a.sub_type === 'bank')
-                      .map(a => (
-                        <option key={a.id} value={a.id}>
-                          {a.account_code ? `${a.account_code} - ` : ''}{a.account_name}
-                        </option>
-                      ))}
+                      .sort((a: any, b: any) => {
+                        const cc = form.currency.toUpperCase()
+                        const am = ((String(a.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()) === cc) ? 0 : 1
+                        const bm = ((String(b.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()) === cc) ? 0 : 1
+                        return am - bm
+                      })
+                      .map((a: any) => {
+                        const ccy = String(a.original_currency || '').toUpperCase()
+                        const suffix = ccy && ccy !== baseCurrency.toUpperCase() ? ` — ${ccy}` : ''
+                        return (
+                          <option key={a.id} value={a.id}>
+                            {a.account_code ? `${a.account_code} - ` : ''}{a.account_name}{suffix}
+                          </option>
+                        )
+                      })}
                     {/* عرض الحسابات الأخرى كاحتياطي */}
                     {cashBankAccounts.filter(a => form.settlement_method === 'cash' ? a.sub_type === 'cash' : a.sub_type === 'bank').length === 0 &&
                       cashBankAccounts.map(a => (
@@ -1760,6 +1773,20 @@ export default function NewPurchaseReturnPage() {
                         </option>
                       ))}
                   </select>
+                  {/* v3.74.517 — تنبيه عند اختلاف عملة حساب الاسترداد عن عملة المرتجع */}
+                  {(() => {
+                    const acc: any = cashBankAccounts.find((a) => a.id === selectedRefundAccountId)
+                    if (!acc) return null
+                    const accCcy = String(acc.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                    if (accCcy === form.currency.toUpperCase()) return null
+                    return (
+                      <p className="text-[11px] mt-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                        ⚠️ {appLang === 'en'
+                          ? `Account currency (${accCcy}) differs from the return currency (${form.currency.toUpperCase()}) — the equivalent will apply at the selected rate.`
+                          : `عملة الحساب (${accCcy}) تختلف عن عملة المرتجع (${form.currency.toUpperCase()}) — سيُطبق المعادل بسعر الصرف المختار.`}
+                      </p>
+                    )
+                  })()}
                   {cashBankAccounts.length === 0 && (
                     <p className="text-xs text-amber-600 mt-1">
                       {appLang === 'en'

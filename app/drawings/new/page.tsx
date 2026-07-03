@@ -43,6 +43,8 @@ export default function NewDrawingPage() {
     const [description, setDescription] = useState("")
     const [currencyCode, setCurrencyCode] = useState("EGP")
     const [exchangeRate, setExchangeRate] = useState<number>(1)
+    // v3.74.517 — استثناء إظهار الحسابات بعملات أخرى
+    const [showAllPayAccounts, setShowAllPayAccounts] = useState(false)
     // v3.18.0: base currency for FX selector (loaded from company)
     const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
 
@@ -109,7 +111,8 @@ export default function NewDrawingPage() {
 
             let payAcctQuery = supabase
                 .from("chart_of_accounts")
-                .select("id, account_code, account_name, branch_id")
+                // v3.74.517 — original_currency لمطابقة عملة الحساب مع عملة المسحوب
+                .select("id, account_code, account_name, branch_id, original_currency")
                 .eq("company_id", cid)
                 .in("sub_type", ["cash", "bank"])
                 .eq("is_active", true)
@@ -134,6 +137,20 @@ export default function NewDrawingPage() {
         if (amount <= 0) {
             toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Amount must be greater than 0' : 'يجب أن يكون المبلغ أكبر من 0', variant: "destructive" })
             return
+        }
+        // v3.74.517 — تأكيد صريح عند اختلاف عملة المسحوب عن عملة الحساب
+        {
+            const acc: any = paymentAccounts.find((a: any) => a.id === paymentAccountId)
+            if (acc) {
+                const accCcy = String(acc.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                if (accCcy !== currencyCode.toUpperCase()) {
+                    const equiv = (amount * (exchangeRate || 1)).toFixed(2)
+                    const ok = window.confirm(appLang === 'en'
+                        ? `Exception: drawing currency (${currencyCode.toUpperCase()}) differs from the account "${acc.account_name}" currency (${accCcy}).\nThe account will be affected by the equivalent ${equiv} ${baseCurrency}. Continue?`
+                        : `تأكيد استثنائى: عملة المسحوب (${currencyCode.toUpperCase()}) تختلف عن عملة الحساب "${acc.account_name}" (${accCcy}).\nسيتأثر الحساب بالمعادل ${equiv} ${baseCurrency} بسعر الصرف المختار. هل تريد المتابعة؟`)
+                    if (!ok) return
+                }
+            }
         }
         if (!paymentAccountId) {
             toast({ title: appLang === 'en' ? 'Error' : 'خطأ', description: appLang === 'en' ? 'Payment account is required' : 'حساب الدفع مطلوب', variant: "destructive" })
@@ -241,7 +258,19 @@ export default function NewDrawingPage() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
-                                    <Select value={currencyCode} onValueChange={setCurrencyCode}>
+                                    <Select value={currencyCode} onValueChange={(v) => {
+                                        setCurrencyCode(v)
+                                        // v3.74.517 — تغيير العملة يعيد ضبط حساب الدفع لأول مطابق
+                                        setShowAllPayAccounts(false)
+                                        const vU = v.toUpperCase()
+                                        const cur: any = paymentAccounts.find((a: any) => a.id === paymentAccountId)
+                                        const curCcy = String(cur?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                                        if (!cur || curCcy !== vU) {
+                                            const first: any = paymentAccounts.find((a: any) => (String(a.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()) === vU)
+                                            setPaymentAccountId(first?.id || "")
+                                        }
+                                        if (vU === baseCurrency.toUpperCase()) setExchangeRate(1)
+                                    }}>
                                         <SelectTrigger>
                                             <SelectValue />
                                         </SelectTrigger>
@@ -269,16 +298,37 @@ export default function NewDrawingPage() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label>{appLang === 'en' ? 'Payment Account' : 'حساب الدفع'}</Label>
-                                    <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+                                    {/* v3.74.517 — الحسابات المطابقة للعملة + استثناء واعٍ */}
+                                    <Select value={paymentAccountId} onValueChange={(v) => {
+                                        setPaymentAccountId(v)
+                                        if (!showAllPayAccounts && v) {
+                                            const acc: any = paymentAccounts.find((a: any) => a.id === v)
+                                            const accCcy = String(acc?.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()
+                                            if (accCcy !== currencyCode.toUpperCase()) {
+                                                setCurrencyCode(accCcy)
+                                                if (accCcy === baseCurrency.toUpperCase()) setExchangeRate(1)
+                                            }
+                                        }
+                                    }}>
                                         <SelectTrigger>
                                             <SelectValue placeholder={appLang === 'en' ? 'Select Account' : 'اختر الحساب'} />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {paymentAccounts.map(Acc => (
-                                                <SelectItem key={Acc.id} value={Acc.id}>{Acc.account_code} - {Acc.account_name}</SelectItem>
-                                            ))}
+                                            {(showAllPayAccounts
+                                                ? paymentAccounts
+                                                : paymentAccounts.filter((a: any) => (String(a.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()) === currencyCode.toUpperCase())
+                                            ).map((Acc: any) => {
+                                                const ccy = String(Acc.original_currency || '').toUpperCase()
+                                                const suffix = ccy && ccy !== baseCurrency.toUpperCase() ? ` — ${ccy}` : ''
+                                                return (<SelectItem key={Acc.id} value={Acc.id}>{Acc.account_code} - {Acc.account_name}{suffix}</SelectItem>)
+                                            })}
                                         </SelectContent>
                                     </Select>
+                                    {!showAllPayAccounts && paymentAccounts.some((a: any) => (String(a.original_currency || '').toUpperCase() || baseCurrency.toUpperCase()) !== currencyCode.toUpperCase()) && (
+                                        <button type="button" className="text-[11px] text-blue-600 hover:underline" onClick={() => setShowAllPayAccounts(true)}>
+                                            {appLang === 'en' ? 'Show accounts in other currencies (exception)' : 'إظهار الحسابات بعملات أخرى (استثناء)'}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
