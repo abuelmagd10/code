@@ -738,6 +738,10 @@ interface UnifiedHistoryEntry {
   // diff card the owner saw when approving.
   raw_current?: PendingDiscountApproval | null
   raw_prior?: NonNullable<PendingDiscountApproval["prior_approval"]> | null
+  // v3.74.511 — معرفات المنفذين تُحل إلى إيميلات دفعة واحدة عبر
+  // /api/members-emails بعد تجميع السجل (كانت "—" فى كل الأقسام عدا الخصومات)
+  requested_by_id?: string | null
+  decided_by_id?: string | null
 }
 
 type UnifiedHistoryCtx = {
@@ -1989,7 +1993,7 @@ function ApprovalsContent() {
           .from("payments")
           .select(`
             id, reference_number, amount, currency_code, original_currency, status,
-            created_at, approved_at, approved_by, rejection_reason,
+            created_at, approved_at, approved_by, rejected_by, created_by, rejection_reason,
             branch_id, warehouse_id,
             supplier_id, branches(name)
           `)
@@ -2015,8 +2019,10 @@ function ApprovalsContent() {
             value_label: `${Number(p.amount).toFixed(2)} ${p.original_currency || p.currency_code || "EGP"}`,
             status: status as any,
             requested_by_email: null,
+            requested_by_id: p.created_by ?? null,
             requested_at: p.created_at,
             decided_by_email: null,
+            decided_by_id: p.approved_by ?? p.rejected_by ?? null,
             decided_at: p.approved_at ?? null,
             decision_note: p.rejection_reason ?? null,
           })
@@ -2124,6 +2130,7 @@ function ApprovalsContent() {
           .from("invoices")
           .select(`id, invoice_number, total_amount, warehouse_status,
                    created_at, updated_at, warehouse_rejected_at,
+                   created_by_user_id, posted_by_user_id, approved_by, rejected_by,
                    warehouse_rejection_reason, branch_id, warehouse_id,
                    customer_id, customers(name)`)
           .eq("company_id", cid)
@@ -2141,8 +2148,10 @@ function ApprovalsContent() {
             value_label: `${Number(r.total_amount).toFixed(2)}`,
             status: status as any,
             requested_by_email: null,
+            requested_by_id: r.posted_by_user_id ?? r.created_by_user_id ?? null,
             requested_at: r.created_at,
             decided_by_email: null,
+            decided_by_id: r.approved_by ?? r.rejected_by ?? null,
             decided_at: r.warehouse_rejected_at ?? r.updated_at ?? null,
             decision_note: r.warehouse_rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
@@ -2161,6 +2170,7 @@ function ApprovalsContent() {
           .from("bills")
           .select(`id, bill_number, total_amount, receipt_status,
                    created_at, updated_at,
+                   created_by, created_by_user_id, received_by, rejected_by,
                    receipt_rejection_reason, branch_id, warehouse_id,
                    supplier_id, suppliers(name)`)
           .eq("company_id", cid)
@@ -2178,8 +2188,10 @@ function ApprovalsContent() {
             value_label: `${Number(r.total_amount).toFixed(2)}`,
             status: status as any,
             requested_by_email: null,
+            requested_by_id: r.created_by_user_id ?? r.created_by ?? null,
             requested_at: r.created_at,
             decided_by_email: null,
+            decided_by_id: r.received_by ?? r.rejected_by ?? null,
             decided_at: r.updated_at ?? null,
             decision_note: r.receipt_rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
@@ -2193,6 +2205,7 @@ function ApprovalsContent() {
         const { data: wos } = await supabase
           .from("inventory_write_offs")
           .select(`id, write_off_number, total_cost, status, reason,
+                   created_by, approved_by, rejected_by,
                    created_at, approved_at, rejected_at, rejection_reason`)
           .eq("company_id", cid)
           .in("status", ["approved", "rejected", "posted"])
@@ -2209,8 +2222,10 @@ function ApprovalsContent() {
             value_label: `${Number(r.total_cost).toFixed(2)}`,
             status: status as any,
             requested_by_email: null,
+            requested_by_id: r.created_by ?? null,
             requested_at: r.created_at,
             decided_by_email: null,
+            decided_by_id: r.approved_by ?? r.rejected_by ?? null,
             decided_at: r.approved_at ?? r.rejected_at ?? null,
             decision_note: r.rejection_reason ?? r.reason ?? null,
           })
@@ -2330,8 +2345,9 @@ function ApprovalsContent() {
           .select(`
             id, return_number, total_amount, workflow_status, status,
             created_at, approved_at, rejected_at, rejection_reason,
-            branch_id, warehouse_id,
-            supplier_id, suppliers(name), branches(name)
+            branch_id, warehouse_id, bill_id,
+            created_by, approved_by, rejected_by,
+            supplier_id, suppliers(name), branches(name), bills(bill_number)
           `)
           .eq("company_id", cid)
           // v3.74.510 — القرار الإدارى (اعتماد/رفض) هو الحدث المسجَّل،
@@ -2348,14 +2364,16 @@ function ApprovalsContent() {
           merged.push({
             id: `pret-${r.id}`,
             category: "purchase_return",
-            doc_label: `مرتجع مشتريات · ${r.return_number ?? r.id.slice(0, 8)}`,
+            doc_label: `مرتجع مشتريات · ${r.return_number ?? r.id.slice(0, 8)}${r.bills?.bill_number ? ` · 🧾 ${r.bills.bill_number}` : ""}`,
             doc_href: `/purchase-returns/${r.id}`,
             party_label: r.suppliers?.name ?? null,
             value_label: `${Number(r.total_amount).toFixed(2)}`,
             status: status as any,
             requested_by_email: null,
+            requested_by_id: r.created_by ?? null,
             requested_at: r.created_at,
             decided_by_email: null,
+            decided_by_id: r.approved_by ?? r.rejected_by ?? null,
             decided_at,
             decision_note: r.rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
@@ -2369,6 +2387,36 @@ function ApprovalsContent() {
         const tb = b.decided_at ? new Date(b.decided_at).getTime() : new Date(b.requested_at).getTime()
         return tb - ta
       })
+
+      // v3.74.511 — حل إيميلات المنفذين دفعة واحدة (كانت "—" فى كل
+      // الأقسام عدا الخصومات التى يثريها الـ API الخاص بها).
+      try {
+        const idSet = new Set<string>()
+        for (const m of merged) {
+          if (m.requested_by_id && !m.requested_by_email) idSet.add(m.requested_by_id)
+          if (m.decided_by_id && !m.decided_by_email) idSet.add(m.decided_by_id)
+        }
+        if (idSet.size > 0) {
+          const res = await fetch("/api/members-emails", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userIds: Array.from(idSet), companyId: cid }),
+          })
+          if (res.ok) {
+            const j = await res.json().catch(() => ({}))
+            const emailMap: Record<string, string> = j?.map || {}
+            for (const m of merged) {
+              if (!m.requested_by_email && m.requested_by_id && emailMap[m.requested_by_id]) {
+                m.requested_by_email = emailMap[m.requested_by_id]
+              }
+              if (!m.decided_by_email && m.decided_by_id && emailMap[m.decided_by_id]) {
+                m.decided_by_email = emailMap[m.decided_by_id]
+              }
+            }
+          }
+        }
+      } catch { /* best-effort enrichment */ }
+
       setHistory(merged)
       setHistoryLoaded(true)
     } catch {
