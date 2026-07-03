@@ -2290,9 +2290,9 @@ function ApprovalsContent() {
       try {
         const [prR, bvR, exR, cdnR, ptR] = await Promise.all([
           supabase.from("purchase_requests").select(`id, request_number, total_estimated_cost, status, created_at, approved_at, rejected_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
-          supabase.from("bank_voucher_requests").select(`id, reference_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("bank_voucher_requests").select(`id, reference_number, amount, status, created_at, reviewed_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
           supabase.from("expenses").select(`id, expense_number, amount, status, created_at, approved_at, rejected_at, rejection_reason`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
-          supabase.from("customer_debit_notes").select(`id, debit_note_number, total_amount, approval_status, created_at, approved_at, rejected_at, rejection_reason, customer_id, customers(name)`).eq("company_id", cid).in("approval_status", ["approved", "rejected"]).order("created_at", { ascending: false }).limit(30),
+          supabase.from("customer_debit_notes").select(`id, debit_note_number, total_amount, approval_status, created_at, approved_at, rejection_reason, customer_id, customers(name)`).eq("company_id", cid).in("approval_status", ["approved", "rejected"]).order("created_at", { ascending: false }).limit(30),
           supabase.from("permission_transfers").select(`id, status, created_at`).eq("company_id", cid).in("status", ["approved", "rejected", "cancelled"]).order("created_at", { ascending: false }).limit(30),
         ])
         for (const r of (prR.data || []) as any[]) {
@@ -2316,7 +2316,7 @@ function ApprovalsContent() {
             value_label: `${Number(r.amount).toFixed(2)}`,
             status: status as any, requested_by_email: null,
             requested_at: r.created_at, decided_by_email: null,
-            decided_at: r.approved_at ?? r.rejected_at ?? null,
+            decided_at: r.reviewed_at ?? null,
             decision_note: r.rejection_reason ?? null,
           })
         }
@@ -2342,7 +2342,7 @@ function ApprovalsContent() {
             value_label: `${Number(r.total_amount).toFixed(2)}`,
             status: r.approval_status as any, requested_by_email: null,
             requested_at: r.created_at, decided_by_email: null,
-            decided_at: r.approved_at ?? r.rejected_at ?? null,
+            decided_at: r.approved_at ?? null,
             decision_note: r.rejection_reason ?? null,
           })
         }
