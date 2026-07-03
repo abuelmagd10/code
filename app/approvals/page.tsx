@@ -2118,10 +2118,12 @@ function ApprovalsContent() {
       // v3.74.481 — dispatch history (invoices with warehouse_status
       // = approved / rejected).
       try {
+        // v3.74.510 — كان يطلب عمود تاريخ اعتماد غير موجود فى جدول الفواتير
+        // فيفشل بصمت ويظهر القسم صفراً دائماً منذ إنشائه.
         const { data: invs } = await supabase
           .from("invoices")
           .select(`id, invoice_number, total_amount, warehouse_status,
-                   created_at, warehouse_approved_at, warehouse_rejected_at,
+                   created_at, updated_at, warehouse_rejected_at,
                    warehouse_rejection_reason, branch_id, warehouse_id,
                    customer_id, customers(name)`)
           .eq("company_id", cid)
@@ -2141,7 +2143,7 @@ function ApprovalsContent() {
             requested_by_email: null,
             requested_at: r.created_at,
             decided_by_email: null,
-            decided_at: r.warehouse_approved_at ?? r.warehouse_rejected_at ?? null,
+            decided_at: r.warehouse_rejected_at ?? r.updated_at ?? null,
             decision_note: r.warehouse_rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
             warehouse_id: r.warehouse_id ?? null,
@@ -2152,14 +2154,17 @@ function ApprovalsContent() {
       // v3.74.481 — goods receipt history (bills with receipt_status
       // = approved / rejected).
       try {
+        // v3.74.510 — كان يطلب عمودى تاريخ اعتماد/رفض غير موجودين فى جدول
+        // bills ويشترط receipt_status='approved' بينما القيمة الفعلية
+        // 'received' — فكان القسم صفراً دائماً منذ إنشائه.
         const { data: bills } = await supabase
           .from("bills")
           .select(`id, bill_number, total_amount, receipt_status,
-                   created_at, receipt_approved_at, receipt_rejected_at,
+                   created_at, updated_at,
                    receipt_rejection_reason, branch_id, warehouse_id,
                    supplier_id, suppliers(name)`)
           .eq("company_id", cid)
-          .in("receipt_status", ["approved", "rejected"])
+          .in("receipt_status", ["received", "rejected"])
           .order("created_at", { ascending: false })
           .limit(50)
         for (const r of (bills || []) as any[]) {
@@ -2175,7 +2180,7 @@ function ApprovalsContent() {
             requested_by_email: null,
             requested_at: r.created_at,
             decided_by_email: null,
-            decided_at: r.receipt_approved_at ?? r.receipt_rejected_at ?? null,
+            decided_at: r.updated_at ?? null,
             decision_note: r.receipt_rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
             warehouse_id: r.warehouse_id ?? null,
@@ -2329,11 +2334,16 @@ function ApprovalsContent() {
             supplier_id, suppliers(name), branches(name)
           `)
           .eq("company_id", cid)
-          .in("workflow_status", ["approved", "rejected", "posted", "completed"])
+          // v3.74.510 — القرار الإدارى (اعتماد/رفض) هو الحدث المسجَّل،
+          // حتى لو كان المرتجع لا يزال بانتظار إخراج المخزن. الفلتر
+          // القديم على workflow_status كان يخفى المعتمد إدارياً
+          // (pending_warehouse) من السجل.
+          .or("approved_at.not.is.null,rejected_at.not.is.null")
           .order("created_at", { ascending: false })
           .limit(100)
         for (const r of (prs || []) as any[]) {
-          const status = r.workflow_status === "rejected" ? "rejected" : "approved"
+          const status = r.workflow_status === "rejected" ? "rejected"
+            : (r.rejected_at && !r.approved_at) ? "rejected" : "approved"
           const decided_at = r.approved_at ?? r.rejected_at ?? null
           merged.push({
             id: `pret-${r.id}`,
