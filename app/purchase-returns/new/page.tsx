@@ -82,6 +82,8 @@ export default function NewPurchaseReturnPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [bills, setBills] = useState<Bill[]>([])
   const [billItems, setBillItems] = useState<BillItem[]>([])
+  // v3.74.515 — نسبة الخصم العام للفاتورة (1 = لا خصم عام)
+  const [docDiscountRatio, setDocDiscountRatio] = useState(1)
   const [products, setProducts] = useState<Product[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
 
@@ -316,7 +318,12 @@ export default function NewPurchaseReturnPage() {
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
           discount_percent: item.discount_percent,
-          line_total: item.line_total,
+          // v3.74.515 — القيمة قبل نسبة الخصم العام تُحسب من الأساسيات
+          // (المخزَّن أصبح بعد النسبة؛ النسبة تُطبق عند الحساب/الحفظ)
+          line_total: (() => {
+            const g = Number(item.quantity || 0) * Number(item.unit_price || 0)
+            return Number((g - (g * Number(item.discount_percent || 0) / 100)).toFixed(2))
+          })(),
         }))
         setItems(loadedItems)
       }
@@ -468,6 +475,7 @@ export default function NewPurchaseReturnPage() {
       setSelectedWarehouseId('')
       setWarehouseStocks({})
       setWarehouseAllocations([])
+      setDocDiscountRatio(1)
       return
     }
     ; (async () => {
@@ -478,6 +486,22 @@ export default function NewPurchaseReturnPage() {
 
       const billItemsData = (data || []) as any[]
       setBillItems(billItemsData)
+
+      // v3.74.515 — نسبة الخصم العام للفاتورة: تقييم المرتجع يجب أن يعكس
+      // القيمة الدفترية بعد الخصم العام وليس صافى البند فقط، وإلا خُفّض
+      // المورد والمخزون بأعلى من التكلفة المسجلة (قرار المالك — الخيار ب).
+      // النسبة = subtotal الفاتورة (بعد الخصم العام) ÷ مجموع صوافى البنود.
+      try {
+        const { data: billRow } = await supabase
+          .from("bills")
+          .select("subtotal")
+          .eq("id", form.bill_id)
+          .maybeSingle()
+        const itemsBase = billItemsData.reduce((s, it) => s + Number(it.line_total || 0), 0)
+        const billSub = Number(billRow?.subtotal || 0)
+        const ratio = itemsBase > 0 && billSub > 0 ? Math.min(billSub / itemsBase, 1) : 1
+        setDocDiscountRatio(Number(ratio.toFixed(6)))
+      } catch { setDocDiscountRatio(1) }
 
       // Auto-populate return items (للمستخدمين غير المميزين)
       const baseItems = billItemsData.map(item => ({
@@ -538,8 +562,9 @@ export default function NewPurchaseReturnPage() {
     })
   }
 
-  const subtotal = useMemo(() => items.reduce((sum, it) => sum + Number(it.line_total || 0), 0), [items])
-  const taxAmount = useMemo(() => items.reduce((sum, it) => sum + (Number(it.line_total || 0) * Number(it.tax_rate || 0) / 100), 0), [items])
+  // v3.74.515 — التقييم بعد نصيب الخصم العام للفاتورة
+  const subtotal = useMemo(() => Number((items.reduce((sum, it) => sum + Number(it.line_total || 0), 0) * docDiscountRatio).toFixed(2)), [items, docDiscountRatio])
+  const taxAmount = useMemo(() => Number((items.reduce((sum, it) => sum + (Number(it.line_total || 0) * docDiscountRatio * Number(it.tax_rate || 0) / 100), 0)).toFixed(2)), [items, docDiscountRatio])
   const total = subtotal + taxAmount
 
   const addManualItem = () => {
@@ -607,18 +632,18 @@ export default function NewPurchaseReturnPage() {
     }))
   }
 
-  // حساب إجمالي التخصيصات
+  // حساب إجمالي التخصيصات — v3.74.515: بعد نصيب الخصم العام
   const allocSubtotal = warehouseAllocations.reduce((sum, alloc) =>
     sum + alloc.items.reduce((s, it) => {
       const gross = it.quantity * it.unit_price
-      const net = gross - (gross * it.discount_percent / 100)
+      const net = (gross - (gross * it.discount_percent / 100)) * docDiscountRatio
       return s + net
     }, 0), 0)
 
   const allocTaxAmount = warehouseAllocations.reduce((sum, alloc) =>
     sum + alloc.items.reduce((s, it) => {
       const gross = it.quantity * it.unit_price
-      const net = gross - (gross * it.discount_percent / 100)
+      const net = (gross - (gross * it.discount_percent / 100)) * docDiscountRatio
       return s + (net * it.tax_rate / 100)
     }, 0), 0)
 
@@ -695,13 +720,14 @@ export default function NewPurchaseReturnPage() {
       const allocItems = alloc.items.filter(it => it.quantity > 0)
       if (allocItems.length === 0) return null
 
+      // v3.74.515 — بعد نصيب الخصم العام
       const allocSub = allocItems.reduce((s, it) => {
         const gross = it.quantity * it.unit_price
-        return s + (gross - (gross * it.discount_percent / 100))
+        return s + (gross - (gross * it.discount_percent / 100)) * docDiscountRatio
       }, 0)
       const allocTax = allocItems.reduce((s, it) => {
         const gross = it.quantity * it.unit_price
-        const net = gross - (gross * it.discount_percent / 100)
+        const net = (gross - (gross * it.discount_percent / 100)) * docDiscountRatio
         return s + (net * it.tax_rate / 100)
       }, 0)
       const allocTot = allocSub + allocTax
@@ -777,7 +803,8 @@ export default function NewPurchaseReturnPage() {
           unit_price: it.unit_price,
           tax_rate: it.tax_rate,
           discount_percent: it.discount_percent,
-          line_total: (() => { const g = it.quantity * it.unit_price; return g - (g * it.discount_percent / 100) })(),
+          // v3.74.515 — صافى البند بعد نصيب الخصم العام
+          line_total: (() => { const g = it.quantity * it.unit_price; return Number(((g - (g * it.discount_percent / 100)) * docDiscountRatio).toFixed(2)) })(),
         }))
       }
     }))
@@ -883,8 +910,9 @@ export default function NewPurchaseReturnPage() {
       const effectiveSelectedWarehouseId = singleAllocItems.length > 0 ? singleAllocWarehouseId : selectedWarehouseId
 
       // إجماليات فعّالة (تأخذ في الاعتبار التخصيصات للمالك/المدير)
-      const effectiveSubtotal = effectiveItems.reduce((sum, it) => sum + Number(it.line_total || 0), 0)
-      const effectiveTaxAmount = effectiveItems.reduce((sum, it) => sum + (Number(it.line_total || 0) * Number(it.tax_rate || 0) / 100), 0)
+      // v3.74.515 — بعد نصيب الخصم العام للفاتورة
+      const effectiveSubtotal = Number((effectiveItems.reduce((sum, it) => sum + Number(it.line_total || 0), 0) * docDiscountRatio).toFixed(2))
+      const effectiveTaxAmount = Number((effectiveItems.reduce((sum, it) => sum + (Number(it.line_total || 0) * docDiscountRatio * Number(it.tax_rate || 0) / 100), 0)).toFixed(2))
       const effectiveTotal = effectiveSubtotal + effectiveTaxAmount
 
       if (effectiveItems.filter(i => i.quantity > 0).length === 0) {
@@ -1142,7 +1170,8 @@ export default function NewPurchaseReturnPage() {
         unit_price: item.unit_price,
         tax_rate: item.tax_rate,
         discount_percent: item.discount_percent,
-        line_total: item.line_total,
+        // v3.74.515 — صافى البند بعد نصيب الخصم العام للفاتورة
+        line_total: Number((Number(item.line_total || 0) * docDiscountRatio).toFixed(2)),
       })) : null
 
       // ===================== 🔥 وضع التعديل: تحديث المرتجع المرفوض وإعادة إرساله =====================
@@ -1155,7 +1184,8 @@ export default function NewPurchaseReturnPage() {
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
           discount_percent: item.discount_percent,
-          line_total: item.line_total,
+          // v3.74.515 — صافى البند بعد نصيب الخصم العام للفاتورة
+          line_total: Number((Number(item.line_total || 0) * docDiscountRatio).toFixed(2)),
         }))
 
         await submitPurchaseReturnCommand({
@@ -1235,7 +1265,8 @@ export default function NewPurchaseReturnPage() {
           unit_price: item.unit_price,
           tax_rate: item.tax_rate,
           discount_percent: item.discount_percent,
-          line_total: item.line_total,
+          // v3.74.515 — صافى البند بعد نصيب الخصم العام للفاتورة
+          line_total: Number((Number(item.line_total || 0) * docDiscountRatio).toFixed(2)),
         })),
         uiSurface: 'purchase_returns_new_page',
       })
@@ -1507,10 +1538,19 @@ export default function NewPurchaseReturnPage() {
 
                   {/* ملخص إجمالي التخصيصات */}
                   {isMultiWarehouse && (
-                    <div className="border-t border-amber-200 dark:border-amber-700 pt-2 flex justify-end gap-6 text-xs text-amber-800 dark:text-amber-200">
-                      <span>{appLang === 'en' ? 'Subtotal' : 'المجموع'}: <strong>{allocSubtotal.toFixed(2)}</strong></span>
-                      <span>{appLang === 'en' ? 'Tax' : 'الضريبة'}: <strong>{allocTaxAmount.toFixed(2)}</strong></span>
-                      <span className="text-base font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {allocTotal.toFixed(2)}</span>
+                    <div className="border-t border-amber-200 dark:border-amber-700 pt-2 flex flex-col items-end gap-1 text-xs text-amber-800 dark:text-amber-200">
+                      <div className="flex justify-end gap-6">
+                        <span>{appLang === 'en' ? 'Subtotal' : 'المجموع'}: <strong>{allocSubtotal.toFixed(2)}</strong></span>
+                        <span>{appLang === 'en' ? 'Tax' : 'الضريبة'}: <strong>{allocTaxAmount.toFixed(2)}</strong></span>
+                        <span className="text-base font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {allocTotal.toFixed(2)}</span>
+                      </div>
+                      {docDiscountRatio < 1 && (
+                        <span className="text-[11px] text-blue-700 dark:text-blue-300">
+                          ℹ️ {appLang === 'en'
+                            ? `Valued net of the bill's document discount (${((1 - docDiscountRatio) * 100).toFixed(2)}%)`
+                            : `التقييم شامل نصيب الخصم العام للفاتورة (${((1 - docDiscountRatio) * 100).toFixed(2)}%)`}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1872,6 +1912,14 @@ export default function NewPurchaseReturnPage() {
                     <div>{appLang === 'en' ? 'Tax' : 'الضريبة'}: {taxAmount.toFixed(2)}</div>
                     <div className="text-lg font-bold">{appLang === 'en' ? 'Total' : 'الإجمالي'}: {total.toFixed(2)}</div>
                   </>
+                )}
+                {/* v3.74.515 — توضيح نصيب الخصم العام فى تقييم المرتجع */}
+                {docDiscountRatio < 1 && (
+                  <div className="text-[11px] text-blue-700 dark:text-blue-300 mt-1">
+                    ℹ️ {appLang === 'en'
+                      ? `Valued net of the bill's document discount (${((1 - docDiscountRatio) * 100).toFixed(2)}%)`
+                      : `التقييم شامل نصيب الخصم العام للفاتورة (${((1 - docDiscountRatio) * 100).toFixed(2)}%)`}
+                  </div>
                 )}
               </div>
             </div>
