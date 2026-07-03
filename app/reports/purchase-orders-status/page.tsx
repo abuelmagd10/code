@@ -40,6 +40,17 @@ export default function PurchaseOrdersStatusReport() {
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ'
   }
+  // v3.74.519 — رمز عملة الشركة الأساسية بدل التثبيت على الجنيه
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const baseSymbol = currencySymbols[baseCurrency] || baseCurrency
+  useEffect(() => {
+    const h = () => { try { setBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {} }
+    window.addEventListener('app_currency_changed', h)
+    return () => window.removeEventListener('app_currency_changed', h)
+  }, [])
 
   useEffect(() => {
     const handler = () => {
@@ -203,7 +214,7 @@ export default function PurchaseOrdersStatusReport() {
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{t('Unbilled', 'غير مفوتر')}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.unbilled}</p>
-                    <p className="text-xs text-gray-500">{currencySymbols['EGP']}{summary.unbilledAmount.toFixed(2)}</p>
+                    <p className="text-xs text-gray-500">{baseSymbol}{summary.unbilledAmount.toFixed(2)}</p>
                   </div>
                 </div>
               </CardContent>
@@ -217,7 +228,7 @@ export default function PurchaseOrdersStatusReport() {
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{t('Partially Billed', 'مفوتر جزئياً')}</p>
                     <p className="text-2xl font-bold text-orange-600">{summary.partiallyBilled}</p>
-                    <p className="text-xs text-gray-500">{currencySymbols['EGP']}{summary.partialAmount.toFixed(2)}</p>
+                    <p className="text-xs text-gray-500">{baseSymbol}{summary.partialAmount.toFixed(2)}</p>
                   </div>
                 </div>
               </CardContent>
@@ -231,7 +242,7 @@ export default function PurchaseOrdersStatusReport() {
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{t('Fully Billed', 'مفوتر بالكامل')}</p>
                     <p className="text-2xl font-bold text-green-600">{summary.fullyBilled}</p>
-                    <p className="text-xs text-gray-500">{currencySymbols['EGP']}{summary.billedAmount.toFixed(2)}</p>
+                    <p className="text-xs text-gray-500">{baseSymbol}{summary.billedAmount.toFixed(2)}</p>
                   </div>
                 </div>
               </CardContent>

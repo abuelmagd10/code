@@ -231,6 +231,17 @@ function SalesOrdersContent() {
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
   };
+  // v3.74.519 — رمز عملة الشركة الأساسية بدل التثبيت على الجنيه
+  const [statsBaseCurrency, setStatsBaseCurrency] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'EGP'
+    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
+  })
+  const statsBaseSymbol = currencySymbols[statsBaseCurrency] || statsBaseCurrency
+  useEffect(() => {
+    const h = () => { try { setStatsBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {} }
+    window.addEventListener('app_currency_changed', h)
+    return () => window.removeEventListener('app_currency_changed', h)
+  }, [])
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
@@ -1700,7 +1711,7 @@ function SalesOrdersContent() {
               {appLang === 'en' ? 'Total Value' : 'إجمالي القيمة'}
             </div>
             <div className="text-xl sm:text-2xl font-bold text-purple-600">
-              {currencySymbols['EGP']}{stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              {statsBaseSymbol}{stats.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
           </Card>
         </div>
