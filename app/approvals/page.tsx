@@ -83,6 +83,13 @@ interface PendingSupplierPayment {
   exchange_rate: number | null
   notes: string | null
   reference_number: string | null
+  // v3.74.523 — allocations. Payments here don't set payments.bill_id
+  // directly; they link through the payment_allocations table. A single
+  // payment can be split across multiple bills, so we carry the primary
+  // (largest / first) allocation on the card and a count for the rest.
+  po_no: string | null
+  allocation_count: number
+  allocated_total: number | null
   type: "supplier_payment"
 }
 
@@ -1295,23 +1302,44 @@ function ApprovalsContent() {
           .not("supplier_id", "is", null)
           .order("created_at", { ascending: true })
           .limit(100)
-        // v3.74.503 — payments has NO FK to suppliers/bills, so PostgREST
-        // embeds fail with 400. Batch-fetch the names in a second pass.
-        // v3.74.521 — same for accounts + user emails (also unlinked FKs).
-        // We also fetch the bills' outstanding amounts (total - paid) so
-        // the owner can spot over- and under-payments before deciding.
+
+        const payIds = (pays || []).map((p: any) => p.id)
         const paySupplierIds = Array.from(new Set((pays || []).map((p: any) => p.supplier_id).filter(Boolean)))
-        const payBillIds = Array.from(new Set((pays || []).map((p: any) => p.bill_id).filter(Boolean)))
         const payAccountIds = Array.from(new Set((pays || []).map((p: any) => p.account_id).filter(Boolean)))
         const payUserIds = Array.from(new Set((pays || [])
           .map((p: any) => p.created_by_user_id || p.created_by)
           .filter(Boolean)))
+
+        // v3.74.523 — bill link isn't on payments.bill_id (that column
+        // stays NULL for allocated payments). It's in payment_allocations
+        // keyed by payment_id. We batch-fetch the allocations first, then
+        // fold the resulting bill_ids into the bills batch so a single
+        // payment allocated to N bills doesn't require N round-trips.
+        const allocsRes = payIds.length
+          ? await supabase.from("payment_allocations")
+              .select("payment_id, bill_id, invoice_id, allocated_amount")
+              .in("payment_id", payIds)
+          : { data: [] as any[] }
+        const allocations = ((allocsRes.data || []) as any[])
+        const allocsByPayment = new Map<string, any[]>()
+        for (const a of allocations) {
+          if (!allocsByPayment.has(a.payment_id)) allocsByPayment.set(a.payment_id, [])
+          allocsByPayment.get(a.payment_id)!.push(a)
+        }
+        const allocBillIds = Array.from(new Set(allocations.map(a => a.bill_id).filter(Boolean)))
+
+        // v3.74.503/521 — payments has NO FK to suppliers/bills, so
+        // PostgREST embeds fail with 400. Batch-fetch in a second pass.
+        // v3.74.523 — payBillIds now comes from allocations, not from the
+        // (always-null) payments.bill_id.
         const [paySupsRes, payBillsRes, payAcctsRes, payUsersRes] = await Promise.all([
           paySupplierIds.length
             ? supabase.from("suppliers").select("id, name").in("id", paySupplierIds)
             : Promise.resolve({ data: [] as any[] }),
-          payBillIds.length
-            ? supabase.from("bills").select("id, bill_number, total_amount, paid_amount, currency_code").in("id", payBillIds)
+          allocBillIds.length
+            ? supabase.from("bills")
+                .select("id, bill_number, total_amount, paid_amount, currency_code, purchase_order_id")
+                .in("id", allocBillIds)
             : Promise.resolve({ data: [] as any[] }),
           // v3.74.522 — chart_of_accounts uses `original_currency`, NOT
           // `currency_code`. The previous select failed silently and the
@@ -1331,29 +1359,47 @@ function ApprovalsContent() {
         const payBillMap = new Map(((payBillsRes.data || []) as any[]).map((b: any) => [b.id, b]))
         const payAcctMap = new Map(((payAcctsRes.data || []) as any[]).map((a: any) => [a.id, a]))
         const payUserMap = new Map(((payUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
+
+        // v3.74.523 — resolve PO numbers for the bills that carry one.
+        // Same round-trip pattern (no FK embed).
+        const payPoIds = Array.from(new Set(((payBillsRes.data || []) as any[])
+          .map((b: any) => b.purchase_order_id)
+          .filter(Boolean)))
+        const payPosRes = payPoIds.length
+          ? await supabase.from("purchase_orders").select("id, po_number").in("id", payPoIds)
+          : { data: [] as any[] }
+        const payPoMap = new Map(((payPosRes.data || []) as any[]).map((po: any) => [po.id, po.po_number]))
+
         setSupplierPayments((pays || []).map((p: any) => {
-          const billRow = p.bill_id ? payBillMap.get(p.bill_id) : null
           const acctRow = p.account_id ? payAcctMap.get(p.account_id) : null
-          const billTotal = billRow ? Number(billRow.total_amount || 0) : null
-          const billPaid = billRow ? Number(billRow.paid_amount || 0) : null
+          const allocs = allocsByPayment.get(p.id) || []
+          // Pick the primary bill = the allocation with the largest amount.
+          // For the common 1-allocation case this is just that allocation.
+          const primaryAlloc = allocs.length
+            ? allocs.slice().sort((a: any, b: any) => Number(b.allocated_amount || 0) - Number(a.allocated_amount || 0))[0]
+            : null
+          const primaryBill = primaryAlloc?.bill_id ? payBillMap.get(primaryAlloc.bill_id) : null
+          const primaryPoNo = primaryBill?.purchase_order_id ? payPoMap.get(primaryBill.purchase_order_id) : null
+          const billTotal = primaryBill ? Number(primaryBill.total_amount || 0) : null
+          const billPaid = primaryBill ? Number(primaryBill.paid_amount || 0) : null
+          const allocatedTotal = allocs.length
+            ? Number(allocs.reduce((s: number, a: any) => s + Number(a.allocated_amount || 0), 0).toFixed(4))
+            : null
           return {
             id: p.id,
             payment_no: p.reference_number ?? null,
             supplier_name: paySupMap.get(p.supplier_id) ?? null,
             amount: Number(p.amount || 0),
             currency: String(p.original_currency || p.currency_code || "EGP"),
-            bill_id: p.bill_id ?? null,
-            bill_no: billRow?.bill_number ?? null,
+            bill_id: primaryAlloc?.bill_id ?? null,
+            bill_no: primaryBill?.bill_number ?? null,
             branch_name: p.branches?.name ?? null,
             warehouse_name: p.warehouses?.name ?? null,
             requested_at: p.created_at,
             requested_by_email: payUserMap.get(p.created_by_user_id || p.created_by) ?? null,
-            // v3.74.521 — enrichment
             payment_date: p.payment_date ?? null,
             payment_method: p.payment_method ?? null,
             account_name: acctRow?.account_name ?? null,
-            // v3.74.522 — chart_of_accounts stores currency in
-            // original_currency, not currency_code (see loader).
             account_currency: acctRow?.original_currency ?? null,
             bill_total: billTotal,
             bill_paid: billPaid,
@@ -1365,6 +1411,9 @@ function ApprovalsContent() {
             exchange_rate: p.exchange_rate != null ? Number(p.exchange_rate) : null,
             notes: p.notes ?? null,
             reference_number: p.reference_number ?? null,
+            po_no: primaryPoNo ?? null,
+            allocation_count: allocs.length,
+            allocated_total: allocatedTotal,
             type: "supplier_payment" as const,
           }
         }))
@@ -3361,11 +3410,20 @@ function ApprovalsContent() {
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 🏭 <span className="font-semibold text-foreground">{p.supplier_name ?? "—"}</span>
                                 {p.bill_no ? (
-                                  <> · 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{p.bill_no}</span></>
+                                  <>
+                                    {" "}· 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{p.bill_no}</span>
+                                    {/* v3.74.523 — PO the bill was raised against */}
+                                    {p.po_no && <> · 📄 {t("أمر شراء", "PO")}: <span className="font-semibold">{p.po_no}</span></>}
+                                    {/* v3.74.523 — flag multi-bill splits */}
+                                    {p.allocation_count > 1 && (
+                                      <> · <span className="text-indigo-700 dark:text-indigo-300 font-semibold">
+                                        + {p.allocation_count - 1} {t("فاتورة أخرى", "more bill(s)")}
+                                      </span></>
+                                    )}
+                                  </>
                                 ) : (
-                                  // v3.74.522 — payments without a bill_id are
-                                  // "on-account" advances/settlements. Say so
-                                  // instead of leaving the line looking empty.
+                                  // v3.74.522 — payments without allocations
+                                  // are on-account advances/settlements.
                                   <> · 🧾 <span className="font-semibold text-amber-700 dark:text-amber-400">{t("دفع على الحساب (بدون فاتورة)", "On-account (no bill)")}</span></>
                                 )}
                               </p>
@@ -4721,7 +4779,7 @@ function ApprovalsContent() {
                         {isAdminLike && rejectId === r.id && (
                           <div className="mt-3 space-y-2">
                             <textarea
-                              value={rejectReason}
+                                          value={rejectReason}
                               onChange={e => setRejectReason(e.target.value)}
                               placeholder={t("سبب الرفض...", "Rejection reason...")}
                               rows={2}

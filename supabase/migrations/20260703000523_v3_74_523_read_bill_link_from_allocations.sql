@@ -1,0 +1,25 @@
+-- v3.74.523 — The payment card was still showing "on-account" for a
+-- payment that /payments correctly listed as tied to BILL-0001 / PO-0001.
+-- Root cause: payments.bill_id is NULL for allocated payments in this
+-- app. The real link is in a separate table `payment_allocations`
+-- (payment_id, bill_id, invoice_id, allocated_amount) and each bill's
+-- purchase_order_id points to the PO on `bills`, not on payments.
+--
+-- Loader change:
+--   1. Batch-fetch payment_allocations WHERE payment_id IN (…)
+--   2. Fold the discovered bill_ids into the bills batch (also grab
+--      bills.purchase_order_id in the same select)
+--   3. Batch-fetch purchase_orders for those PO ids (po_number)
+--   4. Group allocations by payment_id and pick the "primary" = the
+--      allocation with the largest allocated_amount. That's what the
+--      card shows.
+--   5. Also carry allocation_count so the card can flag multi-bill
+--      splits: "+2 فاتورة أخرى".
+--
+-- Card change:
+--   - Bill line now: 🧾 BILL-0001 · 📄 PO-0001 (+ multi-bill hint)
+--   - "on-account" label is now reserved for payments with ZERO
+--     allocations (real advances/settlements).
+--
+-- No DB schema change. This migration file is a doc stamp so the
+-- release script's version-grep guard finds a matching migration.
