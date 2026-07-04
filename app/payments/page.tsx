@@ -361,6 +361,10 @@ export default function PaymentsPage() {
     original_currency: "", exchange_rate: "",
   })
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
+  // v3.74.526 — exception mode for the correction dialog's account list,
+  // mirroring showAllPayAccounts in the supplier-payment form. When false
+  // the account dropdown shows only accounts matching the chosen currency.
+  const [showAllCorrectionAccounts, setShowAllCorrectionAccounts] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
@@ -2680,6 +2684,7 @@ export default function PaymentsPage() {
                                     original_currency: "",
                                     exchange_rate: "",
                                   })
+                                  setShowAllCorrectionAccounts(false)
                                   setCorrectionOpen(true)
                                 }}
                               >
@@ -2731,6 +2736,7 @@ export default function PaymentsPage() {
                                     original_currency: "",
                                     exchange_rate: "",
                                   })
+                                  setShowAllCorrectionAccounts(false)
                                   setCorrectionOpen(true)
                                 }}
                               >
@@ -3402,6 +3408,7 @@ export default function PaymentsPage() {
                                     original_currency: "",
                                     exchange_rate: "",
                                   })
+                                  setShowAllCorrectionAccounts(false)
                                   setCorrectionOpen(true)
                                 }}
                               >
@@ -3824,7 +3831,7 @@ export default function PaymentsPage() {
         </Dialog>
 
         {/* v3.74.114 - Request Correction dialog */}
-        <Dialog open={correctionOpen} onOpenChange={(o) => { if (!o) { setCorrectionOpen(false); setCorrectionPayment(null) } }}>
+        <Dialog open={correctionOpen} onOpenChange={(o) => { if (!o) { setCorrectionOpen(false); setCorrectionPayment(null); setShowAllCorrectionAccounts(false) } }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{appLang === 'en' ? 'Request Payment Correction' : 'طَلَب تَصحيح دَفعَة'}</DialogTitle>
@@ -3867,35 +3874,75 @@ export default function PaymentsPage() {
                   <Textarea value={correctionReason} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCorrectionReason(e.target.value)} className="mt-1" rows={2} placeholder={appLang === 'en' ? 'Why is the original wrong?' : 'لماذا الدَّفعَة الأَصلية خَاطِئَة؟'} />
                 </div>
 
-                {/* v3.74.525 — align with the create-payment form (v3.74.516):
-                    Account is the primary driver. When the accountant picks
-                    an account the payment currency AUTO-syncs to that
-                    account's currency; the standalone currency dropdown
-                    is gone. ExchangeRateSelector replaces the raw rate
-                    input. Method options filter by account type
-                    (cash-only accounts hide transfer/check). */}
+                {/* v3.74.526 — Correction dialog unified with supplier-payment form:
+                    Currency is now a first-class, standalone dropdown (as in
+                    "دفع الموردين"). The account list filters to the chosen
+                    currency, with a conscious "show other currencies"
+                    exception link. Picking an account still syncs the
+                    currency (two-way), and picking a currency snaps the
+                    account to the first matching one. This fixes the case
+                    where the owner rejected a payment for being in the wrong
+                    currency but the accountant had no direct control to
+                    switch it. */}
                 <div className="border-t pt-3">
                   <div className="text-sm font-semibold mb-2 text-emerald-700 dark:text-emerald-300">
                     {appLang === 'en' ? 'Proposed changes (leave blank to keep the original)' : 'التَّعديلات المُقتَرَحَة (اترُك فارِغاً للإِبقاء كما هو)'}
                   </div>
                   {(() => {
-                    // Derive the effective currency + selected account for
-                    // the rest of the form. Order: explicit override →
-                    // account currency (if a different account was chosen)
-                    // → original payment currency.
+                    // Currency is now the source of truth (from the dropdown).
+                    // Order: explicit currency selection → original payment
+                    // currency. The account no longer silently drives it.
                     const originalCurrency = String(correctionPayment.original_currency || correctionPayment.currency_code || baseCurrency || 'EGP').toUpperCase()
                     const selectedAcc = correctionFields.account_id
                       ? (accounts.find(a => a.id === correctionFields.account_id) as any)
                       : null
+                    const baseCcy = (baseCurrency || 'EGP').toUpperCase()
                     const effectiveCurrency = (
                       correctionFields.original_currency
-                      || (selectedAcc ? accountCurrencyOf(selectedAcc) : "")
                       || originalCurrency
                     ).toUpperCase()
-                    const baseCcy = (baseCurrency || 'EGP').toUpperCase()
+                    // Accounts matching the chosen currency (unless the
+                    // conscious exception mode is on).
+                    const correctionAccounts = showAllCorrectionAccounts
+                      ? accounts
+                      : accounts.filter((a: any) => accountCurrencyOf(a) === effectiveCurrency)
                     return (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Account first — drives the currency. */}
+                        {/* Currency first — the primary driver (matches the
+                            supplier-payment form's "العملة" dropdown). */}
+                        <div className="md:col-span-2">
+                          <Label>{appLang === 'en' ? 'Currency' : 'العملة'}</Label>
+                          <select
+                            className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900"
+                            value={effectiveCurrency}
+                            onChange={(e) => {
+                              const v = e.target.value.toUpperCase()
+                              // Snap the account to the first one in the new
+                              // currency (keep it if it already matches).
+                              const keepAcc = selectedAcc && accountCurrencyOf(selectedAcc) === v
+                              const firstMatchedId = (accounts.find((a: any) => accountCurrencyOf(a) === v) as any)?.id || ''
+                              setShowAllCorrectionAccounts(false)
+                              setCorrectionFields({
+                                ...correctionFields,
+                                original_currency: v,
+                                account_id: keepAcc ? correctionFields.account_id : firstMatchedId,
+                                // Same-currency = no rate needed; clear the field.
+                                exchange_rate: v === baseCcy ? "" : correctionFields.exchange_rate,
+                              })
+                            }}
+                          >
+                            {currencies.length > 0 ? (
+                              currencies.map((c) => (
+                                <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
+                              ))
+                            ) : (
+                              Object.entries(currencySymbols).map(([code, symbol]) => (
+                                <option key={code} value={code}>{symbol} {code}</option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                        {/* Account — filtered to the chosen currency. */}
                         <div className="md:col-span-2">
                           <Label>{appLang === 'en' ? 'Account' : 'الحِساب'}</Label>
                           <select
@@ -3908,23 +3955,30 @@ export default function PaymentsPage() {
                               setCorrectionFields({
                                 ...correctionFields,
                                 account_id: accId,
-                                // Auto-sync currency to the account (v3.74.516 pattern).
-                                original_currency: accCcy && accCcy !== originalCurrency ? accCcy : correctionFields.original_currency,
+                                // Picking an account syncs the currency to it.
+                                original_currency: accCcy || correctionFields.original_currency,
                                 // Same-currency = no rate needed; clear the field.
                                 exchange_rate: accCcy && accCcy === baseCcy ? "" : correctionFields.exchange_rate,
                               })
                             }}
                           >
                             <option value="">{appLang === 'en' ? `Keep original (${originalCurrency})` : `إِبقاء الأَصلى (${originalCurrency})`}</option>
-                            {accounts.map(a => {
+                            {correctionAccounts.map(a => {
                               const ccy = accountCurrencyOf(a)
                               const ccySuffix = ccy && ccy !== baseCcy ? ` — ${ccy}` : ''
                               return (<option key={a.id} value={a.id}>{a.account_name} ({a.account_code}){ccySuffix}</option>)
                             })}
                           </select>
+                          {/* Conscious exception link — reveal accounts in
+                              other currencies (mirrors showAllPayAccounts). */}
+                          {!showAllCorrectionAccounts && accounts.some((a: any) => accountCurrencyOf(a) !== effectiveCurrency) && (
+                            <button type="button" className="text-[11px] text-blue-600 hover:underline mt-0.5" onClick={() => setShowAllCorrectionAccounts(true)}>
+                              {appLang === 'en' ? 'Show accounts in other currencies (exception)' : 'إظهار الحسابات بعملات أخرى (استثناء)'}
+                            </button>
+                          )}
                           {/* Amber mismatch banner: only if the accountant
-                              explicitly overrode currency to differ from
-                              the chosen account. */}
+                              explicitly picked an account whose currency
+                              differs from the chosen payment currency. */}
                           {selectedAcc && accountCurrencyOf(selectedAcc) !== effectiveCurrency && (
                             <div className="text-[11px] mt-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                               ℹ️ {appLang === 'en'
@@ -4003,7 +4057,7 @@ export default function PaymentsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button variant="outline" disabled={correctionSubmitting} onClick={() => { setCorrectionOpen(false); setCorrectionPayment(null) }}>
+              <Button variant="outline" disabled={correctionSubmitting} onClick={() => { setCorrectionOpen(false); setCorrectionPayment(null); setShowAllCorrectionAccounts(false) }}>
                 {appLang === 'en' ? 'Cancel' : 'إلغاء'}
               </Button>
               <Button disabled={correctionSubmitting || correctionReason.trim().length < 5} onClick={async () => {
