@@ -1,0 +1,40 @@
+-- v3.74.528 — Sales-side / cross-side audit for the same class of
+-- "amount without currency" bug the supplier payment card had.
+--
+-- Findings from the audit:
+--   * Sales returns math (bill bug #2 analog on invoices/[id]/page.tsx)
+--     is CLEAN. netDueAmount already subtracts returned_amount (line
+--     2540-2542) with defensive logic for pre-reduced totals. No fix.
+--   * /approvals customer refund card said "قيمة الاسترداد: 0.00"
+--     with NO currency label at all. Refund row in DB carries
+--     currency, exchange_rate, base_amount, refund_method,
+--     refund_account_id, rejection_reason — loader was pulling none
+--     of them.
+--   * Vendor payment correction card had the same class of bug.
+--     vendor_payment_correction_requests table itself doesn't store
+--     currency (it stores the delta only); currency lives on the
+--     ORIGINAL payment referenced by original_payment_id.
+--
+-- Fixes (approvals card only, no DB change):
+--
+--   Customer refund:
+--     - PendingCustomerRefund: +currency, +base_amount,
+--       +exchange_rate, +refund_method, +refund_account_name,
+--       +requested_by_email, +rejection_reason
+--     - Loader: select the fx + method + account_id + reason columns
+--       we already had, batch-fetch chart_of_accounts for the
+--       account name and company_members for the requester email.
+--     - Card: amount + currency, FX equivalent for non-EGP, method +
+--       destination account, requester email, notes in amber callout,
+--       previous rejection reason in red banner.
+--
+--   Vendor payment correction:
+--     - PendingVendorPaymentCorrection: +currency, +base_amount,
+--       +exchange_rate, +requested_by_email, +rejection_reason
+--     - Loader: pull rejection_reason + original_payment_id from the
+--       correction row, batch-fetch payments (original_currency,
+--       currency_code, exchange_rate, base_currency_amount) for the
+--       FX context, plus company_members for requester email.
+--     - Card: same enrichment shape as customer refund minus the
+--       method/account (a correction is a reversal, not a fresh
+--       transfer, so those fields don't apply).

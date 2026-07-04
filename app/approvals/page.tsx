@@ -247,6 +247,10 @@ interface PendingDispatch {
 
 // v3.74.476 — vendor payment correction request. Same two-phase
 // pattern as customer refund.
+// v3.74.528 — enrichment: vendor_payment_correction_requests itself
+// carries only amount+status+notes+rejection_reason. Currency and FX
+// context live on the ORIGINAL payment (original_payment_id); the
+// loader now joins that in.
 interface PendingVendorPaymentCorrection {
   id: string
   supplier_name: string | null
@@ -257,6 +261,13 @@ interface PendingVendorPaymentCorrection {
   requested_at: string
   requested_by: string | null
   approved_by: string | null
+  // v3.74.528 — enrichment (currency + FX from original payment,
+  // requester email, rejection reason)
+  currency: string
+  base_amount: number | null
+  exchange_rate: number | null
+  requested_by_email: string | null
+  rejection_reason: string | null
   type: "vendor_payment_correction"
 }
 
@@ -1519,10 +1530,14 @@ function ApprovalsContent() {
       // Governance: /api/customer-refund-requests/[id]/{approve,reject,execute}
       // enforces SoD (approver ≠ executor).
       try {
+        // v3.74.528 — pull the FX + method + account + rejection reason
+        // that were already stored on the row but never surfaced.
         const { data: crs } = await supabase
           .from("customer_refund_requests")
           .select(`
-            id, amount, status, notes, created_at,
+            id, amount, currency, exchange_rate, base_amount,
+            refund_method, refund_account_id, rejection_reason,
+            status, notes, created_at,
             customer_id, requested_by, approved_by, approved_at,
             customers(name),
             invoice_id, invoices(invoice_number)
@@ -1531,6 +1546,19 @@ function ApprovalsContent() {
           .in("status", ["pending", "approved"])
           .order("created_at", { ascending: true })
           .limit(100)
+        // Batch-fetch refund account names + requester emails (no FK).
+        const crAcctIds = Array.from(new Set(((crs || []) as any[]).map(r => r.refund_account_id).filter(Boolean)))
+        const crUserIds = Array.from(new Set(((crs || []) as any[]).map(r => r.requested_by).filter(Boolean)))
+        const [crAcctsRes, crUsersRes] = await Promise.all([
+          crAcctIds.length
+            ? supabase.from("chart_of_accounts").select("id, account_name").in("id", crAcctIds)
+            : Promise.resolve({ data: [] as any[] }),
+          crUserIds.length
+            ? supabase.from("company_members").select("user_id, email").eq("company_id", cid).in("user_id", crUserIds)
+            : Promise.resolve({ data: [] as any[] }),
+        ])
+        const crAcctMap = new Map(((crAcctsRes.data || []) as any[]).map((a: any) => [a.id, a.account_name]))
+        const crUserMap = new Map(((crUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
         setCustomerRefunds((crs || []).map((r: any) => ({
           id: r.id,
           customer_name: r.customers?.name ?? null,
@@ -1541,6 +1569,14 @@ function ApprovalsContent() {
           requested_at: r.created_at,
           requested_by: r.requested_by ?? null,
           approved_by: r.approved_by ?? null,
+          // v3.74.528 — enrichment
+          currency: String(r.currency || "EGP"),
+          base_amount: r.base_amount != null ? Number(r.base_amount) : null,
+          exchange_rate: r.exchange_rate != null ? Number(r.exchange_rate) : null,
+          refund_method: r.refund_method ?? null,
+          refund_account_name: r.refund_account_id ? (crAcctMap.get(r.refund_account_id) ?? null) : null,
+          requested_by_email: r.requested_by ? (crUserMap.get(r.requested_by) ?? null) : null,
+          rejection_reason: r.rejection_reason ?? null,
           type: "customer_refund" as const,
         })))
       } catch {
@@ -1548,12 +1584,15 @@ function ApprovalsContent() {
       }
 
       // v3.74.476 — vendor payment correction requests.
+      // v3.74.528 — pull rejection_reason + original_payment_id so we can
+      // fetch the FX context that lives on the original payment (this
+      // table itself doesn't store currency/rate/base).
       try {
         const { data: vpc } = await supabase
           .from("vendor_payment_correction_requests")
           .select(`
-            id, amount, status, notes, created_at,
-            supplier_id, requested_by, approved_by, approved_at,
+            id, amount, status, notes, rejection_reason, original_payment_id,
+            created_at, supplier_id, requested_by, approved_by, approved_at,
             suppliers(name),
             bill_id, bills(bill_number)
           `)
@@ -1561,18 +1600,42 @@ function ApprovalsContent() {
           .in("status", ["pending", "approved"])
           .order("created_at", { ascending: true })
           .limit(100)
-        setVendorPaymentCorrections((vpc || []).map((r: any) => ({
-          id: r.id,
-          supplier_name: r.suppliers?.name ?? null,
-          bill_no: r.bills?.bill_number ?? null,
-          amount: Number(r.amount || 0),
-          status: r.status,
-          notes: r.notes ?? null,
-          requested_at: r.created_at,
-          requested_by: r.requested_by ?? null,
-          approved_by: r.approved_by ?? null,
-          type: "vendor_payment_correction" as const,
-        })))
+        // Batch-fetch original payments for their currency/FX + requester emails.
+        const vpcOrigIds = Array.from(new Set(((vpc || []) as any[]).map(r => r.original_payment_id).filter(Boolean)))
+        const vpcUserIds = Array.from(new Set(((vpc || []) as any[]).map(r => r.requested_by).filter(Boolean)))
+        const [vpcPaysRes, vpcUsersRes] = await Promise.all([
+          vpcOrigIds.length
+            ? supabase.from("payments")
+                .select("id, original_currency, currency_code, exchange_rate, base_currency_amount")
+                .in("id", vpcOrigIds)
+            : Promise.resolve({ data: [] as any[] }),
+          vpcUserIds.length
+            ? supabase.from("company_members").select("user_id, email").eq("company_id", cid).in("user_id", vpcUserIds)
+            : Promise.resolve({ data: [] as any[] }),
+        ])
+        const vpcPayMap = new Map(((vpcPaysRes.data || []) as any[]).map((p: any) => [p.id, p]))
+        const vpcUserMap = new Map(((vpcUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
+        setVendorPaymentCorrections((vpc || []).map((r: any) => {
+          const origPay = r.original_payment_id ? vpcPayMap.get(r.original_payment_id) : null
+          return {
+            id: r.id,
+            supplier_name: r.suppliers?.name ?? null,
+            bill_no: r.bills?.bill_number ?? null,
+            amount: Number(r.amount || 0),
+            status: r.status,
+            notes: r.notes ?? null,
+            requested_at: r.created_at,
+            requested_by: r.requested_by ?? null,
+            approved_by: r.approved_by ?? null,
+            // v3.74.528 — enrichment via original payment
+            currency: String(origPay?.original_currency || origPay?.currency_code || "EGP"),
+            base_amount: origPay?.base_currency_amount != null ? Number(origPay.base_currency_amount) : null,
+            exchange_rate: origPay?.exchange_rate != null ? Number(origPay.exchange_rate) : null,
+            requested_by_email: r.requested_by ? (vpcUserMap.get(r.requested_by) ?? null) : null,
+            rejection_reason: r.rejection_reason ?? null,
+            type: "vendor_payment_correction" as const,
+          }
+        }))
       } catch {
         setVendorPaymentCorrections([])
       }
@@ -4288,19 +4351,50 @@ function ApprovalsContent() {
                               </div>
                               <div className="min-w-0">
                                 <p className="font-semibold text-sm">{t("طلب استرداد عميل", "Customer Refund Request")}</p>
+                                {/* v3.74.528 — rejection reason banner (only when
+                                    the row carries one, i.e. previously rejected). */}
+                                {r.rejection_reason && (
+                                  <div className="mt-1 mb-1 p-2 rounded text-[11px] bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    ⛔ {t("سبب الرفض السابق", "Previous rejection reason")}: {r.rejection_reason}
+                                  </div>
+                                )}
                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                  👤 {r.customer_name ?? "—"}
-                                  {r.invoice_no && <> · 🧾 {t("فاتورة", "Invoice")}: {r.invoice_no}</>}
+                                  🧑 <span className="font-semibold text-foreground">{r.customer_name ?? "—"}</span>
+                                  {r.invoice_no && <> · 🧾 {t("فاتورة", "Invoice")}: <span className="font-semibold">{r.invoice_no}</span></>}
                                 </p>
                                 <p className="text-xs mt-1">
                                   <span className="font-semibold text-cyan-700 dark:text-cyan-300">
-                                    {t("قيمة الاسترداد", "Refund amount")}: {fmtMoney(r.amount)}
+                                    💰 {t("قيمة الاسترداد", "Refund amount")}: {fmtMoney(r.amount)} {r.currency}
                                   </span>
+                                  {/* v3.74.528 — FX base equivalent for non-EGP */}
+                                  {r.currency !== "EGP" && r.base_amount != null && (
+                                    <span className="ms-2 text-muted-foreground">
+                                      ≈ {fmtMoney(r.base_amount)} EGP
+                                      {r.exchange_rate != null && <> · {t("سعر الصرف", "FX")}: {r.exchange_rate.toFixed(4)}</>}
+                                    </span>
+                                  )}
                                 </p>
-                                {r.notes && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {r.notes}</p>
+                                {/* v3.74.528 — refund method + destination account */}
+                                {(r.refund_method || r.refund_account_name) && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    💳 {r.refund_method === "cash" ? t("نقدى", "Cash")
+                                        : r.refund_method === "bank" || r.refund_method === "bank_transfer" ? t("تحويل بنكى", "Bank transfer")
+                                        : r.refund_method === "check" || r.refund_method === "cheque" ? t("شيك", "Check")
+                                        : r.refund_method ?? t("طريقة الاسترداد", "Method")}
+                                    {r.refund_account_name && <> · 🏦 <span className="font-medium text-foreground">{r.refund_account_name}</span></>}
+                                  </p>
                                 )}
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
+                                {r.requested_by_email && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    ✍️ {t("طلب الاعتماد", "Requested by")}: <span className="font-medium">{r.requested_by_email}</span>
+                                  </p>
+                                )}
+                                {r.notes && (
+                                  <p className="text-xs mt-1 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border-l-2 border-amber-400">
+                                    📝 {r.notes}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
@@ -4417,19 +4511,39 @@ function ApprovalsContent() {
                               </div>
                               <div className="min-w-0">
                                 <p className="font-semibold text-sm">{t("طلب تصحيح دفعة مورد", "Vendor Payment Correction")}</p>
+                                {/* v3.74.528 — rejection reason banner (previous reject) */}
+                                {r.rejection_reason && (
+                                  <div className="mt-1 mb-1 p-2 rounded text-[11px] bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    ⛔ {t("سبب الرفض السابق", "Previous rejection reason")}: {r.rejection_reason}
+                                  </div>
+                                )}
                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                  👤 {r.supplier_name ?? "—"}
-                                  {r.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: {r.bill_no}</>}
+                                  🏭 <span className="font-semibold text-foreground">{r.supplier_name ?? "—"}</span>
+                                  {r.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{r.bill_no}</span></>}
                                 </p>
                                 <p className="text-xs mt-1">
                                   <span className="font-semibold text-violet-700 dark:text-violet-300">
-                                    {t("قيمة التصحيح", "Correction amount")}: {fmtMoney(r.amount)}
+                                    💰 {t("قيمة التصحيح", "Correction amount")}: {fmtMoney(r.amount)} {r.currency}
                                   </span>
+                                  {/* v3.74.528 — FX base equivalent for non-EGP */}
+                                  {r.currency !== "EGP" && r.base_amount != null && (
+                                    <span className="ms-2 text-muted-foreground">
+                                      ≈ {fmtMoney(r.base_amount)} EGP
+                                      {r.exchange_rate != null && <> · {t("سعر الصرف", "FX")}: {r.exchange_rate.toFixed(4)}</>}
+                                    </span>
+                                  )}
                                 </p>
-                                {r.notes && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {r.notes}</p>
-                                )}
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
+                                {r.requested_by_email && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    ✍️ {t("طلب الاعتماد", "Requested by")}: <span className="font-medium">{r.requested_by_email}</span>
+                                  </p>
+                                )}
+                                {r.notes && (
+                                  <p className="text-xs mt-1 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border-l-2 border-amber-400">
+                                    📝 {r.notes}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
