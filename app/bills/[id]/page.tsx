@@ -2080,9 +2080,16 @@ export default function BillViewPage() {
 
                 {/* صافي المتبقي */}
                 {(() => {
-                  // لا نستخدم Math.max لأن الرصيد السالب يعني رصيد دائن للشركة من المورد
-                  // total_amount تم تحديثه بالفعل ليشمل المرتجعات، لذا لا نطرحها مرة أخرى
-                  const netRemaining = bill.total_amount - paidTotal
+                  // v3.74.527 — the earlier comment claimed "total_amount is
+                  // already reduced by returns, so we don't subtract them
+                  // again". That was false: DB stores total_amount as the
+                  // ORIGINAL gross (5.44 + 0.90 + 1.00 = 7.34 for BILL-0001),
+                  // and returned_amount separately (1.03). Without the
+                  // subtraction the three-way match panel disagreed with
+                  // the payment summary on the same page (المستحق: 6.31,
+                  // panel: 7.34) and the "matched" badge stamped a lie.
+                  const returnsTotal = Number((bill as any).returned_amount || 0)
+                  const netRemaining = bill.total_amount - paidTotal - returnsTotal
                   const isCredit = netRemaining < 0
                   const isOwed = netRemaining > 0
                   return (

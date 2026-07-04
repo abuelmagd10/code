@@ -1,0 +1,46 @@
+-- v3.74.527 — Owner spotted a lie on the approval card. BILL-0001 was
+-- raised in EGP (company base currency), but the payment was in USD.
+-- The card said:
+--   "متبقى الفاتورة: 7.34 USD"
+-- The 7.34 came from bills.total_amount (correctly stored in the bill
+-- currency = EGP), but the label was rendered next to `p.currency`,
+-- the PAYMENT currency (USD). Two different currencies were being
+-- passed off as one — the number was right, the label lied.
+--
+-- Also the overpayment check compared p.amount (0.10 USD) directly
+-- against p.bill_outstanding (7.34 EGP) as raw numbers. For this row
+-- it happened to give the right answer, but for a larger USD payment
+-- it would silently fire a false positive.
+--
+-- v3.74.527 fixes both:
+--
+--   PendingSupplierPayment: new field `bill_currency: string | null`.
+--   Loader (v3.74.523 batch): bill.currency_code was already pulled;
+--     we now propagate it as bill_currency on the row we ship to the
+--     card.
+--   Card:
+--     - Outstanding line reads "متبقى الفاتورة: 7.34 EGP" using
+--       p.bill_currency (defaults to "EGP" if the bill row didn't
+--       stamp a currency).
+--     - Overpayment comparison converts BOTH sides to base currency
+--       before comparing:
+--         payInBase = p.base_amount, or p.amount when p.currency=EGP
+--         outstandingInBase = p.bill_outstanding when bill_currency=EGP
+--       Only fires when both conversions are known AND the payment
+--       genuinely exceeds the outstanding.
+--
+-- If the bill is in a non-base currency (uncommon in this app), we
+-- deliberately skip the overpayment badge rather than guess — the
+-- honest thing is to say nothing.
+--
+-- Bonus fix bundled into the same release: the bill view page's
+-- Three-Way Match panel (app/bills/[id]/page.tsx line ~2085) computed
+-- netRemaining = total_amount - paidTotal, with a lying comment that
+-- claimed total_amount was already reduced by returns. It isn't. So on
+-- BILL-0001 the same page showed:
+--   Payments summary → "الصافى المستحق: 6.31 £"   (correct — subtracts returns)
+--   Three-way match  → "صافى المتبقى: 7.34 £"    (wrong — ignores returns)
+-- Fixed by also subtracting bill.returned_amount, matching the payment
+-- summary at line 1897.
+--
+-- No DB schema change. Doc stamp for the release-script version-grep.

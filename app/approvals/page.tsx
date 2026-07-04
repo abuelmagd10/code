@@ -90,6 +90,11 @@ interface PendingSupplierPayment {
   po_no: string | null
   allocation_count: number
   allocated_total: number | null
+  // v3.74.527 — bill_outstanding was previously rendered next to the
+  // payment currency label, which is wrong when the bill and the
+  // payment are in different currencies. Carry the bill's own currency
+  // (from bills.currency_code) so the outstanding line reads honestly.
+  bill_currency: string | null
   type: "supplier_payment"
 }
 
@@ -112,6 +117,10 @@ interface PendingSalesReturnRequest {
 // v3.74.476 — customer refund request. Two-phase workflow:
 // approve → execute. This tab surfaces both phases; the card renders
 // stage-aware buttons (Approve for 'pending', Execute for 'approved').
+// v3.74.528 — enriched to match the supplier-payment card story:
+// currency + FX equivalent + method + refund account + requester email
+// + rejection reason banner. All fields already live in
+// customer_refund_requests; the loader was under-reading them.
 interface PendingCustomerRefund {
   id: string
   customer_name: string | null
@@ -122,6 +131,14 @@ interface PendingCustomerRefund {
   requested_at: string
   requested_by: string | null
   approved_by: string | null
+  // v3.74.528 — enrichment
+  currency: string
+  base_amount: number | null
+  exchange_rate: number | null
+  refund_method: string | null
+  refund_account_name: string | null
+  requested_by_email: string | null
+  rejection_reason: string | null
   type: "customer_refund"
 }
 
@@ -1406,6 +1423,9 @@ function ApprovalsContent() {
             bill_outstanding: billTotal != null && billPaid != null
               ? Number((billTotal - billPaid).toFixed(2))
               : null,
+            // v3.74.527 — bill currency for the outstanding label. Defaults
+            // to base (EGP) when the bill row didn't stamp a currency.
+            bill_currency: primaryBill?.currency_code ? String(primaryBill.currency_code) : null,
             base_amount: p.base_currency_amount != null ? Number(p.base_currency_amount) : null,
             base_currency: "EGP",
             exchange_rate: p.exchange_rate != null ? Number(p.exchange_rate) : null,
@@ -3427,21 +3447,37 @@ function ApprovalsContent() {
                                   <> · 🧾 <span className="font-semibold text-amber-700 dark:text-amber-400">{t("دفع على الحساب (بدون فاتورة)", "On-account (no bill)")}</span></>
                                 )}
                               </p>
-                              {/* v3.74.521 — bill outstanding vs. payment amount so
-                                  the owner spots over-/under-payments at a glance. */}
-                              {p.bill_outstanding != null && (
-                                <p className="text-xs mt-0.5">
-                                  <span className="text-muted-foreground">{t("متبقى الفاتورة", "Bill outstanding")}: </span>
-                                  <span className={`font-semibold ${p.amount > p.bill_outstanding + 0.01 ? "text-red-600" : "text-emerald-600"}`}>
-                                    {fmtMoney(p.bill_outstanding)} {p.currency}
-                                  </span>
-                                  {p.amount > p.bill_outstanding + 0.01 && (
-                                    <span className="ms-1 text-red-600 font-bold">
-                                      · ⚠️ {t("الدفعة أكبر من المتبقى", "Overpayment")}
+                              {/* v3.74.521 — bill outstanding vs. payment amount.
+                                  v3.74.527 — outstanding is now labelled with the
+                                  BILL's own currency (was mis-labelled as the
+                                  payment currency, which lied when they differ).
+                                  Overpayment comparison uses base-currency
+                                  amounts so USD 0.10 vs. EGP 7.34 isn't compared
+                                  as raw numbers. */}
+                              {p.bill_outstanding != null && (() => {
+                                const billCcy = p.bill_currency || "EGP"
+                                // Convert both sides to base (EGP) for a fair
+                                // comparison. Payment: use base_amount if set,
+                                // else amount when currency = base.
+                                const payInBase = p.base_amount != null
+                                  ? p.base_amount
+                                  : (p.currency === "EGP" ? p.amount : null)
+                                const outstandingInBase = billCcy === "EGP" ? p.bill_outstanding : null
+                                const isOverpay = payInBase != null && outstandingInBase != null && payInBase > outstandingInBase + 0.01
+                                return (
+                                  <p className="text-xs mt-0.5">
+                                    <span className="text-muted-foreground">{t("متبقى الفاتورة", "Bill outstanding")}: </span>
+                                    <span className={`font-semibold ${isOverpay ? "text-red-600" : "text-emerald-600"}`}>
+                                      {fmtMoney(p.bill_outstanding)} {billCcy}
                                     </span>
-                                  )}
-                                </p>
-                              )}
+                                    {isOverpay && (
+                                      <span className="ms-1 text-red-600 font-bold">
+                                        · ⚠️ {t("الدفعة أكبر من المتبقى", "Overpayment")}
+                                      </span>
+                                    )}
+                                  </p>
+                                )
+                              })()}
                               <p className="text-xs mt-1">
                                 <span className="font-semibold text-indigo-700 dark:text-indigo-300">
                                   💰 {t("القيمة", "Amount")}: {fmtMoney(p.amount)} {p.currency}
