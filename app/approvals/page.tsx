@@ -1313,17 +1313,24 @@ function ApprovalsContent() {
           payBillIds.length
             ? supabase.from("bills").select("id, bill_number, total_amount, paid_amount, currency_code").in("id", payBillIds)
             : Promise.resolve({ data: [] as any[] }),
+          // v3.74.522 — chart_of_accounts uses `original_currency`, NOT
+          // `currency_code`. The previous select failed silently and the
+          // whole column mapping came back empty, so the card never showed
+          // the source account name.
           payAccountIds.length
-            ? supabase.from("chart_of_accounts").select("id, account_name, currency_code").in("id", payAccountIds)
+            ? supabase.from("chart_of_accounts").select("id, account_name, original_currency").in("id", payAccountIds)
             : Promise.resolve({ data: [] as any[] }),
+          // v3.74.522 — user emails live in `company_members` (keyed by
+          // user_id), not `user_profiles` (which has no email column).
+          // Scope to the current company for RLS friendliness.
           payUserIds.length
-            ? supabase.from("user_profiles").select("id, email").in("id", payUserIds)
+            ? supabase.from("company_members").select("user_id, email").eq("company_id", cid).in("user_id", payUserIds)
             : Promise.resolve({ data: [] as any[] }),
         ])
         const paySupMap = new Map(((paySupsRes.data || []) as any[]).map((s: any) => [s.id, s.name]))
         const payBillMap = new Map(((payBillsRes.data || []) as any[]).map((b: any) => [b.id, b]))
         const payAcctMap = new Map(((payAcctsRes.data || []) as any[]).map((a: any) => [a.id, a]))
-        const payUserMap = new Map(((payUsersRes.data || []) as any[]).map((u: any) => [u.id, u.email]))
+        const payUserMap = new Map(((payUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
         setSupplierPayments((pays || []).map((p: any) => {
           const billRow = p.bill_id ? payBillMap.get(p.bill_id) : null
           const acctRow = p.account_id ? payAcctMap.get(p.account_id) : null
@@ -1345,7 +1352,9 @@ function ApprovalsContent() {
             payment_date: p.payment_date ?? null,
             payment_method: p.payment_method ?? null,
             account_name: acctRow?.account_name ?? null,
-            account_currency: acctRow?.currency_code ?? null,
+            // v3.74.522 — chart_of_accounts stores currency in
+            // original_currency, not currency_code (see loader).
+            account_currency: acctRow?.original_currency ?? null,
             bill_total: billTotal,
             bill_paid: billPaid,
             bill_outstanding: billTotal != null && billPaid != null
@@ -3351,7 +3360,14 @@ function ApprovalsContent() {
                               </p>
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 🏭 <span className="font-semibold text-foreground">{p.supplier_name ?? "—"}</span>
-                                {p.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{p.bill_no}</span></>}
+                                {p.bill_no ? (
+                                  <> · 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{p.bill_no}</span></>
+                                ) : (
+                                  // v3.74.522 — payments without a bill_id are
+                                  // "on-account" advances/settlements. Say so
+                                  // instead of leaving the line looking empty.
+                                  <> · 🧾 <span className="font-semibold text-amber-700 dark:text-amber-400">{t("دفع على الحساب (بدون فاتورة)", "On-account (no bill)")}</span></>
+                                )}
                               </p>
                               {/* v3.74.521 — bill outstanding vs. payment amount so
                                   the owner spots over-/under-payments at a glance. */}

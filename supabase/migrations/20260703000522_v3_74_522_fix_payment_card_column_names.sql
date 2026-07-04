@@ -1,0 +1,27 @@
+-- v3.74.522 — v3.74.521 landed the enriched supplier-payment card, but
+-- the owner's next screenshot showed that account_name and requester
+-- email STILL didn't render. Root cause: the loader queried columns
+-- that don't exist, and Supabase returned an empty set silently for
+-- both batches.
+--
+-- Concrete mismatches:
+--   1. chart_of_accounts.currency_code  ← does NOT exist
+--      chart_of_accounts.original_currency  ← real column
+--      The whole select failed → payAcctMap was empty → account_name
+--      and account_currency both null on every card.
+--
+--   2. user_profiles.email  ← does NOT exist (user_profiles has
+--      display_name, username, avatar_url … no email field).
+--      Real source of email in this app is company_members.email,
+--      keyed by (company_id, user_id).
+--      The whole select failed → payUserMap was empty → requester
+--      line never rendered.
+--
+-- Also surfaces a UX gap the enrichment revealed: some payments are
+-- "on account" — no bill_id, e.g. a supplier advance or a settlement
+-- of open balance. The v3.74.521 card just left the bill line blank,
+-- which looks like missing data. Now the card says explicitly:
+-- "دفع على الحساب (بدون فاتورة)" in amber so the owner sees intent.
+--
+-- No DB schema change. Migration file is a doc stamp so the release
+-- script's version-grep guard finds a matching migration.
