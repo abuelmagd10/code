@@ -346,7 +346,20 @@ export default function PaymentsPage() {
   const [correctionOpen, setCorrectionOpen] = useState(false)
   const [correctionPayment, setCorrectionPayment] = useState<Payment | null>(null)
   const [correctionReason, setCorrectionReason] = useState("")
-  const [correctionFields, setCorrectionFields] = useState<{ amount: string; payment_date: string; account_id: string; payment_method: string; reference_number: string; notes: string }>({ amount: "", payment_date: "", account_id: "", payment_method: "", reference_number: "", notes: "" })
+  // v3.74.524 — added `original_currency` and `exchange_rate` so the
+  // accountant can fix a payment that was rejected because it was
+  // recorded in the wrong currency. Payment was in USD, owner wanted
+  // EGP → previously the correction dialog offered no way to change
+  // the currency at all.
+  const [correctionFields, setCorrectionFields] = useState<{
+    amount: string; payment_date: string; account_id: string;
+    payment_method: string; reference_number: string; notes: string;
+    original_currency: string; exchange_rate: string;
+  }>({
+    amount: "", payment_date: "", account_id: "",
+    payment_method: "", reference_number: "", notes: "",
+    original_currency: "", exchange_rate: "",
+  })
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
@@ -2664,6 +2677,8 @@ export default function PaymentsPage() {
                                     payment_method: p.payment_method || "cash",
                                     reference_number: p.reference_number || "",
                                     notes: p.notes || "",
+                                    original_currency: "",
+                                    exchange_rate: "",
                                   })
                                   setCorrectionOpen(true)
                                 }}
@@ -2713,6 +2728,8 @@ export default function PaymentsPage() {
                                     payment_method: p.payment_method || "cash",
                                     reference_number: p.reference_number || "",
                                     notes: p.notes || "",
+                                    original_currency: "",
+                                    exchange_rate: "",
                                   })
                                   setCorrectionOpen(true)
                                 }}
@@ -3382,6 +3399,8 @@ export default function PaymentsPage() {
                                     payment_method: p.payment_method || "cash",
                                     reference_number: p.reference_number || "",
                                     notes: p.notes || "",
+                                    original_currency: "",
+                                    exchange_rate: "",
                                   })
                                   setCorrectionOpen(true)
                                 }}
@@ -3812,9 +3831,32 @@ export default function PaymentsPage() {
             </DialogHeader>
             {correctionPayment && (
               <div className="space-y-4">
+                {/* v3.74.524 — surface the owner's rejection reason so the
+                    accountant knows what to fix before proposing changes. */}
+                {correctionPayment.rejection_reason && (
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 rounded p-3 text-xs">
+                    <div className="font-semibold text-red-800 dark:text-red-300 mb-1">
+                      ⛔ {appLang === 'en' ? 'Owner rejection reason' : 'سَبَب رَفض المالِك'}
+                    </div>
+                    <div className="text-red-900 dark:text-red-200 whitespace-pre-wrap">{correctionPayment.rejection_reason}</div>
+                  </div>
+                )}
                 <div className="bg-gray-50 dark:bg-slate-800 rounded p-3 text-xs space-y-1">
                   <div className="font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Original payment' : 'الدَّفعَة الأَصلية'}</div>
-                  <div>{appLang === 'en' ? 'Amount' : 'المَبلَغ'}: {Number(correctionPayment.amount).toLocaleString()}</div>
+                  <div>
+                    {appLang === 'en' ? 'Amount' : 'المَبلَغ'}:{" "}
+                    <span className="font-semibold">
+                      {Number(correctionPayment.amount).toLocaleString()}{" "}
+                      {correctionPayment.original_currency || correctionPayment.currency_code || 'EGP'}
+                    </span>
+                    {/* v3.74.524 — FX base equivalent + rate for non-EGP */}
+                    {(correctionPayment.original_currency || correctionPayment.currency_code) !== 'EGP' && correctionPayment.base_currency_amount != null && (
+                      <span className="ms-2 text-muted-foreground">
+                        ≈ {Number(correctionPayment.base_currency_amount).toLocaleString()} EGP
+                        {correctionPayment.exchange_rate != null && <> · {appLang === 'en' ? 'FX' : 'سعر الصرف'}: {Number(correctionPayment.exchange_rate).toFixed(4)}</>}
+                      </span>
+                    )}
+                  </div>
                   <div>{appLang === 'en' ? 'Date' : 'التاريخ'}: {correctionPayment.payment_date}</div>
                   <div>{appLang === 'en' ? 'Method' : 'طَريقَة الدَّفع'}: {correctionPayment.payment_method || '-'}</div>
                   <div>{appLang === 'en' ? 'Reference' : 'المَرجع'}: {correctionPayment.reference_number || '-'}</div>
@@ -3833,6 +3875,35 @@ export default function PaymentsPage() {
                     <div>
                       <Label>{appLang === 'en' ? 'Amount' : 'المَبلَغ'}</Label>
                       <Input type="number" step="0.01" value={correctionFields.amount} onChange={(e) => setCorrectionFields({ ...correctionFields, amount: e.target.value })} />
+                    </div>
+                    {/* v3.74.524 — currency + FX rate so a payment recorded
+                        in the wrong currency can be corrected here. */}
+                    <div>
+                      <Label>{appLang === 'en' ? 'Currency' : 'العُملَة'}</Label>
+                      <select
+                        className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900"
+                        value={correctionFields.original_currency}
+                        onChange={(e) => setCorrectionFields({ ...correctionFields, original_currency: e.target.value })}
+                      >
+                        <option value="">{appLang === 'en' ? 'Keep original' : 'إِبقاء الأَصلى'}</option>
+                        {currencies.map((c) => (
+                          <option key={c.code} value={c.code}>{c.code} — {appLang === 'en' ? c.name : (c.name_ar || c.name)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label>
+                        {appLang === 'en' ? 'FX rate (to EGP)' : 'سعر الصرف (إلى الجنيه)'}
+                        <span className="text-[10px] text-muted-foreground ms-1">
+                          ({appLang === 'en' ? 'blank = auto' : 'فارغ = تلقائى'})
+                        </span>
+                      </Label>
+                      <Input
+                        type="number" step="0.0001" min="0"
+                        value={correctionFields.exchange_rate}
+                        onChange={(e) => setCorrectionFields({ ...correctionFields, exchange_rate: e.target.value })}
+                        placeholder={String(correctionPayment.exchange_rate ?? '')}
+                      />
                     </div>
                     <div>
                       <Label>{appLang === 'en' ? 'Date' : 'التاريخ'}</Label>
@@ -3883,6 +3954,18 @@ export default function PaymentsPage() {
                   if (correctionFields.payment_method && correctionFields.payment_method !== correctionPayment.payment_method) proposed.payment_method = correctionFields.payment_method
                   if (correctionFields.reference_number !== (correctionPayment.reference_number || '')) proposed.reference_number = correctionFields.reference_number
                   if (correctionFields.notes !== (correctionPayment.notes || '')) proposed.notes = correctionFields.notes
+                  // v3.74.524 — currency + FX rate. Main fix for "rejected
+                  // because it was in the wrong currency" — server re-derives
+                  // base_currency_amount from the new currency/rate pair.
+                  const currentCurrency = correctionPayment.original_currency || correctionPayment.currency_code || 'EGP'
+                  if (correctionFields.original_currency && correctionFields.original_currency !== currentCurrency) {
+                    proposed.original_currency = correctionFields.original_currency
+                    if (proposed.amount == null) proposed.amount = origAmount
+                  }
+                  const newRate = Number(correctionFields.exchange_rate)
+                  if (Number.isFinite(newRate) && newRate > 0 && Math.abs(newRate - Number(correctionPayment.exchange_rate || 0)) > 0.0001) {
+                    proposed.exchange_rate = newRate
+                  }
 
                   // v3.74.127 / v3.74.144 — route by payment status.
                   // - If the payment was REJECTED before approval, it never posted

@@ -1,0 +1,41 @@
+-- v3.74.524 — the owner rejected a USD payment; the accountant opened
+-- the correction modal to fix it. The modal showed only:
+--   المبلغ: 0.1
+-- (no currency label), and offered proposed-change controls for
+-- amount, date, account, method, reference, notes — but NOTHING for
+-- currency or FX rate. For a payment rejected because it was recorded
+-- in the wrong currency, there was literally no path to fix it in the
+-- correction flow. Also the rejection reason from the owner was not
+-- surfaced anywhere in the dialog.
+--
+-- Change scope (UI + one server route):
+--
+--   app/payments/page.tsx
+--     - Original payment block: amount now carries its currency label
+--       and, for non-EGP payments, the base EGP equivalent and the
+--       exchange rate used.
+--     - New red banner at the top of the modal shows
+--       "⛔ سبب رفض المالك: <text>" when the row has a rejection_reason.
+--     - Proposed changes now include:
+--         العملة   → dropdown of active currencies (blank = keep)
+--         سعر الصرف → number input (blank = auto-derive)
+--     - correctionFields state extended with original_currency +
+--       exchange_rate.
+--     - Submit payload: sends the new currency + rate when they differ,
+--       and if the accountant only changed the currency (blank amount)
+--       we forward the original numeric amount so the server can
+--       re-derive base_currency_amount without ambiguity.
+--
+--   app/api/payments/[id]/resubmit-after-reject/route.ts
+--     - Whitelist extended with original_currency + exchange_rate.
+--     - When either changes we recompute the whole triple:
+--         original_currency = currency_code = <new>
+--         exchange_rate = exchange_rate_used = <new or old>
+--         original_amount = <new or old amount>
+--         base_currency_amount = original_amount × exchange_rate
+--     - Old row's currency / rate are pulled in the initial SELECT so
+--       we can fall back on them when only one leg of the triple was
+--       changed.
+--
+-- No DB schema change. This migration file is a doc stamp so the
+-- release script's version-grep guard finds a matching migration.

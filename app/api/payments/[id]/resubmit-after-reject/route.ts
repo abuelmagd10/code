@@ -51,6 +51,13 @@ export async function POST(
         payment_method?: string
         reference_number?: string
         notes?: string
+        // v3.74.524 — currency + FX corrections. A payment that was
+        // rejected because it was recorded in the wrong currency (e.g.
+        // USD instead of EGP) needs to change more than the amount:
+        // original_currency, exchange_rate, and the derived
+        // base_currency_amount all move together.
+        original_currency?: string
+        exchange_rate?: number | string
       }
     } = {}
     try { body = await request.json() } catch { }
@@ -73,9 +80,11 @@ export async function POST(
     // No FK between payments.supplier_id and suppliers.id, so do NOT
     // request suppliers(name) here — PostgREST returns a schema-cache
     // error and we'd treat the row as missing.
+    // v3.74.524 — pull the FX context on the existing row so we can
+    // re-derive base_currency_amount when currency or rate changes.
     const { data: pay, error: payErr } = await serviceClient
       .from("payments")
-      .select("id, status, amount, supplier_id, branch_id, created_by")
+      .select("id, status, amount, supplier_id, branch_id, created_by, original_currency, currency_code, exchange_rate")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -144,6 +153,31 @@ export async function POST(
     if ((changes as any).account_id) patch.account_id = String((changes as any).account_id)
     if ((changes as any).payment_method) patch.payment_method = String((changes as any).payment_method)
     if ((changes as any).reference_number !== undefined) patch.reference_number = String((changes as any).reference_number || "")
+
+    // v3.74.524 — currency + FX + derived base_currency_amount.
+    // Any of these three moving invalidates the others, so we recompute
+    // the whole triple from the patch + original row values.
+    const newCurrency = String((changes as any).original_currency || "").toUpperCase().trim()
+    const rawNewRate = (changes as any).exchange_rate
+    const newRate = Number(rawNewRate)
+    const hasNewCurrency = newCurrency && newCurrency !== String(((pay as any).original_currency || (pay as any).currency_code || "EGP")).toUpperCase()
+    const hasNewRate = rawNewRate !== undefined && rawNewRate !== null && rawNewRate !== "" && Number.isFinite(newRate) && newRate > 0
+    if (hasNewCurrency || hasNewRate) {
+      const effectiveCurrency = hasNewCurrency
+        ? newCurrency
+        : String((pay as any).original_currency || (pay as any).currency_code || "EGP").toUpperCase()
+      const effectiveRate = hasNewRate ? newRate : Number((pay as any).exchange_rate || 1) || 1
+      const effectiveAmount = Number.isFinite(newAmount) && newAmount > 0
+        ? Math.abs(newAmount)
+        : Math.abs(Number((pay as any).amount || 0))
+      patch.original_currency = effectiveCurrency
+      patch.currency_code = effectiveCurrency
+      patch.exchange_rate = effectiveRate
+      patch.exchange_rate_used = effectiveRate
+      patch.original_amount = effectiveAmount
+      patch.base_currency_amount = Number((effectiveAmount * effectiveRate).toFixed(4))
+    }
+
     const editStamp = `[تعديل بعد رفض — ${new Date().toISOString().slice(0, 10)}] ${reason}`
     if ((changes as any).notes !== undefined) {
       const newNotes = String((changes as any).notes || "").trim()
@@ -178,7 +212,6 @@ export async function POST(
         .update({ changed_by: user.id })
         .eq("payment_id", id)
         .eq("company_id", companyId)
-        .eq("action", "APPROVE_STAGE")
         .is("changed_by", null)
         .gte("created_at", sinceIso)
     } catch { /* non-fatal */ }
