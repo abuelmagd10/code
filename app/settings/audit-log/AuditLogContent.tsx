@@ -188,42 +188,83 @@ const tableNameTranslations: Record<string, string> = {
   system: "النظام",
 };
 
+// English table name labels (display-only)
+const tableNameTranslationsEn: Record<string, string> = {
+  invoices: "Invoices",
+  bills: "Purchases",
+  products: "Products",
+  customers: "Customers",
+  suppliers: "Suppliers",
+  payments: "Payments",
+  journal_entries: "Journal Entries",
+  journal_entry_lines: "Journal Entry Lines",
+  chart_of_accounts: "Chart of Accounts",
+  tax_codes: "Tax Codes",
+  estimates: "Estimates",
+  estimate_items: "Estimate Items",
+  sales_orders: "Sales Orders",
+  sales_order_items: "Sales Order Items",
+  purchase_orders: "Purchase Orders",
+  purchase_order_items: "Purchase Order Items",
+  sales_returns: "Sales Returns",
+  shareholders: "Shareholders",
+  inventory_transactions: "Inventory Transactions",
+  invoice_items: "Invoice Items",
+  bill_items: "Bill Items",
+  inventory_write_offs: "Inventory Write-offs",
+  company_members: "Team Members",
+  company_role_permissions: "Role Permissions",
+  companies: "Companies",
+  user_sessions: "User Sessions",
+  settings: "Settings",
+  // v3.62.3 — backup-related
+  backup_history: "Backup History",
+  system: "System",
+};
+
 // تصنيف الموارد
-const resourceCategories: Record<string, { name: string; icon: string; tables: string[] }> = {
+const resourceCategories: Record<string, { name: string; nameEn: string; icon: string; tables: string[] }> = {
   sales: {
     name: "المبيعات",
+    nameEn: "Sales",
     icon: "📈",
     tables: ["invoices", "invoice_items", "customers", "estimates", "estimate_items", "sales_orders", "sales_order_items", "sales_returns"],
   },
   purchases: {
     name: "المشتريات",
+    nameEn: "Purchases",
     icon: "📦",
     tables: ["bills", "bill_items", "suppliers", "purchase_orders", "purchase_order_items"],
   },
   inventory: {
     name: "المخزون",
+    nameEn: "Inventory",
     icon: "🏭",
     tables: ["products", "inventory_transactions", "inventory_write_offs"],
   },
   accounting: {
     name: "المحاسبة",
+    nameEn: "Accounting",
     icon: "📊",
     tables: ["journal_entries", "journal_entry_lines", "chart_of_accounts", "payments", "tax_codes"],
   },
   users: {
     name: "المستخدمين",
+    nameEn: "Users",
     icon: "👥",
     tables: ["company_members", "company_role_permissions", "user_sessions"],
   },
   settings: {
     name: "الإعدادات",
+    nameEn: "Settings",
     icon: "⚙️",
     tables: ["companies", "settings"],
   },
 };
 
 // دالة ترجمة أسماء الجداول (خارج المكون للاستخدام العام)
-const translateTable = (table: string): string => {
+const translateTable = (table: string, lang: 'ar' | 'en' = 'ar'): string => {
+  if (lang === 'en') return tableNameTranslationsEn[table] || tableNameTranslations[table] || table;
   return tableNameTranslations[table] || table;
 };
 
@@ -283,6 +324,62 @@ const fieldTranslations: Record<string, string> = {
   purchase_order_id: "أمر الشراء",
 };
 
+// English field name labels (display-only)
+const fieldTranslationsEn: Record<string, string> = {
+  id: "ID",
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  address: "Address",
+  total_amount: "Total Amount",
+  subtotal: "Subtotal",
+  status: "Status",
+  invoice_number: "Invoice Number",
+  bill_number: "Bill Number",
+  invoice_date: "Invoice Date",
+  due_date: "Due Date",
+  paid_amount: "Paid Amount",
+  price: "Price",
+  cost: "Cost",
+  quantity: "Quantity",
+  description: "Description",
+  notes: "Notes",
+  // v3.62.3 — backup metadata fields
+  total_records: "Total Records",
+  size_mb: "Size (MB)",
+  size_bytes: "Size (Bytes)",
+  duration_seconds: "Duration (Seconds)",
+  history_id: "Backup ID",
+  storage_path: "Storage Path",
+  records_restored: "Records Restored",
+  success: "Success",
+  errors: "Errors",
+  warnings: "Warnings",
+  error: "Error",
+  account_name: "Account Name",
+  account_code: "Account Code",
+  account_id: "Account",
+  debit: "Debit",
+  credit: "Credit",
+  rate: "Rate",
+  updated_at: "Updated At",
+  created_at: "Created At",
+  company_id: "Company",
+  customer_id: "Customer",
+  supplier_id: "Supplier",
+  invoice_id: "Invoice",
+  bill_id: "Bill",
+  payment_date: "Payment Date",
+  payment_method: "Payment Method",
+  amount: "Amount",
+  reference_number: "Reference Number",
+  journal_entry_id: "Journal Entry",
+  is_deleted: "Deleted",
+  deleted_at: "Deleted At",
+  deleted_by: "Deleted By",
+  purchase_order_id: "Purchase Order",
+};
+
 // ترجمة قيم الحقول
 const valueTranslations: Record<string, Record<string, string>> = {
   payment_method: {
@@ -305,18 +402,41 @@ const valueTranslations: Record<string, Record<string, string>> = {
   },
 };
 
+// English value labels (display-only)
+const valueTranslationsEn: Record<string, Record<string, string>> = {
+  payment_method: {
+    cash: "Cash",
+    bank: "Bank Transfer",
+    check: "Check",
+    credit_card: "Credit Card",
+    refund: "Refund",
+    customer_credit: "Customer Credit",
+  },
+  status: {
+    draft: "Draft",
+    pending: "Pending",
+    paid: "Paid",
+    partially_paid: "Partially Paid",
+    overdue: "Overdue",
+    cancelled: "Cancelled",
+    active: "Active",
+    inactive: "Inactive",
+  },
+};
+
 // الحقول التي يجب إخفاؤها
 const hiddenFields = ["company_id", "deleted_at", "deleted_by", "is_deleted", "journal_entry_id"];
 
 // تنسيق القيمة للعرض
-const formatValue = (key: string, value: any): string => {
+const formatValue = (key: string, value: any, lang: 'ar' | 'en' = 'ar'): string => {
   if (value === null || value === undefined) return "-";
-  if (value === true) return "نعم";
-  if (value === false) return "لا";
+  if (value === true) return lang === 'en' ? "Yes" : "نعم";
+  if (value === false) return lang === 'en' ? "No" : "لا";
 
   // ترجمة القيم المعروفة
-  if (valueTranslations[key] && valueTranslations[key][value]) {
-    return valueTranslations[key][value];
+  const vmap = lang === 'en' ? valueTranslationsEn : valueTranslations;
+  if (vmap[key] && vmap[key][value]) {
+    return vmap[key][value];
   }
 
   // تنسيق التواريخ
@@ -324,7 +444,7 @@ const formatValue = (key: string, value: any): string => {
     try {
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
-        return date.toLocaleDateString("ar-EG", {
+        return date.toLocaleDateString(lang === 'en' ? "en-US" : "ar-EG", {
           year: "numeric",
           month: "short",
           day: "numeric",
@@ -341,7 +461,7 @@ const formatValue = (key: string, value: any): string => {
   if (key.includes("amount") || key === "price" || key === "cost" || key === "subtotal" || key === "total") {
     const num = Number(value);
     if (!isNaN(num)) {
-      return num.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ج.م";
+      return num.toLocaleString(lang === 'en' ? "en-US" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (lang === 'en' ? " EGP" : " ج.م");
     }
   }
 
@@ -354,7 +474,7 @@ const formatValue = (key: string, value: any): string => {
 };
 
 // استخراج معرف مفهوم من البيانات
-const getReadableIdentifier = (log: AuditLog): string => {
+const getReadableIdentifier = (log: AuditLog, lang: 'ar' | 'en' = 'ar'): string => {
   const data = log.new_data || log.old_data;
   const shortId = log.record_identifier?.slice(0, 8) || "---";
 
@@ -363,121 +483,125 @@ const getReadableIdentifier = (log: AuditLog): string => {
   // حسب نوع الجدول
   switch (log.target_table) {
     case "invoices":
-      return data.invoice_number || `فاتورة ${shortId}`;
+      return data.invoice_number || (lang === 'en' ? `Invoice ${shortId}` : `فاتورة ${shortId}`);
     case "bills":
-      return data.bill_number || `فاتورة مشتريات ${shortId}`;
+      return data.bill_number || (lang === 'en' ? `Purchase Bill ${shortId}` : `فاتورة مشتريات ${shortId}`);
     case "payments":
-      const amount = data.amount ? `${Math.abs(data.amount).toLocaleString("ar-EG")} ج.م` : "";
-      const method = valueTranslations.payment_method?.[data.payment_method] || data.payment_method || "";
+      const amount = data.amount ? `${Math.abs(data.amount).toLocaleString(lang === 'en' ? "en-US" : "ar-EG")} ${lang === 'en' ? "EGP" : "ج.م"}` : "";
+      const method = (lang === 'en' ? valueTranslationsEn : valueTranslations).payment_method?.[data.payment_method] || data.payment_method || "";
       if (data.notes) {
         // استخراج وصف مختصر من الملاحظات
         const shortNote = data.notes.length > 40 ? data.notes.slice(0, 40) + "..." : data.notes;
         return shortNote;
       }
-      return `${method} ${amount}`.trim() || `دفعة ${shortId}`;
+      return `${method} ${amount}`.trim() || (lang === 'en' ? `Payment ${shortId}` : `دفعة ${shortId}`);
     case "customers":
-      return data.name || `عميل ${shortId}`;
+      return data.name || (lang === 'en' ? `Customer ${shortId}` : `عميل ${shortId}`);
     case "suppliers":
-      return data.name || `مورد ${shortId}`;
+      return data.name || (lang === 'en' ? `Supplier ${shortId}` : `مورد ${shortId}`);
     case "products":
-      return data.name || `منتج ${shortId}`;
+      return data.name || (lang === 'en' ? `Product ${shortId}` : `منتج ${shortId}`);
     case "journal_entries":
-      return data.reference_number || `قيد ${shortId}`;
+      return data.reference_number || (lang === 'en' ? `Journal Entry ${shortId}` : `قيد ${shortId}`);
     case "chart_of_accounts":
-      return data.account_name || data.name || `حساب ${shortId}`;
+      return data.account_name || data.name || (lang === 'en' ? `Account ${shortId}` : `حساب ${shortId}`);
     case "estimates":
-      return data.estimate_number || `عرض سعر ${shortId}`;
+      return data.estimate_number || (lang === 'en' ? `Estimate ${shortId}` : `عرض سعر ${shortId}`);
     case "sales_orders":
-      return data.order_number || `أمر بيع ${shortId}`;
+      return data.order_number || (lang === 'en' ? `Sales Order ${shortId}` : `أمر بيع ${shortId}`);
     case "purchase_orders":
-      return data.order_number || `أمر شراء ${shortId}`;
+      return data.order_number || (lang === 'en' ? `Purchase Order ${shortId}` : `أمر شراء ${shortId}`);
     case "sales_returns":
-      return data.return_number || `مرتجع ${shortId}`;
+      return data.return_number || (lang === 'en' ? `Return ${shortId}` : `مرتجع ${shortId}`);
     default:
       return data.name || data.number || shortId;
   }
 };
 
 // وصف العملية بشكل مفهوم
-const getActionDescription = (log: AuditLog): string => {
-  const tableName = translateTable(log.target_table);
+const getActionDescription = (log: AuditLog, lang: 'ar' | 'en' = 'ar'): string => {
+  const tableName = translateTable(log.target_table, lang);
   const identifier = log.record_identifier || log.record_id;
+  const en = lang === 'en';
 
   switch (log.action) {
     case "INSERT":
-      return `تم إنشاء ${tableName} جديد: ${identifier}`;
+      return en ? `Created new ${tableName}: ${identifier}` : `تم إنشاء ${tableName} جديد: ${identifier}`;
     case "UPDATE":
       if (log.changed_fields && log.changed_fields.length > 0) {
         const fields = log.changed_fields
-          .map((f) => fieldTranslations[f] || f)
-          .join("، ");
-        return `تم تحديث ${tableName}: ${identifier} (${fields})`;
+          .map((f) => (en ? (fieldTranslationsEn[f] || f) : (fieldTranslations[f] || f)))
+          .join(en ? ", " : "، ");
+        return en ? `Updated ${tableName}: ${identifier} (${fields})` : `تم تحديث ${tableName}: ${identifier} (${fields})`;
       }
-      return `تم تحديث ${tableName}: ${identifier}`;
+      return en ? `Updated ${tableName}: ${identifier}` : `تم تحديث ${tableName}: ${identifier}`;
     case "DELETE":
-      return `تم حذف ${tableName}: ${identifier}`;
+      return en ? `Deleted ${tableName}: ${identifier}` : `تم حذف ${tableName}: ${identifier}`;
     case "REVERT":
-      return `تم التراجع عن عملية في ${tableName}: ${identifier}`;
+      return en ? `Reverted an operation in ${tableName}: ${identifier}` : `تم التراجع عن عملية في ${tableName}: ${identifier}`;
     case "APPROVE":
-      return `تم اعتماد ${tableName}: ${identifier}`;
+      return en ? `Approved ${tableName}: ${identifier}` : `تم اعتماد ${tableName}: ${identifier}`;
     case "POST":
-      return `تم ترحيل ${tableName}: ${identifier}`;
+      return en ? `Posted ${tableName}: ${identifier}` : `تم ترحيل ${tableName}: ${identifier}`;
     case "CANCEL":
-      return `تم إلغاء ${tableName}: ${identifier}`;
+      return en ? `Cancelled ${tableName}: ${identifier}` : `تم إلغاء ${tableName}: ${identifier}`;
     case "REVERSE":
-      return `تم عكس ${tableName}: ${identifier}`;
+      return en ? `Reversed ${tableName}: ${identifier}` : `تم عكس ${tableName}: ${identifier}`;
     case "CLOSE":
-      return `تم إقفال ${tableName}: ${identifier}`;
+      return en ? `Closed ${tableName}: ${identifier}` : `تم إقفال ${tableName}: ${identifier}`;
     case "LOGIN":
-      return `تسجيل دخول: ${log.user_name || log.user_email}`;
+      return en ? `Login: ${log.user_name || log.user_email}` : `تسجيل دخول: ${log.user_name || log.user_email}`;
     case "LOGOUT":
-      return `تسجيل خروج: ${log.user_name || log.user_email}`;
+      return en ? `Logout: ${log.user_name || log.user_email}` : `تسجيل خروج: ${log.user_name || log.user_email}`;
     case "ACCESS_DENIED":
-      return `محاولة وصول غير مصرح: ${tableName}`;
+      return en ? `Unauthorized access attempt: ${tableName}` : `محاولة وصول غير مصرح: ${tableName}`;
     case "SETTINGS":
-      return `تم تغيير إعدادات: ${identifier}`;
+      return en ? `Settings changed: ${identifier}` : `تم تغيير إعدادات: ${identifier}`;
     case "PERMISSIONS":
-      return `تم تغيير صلاحيات: ${identifier}`;
+      return en ? `Permissions changed: ${identifier}` : `تم تغيير صلاحيات: ${identifier}`;
     default:
-      return `عملية ${log.action} على ${tableName}: ${identifier}`;
+      return en ? `${log.action} operation on ${tableName}: ${identifier}` : `عملية ${log.action} على ${tableName}: ${identifier}`;
   }
 };
 
 // ترجمة نوع العملية
-const getActionText = (action: string): string => {
+const getActionText = (action: string, lang: 'ar' | 'en' = 'ar'): string => {
+  const en = lang === 'en';
   switch (action) {
-    case "INSERT": return "إضافة";
-    case "UPDATE": return "تعديل";
-    case "DELETE": return "حذف";
-    case "REVERT": return "تراجع";
-    case "APPROVE": return "اعتماد";
-    case "POST": return "ترحيل";
-    case "CANCEL": return "إلغاء";
-    case "REVERSE": return "عكس";
-    case "CLOSE": return "إقفال";
-    case "LOGIN": return "تسجيل دخول";
-    case "LOGOUT": return "تسجيل خروج";
-    case "ACCESS_DENIED": return "وصول مرفوض";
-    case "SETTINGS": return "إعدادات";
-    case "PERMISSIONS": return "صلاحيات";
+    case "INSERT": return en ? "Add" : "إضافة";
+    case "UPDATE": return en ? "Edit" : "تعديل";
+    case "DELETE": return en ? "Delete" : "حذف";
+    case "REVERT": return en ? "Revert" : "تراجع";
+    case "APPROVE": return en ? "Approve" : "اعتماد";
+    case "POST": return en ? "Post" : "ترحيل";
+    case "CANCEL": return en ? "Cancel" : "إلغاء";
+    case "REVERSE": return en ? "Reverse" : "عكس";
+    case "CLOSE": return en ? "Close" : "إقفال";
+    case "LOGIN": return en ? "Login" : "تسجيل دخول";
+    case "LOGOUT": return en ? "Logout" : "تسجيل خروج";
+    case "ACCESS_DENIED": return en ? "Access Denied" : "وصول مرفوض";
+    case "SETTINGS": return en ? "Settings" : "إعدادات";
+    case "PERMISSIONS": return en ? "Permissions" : "صلاحيات";
     // v3.62.3 — backup lifecycle actions
-    case "backup_export": return "تصدير نسخة احتياطية";
-    case "backup_delete": return "حذف نسخة احتياطية";
-    case "backup_restore": return "استعادة نسخة احتياطية";
-    case "backup_restore_failed": return "فشل الاستعادة";
+    case "backup_export": return en ? "Backup Export" : "تصدير نسخة احتياطية";
+    case "backup_delete": return en ? "Backup Deletion" : "حذف نسخة احتياطية";
+    case "backup_restore": return en ? "Backup Restore" : "استعادة نسخة احتياطية";
+    case "backup_restore_failed": return en ? "Restore Failed" : "فشل الاستعادة";
     default: return action;
   }
 };
 
 // دالة تصدير CSV
-const exportToCSV = (logs: AuditLog[]) => {
-  const headers = ["التاريخ", "المستخدم", "نوع العملية", "الجدول", "السجل", "الحقول المتغيرة"];
+const exportToCSV = (logs: AuditLog[], lang: 'ar' | 'en' = 'ar') => {
+  const headers = lang === 'en'
+    ? ["Date", "User", "Action Type", "Table", "Record", "Changed Fields"]
+    : ["التاريخ", "المستخدم", "نوع العملية", "الجدول", "السجل", "الحقول المتغيرة"];
   const rows = logs.map(log => [
-    new Date(log.created_at).toLocaleString("ar-EG"),
+    new Date(log.created_at).toLocaleString(lang === 'en' ? "en-US" : "ar-EG"),
     log.user_name || log.user_email,
-    getActionText(log.action),
-    translateTable(log.target_table),
-    getReadableIdentifier(log),
+    getActionText(log.action, lang),
+    translateTable(log.target_table, lang),
+    getReadableIdentifier(log, lang),
     log.changed_fields?.join(", ") || "-"
   ]);
 
@@ -491,6 +615,21 @@ const exportToCSV = (logs: AuditLog[]) => {
 
 export default function AuditLogPage() {
   const { toast } = useToast();
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar');
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar;
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar';
+        setAppLang(v === 'en' ? 'en' : 'ar');
+      } catch {}
+    };
+    handler();
+    window.addEventListener('app_language_changed', handler);
+    return () => window.removeEventListener('app_language_changed', handler);
+  }, []);
+
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState<boolean | null>(null);
@@ -542,14 +681,16 @@ export default function AuditLogPage() {
   const exportToExcel = async () => {
     setExporting(true);
     try {
-      const headers = ["التاريخ", "المستخدم", "البريد", "نوع العملية", "الجدول", "السجل", "الحقول المتغيرة"];
+      const headers = appLang === 'en'
+        ? ["Date", "User", "Email", "Action Type", "Table", "Record", "Changed Fields"]
+        : ["التاريخ", "المستخدم", "البريد", "نوع العملية", "الجدول", "السجل", "الحقول المتغيرة"];
       const rows = logs.map(log => [
-        new Date(log.created_at).toLocaleString("ar-EG"),
+        new Date(log.created_at).toLocaleString(appLang === 'en' ? "en-US" : "ar-EG"),
         log.user_name || "-",
         log.user_email || "-",
-        getActionText(log.action),
-        translateTable(log.target_table),
-        getReadableIdentifier(log),
+        getActionText(log.action, appLang),
+        translateTable(log.target_table, appLang),
+        getReadableIdentifier(log, appLang),
         log.changed_fields?.join(", ") || "-"
       ]);
 
@@ -560,9 +701,9 @@ export default function AuditLogPage() {
       link.href = URL.createObjectURL(blob);
       link.download = `audit_log_${new Date().toISOString().split("T")[0]}.xls`;
       link.click();
-      toast({ title: "تم التصدير", description: "تم تصدير السجلات بنجاح" });
+      toast({ title: t("Exported", "تم التصدير"), description: t("Logs exported successfully", "تم تصدير السجلات بنجاح") });
     } catch {
-      toast({ title: "خطأ", description: "فشل تصدير السجلات", variant: "destructive" });
+      toast({ title: t("Error", "خطأ"), description: t("Failed to export logs", "فشل تصدير السجلات"), variant: "destructive" });
     } finally {
       setExporting(false);
     }
@@ -575,15 +716,15 @@ export default function AuditLogPage() {
 
     const html = `
       <!DOCTYPE html>
-      <html dir="rtl" lang="ar">
+      <html dir="${appLang === 'en' ? 'ltr' : 'rtl'}" lang="${appLang === 'en' ? 'en' : 'ar'}">
       <head>
         <meta charset="UTF-8">
-        <title>سجل المراجعة</title>
+        <title>${t("Audit Log", "سجل المراجعة")}</title>
         <style>
           body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; }
           h1 { color: #6366f1; border-bottom: 2px solid #6366f1; padding-bottom: 10px; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: ${appLang === 'en' ? 'left' : 'right'}; }
           th { background: #6366f1; color: white; }
           tr:nth-child(even) { background: #f9fafb; }
           .insert { color: #16a34a; }
@@ -593,26 +734,26 @@ export default function AuditLogPage() {
         </style>
       </head>
       <body>
-        <h1>📋 سجل المراجعة</h1>
-        <p class="meta">تاريخ التصدير: ${new Date().toLocaleString("ar-EG")} | عدد السجلات: ${logs.length}</p>
+        <h1>📋 ${t("Audit Log", "سجل المراجعة")}</h1>
+        <p class="meta">${t("Export Date", "تاريخ التصدير")}: ${new Date().toLocaleString(appLang === 'en' ? "en-US" : "ar-EG")} | ${t("Number of Records", "عدد السجلات")}: ${logs.length}</p>
         <table>
           <thead>
             <tr>
-              <th>التاريخ</th>
-              <th>المستخدم</th>
-              <th>العملية</th>
-              <th>الجدول</th>
-              <th>السجل</th>
+              <th>${t("Date", "التاريخ")}</th>
+              <th>${t("User", "المستخدم")}</th>
+              <th>${t("Action", "العملية")}</th>
+              <th>${t("Table", "الجدول")}</th>
+              <th>${t("Record", "السجل")}</th>
             </tr>
           </thead>
           <tbody>
             ${logs.map(log => `
               <tr>
-                <td>${new Date(log.created_at).toLocaleString("ar-EG")}</td>
+                <td>${new Date(log.created_at).toLocaleString(appLang === 'en' ? "en-US" : "ar-EG")}</td>
                 <td>${log.user_name || log.user_email}</td>
-                <td class="${log.action.toLowerCase()}">${getActionText(log.action)}</td>
-                <td>${translateTable(log.target_table)}</td>
-                <td>${getReadableIdentifier(log)}</td>
+                <td class="${log.action.toLowerCase()}">${getActionText(log.action, appLang)}</td>
+                <td>${translateTable(log.target_table, appLang)}</td>
+                <td>${getReadableIdentifier(log, appLang)}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -627,8 +768,8 @@ export default function AuditLogPage() {
 
   // تصدير CSV
   const handleExportCSV = () => {
-    exportToCSV(logs);
-    toast({ title: "تم التصدير", description: "تم تصدير السجلات بنجاح" });
+    exportToCSV(logs, appLang);
+    toast({ title: t("Exported", "تم التصدير"), description: t("Logs exported successfully", "تم تصدير السجلات بنجاح") });
   };
 
   // جلب الفروع ومراكز التكلفة
@@ -785,7 +926,7 @@ export default function AuditLogPage() {
   };
 
   const formatDate = (date: string) => {
-    return new Date(date).toLocaleString("ar-EG", {
+    return new Date(date).toLocaleString(appLang === 'en' ? "en-US" : "ar-EG", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -928,7 +1069,7 @@ export default function AuditLogPage() {
       setConfirmDialog({ open: false, type: "revert_batch", log: null });
       setSelectedLog(null);
       setActionLoading(null);
-      alert("❌ حدث خطأ أثناء التراجع الشامل");
+      alert(t("❌ An error occurred during full revert", "❌ حدث خطأ أثناء التراجع الشامل"));
     }
   };
 
@@ -957,7 +1098,7 @@ export default function AuditLogPage() {
       setConfirmDialog({ open: false, type: "revert", log: null });
       setSelectedLog(null);
       setActionLoading(null);
-      alert("❌ حدث خطأ أثناء التراجع");
+      alert(t("❌ An error occurred during revert", "❌ حدث خطأ أثناء التراجع"));
     }
   };
 
@@ -978,7 +1119,7 @@ export default function AuditLogPage() {
 
       if (data.success) {
         fetchLogs(pagination.page);
-        alert("✅ تم حذف السجل");
+        alert(t("✅ Log entry deleted", "✅ تم حذف السجل"));
       } else {
         alert(`❌ ${data.error}`);
       }
@@ -986,11 +1127,12 @@ export default function AuditLogPage() {
       setConfirmDialog({ open: false, type: "delete", log: null });
       setSelectedLog(null);
       setActionLoading(null);
-      alert("❌ حدث خطأ أثناء الحذف");
+      alert(t("❌ An error occurred during deletion", "❌ حدث خطأ أثناء الحذف"));
     }
   };
 
   const translateField = (field: string) => {
+    if (appLang === 'en') return fieldTranslationsEn[field] || fieldTranslations[field] || field;
     return fieldTranslations[field] || field;
   };
 
@@ -1004,7 +1146,7 @@ export default function AuditLogPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5 text-purple-600" />
-              تفاصيل العملية
+              {t("Operation Details", "تفاصيل العملية")}
             </DialogTitle>
           </DialogHeader>
 
@@ -1012,36 +1154,36 @@ export default function AuditLogPage() {
             {/* معلومات أساسية */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">المستخدم</p>
+                <p className="text-xs text-gray-500">{t("User", "المستخدم")}</p>
                 <p className="font-medium">{selectedLog.user_name || selectedLog.user_email}</p>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">التاريخ</p>
+                <p className="text-xs text-gray-500">{t("Date", "التاريخ")}</p>
                 <p className="font-medium">{formatDate(selectedLog.created_at)}</p>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">نوع العملية</p>
+                <p className="text-xs text-gray-500">{t("Action Type", "نوع العملية")}</p>
                 <Badge className={getActionColor(selectedLog.action)}>
                   {getActionIcon(selectedLog.action)}
-                  <span className="mr-1">{getActionText(selectedLog.action)}</span>
+                  <span className="mr-1">{getActionText(selectedLog.action, appLang)}</span>
                 </Badge>
               </div>
               <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-500">الجدول</p>
-                <p className="font-medium">{translateTable(selectedLog.target_table)}</p>
+                <p className="text-xs text-gray-500">{t("Table", "الجدول")}</p>
+                <p className="font-medium">{translateTable(selectedLog.target_table, appLang)}</p>
               </div>
             </div>
 
             {/* السجل */}
             <div className="bg-purple-50 p-3 rounded-lg">
-              <p className="text-xs text-gray-500">السجل</p>
+              <p className="text-xs text-gray-500">{t("Record", "السجل")}</p>
               <p className="font-medium text-purple-700">{selectedLog.record_identifier}</p>
             </div>
 
             {/* الحقول المتغيرة */}
             {selectedLog.action === "UPDATE" && selectedLog.changed_fields?.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-2">الحقول المتغيرة:</p>
+                <p className="text-sm font-medium mb-2">{t("Changed Fields:", "الحقول المتغيرة:")}</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedLog.changed_fields.map((field) => (
                     <Badge key={field} variant="outline" className="bg-yellow-50">
@@ -1059,21 +1201,21 @@ export default function AuditLogPage() {
                   <div className="p-1.5 rounded-lg bg-blue-100">
                     <ArrowUpDown className="h-4 w-4 text-blue-600" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">مقارنة التغييرات (Diff View)</p>
+                  <p className="text-sm font-semibold text-gray-800">{t("Change Comparison (Diff View)", "مقارنة التغييرات (Diff View)")}</p>
                   <Badge variant="outline" className="text-xs">
-                    {selectedLog.changed_fields.filter((f: string) => !hiddenFields.includes(f)).length} حقل
+                    {selectedLog.changed_fields.filter((f: string) => !hiddenFields.includes(f)).length} {t("field(s)", "حقل")}
                   </Badge>
                 </div>
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                   <div className="grid grid-cols-3 bg-gradient-to-l from-gray-100 to-gray-50 border-b">
-                    <div className="py-2.5 px-4 font-semibold text-gray-700 text-sm">الحقل</div>
+                    <div className="py-2.5 px-4 font-semibold text-gray-700 text-sm">{t("Field", "الحقل")}</div>
                     <div className="py-2.5 px-4 font-semibold text-red-600 text-sm flex items-center gap-1.5 border-r border-l">
                       <XCircle className="h-3.5 w-3.5" />
-                      القيمة السابقة
+                      {t("Previous Value", "القيمة السابقة")}
                     </div>
                     <div className="py-2.5 px-4 font-semibold text-green-600 text-sm flex items-center gap-1.5">
                       <Check className="h-3.5 w-3.5" />
-                      القيمة الجديدة
+                      {t("New Value", "القيمة الجديدة")}
                     </div>
                   </div>
                   <div className="divide-y">
@@ -1090,13 +1232,13 @@ export default function AuditLogPage() {
                           <div className="py-3 px-4 bg-red-50/70 text-red-700 text-sm border-r border-l border-red-100">
                             <div className="flex items-start gap-1.5">
                               <span className="text-red-400 mt-0.5">−</span>
-                              <span className="line-through opacity-75">{formatValue(field, selectedLog.old_data?.[field])}</span>
+                              <span className="line-through opacity-75">{formatValue(field, selectedLog.old_data?.[field], appLang)}</span>
                             </div>
                           </div>
                           <div className="py-3 px-4 bg-green-50/70 text-green-700 text-sm">
                             <div className="flex items-start gap-1.5">
                               <span className="text-green-500 mt-0.5">+</span>
-                              <span className="font-medium">{formatValue(field, selectedLog.new_data?.[field])}</span>
+                              <span className="font-medium">{formatValue(field, selectedLog.new_data?.[field], appLang)}</span>
                             </div>
                           </div>
                         </div>
@@ -1112,9 +1254,9 @@ export default function AuditLogPage() {
                   <div className="p-1.5 rounded-lg bg-green-100">
                     <Plus className="h-4 w-4 text-green-600" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">البيانات المضافة</p>
+                  <p className="text-sm font-semibold text-gray-800">{t("Added Data", "البيانات المضافة")}</p>
                   <Badge className="bg-green-100 text-green-700 text-xs">
-                    {Object.entries(selectedLog.new_data).filter(([k]) => !hiddenFields.includes(k)).length} حقل
+                    {Object.entries(selectedLog.new_data).filter(([k]) => !hiddenFields.includes(k)).length} {t("field(s)", "حقل")}
                   </Badge>
                 </div>
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200 max-h-64 overflow-auto">
@@ -1124,7 +1266,7 @@ export default function AuditLogPage() {
                       .map(([key, value]) => (
                         <div key={key} className="bg-white/80 rounded-lg p-2.5 border border-green-100">
                           <p className="text-xs text-gray-500 mb-0.5">{translateField(key)}</p>
-                          <p className="text-sm font-medium text-gray-800">{formatValue(key, value)}</p>
+                          <p className="text-sm font-medium text-gray-800">{formatValue(key, value, appLang)}</p>
                         </div>
                       ))}
                   </div>
@@ -1138,9 +1280,9 @@ export default function AuditLogPage() {
                   <div className="p-1.5 rounded-lg bg-red-100">
                     <Trash2 className="h-4 w-4 text-red-600" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">البيانات المحذوفة</p>
+                  <p className="text-sm font-semibold text-gray-800">{t("Deleted Data", "البيانات المحذوفة")}</p>
                   <Badge className="bg-red-100 text-red-700 text-xs">
-                    {Object.entries(selectedLog.old_data).filter(([k]) => !hiddenFields.includes(k)).length} حقل
+                    {Object.entries(selectedLog.old_data).filter(([k]) => !hiddenFields.includes(k)).length} {t("field(s)", "حقل")}
                   </Badge>
                 </div>
                 <div className="bg-gradient-to-br from-red-50 to-rose-50 p-4 rounded-xl border border-red-200 max-h-64 overflow-auto">
@@ -1150,7 +1292,7 @@ export default function AuditLogPage() {
                       .map(([key, value]) => (
                         <div key={key} className="bg-white/80 rounded-lg p-2.5 border border-red-100">
                           <p className="text-xs text-gray-500 mb-0.5">{translateField(key)}</p>
-                          <p className="text-sm font-medium text-gray-800 line-through opacity-75">{formatValue(key, value)}</p>
+                          <p className="text-sm font-medium text-gray-800 line-through opacity-75">{formatValue(key, value, appLang)}</p>
                         </div>
                       ))}
                   </div>
@@ -1169,9 +1311,9 @@ export default function AuditLogPage() {
                     <div className="p-1.5 rounded-lg bg-blue-100">
                       <Info className="h-4 w-4 text-blue-600" />
                     </div>
-                    <p className="text-sm font-semibold text-gray-800">بيانات إضافية</p>
+                    <p className="text-sm font-semibold text-gray-800">{t("Additional Data", "بيانات إضافية")}</p>
                     <Badge className="bg-blue-100 text-blue-700 text-xs">
-                      {Object.keys(selectedLog.metadata).filter((k) => !hiddenFields.includes(k)).length} حقل
+                      {Object.keys(selectedLog.metadata).filter((k) => !hiddenFields.includes(k)).length} {t("field(s)", "حقل")}
                     </Badge>
                   </div>
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-200 max-h-64 overflow-auto">
@@ -1181,7 +1323,7 @@ export default function AuditLogPage() {
                         .map(([key, value]) => (
                           <div key={key} className="bg-white/80 rounded-lg p-2.5 border border-blue-100">
                             <p className="text-xs text-gray-500 mb-0.5">{translateField(key)}</p>
-                            <p className="text-sm font-medium text-gray-800 break-words">{formatValue(key, value)}</p>
+                            <p className="text-sm font-medium text-gray-800 break-words">{formatValue(key, value, appLang)}</p>
                           </div>
                         ))}
                     </div>
@@ -1197,7 +1339,7 @@ export default function AuditLogPage() {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Activity className="h-4 w-4 text-purple-600" />
-                      <p className="text-sm font-medium text-gray-700">العمليات المرتبطة</p>
+                      <p className="text-sm font-medium text-gray-700">{t("Related Operations", "العمليات المرتبطة")}</p>
                     </div>
                     <Button
                       size="sm"
@@ -1211,7 +1353,7 @@ export default function AuditLogPage() {
                       ) : (
                         <Search className="h-4 w-4" />
                       )}
-                      <span className="mr-1">بحث عن المرتبطة</span>
+                      <span className="mr-1">{t("Find Related", "بحث عن المرتبطة")}</span>
                     </Button>
                   </div>
 
@@ -1225,9 +1367,9 @@ export default function AuditLogPage() {
                                 rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
                                   rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
                                 }`}>
-                                {getActionText(rel.action)}
+                                {getActionText(rel.action, appLang)}
                               </Badge>
-                              <span className="text-gray-700 font-medium">{translateTable(rel.target_table)}</span>
+                              <span className="text-gray-700 font-medium">{translateTable(rel.target_table, appLang)}</span>
                             </div>
                             <span className="text-xs text-gray-400">{rel.record_identifier?.slice(0, 8) || "---"}...</span>
                           </div>
@@ -1235,13 +1377,13 @@ export default function AuditLogPage() {
                       </div>
                       <div className="bg-amber-50 px-3 py-2 border-t">
                         <p className="text-xs text-amber-700 font-medium">
-                          ⚠️ سيتم التراجع عن {relatedLogs.length} عملية عند استخدام التراجع الشامل
+                          {t(`⚠️ ${relatedLogs.length} operation(s) will be reverted when using Full Revert`, `⚠️ سيتم التراجع عن ${relatedLogs.length} عملية عند استخدام التراجع الشامل`)}
                         </p>
                       </div>
                     </div>
                   ) : !loadingRelated ? (
                     <p className="text-xs text-gray-500 text-center py-2">
-                      اضغط "بحث عن المرتبطة" لعرض العمليات المرتبطة
+                      {t('Click "Find Related" to view related operations', 'اضغط "بحث عن المرتبطة" لعرض العمليات المرتبطة')}
                     </p>
                   ) : null}
                 </div>
@@ -1262,8 +1404,8 @@ export default function AuditLogPage() {
                     ) : (
                       <AlertTriangle className="h-5 w-5 ml-2" />
                     )}
-                    <span className="font-bold">التراجع الشامل</span>
-                    <span className="text-xs opacity-80 mr-2">(إلغاء العملية + كل المرتبطة)</span>
+                    <span className="font-bold">{t("Full Revert", "التراجع الشامل")}</span>
+                    <span className="text-xs opacity-80 mr-2">{t("(cancels the operation + all related)", "(إلغاء العملية + كل المرتبطة)")}</span>
                   </Button>
 
                   <div className="flex gap-3">
@@ -1278,7 +1420,7 @@ export default function AuditLogPage() {
                       ) : (
                         <Undo2 className="h-4 w-4 ml-2" />
                       )}
-                      تراجع جزئي
+                      {t("Partial Revert", "تراجع جزئي")}
                     </Button>
 
                     {/* حذف السجل */}
@@ -1289,16 +1431,16 @@ export default function AuditLogPage() {
                       disabled={actionLoading === selectedLog.id}
                     >
                       <Trash2 className="h-4 w-4 ml-2" />
-                      حذف السجل
+                      {t("Delete Log Entry", "حذف السجل")}
                     </Button>
                   </div>
 
                   {/* تنويه */}
                   <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
-                    <p className="font-medium mb-1">💡 الفرق بين التراجع الشامل والجزئي:</p>
+                    <p className="font-medium mb-1">{t("💡 The difference between Full and Partial Revert:", "💡 الفرق بين التراجع الشامل والجزئي:")}</p>
                     <ul className="list-disc list-inside space-y-0.5 text-blue-600">
-                      <li><strong>التراجع الشامل:</strong> يلغي العملية وكل العمليات المرتبطة بها (القيود، المخزون، العناصر...)</li>
-                      <li><strong>التراجع الجزئي:</strong> يلغي هذه العملية فقط بدون المرتبطة</li>
+                      <li><strong>{t("Full Revert:", "التراجع الشامل:")}</strong> {t("cancels the operation and all related operations (journal entries, inventory, items...)", "يلغي العملية وكل العمليات المرتبطة بها (القيود، المخزون، العناصر...)")}</li>
+                      <li><strong>{t("Partial Revert:", "التراجع الجزئي:")}</strong> {t("cancels this operation only, without related ones", "يلغي هذه العملية فقط بدون المرتبطة")}</li>
                     </ul>
                   </div>
                 </div>
@@ -1310,8 +1452,8 @@ export default function AuditLogPage() {
               <div className="border-t pt-4">
                 <div className="bg-purple-50 rounded-lg p-4 text-center">
                   <Undo2 className="h-8 w-8 text-purple-400 mx-auto mb-2" />
-                  <p className="text-purple-700 font-medium">تم التراجع عن هذه العملية مسبقاً</p>
-                  <p className="text-xs text-purple-500 mt-1">لا يمكن إجراء المزيد من العمليات على هذا السجل</p>
+                  <p className="text-purple-700 font-medium">{t("This operation has already been reverted", "تم التراجع عن هذه العملية مسبقاً")}</p>
+                  <p className="text-xs text-purple-500 mt-1">{t("No further actions can be performed on this log entry", "لا يمكن إجراء المزيد من العمليات على هذا السجل")}</p>
                 </div>
               </div>
             )}
@@ -1339,8 +1481,8 @@ export default function AuditLogPage() {
               ) : (
                 <Trash2 className="h-5 w-5" />
               )}
-              {confirmDialog.type === "revert_batch" ? "⚠️ تأكيد التراجع الشامل" :
-                confirmDialog.type === "revert" ? "تأكيد التراجع الجزئي" : "تأكيد حذف السجل"}
+              {confirmDialog.type === "revert_batch" ? t("⚠️ Confirm Full Revert", "⚠️ تأكيد التراجع الشامل") :
+                confirmDialog.type === "revert" ? t("Confirm Partial Revert", "تأكيد التراجع الجزئي") : t("Confirm Log Deletion", "تأكيد حذف السجل")}
             </DialogTitle>
           </DialogHeader>
 
@@ -1349,14 +1491,14 @@ export default function AuditLogPage() {
             <div className="bg-gray-50 p-3 rounded-lg border">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-gray-500">العملية المحددة</p>
-                  <p className="font-medium text-gray-800">{getReadableIdentifier(confirmDialog.log)}</p>
+                  <p className="text-xs text-gray-500">{t("Selected Operation", "العملية المحددة")}</p>
+                  <p className="font-medium text-gray-800">{getReadableIdentifier(confirmDialog.log, appLang)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge className={getActionColor(confirmDialog.log.action)}>
-                    {getActionText(confirmDialog.log.action)}
+                    {getActionText(confirmDialog.log.action, appLang)}
                   </Badge>
-                  <Badge variant="outline">{translateTable(confirmDialog.log.target_table)}</Badge>
+                  <Badge variant="outline">{translateTable(confirmDialog.log.target_table, appLang)}</Badge>
                 </div>
               </div>
             </div>
@@ -1367,10 +1509,10 @@ export default function AuditLogPage() {
                 <div className="bg-red-50 p-4 rounded-lg border border-red-200">
                   <p className="font-bold text-red-800 flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4" />
-                    تحذير: إجراء لا يمكن التراجع عنه!
+                    {t("Warning: This action cannot be undone!", "تحذير: إجراء لا يمكن التراجع عنه!")}
                   </p>
                   <p className="text-sm text-red-600 mt-2">
-                    سيتم إلغاء هذه العملية وجميع العمليات التي تمت معها:
+                    {t("This operation and all operations performed with it will be cancelled:", "سيتم إلغاء هذه العملية وجميع العمليات التي تمت معها:")}
                   </p>
                 </div>
 
@@ -1378,7 +1520,7 @@ export default function AuditLogPage() {
                   <div className="bg-white border rounded-lg overflow-hidden">
                     <div className="bg-amber-50 px-3 py-2 border-b">
                       <p className="text-sm font-medium text-amber-800">
-                        📋 العمليات التي سيتم إلغاؤها ({relatedLogs.length} عملية):
+                        {t(`📋 Operations to be cancelled (${relatedLogs.length}):`, `📋 العمليات التي سيتم إلغاؤها (${relatedLogs.length} عملية):`)}
                       </p>
                     </div>
                     <div className="max-h-40 overflow-auto divide-y">
@@ -1389,9 +1531,9 @@ export default function AuditLogPage() {
                               rel.action === "UPDATE" ? "bg-blue-100 text-blue-700" :
                                 rel.action === "DELETE" ? "bg-red-100 text-red-700" : "bg-gray-100"
                               }`}>
-                              {getActionText(rel.action)}
+                              {getActionText(rel.action, appLang)}
                             </Badge>
-                            <span className="text-gray-700">{translateTable(rel.target_table)}</span>
+                            <span className="text-gray-700">{translateTable(rel.target_table, appLang)}</span>
                           </div>
                         </div>
                       ))}
@@ -1400,12 +1542,12 @@ export default function AuditLogPage() {
                 ) : loadingRelated ? (
                   <div className="flex items-center justify-center py-4 text-gray-500">
                     <Loader2 className="h-5 w-5 animate-spin ml-2" />
-                    جاري البحث عن العمليات المرتبطة...
+                    {t("Searching for related operations...", "جاري البحث عن العمليات المرتبطة...")}
                   </div>
                 ) : (
                   <div className="bg-green-50 p-3 rounded-lg border border-green-200 text-center">
-                    <p className="text-sm text-green-700">✅ لم يتم العثور على عمليات مرتبطة</p>
-                    <p className="text-xs text-green-600">سيتم التراجع عن هذه العملية فقط</p>
+                    <p className="text-sm text-green-700">{t("✅ No related operations found", "✅ لم يتم العثور على عمليات مرتبطة")}</p>
+                    <p className="text-xs text-green-600">{t("Only this operation will be reverted", "سيتم التراجع عن هذه العملية فقط")}</p>
                   </div>
                 )}
               </div>
@@ -1414,14 +1556,14 @@ export default function AuditLogPage() {
             {/* التراجع الجزئي */}
             {confirmDialog.type === "revert" && (
               <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                <p className="font-medium text-purple-800">التراجع الجزئي</p>
+                <p className="font-medium text-purple-800">{t("Partial Revert", "التراجع الجزئي")}</p>
                 <p className="text-sm text-purple-600 mt-2">
-                  {confirmDialog.log.action === "INSERT" && "✓ سيتم حذف السجل الذي تمت إضافته فقط"}
-                  {confirmDialog.log.action === "UPDATE" && "✓ سيتم استرجاع البيانات السابقة فقط"}
-                  {confirmDialog.log.action === "DELETE" && "✓ سيتم استعادة السجل المحذوف فقط"}
+                  {confirmDialog.log.action === "INSERT" && t("✓ Only the added record will be deleted", "✓ سيتم حذف السجل الذي تمت إضافته فقط")}
+                  {confirmDialog.log.action === "UPDATE" && t("✓ Only the previous data will be restored", "✓ سيتم استرجاع البيانات السابقة فقط")}
+                  {confirmDialog.log.action === "DELETE" && t("✓ Only the deleted record will be restored", "✓ سيتم استعادة السجل المحذوف فقط")}
                 </p>
                 <p className="text-xs text-purple-500 mt-2">
-                  ⚠️ ملاحظة: لن يتم إلغاء العمليات المرتبطة (القيود، المخزون، إلخ)
+                  {t("⚠️ Note: related operations (journal entries, inventory, etc.) will not be cancelled", "⚠️ ملاحظة: لن يتم إلغاء العمليات المرتبطة (القيود، المخزون، إلخ)")}
                 </p>
               </div>
             )}
@@ -1429,12 +1571,12 @@ export default function AuditLogPage() {
             {/* حذف السجل */}
             {confirmDialog.type === "delete" && (
               <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                <p className="font-medium text-amber-800">حذف سجل المراجعة</p>
+                <p className="font-medium text-amber-800">{t("Delete Audit Log Entry", "حذف سجل المراجعة")}</p>
                 <p className="text-sm text-amber-600 mt-2">
-                  سيتم حذف سجل المراجعة فقط من قاعدة البيانات.
+                  {t("Only the audit log entry will be deleted from the database.", "سيتم حذف سجل المراجعة فقط من قاعدة البيانات.")}
                 </p>
                 <p className="text-xs text-amber-500 mt-2">
-                  ✓ البيانات الفعلية لن تتأثر
+                  {t("✓ The actual data will not be affected", "✓ البيانات الفعلية لن تتأثر")}
                 </p>
               </div>
             )}
@@ -1469,17 +1611,17 @@ export default function AuditLogPage() {
                   <Trash2 className="h-4 w-4 ml-2" />
                 )}
                 {confirmDialog.type === "revert_batch"
-                  ? `تأكيد التراجع الشامل ${relatedLogs.length > 0 ? `(${relatedLogs.length} عملية)` : ''}`
+                  ? t(`Confirm Full Revert ${relatedLogs.length > 0 ? `(${relatedLogs.length} operations)` : ''}`, `تأكيد التراجع الشامل ${relatedLogs.length > 0 ? `(${relatedLogs.length} عملية)` : ''}`)
                   : confirmDialog.type === "revert"
-                    ? "تأكيد التراجع الجزئي"
-                    : "تأكيد الحذف"}
+                    ? t("Confirm Partial Revert", "تأكيد التراجع الجزئي")
+                    : t("Confirm Deletion", "تأكيد الحذف")}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}
                 disabled={actionLoading === confirmDialog.log.id}
               >
-                إلغاء
+                {t("Cancel", "إلغاء")}
               </Button>
             </div>
           </div>
@@ -1508,8 +1650,8 @@ export default function AuditLogPage() {
                   <History className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-800 dark:text-gray-100 truncate">سجل المراجعة</h1>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm truncate">تتبع العمليات</p>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-800 dark:text-gray-100 truncate">{t("Audit Log", "سجل المراجعة")}</h1>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm truncate">{t("Track operations", "تتبع العمليات")}</p>
                 </div>
               </div>
             </div>
@@ -1520,7 +1662,7 @@ export default function AuditLogPage() {
                 className={showFilters ? "bg-purple-100 dark:bg-purple-900" : ""}
               >
                 <Filter className="h-4 w-4 ml-2" />
-                فلترة
+                {t("Filter", "فلترة")}
               </Button>
 
               {/* زر التصدير */}
@@ -1532,23 +1674,23 @@ export default function AuditLogPage() {
                     ) : (
                       <Download className="h-4 w-4 ml-2" />
                     )}
-                    تصدير
+                    {t("Export", "تصدير")}
                     <ChevronDown className="h-3 w-3 mr-1" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
                     <FileText className="h-4 w-4 ml-2" />
-                    تصدير CSV
+                    {t("Export CSV", "تصدير CSV")}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={exportToExcel} className="cursor-pointer">
                     <FileSpreadsheet className="h-4 w-4 ml-2" />
-                    تصدير Excel
+                    {t("Export Excel", "تصدير Excel")}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={exportToPDF} className="cursor-pointer">
                     <FileDown className="h-4 w-4 ml-2" />
-                    طباعة / PDF
+                    {t("Print / PDF", "طباعة / PDF")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1559,7 +1701,7 @@ export default function AuditLogPage() {
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 ml-2 ${loading ? "animate-spin" : ""}`} />
-                تحديث
+                {t("Refresh", "تحديث")}
               </Button>
             </div>
           </div>
@@ -1570,9 +1712,9 @@ export default function AuditLogPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-purple-100 text-sm">إجمالي العمليات</p>
+                    <p className="text-purple-100 text-sm">{t("Total Operations", "إجمالي العمليات")}</p>
                     <p className="text-3xl font-bold">{summary.total}</p>
-                    <p className="text-purple-200 text-xs">آخر 7 أيام</p>
+                    <p className="text-purple-200 text-xs">{t("Last 7 days", "آخر 7 أيام")}</p>
                   </div>
                   <Activity className="h-10 w-10 text-purple-200" />
                 </div>
@@ -1583,9 +1725,9 @@ export default function AuditLogPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-green-100 text-sm">إضافات</p>
+                    <p className="text-green-100 text-sm">{t("Additions", "إضافات")}</p>
                     <p className="text-3xl font-bold">{summary.inserts}</p>
-                    <p className="text-green-200 text-xs">سجلات جديدة</p>
+                    <p className="text-green-200 text-xs">{t("New records", "سجلات جديدة")}</p>
                   </div>
                   <TrendingUp className="h-10 w-10 text-green-200" />
                 </div>
@@ -1596,9 +1738,9 @@ export default function AuditLogPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-blue-100 text-sm">تعديلات</p>
+                    <p className="text-blue-100 text-sm">{t("Edits", "تعديلات")}</p>
                     <p className="text-3xl font-bold">{summary.updates}</p>
-                    <p className="text-blue-200 text-xs">تحديثات</p>
+                    <p className="text-blue-200 text-xs">{t("Updates", "تحديثات")}</p>
                   </div>
                   <Pencil className="h-10 w-10 text-blue-200" />
                 </div>
@@ -1609,9 +1751,9 @@ export default function AuditLogPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-red-100 text-sm">حذف</p>
+                    <p className="text-red-100 text-sm">{t("Deletions", "حذف")}</p>
                     <p className="text-3xl font-bold">{summary.deletes}</p>
-                    <p className="text-red-200 text-xs">سجلات محذوفة</p>
+                    <p className="text-red-200 text-xs">{t("Deleted records", "سجلات محذوفة")}</p>
                   </div>
                   <TrendingDown className="h-10 w-10 text-red-200" />
                 </div>
@@ -1625,14 +1767,14 @@ export default function AuditLogPage() {
               <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Filter className="h-5 w-5 text-purple-600" />
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">فلاتر البحث المتقدمة</h3>
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">{t("Advanced Search Filters", "فلاتر البحث المتقدمة")}</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* بحث نصي */}
                   <div className="relative sm:col-span-2 lg:col-span-1">
                     <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      placeholder="بحث في السجلات..."
+                      placeholder={t("Search logs...", "بحث في السجلات...")}
                       value={filters.search}
                       onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                       className="pr-10"
@@ -1645,78 +1787,78 @@ export default function AuditLogPage() {
                     onValueChange={(v) => setFilters({ ...filters, action: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="نوع العملية" />
+                      <SelectValue placeholder={t("Action Type", "نوع العملية")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">جميع العمليات</SelectItem>
+                      <SelectItem value="all">{t("All Actions", "جميع العمليات")}</SelectItem>
                       <SelectItem value="INSERT">
                         <span className="flex items-center gap-2">
-                          <Plus className="h-3 w-3 text-green-600" /> إضافة
+                          <Plus className="h-3 w-3 text-green-600" /> {t("Add", "إضافة")}
                         </span>
                       </SelectItem>
                       <SelectItem value="UPDATE">
                         <span className="flex items-center gap-2">
-                          <Pencil className="h-3 w-3 text-blue-600" /> تعديل
+                          <Pencil className="h-3 w-3 text-blue-600" /> {t("Edit", "تعديل")}
                         </span>
                       </SelectItem>
                       <SelectItem value="DELETE">
                         <span className="flex items-center gap-2">
-                          <Trash2 className="h-3 w-3 text-red-600" /> حذف
+                          <Trash2 className="h-3 w-3 text-red-600" /> {t("Delete", "حذف")}
                         </span>
                       </SelectItem>
                       <SelectItem value="REVERT">
                         <span className="flex items-center gap-2">
-                          <Undo2 className="h-3 w-3 text-purple-600" /> تراجع
+                          <Undo2 className="h-3 w-3 text-purple-600" /> {t("Revert", "تراجع")}
                         </span>
                       </SelectItem>
                       <SelectItem value="APPROVE">
                         <span className="flex items-center gap-2">
-                          <Check className="h-3 w-3 text-emerald-600" /> اعتماد
+                          <Check className="h-3 w-3 text-emerald-600" /> {t("Approve", "اعتماد")}
                         </span>
                       </SelectItem>
                       <SelectItem value="POST">
                         <span className="flex items-center gap-2">
-                          <FileText className="h-3 w-3 text-sky-600" /> ترحيل
+                          <FileText className="h-3 w-3 text-sky-600" /> {t("Post", "ترحيل")}
                         </span>
                       </SelectItem>
                       <SelectItem value="CANCEL">
                         <span className="flex items-center gap-2">
-                          <XCircle className="h-3 w-3 text-rose-600" /> إلغاء
+                          <XCircle className="h-3 w-3 text-rose-600" /> {t("Cancel", "إلغاء")}
                         </span>
                       </SelectItem>
                       <SelectItem value="REVERSE">
                         <span className="flex items-center gap-2">
-                          <RefreshCw className="h-3 w-3 text-violet-600" /> عكس
+                          <RefreshCw className="h-3 w-3 text-violet-600" /> {t("Reverse", "عكس")}
                         </span>
                       </SelectItem>
                       <SelectItem value="CLOSE">
                         <span className="flex items-center gap-2">
-                          <Clock className="h-3 w-3 text-slate-600" /> إقفال
+                          <Clock className="h-3 w-3 text-slate-600" /> {t("Close", "إقفال")}
                         </span>
                       </SelectItem>
                       <SelectItem value="LOGIN">
                         <span className="flex items-center gap-2">
-                          <LogIn className="h-3 w-3 text-cyan-600" /> تسجيل دخول
+                          <LogIn className="h-3 w-3 text-cyan-600" /> {t("Login", "تسجيل دخول")}
                         </span>
                       </SelectItem>
                       <SelectItem value="LOGOUT">
                         <span className="flex items-center gap-2">
-                          <LogIn className="h-3 w-3 rotate-180 text-orange-600" /> تسجيل خروج
+                          <LogIn className="h-3 w-3 rotate-180 text-orange-600" /> {t("Logout", "تسجيل خروج")}
                         </span>
                       </SelectItem>
                       <SelectItem value="ACCESS_DENIED">
                         <span className="flex items-center gap-2">
-                          <Shield className="h-3 w-3 text-red-600" /> وصول مرفوض
+                          <Shield className="h-3 w-3 text-red-600" /> {t("Access Denied", "وصول مرفوض")}
                         </span>
                       </SelectItem>
                       <SelectItem value="SETTINGS">
                         <span className="flex items-center gap-2">
-                          <Settings className="h-3 w-3 text-amber-600" /> إعدادات
+                          <Settings className="h-3 w-3 text-amber-600" /> {t("Settings", "إعدادات")}
                         </span>
                       </SelectItem>
                       <SelectItem value="PERMISSIONS">
                         <span className="flex items-center gap-2">
-                          <Shield className="h-3 w-3 text-indigo-600" /> صلاحيات
+                          <Shield className="h-3 w-3 text-indigo-600" /> {t("Permissions", "صلاحيات")}
                         </span>
                       </SelectItem>
                     </SelectContent>
@@ -1730,14 +1872,14 @@ export default function AuditLogPage() {
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="تصنيف المورد" />
+                      <SelectValue placeholder={t("Resource Category", "تصنيف المورد")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">جميع التصنيفات</SelectItem>
+                      <SelectItem value="all">{t("All Categories", "جميع التصنيفات")}</SelectItem>
                       {Object.entries(resourceCategories).map(([key, cat]) => (
                         <SelectItem key={key} value={key}>
                           <span className="flex items-center gap-2">
-                            <span>{cat.icon}</span> {cat.name}
+                            <span>{cat.icon}</span> {appLang === 'en' ? cat.nameEn : cat.name}
                           </span>
                         </SelectItem>
                       ))}
@@ -1750,15 +1892,15 @@ export default function AuditLogPage() {
                     onValueChange={(v) => setFilters({ ...filters, table: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="نوع المورد" />
+                      <SelectValue placeholder={t("Resource Type", "نوع المورد")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">جميع الموارد</SelectItem>
+                      <SelectItem value="all">{t("All Resources", "جميع الموارد")}</SelectItem>
                       {(filters.category && filters.category !== "all"
                         ? resourceCategories[filters.category]?.tables || []
                         : Object.keys(tableNameTranslations)
                       ).map((key) => (
-                        <SelectItem key={key} value={key}>{tableNameTranslations[key] || key}</SelectItem>
+                        <SelectItem key={key} value={key}>{translateTable(key, appLang)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1769,10 +1911,10 @@ export default function AuditLogPage() {
                     onValueChange={(v) => setFilters({ ...filters, userId: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="المستخدم" />
+                      <SelectValue placeholder={t("User", "المستخدم")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">جميع المستخدمين</SelectItem>
+                      <SelectItem value="all">{t("All Users", "جميع المستخدمين")}</SelectItem>
                       {users.map((user) => (
                         <SelectItem key={user.user_id} value={user.user_id}>
                           <span className="flex items-center gap-2">
@@ -1790,10 +1932,10 @@ export default function AuditLogPage() {
                     onValueChange={(v) => setFilters({ ...filters, branchId: v, costCenterId: "" })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="الفرع" />
+                      <SelectValue placeholder={t("Branch", "الفرع")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">جميع الفروع</SelectItem>
+                      <SelectItem value="all">{t("All Branches", "جميع الفروع")}</SelectItem>
                       {branches.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>
                           {branch.name}
@@ -1808,10 +1950,10 @@ export default function AuditLogPage() {
                     onValueChange={(v) => setFilters({ ...filters, costCenterId: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="مركز التكلفة" />
+                      <SelectValue placeholder={t("Cost Center", "مركز التكلفة")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">جميع مراكز التكلفة</SelectItem>
+                      <SelectItem value="all">{t("All Cost Centers", "جميع مراكز التكلفة")}</SelectItem>
                       {filteredCostCenters.map((cc) => (
                         <SelectItem key={cc.id} value={cc.id}>
                           {cc.name}
@@ -1822,7 +1964,7 @@ export default function AuditLogPage() {
 
                   {/* من تاريخ */}
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-500">من تاريخ</label>
+                    <label className="text-xs text-gray-500">{t("From Date", "من تاريخ")}</label>
                     <Input
                       type="date"
                       value={filters.startDate}
@@ -1832,7 +1974,7 @@ export default function AuditLogPage() {
 
                   {/* إلى تاريخ */}
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-500">إلى تاريخ</label>
+                    <label className="text-xs text-gray-500">{t("To Date", "إلى تاريخ")}</label>
                     <Input
                       type="date"
                       value={filters.endDate}
@@ -1844,11 +1986,11 @@ export default function AuditLogPage() {
                   <div className="flex gap-2 items-end sm:col-span-2 lg:col-span-1">
                     <Button onClick={handleFilterChange} className="flex-1 bg-purple-600 hover:bg-purple-700">
                       <Check className="h-4 w-4 ml-1" />
-                      تطبيق
+                      {t("Apply", "تطبيق")}
                     </Button>
                     <Button variant="outline" onClick={clearFilters} className="flex-1">
                       <X className="h-4 w-4 ml-1" />
-                      مسح
+                      {t("Clear", "مسح")}
                     </Button>
                   </div>
                 </div>
@@ -1863,43 +2005,43 @@ export default function AuditLogPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
-                  سجلات النشاط
+                  {t("Activity Logs", "سجلات النشاط")}
                   <Badge className="bg-white/20 text-white mr-2">
-                    {pagination.total} سجل
+                    {pagination.total} {t("record(s)", "سجل")}
                   </Badge>
                 </CardTitle>
                 {/* أزرار الترتيب */}
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-purple-200">ترتيب:</span>
+                  <span className="text-sm text-purple-200">{t("Sort:", "ترتيب:")}</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="text-white hover:bg-white/20">
                         <ArrowUpDown className="h-4 w-4 ml-1" />
-                        {sortField === "created_at" ? "التاريخ" :
-                          sortField === "user_name" ? "المستخدم" :
-                            sortField === "action" ? "العملية" : "الجدول"}
+                        {sortField === "created_at" ? t("Date", "التاريخ") :
+                          sortField === "user_name" ? t("User", "المستخدم") :
+                            sortField === "action" ? t("Action", "العملية") : t("Table", "الجدول")}
                         {sortOrder === "asc" ? <ArrowUp className="h-3 w-3 mr-1" /> : <ArrowDown className="h-3 w-3 mr-1" />}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleSort("created_at")} className="cursor-pointer">
                         <Clock className="h-4 w-4 ml-2" />
-                        التاريخ
+                        {t("Date", "التاريخ")}
                         {sortField === "created_at" && (sortOrder === "asc" ? " ↑" : " ↓")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleSort("user_name")} className="cursor-pointer">
                         <User className="h-4 w-4 ml-2" />
-                        المستخدم
+                        {t("User", "المستخدم")}
                         {sortField === "user_name" && (sortOrder === "asc" ? " ↑" : " ↓")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleSort("action")} className="cursor-pointer">
                         <Activity className="h-4 w-4 ml-2" />
-                        نوع العملية
+                        {t("Action Type", "نوع العملية")}
                         {sortField === "action" && (sortOrder === "asc" ? " ↑" : " ↓")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleSort("target_table")} className="cursor-pointer">
                         <FileText className="h-4 w-4 ml-2" />
-                        الجدول
+                        {t("Table", "الجدول")}
                         {sortField === "target_table" && (sortOrder === "asc" ? " ↑" : " ↓")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -1915,8 +2057,8 @@ export default function AuditLogPage() {
               ) : logs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-500">
                   <History className="h-16 w-16 mb-4 text-gray-300" />
-                  <p className="text-lg">لا توجد سجلات</p>
-                  <p className="text-sm">ستظهر هنا جميع العمليات التي يقوم بها المستخدمون</p>
+                  <p className="text-lg">{t("No logs found", "لا توجد سجلات")}</p>
+                  <p className="text-sm">{t("All operations performed by users will appear here", "ستظهر هنا جميع العمليات التي يقوم بها المستخدمون")}</p>
                 </div>
               ) : (
                 <TooltipProvider>
@@ -1937,7 +2079,7 @@ export default function AuditLogPage() {
                                 </div>
                               </TooltipTrigger>
                               <TooltipContent side="left">
-                                <p>{getActionDescription(log)}</p>
+                                <p>{getActionDescription(log, appLang)}</p>
                               </TooltipContent>
                             </Tooltip>
 
@@ -1945,15 +2087,15 @@ export default function AuditLogPage() {
                             <div className="space-y-1.5">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Badge className={`${getActionColor(log.action)} font-medium`}>
-                                  {getActionText(log.action)}
+                                  {getActionText(log.action, appLang)}
                                 </Badge>
                                 <Badge variant="outline" className="bg-gray-50">
-                                  {translateTable(log.target_table)}
+                                  {translateTable(log.target_table, appLang)}
                                 </Badge>
                               </div>
                               {/* الوصف المفهوم */}
                               <p className="text-gray-800 dark:text-gray-200 font-medium">
-                                {getReadableIdentifier(log)}
+                                {getReadableIdentifier(log, appLang)}
                               </p>
                               <div className="flex items-center gap-3 text-sm text-gray-500">
                                 <Tooltip>
@@ -1976,13 +2118,13 @@ export default function AuditLogPage() {
                                     </span>
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    <p>{new Date(log.created_at).toLocaleString("ar-EG", { dateStyle: "full", timeStyle: "medium" })}</p>
+                                    <p>{new Date(log.created_at).toLocaleString(appLang === 'en' ? "en-US" : "ar-EG", { dateStyle: "full", timeStyle: "medium" })}</p>
                                   </TooltipContent>
                                 </Tooltip>
                               </div>
                               {log.action === "UPDATE" && log.changed_fields?.length > 0 && (
                                 <div className="flex items-center gap-1 flex-wrap mt-1">
-                                  <span className="text-xs text-gray-400">تم تعديل:</span>
+                                  <span className="text-xs text-gray-400">{t("Modified:", "تم تعديل:")}</span>
                                   {log.changed_fields.slice(0, 3).map((field) => (
                                     <Badge key={field} variant="outline" className="text-xs bg-amber-50 border-amber-200 text-amber-700">
                                       {translateField(field)}
@@ -1992,11 +2134,11 @@ export default function AuditLogPage() {
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Badge variant="outline" className="text-xs cursor-help">
-                                          +{log.changed_fields.length - 3} حقول أخرى
+                                          +{log.changed_fields.length - 3} {t("more fields", "حقول أخرى")}
                                         </Badge>
                                       </TooltipTrigger>
                                       <TooltipContent>
-                                        <p>{log.changed_fields.slice(3).map(f => translateField(f)).join("، ")}</p>
+                                        <p>{log.changed_fields.slice(3).map(f => translateField(f)).join(t(", ", "، "))}</p>
                                       </TooltipContent>
                                     </Tooltip>
                                   )}
@@ -2014,11 +2156,11 @@ export default function AuditLogPage() {
                                 className="text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"
                               >
                                 <Eye className="h-4 w-4 ml-1" />
-                                تفاصيل
+                                {t("Details", "تفاصيل")}
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>عرض التفاصيل الكاملة والتغييرات</p>
+                              <p>{t("View full details and changes", "عرض التفاصيل الكاملة والتغييرات")}</p>
                             </TooltipContent>
                           </Tooltip>
                         </div>
@@ -2032,7 +2174,7 @@ export default function AuditLogPage() {
               {pagination.totalPages > 1 && (
                 <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                   <div className="text-sm text-gray-500">
-                    صفحة {pagination.page} من {pagination.totalPages}
+                    {t("Page", "صفحة")} {pagination.page} {t("of", "من")} {pagination.totalPages}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -2042,7 +2184,7 @@ export default function AuditLogPage() {
                       disabled={pagination.page <= 1 || loading}
                     >
                       <ChevronRight className="h-4 w-4" />
-                      السابق
+                      {t("Previous", "السابق")}
                     </Button>
                     <Button
                       variant="outline"
@@ -2050,7 +2192,7 @@ export default function AuditLogPage() {
                       onClick={() => fetchLogs(pagination.page + 1)}
                       disabled={pagination.page >= pagination.totalPages || loading}
                     >
-                      التالي
+                      {t("Next", "التالي")}
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
                   </div>

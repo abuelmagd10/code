@@ -95,6 +95,7 @@ import {
   updateBomStructure,
   updateBomVersion,
 } from "@/lib/manufacturing/bom-ui"
+import { readAppLanguage, type AppLang } from "@/lib/manufacturing/manufacturing-ui"
 import { WarehouseSelector } from "@/components/manufacturing/manufacturing-selectors"
 import { RawMaterialWarehousePicker } from "@/components/manufacturing/raw-material-warehouse-picker"
 
@@ -147,18 +148,26 @@ const EMPTY_PREVIEW_FORM: ExplosionPreviewPayload = {
   respect_effective_dates: true,
 }
 
-function getVersionLockMessage(status: BomVersionStatus) {
+function getVersionLockMessage(status: BomVersionStatus, lang: AppLang = "ar") {
   switch (status) {
     case "pending_approval":
-      return "هذه النسخة مقفلة أثناء دورة الاعتماد. يمكنك فقط اعتمادها أو رفضها إذا كانت لديك الصلاحية."
+      return lang === "en"
+        ? "This version is locked during the approval cycle. You can only approve or reject it if you have the permission."
+        : "هذه النسخة مقفلة أثناء دورة الاعتماد. يمكنك فقط اعتمادها أو رفضها إذا كانت لديك الصلاحية."
     case "approved":
-      return "هذه النسخة معتمدة بالفعل. الحقول والهيكل للقراءة فقط، ويمكن فقط تعيينها كنسخة افتراضية."
+      return lang === "en"
+        ? "This version is already approved. Fields and structure are read-only, and it can only be set as the default version."
+        : "هذه النسخة معتمدة بالفعل. الحقول والهيكل للقراءة فقط، ويمكن فقط تعيينها كنسخة افتراضية."
     case "superseded":
-      return "هذه النسخة مستبدلة وتشغيلية للقراءة فقط."
+      return lang === "en"
+        ? "This version has been superseded and is operationally read-only."
+        : "هذه النسخة مستبدلة وتشغيلية للقراءة فقط."
     case "archived":
-      return "هذه النسخة مؤرشفة ولا تقبل أي تعديل."
+      return lang === "en"
+        ? "This version is archived and does not accept any modification."
+        : "هذه النسخة مؤرشفة ولا تقبل أي تعديل."
     default:
-      return "هذه النسخة قابلة للتحرير."
+      return lang === "en" ? "This version is editable." : "هذه النسخة قابلة للتحرير."
   }
 }
 
@@ -197,6 +206,25 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
   const canUpdate = accessReady ? canAction("manufacturing_boms", "update") : false
   const canDelete = accessReady ? canAction("manufacturing_boms", "delete") : false
   const canApprove = accessReady ? canAction("manufacturing_boms", "approve") : false
+
+  const [appLang, setAppLang] = useState<AppLang>("ar")
+
+  useEffect(() => {
+    const handler = () => setAppLang(readAppLanguage())
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key === "app_language") handler()
+    }
+    handler()
+    window.addEventListener("app_language_changed", handler)
+    window.addEventListener("storage", storageHandler)
+
+    return () => {
+      window.removeEventListener("app_language_changed", handler)
+      window.removeEventListener("storage", storageHandler)
+    }
+  }, [])
+
+  const t = (en: string, ar: string) => (appLang === "en" ? en : ar)
 
   const [bom, setBom] = useState<BomDetail | null>(null)
   const [versionSnapshot, setVersionSnapshot] = useState<BomVersionSnapshot | null>(null)
@@ -292,11 +320,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل البيانات المرجعية",
-        description: error?.message || "حدث خطأ أثناء تحميل الفروع والمنتجات",
+        title: t("Failed to load reference data", "تعذر تحميل البيانات المرجعية"),
+        description: error?.message || t("An error occurred while loading branches and products", "حدث خطأ أثناء تحميل الفروع والمنتجات"),
       })
     }
-  }, [toast])
+  }, [toast, appLang])
 
   const loadBomDetailData = useCallback(async (preferredVersionId?: string | null) => {
     try {
@@ -320,8 +348,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل تفاصيل هيكل المواد",
-        description: error?.message || "حدث خطأ أثناء تحميل السجل",
+        title: t("Failed to load BOM details", "تعذر تحميل تفاصيل هيكل المواد"),
+        description: error?.message || t("An error occurred while loading the record", "حدث خطأ أثناء تحميل السجل"),
       })
       setBom(null)
       setSelectedVersionId(null)
@@ -330,7 +358,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } finally {
       setLoadingBom(false)
     }
-  }, [bomId, hydrateHeaderForm, resetVersionState, selectedVersionId, toast])
+  }, [bomId, hydrateHeaderForm, resetVersionState, selectedVersionId, toast, appLang])
 
   const loadSelectedVersion = useCallback(async (versionId: string) => {
     try {
@@ -340,14 +368,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل بيانات النسخة",
-        description: error?.message || "حدث خطأ أثناء تحميل النسخة المحددة",
+        title: t("Failed to load version data", "تعذر تحميل بيانات النسخة"),
+        description: error?.message || t("An error occurred while loading the selected version", "حدث خطأ أثناء تحميل النسخة المحددة"),
       })
       resetVersionState()
     } finally {
       setLoadingVersion(false)
     }
-  }, [hydrateVersionState, resetVersionState, toast])
+  }, [hydrateVersionState, resetVersionState, toast, appLang])
 
   const refreshWorkspace = useCallback(async (preferredVersionId?: string | null) => {
     const resolvedVersionId = await loadBomDetailData(preferredVersionId)
@@ -375,8 +403,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     if (!headerForm.bom_code.trim() || !headerForm.bom_name.trim()) {
       toast({
         variant: "destructive",
-        title: "البيانات الأساسية مطلوبة",
-        description: "كود هيكل المواد واسمه مطلوبان قبل الحفظ.",
+        title: t("Basic details required", "البيانات الأساسية مطلوبة"),
+        description: t("The BOM code and name are required before saving.", "كود هيكل المواد واسمه مطلوبان قبل الحفظ."),
       })
       return
     }
@@ -384,8 +412,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     if (!headerForm.source_warehouse_id) {
       toast({
         variant: "destructive",
-        title: "محتاجين مخزن صرف الخامات",
-        description: "اختر مخزن، عشان كل أمر إنتاج بيتعمل من القائمة دى يسحب منه الخامات.",
+        title: t("Raw material issue warehouse required", "محتاجين مخزن صرف الخامات"),
+        description: t("Select a warehouse — every production order created from this BOM will draw its raw materials from it.", "اختر مخزن، عشان كل أمر إنتاج بيتعمل من القائمة دى يسحب منه الخامات."),
       })
       return
     }
@@ -401,16 +429,16 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       })
 
       toast({
-        title: "تم حفظ بيانات هيكل المواد",
-        description: "تم تحديث البيانات الرئيسية بنجاح.",
+        title: t("BOM details saved", "تم حفظ بيانات هيكل المواد"),
+        description: t("The main details were updated successfully.", "تم تحديث البيانات الرئيسية بنجاح."),
       })
 
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ بيانات هيكل المواد",
-        description: error?.message || "حدث خطأ أثناء الحفظ",
+        title: t("Failed to save BOM details", "تعذر حفظ بيانات هيكل المواد"),
+        description: error?.message || t("An error occurred while saving", "حدث خطأ أثناء الحفظ"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -425,15 +453,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       setRunningAction("delete-bom")
       await deleteBom(bom.id)
       toast({
-        title: "تم حذف هيكل المواد",
-        description: "تم حذف هيكل المواد وجميع نسخه بنجاح.",
+        title: t("BOM deleted", "تم حذف هيكل المواد"),
+        description: t("The BOM and all its versions were deleted successfully.", "تم حذف هيكل المواد وجميع نسخه بنجاح."),
       })
       router.push("/manufacturing/boms")
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حذف هيكل المواد",
-        description: error?.message || "لا يمكن الحذف لوجود نسخ معتمدة أو لعدم كفاية الصلاحيات.",
+        title: t("Failed to delete BOM", "تعذر حذف هيكل المواد"),
+        description: error?.message || t("Deletion is not possible because approved versions exist or permissions are insufficient.", "لا يمكن الحذف لوجود نسخ معتمدة أو لعدم كفاية الصلاحيات."),
       })
       setRunningAction(null)
       await refreshWorkspace(selectedVersionId)
@@ -456,15 +484,17 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       setCreateVersionOpen(false)
       setCreateVersionForm(EMPTY_CREATE_VERSION_FORM)
       toast({
-        title: "تم إنشاء نسخة جديدة",
-        description: result.version_no ? `النسخة v${result.version_no} جاهزة للتحرير الآن.` : "تم إنشاء النسخة بنجاح.",
+        title: t("New version created", "تم إنشاء نسخة جديدة"),
+        description: result.version_no
+          ? t(`Version v${result.version_no} is now ready for editing.`, `النسخة v${result.version_no} جاهزة للتحرير الآن.`)
+          : t("The version was created successfully.", "تم إنشاء النسخة بنجاح."),
       })
       await refreshWorkspace(result.bom_version_id || selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر إنشاء النسخة",
-        description: error?.message || "حدث خطأ أثناء إنشاء نسخة هيكل المواد",
+        title: t("Failed to create version", "تعذر إنشاء النسخة"),
+        description: error?.message || t("An error occurred while creating the BOM version", "حدث خطأ أثناء إنشاء نسخة هيكل المواد"),
       })
     } finally {
       setRunningAction(null)
@@ -485,16 +515,16 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       })
 
       toast({
-        title: "تم حفظ بيانات النسخة",
-        description: "تم تحديث بيانات النسخة بنجاح.",
+        title: t("Version details saved", "تم حفظ بيانات النسخة"),
+        description: t("The version details were updated successfully.", "تم تحديث بيانات النسخة بنجاح."),
       })
 
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ بيانات النسخة",
-        description: error?.message || "حدث خطأ أثناء الحفظ",
+        title: t("Failed to save version details", "تعذر حفظ بيانات النسخة"),
+        description: error?.message || t("An error occurred while saving", "حدث خطأ أثناء الحفظ"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -509,8 +539,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       setRunningAction("delete-version")
       await deleteBomVersion(selectedVersionId)
       toast({
-        title: "تم حذف النسخة",
-        description: `تم حذف v${selectedVersion.version_no} بنجاح.`,
+        title: t("Version deleted", "تم حذف النسخة"),
+        description: t(`Version v${selectedVersion.version_no} was deleted successfully.`, `تم حذف v${selectedVersion.version_no} بنجاح.`),
       })
 
       const nextVersionId = bom?.versions.find((version) => version.id !== selectedVersionId)?.id || null
@@ -518,8 +548,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حذف النسخة",
-        description: error?.message || "الحذف مرفوض بسبب حالة النسخة الحالية.",
+        title: t("Failed to delete version", "تعذر حذف النسخة"),
+        description: error?.message || t("Deletion was rejected due to the current version status.", "الحذف مرفوض بسبب حالة النسخة الحالية."),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -553,15 +583,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       setSavingStructure(true)
       await updateBomStructure(selectedVersionId, sanitizedLines)
       toast({
-        title: "تم حفظ هيكل النسخة",
-        description: "الـ lines والـ substitutes أصبحت متزامنة مع قاعدة البيانات.",
+        title: t("Version structure saved", "تم حفظ هيكل النسخة"),
+        description: t("Lines and substitutes are now in sync with the database.", "الـ lines والـ substitutes أصبحت متزامنة مع قاعدة البيانات."),
       })
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ الهيكل",
-        description: error?.message || "حدث خطأ أثناء تحديث structure",
+        title: t("Failed to save structure", "تعذر حفظ الهيكل"),
+        description: error?.message || t("An error occurred while updating the structure", "حدث خطأ أثناء تحديث structure"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -581,8 +611,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تنفيذ العملية",
-        description: error?.message || "تم رفض العملية بسبب قيود الحالة أو التزامن",
+        title: t("Failed to execute the operation", "تعذر تنفيذ العملية"),
+        description: error?.message || t("The operation was rejected due to status or concurrency constraints", "تم رفض العملية بسبب قيود الحالة أو التزامن"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -596,8 +626,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     if (selectedVersionHasNoPersistedLines) {
       toast({
         variant: "destructive",
-        title: "لا يمكن إرسال نسخة فارغة",
-        description: "أضف مادة واحدة على الأقل ثم اضغط حفظ الخامات قبل الإرسال للاعتماد.",
+        title: t("Cannot submit an empty version", "لا يمكن إرسال نسخة فارغة"),
+        description: t("Add at least one material, then click Save Materials before submitting for approval.", "أضف مادة واحدة على الأقل ثم اضغط حفظ الخامات قبل الإرسال للاعتماد."),
       })
       return
     }
@@ -605,8 +635,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     await executeVersionAction(
       "submit",
       () => submitBomVersion(selectedVersionId),
-      "تم إرسال النسخة للاعتماد",
-      "أصبحت النسخة في حالة pending_approval."
+      t("Version submitted for approval", "تم إرسال النسخة للاعتماد"),
+      t("The version is now in pending_approval status.", "أصبحت النسخة في حالة pending_approval.")
     )
   }
 
@@ -614,8 +644,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     if (!selectedVersionId || !rejectionReason.trim()) {
       toast({
         variant: "destructive",
-        title: "سبب الرفض مطلوب",
-        description: "أدخل سببًا واضحًا قبل رفض النسخة.",
+        title: t("Rejection reason required", "سبب الرفض مطلوب"),
+        description: t("Enter a clear reason before rejecting the version.", "أدخل سببًا واضحًا قبل رفض النسخة."),
       })
       return
     }
@@ -623,8 +653,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     await executeVersionAction(
       "reject",
       () => rejectBomVersion(selectedVersionId, rejectionReason.trim()),
-      "تم رفض النسخة",
-      "أصبحت النسخة في حالة rejected ويمكن إعادة تعديلها لاحقًا."
+      t("Version rejected", "تم رفض النسخة"),
+      t("The version is now in rejected status and can be edited again later.", "أصبحت النسخة في حالة rejected ويمكن إعادة تعديلها لاحقًا.")
     )
     setRejectOpen(false)
     setRejectionReason("")
@@ -643,8 +673,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تشغيل Explosion Preview",
-        description: error?.message || "حدث خطأ أثناء تنفيذ المعاينة",
+        title: t("Failed to run Explosion Preview", "تعذر تشغيل Explosion Preview"),
+        description: error?.message || t("An error occurred while running the preview", "حدث خطأ أثناء تنفيذ المعاينة"),
       })
       setPreviewResult(null)
     } finally {
@@ -714,7 +744,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
   const getProductOptionLabel = (product: ProductOption, lineType: BomLineDraft["line_type"]) => {
     const allowed = isBomLineProductOptionAllowed(product, lineType, ownerProduct?.id)
-    return allowed ? buildProductLabel(product) : `${buildProductLabel(product)} — غير مناسب لنوع الإضافة`
+    return allowed ? buildProductLabel(product) : `${buildProductLabel(product)} — ${t("not suitable for this line type", "غير مناسب لنوع الإضافة")}`
   }
 
   const removeLine = (lineIndex: number) => {
@@ -763,44 +793,44 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
     switch (confirmAction) {
       case "delete-bom":
         return {
-          title: "حذف هيكل المواد",
+          title: t("Delete BOM", "حذف هيكل المواد"),
           description: bom
-            ? `سيتم حذف ${bom.bom_code} نهائياً إذا كانت الشروط متحققة. هذا الإجراء لا يمكن التراجع عنه.`
-            : "سيتم حذف هيكل المواد إذا كانت شروط الحذف متحققة.",
-          actionLabel: "حذف هيكل المواد",
+            ? t(`${bom.bom_code} will be permanently deleted if the conditions are met. This action cannot be undone.`, `سيتم حذف ${bom.bom_code} نهائياً إذا كانت الشروط متحققة. هذا الإجراء لا يمكن التراجع عنه.`)
+            : t("The BOM will be deleted if the deletion conditions are met.", "سيتم حذف هيكل المواد إذا كانت شروط الحذف متحققة."),
+          actionLabel: t("Delete BOM", "حذف هيكل المواد"),
           actionClassName: "bg-red-600 hover:bg-red-700",
         }
       case "delete-version":
         return {
-          title: "حذف النسخة الحالية",
+          title: t("Delete current version", "حذف النسخة الحالية"),
           description: selectedVersion
-            ? `سيتم حذف النسخة v${selectedVersion.version_no} إذا كانت حالتها تسمح بذلك. لا يمكن التراجع عن هذا الإجراء.`
-            : "سيتم حذف النسخة الحالية إذا كانت حالتها تسمح بذلك.",
-          actionLabel: "حذف النسخة",
+            ? t(`Version v${selectedVersion.version_no} will be deleted if its status allows it. This action cannot be undone.`, `سيتم حذف النسخة v${selectedVersion.version_no} إذا كانت حالتها تسمح بذلك. لا يمكن التراجع عن هذا الإجراء.`)
+            : t("The current version will be deleted if its status allows it.", "سيتم حذف النسخة الحالية إذا كانت حالتها تسمح بذلك."),
+          actionLabel: t("Delete Version", "حذف النسخة"),
           actionClassName: "bg-red-600 hover:bg-red-700",
         }
       case "approve":
         return {
-          title: "اعتماد الإصدار الحالية",
+          title: t("Approve current version", "اعتماد الإصدار الحالية"),
           description: selectedVersion
-            ? `سيتم اعتماد النسخة v${selectedVersion.version_no}. بعد الاعتماد ستصبح للقراءة فقط ويمكن تعيينها كنسخة افتراضية.`
-            : "سيتم اعتماد النسخة الحالية.",
-          actionLabel: "اعتماد",
+            ? t(`Version v${selectedVersion.version_no} will be approved. After approval it becomes read-only and can be set as the default version.`, `سيتم اعتماد النسخة v${selectedVersion.version_no}. بعد الاعتماد ستصبح للقراءة فقط ويمكن تعيينها كنسخة افتراضية.`)
+            : t("The current version will be approved.", "سيتم اعتماد النسخة الحالية."),
+          actionLabel: t("Approve", "اعتماد"),
           actionClassName: "",
         }
       case "set-default":
         return {
-          title: "تعيين هذه النسخة كنسخة رئيسية",
+          title: t("Set this version as the primary version", "تعيين هذه النسخة كنسخة رئيسية"),
           description: selectedVersion
-            ? `سيتم تعيين النسخة ${selectedVersion.version_no} كنسخة الإنتاج الرئيسية لهذا المنتج.`
-            : "سيتم تعيين النسخة الحالية كنسخة رئيسية.",
-          actionLabel: "تعيين كنسخة رئيسية",
+            ? t(`Version ${selectedVersion.version_no} will be set as the primary production version for this product.`, `سيتم تعيين النسخة ${selectedVersion.version_no} كنسخة الإنتاج الرئيسية لهذا المنتج.`)
+            : t("The current version will be set as the primary version.", "سيتم تعيين النسخة الحالية كنسخة رئيسية."),
+          actionLabel: t("Set as primary version", "تعيين كنسخة رئيسية"),
           actionClassName: "",
         }
       default:
         return null
     }
-  }, [bom, confirmAction, selectedVersion])
+  }, [bom, confirmAction, selectedVersion, appLang])
 
   const handleConfirmAction = async () => {
     const action = confirmAction
@@ -824,8 +854,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       await executeVersionAction(
         "approve",
         () => approveBomVersion(selectedVersionId),
-        "تم اعتماد النسخة",
-        "تم اعتماد هذه النسخة وأصبحت جاهزة للتفعيل والاستخدام في أوامر الإنتاج."
+        t("Version approved", "تم اعتماد النسخة"),
+        t("This version has been approved and is now ready to be activated and used in production orders.", "تم اعتماد هذه النسخة وأصبحت جاهزة للتفعيل والاستخدام في أوامر الإنتاج.")
       )
       return
     }
@@ -834,8 +864,8 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
       await executeVersionAction(
         "set-default",
         () => setDefaultBomVersion(selectedVersionId),
-        "تم تعيين النسخة الافتراضية",
-        "أصبحت هذه النسخة هي النسخة الرئيسية المستخدمة في الإنتاج تلقائياً."
+        t("Default version set", "تم تعيين النسخة الافتراضية"),
+        t("This version is now the primary version used automatically in production.", "أصبحت هذه النسخة هي النسخة الرئيسية المستخدمة في الإنتاج تلقائياً.")
       )
     }
   }
@@ -847,26 +877,26 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
           <CompanyHeader />
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-          title={loadingBom ? "جارٍ تحميل قائمة المكوّنات..." : bom ? `${bom.bom_code} — ${bom.bom_name}` : "القائمة مش متاحة"}
-          description="إدارة قائمة المكوّنات وإصداراتها. اعتماد كل إصدار مسجّل ومحفوظ للتدقيق."
+          title={loadingBom ? t("Loading bill of materials...", "جارٍ تحميل قائمة المكوّنات...") : bom ? `${bom.bom_code} — ${bom.bom_name}` : t("BOM not available", "القائمة مش متاحة")}
+          description={t("Manage the bill of materials and its versions. Every version approval is recorded and kept for auditing.", "إدارة قائمة المكوّنات وإصداراتها. اعتماد كل إصدار مسجّل ومحفوظ للتدقيق.")}
           variant="detail"
           backHref="/manufacturing/boms"
-          backLabel="رجوع لقوائم المكوّنات"
+          backLabel={t("Back to BOMs", "رجوع لقوائم المكوّنات")}
           extra={
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
               <Factory className="h-3.5 w-3.5" />
-              مديول التصنيع
+              {t("Manufacturing Module", "مديول التصنيع")}
             </div>
           }
           actions={
             <>
               <Button variant="outline" className="gap-2" onClick={() => refreshWorkspace(selectedVersionId)} disabled={loadingBom || loadingVersion}>
                 <RefreshCw className={`h-4 w-4 ${(loadingBom || loadingVersion) ? "animate-spin" : ""}`} />
-                تحديث
+                {t("Refresh", "تحديث")}
               </Button>
               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !bom} className="gap-2" data-ai-help="manufacturing_bom_detail.create_version_button">
                 <CopyPlus className="h-4 w-4" />
-                إنشاء إصدار جديد
+                {t("Create New Version", "إنشاء إصدار جديد")}
               </Button>
             </>
           }
@@ -879,9 +909,13 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
             <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40">
               <div className="text-blue-600 dark:text-blue-400 text-xl leading-none">ℹ️</div>
               <div className="text-sm text-blue-900 dark:text-blue-200 leading-relaxed">
-                <div className="font-semibold mb-1">إيه يعنى "إصدار" قائمة المكوّنات؟</div>
+                <div className="font-semibold mb-1">{t('What does a BOM "version" mean?', 'إيه يعنى "إصدار" قائمة المكوّنات؟')}</div>
                 <p className="text-blue-800 dark:text-blue-300">
-                  كل قائمة لها إصدار واحد معتمد فى المرة. الإصدار ده بيحدد الخامات وكمياتها وقت إنتاج المنتج. لما تحب تغيّر الوصفة، تنشئ <strong>إصدار جديد</strong>، تعدّل عليه، وترسله للاعتماد. الإصدارات القديمة تفضل محفوظة كأثر لأى أمر إنتاج قديم اتعمل عليها.
+                  {appLang === "en" ? (
+                    <>Each BOM has one approved version at a time. That version defines the raw materials and their quantities used when the product is manufactured. When you want to change the recipe, you create a <strong>new version</strong>, edit it, and submit it for approval. Older versions remain archived as an audit trail for any past production orders made against them.</>
+                  ) : (
+                    <>كل قائمة لها إصدار واحد معتمد فى المرة. الإصدار ده بيحدد الخامات وكمياتها وقت إنتاج المنتج. لما تحب تغيّر الوصفة، تنشئ <strong>إصدار جديد</strong>، تعدّل عليه، وترسله للاعتماد. الإصدارات القديمة تفضل محفوظة كأثر لأى أمر إنتاج قديم اتعمل عليها.</>
+                  )}
                 </p>
               </div>
             </div>
@@ -890,15 +924,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
           {loadingBom && !bom ? (
                 <div className="flex min-h-[280px] items-center justify-center text-slate-500">
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  جارٍ تحميل بيانات قائمة المكوّنات...
+                  {t("Loading bill of materials data...", "جارٍ تحميل بيانات قائمة المكوّنات...")}
                 </div>
               ) : !bom ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
                   <div className="mx-auto flex max-w-lg flex-col items-center gap-3">
                     <AlertTriangle className="h-10 w-10 text-amber-500" />
-                    <h2 className="text-xl font-semibold text-slate-900">القائمة دى مش موجودة</h2>
+                    <h2 className="text-xl font-semibold text-slate-900">{t("This BOM does not exist", "القائمة دى مش موجودة")}</h2>
                     <p className="text-sm leading-6 text-slate-600">
-                      يا ترى انمسحت، يا ترى مش عندك صلاحية تشوفها، يا ترى الفرع الحالى مش هو فرعها.
+                      {t("It may have been deleted, you may not have permission to view it, or it belongs to a different branch.", "يا ترى انمسحت، يا ترى مش عندك صلاحية تشوفها، يا ترى الفرع الحالى مش هو فرعها.")}
                     </p>
                   </div>
                 </div>
@@ -909,46 +943,46 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                     <div className="grid gap-4 md:grid-cols-3">
                       <Card className="border-cyan-200 bg-cyan-50/80">
                         <CardContent className="p-4">
-                          <div className="mb-1 text-xs text-slate-500">المنتج المصنّع</div>
+                          <div className="mb-1 text-xs text-slate-500">{t("Manufactured Product", "المنتج المصنّع")}</div>
                           <div className="text-base font-semibold text-slate-900">{buildProductLabel(ownerProduct)}</div>
                           <div className="mt-1.5 text-xs text-slate-500">
-                            {BOM_USAGE_OPTIONS.find((o) => o.value === bom.bom_usage)?.labelAr || bom.bom_usage}
+                            {BOM_USAGE_OPTIONS.find((o) => o.value === bom.bom_usage)?.[appLang === "en" ? "label" : "labelAr"] || bom.bom_usage}
                           </div>
                         </CardContent>
                       </Card>
                       <Card className="border-indigo-200 bg-indigo-50/80">
                         <CardContent className="p-4">
-                          <div className="mb-1 text-xs text-slate-500">الفرع</div>
+                          <div className="mb-1 text-xs text-slate-500">{t("Branch", "الفرع")}</div>
                           <div className="text-base font-semibold text-slate-900">{buildBranchLabel(branchMap[bom.branch_id])}</div>
                           {bom.source_warehouse_id ? (
-                            <div className="mt-1.5 text-xs text-emerald-600">✓ مخزن صرف محدد</div>
+                            <div className="mt-1.5 text-xs text-emerald-600">{t("✓ Issue warehouse set", "✓ مخزن صرف محدد")}</div>
                           ) : (
-                            <div className="mt-1.5 text-xs text-slate-400">لا يوجد مخزن صرف افتراضي</div>
+                            <div className="mt-1.5 text-xs text-slate-400">{t("No default issue warehouse", "لا يوجد مخزن صرف افتراضي")}</div>
                           )}
                         </CardContent>
                       </Card>
                       <Card className="border-slate-200 bg-slate-50/80">
                         <CardContent className="p-4">
-                          <div className="mb-1 text-xs text-slate-500">النسخة النشطة</div>
+                          <div className="mb-1 text-xs text-slate-500">{t("Active Version", "النسخة النشطة")}</div>
                           {bom.versions.length === 0 ? (
-                            <div className="text-sm text-slate-500">لا توجد نسخ بعد</div>
+                            <div className="text-sm text-slate-500">{t("No versions yet", "لا توجد نسخ بعد")}</div>
                           ) : (
                             <div className="flex flex-wrap items-center gap-2">
                               <Select value={selectedVersionId || ""} onValueChange={setSelectedVersionId}>
                                 <SelectTrigger className="h-8 flex-1 text-sm">
-                                  <SelectValue placeholder="اختر النسخة" />
+                                  <SelectValue placeholder={t("Select version", "اختر النسخة")} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {bom.versions.map((v) => (
                                     <SelectItem key={v.id} value={v.id}>
-                                      v{v.version_no} · {getVersionStatusLabel(v.status)}{v.is_default ? " ★" : ""}
+                                      v{v.version_no} · {getVersionStatusLabel(v.status, appLang)}{v.is_default ? " ★" : ""}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
                               {selectedVersion && (
                                 <Badge variant={getVersionStatusVariant(selectedVersion.status)} className="shrink-0">
-                                  {getVersionStatusLabel(selectedVersion.status)}
+                                  {getVersionStatusLabel(selectedVersion.status, appLang)}
                                 </Badge>
                               )}
                             </div>
@@ -964,36 +998,36 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           <div>
                             <CardTitle className="flex items-center gap-2 text-lg">
                               <Package2 className="h-5 w-5 text-cyan-700" />
-                              الخامات المُكوّنة للمنتج
+                              {t("Product Raw Materials", "الخامات المُكوّنة للمنتج")}
                             </CardTitle>
                             <CardDescription>
                               {selectedVersion
                                 ? structureEditable
-                                  ? "الإصدار ده قابل للتعديل. أضف الخامات وكمياتها واحفظ."
-                                  : getVersionLockMessage(selectedVersion.status)
+                                  ? t("This version is editable. Add the materials and their quantities, then save.", "الإصدار ده قابل للتعديل. أضف الخامات وكمياتها واحفظ.")
+                                  : getVersionLockMessage(selectedVersion.status, appLang)
                                 : bom.versions.length === 0
-                                ? "أنشئ الإصدار الأول علشان تبدأ تضيف الخامات."
-                                : "اختر إصدار من اللى فوق علشان تشوف مكوّناته."}
+                                ? t("Create the first version to start adding materials.", "أنشئ الإصدار الأول علشان تبدأ تضيف الخامات.")
+                                : t("Select a version above to view its components.", "اختر إصدار من اللى فوق علشان تشوف مكوّناته.")}
                             </CardDescription>
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {bom.versions.length === 0 && (
                               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
                                 <CopyPlus className="h-4 w-4" />
-                                إنشاء الإصدار الأول
+                                {t("Create First Version", "إنشاء الإصدار الأول")}
                               </Button>
                             )}
                             {structureEditable && canUpdate && (
                               <>
                                 <Button variant="outline" onClick={addLine} className="gap-2" data-ai-help="manufacturing_bom_detail.components_table">
-                                  إضافة خامة
+                                  {t("Add Material", "إضافة خامة")}
                                 </Button>
                                 <Button
                                   variant="outline"
                                   onClick={() => setStructureDraft(versionSnapshot ? bomSnapshotToDraftLines(versionSnapshot.lines) : [])}
                                   disabled={savingStructure}
                                 >
-                                  إعادة تحميل
+                                  {t("Reload", "إعادة تحميل")}
                                 </Button>
                                 <Button
                                   onClick={handleSaveStructure}
@@ -1002,7 +1036,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   data-ai-help="manufacturing_bom_detail.components_table"
                                 >
                                   {savingStructure ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                  حفظ المواد
+                                  {t("Save Materials", "حفظ المواد")}
                                 </Button>
                               </>
                             )}
@@ -1015,10 +1049,10 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 disabled={!canUpdate || runningAction === "submit" || loadingVersion}
                                 className="gap-2"
                                 data-ai-help="manufacturing_bom_detail.submit_approval_button"
-                                title={selectedVersionHasNoPersistedLines ? "أضف مادة واحدة على الأقل واحفظ المواد قبل الإرسال للاعتماد" : undefined}
+                                title={selectedVersionHasNoPersistedLines ? t("Add at least one material and save the materials before submitting for approval", "أضف مادة واحدة على الأقل واحفظ المواد قبل الإرسال للاعتماد") : undefined}
                               >
                                 {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                                إرسال للاعتماد
+                                {t("Submit for Approval", "إرسال للاعتماد")}
                               </Button>
                             )}
                             {selectedVersion && canApproveVersion(selectedVersion.status) && (
@@ -1030,7 +1064,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 data-ai-help="manufacturing_bom_detail.approve_button"
                               >
                                 {runningAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                اعتماد النسخة
+                                {t("Approve Version", "اعتماد النسخة")}
                               </Button>
                             )}
                           </div>
@@ -1041,13 +1075,13 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           <div className="rounded-2xl border border-dashed p-10 text-center">
                             <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                               <Package2 className="h-8 w-8 text-slate-300" />
-                              <div className="text-lg font-medium text-slate-900">مفيش إصدار لسه</div>
+                              <div className="text-lg font-medium text-slate-900">{t("No version yet", "مفيش إصدار لسه")}</div>
                               <p className="text-sm leading-6 text-slate-500">
-                                القائمة محتاجة إصدار علشان تقدر تضيف الخامات.
+                                {t("The BOM needs a version before you can add materials.", "القائمة محتاجة إصدار علشان تقدر تضيف الخامات.")}
                               </p>
                               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
                                 <CopyPlus className="h-4 w-4" />
-                                إنشاء النسخة الأولى
+                                {t("Create First Version", "إنشاء النسخة الأولى")}
                               </Button>
                             </div>
                           </div>
@@ -1055,24 +1089,24 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           loadingVersion ? (
                             <div className="flex min-h-[160px] items-center justify-center text-slate-500">
                               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                              جارٍ تحميل الإصدار...
+                              {t("Loading version...", "جارٍ تحميل الإصدار...")}
                             </div>
                           ) : (
                             <div className="rounded-2xl border border-dashed p-8 text-center">
                               <WandSparkles className="mx-auto h-8 w-8 text-slate-300" />
-                              <div className="mt-3 text-base font-medium text-slate-900">اختر إصدار من اللى فوق</div>
+                              <div className="mt-3 text-base font-medium text-slate-900">{t("Select a version from above", "اختر إصدار من اللى فوق")}</div>
                             </div>
                           )
                         ) : structureDraft.length === 0 ? (
                               <div className="rounded-2xl border border-dashed p-10 text-center">
                                 <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                                   <Package2 className="h-8 w-8 text-slate-300" />
-                                  <div className="text-lg font-medium text-slate-900">الإصدار ده لسه فاضى</div>
+                                  <div className="text-lg font-medium text-slate-900">{t("This version is still empty", "الإصدار ده لسه فاضى")}</div>
                                   <p className="text-sm leading-6 text-slate-500">
-                                    أضف الخامات اللى بتدخل فى تصنيع المنتج وكمياتها.
+                                    {t("Add the raw materials that go into manufacturing the product, along with their quantities.", "أضف الخامات اللى بتدخل فى تصنيع المنتج وكمياتها.")}
                                   </p>
                                   {structureEditable && (
-                                    <Button onClick={addLine} disabled={!canUpdate}>إضافة مكوّن</Button>
+                                    <Button onClick={addLine} disabled={!canUpdate}>{t("Add Component", "إضافة مكوّن")}</Button>
                                   )}
                                 </div>
                               </div>
@@ -1083,11 +1117,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     <CardHeader className="pb-4">
                                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                         <div>
-                                          <CardTitle className="text-base">سطر BOM #{line.line_no}</CardTitle>
+                                          <CardTitle className="text-base">{t("BOM Line", "سطر BOM")} #{line.line_no}</CardTitle>
                                           <CardDescription>
                                             {productMap[line.component_product_id]
                                               ? buildProductLabel(productMap[line.component_product_id])
-                                              : "لم يُحدد المنتج بعد"}
+                                              : t("Product not selected yet", "لم يُحدد المنتج بعد")}
                                           </CardDescription>
                                         </div>
                                         <Button
@@ -1096,14 +1130,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           onClick={() => removeLine(lineIndex)}
                                           disabled={!structureEditable || !canUpdate}
                                         >
-                                          حذف
+                                          {t("Delete", "حذف")}
                                         </Button>
                                       </div>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
                                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                         <div className="space-y-2">
-                                          <Label>الترتيب</Label>
+                                          <Label>{t("Order", "الترتيب")}</Label>
                                           <Input
                                             type="number"
                                             min="1"
@@ -1113,7 +1147,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label>نوع الإضافة</Label>
+                                          <Label>{t("Line Type", "نوع الإضافة")}</Label>
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                             value={line.line_type}
@@ -1122,7 +1156,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           >
                                             {BOM_LINE_TYPE_OPTIONS.map((option) => (
                                               <option key={option.value} value={option.value}>
-                                                {option.labelAr}
+                                                {appLang === "en" ? option.label : option.labelAr}
                                               </option>
                                             ))}
                                           </select>
@@ -1131,12 +1165,12 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             <div className="flex gap-2 rounded-lg border border-blue-100 bg-blue-50 p-2.5">
                                               <span className="mt-0.5 text-base leading-none">•</span>
                                               <div>
-                                                <p className="text-xs font-semibold text-blue-800">مكوّن تصنيع</p>
+                                                <p className="text-xs font-semibold text-blue-800">{t("Manufacturing Component", "مكوّن تصنيع")}</p>
                                                 <p className="mt-0.5 text-xs leading-5 text-blue-700">
-                                                  مادة تُستهلك بالكامل في التصنيع وتُصرف من المخزون.
+                                                  {t("A material fully consumed during manufacturing and issued from inventory.", "مادة تُستهلك بالكامل في التصنيع وتُصرف من المخزون.")}
                                                 </p>
                                                 <p className="mt-1 text-xs text-blue-600">
-                                                  <span className="font-medium">مثال:</span> دقيق + سكر + زيت في تصنيع البسكويت.
+                                                  <span className="font-medium">{t("Example:", "مثال:")}</span> {t("Flour + sugar + oil in biscuit manufacturing.", "دقيق + سكر + زيت في تصنيع البسكويت.")}
                                                 </p>
                                               </div>
                                             </div>
@@ -1145,15 +1179,15 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             <div className="flex gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-2.5">
                                               <span className="mt-0.5 text-base leading-none">•</span>
                                               <div>
-                                                <p className="text-xs font-semibold text-emerald-800">منتج مشترك</p>
+                                                <p className="text-xs font-semibold text-emerald-800">{t("Co-Product", "منتج مشترك")}</p>
                                                 <p className="mt-0.5 text-xs leading-5 text-emerald-700">
-                                                  منتج رئيسي آخر يخرج من نفس دورة التصنيع بشكل مقصود، وله قيمة اقتصادية مماثلة.
+                                                  {t("Another main product that intentionally comes out of the same manufacturing run, with comparable economic value.", "منتج رئيسي آخر يخرج من نفس دورة التصنيع بشكل مقصود، وله قيمة اقتصادية مماثلة.")}
                                                 </p>
                                                 <p className="mt-1 text-xs text-emerald-600">
-                                                  <span className="font-medium">مثال:</span> عند تكرير النفط: بنزين + ديزل + كيروسين في آنٍ واحد.
+                                                  <span className="font-medium">{t("Example:", "مثال:")}</span> {t("Oil refining: gasoline + diesel + kerosene at the same time.", "عند تكرير النفط: بنزين + ديزل + كيروسين في آنٍ واحد.")}
                                                 </p>
                                                 <p className="mt-1 text-xs text-emerald-600">
-                                                  <span className="font-medium">متى تستخدمه:</span> عندما تريد تسجيل مخرج رئيسي إضافي يُستلم في المخزون.
+                                                  <span className="font-medium">{t("When to use it:", "متى تستخدمه:")}</span> {t("When you want to record an additional main output received into inventory.", "عندما تريد تسجيل مخرج رئيسي إضافي يُستلم في المخزون.")}
                                                 </p>
                                               </div>
                                             </div>
@@ -1162,22 +1196,22 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             <div className="flex gap-2 rounded-lg border border-amber-100 bg-amber-50 p-2.5">
                                               <span className="mt-0.5 text-base leading-none">•</span>
                                               <div>
-                                                <p className="text-xs font-semibold text-amber-800">منتج ثانوي</p>
+                                                <p className="text-xs font-semibold text-amber-800">{t("By-Product", "منتج ثانوي")}</p>
                                                 <p className="mt-0.5 text-xs leading-5 text-amber-700">
-                                                  ناتج عرضي غير مقصود يخرج أثناء التصنيع، وعادةً له قيمة اقتصادية أقل.
+                                                  {t("An unintended incidental output produced during manufacturing, usually of lower economic value.", "ناتج عرضي غير مقصود يخرج أثناء التصنيع، وعادةً له قيمة اقتصادية أقل.")}
                                                 </p>
                                                 <p className="mt-1 text-xs text-amber-600">
-                                                  <span className="font-medium">مثال:</span> نشارة الخشب عند نشر الألواح، أو الحرارة الناتجة.
+                                                  <span className="font-medium">{t("Example:", "مثال:")}</span> {t("Sawdust when sawing boards, or the heat generated.", "نشارة الخشب عند نشر الألواح، أو الحرارة الناتجة.")}
                                                 </p>
                                                 <p className="mt-1 text-xs text-amber-600">
-                                                  <span className="font-medium">متى تستخدمه:</span> عندما تريد تتبع أو بيع الناتج الثانوي بشكل منفصل.
+                                                  <span className="font-medium">{t("When to use it:", "متى تستخدمه:")}</span> {t("When you want to track or sell the by-product separately.", "عندما تريد تتبع أو بيع الناتج الثانوي بشكل منفصل.")}
                                                 </p>
                                               </div>
                                             </div>
                                           )}
                                         </div>
                                         <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_bom_detail.component_product">
-                                          <Label>{line.line_type === "component" ? "المادة الخام" : "المنتج الناتج"}</Label>
+                                          <Label>{line.line_type === "component" ? t("Raw Material", "المادة الخام") : t("Output Product", "المنتج الناتج")}</Label>
                                           <select
                                             className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                             value={line.component_product_id}
@@ -1185,7 +1219,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate}
                                           >
                                             <option value="">
-                                              {line.line_type === "component" ? "اختر المادة الخام" : "اختر المنتج الناتج"}
+                                              {line.line_type === "component" ? t("Select the raw material", "اختر المادة الخام") : t("Select the output product", "اختر المنتج الناتج")}
                                             </option>
                                             {getLineProductOptions(line).map((product) => (
                                               <option key={product.id} value={product.id}>
@@ -1194,11 +1228,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             ))}
                                           </select>
                                           <p className="text-xs leading-5 text-slate-500">
-                                            {getBomLineProductFilterMessage(line.line_type)}
+                                            {getBomLineProductFilterMessage(line.line_type, appLang)}
                                           </p>
                                           {getLineProductOptions(line).length === 0 && (
                                             <p className="text-xs leading-5 text-amber-700">
-                                              لا توجد منتجات مناسبة لنوع الإضافة الحالي. راجع نوع المنتج من صفحة المنتجات.
+                                              {t("No products are suitable for the current line type. Review the product type from the products page.", "لا توجد منتجات مناسبة لنوع الإضافة الحالي. راجع نوع المنتج من صفحة المنتجات.")}
                                             </p>
                                           )}
                                         </div>
@@ -1206,7 +1240,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
                                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                         <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
-                                          <Label>الكمية اللازمة لتصنيع وحدة واحدة</Label>
+                                          <Label>{t("Quantity needed to manufacture one unit", "الكمية اللازمة لتصنيع وحدة واحدة")}</Label>
                                           <Input
                                             type="number"
                                             min="0.0001"
@@ -1217,7 +1251,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           />
                                         </div>
                                         <div className="space-y-2" data-ai-help="manufacturing_bom_detail.scrap_percent">
-                                          <Label>نسبة الهالك %</Label>
+                                          <Label>{t("Scrap Percentage %", "نسبة الهالك %")}</Label>
                                           <Input
                                             type="number"
                                             min="0"
@@ -1229,7 +1263,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                           />
                                         </div>
                                         <div className="space-y-2" data-ai-help="manufacturing_bom_detail.issue_uom">
-                                          <Label>وحدة القياس عند الصرف للمصنع</Label>
+                                          <Label>{t("Unit of measure when issued to the factory", "وحدة القياس عند الصرف للمصنع")}</Label>
                                           <Input
                                             value={line.issue_uom || ""}
                                             onChange={(event) => updateLine(lineIndex, { issue_uom: event.target.value })}
@@ -1243,14 +1277,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate}
                                           />
                                           <div className="space-y-1">
-                                            <div className="font-medium text-slate-900">هذه المادة غير إلزامية</div>
-                                            <div className="text-xs text-slate-500">يمكن إتمام التصنيع بدونها إذا لم تتوفر في المخزن.</div>
+                                            <div className="font-medium text-slate-900">{t("This material is optional", "هذه المادة غير إلزامية")}</div>
+                                            <div className="text-xs text-slate-500">{t("Manufacturing can be completed without it if it is not available in the warehouse.", "يمكن إتمام التصنيع بدونها إذا لم تتوفر في المخزن.")}</div>
                                           </div>
                                         </div>
                                       </div>
 
                                       <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
-                                        <Label>ملاحظات</Label>
+                                        <Label>{t("Notes", "ملاحظات")}</Label>
                                         <Textarea
                                           value={line.notes || ""}
                                           onChange={(event) => updateLine(lineIndex, { notes: event.target.value })}
@@ -1263,9 +1297,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                       <div className="space-y-3" data-ai-help="manufacturing_bom_detail.substitutes">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                           <div>
-                                            <div className="text-sm font-semibold text-slate-900">المكونات البديلة</div>
+                                            <div className="text-sm font-semibold text-slate-900">{t("Substitute Components", "المكونات البديلة")}</div>
                                             <div className="text-xs text-slate-500">
-                                               في حال نقص هذا المكوّن من المخزن، يستخدم النظام إحدى هذه البدائل تلقائياً.
+                                               {t("If this component runs short in the warehouse, the system automatically uses one of these substitutes.", "في حال نقص هذا المكوّن من المخزن، يستخدم النظام إحدى هذه البدائل تلقائياً.")}
                                             </div>
                                           </div>
                                           <Button
@@ -1275,13 +1309,13 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                             disabled={!structureEditable || !canUpdate || line.line_type !== "component"}
                                             data-ai-help="manufacturing_bom_detail.substitutes"
                                           >
-                                            إضافة بديل
+                                            {t("Add Substitute", "إضافة بديل")}
                                           </Button>
                                         </div>
 
                                         {line.substitutes.length === 0 ? (
                                           <div className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">
-                                            لا توجد بدائل لهذا السطر.
+                                            {t("No substitutes for this line.", "لا توجد بدائل لهذا السطر.")}
                                           </div>
                                         ) : (
                                           <div className="space-y-3">
@@ -1289,14 +1323,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                               <div key={`sub-${lineIndex}-${substituteIndex}`} className="rounded-xl border bg-slate-50 p-4">
                                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                                   <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_bom_detail.substitutes">
-                                                    <Label>المنتج البديل</Label>
+                                                    <Label>{t("Substitute Product", "المنتج البديل")}</Label>
                                                     <select
                                                       className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
                                                       value={substitute.substitute_product_id}
                                                       onChange={(event) => updateSubstitute(lineIndex, substituteIndex, { substitute_product_id: event.target.value })}
                                                       disabled={!structureEditable || !canUpdate}
                                                     >
-                                                      <option value="">اختر البديل</option>
+                                                      <option value="">{t("Select substitute", "اختر البديل")}</option>
                                                       {getSubstituteProductOptions(line, substitute.substitute_product_id).map((product) => (
                                                         <option key={product.id} value={product.id}>
                                                           {getProductOptionLabel(product, "component")}
@@ -1304,11 +1338,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                       ))}
                                                     </select>
                                                     <p className="text-xs leading-5 text-slate-500">
-                                                      تظهر فقط المنتجات الصالحة كمدخلات تصنيع، مع استبعاد المكوّن الأساسي والمنتج النهائي.
+                                                      {t("Only products valid as manufacturing inputs are shown, excluding the primary component and the finished product.", "تظهر فقط المنتجات الصالحة كمدخلات تصنيع، مع استبعاد المكوّن الأساسي والمنتج النهائي.")}
                                                     </p>
                                                   </div>
                                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
-                                                    <Label>الكمية</Label>
+                                                    <Label>{t("Quantity", "الكمية")}</Label>
                                                     <Input
                                                       type="number"
                                                       min="0.0001"
@@ -1319,7 +1353,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                     />
                                                   </div>
                                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.substitutes">
-                                                    <Label>الأولوية</Label>
+                                                    <Label>{t("Priority", "الأولوية")}</Label>
                                                     <Input
                                                       type="number"
                                                       min="1"
@@ -1332,7 +1366,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                 </div>
                                                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                                    <Label>ساري من</Label>
+                                                    <Label>{t("Effective From", "ساري من")}</Label>
                                                     <Input
                                                       type="datetime-local"
                                                       value={substitute.effective_from || ""}
@@ -1341,7 +1375,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                     />
                                                   </div>
                                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                                    <Label>ساري حتى</Label>
+                                                    <Label>{t("Effective To", "ساري حتى")}</Label>
                                                     <Input
                                                       type="datetime-local"
                                                       value={substitute.effective_to || ""}
@@ -1351,7 +1385,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                   </div>
                                                 </div>
                                                 <div className="mt-4 space-y-2">
-                                                  <Label>ملاحظات</Label>
+                                                  <Label>{t("Notes", "ملاحظات")}</Label>
                                                   <Textarea
                                                     value={substitute.notes || ""}
                                                     onChange={(event) => updateSubstitute(lineIndex, substituteIndex, { notes: event.target.value })}
@@ -1365,7 +1399,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                     onClick={() => removeSubstitute(lineIndex, substituteIndex)}
                                                     disabled={!structureEditable || !canUpdate}
                                                   >
-                                                    حذف البديل
+                                                    {t("Delete Substitute", "حذف البديل")}
                                                   </Button>
                                                 </div>
                                               </div>
@@ -1388,9 +1422,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                         <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
                           <div className="flex items-center gap-2">
                             <ShieldCheck className="h-4 w-4 text-indigo-600" />
-                            إدارة النسخ والاعتماد
+                            {t("Version Management & Approval", "إدارة النسخ والاعتماد")}
                             {bom.versions.length > 0 && (
-                              <Badge variant="secondary" className="text-xs">{bom.versions.length} نسخة</Badge>
+                              <Badge variant="secondary" className="text-xs">{bom.versions.length} {t("versions", "نسخة")}</Badge>
                             )}
                           </div>
                         </AccordionTrigger>
@@ -1399,11 +1433,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             <div className="flex flex-wrap gap-2">
                               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} variant="outline" className="gap-2">
                                 <CopyPlus className="h-4 w-4" />
-                                إنشاء نسخة جديدة
+                                {t("Create New Version", "إنشاء نسخة جديدة")}
                               </Button>
                             </div>
                             {bom.versions.length === 0 ? (
-                              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">لا توجد نسخ بعد.</div>
+                              <div className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">{t("No versions yet.", "لا توجد نسخ بعد.")}</div>
                             ) : (
                               <div className="space-y-2">
                                 {bom.versions.map((version) => (
@@ -1423,16 +1457,16 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                         <div className="text-base font-semibold text-slate-900">v{version.version_no}</div>
                                         <div className="flex flex-wrap gap-2">
                                           <Badge variant={getVersionStatusVariant(version.status)} data-ai-help="manufacturing_bom_detail.version_status">
-                                            {getVersionStatusLabel(version.status)}
+                                            {getVersionStatusLabel(version.status, appLang)}
                                           </Badge>
-                                          {version.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
+                                          {version.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">{t("Default", "افتراضية")}</Badge> : null}
                                         </div>
                                       </div>
                                       <div className="text-xs text-slate-500">{formatDateOnly(version.updated_at)}</div>
                                     </div>
                                     <div className="mt-3 space-y-1 text-xs text-slate-500">
-                                      <div>سريان من: {formatDateOnly(version.effective_from)}</div>
-                                      <div>سريان إلى: {formatDateOnly(version.effective_to)}</div>
+                                      <div>{t("Effective from", "سريان من")}: {formatDateOnly(version.effective_from)}</div>
+                                      <div>{t("Effective to", "سريان إلى")}: {formatDateOnly(version.effective_to)}</div>
                                     </div>
                                   </button>
                                 ))}
@@ -1445,43 +1479,43 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     <div className="flex flex-wrap items-center gap-2">
                                       <div className="text-lg font-semibold text-slate-900">v{selectedVersion.version_no}</div>
                                       <Badge variant={getVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_bom_detail.version_status">
-                                        {getVersionStatusLabel(selectedVersion.status)}
+                                        {getVersionStatusLabel(selectedVersion.status, appLang)}
                                       </Badge>
-                                      {selectedVersion.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">افتراضية</Badge> : null}
+                                      {selectedVersion.is_default ? <Badge variant="outline" data-ai-help="manufacturing_bom_detail.default_version">{t("Default", "افتراضية")}</Badge> : null}
                                     </div>
-                                    <p className="max-w-xl text-sm leading-6 text-slate-600">{getVersionLockMessage(selectedVersion.status)}</p>
+                                    <p className="max-w-xl text-sm leading-6 text-slate-600">{getVersionLockMessage(selectedVersion.status, appLang)}</p>
                                   </div>
                                   <div className="grid gap-2 text-xs text-slate-500">
-                                    <div>آخر تحديث: {formatDateTime(selectedVersion.updated_at)}</div>
-                                    <div>تاريخ الاعتماد: {formatDateTime(selectedVersion.approved_at)}</div>
+                                    <div>{t("Last updated", "آخر تحديث")}: {formatDateTime(selectedVersion.updated_at)}</div>
+                                    <div>{t("Approval date", "تاريخ الاعتماد")}: {formatDateTime(selectedVersion.approved_at)}</div>
                                   </div>
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                    <Label>تاريخ السريان من</Label>
+                                    <Label>{t("Effective From", "تاريخ السريان من")}</Label>
                                     <Input type="datetime-local" value={versionForm.effective_from}
                                       onChange={(event) => setVersionForm((current) => ({ ...current, effective_from: event.target.value }))}
                                       disabled={!versionEditable || !canUpdate} />
                                   </div>
                                   <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                    <Label>تاريخ السريان إلى</Label>
+                                    <Label>{t("Effective To", "تاريخ السريان إلى")}</Label>
                                     <Input type="datetime-local" value={versionForm.effective_to}
                                       onChange={(event) => setVersionForm((current) => ({ ...current, effective_to: event.target.value }))}
                                       disabled={!versionEditable || !canUpdate} />
                                   </div>
                                 </div>
                                 <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
-                                  <Label>كمية الإنتاج الأساسية</Label>
+                                  <Label>{t("Base Output Quantity", "كمية الإنتاج الأساسية")}</Label>
                                   <Input type="number" min="0.0001" step="0.0001" value={versionForm.base_output_qty}
                                     onChange={(event) => setVersionForm((current) => ({ ...current, base_output_qty: event.target.value }))}
                                     disabled={!versionEditable || !canUpdate} />
                                 </div>
-                                <div className="space-y-2"><Label>ملخص التغيير</Label>
+                                <div className="space-y-2"><Label>{t("Change Summary", "ملخص التغيير")}</Label>
                                   <Textarea value={versionForm.change_summary}
                                     onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                                     disabled={!versionEditable || !canUpdate} />
                                 </div>
-                                <div className="space-y-2"><Label>ملاحظات</Label>
+                                <div className="space-y-2"><Label>{t("Notes", "ملاحظات")}</Label>
                                   <Textarea value={versionForm.notes}
                                     onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
                                     disabled={!versionEditable || !canUpdate} />
@@ -1490,38 +1524,38 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 <div className="flex flex-wrap gap-2">
                                   <Button onClick={handleSaveVersionHeader} disabled={!versionEditable || !canUpdate || savingVersionHeader} className="gap-2">
                                     {savingVersionHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                    حفظ رأس النسخة
+                                    {t("Save Version Header", "حفظ رأس النسخة")}
                                   </Button>
                                   <Button variant="outline"
                                     onClick={() => { void handleSubmitVersionForApproval() }}
                                     disabled={!selectedVersionId || !canUpdate || !canSubmitVersion(selectedVersion.status) || runningAction === "submit" || loadingVersion}
                                     className="gap-2" data-ai-help="manufacturing_bom_detail.submit_approval_button"
-                                    title={selectedVersionHasNoPersistedLines ? "أضف مادة واحدة على الأقل واحفظ المواد قبل الإرسال للاعتماد" : undefined}>
+                                    title={selectedVersionHasNoPersistedLines ? t("Add at least one material and save the materials before submitting for approval", "أضف مادة واحدة على الأقل واحفظ المواد قبل الإرسال للاعتماد") : undefined}>
                                     {runningAction === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                                    إرسال للاعتماد
+                                    {t("Submit for Approval", "إرسال للاعتماد")}
                                   </Button>
                                   <Button variant="outline" onClick={() => setConfirmAction("approve")}
                                     disabled={!selectedVersionId || !canApprove || !canApproveVersion(selectedVersion.status) || runningAction === "approve"}
                                     className="gap-2" data-ai-help="manufacturing_bom_detail.approve_button">
                                     {runningAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                    اعتماد
+                                    {t("Approve", "اعتماد")}
                                   </Button>
                                   <Button variant="outline" onClick={() => setRejectOpen(true)}
                                     disabled={!selectedVersionId || !canApprove || !canRejectVersion(selectedVersion.status) || runningAction === "reject"}
                                     className="gap-2" data-ai-help="manufacturing_bom_detail.reject_button">
-                                    <ShieldX className="h-4 w-4" /> رفض
+                                    <ShieldX className="h-4 w-4" /> {t("Reject", "رفض")}
                                   </Button>
                                   <Button variant="outline" onClick={() => setConfirmAction("set-default")}
                                     disabled={!selectedVersionId || !canUpdate || !canSetDefaultVersion(selectedVersion.status, selectedVersion.is_default) || runningAction === "set-default"}
                                     className="gap-2" data-ai-help="manufacturing_bom_detail.set_default_button">
                                     {runningAction === "set-default" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                                    تعيين كافتراضية
+                                    {t("Set as Default", "تعيين كافتراضية")}
                                   </Button>
                                   <Button variant="destructive" onClick={() => setConfirmAction("delete-version")}
                                     disabled={!selectedVersionId || !canDelete || !canDeleteVersion(selectedVersion.status) || runningAction === "delete-version"}
                                     className="gap-2">
                                     {runningAction === "delete-version" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                    حذف النسخة
+                                    {t("Delete Version", "حذف النسخة")}
                                   </Button>
                                 </div>
                               </div>
@@ -1535,20 +1569,20 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                         <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
                           <div className="flex items-center gap-2">
                             <Package2 className="h-4 w-4 text-cyan-600" />
-                            إعدادات قائمة المواد
+                            {t("BOM Settings", "إعدادات قائمة المواد")}
                           </div>
                         </AccordionTrigger>
                         <AccordionContent className="px-6 pb-6">
                           <div className="space-y-4">
                             <div className="grid gap-4 md:grid-cols-2">
                               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_code">
-                                <Label>كود هيكل المواد</Label>
+                                <Label>{t("BOM Code", "كود هيكل المواد")}</Label>
                                 <Input value={headerForm.bom_code}
                                   onChange={(event) => setHeaderForm((current) => ({ ...current, bom_code: event.target.value }))}
                                   disabled={!canUpdate} />
                               </div>
                               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.bom_name">
-                                <Label>اسم هيكل المواد</Label>
+                                <Label>{t("BOM Name", "اسم هيكل المواد")}</Label>
                                 <Input value={headerForm.bom_name}
                                   onChange={(event) => setHeaderForm((current) => ({ ...current, bom_name: event.target.value }))}
                                   disabled={!canUpdate} />
@@ -1556,33 +1590,33 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                             </div>
                             <div className="grid gap-4 md:grid-cols-3">
                               <div className="space-y-2">
-                                <Label>الاستخدام</Label>
+                                <Label>{t("Usage", "الاستخدام")}</Label>
                                 <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                                  {BOM_USAGE_OPTIONS.find((option) => option.value === bom.bom_usage)?.labelAr || bom.bom_usage}
+                                  {BOM_USAGE_OPTIONS.find((option) => option.value === bom.bom_usage)?.[appLang === "en" ? "label" : "labelAr"] || bom.bom_usage}
                                 </div>
                               </div>
                               <div className="space-y-2">
-                                <Label>الفرع</Label>
+                                <Label>{t("Branch", "الفرع")}</Label>
                                 <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
                                   {buildBranchLabel(branchMap[bom.branch_id])}
                                 </div>
                               </div>
                               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.finished_product">
-                                <Label>المنتج المالك</Label>
+                                <Label>{t("Owner Product", "المنتج المالك")}</Label>
                                 <div className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-slate-700">
                                   {buildProductLabel(ownerProduct)}
                                 </div>
                               </div>
                             </div>
                             <div className="space-y-2" data-ai-help="manufacturing_bom_detail.notes">
-                              <Label>الوصف</Label>
+                              <Label>{t("Description", "الوصف")}</Label>
                               <Textarea value={headerForm.description}
                                 onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
                                 disabled={!canUpdate} />
                             </div>
                             <div className="space-y-2">
                               <Label className="flex items-center gap-1">
-                                مخزن صرف الخامات
+                                {t("Raw Material Issue Warehouse", "مخزن صرف الخامات")}
                                 <span className="text-red-500">*</span>
                               </Label>
                               <RawMaterialWarehousePicker
@@ -1590,19 +1624,19 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 onChange={(warehouseId) => setHeaderForm((current) => ({ ...current, source_warehouse_id: warehouseId || null }))}
                                 branchId={bom?.branch_id || null}
                                 disabled={!canUpdate}
-                                lang="ar" />
+                                lang={appLang} />
                               <p className="text-xs text-muted-foreground">
-                                إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات من المخزن ده.
+                                {t("Required — every production order created from this BOM will draw its raw materials from this warehouse.", "إجبارى — كل أمر إنتاج بيتعمل من القائمة دى هيسحب الخامات من المخزن ده.")}
                               </p>
                             </div>
                             <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-slate-50 px-4 py-3">
                               <div className="space-y-1">
-                                <div className="font-medium text-slate-900">نشاط BOM</div>
-                                <div className="text-sm text-slate-500">يمكن تعطيل السجل دون فقد تاريخ النسخ أو الاعتماد.</div>
+                                <div className="font-medium text-slate-900">{t("BOM Active Status", "نشاط BOM")}</div>
+                                <div className="text-sm text-slate-500">{t("The record can be deactivated without losing version or approval history.", "يمكن تعطيل السجل دون فقد تاريخ النسخ أو الاعتماد.")}</div>
                               </div>
                               <div className="flex items-center gap-3">
                                 <Badge variant={headerForm.is_active ? "default" : "outline"}>
-                                  {headerForm.is_active ? "نشط" : "غير نشط"}
+                                  {headerForm.is_active ? t("Active", "نشط") : t("Inactive", "غير نشط")}
                                 </Badge>
                                 <Switch checked={headerForm.is_active}
                                   onCheckedChange={(checked) => setHeaderForm((current) => ({ ...current, is_active: Boolean(checked) }))}
@@ -1610,17 +1644,17 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="text-xs text-slate-500">آخر تحديث: {formatDateTime(bom.updated_at)}</div>
+                              <div className="text-xs text-slate-500">{t("Last updated", "آخر تحديث")}: {formatDateTime(bom.updated_at)}</div>
                               <div className="flex flex-wrap gap-2">
-                                <Button variant="outline" onClick={() => hydrateHeaderForm(bom)} disabled={savingHeader}>إعادة تعيين</Button>
+                                <Button variant="outline" onClick={() => hydrateHeaderForm(bom)} disabled={savingHeader}>{t("Reset", "إعادة تعيين")}</Button>
                                 <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_bom_detail.bom_name">
                                   {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                  حفظ البيانات
+                                  {t("Save Details", "حفظ البيانات")}
                                 </Button>
                                 <Button variant="destructive" onClick={() => setConfirmAction("delete-bom")}
                                   disabled={!canDelete || runningAction === "delete-bom"} className="gap-2">
                                   {runningAction === "delete-bom" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                  حذف BOM
+                                  {t("Delete BOM", "حذف BOM")}
                                 </Button>
                               </div>
                             </div>
@@ -1633,7 +1667,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                         <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
                           <div className="flex items-center gap-2">
                             <FileSearch className="h-4 w-4 text-slate-500" />
-                            تحليل مكونات الإنتاج (متقدم)
+                            {t("Production Components Analysis (Advanced)", "تحليل مكونات الإنتاج (متقدم)")}
                           </div>
                         </AccordionTrigger>
                         <AccordionContent className="px-0 pb-0">
@@ -1641,21 +1675,21 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                           <CardHeader>
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                               <div>
-                                <CardTitle className="text-lg">معاينة تفجير المواد</CardTitle>
+                                <CardTitle className="text-lg">{t("Material Explosion Preview", "معاينة تفجير المواد")}</CardTitle>
                                 <CardDescription>
-                                  معاينة قراءة فقط، single-level فقط، ولا تقوم بأي حجز أو استهلاك أو اتخاذ قرار stock.
+                                  {t("A read-only, single-level preview. It performs no reservation, consumption, or stock decisions.", "معاينة قراءة فقط، single-level فقط، ولا تقوم بأي حجز أو استهلاك أو اتخاذ قرار stock.")}
                                 </CardDescription>
                               </div>
                               <Button onClick={handleRunPreview} disabled={!selectedVersionId || previewLoading} className="gap-2" data-ai-help="manufacturing_bom_detail.explosion_preview_button">
                                 {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
-                                تشغيل المعاينة
+                                {t("Run Preview", "تشغيل المعاينة")}
                               </Button>
                             </div>
                           </CardHeader>
                           <CardContent className="space-y-6">
                             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.preview_quantity">
-                                <Label>كمية الإدخال</Label>
+                                <Label>{t("Input Quantity", "كمية الإدخال")}</Label>
                                 <Input
                                   type="number"
                                   min="0.0001"
@@ -1665,7 +1699,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 />
                               </div>
                               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                                <Label>بتاريخ</Label>
+                                <Label>{t("As of Date", "بتاريخ")}</Label>
                                 <Input
                                   type="datetime-local"
                                   value={previewForm.as_of_date || ""}
@@ -1673,7 +1707,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 />
                               </div>
                               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.substitutes">
-                                <Label>استراتيجية البدائل</Label>
+                                <Label>{t("Substitute Strategy", "استراتيجية البدائل")}</Label>
                                 <Select
                                   value={previewForm.substitute_strategy || "primary_only"}
                                   onValueChange={(value) => setPreviewForm((current) => ({ ...current, substitute_strategy: value as ExplosionPreviewPayload["substitute_strategy"] }))}
@@ -1682,41 +1716,41 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="primary_only">الأساسي فقط</SelectItem>
-                                    <SelectItem value="none">بدون بدائل</SelectItem>
+                                    <SelectItem value="primary_only">{t("Primary only", "الأساسي فقط")}</SelectItem>
+                                    <SelectItem value="none">{t("No substitutes", "بدون بدائل")}</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
                               <div className="space-y-2 rounded-2xl border px-4 py-3">
-                                <div className="text-sm font-medium text-slate-900">خيارات المعاينة</div>
+                                <div className="text-sm font-medium text-slate-900">{t("Preview Options", "خيارات المعاينة")}</div>
                                 <div className="mt-3 space-y-3 text-sm">
                                   <label className="flex items-center gap-2">
                                     <Checkbox
                                       checked={Boolean(previewForm.include_substitutes)}
                                       onCheckedChange={(checked) => setPreviewForm((current) => ({ ...current, include_substitutes: Boolean(checked) }))}
                                     />
-                                    تضمين البدائل
+                                    {t("Include substitutes", "تضمين البدائل")}
                                   </label>
                                   <label className="flex items-center gap-2">
                                     <Checkbox
                                       checked={Boolean(previewForm.include_co_products)}
                                       onCheckedChange={(checked) => setPreviewForm((current) => ({ ...current, include_co_products: Boolean(checked) }))}
                                     />
-                                    تضمين المنتجات المشتركة
+                                    {t("Include co-products", "تضمين المنتجات المشتركة")}
                                   </label>
                                   <label className="flex items-center gap-2">
                                     <Checkbox
                                       checked={Boolean(previewForm.include_by_products)}
                                       onCheckedChange={(checked) => setPreviewForm((current) => ({ ...current, include_by_products: Boolean(checked) }))}
                                     />
-                                    تضمين المنتجات الثانوية
+                                    {t("Include by-products", "تضمين المنتجات الثانوية")}
                                   </label>
                                   <label className="flex items-center gap-2">
                                     <Checkbox
                                       checked={Boolean(previewForm.respect_effective_dates)}
                                       onCheckedChange={(checked) => setPreviewForm((current) => ({ ...current, respect_effective_dates: Boolean(checked) }))}
                                     />
-                                    مراعاة تواريخ السريان
+                                    {t("Respect effective dates", "مراعاة تواريخ السريان")}
                                   </label>
                                 </div>
                               </div>
@@ -1726,9 +1760,9 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                               <div className="rounded-2xl border border-dashed p-10 text-center">
                                 <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                                   <FileSearch className="h-8 w-8 text-slate-300" />
-                                  <div className="text-lg font-medium text-slate-900">لا توجد معاينة بعد</div>
+                                  <div className="text-lg font-medium text-slate-900">{t("No preview yet", "لا توجد معاينة بعد")}</div>
                                   <p className="text-sm leading-6 text-slate-500">
-                                    أدخل كمية الإدخال واضغط تشغيل المعاينة لعرض المكونات والبدائل والمخرجات الثانوية.
+                                    {t("Enter the input quantity and click Run Preview to view the components, substitutes, and secondary outputs.", "أدخل كمية الإدخال واضغط تشغيل المعاينة لعرض المكونات والبدائل والمخرجات الثانوية.")}
                                   </p>
                                 </div>
                               </div>
@@ -1737,25 +1771,25 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 <div className="grid gap-4 md:grid-cols-4">
                                   <Card className="border-cyan-200 bg-cyan-50/80">
                                     <CardContent className="p-4">
-                                      <div className="text-sm text-slate-500">معامل التحجيم</div>
+                                      <div className="text-sm text-slate-500">{t("Scale Factor", "معامل التحجيم")}</div>
                                       <div className="mt-1 text-2xl font-semibold text-slate-900">{formatQuantity(previewResult.scale_factor, 6)}</div>
                                     </CardContent>
                                   </Card>
                                   <Card className="border-indigo-200 bg-indigo-50/80">
                                     <CardContent className="p-4">
-                                      <div className="text-sm text-slate-500">المكونات</div>
+                                      <div className="text-sm text-slate-500">{t("Components", "المكونات")}</div>
                                       <div className="mt-1 text-2xl font-semibold text-slate-900">{previewResult.components.length}</div>
                                     </CardContent>
                                   </Card>
                                   <Card className="border-emerald-200 bg-emerald-50/80">
                                     <CardContent className="p-4">
-                                      <div className="text-sm text-slate-500">المنتجات المشتركة</div>
+                                      <div className="text-sm text-slate-500">{t("Co-Products", "المنتجات المشتركة")}</div>
                                       <div className="mt-1 text-2xl font-semibold text-slate-900">{previewResult.co_products.length}</div>
                                     </CardContent>
                                   </Card>
                                   <Card className="border-amber-200 bg-amber-50/80">
                                     <CardContent className="p-4">
-                                      <div className="text-sm text-slate-500">المنتجات الثانوية</div>
+                                      <div className="text-sm text-slate-500">{t("By-Products", "المنتجات الثانوية")}</div>
                                       <div className="mt-1 text-2xl font-semibold text-slate-900">{previewResult.by_products.length}</div>
                                     </CardContent>
                                   </Card>
@@ -1763,25 +1797,25 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
                                 <Card data-ai-help="manufacturing_bom_detail.preview_results">
                                   <CardHeader>
-                                    <CardTitle className="text-base">المكونات المطلوبة</CardTitle>
+                                    <CardTitle className="text-base">{t("Required Components", "المكونات المطلوبة")}</CardTitle>
                                   </CardHeader>
                                   <CardContent>
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead>السطر</TableHead>
-                                          <TableHead data-ai-help="manufacturing_bom_detail.component_product">المكوّن</TableHead>
-                                          <TableHead data-ai-help="manufacturing_bom_detail.quantity_per_unit">الكمية المطلوبة</TableHead>
-                                          <TableHead data-ai-help="manufacturing_bom_detail.quantity_per_unit">الكمية الإجمالية</TableHead>
-                                          <TableHead data-ai-help="manufacturing_bom_detail.scrap_percent">الهالك %</TableHead>
-                                          <TableHead data-ai-help="manufacturing_bom_detail.substitutes">البدائل</TableHead>
+                                          <TableHead>{t("Line", "السطر")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.component_product">{t("Component", "المكوّن")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.quantity_per_unit">{t("Required Quantity", "الكمية المطلوبة")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.quantity_per_unit">{t("Gross Quantity", "الكمية الإجمالية")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.scrap_percent">{t("Scrap %", "الهالك %")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_bom_detail.substitutes">{t("Substitutes", "البدائل")}</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
                                         {previewResult.components.length === 0 ? (
                                           <TableRow>
                                             <TableCell colSpan={6} className="py-8 text-center text-slate-500">
-                                              لا توجد component lines في هذه النسخة.
+                                              {t("No component lines in this version.", "لا توجد component lines في هذه النسخة.")}
                                             </TableCell>
                                           </TableRow>
                                         ) : (
@@ -1790,7 +1824,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                               <TableCell>#{component.line_no}</TableCell>
                                               <TableCell className="max-w-sm whitespace-normal">
                                                 <div className="font-medium text-slate-900">{component.component_name || component.component_product_id}</div>
-                                                <div className="text-xs text-slate-500">{component.component_sku || "بدون رمز"}</div>
+                                                <div className="text-xs text-slate-500">{component.component_sku || t("No SKU", "بدون رمز")}</div>
                                               </TableCell>
                                               <TableCell>{formatQuantity(component.required_quantity)}</TableCell>
                                               <TableCell>{formatQuantity(component.gross_required_quantity)}</TableCell>
@@ -1804,7 +1838,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                                       <div key={substitute.substitute_id} className="rounded-lg border bg-slate-50 px-2 py-1 text-xs">
                                                         <div className="font-medium text-slate-900">{substitute.substitute_name || substitute.substitute_product_id}</div>
                                                         <div className="text-slate-500">
-                                                          الكمية: {formatQuantity(substitute.substitute_quantity)} · الأولوية: {substitute.priority}
+                                                          {t("Quantity", "الكمية")}: {formatQuantity(substitute.substitute_quantity)} · {t("Priority", "الأولوية")}: {substitute.priority}
                                                         </div>
                                                       </div>
                                                     ))}
@@ -1822,17 +1856,17 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                 <div className="grid gap-4 xl:grid-cols-2">
                                   <Card>
                                     <CardHeader>
-                                      <CardTitle className="text-base">المنتجات المشتركة</CardTitle>
+                                      <CardTitle className="text-base">{t("Co-Products", "المنتجات المشتركة")}</CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-3">
                                       {previewResult.co_products.length === 0 ? (
-                                        <div className="text-sm text-slate-500">لا توجد co-products في هذه المعاينة.</div>
+                                        <div className="text-sm text-slate-500">{t("No co-products in this preview.", "لا توجد co-products في هذه المعاينة.")}</div>
                                       ) : (
                                         previewResult.co_products.map((item) => (
                                           <div key={item.line_id} className="rounded-xl border p-3">
                                             <div className="font-medium text-slate-900">{item.product_name || item.product_id}</div>
                                             <div className="mt-1 text-sm text-slate-500">
-                                              ناتج: {formatQuantity(item.output_quantity)} من السطر #{item.line_no}
+                                              {t("Output", "ناتج")}: {formatQuantity(item.output_quantity)} {t("from line", "من السطر")} #{item.line_no}
                                             </div>
                                           </div>
                                         ))
@@ -1841,17 +1875,17 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   </Card>
                                   <Card>
                                     <CardHeader>
-                                      <CardTitle className="text-base">المنتجات الثانوية</CardTitle>
+                                      <CardTitle className="text-base">{t("By-Products", "المنتجات الثانوية")}</CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-3">
                                       {previewResult.by_products.length === 0 ? (
-                                        <div className="text-sm text-slate-500">لا توجد by-products في هذه المعاينة.</div>
+                                        <div className="text-sm text-slate-500">{t("No by-products in this preview.", "لا توجد by-products في هذه المعاينة.")}</div>
                                       ) : (
                                         previewResult.by_products.map((item) => (
                                           <div key={item.line_id} className="rounded-xl border p-3">
                                             <div className="font-medium text-slate-900">{item.product_name || item.product_id}</div>
                                             <div className="mt-1 text-sm text-slate-500">
-                                              ناتج: {formatQuantity(item.output_quantity)} من السطر #{item.line_no}
+                                              {t("Output", "ناتج")}: {formatQuantity(item.output_quantity)} {t("from line", "من السطر")} #{item.line_no}
                                             </div>
                                           </div>
                                         ))
@@ -1864,11 +1898,11 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                   <div className="grid gap-4 xl:grid-cols-2">
                                     <Card className="border-amber-200 bg-amber-50/70">
                                       <CardHeader>
-                                        <CardTitle className="text-base text-amber-900">تحذيرات</CardTitle>
+                                        <CardTitle className="text-base text-amber-900">{t("Warnings", "تحذيرات")}</CardTitle>
                                       </CardHeader>
                                       <CardContent className="space-y-2 text-sm text-amber-900">
                                         {previewResult.warnings.length === 0 ? (
-                                          <div>لا توجد تحذيرات.</div>
+                                          <div>{t("No warnings.", "لا توجد تحذيرات.")}</div>
                                         ) : (
                                           previewResult.warnings.map((warning, index) => <div key={`warning-${index}`}>• {warning}</div>)
                                         )}
@@ -1876,7 +1910,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                                     </Card>
                                     <Card className="border-slate-200 bg-slate-50">
                                       <CardHeader>
-                                        <CardTitle className="text-base">قيود معروفة</CardTitle>
+                                        <CardTitle className="text-base">{t("Known Limitations", "قيود معروفة")}</CardTitle>
                                       </CardHeader>
                                       <CardContent className="space-y-2 text-sm text-slate-700">
                                         {previewResult.limitations.map((limitation, index) => (
@@ -1907,30 +1941,30 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء BOM Version جديدة</DialogTitle>
+              <DialogTitle>{t("Create New BOM Version", "إنشاء BOM Version جديدة")}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_bom_detail.create_version_button">
-                <Label>استنساخ من نسخة (اختياري)</Label>
+                <Label>{t("Clone from a version (optional)", "استنساخ من نسخة (اختياري)")}</Label>
                 <Select
                   value={createVersionForm.clone_from_version_id || "none"}
                   onValueChange={(value) => setCreateVersionForm((current) => ({ ...current, clone_from_version_id: value === "none" ? null : value }))}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="ابدأ من نسخة فارغة" />
+                    <SelectValue placeholder={t("Start from an empty version", "ابدأ من نسخة فارغة")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">بدون استنساخ</SelectItem>
+                    <SelectItem value="none">{t("No cloning", "بدون استنساخ")}</SelectItem>
                     {(bom?.versions || []).map((version) => (
                       <SelectItem key={version.id} value={version.id}>
-                        v{version.version_no} — {getVersionStatusLabel(version.status)}
+                        v{version.version_no} — {getVersionStatusLabel(version.status, appLang)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                <Label>ساري من</Label>
+                <Label>{t("Effective From", "ساري من")}</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_from)}
@@ -1938,7 +1972,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 />
               </div>
               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.effective_dates">
-                <Label>ساري حتى</Label>
+                <Label>{t("Effective To", "ساري حتى")}</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_to)}
@@ -1946,7 +1980,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 />
               </div>
               <div className="space-y-2" data-ai-help="manufacturing_bom_detail.quantity_per_unit">
-                <Label>كمية الإنتاج الأساسية</Label>
+                <Label>{t("Base Output Quantity", "كمية الإنتاج الأساسية")}</Label>
                 <Input
                   type="number"
                   min="0.0001"
@@ -1956,14 +1990,14 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 />
               </div>
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_bom_detail.notes">
-                <Label>ملخص التغيير</Label>
+                <Label>{t("Change Summary", "ملخص التغيير")}</Label>
                 <Textarea
                   value={typeof createVersionForm.change_summary === "string" ? createVersionForm.change_summary : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                 />
               </div>
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_bom_detail.notes">
-                <Label>ملاحظات</Label>
+                <Label>{t("Notes", "ملاحظات")}</Label>
                 <Textarea
                   value={typeof createVersionForm.notes === "string" ? createVersionForm.notes : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, notes: event.target.value }))}
@@ -1972,10 +2006,10 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setCreateVersionOpen(false)}>
-                إلغاء
+                {t("Cancel", "إلغاء")}
               </Button>
               <Button onClick={handleCreateVersion} disabled={runningAction === "create-version"} data-ai-help="manufacturing_bom_detail.create_version_button">
-                {runningAction === "create-version" ? "جاري الإنشاء..." : "إنشاء النسخة"}
+                {runningAction === "create-version" ? t("Creating...", "جاري الإنشاء...") : t("Create Version", "إنشاء النسخة")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1984,22 +2018,22 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
         <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>رفض النسخة الحالية</DialogTitle>
+              <DialogTitle>{t("Reject Current Version", "رفض النسخة الحالية")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-2 py-2" data-ai-help="manufacturing_bom_detail.reject_button">
-              <Label>سبب الرفض</Label>
+              <Label>{t("Rejection Reason", "سبب الرفض")}</Label>
               <Textarea
                 value={rejectionReason}
                 onChange={(event) => setRejectionReason(event.target.value)}
-                placeholder="أدخل سببًا مباشرًا يساعد فريق التصنيع أو الهندسة على تعديل النسخة وإعادة إرسالها."
+                placeholder={t("Enter a direct reason that helps the manufacturing or engineering team revise the version and resubmit it.", "أدخل سببًا مباشرًا يساعد فريق التصنيع أو الهندسة على تعديل النسخة وإعادة إرسالها.")}
               />
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setRejectOpen(false)}>
-                إلغاء
+                {t("Cancel", "إلغاء")}
               </Button>
               <Button variant="destructive" onClick={handleReject} disabled={runningAction === "reject"} data-ai-help="manufacturing_bom_detail.reject_button">
-                {runningAction === "reject" ? "جاري الرفض..." : "رفض النسخة"}
+                {runningAction === "reject" ? t("Rejecting...", "جاري الرفض...") : t("Reject Version", "رفض النسخة")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2012,7 +2046,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
               <AlertDialogDescription>{confirmDialogMeta?.description}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={Boolean(runningAction)}>إلغاء</AlertDialogCancel>
+              <AlertDialogCancel disabled={Boolean(runningAction)}>{t("Cancel", "إلغاء")}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   void handleConfirmAction()
@@ -2022,7 +2056,7 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
                 data-ai-help={confirmAction === "approve" ? "manufacturing_bom_detail.approve_button" : confirmAction === "set-default" ? "manufacturing_bom_detail.set_default_button" : "manufacturing_bom_detail.version_status"}
               >
                 {runningAction === "delete-bom" || runningAction === "delete-version" || runningAction === "approve" || runningAction === "set-default"
-                  ? "جاري التنفيذ..."
+                  ? t("Processing...", "جاري التنفيذ...")
                   : confirmDialogMeta?.actionLabel}
               </AlertDialogAction>
             </AlertDialogFooter>

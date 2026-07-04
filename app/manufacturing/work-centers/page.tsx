@@ -58,8 +58,16 @@ const COST_UOM_LABELS: Record<string, string> = {
   per_unit: "للوحدة",
 }
 
+const COST_UOM_LABELS_EN: Record<string, string> = {
+  per_hour: "per hour",
+  per_minute: "per minute",
+  per_unit: "per unit",
+}
+
 const TYPE_LABELS: Record<string, string> = { machine: "آلة", production_line: "خط إنتاج", labor_group: "مجموعة عمالة" }
+const TYPE_LABELS_EN: Record<string, string> = { machine: "Machine", production_line: "Production Line", labor_group: "Labor Group" }
 const STATUS_LABELS: Record<string, string> = { active: "نشط", inactive: "غير نشط", blocked: "موقوف" }
+const STATUS_LABELS_EN: Record<string, string> = { active: "Active", inactive: "Inactive", blocked: "Blocked" }
 const STATUS_VARIANTS: Record<string, "default" | "secondary" | "destructive"> = { active: "default", inactive: "secondary", blocked: "destructive" }
 
 export default function WorkCentersPage() {
@@ -80,6 +88,21 @@ export default function WorkCentersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch {}
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => window.removeEventListener('app_language_changed', handler)
+  }, [])
+
   // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadData() })
 
@@ -95,7 +118,7 @@ export default function WorkCentersPage() {
       setWorkCenters(wcJson.data || [])
       setBranches(brJson.branches || [])
     } catch {
-      toast({ variant: "destructive", title: "خطأ في التحميل", description: "تعذر جلب بيانات مراكز العمل" })
+      toast({ variant: "destructive", title: t("Load Error", "خطأ في التحميل"), description: t("Could not fetch work centers data", "تعذر جلب بيانات مراكز العمل") })
     } finally {
       setLoading(false)
     }
@@ -147,12 +170,12 @@ export default function WorkCentersPage() {
   const handleSave = async () => {
     // v3.74.266 — اسم المحطة هو الحقل الوحيد المطلوب من المستخدم.
     // الكود يتولّد تلقائياً والفرع بيتعبأ من openAdd().
-    if (!formData.name.trim()) return toast({ variant: "destructive", title: "محتاجين اسم المحطة" })
+    if (!formData.name.trim()) return toast({ variant: "destructive", title: t("Work center name is required", "محتاجين اسم المحطة") })
     let codeToSubmit = formData.code.trim()
     if (!codeToSubmit) codeToSubmit = nextAutoCode()
     let branchToSubmit = formData.branch_id
     if (!branchToSubmit) branchToSubmit = branches[0]?.id || ""
-    if (!branchToSubmit) return toast({ variant: "destructive", title: "ما فيش فروع بعد", description: "ضيف فرع من الإعدادات الأول." })
+    if (!branchToSubmit) return toast({ variant: "destructive", title: t("No branches yet", "ما فيش فروع بعد"), description: t("Add a branch from Settings first.", "ضيف فرع من الإعدادات الأول.") })
     try {
       setSaving(true)
       const url = editingWC ? `/api/manufacturing/work-centers/${editingWC.id}` : "/api/manufacturing/work-centers"
@@ -171,12 +194,12 @@ export default function WorkCentersPage() {
         fixed_overhead_rate: formData.fixed_overhead_rate ? Number(formData.fixed_overhead_rate) : 0,
       }
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
-      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "حدث خطأ") }
-      toast({ title: editingWC ? "تم التعديل" : "تم الإنشاء", description: editingWC ? "تم تعديل مركز العمل بنجاح" : "تم إنشاء مركز العمل بنجاح" })
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error || t("An error occurred", "حدث خطأ")) }
+      toast({ title: editingWC ? t("Updated", "تم التعديل") : t("Created", "تم الإنشاء"), description: editingWC ? t("Work center updated successfully", "تم تعديل مركز العمل بنجاح") : t("Work center created successfully", "تم إنشاء مركز العمل بنجاح") })
       setDialogOpen(false)
       await loadData()
     } catch (e: any) {
-      toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message })
+      toast({ variant: "destructive", title: t("Save Error", "خطأ في الحفظ"), description: e.message })
     } finally { setSaving(false) }
   }
 
@@ -185,12 +208,12 @@ export default function WorkCentersPage() {
     try {
       setDeleting(true)
       const res = await fetch(`/api/manufacturing/work-centers/${deleteId}`, { method: "DELETE" })
-      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "حدث خطأ") }
-      toast({ title: "تم الحذف", description: "تم حذف مركز العمل بنجاح" })
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error || t("An error occurred", "حدث خطأ")) }
+      toast({ title: t("Deleted", "تم الحذف"), description: t("Work center deleted successfully", "تم حذف مركز العمل بنجاح") })
       setDeleteId(null)
       await loadData()
     } catch (e: any) {
-      toast({ variant: "destructive", title: "خطأ في الحذف", description: e.message })
+      toast({ variant: "destructive", title: t("Delete Error", "خطأ في الحذف"), description: e.message })
     } finally { setDeleting(false) }
   }
 
@@ -200,22 +223,22 @@ export default function WorkCentersPage() {
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
           <CompanyHeader />
           <ERPPageHeader
-            title="مراكز العمل"
-            description="الآلات والأقسام التي تُنجز فيها عمليات التصنيع — يجب تعريفها قبل إنشاء مسارات التصنيع."
+            title={t("Work Centers", "مراكز العمل")}
+            description={t("The machines and departments where manufacturing operations are performed — they must be defined before creating manufacturing routings.", "الآلات والأقسام التي تُنجز فيها عمليات التصنيع — يجب تعريفها قبل إنشاء مسارات التصنيع.")}
             variant="list"
-            extra={canWrite ? <Button onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" />إضافة مركز عمل</Button> : null}
+            extra={canWrite ? <Button onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" />{t("Add Work Center", "إضافة مركز عمل")}</Button> : null}
           />
 
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
-              <Loader2 className="h-5 w-5 animate-spin" />جاري التحميل...
+              <Loader2 className="h-5 w-5 animate-spin" />{t("Loading...", "جاري التحميل...")}
             </div>
           ) : workCenters.length === 0 ? (
             <Card className="p-10 text-center">
               <Cpu className="mx-auto h-10 w-10 text-slate-300 mb-3" />
-              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">لا توجد مراكز عمل بعد</p>
-              <p className="text-sm text-slate-500 mt-1 mb-4">أضف أول مركز عمل لتتمكن من ربطه بعمليات التصنيع.</p>
-              {canWrite && <Button onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" />إضافة مركز عمل</Button>}
+              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">{t("No work centers yet", "لا توجد مراكز عمل بعد")}</p>
+              <p className="text-sm text-slate-500 mt-1 mb-4">{t("Add your first work center so you can link it to manufacturing operations.", "أضف أول مركز عمل لتتمكن من ربطه بعمليات التصنيع.")}</p>
+              {canWrite && <Button onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" />{t("Add Work Center", "إضافة مركز عمل")}</Button>}
             </Card>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -225,36 +248,36 @@ export default function WorkCentersPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <CardTitle className="text-base truncate">{wc.code} — {wc.name}</CardTitle>
-                        <CardDescription className="mt-0.5">{TYPE_LABELS[wc.work_center_type] || wc.work_center_type}</CardDescription>
+                        <CardDescription className="mt-0.5">{(appLang === 'en' ? TYPE_LABELS_EN : TYPE_LABELS)[wc.work_center_type] || wc.work_center_type}</CardDescription>
                       </div>
-                      <Badge variant={STATUS_VARIANTS[wc.status] || "secondary"}>{STATUS_LABELS[wc.status] || wc.status}</Badge>
+                      <Badge variant={STATUS_VARIANTS[wc.status] || "secondary"}>{(appLang === 'en' ? STATUS_LABELS_EN : STATUS_LABELS)[wc.status] || wc.status}</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {wc.description && <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{wc.description}</p>}
                     {(wc.nominal_capacity_per_hour || wc.available_hours_per_day) && (
                       <div className="flex gap-3 text-xs text-slate-500">
-                        {wc.nominal_capacity_per_hour && <span>⚡ {wc.nominal_capacity_per_hour} {wc.capacity_uom || ""}/ساعة</span>}
-                        {wc.available_hours_per_day && <span>⏱ {wc.available_hours_per_day} ساعة/يوم</span>}
+                        {wc.nominal_capacity_per_hour && <span>⚡ {wc.nominal_capacity_per_hour} {wc.capacity_uom || ""}/{t("hour", "ساعة")}</span>}
+                        {wc.available_hours_per_day && <span>⏱ {wc.available_hours_per_day} {t("hours/day", "ساعة/يوم")}</span>}
                       </div>
                     )}
                     {/* v3.7.0: Cost rates summary */}
                     {(Number(wc.labor_cost_rate) > 0 || Number(wc.machine_cost_rate) > 0 || Number(wc.variable_overhead_rate) > 0 || Number(wc.fixed_overhead_rate) > 0) && (
                       <div className="space-y-1 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
                         <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                          💰 معدلات التكلفة ({COST_UOM_LABELS[wc.cost_rate_uom || "per_hour"]})
+                          💰 {t("Cost Rates", "معدلات التكلفة")} ({(appLang === 'en' ? COST_UOM_LABELS_EN : COST_UOM_LABELS)[wc.cost_rate_uom || "per_hour"]})
                         </div>
                         <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-500">
-                          {Number(wc.labor_cost_rate) > 0 && <span>عمالة: {Number(wc.labor_cost_rate).toLocaleString()}</span>}
-                          {Number(wc.machine_cost_rate) > 0 && <span>آلة: {Number(wc.machine_cost_rate).toLocaleString()}</span>}
-                          {Number(wc.variable_overhead_rate) > 0 && <span>أعباء متغيرة: {Number(wc.variable_overhead_rate).toLocaleString()}</span>}
-                          {Number(wc.fixed_overhead_rate) > 0 && <span>أعباء ثابتة: {Number(wc.fixed_overhead_rate).toLocaleString()}</span>}
+                          {Number(wc.labor_cost_rate) > 0 && <span>{t("Labor", "عمالة")}: {Number(wc.labor_cost_rate).toLocaleString()}</span>}
+                          {Number(wc.machine_cost_rate) > 0 && <span>{t("Machine", "آلة")}: {Number(wc.machine_cost_rate).toLocaleString()}</span>}
+                          {Number(wc.variable_overhead_rate) > 0 && <span>{t("Variable OH", "أعباء متغيرة")}: {Number(wc.variable_overhead_rate).toLocaleString()}</span>}
+                          {Number(wc.fixed_overhead_rate) > 0 && <span>{t("Fixed OH", "أعباء ثابتة")}: {Number(wc.fixed_overhead_rate).toLocaleString()}</span>}
                         </div>
                       </div>
                     )}
                     <div className="flex gap-2 pt-1">
-                      {canUpdate && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit(wc)}><Pencil className="h-3.5 w-3.5" />تعديل</Button>}
-                      {canDelete && <Button size="sm" variant="outline" className="gap-1.5 text-red-600 hover:bg-red-50" onClick={() => setDeleteId(wc.id)}><Trash2 className="h-3.5 w-3.5" />حذف</Button>}
+                      {canUpdate && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit(wc)}><Pencil className="h-3.5 w-3.5" />{t("Edit", "تعديل")}</Button>}
+                      {canDelete && <Button size="sm" variant="outline" className="gap-1.5 text-red-600 hover:bg-red-50" onClick={() => setDeleteId(wc.id)}><Trash2 className="h-3.5 w-3.5" />{t("Delete", "حذف")}</Button>}
                     </div>
                   </CardContent>
                 </Card>
@@ -268,9 +291,9 @@ export default function WorkCentersPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingWC ? "تعديل مركز العمل" : "إضافة مركز عمل جديد"}</DialogTitle>
+            <DialogTitle>{editingWC ? t("Edit Work Center", "تعديل مركز العمل") : t("Add New Work Center", "إضافة مركز عمل جديد")}</DialogTitle>
             <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-              مركز العمل هو أى آلة أو خط أو ورشة بتشتغل فيها خطوة من خطوات التصنيع. أدخل الاسم والنوع فقط، وباقى الإعدادات اختيارية.
+              {t("A work center is any machine, line, or workshop where a manufacturing step takes place. Enter just the name and type — all other settings are optional.", "مركز العمل هو أى آلة أو خط أو ورشة بتشتغل فيها خطوة من خطوات التصنيع. أدخل الاسم والنوع فقط، وباقى الإعدادات اختيارية.")}
             </p>
           </DialogHeader>
 
@@ -279,34 +302,34 @@ export default function WorkCentersPage() {
             {/* ─── الأساسيات (دايماً ظاهرة) ─── */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
-                <Label>اسم المحطة <span className="text-red-500">*</span></Label>
+                <Label>{t("Work Center Name", "اسم المحطة")} <span className="text-red-500">*</span></Label>
                 <Input
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="مثلاً: آلة الخلط الكبرى، خط التعبئة، ورشة التجميع"
+                  placeholder={t("e.g., Main Mixing Machine, Filling Line, Assembly Workshop", "مثلاً: آلة الخلط الكبرى، خط التعبئة، ورشة التجميع")}
                   disabled={saving}
                 />
-                <p className="text-xs text-slate-400">اكتب اسم واضح يميّز المحطة عن غيرها.</p>
+                <p className="text-xs text-slate-400">{t("Enter a clear name that distinguishes this work center from others.", "اكتب اسم واضح يميّز المحطة عن غيرها.")}</p>
               </div>
 
               <div className="space-y-2 sm:col-span-2">
-                <Label>نوع المحطة</Label>
+                <Label>{t("Work Center Type", "نوع المحطة")}</Label>
                 <Select value={formData.work_center_type} onValueChange={(v) => setFormData({ ...formData, work_center_type: v })} disabled={saving}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="machine">⚙️ آلة — جهاز واحد يشتغل لوحده</SelectItem>
-                    <SelectItem value="production_line">🏭 خط إنتاج — مجموعة آلات متتابعة</SelectItem>
-                    <SelectItem value="labor_group">👷 ورشة يدوية — عمالة بشرية</SelectItem>
+                    <SelectItem value="machine">{t("⚙️ Machine — a single device that operates on its own", "⚙️ آلة — جهاز واحد يشتغل لوحده")}</SelectItem>
+                    <SelectItem value="production_line">{t("🏭 Production Line — a series of connected machines", "🏭 خط إنتاج — مجموعة آلات متتابعة")}</SelectItem>
+                    <SelectItem value="labor_group">{t("👷 Manual Workshop — human labor", "👷 ورشة يدوية — عمالة بشرية")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2 sm:col-span-2">
-                <Label>شرح مختصر (اختيارى)</Label>
+                <Label>{t("Short Description (optional)", "شرح مختصر (اختيارى)")}</Label>
                 <Textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="ايه اللى بيحصل فى المحطة دى؟ (سطر أو سطرين)"
+                  placeholder={t("What happens at this work center? (one or two lines)", "ايه اللى بيحصل فى المحطة دى؟ (سطر أو سطرين)")}
                   disabled={saving}
                   rows={2}
                 />
@@ -317,54 +340,54 @@ export default function WorkCentersPage() {
             <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
               <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
                 <span className="flex items-center gap-2">
-                  ⚙️ إعدادات تشغيلية متقدمة
-                  <span className="text-xs text-slate-400 font-normal">(اختيارى — للى عاوز يتابع الأداء)</span>
+                  {t("⚙️ Advanced Operational Settings", "⚙️ إعدادات تشغيلية متقدمة")}
+                  <span className="text-xs text-slate-400 font-normal">{t("(optional — for those who want to track performance)", "(اختيارى — للى عاوز يتابع الأداء)")}</span>
                 </span>
                 <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
               </summary>
               <div className="grid gap-4 sm:grid-cols-2 p-4 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <div className="space-y-2">
-                  <Label>كود المحطة</Label>
+                  <Label>{t("Work Center Code", "كود المحطة")}</Label>
                   <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} placeholder="WC-01" disabled={saving} />
-                  <p className="text-xs text-slate-400">رمز قصير لتمييز المحطة. متولّد تلقائياً، تقدر تغيّره.</p>
+                  <p className="text-xs text-slate-400">{t("A short code identifying the work center. Auto-generated, but you can change it.", "رمز قصير لتمييز المحطة. متولّد تلقائياً، تقدر تغيّره.")}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>الفرع</Label>
+                  <Label>{t("Branch", "الفرع")}</Label>
                   <Select value={formData.branch_id} onValueChange={(v) => setFormData({ ...formData, branch_id: v })} disabled={saving || !!editingWC}>
-                    <SelectTrigger><SelectValue placeholder="اختر الفرع..." /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t("Select branch...", "اختر الفرع...")} /></SelectTrigger>
                     <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
                   </Select>
-                  <p className="text-xs text-slate-400">الفرع اللى موجودة فيه المحطة فعلياً.</p>
+                  <p className="text-xs text-slate-400">{t("The branch where this work center is physically located.", "الفرع اللى موجودة فيه المحطة فعلياً.")}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>الحالة</Label>
+                  <Label>{t("Status", "الحالة")}</Label>
                   <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })} disabled={saving}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">نشط — شغّال ويستقبل أوامر</SelectItem>
-                      <SelectItem value="inactive">غير نشط — متوقف مؤقتاً</SelectItem>
-                      <SelectItem value="blocked">موقوف — معطّل عن الاستخدام</SelectItem>
+                      <SelectItem value="active">{t("Active — running and accepting orders", "نشط — شغّال ويستقبل أوامر")}</SelectItem>
+                      <SelectItem value="inactive">{t("Inactive — temporarily stopped", "غير نشط — متوقف مؤقتاً")}</SelectItem>
+                      <SelectItem value="blocked">{t("Blocked — disabled from use", "موقوف — معطّل عن الاستخدام")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>وحدة الإنتاج</Label>
-                  <Input value={formData.capacity_uom} onChange={(e) => setFormData({ ...formData, capacity_uom: e.target.value })} placeholder="قطعة، كجم، لتر" disabled={saving} />
-                  <p className="text-xs text-slate-400">ايه اللى المحطة دى بتنتجه؟ قطع، أوزان، حجوم؟</p>
+                  <Label>{t("Output Unit", "وحدة الإنتاج")}</Label>
+                  <Input value={formData.capacity_uom} onChange={(e) => setFormData({ ...formData, capacity_uom: e.target.value })} placeholder={t("piece, kg, liter", "قطعة، كجم، لتر")} disabled={saving} />
+                  <p className="text-xs text-slate-400">{t("What does this work center produce? Pieces, weights, volumes?", "ايه اللى المحطة دى بتنتجه؟ قطع، أوزان، حجوم؟")}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>الإنتاج فى الساعة</Label>
+                  <Label>{t("Output per Hour", "الإنتاج فى الساعة")}</Label>
                   <Input type="number" min="0" value={formData.nominal_capacity_per_hour} onChange={(e) => setFormData({ ...formData, nominal_capacity_per_hour: e.target.value })} placeholder="100" disabled={saving} />
-                  <p className="text-xs text-slate-400">كم قطعة/كجم/لتر بتنتجها فى الساعة؟</p>
+                  <p className="text-xs text-slate-400">{t("How many pieces/kg/liters does it produce per hour?", "كم قطعة/كجم/لتر بتنتجها فى الساعة؟")}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>ساعات العمل اليومية</Label>
+                  <Label>{t("Working Hours per Day", "ساعات العمل اليومية")}</Label>
                   <Input type="number" min="0" max="24" value={formData.available_hours_per_day} onChange={(e) => setFormData({ ...formData, available_hours_per_day: e.target.value })} placeholder="8" disabled={saving} />
                 </div>
                 <div className="space-y-2">
-                  <Label>كفاءة التشغيل %</Label>
+                  <Label>{t("Operating Efficiency %", "كفاءة التشغيل %")}</Label>
                   <Input type="number" min="0" max="200" step="0.01" value={formData.efficiency_percent} onChange={(e) => setFormData({ ...formData, efficiency_percent: e.target.value })} placeholder="100" disabled={saving} />
-                  <p className="text-xs text-slate-400">100% = المحطة بتشتغل بالطاقة القصوى. أقل من ده لو فى وقت تحضير أو صيانة.</p>
+                  <p className="text-xs text-slate-400">{t("100% = the work center runs at full capacity. Use less if there is setup or maintenance time.", "100% = المحطة بتشتغل بالطاقة القصوى. أقل من ده لو فى وقت تحضير أو صيانة.")}</p>
                 </div>
               </div>
             </details>
@@ -373,43 +396,43 @@ export default function WorkCentersPage() {
             <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
               <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 list-none flex items-center justify-between">
                 <span className="flex items-center gap-2">
-                  💰 حسابات التكلفة
-                  <span className="text-xs text-slate-400 font-normal">(للمحاسب فقط — اتركها فاضية لو ما تتبعش تكلفة المحطة)</span>
+                  {t("💰 Cost Accounting", "💰 حسابات التكلفة")}
+                  <span className="text-xs text-slate-400 font-normal">{t("(accountants only — leave empty if you don't track work center costs)", "(للمحاسب فقط — اتركها فاضية لو ما تتبعش تكلفة المحطة)")}</span>
                 </span>
                 <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
               </summary>
               <div className="p-4 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
                 <div className="space-y-2 max-w-xs">
-                  <Label>كل قيم التكلفة التالية محسوبة:</Label>
+                  <Label>{t("All the following cost values are calculated:", "كل قيم التكلفة التالية محسوبة:")}</Label>
                   <Select value={formData.cost_rate_uom} onValueChange={(v) => setFormData({ ...formData, cost_rate_uom: v })} disabled={saving}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="per_hour">للساعة الواحدة</SelectItem>
-                      <SelectItem value="per_minute">للدقيقة الواحدة</SelectItem>
-                      <SelectItem value="per_unit">للقطعة الواحدة</SelectItem>
+                      <SelectItem value="per_hour">{t("per hour", "للساعة الواحدة")}</SelectItem>
+                      <SelectItem value="per_minute">{t("per minute", "للدقيقة الواحدة")}</SelectItem>
+                      <SelectItem value="per_unit">{t("per unit", "للقطعة الواحدة")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 pt-1">
                   <div className="space-y-1">
-                    <Label className="text-sm">تكلفة العامل</Label>
+                    <Label className="text-sm">{t("Labor Cost", "تكلفة العامل")}</Label>
                     <Input type="number" min="0" step="0.01" value={formData.labor_cost_rate} onChange={(e) => setFormData({ ...formData, labor_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
-                    <p className="text-xs text-slate-400">متوسط أجر العامل اللى يشغّل المحطة.</p>
+                    <p className="text-xs text-slate-400">{t("Average wage of the worker operating the work center.", "متوسط أجر العامل اللى يشغّل المحطة.")}</p>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-sm">تكلفة تشغيل الآلة</Label>
+                    <Label className="text-sm">{t("Machine Operating Cost", "تكلفة تشغيل الآلة")}</Label>
                     <Input type="number" min="0" step="0.01" value={formData.machine_cost_rate} onChange={(e) => setFormData({ ...formData, machine_cost_rate: e.target.value })} placeholder="0" disabled={saving} />
-                    <p className="text-xs text-slate-400">كهرباء وزيوت ومستهلكات وإهلاك الآلة.</p>
+                    <p className="text-xs text-slate-400">{t("Electricity, oils, consumables, and machine depreciation.", "كهرباء وزيوت ومستهلكات وإهلاك الآلة.")}</p>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-sm">مصاريف متغيرة</Label>
+                    <Label className="text-sm">{t("Variable Overheads", "مصاريف متغيرة")}</Label>
                     <Input type="number" min="0" step="0.01" value={formData.variable_overhead_rate} onChange={(e) => setFormData({ ...formData, variable_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
-                    <p className="text-xs text-slate-400">مصاريف بتتغير حسب الإنتاج (مياه، تنظيف، نقل).</p>
+                    <p className="text-xs text-slate-400">{t("Expenses that vary with production (water, cleaning, transport).", "مصاريف بتتغير حسب الإنتاج (مياه، تنظيف، نقل).")}</p>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-sm">مصاريف ثابتة</Label>
+                    <Label className="text-sm">{t("Fixed Overheads", "مصاريف ثابتة")}</Label>
                     <Input type="number" min="0" step="0.01" value={formData.fixed_overhead_rate} onChange={(e) => setFormData({ ...formData, fixed_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
-                    <p className="text-xs text-slate-400">مصاريف ثابتة شهرياً (إيجار، تأمين، صيانة دورية) موزعة على الساعة.</p>
+                    <p className="text-xs text-slate-400">{t("Fixed monthly expenses (rent, insurance, routine maintenance) allocated per hour.", "مصاريف ثابتة شهرياً (إيجار، تأمين، صيانة دورية) موزعة على الساعة.")}</p>
                   </div>
                 </div>
               </div>
@@ -417,10 +440,10 @@ export default function WorkCentersPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>إلغاء</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>{t("Cancel", "إلغاء")}</Button>
             <Button onClick={handleSave} disabled={saving} className="gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {editingWC ? "حفظ التعديلات" : "إضافة"}
+              {editingWC ? t("Save Changes", "حفظ التعديلات") : t("Add", "إضافة")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -430,14 +453,14 @@ export default function WorkCentersPage() {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
-            <AlertDialogDescription>هل أنت متأكد من حذف مركز العمل هذا؟ لا يمكن التراجع عن هذا الإجراء.</AlertDialogDescription>
+            <AlertDialogTitle>{t("Confirm Deletion", "تأكيد الحذف")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("Are you sure you want to delete this work center? This action cannot be undone.", "هل أنت متأكد من حذف مركز العمل هذا؟ لا يمكن التراجع عن هذا الإجراء.")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>إلغاء</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>{t("Cancel", "إلغاء")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700">
               {deleting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-              حذف
+              {t("Delete", "حذف")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

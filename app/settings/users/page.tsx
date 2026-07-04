@@ -33,47 +33,47 @@ type PermissionTransfer = { id: string; from_user_id: string; to_user_id: string
 type UserBranchAccess = { id: string; user_id: string; branch_id: string; is_primary: boolean; can_view_customers: boolean; can_view_orders: boolean; can_view_prices: boolean; is_active: boolean }
 
 // 🔐 Enterprise Action Mapping
-const ADVANCED_ACTIONS_MAP: Record<string, { value: AdvancedAction, label: string }[]> = {
+const ADVANCED_ACTIONS_MAP: Record<string, { value: AdvancedAction, label: string, labelEn: string }[]> = {
   invoices: [
-    { value: "print", label: "طباعة الفاتورة" },
-    { value: "send", label: "إرسال فاتورة" },
-    { value: "convert_to_bill", label: "تحويل لفاتورة شراء" },
-    { value: "void", label: "إبطال" }
+    { value: "print", label: "طباعة الفاتورة", labelEn: "Print Invoice" },
+    { value: "send", label: "إرسال فاتورة", labelEn: "Send Invoice" },
+    { value: "convert_to_bill", label: "تحويل لفاتورة شراء", labelEn: "Convert to Purchase Bill" },
+    { value: "void", label: "إبطال", labelEn: "Void" }
   ],
   bills: [
-    { value: "record_payment", label: "تسجيل دفعة" },
-    { value: "convert_to_invoice", label: "تحويل لفاتورة مبيعات" },
-    { value: "void", label: "إبطال" }
+    { value: "record_payment", label: "تسجيل دفعة", labelEn: "Record Payment" },
+    { value: "convert_to_invoice", label: "تحويل لفاتورة مبيعات", labelEn: "Convert to Sales Invoice" },
+    { value: "void", label: "إبطال", labelEn: "Void" }
   ],
   journal_entries: [
-    { value: "post", label: "ترحيل القيد" },
-    { value: "unpost", label: "إلغاء ترحيل" }
+    { value: "post", label: "ترحيل القيد", labelEn: "Post Entry" },
+    { value: "unpost", label: "إلغاء ترحيل", labelEn: "Unpost" }
   ],
   banking: [
-    { value: "reconcile", label: "مطابقة" },
-    { value: "record_payment", label: "تسجيل دفعة/استلام" }
+    { value: "reconcile", label: "مطابقة", labelEn: "Reconcile" },
+    { value: "record_payment", label: "تسجيل دفعة/استلام", labelEn: "Record Payment/Receipt" }
   ],
   inventory: [
-    { value: "adjust", label: "تسوية" },
-    { value: "transfer", label: "نقل مخزون" },
-    { value: "count", label: "جرد مباشر" }
+    { value: "adjust", label: "تسوية", labelEn: "Adjust" },
+    { value: "transfer", label: "نقل مخزون", labelEn: "Transfer Stock" },
+    { value: "count", label: "جرد مباشر", labelEn: "Physical Count" }
   ],
   hr: [
-    { value: "process", label: "معالجة الرواتب" },
-    { value: "approve", label: "اعتماد الرواتب" }
+    { value: "process", label: "معالجة الرواتب", labelEn: "Process Payroll" },
+    { value: "approve", label: "اعتماد الرواتب", labelEn: "Approve Payroll" }
   ],
   payroll: [
-    { value: "process", label: "معالجة الرواتب" },
-    { value: "approve", label: "اعتماد الرواتب" }
+    { value: "process", label: "معالجة الرواتب", labelEn: "Process Payroll" },
+    { value: "approve", label: "اعتماد الرواتب", labelEn: "Approve Payroll" }
   ],
   fixed_assets: [
-    { value: "post_depreciation", label: "ترحيل إهلاك" },
-    { value: "approve_depreciation", label: "اعتماد إهلاك" }
+    { value: "post_depreciation", label: "ترحيل إهلاك", labelEn: "Post Depreciation" },
+    { value: "approve_depreciation", label: "اعتماد إهلاك", labelEn: "Approve Depreciation" }
   ],
   sales_returns: [
-    { value: "partial_return", label: "مرتجع جزئي" },
-    { value: "full_return", label: "مرتجع كامل" },
-    { value: "reverse_return", label: "عكس مرتجع" }
+    { value: "partial_return", label: "مرتجع جزئي", labelEn: "Partial Return" },
+    { value: "full_return", label: "مرتجع كامل", labelEn: "Full Return" },
+    { value: "reverse_return", label: "عكس مرتجع", labelEn: "Reverse Return" }
   ]
 }
 
@@ -201,6 +201,21 @@ export default function UsersSettingsPage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
   const [linkingEmployee, setLinkingEmployee] = useState(false)
 
+  // 🌐 Bilingual (Arabic/English) UI support
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const v = localStorage.getItem('app_language') || 'ar'
+        setAppLang(v === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
+
   const getAppLang = () => {
     if (typeof window === "undefined") return "ar"
     return (localStorage.getItem("app_language") || "ar") === "en" ? "en" : "ar"
@@ -250,7 +265,7 @@ export default function UsersSettingsPage() {
           .select("id, name, user_id")
           .eq("id", cid)
           .maybeSingle()
-        setCompanyName(currentCompany?.name || "الشركة")
+        setCompanyName(currentCompany?.name || (getAppLang() === "en" ? "Company" : "الشركة"))
 
         // جلب الشركات التي ينتمي إليها المستخدم فقط
         if (uid) {
@@ -266,7 +281,7 @@ export default function UsersSettingsPage() {
               .from("companies")
               .select("id,name")
               .in("id", memberIds)
-            setMyCompanies((companies || []).map((c: any) => ({ id: String(c.id), name: String(c.name || "شركة") })))
+            setMyCompanies((companies || []).map((c: any) => ({ id: String(c.id), name: String(c.name || (getAppLang() === "en" ? "Company" : "شركة")) })))
           }
         }
         setInviteCompanyId(cid)
@@ -359,7 +374,7 @@ export default function UsersSettingsPage() {
         }
         setCanManage(owner || admin)
       } catch (err: any) {
-        setActionError(typeof err?.message === "string" ? err.message : "تعذر تحميل الأعضاء")
+        setActionError(typeof err?.message === "string" ? err.message : (getAppLang() === "en" ? "Failed to load members" : "تعذر تحميل الأعضاء"))
       } finally {
         setPageLoading(false)
       }
@@ -516,7 +531,7 @@ export default function UsersSettingsPage() {
             .select("id, name, user_id")
             .eq("id", newCompanyId)
             .maybeSingle();
-          setCompanyName(currentCompany?.name || "الشركة");
+          setCompanyName(currentCompany?.name || (getAppLang() === "en" ? "Company" : "الشركة"));
 
           // جلب أعضاء الشركة الجديدة
           const res = await fetch(`/api/company-members?companyId=${newCompanyId}`);
@@ -838,7 +853,7 @@ export default function UsersSettingsPage() {
   // 🔄 نقل الصلاحيات
   const handleTransferPermissions = async () => {
     if (!selectedSourceUser || selectedTargetUsers.length === 0) {
-      toastActionError(toast, "نقل", "الصلاحيات", "يجب تحديد الموظف المصدر والموظفين الهدف")
+      toastActionError(toast, t("Transfer", "نقل"), t("Permissions", "الصلاحيات"), t("You must select the source employee and the target employees", "يجب تحديد الموظف المصدر والموظفين الهدف"))
       return
     }
     setPermissionLoading(true)
@@ -860,15 +875,15 @@ export default function UsersSettingsPage() {
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        toastActionSuccess(toast, "نقل", `${data.total_transferred} سجل`)
+        toastActionSuccess(toast, t("Transfer", "نقل"), t(`${data.total_transferred} records`, `${data.total_transferred} سجل`))
         setShowPermissionDialog(false)
         resetPermissionForm()
         loadPermissionData()
       } else {
-        toastActionError(toast, "نقل", "الصلاحيات", data.error)
+        toastActionError(toast, t("Transfer", "نقل"), t("Permissions", "الصلاحيات"), data.error)
       }
     } catch (err: any) {
-      toastActionError(toast, "نقل", "الصلاحيات", err.message)
+      toastActionError(toast, t("Transfer", "نقل"), t("Permissions", "الصلاحيات"), err.message)
     } finally {
       setPermissionLoading(false)
     }
@@ -877,7 +892,7 @@ export default function UsersSettingsPage() {
   // 🔓 فتح الصلاحيات (مشاركة)
   const handleSharePermissions = async () => {
     if (!selectedSourceUser || selectedTargetUsers.length === 0) {
-      toastActionError(toast, "مشاركة", "الصلاحيات", "يجب تحديد الموظف المصدر والموظفين الهدف")
+      toastActionError(toast, t("Share", "مشاركة"), t("Permissions", "الصلاحيات"), t("You must select the source employee and the target employees", "يجب تحديد الموظف المصدر والموظفين الهدف"))
       return
     }
     setPermissionLoading(true)
@@ -898,15 +913,15 @@ export default function UsersSettingsPage() {
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        toastActionSuccess(toast, "مشاركة", "الصلاحيات")
+        toastActionSuccess(toast, t("Share", "مشاركة"), t("Permissions", "الصلاحيات"))
         setShowPermissionDialog(false)
         resetPermissionForm()
         loadPermissionData()
       } else {
-        toastActionError(toast, "مشاركة", "الصلاحيات", data.error)
+        toastActionError(toast, t("Share", "مشاركة"), t("Permissions", "الصلاحيات"), data.error)
       }
     } catch (err: any) {
-      toastActionError(toast, "مشاركة", "الصلاحيات", err.message)
+      toastActionError(toast, t("Share", "مشاركة"), t("Permissions", "الصلاحيات"), err.message)
     } finally {
       setPermissionLoading(false)
     }
@@ -918,11 +933,11 @@ export default function UsersSettingsPage() {
   // vacation cover and the cron auto-deactivates it on the end date.
   const handleVacationCover = async () => {
     if (!vacGrantorId || vacGranteeIds.length === 0 || !vacEndDate) {
-      toastActionError(toast, "تَفويض", "إجازة", "يجب تَحديد الموظف الغائب، البَديل، وتاريخ الانتهاء")
+      toastActionError(toast, t("Delegate", "تَفويض"), t("Vacation", "إجازة"), t("You must select the absent employee, the substitute, and the end date", "يجب تَحديد الموظف الغائب، البَديل، وتاريخ الانتهاء"))
       return
     }
     if (vacEndDate < vacStartDate) {
-      toastActionError(toast, "تَفويض", "إجازة", "تاريخ الانتهاء يجب أن يكون بعد تاريخ البَدء")
+      toastActionError(toast, t("Delegate", "تَفويض"), t("Vacation", "إجازة"), t("The end date must be after the start date", "تاريخ الانتهاء يجب أن يكون بعد تاريخ البَدء"))
       return
     }
     setVacLoading(true)
@@ -952,7 +967,7 @@ export default function UsersSettingsPage() {
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        toastActionSuccess(toast, "تَفويض إجازة", `${vacGranteeIds.length} بديل حتى ${vacEndDate}`)
+        toastActionSuccess(toast, t("Vacation cover", "تَفويض إجازة"), t(`${vacGranteeIds.length} substitute(s) until ${vacEndDate}`, `${vacGranteeIds.length} بديل حتى ${vacEndDate}`))
         setShowVacationDialog(false)
         setVacGrantorId("")
         setVacGranteeIds([])
@@ -962,10 +977,10 @@ export default function UsersSettingsPage() {
         setVacReason("")
         loadPermissionData()
       } else {
-        toastActionError(toast, "تَفويض إجازة", "فشل", data.error || "خطأ")
+        toastActionError(toast, t("Vacation cover", "تَفويض إجازة"), t("Failed", "فشل"), data.error || t("Error", "خطأ"))
       }
     } catch (err: any) {
-      toastActionError(toast, "تَفويض إجازة", "خطأ", err.message)
+      toastActionError(toast, t("Vacation cover", "تَفويض إجازة"), t("Error", "خطأ"), err.message)
     } finally {
       setVacLoading(false)
     }
@@ -974,7 +989,7 @@ export default function UsersSettingsPage() {
   // 🏢 إضافة وصول فروع متعددة
   const handleAddBranchAccess = async () => {
     if (!selectedSourceUser || selectedBranches.length === 0) {
-      toastActionError(toast, "إضافة", "وصول الفروع", "يجب تحديد الموظف والفروع")
+      toastActionError(toast, t("Add", "إضافة"), t("Branch access", "وصول الفروع"), t("You must select the employee and the branches", "يجب تحديد الموظف والفروع"))
       return
     }
     setPermissionLoading(true)
@@ -990,15 +1005,15 @@ export default function UsersSettingsPage() {
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        toastActionSuccess(toast, "إضافة", "وصول الفروع")
+        toastActionSuccess(toast, t("Add", "إضافة"), t("Branch access", "وصول الفروع"))
         setShowPermissionDialog(false)
         resetPermissionForm()
         loadPermissionData()
       } else {
-        toastActionError(toast, "إضافة", "وصول الفروع", data.error)
+        toastActionError(toast, t("Add", "إضافة"), t("Branch access", "وصول الفروع"), data.error)
       }
     } catch (err: any) {
-      toastActionError(toast, "إضافة", "وصول الفروع", err.message)
+      toastActionError(toast, t("Add", "إضافة"), t("Branch access", "وصول الفروع"), err.message)
     } finally {
       setPermissionLoading(false)
     }
@@ -1042,13 +1057,13 @@ export default function UsersSettingsPage() {
   const NO_BRANCH = "__NONE__"
   const saveMemberBranches = async () => {
     if (!editingMemberId) {
-      toastActionError(toast, "حفظ", "الفرع", "غير محدد")
+      toastActionError(toast, t("Save", "حفظ"), t("Branch", "الفرع"), t("Not specified", "غير محدد"))
       return
     }
     const isBookingOfficer = editingMemberRole === "booking_officer"
     const isUnassigned     = memberBranchId === NO_BRANCH || memberBranchId === ""
     if (isUnassigned && !isBookingOfficer) {
-      toastActionError(toast, "حفظ", "الفرع", "يجب تحديد فرع واحد إلزاميًا")
+      toastActionError(toast, t("Save", "حفظ"), t("Branch", "الفرع"), t("Selecting one branch is mandatory", "يجب تحديد فرع واحد إلزاميًا"))
       return
     }
     setSavingMemberBranches(true)
@@ -1156,7 +1171,7 @@ export default function UsersSettingsPage() {
         return others
       })
 
-      toastActionSuccess(toast, "حفظ", "فرع الموظف")
+      toastActionSuccess(toast, t("Save", "حفظ"), t("Employee branch", "فرع الموظف"))
 
       // إنشاء إشعار للمستخدم عند تغيير فرعه من الخلفية فقط
       if ((currentMember?.branch_id || "") !== memberBranchId) {
@@ -1182,7 +1197,7 @@ export default function UsersSettingsPage() {
         }
       } catch { }
     } catch (err: any) {
-      toastActionError(toast, "حفظ", "الفروع", err.message)
+      toastActionError(toast, t("Save", "حفظ"), t("Branches", "الفروع"), err.message)
     } finally {
       setSavingMemberBranches(false)
     }
@@ -1220,7 +1235,7 @@ export default function UsersSettingsPage() {
         }),
       })
       const result = await res.json()
-      if (!res.ok) throw new Error(result.error || "فشل ربط العضو بالموظف")
+      if (!res.ok) throw new Error(result.error || t("Failed to link member to employee", "فشل ربط العضو بالموظف"))
 
       // Update local state
       const emp = employeesList.find(e => e.id === selectedEmployeeId)
@@ -1235,12 +1250,12 @@ export default function UsersSettingsPage() {
           : m
       ))
 
-      toastActionSuccess(toast, "ربط", selectedEmployeeId ? "العضو بالموظف" : "إلغاء الربط")
+      toastActionSuccess(toast, t("Link", "ربط"), selectedEmployeeId ? t("Member to employee", "العضو بالموظف") : t("Unlink", "إلغاء الربط"))
       setShowLinkEmployeeDialog(false)
       // Notify sidebar to refresh display_name only
       window.dispatchEvent(new Event('profile_updated'))
     } catch (err: any) {
-      toastActionError(toast, "ربط", "العضو بالموظف", err.message)
+      toastActionError(toast, t("Link", "ربط"), t("Member to employee", "العضو بالموظف"), err.message)
     } finally {
       setLinkingEmployee(false)
     }
@@ -1252,24 +1267,24 @@ export default function UsersSettingsPage() {
     if (memberAccess.length > 0) {
       return memberAccess.map(a => {
         const branch = branches.find(b => b.id === a.branch_id)
-        return branch?.name || "فرع غير معروف"
-      }).join("، ")
+        return branch?.name || t("Unknown branch", "فرع غير معروف")
+      }).join(t(", ", "، "))
     }
     if (member.branch_id) {
       const branch = branches.find(b => b.id === member.branch_id)
-      return branch?.name || "فرع غير معروف"
+      return branch?.name || t("Unknown branch", "فرع غير معروف")
     }
-    return "غير محدد"
+    return t("Not assigned", "غير محدد")
   }
 
   const createInvitation = async () => {
     const targetCompanyId = (inviteCompanyId || companyId)
     if (!targetCompanyId || !inviteEmail.trim() || !inviteName.trim()) return
-    if (!canManage) { setActionError("ليست لديك صلاحية لإنشاء دعوات"); return }
+    if (!canManage) { setActionError(t("You do not have permission to create invitations", "ليست لديك صلاحية لإنشاء دعوات")); return }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(inviteEmail.trim())) { setActionError("البريد الإلكتروني غير صالح"); return }
-    if (!inviteName.trim()) { setActionError("اسم الموظف مطلوب"); return }
-    if (!inviteBranchId) { setActionError("يجب تحديد الفرع"); return }
+    if (!emailRegex.test(inviteEmail.trim())) { setActionError(t("Invalid email address", "البريد الإلكتروني غير صالح")); return }
+    if (!inviteName.trim()) { setActionError(t("Employee name is required", "اسم الموظف مطلوب")); return }
+    if (!inviteBranchId) { setActionError(t("Branch selection is required", "يجب تحديد الفرع")); return }
     setLoading(true)
     try {
       setActionError(null)
@@ -1282,7 +1297,7 @@ export default function UsersSettingsPage() {
           .maybeSingle()
         // 🔐 السماح للأدوار الإدارية بإرسال دعوات
         const canManageTarget = ["owner", "admin", "general_manager", "manager"].includes(String(myMemberTarget?.role || ""))
-        if (!canManageTarget) { setActionError("ليست لديك صلاحية لإرسال دعوة لهذه الشركة"); return }
+        if (!canManageTarget) { setActionError(t("You do not have permission to send an invitation for this company", "ليست لديك صلاحية لإرسال دعوة لهذه الشركة")); return }
       } catch { }
 
       // ✅ Always go through API — enforces seat checks server-side
@@ -1302,12 +1317,12 @@ export default function UsersSettingsPage() {
 
       // ✅ Handle 402: No seats available
       if (res.status === 402) {
-        setActionError("لا توجد مقاعد متاحة. لإرسال دعوة جديدة، يرجى إضافة مقعد مدفوع إلى اشتراك الشركة.")
+        setActionError(t("No seats available. To send a new invitation, please add a paid seat to the company subscription.", "لا توجد مقاعد متاحة. لإرسال دعوة جديدة، يرجى إضافة مقعد مدفوع إلى اشتراك الشركة."))
         return
       }
 
       if (!res.ok) {
-        setActionError(data?.error || data?.message || "تعذر إنشاء الدعوة")
+        setActionError(data?.error || data?.message || t("Failed to create the invitation", "تعذر إنشاء الدعوة"))
         return
       }
 
@@ -1328,38 +1343,38 @@ export default function UsersSettingsPage() {
       if (data?.email_delivered === false || data?.type === "manual") {
         setActionError(
           data?.warning ||
-          "الدعوة اتسجّلت لكن الإيميل ما اتبعتش (Resend رفض الإرسال). انسخ الرابط من زرار 'نسخ الرابط' فى الدعوات المعلقة وابعته يدوياً."
+          t("The invitation was saved but the email was not sent (Resend rejected it). Copy the link using the 'Copy Link' button in the pending invitations and send it manually.", "الدعوة اتسجّلت لكن الإيميل ما اتبعتش (Resend رفض الإرسال). انسخ الرابط من زرار 'نسخ الرابط' فى الدعوات المعلقة وابعته يدوياً.")
         )
       } else {
-        toastActionSuccess(toast, "إنشاء", "الدعوة")
+        toastActionSuccess(toast, t("Create", "إنشاء"), t("Invitation", "الدعوة"))
       }
     } catch (e) {
-      setActionError((e as any)?.message || "حدث خطأ أثناء إنشاء الدعوة")
+      setActionError((e as any)?.message || t("An error occurred while creating the invitation", "حدث خطأ أثناء إنشاء الدعوة"))
     } finally { setLoading(false) }
   }
 
 
   const updateRole = async (id: string, role: string) => {
-    if (!canManage) { setActionError("ليست لديك صلاحية لتغيير الأدوار"); return }
+    if (!canManage) { setActionError(t("You do not have permission to change roles", "ليست لديك صلاحية لتغيير الأدوار")); return }
     setLoading(true)
     try {
       setActionError(null)
       const m = members.find((x) => x.id === id)
-      if (!m) { setActionError("العضو غير موجود"); return }
+      if (!m) { setActionError(t("Member not found", "العضو غير موجود")); return }
       // منع فقدان آخر مالك
       const owners = members.filter((x) => x.role === "owner")
-      if (m.role === "owner" && owners.length === 1 && role !== "owner") { setActionError("لا يمكن تغيير دور آخر مالك"); return }
+      if (m.role === "owner" && owners.length === 1 && role !== "owner") { setActionError(t("Cannot change the role of the last owner", "لا يمكن تغيير دور آخر مالك")); return }
       // منع خفض دور المستخدم الحالي إلى عرض فقط بدون وجود مدير/مالك آخر
       if (m.user_id === currentUserId && !["owner", "admin"].includes(role)) {
         const hasOtherAdmin = members.some((x) => x.user_id !== currentUserId && ["owner", "admin"].includes(x.role))
-        if (!hasOtherAdmin) { setActionError("لا يمكن خفض دورك دون وجود مدير/مالك آخر"); return }
+        if (!hasOtherAdmin) { setActionError(t("You cannot downgrade your own role without another admin/owner", "لا يمكن خفض دورك دون وجود مدير/مالك آخر")); return }
       }
       const oldRole = m.role
       const { error } = await supabase
         .from("company_members")
         .update({ role })
         .eq("id", id)
-      if (error) { setActionError(error.message || "تعذر التحديث"); return }
+      if (error) { setActionError(error.message || t("Update failed", "تعذر التحديث")); return }
 
       // إنشاء إشعار للمستخدم عند تغيير دوره
       if (oldRole !== role) {
@@ -1390,95 +1405,98 @@ export default function UsersSettingsPage() {
   }
 
   const removeMember = async (id: string) => {
-    if (!canManage) { setActionError("ليست لديك صلاحية لإزالة الأعضاء"); return }
+    if (!canManage) { setActionError(t("You do not have permission to remove members", "ليست لديك صلاحية لإزالة الأعضاء")); return }
     setLoading(true)
     try {
       setActionError(null)
       const m = members.find((x) => x.id === id)
-      if (!m) { setActionError("العضو غير موجود"); return }
+      if (!m) { setActionError(t("Member not found", "العضو غير موجود")); return }
       const owners = members.filter((x) => x.role === "owner")
-      if (m.role === "owner" && owners.length === 1) { setActionError("لا يمكن إزالة آخر مالك"); return }
-      if (m.user_id === currentUserId) { setActionError("لا يمكنك إزالة نفسك"); return }
+      if (m.role === "owner" && owners.length === 1) { setActionError(t("Cannot remove the last owner", "لا يمكن إزالة آخر مالك")); return }
+      if (m.user_id === currentUserId) { setActionError(t("You cannot remove yourself", "لا يمكنك إزالة نفسك")); return }
       const { error } = await supabase
         .from("company_members")
         .delete()
         .eq("id", id)
-      if (error) { setActionError(error.message || "تعذر الإزالة"); return }
+      if (error) { setActionError(error.message || t("Removal failed", "تعذر الإزالة")); return }
       await refreshMembers()
     } finally {
       setLoading(false)
     }
   }
 
-  const roleLabels: Record<string, { ar: string; en: string; color: string; description: string }> = {
-    owner: { ar: 'مالك', en: 'Owner', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', description: 'صلاحيات كاملة على كل شيء' },
-    admin: { ar: 'مدير عام', en: 'Admin', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', description: 'إدارة كاملة للنظام' },
-    manager: { ar: 'مدير', en: 'Manager', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة العمليات اليومية' },
-    accountant: { ar: 'محاسب', en: 'Accountant', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', description: 'إدارة الحسابات والفواتير' },
-    store_manager: { ar: 'مسؤول مخزن', en: 'Store Manager', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', description: 'إدارة المخزون والمنتجات' },
+  const roleLabels: Record<string, { ar: string; en: string; color: string; description: string; descriptionEn: string }> = {
+    owner: { ar: 'مالك', en: 'Owner', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', description: 'صلاحيات كاملة على كل شيء', descriptionEn: 'Full permissions over everything' },
+    admin: { ar: 'مدير عام', en: 'Admin', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', description: 'إدارة كاملة للنظام', descriptionEn: 'Full system administration' },
+    manager: { ar: 'مدير', en: 'Manager', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة العمليات اليومية', descriptionEn: 'Manages daily operations' },
+    accountant: { ar: 'محاسب', en: 'Accountant', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', description: 'إدارة الحسابات والفواتير', descriptionEn: 'Manages accounts and invoices' },
+    store_manager: { ar: 'مسؤول مخزن', en: 'Store Manager', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', description: 'إدارة المخزون والمنتجات', descriptionEn: 'Manages inventory and products' },
     // ── الأدوار الجديدة ──────────────────────────────────────────
-    manufacturing_officer: { ar: 'مسؤول التصنيع', en: 'Manufacturing Officer', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', description: 'إدارة قوائم المواد والإنتاج' },
-    booking_officer: { ar: 'مسؤول الحجوزات', en: 'Booking Officer', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة الحجوزات والخدمات' },
-    purchasing_officer: { ar: 'مسؤول المشتريات', en: 'Purchasing Officer', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', description: 'إدارة المشتريات والموردين' },
-    hr_officer: { ar: 'مسؤول الموارد البشرية', en: 'HR Officer', color: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400', description: 'إدارة الموظفين والمرتبات والحضور' },
-    staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'صلاحيات محدودة' },
-    viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط' },
+    manufacturing_officer: { ar: 'مسؤول التصنيع', en: 'Manufacturing Officer', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', description: 'إدارة قوائم المواد والإنتاج', descriptionEn: 'Manages BOMs and production' },
+    booking_officer: { ar: 'مسؤول الحجوزات', en: 'Booking Officer', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة الحجوزات والخدمات', descriptionEn: 'Manages bookings and services' },
+    purchasing_officer: { ar: 'مسؤول المشتريات', en: 'Purchasing Officer', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', description: 'إدارة المشتريات والموردين', descriptionEn: 'Manages purchasing and suppliers' },
+    hr_officer: { ar: 'مسؤول الموارد البشرية', en: 'HR Officer', color: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400', description: 'إدارة الموظفين والمرتبات والحضور', descriptionEn: 'Manages employees, payroll, and attendance' },
+    staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'صلاحيات محدودة', descriptionEn: 'Limited permissions' },
+    viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط', descriptionEn: 'View data only' },
   }
+
+  // 🌐 Bilingual role name helper (display only)
+  const roleName = (r: string) => (appLang === 'en' ? roleLabels[r]?.en : roleLabels[r]?.ar) || r
 
   // تصنيف الموارد حسب الفئات للعرض المنظم - جميع الصفحات الموجودة فعلياً في التطبيق
   const resourceCategories = {
     reports: {
-      label: '📊 التقارير واللوحة الرئيسية',
+      label: t('📊 Reports & Dashboard', '📊 التقارير واللوحة الرئيسية'),
       resources: [
-        { value: 'dashboard', label: 'لوحة التحكم' },
-        { value: 'reports', label: 'التقارير العامة' },
+        { value: 'dashboard', label: t('Dashboard', 'لوحة التحكم') },
+        { value: 'reports', label: t('General Reports', 'التقارير العامة') },
       ]
     },
     sales: {
-      label: '💰 المبيعات',
+      label: t('💰 Sales', '💰 المبيعات'),
       resources: [
-        { value: 'invoices', label: 'فواتير المبيعات' },
-        { value: 'customers', label: 'العملاء' },
-        { value: 'estimates', label: 'العروض السعرية' },
-        { value: 'sales_orders', label: 'أوامر المبيعات' },
-        { value: 'sales_returns', label: 'مرتجعات المبيعات' },
-        { value: 'sent_invoice_returns', label: 'مرتجعات الفواتير المرسلة' },
-        { value: 'customer_debit_notes', label: 'إشعارات دائن العملاء' },
-        { value: 'customer_credits', label: 'الأرصدة الدائنة للعملاء' },
+        { value: 'invoices', label: t('Sales Invoices', 'فواتير المبيعات') },
+        { value: 'customers', label: t('Customers', 'العملاء') },
+        { value: 'estimates', label: t('Estimates', 'العروض السعرية') },
+        { value: 'sales_orders', label: t('Sales Orders', 'أوامر المبيعات') },
+        { value: 'sales_returns', label: t('Sales Returns', 'مرتجعات المبيعات') },
+        { value: 'sent_invoice_returns', label: t('Sent Invoice Returns', 'مرتجعات الفواتير المرسلة') },
+        { value: 'customer_debit_notes', label: t('Customer Debit Notes', 'إشعارات دائن العملاء') },
+        { value: 'customer_credits', label: t('Customer Credit Balances', 'الأرصدة الدائنة للعملاء') },
         // v3.74.492 — sales_return_requests resource retired. The
         // approval workflow now lives in the unified /approvals inbox
         // (resource: 'approvals').
-        { value: 'customer_refund_requests', label: 'طلبات استرداد العملاء' },
+        { value: 'customer_refund_requests', label: t('Customer Refund Requests', 'طلبات استرداد العملاء') },
       ]
     },
     services_bookings: {
-      label: '🎫 الخدمات والحجوزات',
+      label: t('🎫 Services & Bookings', '🎫 الخدمات والحجوزات'),
       resources: [
-        { value: 'services', label: 'الخدمات' },
-        { value: 'bookings', label: 'الحجوزات' },
+        { value: 'services', label: t('Services', 'الخدمات') },
+        { value: 'bookings', label: t('Bookings', 'الحجوزات') },
       ]
     },
     purchases: {
-      label: '🛒 المشتريات',
+      label: t('🛒 Purchases', '🛒 المشتريات'),
       resources: [
-        { value: 'bills', label: 'فواتير المشتريات' },
-        { value: 'suppliers', label: 'الموردون' },
-        { value: 'purchase_orders', label: 'أوامر الشراء' },
-        { value: 'purchase_returns', label: 'مرتجعات المشتريات' },
-        { value: 'vendor_credits', label: 'إشعارات دائن الموردين' },
-        { value: 'vendor_payment_correction_requests', label: 'طلبات تصحيح مدفوعات الموردين' },
+        { value: 'bills', label: t('Purchase Bills', 'فواتير المشتريات') },
+        { value: 'suppliers', label: t('Suppliers', 'الموردون') },
+        { value: 'purchase_orders', label: t('Purchase Orders', 'أوامر الشراء') },
+        { value: 'purchase_returns', label: t('Purchase Returns', 'مرتجعات المشتريات') },
+        { value: 'vendor_credits', label: t('Vendor Credit Notes', 'إشعارات دائن الموردين') },
+        { value: 'vendor_payment_correction_requests', label: t('Vendor Payment Correction Requests', 'طلبات تصحيح مدفوعات الموردين') },
       ]
     },
     inventory: {
-      label: '📦 المخزون',
+      label: t('📦 Inventory', '📦 المخزون'),
       resources: [
-        { value: 'products', label: 'المنتجات' },
-        { value: 'inventory', label: 'حركات المخزون' },
-        { value: 'inventory_transfers', label: 'تحويلات المخزون' },
-        { value: 'write_offs', label: 'إهلاك المخزون' },
-        { value: 'third_party_inventory', label: 'مخزون الطرف الثالث' },
+        { value: 'products', label: t('Products', 'المنتجات') },
+        { value: 'inventory', label: t('Inventory Movements', 'حركات المخزون') },
+        { value: 'inventory_transfers', label: t('Inventory Transfers', 'تحويلات المخزون') },
+        { value: 'write_offs', label: t('Inventory Write-offs', 'إهلاك المخزون') },
+        { value: 'third_party_inventory', label: t('Third-Party Inventory', 'مخزون الطرف الثالث') },
         // صفحة توفر المنتجات في الفروع
-        { value: 'product_availability', label: 'توفر المنتجات في الفروع' },
+        { value: 'product_availability', label: t('Product Availability by Branch', 'توفر المنتجات في الفروع') },
         // v3.74.492 — dispatch_approvals resource retired. The
         // warehouse dispatch flow (including approve-with-shipping
         // for API-integrated providers) lives in the unified
@@ -1489,86 +1507,86 @@ export default function UsersSettingsPage() {
       ]
     },
     manufacturing: {
-      label: '🏭 التصنيع',
+      label: t('🏭 Manufacturing', '🏭 التصنيع'),
       resources: [
-        { value: 'manufacturing_boms', label: 'التصنيع (هياكل المواد، مسارات التشغيل، أوامر الإنتاج)' },
+        { value: 'manufacturing_boms', label: t('Manufacturing (BOMs, Routings, Production Orders)', 'التصنيع (هياكل المواد، مسارات التشغيل، أوامر الإنتاج)') },
       ]
     },
     // v3.74.482 — Approvals is now cross-cutting (not manufacturing-only),
     // so it gets its own top-level group in the role permissions grid.
     approvals: {
-      label: '🔔 صندوق الموافقات',
+      label: t('🔔 Approvals Inbox', '🔔 صندوق الموافقات'),
       resources: [
-        { value: 'approvals', label: 'صندوق الموافقات (كل الفئات: تصنيع، خصومات، دفعات موردين، مرتجعات مشتريات ومبيعات، استرداد، تصحيح، صرف، استلام، إهلاك، تحويلات، وطلبات متنوعة)' },
+        { value: 'approvals', label: t('Approvals Inbox (all categories: manufacturing, discounts, vendor payments, purchase & sales returns, refunds, corrections, dispatch, receiving, write-offs, transfers, and misc requests)', 'صندوق الموافقات (كل الفئات: تصنيع، خصومات، دفعات موردين، مرتجعات مشتريات ومبيعات، استرداد، تصحيح، صرف، استلام، إهلاك، تحويلات، وطلبات متنوعة)') },
       ]
     },
     finance: {
-      label: '🏦 المالية والمحاسبة',
+      label: t('🏦 Finance & Accounting', '🏦 المالية والمحاسبة'),
       resources: [
-        { value: 'expenses', label: 'المصروفات' },
-        { value: 'drawings', label: 'المسحوبات الشخصية' },
-        { value: 'annual_closing', label: 'الإقفال السنوي' },
-        { value: 'accounting_periods', label: 'الفترات المحاسبية' },
-        { value: 'payments', label: 'المدفوعات' },
-        { value: 'journal_entries', label: 'القيود اليومية' },
-        { value: 'chart_of_accounts', label: 'الشجرة المحاسبية' },
-        { value: 'banking', label: 'الأعمال المصرفية' },
-        { value: 'shareholders', label: 'المساهمون' },
-        { value: 'fixed_assets', label: 'الأصول الثابتة' },
-        { value: 'asset_categories', label: 'فئات الأصول' },
-        { value: 'fixed_assets_reports', label: 'تقارير الأصول الثابتة' },
-        { value: 'fx_revaluation', label: 'إعادة تقييم العملات' },
-        { value: 'fix_cogs', label: 'إصلاح تكلفة البضاعة المباعة' },
+        { value: 'expenses', label: t('Expenses', 'المصروفات') },
+        { value: 'drawings', label: t('Owner Drawings', 'المسحوبات الشخصية') },
+        { value: 'annual_closing', label: t('Annual Closing', 'الإقفال السنوي') },
+        { value: 'accounting_periods', label: t('Accounting Periods', 'الفترات المحاسبية') },
+        { value: 'payments', label: t('Payments', 'المدفوعات') },
+        { value: 'journal_entries', label: t('Journal Entries', 'القيود اليومية') },
+        { value: 'chart_of_accounts', label: t('Chart of Accounts', 'الشجرة المحاسبية') },
+        { value: 'banking', label: t('Banking', 'الأعمال المصرفية') },
+        { value: 'shareholders', label: t('Shareholders', 'المساهمون') },
+        { value: 'fixed_assets', label: t('Fixed Assets', 'الأصول الثابتة') },
+        { value: 'asset_categories', label: t('Asset Categories', 'فئات الأصول') },
+        { value: 'fixed_assets_reports', label: t('Fixed Asset Reports', 'تقارير الأصول الثابتة') },
+        { value: 'fx_revaluation', label: t('FX Revaluation', 'إعادة تقييم العملات') },
+        { value: 'fix_cogs', label: t('Fix COGS', 'إصلاح تكلفة البضاعة المباعة') },
       ]
     },
     hr: {
-      label: '👥 الموارد البشرية',
+      label: t('👥 Human Resources', '👥 الموارد البشرية'),
       resources: [
-        { value: 'hr', label: 'الموارد البشرية (الرئيسية)' },
-        { value: 'employees', label: 'الموظفين' },
-        { value: 'attendance', label: 'الحضور والانصراف' },
-        { value: 'payroll', label: 'الرواتب' },
-        { value: 'instant_payouts', label: 'السلف الفورية' },
-        { value: 'employee_bonuses', label: 'حوافز الموظفين' },
+        { value: 'hr', label: t('HR (Main)', 'الموارد البشرية (الرئيسية)') },
+        { value: 'employees', label: t('Employees', 'الموظفين') },
+        { value: 'attendance', label: t('Attendance', 'الحضور والانصراف') },
+        { value: 'payroll', label: t('Payroll', 'الرواتب') },
+        { value: 'instant_payouts', label: t('Instant Payouts', 'السلف الفورية') },
+        { value: 'employee_bonuses', label: t('Employee Bonuses', 'حوافز الموظفين') },
       ]
     },
     organization: {
-      label: '🏢 الهيكل التنظيمي',
+      label: t('🏢 Organization Structure', '🏢 الهيكل التنظيمي'),
       resources: [
-        { value: 'branches', label: 'الفروع' },
-        { value: 'cost_centers', label: 'مراكز التكلفة' },
-        { value: 'warehouses', label: 'المستودعات' },
+        { value: 'branches', label: t('Branches', 'الفروع') },
+        { value: 'cost_centers', label: t('Cost Centers', 'مراكز التكلفة') },
+        { value: 'warehouses', label: t('Warehouses', 'المستودعات') },
       ]
     },
     settings: {
-      label: '⚙️ الإعدادات',
+      label: t('⚙️ Settings', '⚙️ الإعدادات'),
       resources: [
-        { value: 'settings', label: 'الإعدادات (الرئيسية)' },
-        { value: 'system_status', label: 'حالة النظام' },
-        { value: 'company_settings', label: 'إعدادات الشركة' },
-        { value: 'users', label: 'المستخدمون' },
-        { value: 'exchange_rates', label: 'أسعار العملات' },
-        { value: 'taxes', label: 'الضرائب' },
-        { value: 'audit_log', label: 'سجل التدقيق' },
-        { value: 'backup', label: 'النسخ الاحتياطي' },
-        { value: 'shipping', label: 'إعدادات الشحن' },
-        { value: 'profile', label: 'الملف الشخصي' },
-        { value: 'orders_rules', label: 'قواعد الطلبات' },
-        { value: 'accounting_maintenance', label: 'صيانة المحاسبة' },
-        { value: 'commissions', label: 'قواعد العمولات' },
-        { value: 'notifications', label: 'تفضيلات الإشعارات' },
-        { value: 'billing', label: 'الفوترة والاشتراك' },
-        { value: 'seats', label: 'إدارة المقاعد' },
-        { value: 'tooltips', label: 'نَصائح الواجهة' },
+        { value: 'settings', label: t('Settings (Main)', 'الإعدادات (الرئيسية)') },
+        { value: 'system_status', label: t('System Status', 'حالة النظام') },
+        { value: 'company_settings', label: t('Company Settings', 'إعدادات الشركة') },
+        { value: 'users', label: t('Users', 'المستخدمون') },
+        { value: 'exchange_rates', label: t('Exchange Rates', 'أسعار العملات') },
+        { value: 'taxes', label: t('Taxes', 'الضرائب') },
+        { value: 'audit_log', label: t('Audit Log', 'سجل التدقيق') },
+        { value: 'backup', label: t('Backup', 'النسخ الاحتياطي') },
+        { value: 'shipping', label: t('Shipping Settings', 'إعدادات الشحن') },
+        { value: 'profile', label: t('Profile', 'الملف الشخصي') },
+        { value: 'orders_rules', label: t('Order Rules', 'قواعد الطلبات') },
+        { value: 'accounting_maintenance', label: t('Accounting Maintenance', 'صيانة المحاسبة') },
+        { value: 'commissions', label: t('Commission Rules', 'قواعد العمولات') },
+        { value: 'notifications', label: t('Notification Preferences', 'تفضيلات الإشعارات') },
+        { value: 'billing', label: t('Billing & Subscription', 'الفوترة والاشتراك') },
+        { value: 'seats', label: t('Seat Management', 'إدارة المقاعد') },
+        { value: 'tooltips', label: t('UI Tooltips', 'نَصائح الواجهة') },
       ]
     },
     permissions: {
-      label: '🔐 إدارة الصلاحيات',
+      label: t('🔐 Permissions Management', '🔐 إدارة الصلاحيات'),
       resources: [
-        { value: 'permission_sharing', label: 'مشاركة الصلاحيات' },
-        { value: 'permission_transfers', label: 'نقل الصلاحيات' },
-        { value: 'user_branch_access', label: 'وصول الفروع' },
-        { value: 'role_permissions', label: 'صلاحيات الأدوار' },
+        { value: 'permission_sharing', label: t('Permission Sharing', 'مشاركة الصلاحيات') },
+        { value: 'permission_transfers', label: t('Permission Transfers', 'نقل الصلاحيات') },
+        { value: 'user_branch_access', label: t('Branch Access', 'وصول الفروع') },
+        { value: 'role_permissions', label: t('Role Permissions', 'صلاحيات الأدوار') },
       ]
     },
   }
@@ -1650,7 +1668,7 @@ export default function UsersSettingsPage() {
         <main className="flex-1 md:mr-64 p-4 md:p-8 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-spin" />
-            <p className="text-gray-500 dark:text-gray-400">جاري تحميل بيانات المستخدمين...</p>
+            <p className="text-gray-500 dark:text-gray-400">{t("Loading user data...", "جاري تحميل بيانات المستخدمين...")}</p>
           </div>
         </main>
       </div>
@@ -1670,11 +1688,11 @@ export default function UsersSettingsPage() {
                   <Users className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">المستخدمون</h1>
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">إدارة أعضاء الشركة وصلاحياتهم</p>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">{t("Users", "المستخدمون")}</h1>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1">{t("Manage company members and their permissions", "إدارة أعضاء الشركة وصلاحياتهم")}</p>
                   {/* 🔐 Governance Notice */}
                   <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                    👑 صلاحية إدارية - جميع المستخدمين مرئيين
+                    {t("👑 Administrative access - all users are visible", "👑 صلاحية إدارية - جميع المستخدمين مرئيين")}
                   </p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs">
@@ -1687,12 +1705,12 @@ export default function UsersSettingsPage() {
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={refreshMembers} disabled={refreshing} className="gap-2">
                   <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  تحديث
+                  {t("Refresh", "تحديث")}
                 </Button>
                 <Link href="/settings">
                   <Button variant="outline" className="gap-2">
                     <ChevronRight className="w-4 h-4 rotate-180" />
-                    العودة للإعدادات
+                    {t("Back to Settings", "العودة للإعدادات")}
                   </Button>
                 </Link>
               </div>
@@ -1705,8 +1723,8 @@ export default function UsersSettingsPage() {
           <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
             <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">وضع العرض فقط</p>
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">ليس لديك صلاحية لتعديل المستخدمين. تواصل مع مدير الشركة للحصول على الصلاحيات.</p>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t("View-only mode", "وضع العرض فقط")}</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">{t("You do not have permission to edit users. Contact the company administrator for access.", "ليس لديك صلاحية لتعديل المستخدمين. تواصل مع مدير الشركة للحصول على الصلاحيات.")}</p>
             </div>
           </div>
         )}
@@ -1720,18 +1738,18 @@ export default function UsersSettingsPage() {
                   <UserCog className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">أعضاء الشركة</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">يمكن للمالك والمدير تعديل الأدوار وإدارة الأعضاء</p>
+                  <CardTitle className="text-base">{t("Company Members", "أعضاء الشركة")}</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">{t("The owner and admins can edit roles and manage members", "يمكن للمالك والمدير تعديل الأدوار وإدارة الأعضاء")}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="gap-1">
                   <Users className="w-3 h-3" />
-                  {members.length} عضو
+                  {members.length} {t("members", "عضو")}
                 </Badge>
                 {currentRole && (
                   <Badge className={roleLabels[currentRole]?.color || roleLabels.viewer.color}>
-                    دورك: {roleLabels[currentRole]?.ar || currentRole}
+                    {t("Your role:", "دورك:")} {roleName(currentRole)}
                   </Badge>
                 )}
               </div>
@@ -1741,7 +1759,7 @@ export default function UsersSettingsPage() {
             {members.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>لا يوجد أعضاء حالياً</p>
+                <p>{t("No members yet", "لا يوجد أعضاء حالياً")}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1756,14 +1774,14 @@ export default function UsersSettingsPage() {
                           <p className="font-medium text-gray-900 dark:text-white">
                             {m.display_name || m.email || m.user_id}
                           </p>
-                          {m.is_current && <Badge className="text-[10px] bg-blue-500 text-white">أنت</Badge>}
+                          {m.is_current && <Badge className="text-[10px] bg-blue-500 text-white">{t("You", "أنت")}</Badge>}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           {m.email && (
                             <span className="text-xs text-muted-foreground">{m.email}</span>
                           )}
                           <Badge className={`text-[10px] ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
-                            {roleLabels[m.role]?.ar || m.role}
+                            {roleName(m.role)}
                           </Badge>
                           {/* 🏢 عرض الفروع المرتبطة */}
                           <Badge variant="outline" className="text-[10px] gap-1 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800">
@@ -1783,7 +1801,7 @@ export default function UsersSettingsPage() {
                           className="gap-1 h-8 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
                         >
                           <GitBranch className="w-3 h-3" />
-                          الفروع
+                          {t("Branches", "الفروع")}
                         </Button>
                       )}
                       {/* 🔗 زر ربط بالموظف */}
@@ -1798,7 +1816,7 @@ export default function UsersSettingsPage() {
                           }`}
                         >
                           <UserCog className="w-3 h-3" />
-                          {m.employee_id ? (m.employee_name || "مرتبط") : "ربط بموظف"}
+                          {m.employee_id ? (m.employee_name || t("Linked", "مرتبط")) : t("Link to Employee", "ربط بموظف")}
                         </Button>
                       )}
                       {canManage && !m.is_current && (
@@ -1809,7 +1827,7 @@ export default function UsersSettingsPage() {
                               const js = await res.json()
                               if (res.ok && js?.ok) {
                                 setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
-                                toastActionSuccess(toast, "تحديث", "الدور")
+                                toastActionSuccess(toast, t("Update", "تحديث"), t("Role", "الدور"))
 
                                 // ✅ تحديث الصلاحيات فقط إذا كنا نغير دور المستخدم الحالي
                                 if (m.user_id === currentUserId) {
@@ -1831,30 +1849,30 @@ export default function UsersSettingsPage() {
                                   }
                                 }
                               } else {
-                                toastActionError(toast, "تحديث", "الدور", js?.error || undefined)
+                                toastActionError(toast, t("Update", "تحديث"), t("Role", "الدور"), js?.error || undefined)
                               }
-                            } catch (err: any) { toastActionError(toast, "تحديث", "الدور", err?.message) }
+                            } catch (err: any) { toastActionError(toast, t("Update", "تحديث"), t("Role", "الدور"), err?.message) }
                           }}>
                             <SelectTrigger className="w-28 h-8 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="owner">مالك</SelectItem>
-                              <SelectItem value="admin">مدير عام</SelectItem>
-                              <SelectItem value="manager">مدير</SelectItem>
-                              <SelectItem value="accountant">محاسب</SelectItem>
-                              <SelectItem value="store_manager">مسؤول مخزن</SelectItem>
-                              <SelectItem value="manufacturing_officer">مسؤول التصنيع</SelectItem>
-                              <SelectItem value="booking_officer">مسؤول الحجوزات</SelectItem>
-                              <SelectItem value="purchasing_officer">مسؤول المشتريات</SelectItem>
-                              <SelectItem value="hr_officer">مسؤول الموارد البشرية</SelectItem>
-                              <SelectItem value="staff">موظف</SelectItem>
-                              <SelectItem value="viewer">عرض فقط</SelectItem>
+                              <SelectItem value="owner">{t("Owner", "مالك")}</SelectItem>
+                              <SelectItem value="admin">{t("Admin", "مدير عام")}</SelectItem>
+                              <SelectItem value="manager">{t("Manager", "مدير")}</SelectItem>
+                              <SelectItem value="accountant">{t("Accountant", "محاسب")}</SelectItem>
+                              <SelectItem value="store_manager">{t("Store Manager", "مسؤول مخزن")}</SelectItem>
+                              <SelectItem value="manufacturing_officer">{t("Manufacturing Officer", "مسؤول التصنيع")}</SelectItem>
+                              <SelectItem value="booking_officer">{t("Booking Officer", "مسؤول الحجوزات")}</SelectItem>
+                              <SelectItem value="purchasing_officer">{t("Purchasing Officer", "مسؤول المشتريات")}</SelectItem>
+                              <SelectItem value="hr_officer">{t("HR Officer", "مسؤول الموارد البشرية")}</SelectItem>
+                              <SelectItem value="staff">{t("Staff", "موظف")}</SelectItem>
+                              <SelectItem value="viewer">{t("Viewer", "عرض فقط")}</SelectItem>
                             </SelectContent>
                           </Select>
                           <Button variant="outline" size="sm" onClick={() => { setChangePassUserId(m.user_id); setNewMemberPass("") }} className="gap-1 h-8 text-xs">
                             <Lock className="w-3 h-3" />
-                            كلمة المرور
+                            {t("Password", "كلمة المرور")}
                           </Button>
                         </>
                       )}
@@ -1887,20 +1905,20 @@ export default function UsersSettingsPage() {
                 <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
                   <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                 </div>
-                <DialogTitle>تأكيد حذف العضو</DialogTitle>
+                <DialogTitle>{t("Confirm Member Deletion", "تأكيد حذف العضو")}</DialogTitle>
               </div>
             </DialogHeader>
             <div className="space-y-3 py-4">
               <p className="text-gray-700 dark:text-gray-300">
-                هل أنت متأكد من رغبتك في إزالة <strong>{userToDelete?.email || userToDelete?.username || 'هذا العضو'}</strong> من الشركة؟
+                {t("Are you sure you want to remove", "هل أنت متأكد من رغبتك في إزالة")} <strong>{userToDelete?.email || userToDelete?.username || t('this member', 'هذا العضو')}</strong> {t("from the company?", "من الشركة؟")}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                سيتم التحقق من وجود بيانات مرتبطة بهذا المستخدم قبل الحذف.
+                {t("Linked data for this user will be checked before deletion.", "سيتم التحقق من وجود بيانات مرتبطة بهذا المستخدم قبل الحذف.")}
               </p>
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => { setDeleteConfirmOpen(false); setUserToDelete(null) }} disabled={isDeleting}>
-                إلغاء
+                {t("Cancel", "إلغاء")}
               </Button>
               <Button
                 variant="destructive"
@@ -1916,7 +1934,7 @@ export default function UsersSettingsPage() {
                     const js = await res.json()
                     if (res.ok && js?.ok) {
                       setMembers((prev) => prev.filter((x) => x.user_id !== userToDelete.user_id))
-                      toastActionSuccess(toast, "حذف", "العضو")
+                      toastActionSuccess(toast, t("Delete", "حذف"), t("Member", "العضو"))
                       setDeleteConfirmOpen(false)
                       setUserToDelete(null)
                     } else if (res.status === 409 && js?.reason === "HAS_DEPENDENCIES") {
@@ -1928,10 +1946,10 @@ export default function UsersSettingsPage() {
                       setReassignModalOpen(true)
                       setUserToDelete(null)
                     } else {
-                      toastActionError(toast, "حذف", "العضو", js?.error || js?.error_en || undefined)
+                      toastActionError(toast, t("Delete", "حذف"), t("Member", "العضو"), js?.error || js?.error_en || undefined)
                     }
                   } catch (e: any) {
-                    toastActionError(toast, "حذف", "العضو", e?.message)
+                    toastActionError(toast, t("Delete", "حذف"), t("Member", "العضو"), e?.message)
                   } finally {
                     setIsDeleting(false)
                   }
@@ -1941,12 +1959,12 @@ export default function UsersSettingsPage() {
                 {isDeleting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    جاري الحذف...
+                    {t("Deleting...", "جاري الحذف...")}
                   </>
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
-                    حذف
+                    {t("Delete", "حذف")}
                   </>
                 )}
               </Button>
@@ -1962,27 +1980,27 @@ export default function UsersSettingsPage() {
                 <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
                   <Key className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                 </div>
-                <DialogTitle>تغيير كلمة مرور العضو</DialogTitle>
+                <DialogTitle>{t("Change Member Password", "تغيير كلمة مرور العضو")}</DialogTitle>
               </div>
             </DialogHeader>
             <div className="space-y-3 py-4">
-              <Label className="text-gray-600 dark:text-gray-400">كلمة المرور الجديدة</Label>
-              <Input type="password" value={newMemberPass} onChange={(e) => setNewMemberPass(e.target.value)} placeholder="أدخل كلمة المرور الجديدة" className="bg-gray-50 dark:bg-slate-800" />
-              <p className="text-xs text-gray-500">الحد الأدنى 6 أحرف</p>
+              <Label className="text-gray-600 dark:text-gray-400">{t("New Password", "كلمة المرور الجديدة")}</Label>
+              <Input type="password" value={newMemberPass} onChange={(e) => setNewMemberPass(e.target.value)} placeholder={t("Enter the new password", "أدخل كلمة المرور الجديدة")} className="bg-gray-50 dark:bg-slate-800" />
+              <p className="text-xs text-gray-500">{t("Minimum 6 characters", "الحد الأدنى 6 أحرف")}</p>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => { setChangePassUserId(null); setNewMemberPass("") }}>إلغاء</Button>
+              <Button variant="outline" onClick={() => { setChangePassUserId(null); setNewMemberPass("") }}>{t("Cancel", "إلغاء")}</Button>
               <Button className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500" onClick={async () => {
                 const pw = (newMemberPass || '').trim()
-                if (pw.length < 6) { toastActionError(toast, "تحديث", "كلمة المرور", "الحد الأدنى 6 أحرف"); return }
+                if (pw.length < 6) { toastActionError(toast, t("Update", "تحديث"), t("Password", "كلمة المرور"), t("Minimum 6 characters", "الحد الأدنى 6 أحرف")); return }
                 try {
                   const res = await fetch("/api/member-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: changePassUserId, password: pw, companyId }) })
                   const js = await res.json()
-                  if (res.ok && js?.ok) { toastActionSuccess(toast, "تحديث", "كلمة المرور"); setChangePassUserId(null); setNewMemberPass("") } else { toastActionError(toast, "تحديث", "كلمة المرور", js?.error || undefined) }
-                } catch (e: any) { toastActionError(toast, "تحديث", "كلمة المرور", e?.message) }
+                  if (res.ok && js?.ok) { toastActionSuccess(toast, t("Update", "تحديث"), t("Password", "كلمة المرور")); setChangePassUserId(null); setNewMemberPass("") } else { toastActionError(toast, t("Update", "تحديث"), t("Password", "كلمة المرور"), js?.error || undefined) }
+                } catch (e: any) { toastActionError(toast, t("Update", "تحديث"), t("Password", "كلمة المرور"), e?.message) }
               }}>
                 <Lock className="w-4 h-4" />
-                حفظ
+                {t("Save", "حفظ")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1996,31 +2014,31 @@ export default function UsersSettingsPage() {
                 <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
                   <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
                 </div>
-                <DialogTitle>نقل صلاحيات السجلات وملكية البيانات</DialogTitle>
+                <DialogTitle>{t("Transfer Record Permissions and Data Ownership", "نقل صلاحيات السجلات وملكية البيانات")}</DialogTitle>
               </div>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-md border border-amber-200 dark:border-amber-800">
                 <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
-                  لا يمكن حذف المستخدم ({userToReassign?.display_name || userToReassign?.username}) مباشرة لوجود بيانات مرتبطة به:
+                  {t(`The user (${userToReassign?.display_name || userToReassign?.username}) cannot be deleted directly because they have linked data:`, `لا يمكن حذف المستخدم (${userToReassign?.display_name || userToReassign?.username}) مباشرة لوجود بيانات مرتبطة به:`)}
                 </p>
                 <ul className="list-disc list-inside text-xs text-amber-700 dark:text-amber-400 space-y-1">
-                  {userDependencies?.invoices > 0 && <li>فواتير مبيعات: {userDependencies.invoices}</li>}
-                  {userDependencies?.sales_orders > 0 && <li>أوامر بيع: {userDependencies.sales_orders}</li>}
-                  {userDependencies?.purchase_orders > 0 && <li>أوامر شراء: {userDependencies.purchase_orders}</li>}
-                  {userDependencies?.bills > 0 && <li>فواتير مشتريات: {userDependencies.bills}</li>}
-                  {userDependencies?.customers > 0 && <li>عملاء: {userDependencies.customers}</li>}
-                  {userDependencies?.suppliers > 0 && <li>موردين: {userDependencies.suppliers}</li>}
-                  {userDependencies?.journal_entries > 0 && <li>قيود يومية: {userDependencies.journal_entries}</li>}
+                  {userDependencies?.invoices > 0 && <li>{t("Sales invoices:", "فواتير مبيعات:")} {userDependencies.invoices}</li>}
+                  {userDependencies?.sales_orders > 0 && <li>{t("Sales orders:", "أوامر بيع:")} {userDependencies.sales_orders}</li>}
+                  {userDependencies?.purchase_orders > 0 && <li>{t("Purchase orders:", "أوامر شراء:")} {userDependencies.purchase_orders}</li>}
+                  {userDependencies?.bills > 0 && <li>{t("Purchase bills:", "فواتير مشتريات:")} {userDependencies.bills}</li>}
+                  {userDependencies?.customers > 0 && <li>{t("Customers:", "عملاء:")} {userDependencies.customers}</li>}
+                  {userDependencies?.suppliers > 0 && <li>{t("Suppliers:", "موردين:")} {userDependencies.suppliers}</li>}
+                  {userDependencies?.journal_entries > 0 && <li>{t("Journal entries:", "قيود يومية:")} {userDependencies.journal_entries}</li>}
                 </ul>
-                <p className="mt-2 text-xs font-bold text-amber-900 dark:text-amber-200">الإجمالي: {userDependencies?.total} سجل</p>
+                <p className="mt-2 text-xs font-bold text-amber-900 dark:text-amber-200">{t("Total:", "الإجمالي:")} {userDependencies?.total} {t("records", "سجل")}</p>
               </div>
 
               <div className="space-y-2">
-                <Label>اختر الموظف البديل لنقل الملكية إليه</Label>
+                <Label>{t("Select the replacement employee to transfer ownership to", "اختر الموظف البديل لنقل الملكية إليه")}</Label>
                 <Select value={reassignTargetId} onValueChange={setReassignTargetId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="اختر موظفاً (مسموح بالنشطين فقط)" />
+                    <SelectValue placeholder={t("Select an employee (active members only)", "اختر موظفاً (مسموح بالنشطين فقط)")} />
                   </SelectTrigger>
                   <SelectContent>
                     {members.filter(m => m.user_id !== userToReassign?.user_id).map(m => (
@@ -2028,11 +2046,11 @@ export default function UsersSettingsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500 mt-1 pb-1">سيتم نقل كافة السجلات باسم الموظف المختار أعلاه، ولن يفقد النظام أي بيانات.</p>
+                <p className="text-xs text-gray-500 mt-1 pb-1">{t("All records will be transferred to the employee selected above; no data will be lost.", "سيتم نقل كافة السجلات باسم الموظف المختار أعلاه، ولن يفقد النظام أي بيانات.")}</p>
               </div>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setReassignModalOpen(false)}>إلغاء</Button>
+              <Button variant="outline" onClick={() => setReassignModalOpen(false)}>{t("Cancel", "إلغاء")}</Button>
               <Button className="gap-2 bg-red-600 hover:bg-red-700 text-white" disabled={!reassignTargetId || isReassigning} onClick={async () => {
                 setIsReassigning(true)
                 try {
@@ -2049,18 +2067,18 @@ export default function UsersSettingsPage() {
                   const js = await res.json()
                   if (res.ok && js?.ok) {
                     setMembers((prev) => prev.filter((x) => x.user_id !== userToReassign?.user_id))
-                    toastActionSuccess(toast, "نقل داتا وحذف", "المستخدم القديم")
+                    toastActionSuccess(toast, t("Transfer data & delete", "نقل داتا وحذف"), t("old user", "المستخدم القديم"))
                     setReassignModalOpen(false)
                   } else {
-                    toastActionError(toast, "نقل وحذف", "العضو", js?.error || undefined)
+                    toastActionError(toast, t("Transfer & delete", "نقل وحذف"), t("Member", "العضو"), js?.error || undefined)
                   }
                 } catch (e: any) {
-                  toastActionError(toast, "نقل وحذف", "العضو", e?.message)
+                  toastActionError(toast, t("Transfer & delete", "نقل وحذف"), t("Member", "العضو"), e?.message)
                 } finally {
                   setIsReassigning(false)
                 }
               }}>
-                {isReassigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "نقل البيانات والحذف نهائياً"}
+                {isReassigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : t("Transfer Data and Delete Permanently", "نقل البيانات والحذف نهائياً")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2075,7 +2093,7 @@ export default function UsersSettingsPage() {
                   <UserCog className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
-                  <DialogTitle>ربط العضو بموظف</DialogTitle>
+                  <DialogTitle>{t("Link Member to Employee", "ربط العضو بموظف")}</DialogTitle>
                   <DialogDescription>
                     {linkingMember?.display_name || linkingMember?.email}
                   </DialogDescription>
@@ -2084,15 +2102,15 @@ export default function UsersSettingsPage() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div>
-                <Label>اختر الموظف من سجل الموظفين</Label>
-                <p className="text-xs text-gray-500 mt-1">عند الربط سيتم تحديث اسم العضو في جميع أنحاء النظام (القائمة الجانبية، سجل المراجعة، إلخ)</p>
+                <Label>{t("Select the employee from the employee records", "اختر الموظف من سجل الموظفين")}</Label>
+                <p className="text-xs text-gray-500 mt-1">{t("When linked, the member's name will be updated across the system (sidebar, audit log, etc.)", "عند الربط سيتم تحديث اسم العضو في جميع أنحاء النظام (القائمة الجانبية، سجل المراجعة، إلخ)")}</p>
               </div>
               <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="اختر موظفاً..." />
+                  <SelectValue placeholder={t("Select an employee...", "اختر موظفاً...")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— بدون ربط —</SelectItem>
+                  <SelectItem value="__none__">{t("— No link —", "— بدون ربط —")}</SelectItem>
                   {employeesList.map((emp) => (
                     <SelectItem key={emp.id} value={emp.id}>
                       {emp.full_name}{emp.job_title ? ` — ${emp.job_title}` : ""}{emp.department ? ` (${emp.department})` : ""}
@@ -2103,13 +2121,13 @@ export default function UsersSettingsPage() {
               {linkingMember?.employee_id && (
                 <div className="flex items-center gap-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-xs">
                   <Check className="w-3 h-3 text-purple-600" />
-                  <span>مرتبط حالياً بـ: <strong>{linkingMember.employee_name}</strong></span>
+                  <span>{t("Currently linked to:", "مرتبط حالياً بـ:")} <strong>{linkingMember.employee_name}</strong></span>
                 </div>
               )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setShowLinkEmployeeDialog(false)} disabled={linkingEmployee}>
-                إلغاء
+                {t("Cancel", "إلغاء")}
               </Button>
               <Button
                 onClick={() => {
@@ -2130,26 +2148,26 @@ export default function UsersSettingsPage() {
                   })
                     .then(res => res.json().then(result => ({ res, result })))
                     .then(({ res, result }) => {
-                      if (!res.ok) throw new Error(result.error || "فشل ربط العضو بالموظف")
+                      if (!res.ok) throw new Error(result.error || t("Failed to link member to employee", "فشل ربط العضو بالموظف"))
                       const emp = employeesList.find(e => e.id === resolvedId)
                       setMembers(prev => prev.map(m =>
                         m.user_id === linkingMember?.user_id
                           ? { ...m, employee_id: resolvedId || undefined, employee_name: emp?.full_name, display_name: emp?.full_name || m.display_name }
                           : m
                       ))
-                      toastActionSuccess(toast, "ربط", resolvedId ? "العضو بالموظف" : "إلغاء الربط")
+                      toastActionSuccess(toast, t("Link", "ربط"), resolvedId ? t("Member to employee", "العضو بالموظف") : t("Unlink", "إلغاء الربط"))
                       setShowLinkEmployeeDialog(false)
                       // Notify sidebar to refresh display_name only
                       window.dispatchEvent(new Event('profile_updated'))
                     })
-                    .catch((err: any) => toastActionError(toast, "ربط", "العضو بالموظف", err.message))
+                    .catch((err: any) => toastActionError(toast, t("Link", "ربط"), t("Member to employee", "العضو بالموظف"), err.message))
                     .finally(() => setLinkingEmployee(false))
                 }}
                 disabled={linkingEmployee}
                 className="bg-purple-600 hover:bg-purple-700"
               >
                 {linkingEmployee ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : null}
-                {selectedEmployeeId && selectedEmployeeId !== "__none__" ? "ربط وتحديث الاسم" : "إلغاء الربط"}
+                {selectedEmployeeId && selectedEmployeeId !== "__none__" ? t("Link and Update Name", "ربط وتحديث الاسم") : t("Unlink", "إلغاء الربط")}
               </Button>
             </div>
           </DialogContent>
@@ -2164,7 +2182,7 @@ export default function UsersSettingsPage() {
                   <GitBranch className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <DialogTitle>إدارة فروع الموظف</DialogTitle>
+                  <DialogTitle>{t("Manage Employee Branches", "إدارة فروع الموظف")}</DialogTitle>
                   <p className="text-sm text-gray-500 mt-1">{editingMemberName}</p>
                 </div>
               </div>
@@ -2173,29 +2191,29 @@ export default function UsersSettingsPage() {
               <div className="space-y-2">
                 <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  الفرع التابع له الموظف
+                  {t("Employee's branch", "الفرع التابع له الموظف")}
                   {editingMemberRole !== 'booking_officer' && <span className="text-red-500">*</span>}
                 </Label>
                 <p className="text-xs text-gray-500">
                   {editingMemberRole === 'booking_officer'
-                    ? 'مسؤول الحجز ممكن يكون مرتبط بفرع أو يخدم الشركة كلها (بدون فرع).'
-                    : 'اختر الفرع الواحد الذي ينتمي إليه الموظف (إلزامي)'}
+                    ? t('A booking officer can be linked to a branch or serve the whole company (no branch).', 'مسؤول الحجز ممكن يكون مرتبط بفرع أو يخدم الشركة كلها (بدون فرع).')
+                    : t('Select the single branch this employee belongs to (required)', 'اختر الفرع الواحد الذي ينتمي إليه الموظف (إلزامي)')}
                 </p>
                 <Select
                   value={memberBranchId}
                   onValueChange={(value) => setMemberBranchId(value)}
                 >
                   <SelectTrigger className="w-full bg-white dark:bg-slate-800">
-                    <SelectValue placeholder="اختر الفرع" />
+                    <SelectValue placeholder={t("Select a branch", "اختر الفرع")} />
                   </SelectTrigger>
                   <SelectContent>
                     {/* v3.74.329 — "بدون فرع" option, only for booking_officer */}
                     {editingMemberRole === 'booking_officer' && (
                       <SelectItem value="__NONE__">
                         <div className="flex items-center gap-2">
-                          <span>عدم الربط بفرع</span>
+                          <span>{t("No branch assignment", "عدم الربط بفرع")}</span>
                           <Badge className="text-[9px] bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">
-                            كل الفروع
+                            {t("All branches", "كل الفروع")}
                           </Badge>
                         </div>
                       </SelectItem>
@@ -2206,7 +2224,7 @@ export default function UsersSettingsPage() {
                           <span>{branch.name}</span>
                           {branch.is_main && (
                             <Badge className="text-[9px] bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                              رئيسي
+                              {t("Main", "رئيسي")}
                             </Badge>
                           )}
                         </div>
@@ -2219,13 +2237,13 @@ export default function UsersSettingsPage() {
               {memberBranchId === "__NONE__" ? (
                 <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
                   <p className="text-sm text-amber-700 dark:text-amber-400">
-                    <strong>الفرع المحدد:</strong> مسؤول حجز بدون فرع — يقدر يستقبل ويتعامل مع عملاء كل الفروع.
+                    <strong>{t("Selected branch:", "الفرع المحدد:")}</strong> {t("Booking officer with no branch — can receive and handle customers from all branches.", "مسؤول حجز بدون فرع — يقدر يستقبل ويتعامل مع عملاء كل الفروع.")}
                   </p>
                 </div>
               ) : memberBranchId ? (
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
                   <p className="text-sm text-emerald-700 dark:text-emerald-400">
-                    <strong>الفرع المحدد:</strong> {branches.find(b => b.id === memberBranchId)?.name || "غير محدد"}
+                    <strong>{t("Selected branch:", "الفرع المحدد:")}</strong> {branches.find(b => b.id === memberBranchId)?.name || t("Not specified", "غير محدد")}
                   </p>
                 </div>
               ) : null}
@@ -2233,21 +2251,19 @@ export default function UsersSettingsPage() {
               <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
                 <p className="text-xs text-amber-700 dark:text-amber-400">
                   <AlertCircle className="w-3 h-3 inline ml-1" />
-                  <strong>قرار معماري إلزامي:</strong> كل موظف يجب أن ينتمي إلى فرع واحد فقط.
-                  هذا يضمن عزل البيانات بين الفروع، منطق الصلاحيات الصحيح، وRealtime مستقر.
-                  المدراء والمالكون يمكنهم الوصول لجميع الفروع.
+                  <strong>{t("Mandatory architectural decision:", "قرار معماري إلزامي:")}</strong> {t("Every employee must belong to exactly one branch. This ensures data isolation between branches, correct permission logic, and stable realtime updates. Admins and owners can access all branches.", "كل موظف يجب أن ينتمي إلى فرع واحد فقط. هذا يضمن عزل البيانات بين الفروع، منطق الصلاحيات الصحيح، وRealtime مستقر. المدراء والمالكون يمكنهم الوصول لجميع الفروع.")}
                 </p>
               </div>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setShowMemberBranchDialog(false)}>إلغاء</Button>
+              <Button variant="outline" onClick={() => setShowMemberBranchDialog(false)}>{t("Cancel", "إلغاء")}</Button>
               <Button
                 className="gap-2 bg-gradient-to-r from-emerald-500 to-teal-500"
                 onClick={saveMemberBranches}
                 disabled={savingMemberBranches || !memberBranchId}
               >
                 {savingMemberBranches ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                حفظ الفرع
+                {t("Save Branch", "حفظ الفرع")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2263,21 +2279,21 @@ export default function UsersSettingsPage() {
                     <UserPlus className="w-5 h-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">دعوات عبر البريد</CardTitle>
-                    <p className="text-xs text-gray-500 mt-1">إرسال دعوات للانضمام للشركة</p>
+                    <CardTitle className="text-base">{t("Email Invitations", "دعوات عبر البريد")}</CardTitle>
+                    <p className="text-xs text-gray-500 mt-1">{t("Send invitations to join the company", "إرسال دعوات للانضمام للشركة")}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {invites.length > 0 && (
                     <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-200">
                       <Mail className="w-3 h-3" />
-                      {invites.length} دعوة معلقة
+                      {invites.length} {t("pending invitation(s)", "دعوة معلقة")}
                     </Badge>
                   )}
                   <Link href="/settings/billing">
                     <Button variant="outline" size="sm" className="gap-1.5 text-violet-600 border-violet-200 hover:bg-violet-50 dark:text-violet-400 dark:border-violet-800 dark:hover:bg-violet-900/20">
                       <CreditCard className="w-3.5 h-3.5" />
-                      إدارة الاشتراك
+                      {t("Manage Subscription", "إدارة الاشتراك")}
                     </Button>
                   </Link>
                 </div>
@@ -2301,7 +2317,7 @@ export default function UsersSettingsPage() {
                   {actionError.includes("مقاعد") && (
                     <a href="/settings/billing" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 text-xs font-semibold rounded-lg transition-colors border border-red-300 w-fit">
                       <CreditCard className="w-3.5 h-3.5" />
-                      إضافة مقعد شهري
+                      {t("Add a monthly seat", "إضافة مقعد شهري")}
                     </a>
                   )}
                 </div>
@@ -2310,7 +2326,7 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Building2 className="w-4 h-4" />
-                    الشركة الهدف
+                    {t("Target Company", "الشركة الهدف")}
                   </Label>
                   <Select value={inviteCompanyId || companyId || 'none'} onValueChange={(v) => setInviteCompanyId(v)} disabled={(myCompanies || []).length <= 1}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
@@ -2318,7 +2334,7 @@ export default function UsersSettingsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {(myCompanies || []).length === 0 ? (
-                        <SelectItem value={companyId || 'none'}>{companyName || "غير محدد"}</SelectItem>
+                        <SelectItem value={companyId || 'none'}>{companyName || t("Not specified", "غير محدد")}</SelectItem>
                       ) : (
                         myCompanies.map((c) => (
                           <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
@@ -2330,37 +2346,37 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <UserCog className="w-4 h-4" />
-                    اسم الموظف <span className="text-red-500">*</span>
+                    {t("Employee Name", "اسم الموظف")} <span className="text-red-500">*</span>
                   </Label>
-                  <Input placeholder="الاسم الكامل" value={inviteName} onChange={(e) => setInviteName(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
+                  <Input placeholder={t("Full name", "الاسم الكامل")} value={inviteName} onChange={(e) => setInviteName(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Mail className="w-4 h-4" />
-                    البريد الإلكتروني
+                    {t("Email Address", "البريد الإلكتروني")}
                   </Label>
                   <Input placeholder="example@domain.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className="bg-gray-50 dark:bg-slate-800" />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Shield className="w-4 h-4" />
-                    الدور
+                    {t("Role", "الدور")}
                   </Label>
                   <Select value={inviteRole} onValueChange={(v) => setInviteRole(v)}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">مدير عام</SelectItem>
-                      <SelectItem value="manager">مدير</SelectItem>
-                      <SelectItem value="accountant">محاسب</SelectItem>
-                      <SelectItem value="store_manager">مسؤول مخزن</SelectItem>
-                      <SelectItem value="manufacturing_officer">مسؤول التصنيع</SelectItem>
-                      <SelectItem value="booking_officer">مسؤول الحجوزات</SelectItem>
-                      <SelectItem value="purchasing_officer">مسؤول المشتريات</SelectItem>
-                      <SelectItem value="hr_officer">مسؤول الموارد البشرية</SelectItem>
-                      <SelectItem value="staff">موظف</SelectItem>
-                      <SelectItem value="viewer">عرض فقط</SelectItem>
+                      <SelectItem value="admin">{t("Admin", "مدير عام")}</SelectItem>
+                      <SelectItem value="manager">{t("Manager", "مدير")}</SelectItem>
+                      <SelectItem value="accountant">{t("Accountant", "محاسب")}</SelectItem>
+                      <SelectItem value="store_manager">{t("Store Manager", "مسؤول مخزن")}</SelectItem>
+                      <SelectItem value="manufacturing_officer">{t("Manufacturing Officer", "مسؤول التصنيع")}</SelectItem>
+                      <SelectItem value="booking_officer">{t("Booking Officer", "مسؤول الحجوزات")}</SelectItem>
+                      <SelectItem value="purchasing_officer">{t("Purchasing Officer", "مسؤول المشتريات")}</SelectItem>
+                      <SelectItem value="hr_officer">{t("HR Officer", "مسؤول الموارد البشرية")}</SelectItem>
+                      <SelectItem value="staff">{t("Staff", "موظف")}</SelectItem>
+                      <SelectItem value="viewer">{t("Viewer", "عرض فقط")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2371,7 +2387,7 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
-                    الفرع <span className="text-red-500">*</span>
+                    {t("Branch", "الفرع")} <span className="text-red-500">*</span>
                   </Label>
                   <Select value={inviteBranchId || "none"} onValueChange={(v) => {
                     const newBranchId = v === "none" ? "" : v
@@ -2388,13 +2404,13 @@ export default function UsersSettingsPage() {
                     }
                   }}>
                     <SelectTrigger className={`bg-gray-50 dark:bg-slate-800 ${!inviteBranchId ? 'border-red-300' : ''}`}>
-                      <SelectValue placeholder="اختر الفرع" />
+                      <SelectValue placeholder={t("Select a branch", "اختر الفرع")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">اختر الفرع...</SelectItem>
+                      <SelectItem value="none">{t("Select a branch...", "اختر الفرع...")}</SelectItem>
                       {branches.map(b => (
                         <SelectItem key={b.id} value={b.id}>
-                          {b.name} {b.is_main && '(رئيسي)'}
+                          {b.name} {b.is_main && t('(Main)', '(رئيسي)')}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -2403,7 +2419,7 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Building2 className="w-4 h-4" />
-                    مركز التكلفة
+                    {t("Cost Center", "مركز التكلفة")}
                   </Label>
                   <Select
                     value={inviteCostCenterId || "none"}
@@ -2411,10 +2427,10 @@ export default function UsersSettingsPage() {
                     disabled={!inviteBranchId}
                   >
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                      <SelectValue placeholder="اختر مركز التكلفة" />
+                      <SelectValue placeholder={t("Select a cost center", "اختر مركز التكلفة")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">بدون تحديد</SelectItem>
+                      <SelectItem value="none">{t("Not specified", "بدون تحديد")}</SelectItem>
                       {costCenters.filter(cc => cc.branch_id === inviteBranchId).map(cc => (
                         <SelectItem key={cc.id} value={cc.id}>
                           {cc.cost_center_name}
@@ -2426,7 +2442,7 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Warehouse className="w-4 h-4" />
-                    المخزن
+                    {t("Warehouse", "المخزن")}
                   </Label>
                   <Select
                     value={inviteWarehouseId || "none"}
@@ -2434,13 +2450,13 @@ export default function UsersSettingsPage() {
                     disabled={!inviteBranchId}
                   >
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                      <SelectValue placeholder="اختر المخزن" />
+                      <SelectValue placeholder={t("Select a warehouse", "اختر المخزن")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">بدون تحديد</SelectItem>
+                      <SelectItem value="none">{t("Not specified", "بدون تحديد")}</SelectItem>
                       {warehouses.filter(w => w.branch_id === inviteBranchId).map(w => (
                         <SelectItem key={w.id} value={w.id}>
-                          {w.name} {w.is_main && '(رئيسي)'}
+                          {w.name} {w.is_main && t('(Main)', '(رئيسي)')}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -2449,7 +2465,7 @@ export default function UsersSettingsPage() {
                 <div>
                   <Button onClick={createInvitation} disabled={loading || !inviteEmail.trim() || !inviteBranchId} className="w-full gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                    إنشاء دعوة
+                    {t("Create Invitation", "إنشاء دعوة")}
                   </Button>
                 </div>
               </div>
@@ -2457,7 +2473,7 @@ export default function UsersSettingsPage() {
               {/* الدعوات المعلقة */}
               {invites.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الدعوات المعلقة:</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("Pending invitations:", "الدعوات المعلقة:")}</p>
                   <div className="space-y-2">
                     {invites.map((inv) => (
                       <div key={inv.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
@@ -2469,10 +2485,10 @@ export default function UsersSettingsPage() {
                             <p className="font-medium text-sm text-gray-900 dark:text-white">{inv.email}</p>
                             <div className="flex items-center gap-2 mt-1">
                               <Badge className={`text-[10px] ${roleLabels[inv.role]?.color || roleLabels.viewer.color}`}>
-                                {roleLabels[inv.role]?.ar || inv.role}
+                                {roleName(inv.role)}
                               </Badge>
                               <span className="text-xs text-gray-500">
-                                تنتهي: {new Date(inv.expires_at).toLocaleDateString('ar-EG')}
+                                {t("Expires:", "تنتهي:")} {new Date(inv.expires_at).toLocaleDateString('ar-EG')}
                               </span>
                             </div>
                           </div>
@@ -2494,12 +2510,12 @@ export default function UsersSettingsPage() {
                                 })
                                 const data = await res.json()
                                 if (res.ok && data.ok) {
-                                  toastActionSuccess(toast, "إعادة إرسال", "الدعوة")
+                                  toastActionSuccess(toast, t("Resend", "إعادة إرسال"), t("Invitation", "الدعوة"))
                                 } else {
-                                  toastActionError(toast, "إعادة إرسال", "الدعوة", data.error || "فشل الإرسال")
+                                  toastActionError(toast, t("Resend", "إعادة إرسال"), t("Invitation", "الدعوة"), data.error || t("Sending failed", "فشل الإرسال"))
                                 }
                               } catch (err) {
-                                toastActionError(toast, "إعادة إرسال", "الدعوة", "حدث خطأ")
+                                toastActionError(toast, t("Resend", "إعادة إرسال"), t("Invitation", "الدعوة"), t("An error occurred", "حدث خطأ"))
                               } finally {
                                 setResendingInvite(null)
                               }
@@ -2510,7 +2526,7 @@ export default function UsersSettingsPage() {
                             ) : (
                               <RefreshCw className="w-3 h-3" />
                             )}
-                            إعادة إرسال
+                            {t("Resend", "إعادة إرسال")}
                           </Button>
                           {/* زر نسخ رابط الدعوة */}
                           {inv.accept_token && (
@@ -2522,7 +2538,7 @@ export default function UsersSettingsPage() {
                                 const inviteLink = `${window.location.origin}/invitations/accept?token=${inv.accept_token}`
                                 try {
                                   await navigator.clipboard.writeText(inviteLink)
-                                  toastActionSuccess(toast, "نسخ", "رابط الدعوة")
+                                  toastActionSuccess(toast, t("Copy", "نسخ"), t("Invitation link", "رابط الدعوة"))
                                 } catch {
                                   // Fallback for older browsers
                                   const textArea = document.createElement("textarea")
@@ -2531,12 +2547,12 @@ export default function UsersSettingsPage() {
                                   textArea.select()
                                   document.execCommand("copy")
                                   document.body.removeChild(textArea)
-                                  toastActionSuccess(toast, "نسخ", "رابط الدعوة")
+                                  toastActionSuccess(toast, t("Copy", "نسخ"), t("Invitation link", "رابط الدعوة"))
                                 }
                               }}
                             >
                               <Copy className="w-3 h-3" />
-                              نسخ الرابط
+                              {t("Copy Link", "نسخ الرابط")}
                             </Button>
                           )}
                           {/* زر الحذف */}
@@ -2544,7 +2560,7 @@ export default function UsersSettingsPage() {
                             const { error } = await supabase.from("company_invitations").delete().eq("id", inv.id)
                             if (!error) {
                               setInvites((prev) => prev.filter((x) => x.id !== inv.id))
-                              toastActionSuccess(toast, "حذف", "الدعوة")
+                              toastActionSuccess(toast, t("Delete", "حذف"), t("Invitation", "الدعوة"))
                             }
                           }}>
                             <Trash2 className="w-3 h-3" />
@@ -2558,7 +2574,7 @@ export default function UsersSettingsPage() {
 
               <p className="text-xs text-gray-500 bg-gray-50 dark:bg-slate-800 p-3 rounded-lg flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
-                روابط الانضمام تُدار تلقائيًا عبر البريد وصفحة القبول. صلاحية الدعوة 7 أيام.
+                {t("Join links are managed automatically via email and the acceptance page. Invitations are valid for 7 days.", "روابط الانضمام تُدار تلقائيًا عبر البريد وصفحة القبول. صلاحية الدعوة 7 أيام.")}
               </p>
             </CardContent>
           </Card>
@@ -2573,8 +2589,8 @@ export default function UsersSettingsPage() {
                   <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">صلاحيات الأدوار</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">تحديد صلاحيات كل دور على موارد النظام</p>
+                  <CardTitle className="text-base">{t("Role Permissions", "صلاحيات الأدوار")}</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">{t("Define each role's permissions over system resources", "تحديد صلاحيات كل دور على موارد النظام")}</p>
                 </div>
               </div>
             </CardHeader>
@@ -2586,7 +2602,7 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <UserCog className="w-4 h-4" />
-                    الدور
+                    {t("Role", "الدور")}
                   </Label>
                   <Select value={permRole} onValueChange={(v) => setPermRole(v)}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
@@ -2596,78 +2612,78 @@ export default function UsersSettingsPage() {
                       <SelectItem value="admin">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                          مدير عام
+                          {t("Admin", "مدير عام")}
                         </div>
                       </SelectItem>
                       <SelectItem value="manager">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                          مدير
+                          {t("Manager", "مدير")}
                         </div>
                       </SelectItem>
                       <SelectItem value="accountant">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          محاسب
+                          {t("Accountant", "محاسب")}
                         </div>
                       </SelectItem>
                       <SelectItem value="store_manager">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                          مسؤول مخزن
+                          {t("Store Manager", "مسؤول مخزن")}
                         </div>
                       </SelectItem>
                       <SelectItem value="manufacturing_officer">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                          مسؤول التصنيع
+                          {t("Manufacturing Officer", "مسؤول التصنيع")}
                         </div>
                       </SelectItem>
                       <SelectItem value="booking_officer">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                          مسؤول الحجوزات
+                          {t("Booking Officer", "مسؤول الحجوزات")}
                         </div>
                       </SelectItem>
                       <SelectItem value="purchasing_officer">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                          مسؤول المشتريات
+                          {t("Purchasing Officer", "مسؤول المشتريات")}
                         </div>
                       </SelectItem>
                       <SelectItem value="hr_officer">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-pink-500"></span>
-                          مسؤول الموارد البشرية
+                          {t("HR Officer", "مسؤول الموارد البشرية")}
                         </div>
                       </SelectItem>
                       <SelectItem value="staff">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          موظف
+                          {t("Staff", "موظف")}
                         </div>
                       </SelectItem>
                       <SelectItem value="viewer">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-gray-500"></span>
-                          عرض فقط
+                          {t("Viewer", "عرض فقط")}
                         </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
                   {roleLabels[permRole] && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{roleLabels[permRole].description}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{appLang === 'en' ? roleLabels[permRole].descriptionEn : roleLabels[permRole].description}</p>
                   )}
                 </div>
                 <div className="space-y-2">
                   <Label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
                     <Shield className="w-4 h-4" />
-                    المورد (الصفحة)
+                    {t("Resource (Page)", "المورد (الصفحة)")}
                   </Label>
                   {defaultSidebarResourcesByRole[permRole] && defaultSidebarResourcesByRole[permRole].length > 0 && (
                     <div className="mb-2 p-3 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700">
                       <p className="text-[11px] text-gray-600 dark:text-gray-300 mb-1">
-                        الصفحات الافتراضية في القائمة الجانبية لهذا الدور:
+                        {t("Default sidebar pages for this role:", "الصفحات الافتراضية في القائمة الجانبية لهذا الدور:")}
                       </p>
                       <div className="flex flex-wrap gap-1.5 mt-1">
                         {defaultSidebarResourcesByRole[permRole].map((res) => (
@@ -2677,14 +2693,13 @@ export default function UsersSettingsPage() {
                         ))}
                       </div>
                       <p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">
-                        يمكن للأدوار العليا تعديل هذه الافتراضات لكل مستخدم عند الحاجة. هذا يؤثر فقط على عرض الصفحات في القائمة،
-                        وليس على صلاحيات القراءة أو التعديل أو الحذف.
+                        {t("Higher roles can adjust these defaults per user when needed. This only affects which pages appear in the sidebar, not read, edit, or delete permissions.", "يمكن للأدوار العليا تعديل هذه الافتراضات لكل مستخدم عند الحاجة. هذا يؤثر فقط على عرض الصفحات في القائمة، وليس على صلاحيات القراءة أو التعديل أو الحذف.")}
                       </p>
                     </div>
                   )}
                   <Select value={permResource} onValueChange={(v) => { setPermResource(v); setResourceSearch("") }}>
                     <SelectTrigger className="bg-gray-50 dark:bg-slate-800">
-                      <SelectValue placeholder="اختر المورد..." />
+                      <SelectValue placeholder={t("Select a resource...", "اختر المورد...")} />
                     </SelectTrigger>
                     <SelectContent className="max-h-96">
                       {/* حقل البحث */}
@@ -2695,7 +2710,7 @@ export default function UsersSettingsPage() {
                             type="text"
                             value={resourceSearch}
                             onChange={(e) => setResourceSearch(e.target.value)}
-                            placeholder="ابحث عن صفحة..."
+                            placeholder={t("Search for a page...", "ابحث عن صفحة...")}
                             className="pr-9 h-9 text-sm bg-gray-50 dark:bg-slate-800"
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => e.stopPropagation()}
@@ -2746,7 +2761,7 @@ export default function UsersSettingsPage() {
                       ) && (
                           <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                             <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">لا توجد نتائج لـ "{resourceSearch}"</p>
+                            <p className="text-sm">{t(`No results for "${resourceSearch}"`, `لا توجد نتائج لـ "${resourceSearch}"`)}</p>
                           </div>
                         )}
                     </SelectContent>
@@ -2765,7 +2780,7 @@ export default function UsersSettingsPage() {
               {/* صلاحيات الوصول - محسنة */}
               <div className="p-4 bg-gray-50 dark:bg-slate-800 rounded-xl space-y-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">صلاحيات الوصول:</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("Access permissions:", "صلاحيات الوصول:")}</p>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -2773,7 +2788,7 @@ export default function UsersSettingsPage() {
                       onClick={() => { setPermAccess(true); setPermRead(true); setPermWrite(true); setPermUpdate(true); setPermDelete(true); setPermFull(true) }}
                       className="text-xs h-7 px-2 gap-1"
                     >
-                      <Check className="w-3 h-3" /> تحديد الكل
+                      <Check className="w-3 h-3" /> {t("Select all", "تحديد الكل")}
                     </Button>
                     <Button
                       variant="outline"
@@ -2781,7 +2796,7 @@ export default function UsersSettingsPage() {
                       onClick={() => { setPermAccess(false); setPermRead(false); setPermWrite(false); setPermUpdate(false); setPermDelete(false); setPermFull(false) }}
                       className="text-xs h-7 px-2 gap-1"
                     >
-                      <X className="w-3 h-3" /> إلغاء الكل
+                      <X className="w-3 h-3" /> {t("Clear all", "إلغاء الكل")}
                     </Button>
                   </div>
                 </div>
@@ -2794,11 +2809,11 @@ export default function UsersSettingsPage() {
                       <div className={`p-2 rounded-lg ${permAccess ? 'bg-indigo-100 dark:bg-indigo-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
                         <Eye className={`w-5 h-5 ${permAccess ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`} />
                       </div>
-                      <span className={`text-sm font-semibold ${permAccess ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-500'}`}>إظهار</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">في القائمة</span>
+                      <span className={`text-sm font-semibold ${permAccess ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-500'}`}>{t("Show", "إظهار")}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">{t("in the menu", "في القائمة")}</span>
                     </label>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
-                      عرض الصفحة في القائمة الجانبية
+                      {t("Show the page in the sidebar", "عرض الصفحة في القائمة الجانبية")}
                     </div>
                   </div>
 
@@ -2809,11 +2824,11 @@ export default function UsersSettingsPage() {
                       <div className={`p-2 rounded-lg ${permRead ? 'bg-blue-100 dark:bg-blue-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
                         <Eye className={`w-5 h-5 ${permRead ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} />
                       </div>
-                      <span className={`text-sm font-semibold ${permRead ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500'}`}>قراءة</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">عرض البيانات</span>
+                      <span className={`text-sm font-semibold ${permRead ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500'}`}>{t("Read", "قراءة")}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">{t("View data", "عرض البيانات")}</span>
                     </label>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
-                      عرض وقراءة البيانات فقط
+                      {t("View and read data only", "عرض وقراءة البيانات فقط")}
                     </div>
                   </div>
 
@@ -2824,11 +2839,11 @@ export default function UsersSettingsPage() {
                       <div className={`p-2 rounded-lg ${permWrite ? 'bg-green-100 dark:bg-green-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
                         <UserPlus className={`w-5 h-5 ${permWrite ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`} />
                       </div>
-                      <span className={`text-sm font-semibold ${permWrite ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>كتابة</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">إنشاء جديد</span>
+                      <span className={`text-sm font-semibold ${permWrite ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>{t("Write", "كتابة")}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">{t("Create new", "إنشاء جديد")}</span>
                     </label>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
-                      إنشاء سجلات وبيانات جديدة
+                      {t("Create new records and data", "إنشاء سجلات وبيانات جديدة")}
                     </div>
                   </div>
 
@@ -2839,11 +2854,11 @@ export default function UsersSettingsPage() {
                       <div className={`p-2 rounded-lg ${permUpdate ? 'bg-amber-100 dark:bg-amber-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
                         <Edit className={`w-5 h-5 ${permUpdate ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'}`} />
                       </div>
-                      <span className={`text-sm font-semibold ${permUpdate ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500'}`}>تعديل</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">تحديث البيانات</span>
+                      <span className={`text-sm font-semibold ${permUpdate ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500'}`}>{t("Edit", "تعديل")}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">{t("Update data", "تحديث البيانات")}</span>
                     </label>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
-                      تعديل وتحديث السجلات الموجودة
+                      {t("Edit and update existing records", "تعديل وتحديث السجلات الموجودة")}
                     </div>
                   </div>
 
@@ -2854,11 +2869,11 @@ export default function UsersSettingsPage() {
                       <div className={`p-2 rounded-lg ${permDelete ? 'bg-red-100 dark:bg-red-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
                         <Trash2 className={`w-5 h-5 ${permDelete ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`} />
                       </div>
-                      <span className={`text-sm font-semibold ${permDelete ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>حذف</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">إزالة البيانات</span>
+                      <span className={`text-sm font-semibold ${permDelete ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>{t("Delete", "حذف")}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">{t("Remove data", "إزالة البيانات")}</span>
                     </label>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
-                      ⚠️ حذف السجلات نهائياً - صلاحية حساسة
+                      {t("⚠️ Permanently delete records - a sensitive permission", "⚠️ حذف السجلات نهائياً - صلاحية حساسة")}
                     </div>
                   </div>
 
@@ -2884,11 +2899,11 @@ export default function UsersSettingsPage() {
                       <div className={`p-2 rounded-lg ${permFull ? 'bg-purple-100 dark:bg-purple-800' : 'bg-gray-100 dark:bg-slate-600'}`}>
                         <Shield className={`w-5 h-5 ${permFull ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400'}`} />
                       </div>
-                      <span className={`text-sm font-semibold ${permFull ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500'}`}>تحكم كامل</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">كل الصلاحيات</span>
+                      <span className={`text-sm font-semibold ${permFull ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500'}`}>{t("Full control", "تحكم كامل")}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center">{t("All permissions", "كل الصلاحيات")}</span>
                     </label>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
-                      جميع الصلاحيات + العمليات المتقدمة
+                      {t("All permissions + advanced actions", "جميع الصلاحيات + العمليات المتقدمة")}
                     </div>
                   </div>
                 </div>
@@ -2897,10 +2912,10 @@ export default function UsersSettingsPage() {
                 {ADVANCED_ACTIONS_MAP[permResource] && ADVANCED_ACTIONS_MAP[permResource].length > 0 && (
                   <div className="mt-6 pt-4 border-t border-gray-100 dark:border-slate-700">
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">الإجراءات المتقدمة (Action-Level Permissions):</p>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("Advanced Actions (Action-Level Permissions):", "الإجراءات المتقدمة (Action-Level Permissions):")}</p>
                       <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800 gap-1">
                         <Lock className="w-3 h-3" />
-                        صلاحيات دقيقة
+                        {t("Fine-grained permissions", "صلاحيات دقيقة")}
                       </Badge>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2920,7 +2935,7 @@ export default function UsersSettingsPage() {
                               }}
                               className={isSelected ? "border-indigo-500 text-indigo-600" : ""}
                             />
-                            <span className="text-sm font-medium">{action.label}</span>
+                            <span className="text-sm font-medium">{appLang === 'en' ? action.labelEn : action.label}</span>
                           </label>
                         )
                       })}
@@ -2932,9 +2947,9 @@ export default function UsersSettingsPage() {
                 <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <AlertCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
                   <div className="text-xs text-blue-700 dark:text-blue-400">
-                    <span className="font-medium">💡 ملاحظات:</span>
-                    <span className="mr-2">إلغاء "إظهار" يخفي الصفحة من القائمة.</span>
-                    <span>"تحكم كامل" يفعّل جميع الصلاحيات تلقائياً.</span>
+                    <span className="font-medium">{t('💡 Notes:', '💡 ملاحظات:')}</span>
+                    <span className="mr-2">{t('Unchecking "Show" hides the page from the menu.', 'إلغاء "إظهار" يخفي الصفحة من القائمة.')}</span>
+                    <span>{t('"Full control" enables all permissions automatically.', '"تحكم كامل" يفعّل جميع الصلاحيات تلقائياً.')}</span>
                   </div>
                 </div>
               </div>
@@ -2956,7 +2971,7 @@ export default function UsersSettingsPage() {
                       can_access: permAccess,
                       allowed_actions: permFull ? ["*"] : permAllowedActions.map(action => `${permResource}:${action}`)
                     }, { onConflict: "company_id,role,resource" })
-                  if (error) { setActionError(error.message || "تعذر الحفظ"); return }
+                  if (error) { setActionError(error.message || t("Save failed", "تعذر الحفظ")); return }
                   const { data: perms } = await supabase
                     .from("company_role_permissions")
                     .select("id,role,resource,can_read,can_write,can_update,can_delete,all_access,can_access,allowed_actions")
@@ -2964,7 +2979,7 @@ export default function UsersSettingsPage() {
                     .eq("role", permRole)
                   setRolePerms(perms || [])
                   setActionError(null)
-                  toastActionSuccess(toast, "حفظ", "الصلاحيات")
+                  toastActionSuccess(toast, t("Save", "حفظ"), t("Permissions", "الصلاحيات"))
 
                   // ✅ تحديث الصلاحيات فقط إذا كنا نحفظ صلاحيات للمستخدم الحالي
                   // إذا كنا نحفظ صلاحيات لدور آخر، لا نحدث الصلاحيات (لأنها لا تتأثر)
@@ -2995,7 +3010,7 @@ export default function UsersSettingsPage() {
                 }
               }} disabled={loading} className="gap-2 bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
-                حفظ الصلاحيات
+                {t("Save Permissions", "حفظ الصلاحيات")}
               </Button>
 
               {/* عرض الصلاحيات المحفوظة - محسن */}
@@ -3006,12 +3021,12 @@ export default function UsersSettingsPage() {
                       <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">الصلاحيات المحفوظة</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">للدور: <Badge className={roleLabels[permRole]?.color || 'bg-gray-100'}>{roleLabels[permRole]?.ar || permRole}</Badge></p>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{t("Saved Permissions", "الصلاحيات المحفوظة")}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{t("For role:", "للدور:")} <Badge className={roleLabels[permRole]?.color || 'bg-gray-100'}>{roleName(permRole)}</Badge></p>
                     </div>
                   </div>
                   <Badge variant="outline" className="text-xs">
-                    {rolePerms.filter((p) => p.role === permRole).length} صلاحية
+                    {rolePerms.filter((p) => p.role === permRole).length} {t("permission(s)", "صلاحية")}
                   </Badge>
                 </div>
 
@@ -3032,10 +3047,10 @@ export default function UsersSettingsPage() {
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-2">
                                 {p.can_access === false && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400 font-medium">مخفي</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400 font-medium">{t("Hidden", "مخفي")}</span>
                                 )}
                                 {p.all_access && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-200 text-purple-700 dark:bg-purple-800 dark:text-purple-300 font-medium">تحكم كامل</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-200 text-purple-700 dark:bg-purple-800 dark:text-purple-300 font-medium">{t("Full control", "تحكم كامل")}</span>
                                 )}
                               </div>
                               <span className="text-[10px] text-gray-400">{activeCount}/5</span>
@@ -3053,7 +3068,7 @@ export default function UsersSettingsPage() {
                                   let label = rawAction;
                                   if (ADVANCED_ACTIONS_MAP[p.resource]) {
                                     const matched = ADVANCED_ACTIONS_MAP[p.resource].find(a => a.value === rawAction);
-                                    if (matched) label = matched.label;
+                                    if (matched) label = appLang === 'en' ? matched.labelEn : matched.label;
                                   }
                                   return (
                                     <Badge key={act} variant="outline" className="text-[10px] bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
@@ -3066,23 +3081,23 @@ export default function UsersSettingsPage() {
 
                             {/* أيقونات الصلاحيات */}
                             <div className="flex items-center gap-2 flex-wrap">
-                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_access !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="إظهار">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_access !== false ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title={t("Show", "إظهار")}>
                                 <Eye className="w-3 h-3" />
                                 {p.can_access !== false ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                               </div>
-                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_read ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="قراءة">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_read ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title={t("Read", "قراءة")}>
                                 <Eye className="w-3 h-3" />
                                 {p.can_read ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                               </div>
-                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_write ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="كتابة">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_write ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title={t("Write", "كتابة")}>
                                 <UserPlus className="w-3 h-3" />
                                 {p.can_write ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                               </div>
-                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_update ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="تعديل">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_update ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title={t("Edit", "تعديل")}>
                                 <Edit className="w-3 h-3" />
                                 {p.can_update ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                               </div>
-                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_delete ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title="حذف">
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.can_delete ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}`} title={t("Delete", "حذف")}>
                                 <Trash2 className="w-3 h-3" />
                                 {p.can_delete ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                               </div>
@@ -3097,8 +3112,8 @@ export default function UsersSettingsPage() {
                     <div className="p-4 bg-gray-100 dark:bg-slate-700 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
                       <Shield className="w-8 h-8 text-gray-400 dark:text-gray-500" />
                     </div>
-                    <p className="text-base font-medium text-gray-600 dark:text-gray-400 mb-1">لا توجد صلاحيات مُحددة</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-500">اختر مورداً وحدد الصلاحيات ثم اضغط "حفظ الصلاحيات"</p>
+                    <p className="text-base font-medium text-gray-600 dark:text-gray-400 mb-1">{t("No permissions defined", "لا توجد صلاحيات مُحددة")}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-500">{t('Select a resource, set the permissions, then click "Save Permissions"', 'اختر مورداً وحدد الصلاحيات ثم اضغط "حفظ الصلاحيات"')}</p>
                   </div>
                 )}
               </div>
@@ -3116,8 +3131,8 @@ export default function UsersSettingsPage() {
                     <ArrowRightLeft className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">نقل وفتح الصلاحيات</CardTitle>
-                    <p className="text-xs text-gray-500 mt-1">نقل ملكية البيانات أو مشاركة الوصول بين الموظفين</p>
+                    <CardTitle className="text-base">{t("Transfer & Share Permissions", "نقل وفتح الصلاحيات")}</CardTitle>
+                    <p className="text-xs text-gray-500 mt-1">{t("Transfer data ownership or share access between employees", "نقل ملكية البيانات أو مشاركة الوصول بين الموظفين")}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -3128,14 +3143,14 @@ export default function UsersSettingsPage() {
                     className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                   >
                     <Calendar className="w-4 h-4" />
-                    تَفويض إجازة
+                    {t("Vacation Cover", "تَفويض إجازة")}
                   </Button>
                   <Button
                     onClick={() => { setShowPermissionDialog(true); setPermissionAction('share') }}
                     className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
                   >
                     <Share2 className="w-4 h-4" />
-                    إدارة الصلاحيات
+                    {t("Manage Permissions", "إدارة الصلاحيات")}
                   </Button>
                 </div>
               </div>
@@ -3145,19 +3160,19 @@ export default function UsersSettingsPage() {
                 <TabsList className="grid w-full grid-cols-4 mb-4">
                   <TabsTrigger value="sharing" className="gap-2">
                     <Share2 className="w-4 h-4" />
-                    المشاركات
+                    {t("Shares", "المشاركات")}
                   </TabsTrigger>
                   <TabsTrigger value="shared_with_me" className="gap-2">
                     <Eye className="w-4 h-4" />
-                    مُشارَك مَعى
+                    {t("Shared with Me", "مُشارَك مَعى")}
                   </TabsTrigger>
                   <TabsTrigger value="transfers" className="gap-2">
                     <ArrowRightLeft className="w-4 h-4" />
-                    النقل
+                    {t("Transfers", "النقل")}
                   </TabsTrigger>
                   <TabsTrigger value="branches" className="gap-2">
                     <GitBranch className="w-4 h-4" />
-                    الفروع
+                    {t("Branches", "الفروع")}
                   </TabsTrigger>
                 </TabsList>
 
@@ -3174,8 +3189,8 @@ export default function UsersSettingsPage() {
                       >
                         {showSharingArchive ? <Eye className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
                         {showSharingArchive
-                          ? `إخفاء المُؤرشَفة`
-                          : `إظهار المُؤرشَفة (${archivedSharing.length})`}
+                          ? t(`Hide archived`, `إخفاء المُؤرشَفة`)
+                          : t(`Show archived (${archivedSharing.length})`, `إظهار المُؤرشَفة (${archivedSharing.length})`)}
                       </Button>
                     </div>
                   )}
@@ -3189,7 +3204,7 @@ export default function UsersSettingsPage() {
                       return (
                         <div className="text-center py-8 text-gray-400">
                           <Share2 className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                          <p className="text-sm">لا توجد صلاحيات مشتركة حالياً</p>
+                          <p className="text-sm">{t("No shared permissions currently", "لا توجد صلاحيات مشتركة حالياً")}</p>
                         </div>
                       )
                     }
@@ -3198,13 +3213,13 @@ export default function UsersSettingsPage() {
                         {rows.map((ps: any) => {
                           const grantor = members.find(m => m.user_id === ps.grantor_user_id)
                           const grantee = members.find(m => m.user_id === ps.grantee_user_id)
-                          const grantorRoleAr = grantor?.role ? (roleLabels[grantor.role]?.ar || grantor.role) : ''
-                          const granteeRoleAr = grantee?.role ? (roleLabels[grantee.role]?.ar || grantee.role) : ''
+                          const grantorRoleAr = grantor?.role ? roleName(grantor.role) : ''
+                          const granteeRoleAr = grantee?.role ? roleName(grantee.role) : ''
                           const isInactive = ps.is_active === false
                           const isExpired = ps.expires_at && new Date(ps.expires_at) < new Date()
                           const expiryLabel = ps.expires_at
-                            ? `ينتهى ${new Date(ps.expires_at).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
-                            : 'دائم'
+                            ? `${t("Expires", "ينتهى")} ${new Date(ps.expires_at).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                            : t('Permanent', 'دائم')
                           const cardCls = isInactive
                             ? 'bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 opacity-70'
                             : isExpired
@@ -3219,37 +3234,37 @@ export default function UsersSettingsPage() {
                                   <div className="min-w-0 flex-1">
                                     {/* Names + roles */}
                                     <p className="text-sm font-medium">
-                                      <span className="text-gray-700 dark:text-gray-300">{grantor?.display_name || grantor?.email || 'موظف'}</span>
+                                      <span className="text-gray-700 dark:text-gray-300">{grantor?.display_name || grantor?.email || t('Employee', 'موظف')}</span>
                                       {grantorRoleAr && <span className="text-[10px] text-gray-500 mx-1">({grantorRoleAr})</span>}
                                       <span className="mx-2 text-gray-400">←</span>
-                                      <span className={isInactive ? 'text-gray-600' : 'text-green-700 dark:text-green-400'}>{grantee?.display_name || grantee?.email || 'موظف'}</span>
+                                      <span className={isInactive ? 'text-gray-600' : 'text-green-700 dark:text-green-400'}>{grantee?.display_name || grantee?.email || t('Employee', 'موظف')}</span>
                                       {granteeRoleAr && <span className="text-[10px] text-gray-500 mx-1">({granteeRoleAr})</span>}
                                     </p>
                                     {/* Badges */}
                                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                       <Badge variant="outline" className="text-[10px]">
-                                        {ps.resource_type === 'all' ? 'الكل' :
-                                          ps.resource_type === 'customers' ? 'العملاء' :
-                                          ps.resource_type === 'estimates' ? 'عروض الأسعار' :
-                                          ps.resource_type === 'sales_orders' ? 'أوامر البيع' :
-                                          ps.resource_type === 'bookings' ? 'الحجوزات' :
+                                        {ps.resource_type === 'all' ? t('All', 'الكل') :
+                                          ps.resource_type === 'customers' ? t('Customers', 'العملاء') :
+                                          ps.resource_type === 'estimates' ? t('Estimates', 'عروض الأسعار') :
+                                          ps.resource_type === 'sales_orders' ? t('Sales Orders', 'أوامر البيع') :
+                                          ps.resource_type === 'bookings' ? t('Bookings', 'الحجوزات') :
                                           ps.resource_type}
                                       </Badge>
-                                      {ps.can_edit && !isInactive && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">تعديل</Badge>}
-                                      {ps.can_delete && !isInactive && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">حذف</Badge>}
+                                      {ps.can_edit && !isInactive && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{t("Edit", "تعديل")}</Badge>}
+                                      {ps.can_delete && !isInactive && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{t("Delete", "حذف")}</Badge>}
                                       {isInactive ? (
-                                        <Badge className="text-[10px] bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">مُؤرشَف</Badge>
+                                        <Badge className="text-[10px] bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{t("Archived", "مُؤرشَف")}</Badge>
                                       ) : isExpired ? (
-                                        <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">انتَهى</Badge>
+                                        <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">{t("Expired", "انتَهى")}</Badge>
                                       ) : (
-                                        <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">نَشِط</Badge>
+                                        <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">{t("Active", "نَشِط")}</Badge>
                                       )}
                                       <Badge className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400">
                                         🗓 {expiryLabel}
                                       </Badge>
                                       {isVacation && (
                                         <Badge className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-400">
-                                          🌴 تَفويض إجازة
+                                          {t("🌴 Vacation cover", "🌴 تَفويض إجازة")}
                                         </Badge>
                                       )}
                                     </div>
@@ -3259,13 +3274,13 @@ export default function UsersSettingsPage() {
                                     )}
                                     {/* Dates */}
                                     <p className="text-[10px] text-gray-400 mt-1">
-                                      أُنشئت {new Date(ps.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
+                                      {t("Created", "أُنشئت")} {new Date(ps.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
                                     </p>
                                   </div>
                                 </div>
                                 {!isInactive && (
                                   <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50 flex-shrink-0" onClick={async () => {
-                                    if (!window.confirm('سَيتم أرشَفة هذه المُشاركة. يُمكن مُراجعتها لاحقاً من زر "إظهار المُؤرشَفة". تَأكيد؟')) return
+                                    if (!window.confirm(t('This share will be archived. You can review it later via the "Show archived" button. Confirm?', 'سَيتم أرشَفة هذه المُشاركة. يُمكن مُراجعتها لاحقاً من زر "إظهار المُؤرشَفة". تَأكيد؟'))) return
                                     await supabase.from("permission_sharing").update({ is_active: false }).eq("id", ps.id)
                                     loadPermissionData()
                                   }}>
@@ -3293,8 +3308,8 @@ export default function UsersSettingsPage() {
                       >
                         {showSharedWithMeArchive ? <Eye className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
                         {showSharedWithMeArchive
-                          ? `إخفاء المُؤرشَفة`
-                          : `إظهار المُؤرشَفة (${archivedSharedWithMe.length})`}
+                          ? t(`Hide archived`, `إخفاء المُؤرشَفة`)
+                          : t(`Show archived (${archivedSharedWithMe.length})`, `إظهار المُؤرشَفة (${archivedSharedWithMe.length})`)}
                       </Button>
                     </div>
                   )}
@@ -3308,8 +3323,8 @@ export default function UsersSettingsPage() {
                       return (
                         <div className="text-center py-8 text-gray-400">
                           <Eye className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                          <p className="text-sm">لا يوجد بَيانات مُشارَكة مَعى حالياً</p>
-                          <p className="text-xs mt-2 text-gray-500">عند مُشاركة موظف آخر بَياناته معك، سيظهر هنا.</p>
+                          <p className="text-sm">{t("No data is shared with me currently", "لا يوجد بَيانات مُشارَكة مَعى حالياً")}</p>
+                          <p className="text-xs mt-2 text-gray-500">{t("When another employee shares their data with you, it will appear here.", "عند مُشاركة موظف آخر بَياناته معك، سيظهر هنا.")}</p>
                         </div>
                       )
                     }
@@ -3317,20 +3332,20 @@ export default function UsersSettingsPage() {
                       <div className="space-y-2">
                         {rows.map((sw: any) => {
                           const resourceLabel =
-                            sw.resource_type === 'all' ? 'الكل (عملاء + عروض + أوامر + حجوزات)' :
-                            sw.resource_type === 'customers' ? 'العملاء' :
-                            sw.resource_type === 'estimates' ? 'عروض الأسعار' :
-                            sw.resource_type === 'sales_orders' ? 'أوامر البيع' :
-                            sw.resource_type === 'bookings' ? 'الحجوزات' :
+                            sw.resource_type === 'all' ? t('All (customers + estimates + orders + bookings)', 'الكل (عملاء + عروض + أوامر + حجوزات)') :
+                            sw.resource_type === 'customers' ? t('Customers', 'العملاء') :
+                            sw.resource_type === 'estimates' ? t('Estimates', 'عروض الأسعار') :
+                            sw.resource_type === 'sales_orders' ? t('Sales Orders', 'أوامر البيع') :
+                            sw.resource_type === 'bookings' ? t('Bookings', 'الحجوزات') :
                             sw.resource_type
                           const grantor = members.find(m => m.user_id === sw.grantor_user_id)
-                          const grantorDisplay = grantor?.display_name || grantor?.email || sw.grantor_name || sw.grantor_email || 'موظف (غير معروف)'
-                          const grantorRoleAr = grantor?.role ? (roleLabels[grantor.role]?.ar || grantor.role) : ''
+                          const grantorDisplay = grantor?.display_name || grantor?.email || sw.grantor_name || sw.grantor_email || t('Employee (unknown)', 'موظف (غير معروف)')
+                          const grantorRoleAr = grantor?.role ? roleName(grantor.role) : ''
                           const isInactive = sw.is_active === false
                           const isExpired = sw.expires_at && new Date(sw.expires_at) < new Date()
                           const expiresLabel = sw.expires_at
-                            ? `ينتهى ${new Date(sw.expires_at).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
-                            : 'دائم'
+                            ? `${t("Expires", "ينتهى")} ${new Date(sw.expires_at).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                            : t('Permanent', 'دائم')
                           const isVacation = (sw.notes || '').includes('[تَفويض إجازة]')
                           const cardCls = isInactive
                             ? 'bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-slate-700 opacity-70'
@@ -3343,27 +3358,27 @@ export default function UsersSettingsPage() {
                                 {isVacation ? <Calendar className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" /> : <Eye className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />}
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-medium">
-                                    <span className="text-gray-600 dark:text-gray-400">من:</span>{' '}
+                                    <span className="text-gray-600 dark:text-gray-400">{t("From:", "من:")}</span>{' '}
                                     <span className={isInactive ? 'text-gray-600' : 'text-blue-700 dark:text-blue-400 font-semibold'}>{grantorDisplay}</span>
                                     {grantorRoleAr && <span className="text-[10px] text-gray-500 mx-1">({grantorRoleAr})</span>}
                                   </p>
                                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                     <Badge variant="outline" className="text-[10px]">{resourceLabel}</Badge>
-                                    {sw.can_edit && !isInactive && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">تعديل</Badge>}
-                                    {sw.can_delete && !isInactive && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">حذف</Badge>}
+                                    {sw.can_edit && !isInactive && <Badge className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{t("Edit", "تعديل")}</Badge>}
+                                    {sw.can_delete && !isInactive && <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">{t("Delete", "حذف")}</Badge>}
                                     {isInactive ? (
-                                      <Badge className="text-[10px] bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">مُؤرشَف</Badge>
+                                      <Badge className="text-[10px] bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{t("Archived", "مُؤرشَف")}</Badge>
                                     ) : isExpired ? (
-                                      <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">انتَهى</Badge>
+                                      <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">{t("Expired", "انتَهى")}</Badge>
                                     ) : (
-                                      <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">نَشِط</Badge>
+                                      <Badge className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">{t("Active", "نَشِط")}</Badge>
                                     )}
                                     <Badge className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400">
                                       🗓 {expiresLabel}
                                     </Badge>
                                     {isVacation && (
                                       <Badge className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-400">
-                                        🌴 تَفويض إجازة
+                                        {t("🌴 Vacation cover", "🌴 تَفويض إجازة")}
                                       </Badge>
                                     )}
                                   </div>
@@ -3371,7 +3386,7 @@ export default function UsersSettingsPage() {
                                     <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 italic line-clamp-2">{sw.notes}</p>
                                   )}
                                   <p className="text-[10px] text-gray-400 mt-1">
-                                    أُنشئت {new Date(sw.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
+                                    {t("Created", "أُنشئت")} {new Date(sw.created_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' })}
                                   </p>
                                 </div>
                               </div>
@@ -3401,18 +3416,18 @@ export default function UsersSettingsPage() {
                           ['owner','admin','general_manager'].includes(String(currentRole || ''))
                         const canActOnRequest = isPending && canManage && (!isInitiator || isSoloSenior)
                         const resourceLabel =
-                          pt.resource_type === 'all' ? 'الكل' :
-                          pt.resource_type === 'customers' ? 'العملاء' :
-                          pt.resource_type === 'sales_orders' ? 'أوامر البيع' :
-                          pt.resource_type === 'estimates' ? 'عروض الأسعار' :
-                          pt.resource_type === 'bookings' ? 'الحجوزات' :
+                          pt.resource_type === 'all' ? t('All', 'الكل') :
+                          pt.resource_type === 'customers' ? t('Customers', 'العملاء') :
+                          pt.resource_type === 'sales_orders' ? t('Sales Orders', 'أوامر البيع') :
+                          pt.resource_type === 'estimates' ? t('Estimates', 'عروض الأسعار') :
+                          pt.resource_type === 'bookings' ? t('Bookings', 'الحجوزات') :
                           pt.resource_type
                         const statusBadge =
-                          pt.status === 'completed' ? { cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', label: '✓ مُنفَّذ' } :
-                          pt.status === 'pending'   ? { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', label: '⏳ بانتظار اعتماد' } :
-                          pt.status === 'approved'  ? { cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', label: '✓ مُعتَمَد' } :
-                          pt.status === 'rejected'  ? { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', label: '✕ مَرفوض' } :
-                          pt.status === 'failed'    ? { cls: 'bg-red-100 text-red-700', label: '⚠ فَشل' } :
+                          pt.status === 'completed' ? { cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', label: t('✓ Completed', '✓ مُنفَّذ') } :
+                          pt.status === 'pending'   ? { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', label: t('⏳ Awaiting approval', '⏳ بانتظار اعتماد') } :
+                          pt.status === 'approved'  ? { cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', label: t('✓ Approved', '✓ مُعتَمَد') } :
+                          pt.status === 'rejected'  ? { cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', label: t('✕ Rejected', '✕ مَرفوض') } :
+                          pt.status === 'failed'    ? { cls: 'bg-red-100 text-red-700', label: t('⚠ Failed', '⚠ فَشل') } :
                                                        { cls: 'bg-gray-100 text-gray-700', label: pt.status }
                         return (
                           <div key={pt.id} className={`p-3 rounded-lg border ${isPending ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'}`}>
@@ -3421,25 +3436,25 @@ export default function UsersSettingsPage() {
                                 <ArrowRightLeft className="w-4 h-4 text-blue-600 flex-shrink-0" />
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-medium truncate">
-                                    <span className="text-gray-700 dark:text-gray-300">{fromUser?.display_name || fromUser?.email || 'موظف'}</span>
+                                    <span className="text-gray-700 dark:text-gray-300">{fromUser?.display_name || fromUser?.email || t('Employee', 'موظف')}</span>
                                     <span className="mx-2 text-blue-500">→</span>
-                                    <span className="text-blue-700 dark:text-blue-400">{toUser?.display_name || toUser?.email || 'موظف'}</span>
+                                    <span className="text-blue-700 dark:text-blue-400">{toUser?.display_name || toUser?.email || t('Employee', 'موظف')}</span>
                                   </p>
                                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                                     <Badge variant="outline" className="text-[10px]">{resourceLabel}</Badge>
                                     {pt.status === 'completed' && (
-                                      <Badge className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{pt.records_transferred} سجل</Badge>
+                                      <Badge className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{pt.records_transferred} {t("records", "سجل")}</Badge>
                                     )}
                                     <span className="text-[10px] text-gray-500">{new Date(pt.transferred_at).toLocaleDateString('ar-EG')}</span>
                                   </div>
                                   {pt.status === 'rejected' && pt.rejected_reason && (
-                                    <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">سَبَب الرَّفض: {pt.rejected_reason}</p>
+                                    <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{t("Rejection reason:", "سَبَب الرَّفض:")} {pt.rejected_reason}</p>
                                   )}
                                   {isPending && isInitiator && !isSoloSenior && (
-                                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">طَلَبت هذا النَّقل بنفسك — يَحتاج اعتماد مَسؤول آخر.</p>
+                                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">{t("You requested this transfer yourself — it needs approval from another administrator.", "طَلَبت هذا النَّقل بنفسك — يَحتاج اعتماد مَسؤول آخر.")}</p>
                                   )}
                                   {isPending && isInitiator && isSoloSenior && (
-                                    <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-1">أَنت المالك الوَحيد — يُمكِنك اعتماد طَلَبك بنَفسك (اعتماد ذاتى).</p>
+                                    <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-1">{t("You are the only owner — you can approve your own request (self-approval).", "أَنت المالك الوَحيد — يُمكِنك اعتماد طَلَبك بنَفسك (اعتماد ذاتى).")}</p>
                                   )}
                                 </div>
                               </div>
@@ -3460,18 +3475,30 @@ export default function UsersSettingsPage() {
                                         const currentTotal = c?.current_total     ?? 0
                                         const hasDrift     = c?.has_drift         ?? false
                                         const prompt = hasDrift
-                                          ? `اختر النَطاق:\n` +
-                                            `———————————\n` +
-                                            `OK = نَطاق مُسَجَّل وقت الطَلَب (${snapTotal} سَجل)\n` +
-                                            `Cancel = ثم سَنَسألك عن النَطاق الحالى (${currentTotal} سَجل)`
-                                          : `اعتماد نَقل ${resourceLabel} من ${fromUser?.display_name || 'موظف'} إلى ${toUser?.display_name || 'موظف'}؟\n(${snapTotal} سَجل — لا يوجد تَغيير منذ الطَلَب)`
+                                          ? t(
+                                              `Choose the scope:\n` +
+                                              `———————————\n` +
+                                              `OK = scope recorded at request time (${snapTotal} records)\n` +
+                                              `Cancel = we will then ask you about the current scope (${currentTotal} records)`,
+                                              `اختر النَطاق:\n` +
+                                              `———————————\n` +
+                                              `OK = نَطاق مُسَجَّل وقت الطَلَب (${snapTotal} سَجل)\n` +
+                                              `Cancel = ثم سَنَسألك عن النَطاق الحالى (${currentTotal} سَجل)`
+                                            )
+                                          : t(
+                                              `Approve transferring ${resourceLabel} from ${fromUser?.display_name || t('Employee', 'موظف')} to ${toUser?.display_name || t('Employee', 'موظف')}?\n(${snapTotal} records — no changes since the request)`,
+                                              `اعتماد نَقل ${resourceLabel} من ${fromUser?.display_name || t('Employee', 'موظف')} إلى ${toUser?.display_name || t('Employee', 'موظف')}؟\n(${snapTotal} سَجل — لا يوجد تَغيير منذ الطَلَب)`
+                                            )
 
                                         let mode: 'snapshot' | 'dynamic' = 'snapshot'
                                         if (hasDrift) {
                                           const useSnapshot = window.confirm(prompt)
                                           if (!useSnapshot) {
                                             const useDynamic = window.confirm(
-                                              `اعتماد بالنَطاق الحالى = نَقل كل سَجلات ${fromUser?.display_name || 'الموظف'} الحالية (${currentTotal} سَجل، بما فيها الجَديدة بعد الطَلَب).\n\nتَأكيد؟`
+                                              t(
+                                                `Approving with the current scope = transferring all of ${fromUser?.display_name || t('the employee', 'الموظف')}'s current records (${currentTotal} records, including those created after the request).\n\nConfirm?`,
+                                                `اعتماد بالنَطاق الحالى = نَقل كل سَجلات ${fromUser?.display_name || t('the employee', 'الموظف')} الحالية (${currentTotal} سَجل، بما فيها الجَديدة بعد الطَلَب).\n\nتَأكيد؟`
+                                              )
                                             )
                                             if (!useDynamic) return
                                             mode = 'dynamic'
@@ -3490,25 +3517,25 @@ export default function UsersSettingsPage() {
                                           })
                                           const data = await res.json()
                                           if (res.ok && data.success) {
-                                            toastActionSuccess(toast, `اعتماد النَّقل (${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'})`, `${data.result?.records_transferred ?? 0} سجل`)
+                                            toastActionSuccess(toast, t(`Transfer approved (${mode === 'snapshot' ? 'recorded' : 'current'})`, `اعتماد النَّقل (${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'})`), t(`${data.result?.records_transferred ?? 0} records`, `${data.result?.records_transferred ?? 0} سجل`))
                                             loadPermissionData()
                                           } else {
-                                            toastActionError(toast, 'اعتماد', 'النَّقل', data.error || 'فَشل')
+                                            toastActionError(toast, t('Approve', 'اعتماد'), t('Transfer', 'النَّقل'), data.error || t('Failed', 'فَشل'))
                                           }
                                         } catch (err: any) {
-                                          toastActionError(toast, 'اعتماد', 'النَّقل', err?.message || 'خطأ')
+                                          toastActionError(toast, t('Approve', 'اعتماد'), t('Transfer', 'النَّقل'), err?.message || t('Error', 'خطأ'))
                                         }
                                       }}
                                     >
                                       <Check className="w-3 h-3" />
-                                      اعتماد
+                                      {t("Approve", "اعتماد")}
                                     </Button>
                                     <Button
                                       size="sm"
                                       variant="outline"
                                       className="h-7 px-2 border-red-300 text-red-700 hover:bg-red-50 text-[11px] gap-1"
                                       onClick={async () => {
-                                        const reason = window.prompt('سَبَب الرَّفض (مَطلوب):')
+                                        const reason = window.prompt(t('Rejection reason (required):', 'سَبَب الرَّفض (مَطلوب):'))
                                         if (!reason || !reason.trim()) return
                                         try {
                                           const res = await fetch(`/api/permissions/transfer/${pt.id}/reject`, {
@@ -3518,18 +3545,18 @@ export default function UsersSettingsPage() {
                                           })
                                           const data = await res.json()
                                           if (res.ok && data.success) {
-                                            toastActionSuccess(toast, 'رفض النَّقل', 'تم')
+                                            toastActionSuccess(toast, t('Reject transfer', 'رفض النَّقل'), t('Done', 'تم'))
                                             loadPermissionData()
                                           } else {
-                                            toastActionError(toast, 'رفض', 'النَّقل', data.error || 'فَشل')
+                                            toastActionError(toast, t('Reject', 'رفض'), t('Transfer', 'النَّقل'), data.error || t('Failed', 'فَشل'))
                                           }
                                         } catch (err: any) {
-                                          toastActionError(toast, 'رفض', 'النَّقل', err?.message || 'خطأ')
+                                          toastActionError(toast, t('Reject', 'رفض'), t('Transfer', 'النَّقل'), err?.message || t('Error', 'خطأ'))
                                         }
                                       }}
                                     >
                                       <X className="w-3 h-3" />
-                                      رفض
+                                      {t("Reject", "رفض")}
                                     </Button>
                                   </>
                                 )}
@@ -3542,7 +3569,7 @@ export default function UsersSettingsPage() {
                   ) : (
                     <div className="text-center py-8 text-gray-400">
                       <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">لا توجد عمليات نقل سابقة</p>
+                      <p className="text-sm">{t("No previous transfers", "لا توجد عمليات نقل سابقة")}</p>
                     </div>
                   )}
                 </TabsContent>

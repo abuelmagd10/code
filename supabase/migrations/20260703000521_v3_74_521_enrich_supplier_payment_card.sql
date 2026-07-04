@@ -1,0 +1,52 @@
+-- v3.74.521 — Owner complained that the supplier payment card in
+-- /approvals shows almost nothing: "دفعة مورد · بدون رقم", requester
+-- name, amount, branch, date, approve/reject. That is not enough
+-- context to approve a payment without leaving the inbox and clicking
+-- into the underlying record.
+--
+-- The card previously carried only:
+--   - reference_number (usually null → "بدون رقم")
+--   - supplier_name
+--   - amount + currency
+--   - branch_name (+ warehouse_name)
+--   - created_at
+--
+-- What the owner actually needs to decide:
+--   1. WHICH bill is being paid, and does the amount match the
+--      outstanding balance on that bill?
+--   2. HOW is the money leaving — cash box, bank account, cheque —
+--      and is the source account's currency compatible with the
+--      payment's currency?
+--   3. WHEN did the payment actually happen (payment_date) versus
+--      when approval was requested (created_at)?
+--   4. WHO asked for the approval? (requester email — the accountant)
+--   5. WHY? (the accountant's notes)
+--   6. For FX: exchange rate + base-currency equivalent so the owner
+--      can sanity-check the rate.
+--
+-- Change scope (UI + client-side loader only, no DB writes):
+--   - app/approvals/page.tsx
+--       PendingSupplierPayment interface: +12 fields
+--       Loader (v3.74.472/503 block): pull payment_date, payment_method,
+--         notes, exchange_rate, base_currency_amount, account_id, plus
+--         batch-fetch account_name from chart_of_accounts and requester
+--         email from user_profiles. Also pull bill total_amount +
+--         paid_amount so we can compute bill_outstanding client-side.
+--       Card: renders the new fields with icons + colours:
+--         - supplier + bill number bold
+--         - bill outstanding vs. payment amount (red badge on overpay)
+--         - amount + FX base amount + rate
+--         - method + account (amber warning if account currency mismatches)
+--         - payment date vs. requested date
+--         - requester email
+--         - accountant's note in an amber callout
+--
+-- Notes:
+--   - No schema change. payments already stores everything above; the
+--     card was just under-reading.
+--   - PostgREST embed on suppliers/bills/accounts still doesn't work
+--     (no FK). We keep the v3.74.503 batch-fetch pattern and add two
+--     more batches (accounts, user_profiles) for the new fields.
+--   - Currency mismatch is highlighted, not blocked — v3.74.517
+--     already added a hard rejection at the /api layer for
+--     currency-account mismatches, so this is a visual heads-up.

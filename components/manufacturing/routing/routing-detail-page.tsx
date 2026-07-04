@@ -84,6 +84,7 @@ import {
   updateRoutingOperations,
   updateRoutingVersion,
 } from "@/lib/manufacturing/routing-ui"
+import { readAppLanguage, type AppLang } from "@/lib/manufacturing/manufacturing-ui"
 
 interface RoutingDetailPageProps {
   routingId: string
@@ -118,16 +119,25 @@ const EMPTY_CREATE_VERSION_FORM: RoutingVersionCreatePayload = {
   notes: "",
 }
 
-function getRoutingVersionLockMessage(status: RoutingVersionStatus) {
+function getRoutingVersionLockMessage(status: RoutingVersionStatus, lang: AppLang) {
+  const isEn = lang === "en"
   switch (status) {
     case "active":
-      return "الإصدار ده مفعّل ومستخدم فى التصنيع دلوقتى. مش هتقدر تعدّله إلا بعد ما تشيله من الخدمة أو تأرشفه."
+      return isEn
+        ? "This version is active and currently used in manufacturing. You cannot edit it until you take it out of service or archive it."
+        : "الإصدار ده مفعّل ومستخدم فى التصنيع دلوقتى. مش هتقدر تعدّله إلا بعد ما تشيله من الخدمة أو تأرشفه."
     case "inactive":
-      return "الإصدار ده موقوف. تقدر تشغّله تانى أو تأرشفه نهائياً."
+      return isEn
+        ? "This version is deactivated. You can reactivate it or archive it permanently."
+        : "الإصدار ده موقوف. تقدر تشغّله تانى أو تأرشفه نهائياً."
     case "archived":
-      return "الإصدار ده مؤرشف. مفيش تعديل ممكن عليه."
+      return isEn
+        ? "This version is archived. No further edits are possible."
+        : "الإصدار ده مؤرشف. مفيش تعديل ممكن عليه."
     default:
-      return "الإصدار ده لسه قيد التحضير. تقدر تعدّل بياناته وخطواته."
+      return isEn
+        ? "This version is still in draft. You can edit its details and steps."
+        : "الإصدار ده لسه قيد التحضير. تقدر تعدّل بياناته وخطواته."
   }
 }
 
@@ -157,6 +167,18 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
   const canWrite = accessReady ? canAction("manufacturing_boms", "write") : false
   const canUpdate = accessReady ? canAction("manufacturing_boms", "update") : false
   const canDelete = accessReady ? canAction("manufacturing_boms", "delete") : false
+
+  const [lang, setLang] = useState<AppLang>("ar")
+  const t = (en: string, ar: string) => (lang === "en" ? en : ar)
+
+  // ── Language ──
+  useEffect(() => {
+    const handler = () => setLang(readAppLanguage())
+    handler()
+    window.addEventListener("app_language_changed", handler)
+    window.addEventListener("storage", (e) => { if (e.key === "app_language") handler() })
+    return () => window.removeEventListener("app_language_changed", handler)
+  }, [])
 
   const [routing, setRouting] = useState<RoutingDetail | null>(null)
   const [versionSnapshot, setVersionSnapshot] = useState<RoutingVersionSnapshot | null>(null)
@@ -261,8 +283,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر فتح مسار التصنيع",
-        description: error?.message || "حدث خطأ أثناء تحميل السجل",
+        title: t("Failed to open routing", "تعذر فتح مسار التصنيع"),
+        description: error?.message || t("An error occurred while loading the record", "حدث خطأ أثناء تحميل السجل"),
       })
       setRouting(null)
       setSelectedVersionId(null)
@@ -271,7 +293,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } finally {
       setLoadingRouting(false)
     }
-  }, [hydrateHeaderForm, resetVersionState, routingId, selectedVersionId, toast])
+  }, [hydrateHeaderForm, resetVersionState, routingId, selectedVersionId, toast, lang])
 
   const loadSelectedVersion = useCallback(async (versionId: string) => {
     try {
@@ -281,14 +303,14 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تحميل بيانات الإصدار",
-        description: error?.message || "حصل خطأ أثناء تحميل الإصدار المحدد",
+        title: t("Failed to load version data", "تعذر تحميل بيانات الإصدار"),
+        description: error?.message || t("An error occurred while loading the selected version", "حصل خطأ أثناء تحميل الإصدار المحدد"),
       })
       resetVersionState()
     } finally {
       setLoadingVersion(false)
     }
-  }, [hydrateVersionState, resetVersionState, toast])
+  }, [hydrateVersionState, resetVersionState, toast, lang])
 
   const refreshWorkspace = useCallback(async (preferredVersionId?: string | null) => {
     const resolvedVersionId = await loadRoutingDetailData(preferredVersionId)
@@ -315,8 +337,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     if (!headerForm.routing_code.trim() || !headerForm.routing_name.trim()) {
       toast({
         variant: "destructive",
-        title: "البيانات الأساسية مطلوبة",
-        description: "كود المسار واسمه محتاجين قبل الحفظ.",
+        title: t("Basic details required", "البيانات الأساسية مطلوبة"),
+        description: t("Routing code and name are required before saving.", "كود المسار واسمه محتاجين قبل الحفظ."),
       })
       return
     }
@@ -331,16 +353,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       })
 
       toast({
-        title: "تم الحفظ",
-        description: "بيانات المسار اتعدّلت بنجاح.",
+        title: t("Saved", "تم الحفظ"),
+        description: t("Routing details updated successfully.", "بيانات المسار اتعدّلت بنجاح."),
       })
 
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر الحفظ",
-        description: error?.message || "حدث خطأ أثناء الحفظ",
+        title: t("Save failed", "تعذر الحفظ"),
+        description: error?.message || t("An error occurred while saving", "حدث خطأ أثناء الحفظ"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -355,15 +377,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       setRunningAction("delete-routing")
       await deleteRouting(routing.id)
       toast({
-        title: "تم حذف المسار",
-        description: "المسار وكل إصداراته اتمسحوا.",
+        title: t("Routing deleted", "تم حذف المسار"),
+        description: t("The routing and all its versions were removed.", "المسار وكل إصداراته اتمسحوا."),
       })
       router.push("/manufacturing/routings")
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حذف المسار",
-        description: error?.message || "لا يمكن الحذف لوجود نسخ مفعّلة أو لعدم كفاية الصلاحيات.",
+        title: t("Failed to delete routing", "تعذر حذف المسار"),
+        description: error?.message || t("Deletion is not possible due to active versions or insufficient permissions.", "لا يمكن الحذف لوجود نسخ مفعّلة أو لعدم كفاية الصلاحيات."),
       })
       setRunningAction(null)
       await refreshWorkspace(selectedVersionId)
@@ -386,15 +408,17 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       setCreateVersionOpen(false)
       setCreateVersionForm(EMPTY_CREATE_VERSION_FORM)
       toast({
-        title: "تم إنشاء إصدار جديد",
-        description: result.version_no ? `الإصدار v${result.version_no} جاهز للتعديل دلوقتى.` : "تم إنشاء الإصدار.",
+        title: t("New version created", "تم إنشاء إصدار جديد"),
+        description: result.version_no
+          ? t(`Version v${result.version_no} is ready for editing now.`, `الإصدار v${result.version_no} جاهز للتعديل دلوقتى.`)
+          : t("Version created.", "تم إنشاء الإصدار."),
       })
       await refreshWorkspace(result.routing_version_id || selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر إنشاء الإصدار",
-        description: error?.message || "حصل خطأ أثناء إنشاء الإصدار",
+        title: t("Failed to create version", "تعذر إنشاء الإصدار"),
+        description: error?.message || t("An error occurred while creating the version", "حصل خطأ أثناء إنشاء الإصدار"),
       })
     } finally {
       setRunningAction(null)
@@ -414,16 +438,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       })
 
       toast({
-        title: "تم حفظ الإصدار",
-        description: "بيانات الإصدار اتعدّلت بنجاح.",
+        title: t("Version saved", "تم حفظ الإصدار"),
+        description: t("Version details updated successfully.", "بيانات الإصدار اتعدّلت بنجاح."),
       })
 
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ الإصدار",
-        description: error?.message || "حدث خطأ أثناء الحفظ",
+        title: t("Failed to save version", "تعذر حفظ الإصدار"),
+        description: error?.message || t("An error occurred while saving", "حدث خطأ أثناء الحفظ"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -438,8 +462,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       setRunningAction("delete-version")
       await deleteRoutingVersion(selectedVersionId)
       toast({
-        title: "تم حذف الإصدار",
-        description: `تم حذف v${selectedVersion.version_no} بنجاح.`,
+        title: t("Version deleted", "تم حذف الإصدار"),
+        description: t(`Version v${selectedVersion.version_no} was deleted successfully.`, `تم حذف v${selectedVersion.version_no} بنجاح.`),
       })
 
       const nextVersionId = routing?.versions.find((version) => version.id !== selectedVersionId)?.id || null
@@ -447,8 +471,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حذف الإصدار",
-        description: error?.message || "الحذف مرفوض بسبب الحالة الحالية للإصدار.",
+        title: t("Failed to delete version", "تعذر حذف الإصدار"),
+        description: error?.message || t("Deletion rejected due to the version's current status.", "الحذف مرفوض بسبب الحالة الحالية للإصدار."),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -464,15 +488,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     for (let i = 0; i < operationsDraft.length; i++) {
       const op = operationsDraft[i]
       if (!op.operation_code.trim()) {
-        toast({ variant: "destructive", title: "بيانات ناقصة", description: `العملية رقم ${i + 1}: كود العملية مطلوب` })
+        toast({ variant: "destructive", title: t("Missing data", "بيانات ناقصة"), description: t(`Operation #${i + 1}: operation code is required`, `العملية رقم ${i + 1}: كود العملية مطلوب`) })
         return
       }
       if (!op.operation_name.trim()) {
-        toast({ variant: "destructive", title: "بيانات ناقصة", description: `العملية رقم ${i + 1}: اسم العملية مطلوب` })
+        toast({ variant: "destructive", title: t("Missing data", "بيانات ناقصة"), description: t(`Operation #${i + 1}: operation name is required`, `العملية رقم ${i + 1}: اسم العملية مطلوب`) })
         return
       }
       if (!op.work_center_id || !uuidRegex.test(op.work_center_id)) {
-        toast({ variant: "destructive", title: "بيانات ناقصة", description: `العملية رقم ${i + 1}: يجب تحديد مركز العمل` })
+        toast({ variant: "destructive", title: t("Missing data", "بيانات ناقصة"), description: t(`Operation #${i + 1}: a work center must be selected`, `العملية رقم ${i + 1}: يجب تحديد مركز العمل`) })
         return
       }
     }
@@ -496,15 +520,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
       setSavingOperations(true)
       await updateRoutingOperations(selectedVersionId, sanitizedOperations)
       toast({
-        title: "تم حفظ مراحل التصنيع",
-        description: "تم تحديث مراحل التصنيع وحفظها بنجاح.",
+        title: t("Manufacturing steps saved", "تم حفظ مراحل التصنيع"),
+        description: t("Manufacturing steps were updated and saved successfully.", "تم تحديث مراحل التصنيع وحفظها بنجاح."),
       })
       await refreshWorkspace(selectedVersionId)
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر حفظ العمليات",
-        description: error?.message || "حدث خطأ أثناء تحديث العمليات",
+        title: t("Failed to save operations", "تعذر حفظ العمليات"),
+        description: error?.message || t("An error occurred while updating the operations", "حدث خطأ أثناء تحديث العمليات"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -524,8 +548,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "تعذر تنفيذ العملية",
-        description: error?.message || "تم رفض العملية بسبب قيود الحالة أو التزامن",
+        title: t("Failed to perform the action", "تعذر تنفيذ العملية"),
+        description: error?.message || t("The action was rejected due to status or concurrency constraints", "تم رفض العملية بسبب قيود الحالة أو التزامن"),
       })
       await refreshWorkspace(selectedVersionId)
     } finally {
@@ -547,8 +571,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
         await executeVersionAction(
           "activate",
           () => activateRoutingVersion(selectedVersion.id),
-          "الإصدار اتفعّل",
-          `الإصدار v${selectedVersion.version_no} بقى نشط.`
+          t("Version activated", "الإصدار اتفعّل"),
+          t(`Version v${selectedVersion.version_no} is now active.`, `الإصدار v${selectedVersion.version_no} بقى نشط.`)
         )
         break
       case "deactivate":
@@ -556,8 +580,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
         await executeVersionAction(
           "deactivate",
           () => deactivateRoutingVersion(selectedVersion.id),
-          "الإصدار اتشال من الخدمة",
-          `الإصدار v${selectedVersion.version_no} بقى غير نشط.`
+          t("Version deactivated", "الإصدار اتشال من الخدمة"),
+          t(`Version v${selectedVersion.version_no} is now inactive.`, `الإصدار v${selectedVersion.version_no} بقى غير نشط.`)
         )
         break
       case "archive":
@@ -565,8 +589,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
         await executeVersionAction(
           "archive",
           () => archiveRoutingVersion(selectedVersion.id),
-          "الإصدار اتأرشف",
-          `الإصدار v${selectedVersion.version_no} اتأرشف وبقى للقراءة فقط.`
+          t("Version archived", "الإصدار اتأرشف"),
+          t(`Version v${selectedVersion.version_no} was archived and is now read-only.`, `الإصدار v${selectedVersion.version_no} اتأرشف وبقى للقراءة فقط.`)
         )
         break
       default:
@@ -580,45 +604,60 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
     switch (confirmAction) {
       case "delete-routing":
         return {
-          title: "حذف المسار",
-          description: "هيتمسح المسار كله لو الشروط متحققة.",
-          actionLabel: "حذف المسار",
+          title: t("Delete routing", "حذف المسار"),
+          description: t("The entire routing will be deleted if the conditions are met.", "هيتمسح المسار كله لو الشروط متحققة."),
+          actionLabel: t("Delete routing", "حذف المسار"),
           actionClassName: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         }
       case "delete-version":
         return {
-          title: "حذف الإصدار ده",
-          description: `الإصدار ${selectedVersion?.version_no} هيتمسح نهائياً. الحذف ممكن قبل تفعيل الإصدار بس.`,
-          actionLabel: "حذف الإصدار",
+          title: t("Delete this version", "حذف الإصدار ده"),
+          description: t(
+            `Version ${selectedVersion?.version_no} will be permanently deleted. Deletion is only possible before the version is activated.`,
+            `الإصدار ${selectedVersion?.version_no} هيتمسح نهائياً. الحذف ممكن قبل تفعيل الإصدار بس.`
+          ),
+          actionLabel: t("Delete version", "حذف الإصدار"),
           actionClassName: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         }
       case "activate":
         return {
-          title: "تفعيل الإصدار ده",
+          title: t("Activate this version", "تفعيل الإصدار ده"),
           description: activationRequiresSavedOperation
-            ? "مش هتقدر تفعّل الإصدار قبل ما تضيف خطوة واحدة على الأقل وتحفظها."
-            : `الإصدار ${selectedVersion?.version_no} هيبقى الإصدار الفعّال للتصنيع. لو فى إصدار تانى مفعّل، هيتشال من الخدمة تلقائياً.`,
-          actionLabel: "تفعيل الإصدار",
+            ? t(
+                "You cannot activate the version before adding and saving at least one step.",
+                "مش هتقدر تفعّل الإصدار قبل ما تضيف خطوة واحدة على الأقل وتحفظها."
+              )
+            : t(
+                `Version ${selectedVersion?.version_no} will become the active version for manufacturing. If another version is active, it will be deactivated automatically.`,
+                `الإصدار ${selectedVersion?.version_no} هيبقى الإصدار الفعّال للتصنيع. لو فى إصدار تانى مفعّل، هيتشال من الخدمة تلقائياً.`
+              ),
+          actionLabel: t("Activate version", "تفعيل الإصدار"),
           actionClassName: "",
         }
       case "deactivate":
         return {
-          title: "شيل الإصدار من الخدمة",
-          description: `الإصدار ${selectedVersion?.version_no} هيتشال من الخدمة بدون حذف أى بيانات. تقدر تشغّله تانى بعدين.`,
-          actionLabel: "شيل من الخدمة",
+          title: t("Take version out of service", "شيل الإصدار من الخدمة"),
+          description: t(
+            `Version ${selectedVersion?.version_no} will be taken out of service without deleting any data. You can reactivate it later.`,
+            `الإصدار ${selectedVersion?.version_no} هيتشال من الخدمة بدون حذف أى بيانات. تقدر تشغّله تانى بعدين.`
+          ),
+          actionLabel: t("Deactivate", "شيل من الخدمة"),
           actionClassName: "",
         }
       case "archive":
         return {
-          title: "أرشفة الإصدار نهائياً",
-          description: `الإصدار ${selectedVersion?.version_no} هيتقفل نهائياً وما تقدرش تعدّله بعد كده.`,
-          actionLabel: "أرشفة",
+          title: t("Archive version permanently", "أرشفة الإصدار نهائياً"),
+          description: t(
+            `Version ${selectedVersion?.version_no} will be permanently locked and can no longer be edited.`,
+            `الإصدار ${selectedVersion?.version_no} هيتقفل نهائياً وما تقدرش تعدّله بعد كده.`
+          ),
+          actionLabel: t("Archive", "أرشفة"),
           actionClassName: "bg-slate-900 text-white hover:bg-slate-800",
         }
       default:
         return null
     }
-  }, [activationRequiresSavedOperation, confirmAction, selectedVersion])
+  }, [activationRequiresSavedOperation, confirmAction, selectedVersion, lang])
 
   const handleAddOperation = () => {
     const nextOperationNo = Math.max(0, ...operationsDraft.map((operation) => Number(operation.operation_no) || 0)) + 10
@@ -632,26 +671,26 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
           <CompanyHeader />
           <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-4 sm:p-6">
             <ERPPageHeader
-          title={routing ? `${routing.routing_code} — ${routing.routing_name}` : "تفاصيل المسار"}
-          description="إدارة بيانات المسار وإصداراته وخطوات التصنيع."
+          title={routing ? `${routing.routing_code} — ${routing.routing_name}` : t("Routing Details", "تفاصيل المسار")}
+          description={t("Manage routing details, versions, and manufacturing steps.", "إدارة بيانات المسار وإصداراته وخطوات التصنيع.")}
           variant="detail"
           backHref="/manufacturing/routings"
-          backLabel="العودة للقائمة"
+          backLabel={t("Back to List", "العودة للقائمة")}
           extra={
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-medium text-cyan-700">
               <Factory className="h-3.5 w-3.5" />
-              مسار تصنيع
+              {t("Manufacturing Routing", "مسار تصنيع")}
             </div>
           }
           actions={
             <>
               <Button variant="outline" onClick={() => refreshWorkspace(selectedVersionId)} disabled={loadingRouting || loadingVersion} className="gap-2">
                 <RefreshCw className={`h-4 w-4 ${loadingRouting || loadingVersion ? "animate-spin" : ""}`} />
-                تحديث
+                {t("Refresh", "تحديث")}
               </Button>
               <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite || !routing} className="gap-2" data-ai-help="manufacturing_routing_detail.create_version_button">
                 <Plus className="h-4 w-4" />
-                إنشاء إصدار جديد
+                {t("Create New Version", "إنشاء إصدار جديد")}
               </Button>
               <Button
                 variant="destructive"
@@ -660,7 +699,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 className="gap-2"
               >
                 <Trash2 className="h-4 w-4" />
-                حذف المسار
+                {t("Delete Routing", "حذف المسار")}
               </Button>
             </>
           }
@@ -671,18 +710,18 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
           {loadingRouting && !routing ? (
                 <div className="flex items-center justify-center gap-2 rounded-2xl border bg-white p-12 text-slate-500">
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  جارٍ تحميل المسار...
+                  {t("Loading routing...", "جارٍ تحميل المسار...")}
                 </div>
               ) : !routing ? (
                 <div className="rounded-2xl border border-dashed bg-white p-12 text-center">
                   <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                     <AlertTriangle className="h-10 w-10 text-slate-300" />
-                    <div className="text-lg font-medium text-slate-900">المسار ده مش موجود</div>
+                    <div className="text-lg font-medium text-slate-900">{t("This routing does not exist", "المسار ده مش موجود")}</div>
                     <p className="text-sm leading-6 text-slate-500">
-                      قد يكون السجل غير موجود أو أنك لا تملك صلاحية الوصول إليه.
+                      {t("The record may not exist, or you may not have permission to access it.", "قد يكون السجل غير موجود أو أنك لا تملك صلاحية الوصول إليه.")}
                     </p>
                     <Button variant="outline" onClick={() => router.push("/manufacturing/routings")}>
-                      العودة إلى القائمة
+                      {t("Back to List", "العودة إلى القائمة")}
                     </Button>
                   </div>
                 </div>
@@ -692,7 +731,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-cyan-200 bg-cyan-50/80" data-ai-help="manufacturing_routing_detail.finished_product">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">المنتج المصنّع</div>
+                        <div className="text-sm text-slate-500">{t("Manufactured Product", "المنتج المصنّع")}</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">{buildProductLabel(ownerProduct)}</div>
                         {ownerProduct?.product_type ? (
                           <Badge variant="outline" className="mt-2">{ownerProduct.product_type}</Badge>
@@ -701,29 +740,29 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                     </Card>
                     <Card className="border-indigo-200 bg-indigo-50/80" data-ai-help="manufacturing_routing_detail.routing_usage">
                       <CardContent className="p-4">
-                        <div className="text-sm text-slate-500">نوع الاستخدام</div>
+                        <div className="text-sm text-slate-500">{t("Usage Type", "نوع الاستخدام")}</div>
                         <div className="mt-1 text-base font-semibold text-slate-900">
-                          {ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.labelAr || routing.routing_usage}
+                          {ROUTING_USAGE_OPTIONS.find((option) => option.value === routing.routing_usage)?.[lang === "en" ? "label" : "labelAr"] || routing.routing_usage}
                         </div>
                         <Badge variant={routing.is_active ? "default" : "outline"} className="mt-2" data-ai-help="manufacturing_routing_detail.version_status">
-                          {routing.is_active ? "نشط" : "غير نشط"}
+                          {routing.is_active ? t("Active", "نشط") : t("Inactive", "غير نشط")}
                         </Badge>
                       </CardContent>
                     </Card>
                     <Card className="border-slate-200 bg-slate-50/80" data-ai-help="manufacturing_routing_detail.version_selector">
                       <CardContent className="p-4">
-                        <div className="mb-2 text-sm text-slate-500">الإصدار المحدد</div>
+                        <div className="mb-2 text-sm text-slate-500">{t("Selected Version", "الإصدار المحدد")}</div>
                         {routing.versions.length === 0 ? (
-                          <div className="text-sm text-slate-400">لا توجد نسخ بعد</div>
+                          <div className="text-sm text-slate-400">{t("No versions yet", "لا توجد نسخ بعد")}</div>
                         ) : (
                           <Select value={selectedVersionId || ""} onValueChange={setSelectedVersionId}>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="اختر إصدار..." />
+                              <SelectValue placeholder={t("Select a version...", "اختر إصدار...")} />
                             </SelectTrigger>
                             <SelectContent>
                               {routing.versions.map((version) => (
                                 <SelectItem key={version.id} value={version.id}>
-                                  v{version.version_no} — {getRoutingVersionStatusLabel(version.status)}
+                                  v{version.version_no} — {getRoutingVersionStatusLabel(version.status, lang)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -731,7 +770,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                         )}
                         {selectedVersion && (
                           <Badge variant={getRoutingVersionStatusVariant(selectedVersion.status)} className="mt-2">
-                            {getRoutingVersionStatusLabel(selectedVersion.status)}
+                            {getRoutingVersionStatusLabel(selectedVersion.status, lang)}
                           </Badge>
                         )}
                       </CardContent>
@@ -745,13 +784,13 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                         <CardContent className="py-12 text-center">
                           <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                             <GitBranch className="h-10 w-10 text-slate-300" />
-                            <div className="text-lg font-medium text-slate-900">مفيش إصدار مختار</div>
+                            <div className="text-lg font-medium text-slate-900">{t("No version selected", "مفيش إصدار مختار")}</div>
                             <p className="text-sm leading-6 text-slate-500">
-                              أنشئ إصدار جديد أو اختر واحد من اللى فوق.
+                              {t("Create a new version or select one from above.", "أنشئ إصدار جديد أو اختر واحد من اللى فوق.")}
                             </p>
                             <Button onClick={() => setCreateVersionOpen(true)} disabled={!canWrite} className="gap-2">
                               <Plus className="h-4 w-4" />
-                              إنشاء الإصدار الأول
+                              {t("Create First Version", "إنشاء الإصدار الأول")}
                             </Button>
                           </div>
                         </CardContent>
@@ -763,9 +802,12 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                 <CardHeader>
                                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                     <div>
-                                      <CardTitle className="text-base">خطوات التصنيع</CardTitle>
+                                      <CardTitle className="text-base">{t("Manufacturing Steps", "خطوات التصنيع")}</CardTitle>
                                       <CardDescription>
-                                        سلسلة الخطوات المرتبة التي تتحول فيها المواد الخام إلى منتج نهائي — كل خطوة لها مركز عمل وأوقات محددة.
+                                        {t(
+                                          "The ordered sequence of steps that turns raw materials into a finished product — each step has a work center and defined times.",
+                                          "سلسلة الخطوات المرتبة التي تتحول فيها المواد الخام إلى منتج نهائي — كل خطوة لها مركز عمل وأوقات محددة."
+                                        )}
                                       </CardDescription>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
@@ -777,7 +819,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                         data-ai-help="manufacturing_routing_detail.add_operation_button"
                                       >
                                         <Plus className="h-4 w-4" />
-                                        إضافة خطوة
+                                        {t("Add Step", "إضافة خطوة")}
                                       </Button>
                                       <Button
                                         onClick={handleSaveOperations}
@@ -786,7 +828,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                         data-ai-help="manufacturing_routing_detail.save_operations_button"
                                       >
                                         <Save className="h-4 w-4" />
-                                        {savingOperations ? "جاري الحفظ..." : "حفظ العمليات"}
+                                        {savingOperations ? t("Saving...", "جاري الحفظ...") : t("Save Operations", "حفظ العمليات")}
                                       </Button>
                                     </div>
                                   </div>
@@ -798,36 +840,44 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                       <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-500" />
                                       <div className="space-y-2">
                                         <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                                          ما هى خطوات التصنيع؟
+                                          {t("What are manufacturing steps?", "ما هى خطوات التصنيع؟")}
                                         </p>
                                         <p className="text-sm leading-relaxed text-blue-800 dark:text-blue-300">
-                                          هو <strong>خطة العمل التفصيلية</strong> لتصنيع المنتج — يُحدد كل خطوة إنتاجية بالترتيب، ومن أين تتم، وكم تستغرق.
+                                          {lang === "en" ? (
+                                            <>It is the <strong>detailed work plan</strong> for manufacturing the product — defining each production step in order, where it happens, and how long it takes.</>
+                                          ) : (
+                                            <>هو <strong>خطة العمل التفصيلية</strong> لتصنيع المنتج — يُحدد كل خطوة إنتاجية بالترتيب، ومن أين تتم، وكم تستغرق.</>
+                                          )}
                                         </p>
                                         <div className="mt-3 grid gap-2 sm:grid-cols-3">
                                           <div className="flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/5">
                                             <Factory className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
                                             <div>
-                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">مركز العمل</p>
-                                              <p className="text-xs text-blue-700 dark:text-blue-400">القسم أو الماكينة المسؤولة عن الخطوة</p>
+                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">{t("Work Center", "مركز العمل")}</p>
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">{t("The department or machine responsible for the step", "القسم أو الماكينة المسؤولة عن الخطوة")}</p>
                                             </div>
                                           </div>
                                           <div className="flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/5">
                                             <Timer className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
                                             <div>
-                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">الأوقات</p>
-                                              <p className="text-xs text-blue-700 dark:text-blue-400">إعداد + تشغيل + انتظار + نقل (بالدقائق)</p>
+                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">{t("Times", "الأوقات")}</p>
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">{t("Setup + run + queue + move (in minutes)", "إعداد + تشغيل + انتظار + نقل (بالدقائق)")}</p>
                                             </div>
                                           </div>
                                           <div className="flex items-start gap-2 rounded-lg bg-white/60 px-3 py-2 dark:bg-white/5">
                                             <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
                                             <div>
-                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">نقطة الجودة</p>
-                                              <p className="text-xs text-blue-700 dark:text-blue-400">فحص إلزامي قبل الانتقال للخطوة التالية</p>
+                                              <p className="text-xs font-medium text-blue-900 dark:text-blue-200">{t("Quality Checkpoint", "نقطة الجودة")}</p>
+                                              <p className="text-xs text-blue-700 dark:text-blue-400">{t("A mandatory inspection before moving to the next step", "فحص إلزامي قبل الانتقال للخطوة التالية")}</p>
                                             </div>
                                           </div>
                                         </div>
                                         <p className="text-xs text-blue-600 dark:text-blue-400">
-                                          <strong>مثال:</strong> تقطيع (10) &rarr; خياطة (20) &rarr; كي (30) &rarr; تعبئة (40)
+                                          {lang === "en" ? (
+                                            <><strong>Example:</strong> Cutting (10) &rarr; Sewing (20) &rarr; Ironing (30) &rarr; Packing (40)</>
+                                          ) : (
+                                            <><strong>مثال:</strong> تقطيع (10) &rarr; خياطة (20) &rarr; كي (30) &rarr; تعبئة (40)</>
+                                          )}
                                         </p>
                                       </div>
                                     </div>
@@ -835,15 +885,15 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                   {loadingVersion ? (
                                     <div className="flex items-center justify-center gap-2 rounded-2xl border bg-slate-50 p-10 text-slate-500">
                                       <Loader2 className="h-5 w-5 animate-spin" />
-                                      جاري تحميل العمليات...
+                                      {t("Loading operations...", "جاري تحميل العمليات...")}
                                     </div>
                                   ) : operationsDraft.length === 0 ? (
                                     <div className="rounded-2xl border border-dashed p-10 text-center">
                                       <div className="mx-auto flex max-w-md flex-col items-center gap-3">
                                         <Settings2 className="h-8 w-8 text-slate-300" />
-                                        <div className="text-lg font-medium text-slate-900">لا توجد عمليات بعد</div>
+                                        <div className="text-lg font-medium text-slate-900">{t("No operations yet", "لا توجد عمليات بعد")}</div>
                                         <p className="text-sm leading-6 text-slate-500">
-                                          أضف أول خطوة للإصدار. التفعيل محتاج خطوة واحدة على الأقل.
+                                          {t("Add the first step to this version. Activation requires at least one step.", "أضف أول خطوة للإصدار. التفعيل محتاج خطوة واحدة على الأقل.")}
                                         </p>
                                       </div>
                                     </div>
@@ -856,9 +906,9 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                           <CardHeader className="border-b pb-4">
                                             <div className="flex items-center justify-between gap-3">
                                               <div className="space-y-1">
-                                                <CardTitle className="text-base">خطوة #{operation.operation_no || index + 1}</CardTitle>
+                                                <CardTitle className="text-base">{t("Step", "خطوة")} #{operation.operation_no || index + 1}</CardTitle>
                                                 <CardDescription>
-                                                  {workCenter ? buildWorkCenterLabel(workCenter) : "أدخل معرف مركز العمل وسيتم التحقق منه تلقائياً."}
+                                                  {workCenter ? buildWorkCenterLabel(workCenter) : t("Enter the work center ID and it will be validated automatically.", "أدخل معرف مركز العمل وسيتم التحقق منه تلقائياً.")}
                                                 </CardDescription>
                                               </div>
                                               <Button
@@ -874,13 +924,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                           <CardContent className="grid gap-4 pt-6 md:grid-cols-2 xl:grid-cols-4">
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.operation_sequence">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>رقم الخطوة</Label>
+                                                <Label>{t("Step No.", "رقم الخطوة")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    ترتيب الخطوة فى التصنيع. الأفضل مضاعفات 10 (10، 20، 30...) عشان تقدر تدخّل خطوات جديدة بينها بعدين.
+                                                    {t(
+                                                      "The step's order in manufacturing. Multiples of 10 (10, 20, 30...) are best so you can insert new steps in between later.",
+                                                      "ترتيب الخطوة فى التصنيع. الأفضل مضاعفات 10 (10، 20، 30...) عشان تقدر تدخّل خطوات جديدة بينها بعدين."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -901,13 +954,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.operation_code">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>كود الخطوة</Label>
+                                                <Label>{t("Step Code", "كود الخطوة")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    كود مختصر يميّز الخطوة. مثلاً CUT-01 للتقطيع، SEW-02 للخياطة. بيظهر فى التقارير وأوامر العمل.
+                                                    {t(
+                                                      "A short code identifying the step, e.g. CUT-01 for cutting, SEW-02 for sewing. It appears in reports and work orders.",
+                                                      "كود مختصر يميّز الخطوة. مثلاً CUT-01 للتقطيع، SEW-02 للخياطة. بيظهر فى التقارير وأوامر العمل."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -925,13 +981,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_routing_detail.operation_name">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>اسم الخطوة</Label>
+                                                <Label>{t("Step Name", "اسم الخطوة")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    اسم الخطوة الكامل اللى يظهر للعمال وفى أوامر العمل. مثلاً: تقطيع القماش، خياطة الأطراف، كى ومرور نهائى.
+                                                    {t(
+                                                      "The full step name shown to workers and in work orders, e.g. fabric cutting, edge sewing, final ironing and inspection.",
+                                                      "اسم الخطوة الكامل اللى يظهر للعمال وفى أوامر العمل. مثلاً: تقطيع القماش، خياطة الأطراف، كى ومرور نهائى."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -949,21 +1008,24 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2 xl:col-span-2" data-ai-help="manufacturing_routing_detail.work_center">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>مركز العمل</Label>
+                                                <Label>{t("Work Center", "مركز العمل")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    محطة العمل المسؤولة عن تنفيذ الخطوة دى. اختار من القائمة.
+                                                    {t(
+                                                      "The work station responsible for executing this step. Select from the list.",
+                                                      "محطة العمل المسؤولة عن تنفيذ الخطوة دى. اختار من القائمة."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
                                               {allWorkCenters.length === 0 ? (
                                                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                                                  لا توجد مراكز عمل معرّفة بعد.{" "}
+                                                  {t("No work centers defined yet.", "لا توجد مراكز عمل معرّفة بعد.")}{" "}
                                                   <a href="/manufacturing/work-centers" target="_blank" className="font-semibold underline underline-offset-2">
-                                                    أضف مراكز العمل أولاً
+                                                    {t("Add work centers first", "أضف مراكز العمل أولاً")}
                                                   </a>
                                                 </div>
                                               ) : (
@@ -979,7 +1041,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                                   disabled={!canUpdate || !operationsEditable || savingOperations}
                                                 >
                                                   <SelectTrigger>
-                                                    <SelectValue placeholder="اختر مركز العمل..." />
+                                                    <SelectValue placeholder={t("Select a work center...", "اختر مركز العمل...")} />
                                                   </SelectTrigger>
                                                   <SelectContent>
                                                     {allWorkCenters.map((wc) => (
@@ -995,7 +1057,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                                 <div className="rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800">
                                                   <div className="font-medium text-slate-900 dark:text-slate-100">{buildWorkCenterLabel(workCenter)}</div>
                                                   <div className="mt-1">
-                                                    {workCenter.work_center_type || "غير محدد"} · {workCenter.status || "غير محدد"}
+                                                    {workCenter.work_center_type || t("Not specified", "غير محدد")} · {workCenter.status || t("Not specified", "غير محدد")}
                                                     {workCenter.capacity_uom ? ` · ${formatQuantity(workCenter.nominal_capacity_per_hour)} ${workCenter.capacity_uom}/hr` : ""}
                                                   </div>
                                                 </div>
@@ -1003,8 +1065,8 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="flex items-center justify-between rounded-xl border px-4 py-3 xl:col-span-2" data-ai-help="manufacturing_routing_detail.quality_checkpoint">
                                               <div className="space-y-1">
-                                                <div className="font-medium text-slate-900">نقطة مراقبة الجودة</div>
-                                                <div className="text-sm text-slate-500">يفعّل فحص الجودة عند الخطوة دى.</div>
+                                                <div className="font-medium text-slate-900">{t("Quality Control Checkpoint", "نقطة مراقبة الجودة")}</div>
+                                                <div className="text-sm text-slate-500">{t("Enables a quality inspection at this step.", "يفعّل فحص الجودة عند الخطوة دى.")}</div>
                                               </div>
                                               <Switch
                                                 checked={operation.quality_checkpoint_required}
@@ -1020,13 +1082,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.setup_time">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>وقت الإعداد (د)</Label>
+                                                <Label>{t("Setup Time (min)", "وقت الإعداد (د)")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    الوقت اللازم لتجهيز الماكينة أو مكان العمل قبل بدء الإنتاج الفعلي (ضبط الآلة، تحميل المواد...). يُحسب مرة واحدة لكل دفعة بغض النظر عن الكمية.
+                                                    {t(
+                                                      "The time needed to prepare the machine or workplace before actual production starts (machine adjustment, loading materials...). Counted once per batch regardless of quantity.",
+                                                      "الوقت اللازم لتجهيز الماكينة أو مكان العمل قبل بدء الإنتاج الفعلي (ضبط الآلة، تحميل المواد...). يُحسب مرة واحدة لكل دفعة بغض النظر عن الكمية."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1047,13 +1112,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2" data-ai-help="manufacturing_routing_detail.run_time">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>وقت التشغيل / وحدة (د)</Label>
+                                                <Label>{t("Run Time / Unit (min)", "وقت التشغيل / وحدة (د)")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    الوقت اللى محتاجاه لإنتاج وحدة واحدة فى الخطوة دى. هيتضرب فى الكمية الإجمالية للحصول على إجمالى وقت الخطوة.
+                                                    {t(
+                                                      "The time needed to produce one unit at this step. It is multiplied by the total quantity to get the step's total time.",
+                                                      "الوقت اللى محتاجاه لإنتاج وحدة واحدة فى الخطوة دى. هيتضرب فى الكمية الإجمالية للحصول على إجمالى وقت الخطوة."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1074,13 +1142,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>وقت الانتظار (د)</Label>
+                                                <Label>{t("Queue Time (min)", "وقت الانتظار (د)")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    المدة التي تنتظرها المادة في قائمة الانتظار قبل أن يبدأ مركز العمل بمعالجتها. يرتفع في خطوط الإنتاج المزدحمة.
+                                                    {t(
+                                                      "How long the material waits in the queue before the work center starts processing it. Increases on busy production lines.",
+                                                      "المدة التي تنتظرها المادة في قائمة الانتظار قبل أن يبدأ مركز العمل بمعالجتها. يرتفع في خطوط الإنتاج المزدحمة."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1101,13 +1172,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>وقت النقل (د)</Label>
+                                                <Label>{t("Move Time (min)", "وقت النقل (د)")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    الوقت اللى يستغرقه نقل المواد من محطة العمل دى للى بعدها بعد ما الخطوة تخلص.
+                                                    {t(
+                                                      "The time it takes to move materials from this work station to the next one after the step is finished.",
+                                                      "الوقت اللى يستغرقه نقل المواد من محطة العمل دى للى بعدها بعد ما الخطوة تخلص."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1128,13 +1202,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>وقت العمالة (د)</Label>
+                                                <Label>{t("Labor Time (min)", "وقت العمالة (د)")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    الوقت اللى يقضيه العامل فى تنفيذ الخطوة. بيُستخدم لحساب تكلفة الأجور.
+                                                    {t(
+                                                      "The time the worker spends performing the step. Used to calculate labor costs.",
+                                                      "الوقت اللى يقضيه العامل فى تنفيذ الخطوة. بيُستخدم لحساب تكلفة الأجور."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1155,13 +1232,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>وقت الآلة (د)</Label>
+                                                <Label>{t("Machine Time (min)", "وقت الآلة (د)")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    الوقت الفعلي الذي تعمل فيه الماكينة بشكل مستقل. قد يختلف عن وقت العمالة (مثلاً: الماكينة تعمل 30 دقيقة والعامل يراقبها 5 دقائق فقط).
+                                                    {t(
+                                                      "The actual time the machine runs independently. It may differ from labor time (e.g. the machine runs for 30 minutes while the worker monitors it for only 5).",
+                                                      "الوقت الفعلي الذي تعمل فيه الماكينة بشكل مستقل. قد يختلف عن وقت العمالة (مثلاً: الماكينة تعمل 30 دقيقة والعامل يراقبها 5 دقائق فقط)."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1182,13 +1262,16 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                             </div>
                                             <div className="space-y-2 xl:col-span-4" data-ai-help="manufacturing_routing_detail.instructions">
                                               <div className="flex items-center gap-1.5">
-                                                <Label>تعليمات التنفيذ</Label>
+                                                <Label>{t("Work Instructions", "تعليمات التنفيذ")}</Label>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
                                                     <Info className="h-3.5 w-3.5 cursor-help text-slate-400" />
                                                   </TooltipTrigger>
                                                   <TooltipContent side="top" className="max-w-xs">
-                                                    ملاحظات وإرشادات للخطوة — هتُطبع فى أوامر العمل وتظهر للعمال على الخط. مثلاً: استخدم لاصق درجة B فقط.
+                                                    {t(
+                                                      "Notes and guidance for the step — printed on work orders and shown to workers on the line, e.g. use grade-B adhesive only.",
+                                                      "ملاحظات وإرشادات للخطوة — هتُطبع فى أوامر العمل وتظهر للعمال على الخط. مثلاً: استخدم لاصق درجة B فقط."
+                                                    )}
                                                   </TooltipContent>
                                                 </Tooltip>
                                               </div>
@@ -1215,19 +1298,19 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                               {activeSnapshot?.operations.length ? (
                                 <Card data-ai-help="manufacturing_routing_detail.operations_table">
                                   <CardHeader>
-                                    <CardTitle className="text-base">الإصدار المحفوظ دلوقتى</CardTitle>
-                                    <CardDescription>عرض سريع للإصدار اللى محفوظ فعلاً بعد آخر تحديث.</CardDescription>
+                                    <CardTitle className="text-base">{t("Currently Saved Version", "الإصدار المحفوظ دلوقتى")}</CardTitle>
+                                    <CardDescription>{t("A quick view of what is actually saved after the last update.", "عرض سريع للإصدار اللى محفوظ فعلاً بعد آخر تحديث.")}</CardDescription>
                                   </CardHeader>
                                   <CardContent>
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead data-ai-help="manufacturing_routing_detail.operation_sequence">الرقم</TableHead>
-                                          <TableHead data-ai-help="manufacturing_routing_detail.operation_code">الكود</TableHead>
-                                          <TableHead data-ai-help="manufacturing_routing_detail.operation_name">الاسم</TableHead>
-                                          <TableHead data-ai-help="manufacturing_routing_detail.work_center">مركز العمل</TableHead>
-                                          <TableHead data-ai-help="manufacturing_routing_detail.run_time">وقت التشغيل/وحدة</TableHead>
-                                          <TableHead data-ai-help="manufacturing_routing_detail.quality_checkpoint">مراقبة الجودة</TableHead>
+                                          <TableHead data-ai-help="manufacturing_routing_detail.operation_sequence">{t("No.", "الرقم")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_routing_detail.operation_code">{t("Code", "الكود")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_routing_detail.operation_name">{t("Name", "الاسم")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_routing_detail.work_center">{t("Work Center", "مركز العمل")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_routing_detail.run_time">{t("Run Time/Unit", "وقت التشغيل/وحدة")}</TableHead>
+                                          <TableHead data-ai-help="manufacturing_routing_detail.quality_checkpoint">{t("Quality Control", "مراقبة الجودة")}</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
@@ -1240,7 +1323,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                               {buildWorkCenterLabel(operation.work_center)}
                                             </TableCell>
                                             <TableCell>{formatQuantity(operation.run_time_minutes_per_unit, 4)}</TableCell>
-                                            <TableCell>{operation.quality_checkpoint_required ? "مطلوب" : "—"}</TableCell>
+                                            <TableCell>{operation.quality_checkpoint_required ? t("Required", "مطلوب") : "—"}</TableCell>
                                           </TableRow>
                                         ))}
                                       </TableBody>
@@ -1257,7 +1340,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                 <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
                                   <div className="flex items-center gap-2">
                                     <ShieldCheck className="h-4 w-4 text-indigo-600" />
-                                    إدارة الإصدار
+                                    {t("Version Management", "إدارة الإصدار")}
                                   </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-6 pb-6">
@@ -1267,10 +1350,10 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                         <div className="flex items-center gap-2">
                                           <span className="text-lg font-semibold text-slate-900">v{selectedVersion.version_no}</span>
                                           <Badge variant={getRoutingVersionStatusVariant(selectedVersion.status)} data-ai-help="manufacturing_routing_detail.version_status">
-                                            {getRoutingVersionStatusLabel(selectedVersion.status)}
+                                            {getRoutingVersionStatusLabel(selectedVersion.status, lang)}
                                           </Badge>
                                         </div>
-                                        <p className="text-sm text-slate-500">{getRoutingVersionLockMessage(selectedVersion.status)}</p>
+                                        <p className="text-sm text-slate-500">{getRoutingVersionLockMessage(selectedVersion.status, lang)}</p>
                                       </div>
                                       <div className="text-xs text-slate-400">{formatDateTime(selectedVersion.updated_at)}</div>
                                     </div>
@@ -1278,46 +1361,46 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                       <Button variant="outline" onClick={() => setConfirmAction("activate")}
                                         disabled={!canUpdate || !canActivateRoutingVersion(selectedVersion.status) || loadingVersion || activationRequiresSavedOperation || Boolean(runningAction)}
                                         className="gap-2" data-ai-help="manufacturing_routing_detail.activate_button">
-                                        <PlayCircle className="h-4 w-4" />تفعيل
+                                        <PlayCircle className="h-4 w-4" />{t("Activate", "تفعيل")}
                                       </Button>
                                       <Button variant="outline" onClick={() => setConfirmAction("deactivate")}
                                         disabled={!canUpdate || !canDeactivateRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
                                         className="gap-2" data-ai-help="manufacturing_routing_detail.deactivate_button">
-                                        <PauseCircle className="h-4 w-4" />إيقاف
+                                        <PauseCircle className="h-4 w-4" />{t("Deactivate", "إيقاف")}
                                       </Button>
                                       <Button variant="outline" onClick={() => setConfirmAction("archive")}
                                         disabled={!canUpdate || !canArchiveRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
                                         className="gap-2" data-ai-help="manufacturing_routing_detail.archive_button">
-                                        <Archive className="h-4 w-4" />أرشفة
+                                        <Archive className="h-4 w-4" />{t("Archive", "أرشفة")}
                                       </Button>
                                       <Button variant="destructive" onClick={() => setConfirmAction("delete-version")}
                                         disabled={!canDelete || !canDeleteRoutingVersion(selectedVersion.status) || Boolean(runningAction)}
                                         className="gap-2">
-                                        <Trash2 className="h-4 w-4" />حذف الإصدار
+                                        <Trash2 className="h-4 w-4" />{t("Delete Version", "حذف الإصدار")}
                                       </Button>
                                     </div>
                                     <Separator />
                                     <div className="grid gap-4 md:grid-cols-2">
                                       <div className="space-y-2">
-                                        <Label>تاريخ السريان من</Label>
+                                        <Label>{t("Effective From", "تاريخ السريان من")}</Label>
                                         <Input type="datetime-local" value={versionForm.effective_from}
                                           onChange={(event) => setVersionForm((current) => ({ ...current, effective_from: event.target.value }))}
                                           disabled={!canUpdate || !versionEditable || savingVersionHeader} />
                                       </div>
                                       <div className="space-y-2">
-                                        <Label>تاريخ السريان إلى</Label>
+                                        <Label>{t("Effective To", "تاريخ السريان إلى")}</Label>
                                         <Input type="datetime-local" value={versionForm.effective_to}
                                           onChange={(event) => setVersionForm((current) => ({ ...current, effective_to: event.target.value }))}
                                           disabled={!canUpdate || !versionEditable || savingVersionHeader} />
                                       </div>
                                       <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
-                                        <Label>ملخص التغييرات</Label>
+                                        <Label>{t("Change Summary", "ملخص التغييرات")}</Label>
                                         <Textarea value={versionForm.change_summary}
                                           onChange={(event) => setVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                                           disabled={!canUpdate || !versionEditable || savingVersionHeader} />
                                       </div>
                                       <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
-                                        <Label>ملاحظات</Label>
+                                        <Label>{t("Notes", "ملاحظات")}</Label>
                                         <Textarea value={versionForm.notes}
                                           onChange={(event) => setVersionForm((current) => ({ ...current, notes: event.target.value }))}
                                           disabled={!canUpdate || !versionEditable || savingVersionHeader} />
@@ -1327,7 +1410,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                       disabled={!canUpdate || !versionEditable || savingVersionHeader}
                                       className="gap-2" data-ai-help="manufacturing_routing_detail.version_status">
                                       <Save className="h-4 w-4" />
-                                      {savingVersionHeader ? "جارٍ الحفظ..." : "حفظ الإصدار"}
+                                      {savingVersionHeader ? t("Saving...", "جارٍ الحفظ...") : t("Save Version", "حفظ الإصدار")}
                                     </Button>
                                   </div>
                                 </AccordionContent>
@@ -1338,42 +1421,42 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                 <AccordionTrigger className="px-6 py-4 text-base font-semibold hover:no-underline">
                                   <div className="flex items-center gap-2">
                                     <Settings2 className="h-4 w-4 text-cyan-600" />
-                                    إعدادات المسار
+                                    {t("Routing Settings", "إعدادات المسار")}
                                   </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-6 pb-6">
                                   <div className="grid gap-4 md:grid-cols-2">
                                     <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_code">
-                                      <Label>كود المسار</Label>
+                                      <Label>{t("Routing Code", "كود المسار")}</Label>
                                       <Input value={headerForm.routing_code}
                                         onChange={(event) => setHeaderForm((current) => ({ ...current, routing_code: event.target.value }))}
                                         disabled={!canUpdate || savingHeader} />
                                     </div>
                                     <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_name">
-                                      <Label>اسم المسار</Label>
+                                      <Label>{t("Routing Name", "اسم المسار")}</Label>
                                       <Input value={headerForm.routing_name}
                                         onChange={(event) => setHeaderForm((current) => ({ ...current, routing_name: event.target.value }))}
                                         disabled={!canUpdate || savingHeader} />
                                     </div>
                                     <div className="space-y-2" data-ai-help="manufacturing_routing_detail.finished_product">
-                                      <Label>المنتج المالك</Label>
+                                      <Label>{t("Owner Product", "المنتج المالك")}</Label>
                                       <Input value={buildProductLabel(ownerProduct)} disabled />
                                     </div>
                                     <div className="space-y-2" data-ai-help="manufacturing_routing_detail.routing_usage">
-                                      <Label>نوع الاستخدام</Label>
-                                      <Input value={ROUTING_USAGE_OPTIONS.find((o) => o.value === routing.routing_usage)?.labelAr || routing.routing_usage} disabled />
+                                      <Label>{t("Usage Type", "نوع الاستخدام")}</Label>
+                                      <Input value={ROUTING_USAGE_OPTIONS.find((o) => o.value === routing.routing_usage)?.[lang === "en" ? "label" : "labelAr"] || routing.routing_usage} disabled />
                                     </div>
                                     <div className="flex items-center justify-between rounded-xl border px-4 py-3 md:col-span-2" data-ai-help="manufacturing_routing_detail.version_status">
                                       <div className="space-y-1">
-                                        <div className="font-medium text-slate-900">حالة التفعيل</div>
-                                        <div className="text-sm text-slate-500">تخص المسار نفسه مش الإصدار.</div>
+                                        <div className="font-medium text-slate-900">{t("Activation Status", "حالة التفعيل")}</div>
+                                        <div className="text-sm text-slate-500">{t("Applies to the routing itself, not the version.", "تخص المسار نفسه مش الإصدار.")}</div>
                                       </div>
                                       <Switch checked={headerForm.is_active}
                                         onCheckedChange={(checked) => setHeaderForm((current) => ({ ...current, is_active: Boolean(checked) }))}
                                         disabled={!canUpdate || savingHeader} />
                                     </div>
                                     <div className="space-y-2 md:col-span-2">
-                                      <Label>الوصف</Label>
+                                      <Label>{t("Description", "الوصف")}</Label>
                                       <Textarea value={headerForm.description}
                                         onChange={(event) => setHeaderForm((current) => ({ ...current, description: event.target.value }))}
                                         disabled={!canUpdate || savingHeader} />
@@ -1381,7 +1464,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                     <div className="md:col-span-2">
                                       <Button onClick={handleSaveHeader} disabled={!canUpdate || savingHeader} className="gap-2" data-ai-help="manufacturing_routing_detail.routing_name">
                                         <Save className="h-4 w-4" />
-                                        {savingHeader ? "جاري الحفظ..." : "حفظ البيانات الأساسية"}
+                                        {savingHeader ? t("Saving...", "جاري الحفظ...") : t("Save Basic Details", "حفظ البيانات الأساسية")}
                                       </Button>
                                     </div>
                                   </div>
@@ -1398,11 +1481,11 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
         <Dialog open={createVersionOpen} onOpenChange={setCreateVersionOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>إنشاء إصدار جديد</DialogTitle>
+              <DialogTitle>{t("Create New Version", "إنشاء إصدار جديد")}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-2 md:grid-cols-2">
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.create_version_button">
-                <Label>نسخ من إصدار موجود</Label>
+                <Label>{t("Clone From Existing Version", "نسخ من إصدار موجود")}</Label>
                 <Select
                   value={createVersionForm.clone_from_version_id || "none"}
                   onValueChange={(value) =>
@@ -1413,13 +1496,13 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                   }
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="ابدأ من إصدار فاضى" />
+                    <SelectValue placeholder={t("Start from an empty version", "ابدأ من إصدار فاضى")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">بدون استنساخ</SelectItem>
+                    <SelectItem value="none">{t("No cloning", "بدون استنساخ")}</SelectItem>
                     {(routing?.versions || []).map((version) => (
                       <SelectItem key={version.id} value={version.id}>
-                        v{version.version_no} · {getRoutingVersionStatusLabel(version.status)}
+                        v{version.version_no} · {getRoutingVersionStatusLabel(version.status, lang)}
                         {version.updated_at ? ` · ${formatDateTime(version.updated_at)}` : ""}
                       </SelectItem>
                     ))}
@@ -1427,7 +1510,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>تاريخ السريان من</Label>
+                <Label>{t("Effective From", "تاريخ السريان من")}</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_from)}
@@ -1435,7 +1518,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <Label>تاريخ السريان إلى</Label>
+                <Label>{t("Effective To", "تاريخ السريان إلى")}</Label>
                 <Input
                   type="datetime-local"
                   value={isoToLocalDateTimeInput(createVersionForm.effective_to)}
@@ -1443,14 +1526,14 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 />
               </div>
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
-                <Label>ملخص التغييرات</Label>
+                <Label>{t("Change Summary", "ملخص التغييرات")}</Label>
                 <Textarea
                   value={typeof createVersionForm.change_summary === "string" ? createVersionForm.change_summary : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, change_summary: event.target.value }))}
                 />
               </div>
               <div className="space-y-2 md:col-span-2" data-ai-help="manufacturing_routing_detail.instructions">
-                <Label>ملاحظات</Label>
+                <Label>{t("Notes", "ملاحظات")}</Label>
                 <Textarea
                   value={typeof createVersionForm.notes === "string" ? createVersionForm.notes : ""}
                   onChange={(event) => setCreateVersionForm((current) => ({ ...current, notes: event.target.value }))}
@@ -1459,10 +1542,10 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
             </div>
             <DialogFooter className="gap-2">
               <Button variant="outline" onClick={() => setCreateVersionOpen(false)}>
-                إلغاء
+                {t("Cancel", "إلغاء")}
               </Button>
               <Button onClick={handleCreateVersion} disabled={runningAction === "create-version"} data-ai-help="manufacturing_routing_detail.create_version_button">
-                {runningAction === "create-version" ? "جارٍ الإنشاء..." : "إنشاء الإصدار"}
+                {runningAction === "create-version" ? t("Creating...", "جارٍ الإنشاء...") : t("Create Version", "إنشاء الإصدار")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1480,7 +1563,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
               <AlertDialogDescription>{confirmDialogMeta?.description}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={Boolean(runningAction)}>إلغاء</AlertDialogCancel>
+              <AlertDialogCancel disabled={Boolean(runningAction)}>{t("Cancel", "إلغاء")}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   void handleConfirmAction()
@@ -1489,7 +1572,7 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                 className={confirmDialogMeta?.actionClassName}
                 data-ai-help={confirmAction === "activate" ? "manufacturing_routing_detail.activate_button" : confirmAction === "deactivate" ? "manufacturing_routing_detail.deactivate_button" : confirmAction === "archive" ? "manufacturing_routing_detail.archive_button" : "manufacturing_routing_detail.version_status"}
               >
-                {runningAction ? "جاري التنفيذ..." : confirmDialogMeta?.actionLabel}
+                {runningAction ? t("Processing...", "جاري التنفيذ...") : confirmDialogMeta?.actionLabel}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

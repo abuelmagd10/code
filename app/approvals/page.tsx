@@ -50,6 +50,14 @@ interface PendingMaterialIssue {
 // /api/supplier-payments/[id]/approve endpoint for actions so the
 // governance layer (SupplierPaymentCommandService + JE creation)
 // stays intact.
+// v3.74.521 — enriched with everything the owner needs to decide in the
+// inbox without opening the payment page:
+//   - payment_method + account_name (which cash/bank the money leaves)
+//   - payment_date (actual, not the request timestamp)
+//   - bill_outstanding (was the payment sized correctly?)
+//   - base_amount + exchange_rate (FX visibility for non-EGP)
+//   - notes + reference_number (context provided by the accountant)
+//   - requester email (WHO asked for approval)
 interface PendingSupplierPayment {
   id: string
   payment_no: string | null
@@ -62,6 +70,19 @@ interface PendingSupplierPayment {
   warehouse_name: string | null
   requested_at: string
   requested_by_email: string | null
+  // v3.74.521 — enrichment fields
+  payment_date: string | null
+  payment_method: string | null
+  account_name: string | null
+  account_currency: string | null
+  bill_total: number | null
+  bill_paid: number | null
+  bill_outstanding: number | null
+  base_amount: number | null
+  base_currency: string | null
+  exchange_rate: number | null
+  notes: string | null
+  reference_number: string | null
   type: "supplier_payment"
 }
 
@@ -1261,8 +1282,11 @@ function ApprovalsContent() {
         const { data: pays } = await supabase
           .from("payments")
           .select(`
-            id, reference_number, amount, currency_code, original_currency, created_at, created_by,
-            supplier_id, branch_id, warehouse_id, bill_id,
+            id, reference_number, amount, currency_code, original_currency,
+            base_currency_amount, exchange_rate,
+            payment_date, payment_method, notes,
+            created_at, created_by, created_by_user_id,
+            supplier_id, branch_id, warehouse_id, bill_id, account_id,
             branches(name),
             warehouses(name)
           `)
@@ -1273,32 +1297,68 @@ function ApprovalsContent() {
           .limit(100)
         // v3.74.503 — payments has NO FK to suppliers/bills, so PostgREST
         // embeds fail with 400. Batch-fetch the names in a second pass.
+        // v3.74.521 — same for accounts + user emails (also unlinked FKs).
+        // We also fetch the bills' outstanding amounts (total - paid) so
+        // the owner can spot over- and under-payments before deciding.
         const paySupplierIds = Array.from(new Set((pays || []).map((p: any) => p.supplier_id).filter(Boolean)))
         const payBillIds = Array.from(new Set((pays || []).map((p: any) => p.bill_id).filter(Boolean)))
-        const [paySupsRes, payBillsRes] = await Promise.all([
+        const payAccountIds = Array.from(new Set((pays || []).map((p: any) => p.account_id).filter(Boolean)))
+        const payUserIds = Array.from(new Set((pays || [])
+          .map((p: any) => p.created_by_user_id || p.created_by)
+          .filter(Boolean)))
+        const [paySupsRes, payBillsRes, payAcctsRes, payUsersRes] = await Promise.all([
           paySupplierIds.length
             ? supabase.from("suppliers").select("id, name").in("id", paySupplierIds)
             : Promise.resolve({ data: [] as any[] }),
           payBillIds.length
-            ? supabase.from("bills").select("id, bill_number").in("id", payBillIds)
+            ? supabase.from("bills").select("id, bill_number, total_amount, paid_amount, currency_code").in("id", payBillIds)
+            : Promise.resolve({ data: [] as any[] }),
+          payAccountIds.length
+            ? supabase.from("chart_of_accounts").select("id, account_name, currency_code").in("id", payAccountIds)
+            : Promise.resolve({ data: [] as any[] }),
+          payUserIds.length
+            ? supabase.from("user_profiles").select("id, email").in("id", payUserIds)
             : Promise.resolve({ data: [] as any[] }),
         ])
         const paySupMap = new Map(((paySupsRes.data || []) as any[]).map((s: any) => [s.id, s.name]))
-        const payBillMap = new Map(((payBillsRes.data || []) as any[]).map((b: any) => [b.id, b.bill_number]))
-        setSupplierPayments((pays || []).map((p: any) => ({
-          id: p.id,
-          payment_no: p.reference_number ?? null,
-          supplier_name: paySupMap.get(p.supplier_id) ?? null,
-          amount: Number(p.amount || 0),
-          currency: String(p.original_currency || p.currency_code || "EGP"),
-          bill_id: p.bill_id ?? null,
-          bill_no: payBillMap.get(p.bill_id) ?? null,
-          branch_name: p.branches?.name ?? null,
-          warehouse_name: p.warehouses?.name ?? null,
-          requested_at: p.created_at,
-          requested_by_email: null,
-          type: "supplier_payment" as const,
-        })))
+        const payBillMap = new Map(((payBillsRes.data || []) as any[]).map((b: any) => [b.id, b]))
+        const payAcctMap = new Map(((payAcctsRes.data || []) as any[]).map((a: any) => [a.id, a]))
+        const payUserMap = new Map(((payUsersRes.data || []) as any[]).map((u: any) => [u.id, u.email]))
+        setSupplierPayments((pays || []).map((p: any) => {
+          const billRow = p.bill_id ? payBillMap.get(p.bill_id) : null
+          const acctRow = p.account_id ? payAcctMap.get(p.account_id) : null
+          const billTotal = billRow ? Number(billRow.total_amount || 0) : null
+          const billPaid = billRow ? Number(billRow.paid_amount || 0) : null
+          return {
+            id: p.id,
+            payment_no: p.reference_number ?? null,
+            supplier_name: paySupMap.get(p.supplier_id) ?? null,
+            amount: Number(p.amount || 0),
+            currency: String(p.original_currency || p.currency_code || "EGP"),
+            bill_id: p.bill_id ?? null,
+            bill_no: billRow?.bill_number ?? null,
+            branch_name: p.branches?.name ?? null,
+            warehouse_name: p.warehouses?.name ?? null,
+            requested_at: p.created_at,
+            requested_by_email: payUserMap.get(p.created_by_user_id || p.created_by) ?? null,
+            // v3.74.521 — enrichment
+            payment_date: p.payment_date ?? null,
+            payment_method: p.payment_method ?? null,
+            account_name: acctRow?.account_name ?? null,
+            account_currency: acctRow?.currency_code ?? null,
+            bill_total: billTotal,
+            bill_paid: billPaid,
+            bill_outstanding: billTotal != null && billPaid != null
+              ? Number((billTotal - billPaid).toFixed(2))
+              : null,
+            base_amount: p.base_currency_amount != null ? Number(p.base_currency_amount) : null,
+            base_currency: "EGP",
+            exchange_rate: p.exchange_rate != null ? Number(p.exchange_rate) : null,
+            notes: p.notes ?? null,
+            reference_number: p.reference_number ?? null,
+            type: "supplier_payment" as const,
+          }
+        }))
       } catch {
         setSupplierPayments([])
       }
@@ -3290,22 +3350,72 @@ function ApprovalsContent() {
                                 {t("دفعة مورد", "Supplier Payment")} · {p.payment_no ?? t("بدون رقم", "(no number)")}
                               </p>
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                👤 {p.supplier_name ?? "—"}
-                                {p.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: {p.bill_no}</>}
+                                🏭 <span className="font-semibold text-foreground">{p.supplier_name ?? "—"}</span>
+                                {p.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{p.bill_no}</span></>}
                               </p>
+                              {/* v3.74.521 — bill outstanding vs. payment amount so
+                                  the owner spots over-/under-payments at a glance. */}
+                              {p.bill_outstanding != null && (
+                                <p className="text-xs mt-0.5">
+                                  <span className="text-muted-foreground">{t("متبقى الفاتورة", "Bill outstanding")}: </span>
+                                  <span className={`font-semibold ${p.amount > p.bill_outstanding + 0.01 ? "text-red-600" : "text-emerald-600"}`}>
+                                    {fmtMoney(p.bill_outstanding)} {p.currency}
+                                  </span>
+                                  {p.amount > p.bill_outstanding + 0.01 && (
+                                    <span className="ms-1 text-red-600 font-bold">
+                                      · ⚠️ {t("الدفعة أكبر من المتبقى", "Overpayment")}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
                               <p className="text-xs mt-1">
                                 <span className="font-semibold text-indigo-700 dark:text-indigo-300">
-                                  {t("القيمة", "Amount")}: {fmtMoney(p.amount)} {p.currency}
+                                  💰 {t("القيمة", "Amount")}: {fmtMoney(p.amount)} {p.currency}
                                 </span>
+                                {/* v3.74.521 — FX rate + base equivalent for non-EGP payments */}
+                                {p.currency !== "EGP" && p.base_amount != null && (
+                                  <span className="ms-2 text-muted-foreground">
+                                    ≈ {fmtMoney(p.base_amount)} {p.base_currency}
+                                    {p.exchange_rate != null && <> · {t("سعر الصرف", "FX")}: {p.exchange_rate.toFixed(4)}</>}
+                                  </span>
+                                )}
                               </p>
+                              {/* v3.74.521 — payment method + source account */}
+                              {(p.payment_method || p.account_name) && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  💳 {p.payment_method === "cash" ? t("نقدى", "Cash")
+                                      : p.payment_method === "bank" || p.payment_method === "bank_transfer" ? t("تحويل بنكى", "Bank transfer")
+                                      : p.payment_method === "check" || p.payment_method === "cheque" ? t("شيك", "Check")
+                                      : p.payment_method ?? t("طريقة الدفع", "Method")}
+                                  {p.account_name && <> · 🏦 <span className="font-medium text-foreground">{p.account_name}</span></>}
+                                  {p.account_currency && p.account_currency !== p.currency && (
+                                    <span className="ms-1 text-amber-600">
+                                      ⚠️ {t("عملة الحساب", "Account currency")}: {p.account_currency}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
                               {p.branch_name && (
                                 <p className="text-xs text-muted-foreground mt-1">
                                   🏢 {p.branch_name}{p.warehouse_name && <> · 🏬 {p.warehouse_name}</>}
                                 </p>
                               )}
+                              {/* v3.74.521 — actual payment date + requested-at + requester */}
                               <p className="text-xs text-muted-foreground mt-1">
-                                📅 {fmtDate(p.requested_at)}
+                                📅 {t("تاريخ الدفع", "Payment date")}: {fmtDate(p.payment_date || p.requested_at)}
+                                <> · ⏱️ {t("طُلب فى", "Requested")}: {fmtDate(p.requested_at)}</>
                               </p>
+                              {p.requested_by_email && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  ✍️ {t("طلب الاعتماد", "Requested by")}: <span className="font-medium">{p.requested_by_email}</span>
+                                </p>
+                              )}
+                              {/* v3.74.521 — accountant's note gives owner the "why" */}
+                              {p.notes && (
+                                <p className="text-xs mt-1 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border-l-2 border-amber-400">
+                                  📝 {p.notes}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
