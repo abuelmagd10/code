@@ -1,0 +1,38 @@
+-- v3.74.525 — Owner rejected v3.74.524's correction modal design. The
+-- standalone currency dropdown listed all 27 currencies inline as a
+-- wall of text, and the modal had different mechanics than the
+-- create-payment form the same accountant uses every day. Owner asked
+-- for the modal to behave "same as pay-supplier form on the payments
+-- page".
+--
+-- The create-payment form (v3.74.516 pattern):
+--   - Account is the primary driver.
+--   - Selecting an account auto-syncs the payment currency to that
+--     account's currency; no separate currency dropdown.
+--   - Amount + currency badge in one input.
+--   - Method dropdown filters based on account type (cash-only
+--     accounts hide transfer/check).
+--   - Reference number appears only for transfer/check.
+--   - ExchangeRateSelector (API dropdown + manual override) replaces
+--     any raw rate input, and only shows when currency != base.
+--
+-- v3.74.525 rebuilds the "Proposed changes" section of the correction
+-- modal to mirror that pattern exactly:
+--   1. Account is the top field. onChange auto-derives:
+--        - original_currency ← account's currency (if different)
+--        - exchange_rate  ← cleared when account currency = base
+--   2. Amount input shows the effective currency inline as a badge.
+--   3. Amber banner surfaces any account/currency mismatch.
+--   4. Method dropdown filters cash-only via isCashAccount().
+--   5. Reference input renders only for transfer/check.
+--   6. ExchangeRateSelector renders only when effective currency
+--      != base currency.
+--
+-- The server route (resubmit-after-reject) is unchanged from v3.74.524
+-- — it already accepts original_currency + exchange_rate and re-derives
+-- the whole triple. The redesign is purely UI: the accountant now
+-- interacts with the correction the same way they interact with the
+-- create form.
+--
+-- No DB schema change. This migration file is a doc stamp so the
+-- release script's version-grep guard finds a matching migration.

@@ -3867,72 +3867,138 @@ export default function PaymentsPage() {
                   <Textarea value={correctionReason} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCorrectionReason(e.target.value)} className="mt-1" rows={2} placeholder={appLang === 'en' ? 'Why is the original wrong?' : 'لماذا الدَّفعَة الأَصلية خَاطِئَة؟'} />
                 </div>
 
+                {/* v3.74.525 — align with the create-payment form (v3.74.516):
+                    Account is the primary driver. When the accountant picks
+                    an account the payment currency AUTO-syncs to that
+                    account's currency; the standalone currency dropdown
+                    is gone. ExchangeRateSelector replaces the raw rate
+                    input. Method options filter by account type
+                    (cash-only accounts hide transfer/check). */}
                 <div className="border-t pt-3">
                   <div className="text-sm font-semibold mb-2 text-emerald-700 dark:text-emerald-300">
                     {appLang === 'en' ? 'Proposed changes (leave blank to keep the original)' : 'التَّعديلات المُقتَرَحَة (اترُك فارِغاً للإِبقاء كما هو)'}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <Label>{appLang === 'en' ? 'Amount' : 'المَبلَغ'}</Label>
-                      <Input type="number" step="0.01" value={correctionFields.amount} onChange={(e) => setCorrectionFields({ ...correctionFields, amount: e.target.value })} />
-                    </div>
-                    {/* v3.74.524 — currency + FX rate so a payment recorded
-                        in the wrong currency can be corrected here. */}
-                    <div>
-                      <Label>{appLang === 'en' ? 'Currency' : 'العُملَة'}</Label>
-                      <select
-                        className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900"
-                        value={correctionFields.original_currency}
-                        onChange={(e) => setCorrectionFields({ ...correctionFields, original_currency: e.target.value })}
-                      >
-                        <option value="">{appLang === 'en' ? 'Keep original' : 'إِبقاء الأَصلى'}</option>
-                        {currencies.map((c) => (
-                          <option key={c.code} value={c.code}>{c.code} — {appLang === 'en' ? c.name : (c.name_ar || c.name)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <Label>
-                        {appLang === 'en' ? 'FX rate (to EGP)' : 'سعر الصرف (إلى الجنيه)'}
-                        <span className="text-[10px] text-muted-foreground ms-1">
-                          ({appLang === 'en' ? 'blank = auto' : 'فارغ = تلقائى'})
-                        </span>
-                      </Label>
-                      <Input
-                        type="number" step="0.0001" min="0"
-                        value={correctionFields.exchange_rate}
-                        onChange={(e) => setCorrectionFields({ ...correctionFields, exchange_rate: e.target.value })}
-                        placeholder={String(correctionPayment.exchange_rate ?? '')}
-                      />
-                    </div>
-                    <div>
-                      <Label>{appLang === 'en' ? 'Date' : 'التاريخ'}</Label>
-                      <Input type="date" value={correctionFields.payment_date} onChange={(e) => setCorrectionFields({ ...correctionFields, payment_date: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label>{appLang === 'en' ? 'Account' : 'الحِساب'}</Label>
-                      <select className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900" value={correctionFields.account_id} onChange={(e) => setCorrectionFields({ ...correctionFields, account_id: e.target.value })}>
-                        <option value="">{appLang === 'en' ? 'Keep original' : 'إِبقاء الأَصلى'}</option>
-                        {accounts.map(a => (<option key={a.id} value={a.id}>{a.account_name} ({a.account_code})</option>))}
-                      </select>
-                    </div>
-                    <div>
-                      <Label>{appLang === 'en' ? 'Method' : 'طَريقَة الدَّفع'}</Label>
-                      <select className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900" value={correctionFields.payment_method} onChange={(e) => setCorrectionFields({ ...correctionFields, payment_method: e.target.value })}>
-                        <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
-                        <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
-                        <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
-                      </select>
-                    </div>
-                    <div className="md:col-span-2">
-                      <Label>{appLang === 'en' ? 'Reference' : 'رَقم المَرجع'}</Label>
-                      <Input value={correctionFields.reference_number} onChange={(e) => setCorrectionFields({ ...correctionFields, reference_number: e.target.value })} />
-                    </div>
-                    <div className="md:col-span-2">
-                      <Label>{appLang === 'en' ? 'Notes' : 'مُلاحَظات'}</Label>
-                      <Input value={correctionFields.notes} onChange={(e) => setCorrectionFields({ ...correctionFields, notes: e.target.value })} />
-                    </div>
-                  </div>
+                  {(() => {
+                    // Derive the effective currency + selected account for
+                    // the rest of the form. Order: explicit override →
+                    // account currency (if a different account was chosen)
+                    // → original payment currency.
+                    const originalCurrency = String(correctionPayment.original_currency || correctionPayment.currency_code || baseCurrency || 'EGP').toUpperCase()
+                    const selectedAcc = correctionFields.account_id
+                      ? (accounts.find(a => a.id === correctionFields.account_id) as any)
+                      : null
+                    const effectiveCurrency = (
+                      correctionFields.original_currency
+                      || (selectedAcc ? accountCurrencyOf(selectedAcc) : "")
+                      || originalCurrency
+                    ).toUpperCase()
+                    const baseCcy = (baseCurrency || 'EGP').toUpperCase()
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Account first — drives the currency. */}
+                        <div className="md:col-span-2">
+                          <Label>{appLang === 'en' ? 'Account' : 'الحِساب'}</Label>
+                          <select
+                            className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900"
+                            value={correctionFields.account_id}
+                            onChange={(e) => {
+                              const accId = e.target.value
+                              const acc = accId ? (accounts.find(a => a.id === accId) as any) : null
+                              const accCcy = acc ? accountCurrencyOf(acc) : ""
+                              setCorrectionFields({
+                                ...correctionFields,
+                                account_id: accId,
+                                // Auto-sync currency to the account (v3.74.516 pattern).
+                                original_currency: accCcy && accCcy !== originalCurrency ? accCcy : correctionFields.original_currency,
+                                // Same-currency = no rate needed; clear the field.
+                                exchange_rate: accCcy && accCcy === baseCcy ? "" : correctionFields.exchange_rate,
+                              })
+                            }}
+                          >
+                            <option value="">{appLang === 'en' ? `Keep original (${originalCurrency})` : `إِبقاء الأَصلى (${originalCurrency})`}</option>
+                            {accounts.map(a => {
+                              const ccy = accountCurrencyOf(a)
+                              const ccySuffix = ccy && ccy !== baseCcy ? ` — ${ccy}` : ''
+                              return (<option key={a.id} value={a.id}>{a.account_name} ({a.account_code}){ccySuffix}</option>)
+                            })}
+                          </select>
+                          {/* Amber mismatch banner: only if the accountant
+                              explicitly overrode currency to differ from
+                              the chosen account. */}
+                          {selectedAcc && accountCurrencyOf(selectedAcc) !== effectiveCurrency && (
+                            <div className="text-[11px] mt-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                              ℹ️ {appLang === 'en'
+                                ? `Account currency: ${accountCurrencyOf(selectedAcc)} — different from payment currency (${effectiveCurrency}).`
+                                : `عملة الحساب: ${accountCurrencyOf(selectedAcc)} — مختلفة عن عملة الدفع (${effectiveCurrency}).`}
+                            </div>
+                          )}
+                        </div>
+                        {/* Amount + currency badge (currency is derived, not a
+                            separate dropdown). */}
+                        <div>
+                          <Label>
+                            {appLang === 'en' ? 'Amount' : 'المَبلَغ'}
+                            <span className="ms-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                              ({effectiveCurrency})
+                            </span>
+                          </Label>
+                          <Input
+                            type="number" step="0.01" min="0"
+                            value={correctionFields.amount}
+                            onChange={(e) => setCorrectionFields({ ...correctionFields, amount: e.target.value })}
+                            placeholder={String(Math.abs(Number(correctionPayment.amount || 0)))}
+                          />
+                        </div>
+                        <div>
+                          <Label>{appLang === 'en' ? 'Date' : 'التاريخ'}</Label>
+                          <Input type="date" value={correctionFields.payment_date} onChange={(e) => setCorrectionFields({ ...correctionFields, payment_date: e.target.value })} />
+                        </div>
+                        {/* Method — filter transfer/check for cash accounts,
+                            matching the create form's behavior. */}
+                        <div>
+                          <Label>{appLang === 'en' ? 'Method' : 'طَريقَة الدَّفع'}</Label>
+                          <select className="w-full border rounded px-2 py-1 bg-white dark:bg-slate-900" value={correctionFields.payment_method} onChange={(e) => setCorrectionFields({ ...correctionFields, payment_method: e.target.value })}>
+                            <option value="cash">{appLang === 'en' ? 'Cash' : 'كاش'}</option>
+                            {!isCashAccount(correctionFields.account_id || correctionPayment.account_id || '') && (
+                              <>
+                                <option value="transfer">{appLang === 'en' ? 'Transfer' : 'تحويل'}</option>
+                                <option value="check">{appLang === 'en' ? 'Check' : 'شيك'}</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                        {/* Reference only shows for transfer/check, same as
+                            create form. */}
+                        {(correctionFields.payment_method === 'transfer' || correctionFields.payment_method === 'check') && (
+                          <div>
+                            <Label>{appLang === 'en' ? 'Transfer/Check No.' : 'رقم التحويل/الشيك'}</Label>
+                            <Input value={correctionFields.reference_number} onChange={(e) => setCorrectionFields({ ...correctionFields, reference_number: e.target.value })} />
+                          </div>
+                        )}
+                        {/* Exchange rate: only when effective currency ≠ base,
+                            and via ExchangeRateSelector (API dropdown + manual
+                            override), not a raw number input. */}
+                        {effectiveCurrency !== baseCcy && (
+                          <div className="md:col-span-2">
+                            <Label>{appLang === 'en' ? 'Exchange rate' : 'سعر الصرف'}</Label>
+                            <ExchangeRateSelector
+                              fromCurrency={effectiveCurrency}
+                              baseCurrency={baseCcy}
+                              value={Number(correctionFields.exchange_rate) || Number(correctionPayment.exchange_rate || 0) || 0}
+                              onChange={(v) => setCorrectionFields({ ...correctionFields, exchange_rate: String(v) })}
+                              hideLabel
+                              showPreview
+                              amount={Number(correctionFields.amount) || Math.abs(Number(correctionPayment.amount || 0))}
+                            />
+                          </div>
+                        )}
+                        <div className="md:col-span-2">
+                          <Label>{appLang === 'en' ? 'Notes' : 'مُلاحَظات'}</Label>
+                          <Input value={correctionFields.notes} onChange={(e) => setCorrectionFields({ ...correctionFields, notes: e.target.value })} />
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             )}
@@ -3955,7 +4021,6 @@ export default function PaymentsPage() {
                   if (correctionFields.reference_number !== (correctionPayment.reference_number || '')) proposed.reference_number = correctionFields.reference_number
                   if (correctionFields.notes !== (correctionPayment.notes || '')) proposed.notes = correctionFields.notes
                   // v3.74.524 — currency + FX rate. Main fix for "rejected
-                  // because it was in the wrong currency" — server re-derives
                   // base_currency_amount from the new currency/rate pair.
                   const currentCurrency = correctionPayment.original_currency || correctionPayment.currency_code || 'EGP'
                   if (correctionFields.original_currency && correctionFields.original_currency !== currentCurrency) {
