@@ -473,6 +473,11 @@ export class CustomerPaymentCommandService {
     const needsAdvanceJournal = Boolean(existingMainJournalId) || applications.length === 0 || unallocatedAmount > 0 || applications.length > 1
     if (needsAdvanceJournal && !mapping.customerAdvance) throw new Error("Customer advance account is required to finalize customer payment")
 
+    // v3.74.533 — IAS 21: settlement + AR/customer-advance are base-currency accounts.
+    const paymentFxRate = Number((payment as any).exchange_rate || (payment as any).exchange_rate_used || 1) || 1
+    const paymentAmountBase = Number(asNumber(payment.amount) * paymentFxRate)
+    const toBase = (amt: number) => Number((amt * paymentFxRate).toFixed(4))
+
     let mainJournalEntryId = existingMainJournalId
     if (needsAdvanceJournal && !mainJournalEntryId) {
       const entry = await createCompleteJournalEntry(this.adminSupabase, {
@@ -485,8 +490,8 @@ export class CustomerPaymentCommandService {
         cost_center_id: payment.cost_center_id || null,
         warehouse_id: payment.warehouse_id || null,
       }, [
-        { account_id: settlementAccountId, debit_amount: asNumber(payment.amount), credit_amount: 0, description: "نقد/بنك", branch_id: payment.branch_id || actor.actorBranchId || null, cost_center_id: payment.cost_center_id || null },
-        { account_id: mapping.customerAdvance!, debit_amount: 0, credit_amount: asNumber(payment.amount), description: "سلف من العملاء", branch_id: payment.branch_id || actor.actorBranchId || null, cost_center_id: payment.cost_center_id || null },
+        { account_id: settlementAccountId, debit_amount: paymentAmountBase, credit_amount: 0, description: "نقد/بنك", branch_id: payment.branch_id || actor.actorBranchId || null, cost_center_id: payment.cost_center_id || null },
+        { account_id: mapping.customerAdvance!, debit_amount: 0, credit_amount: paymentAmountBase, description: "سلف من العملاء", branch_id: payment.branch_id || actor.actorBranchId || null, cost_center_id: payment.cost_center_id || null },
       ])
       if (!entry.success || !entry.entryId) throw new Error(entry.error || "Failed to create customer payment journal")
       mainJournalEntryId = entry.entryId
@@ -509,8 +514,8 @@ export class CustomerPaymentCommandService {
         cost_center_id: costCenterId,
         warehouse_id: warehouseId,
       }, [
-        { account_id: needsAdvanceJournal ? mapping.customerAdvance! : settlementAccountId, debit_amount: asNumber(application.amount_applied), credit_amount: 0, description: needsAdvanceJournal ? "تسوية سلف العملاء" : "نقد/بنك", branch_id: branchId, cost_center_id: costCenterId },
-        { account_id: mapping.ar, debit_amount: 0, credit_amount: asNumber(application.amount_applied), description: "الذمم المدينة", branch_id: branchId, cost_center_id: costCenterId },
+        { account_id: needsAdvanceJournal ? mapping.customerAdvance! : settlementAccountId, debit_amount: toBase(asNumber(application.amount_applied)), credit_amount: 0, description: needsAdvanceJournal ? "تسوية سلف العملاء" : "نقد/بنك", branch_id: branchId, cost_center_id: costCenterId },
+        { account_id: mapping.ar, debit_amount: 0, credit_amount: toBase(asNumber(application.amount_applied)), description: "الذمم المدينة", branch_id: branchId, cost_center_id: costCenterId },
       ])
       if (!entry.success || !entry.entryId) throw new Error(entry.error || `Failed to create invoice payment journal for application ${application.id}`)
       invoicePaymentJournalIds.push(entry.entryId)
