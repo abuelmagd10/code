@@ -1,0 +1,16 @@
+-- v3.74.539 — Owner screenshot after v3.74.538:
+--   💰 قيمة التصحيح: 0.10 USD ≈ 4.93 EGP · سعر الصرف: 49.28
+-- That is the ORIGINAL payment, not the correction. Metadata for this
+-- request was:
+--   { "amount": 3, "original_currency": "EGP" }
+-- so the accountant asked to change 0.10 USD → 3 EGP. Owner couldn't
+-- see the change and could only approve or reject blind.
+--
+-- Fix (UI + loader only):
+--   Interface: +proposed_amount, +proposed_currency, +proposed_account_
+--     name, +proposed_method, +proposed_date, +proposed_reference.
+--   Loader: pull metadata; batch-fetch chart_of_accounts for any
+--     proposed account_id → account_name; unpack proposed_changes.
+--   Card: relabel current amount as "الحالى" and add a violet
+--     "التعديلات المقترحة" panel with a diff list (line-through old,
+--     bold new).

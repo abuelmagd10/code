@@ -268,6 +268,15 @@ interface PendingVendorPaymentCorrection {
   exchange_rate: number | null
   requested_by_email: string | null
   rejection_reason: string | null
+  // v3.74.539 — proposed changes so the owner sees exactly what the
+  // accountant wants to change. Metadata.proposed_changes is a small
+  // JSON blob of just the diffed keys, not the full new payment.
+  proposed_amount: number | null
+  proposed_currency: string | null
+  proposed_account_name: string | null
+  proposed_method: string | null
+  proposed_date: string | null
+  proposed_reference: string | null
   type: "vendor_payment_correction"
 }
 
@@ -1589,13 +1598,15 @@ function ApprovalsContent() {
 
       // v3.74.476 — vendor payment correction requests.
       // v3.74.528 — pull rejection_reason + original_payment_id so we can
-      // fetch the FX context that lives on the original payment (this
-      // table itself doesn't store currency/rate/base).
+      // fetch the FX context that lives on the original payment.
+      // v3.74.539 — also pull metadata so the card can surface
+      // proposed_changes (what the accountant wants to change to).
       try {
         const { data: vpc } = await supabase
           .from("vendor_payment_correction_requests")
           .select(`
             id, amount, status, notes, rejection_reason, original_payment_id,
+            metadata,
             created_at, supplier_id, requested_by, approved_by, approved_at,
             suppliers(name),
             bill_id, bills(bill_number)
@@ -1619,8 +1630,17 @@ function ApprovalsContent() {
         ])
         const vpcPayMap = new Map(((vpcPaysRes.data || []) as any[]).map((p: any) => [p.id, p]))
         const vpcUserMap = new Map(((vpcUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
+        // v3.74.539 — batch-fetch chart_of_accounts to resolve any
+        // proposed account_id into an account name.
+        const vpcProposedAcctIds = Array.from(new Set((vpc || []).map((r: any) => (r.metadata?.proposed_changes?.account_id) as string | undefined).filter(Boolean)))
+        const vpcAcctsRes = vpcProposedAcctIds.length
+          ? await supabase.from("chart_of_accounts").select("id, account_name").in("id", vpcProposedAcctIds)
+          : { data: [] as any[] }
+        const vpcAcctMap = new Map(((vpcAcctsRes.data || []) as any[]).map((a: any) => [a.id, a.account_name]))
         setVendorPaymentCorrections((vpc || []).map((r: any) => {
           const origPay = r.original_payment_id ? vpcPayMap.get(r.original_payment_id) : null
+          // v3.74.539 — pluck proposed_changes fields for the card
+          const proposed = (r.metadata?.proposed_changes || {}) as Record<string, any>
           return {
             id: r.id,
             supplier_name: r.suppliers?.name ?? null,
@@ -1631,12 +1651,18 @@ function ApprovalsContent() {
             requested_at: r.created_at,
             requested_by: r.requested_by ?? null,
             approved_by: r.approved_by ?? null,
-            // v3.74.528 — enrichment via original payment
             currency: String(origPay?.original_currency || origPay?.currency_code || "EGP"),
             base_amount: origPay?.base_currency_amount != null ? Number(origPay.base_currency_amount) : null,
             exchange_rate: origPay?.exchange_rate != null ? Number(origPay.exchange_rate) : null,
             requested_by_email: r.requested_by ? (vpcUserMap.get(r.requested_by) ?? null) : null,
             rejection_reason: r.rejection_reason ?? null,
+            // v3.74.539 — proposed changes (owner needs these to decide)
+            proposed_amount: proposed.amount != null ? Number(proposed.amount) : null,
+            proposed_currency: proposed.original_currency ? String(proposed.original_currency) : null,
+            proposed_account_name: proposed.account_id ? (vpcAcctMap.get(proposed.account_id) ?? null) : null,
+            proposed_method: proposed.payment_method ? String(proposed.payment_method) : null,
+            proposed_date: proposed.payment_date ? String(proposed.payment_date) : null,
+            proposed_reference: proposed.reference_number ? String(proposed.reference_number) : null,
             type: "vendor_payment_correction" as const,
           }
         }))
@@ -4588,8 +4614,8 @@ function ApprovalsContent() {
                                   {r.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: <span className="font-semibold">{r.bill_no}</span></>}
                                 </p>
                                 <p className="text-xs mt-1">
-                                  <span className="font-semibold text-violet-700 dark:text-violet-300">
-                                    💰 {t("قيمة التصحيح", "Correction amount")}: {fmtMoney(r.amount)} {r.currency}
+                                  <span className="text-muted-foreground">
+                                    {t("الحالى", "Current")}: {fmtMoney(r.amount)} {r.currency}
                                   </span>
                                   {/* v3.74.528 — FX base equivalent for non-EGP */}
                                   {r.currency !== "EGP" && r.base_amount != null && (
@@ -4599,6 +4625,48 @@ function ApprovalsContent() {
                                     </span>
                                   )}
                                 </p>
+                                {/* v3.74.539 — proposed changes so the owner sees
+                                    exactly what the accountant wants to change to.
+                                    Nothing here means notes-only correction. */}
+                                {(r.proposed_amount != null || r.proposed_currency || r.proposed_account_name || r.proposed_method || r.proposed_date || r.proposed_reference) && (
+                                  <div className="mt-1 p-2 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 text-xs">
+                                    <p className="font-semibold text-violet-700 dark:text-violet-300 mb-0.5">
+                                      🔧 {t("التعديلات المقترحة", "Proposed changes")}
+                                    </p>
+                                    <ul className="text-xs text-violet-900 dark:text-violet-200 ms-4 list-disc">
+                                      {r.proposed_amount != null && (
+                                        <li>
+                                          {t("القيمة", "Amount")}: <span className="line-through text-muted-foreground">{fmtMoney(r.amount)}</span>
+                                          <span className="font-semibold ms-1">→ {fmtMoney(r.proposed_amount)}</span>
+                                          {r.proposed_currency && <> {r.proposed_currency}</>}
+                                        </li>
+                                      )}
+                                      {r.proposed_currency && r.proposed_amount == null && (
+                                        <li>
+                                          {t("العملة", "Currency")}: <span className="line-through text-muted-foreground">{r.currency}</span>
+                                          <span className="font-semibold ms-1">→ {r.proposed_currency}</span>
+                                        </li>
+                                      )}
+                                      {r.proposed_account_name && (
+                                        <li>{t("الحساب", "Account")}: <span className="font-semibold">{r.proposed_account_name}</span></li>
+                                      )}
+                                      {r.proposed_method && (
+                                        <li>{t("طريقة الدفع", "Method")}: <span className="font-semibold">
+                                          {r.proposed_method === "cash" ? t("نقدى", "Cash")
+                                            : r.proposed_method === "bank" || r.proposed_method === "bank_transfer" ? t("تحويل بنكى", "Bank transfer")
+                                            : r.proposed_method === "check" || r.proposed_method === "cheque" ? t("شيك", "Check")
+                                            : r.proposed_method}
+                                        </span></li>
+                                      )}
+                                      {r.proposed_date && (
+                                        <li>{t("التاريخ", "Date")}: <span className="font-semibold">{r.proposed_date}</span></li>
+                                      )}
+                                      {r.proposed_reference && (
+                                        <li>{t("المرجع", "Reference")}: <span className="font-semibold">{r.proposed_reference}</span></li>
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
                                 {r.requested_by_email && (
                                   <p className="text-xs text-muted-foreground mt-0.5">
