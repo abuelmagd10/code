@@ -1,0 +1,24 @@
+-- v3.74.547 — two surfaces still displayed stale/wrong values after
+-- v3.74.546 fixed the correction execution + repaired the corrupt data.
+--
+-- 1) AI proactive-alerts widget
+--    ai_get_proactive_alerts computed outstanding as total - paid,
+--    ignoring returned_amount. On BILL-0001 it reported 4.34 EGP
+--    remaining when the truth is 3.31 EGP (7.34 - 3.00 - 1.03).
+--    Fixed: subtract returned_amount everywhere in the RPC
+--    (overdue invoices, due-soon invoices, overdue bills).
+--
+-- 2) Bank / account ledger sort
+--    PostgREST's .order("entry_date", { referencedTable: ... })
+--    only orders the EMBEDDED journal_entries record — it does NOT
+--    reorder the parent journal_entry_lines rows. So the parent
+--    order fell back to .order("id") on the lines' UUID, giving a
+--    chaotic display. The v3.74.535 fix looked correct but was silently
+--    ineffective (nothing in the tests would have surfaced it).
+--    Fix (Node side): re-sort the fetched rows in memory by
+--      (journal_entries.entry_date DESC, id DESC)
+--    Applied to both the API (app/api/account-lines/route.ts) and the
+--    banking page fallback (app/banking/[id]/page.tsx). The client-side
+--    running-balance loop was already correct given the input order.
+--
+-- Doc stamp only — the RPC was applied via mcp__apply_migration.

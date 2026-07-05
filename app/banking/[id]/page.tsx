@@ -229,11 +229,21 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
           .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, journal_entries!inner(entry_date, description, company_id, deleted_at)")
           .eq("account_id", accountId)
           .is("journal_entries.deleted_at", null)
-          // v3.74.535 — chronological order (was: order by random UUID)
-          .order("entry_date", { referencedTable: "journal_entries", ascending: false })
+          // v3.74.547 — PostgREST's .order(...) with referencedTable only
+          // orders the embedded record, not the parent row. Force the
+          // chronological order in JS after fetch.
           .order("id", { ascending: false })
           .limit(100)
-        setLines((directLines || []) as any)
+        const rows = (directLines || []) as any[]
+        rows.sort((a, b) => {
+          const da = String(a?.journal_entries?.entry_date || '0001-01-01')
+          const db = String(b?.journal_entries?.entry_date || '0001-01-01')
+          if (da !== db) return da < db ? 1 : -1  // DESC
+          const ia = String(a?.id || '')
+          const ib = String(b?.id || '')
+          return ia < ib ? 1 : ia > ib ? -1 : 0
+        })
+        setLines(rows as any)
       }
     } finally { setLoading(false) }
   }

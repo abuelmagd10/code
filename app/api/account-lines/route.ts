@@ -7,16 +7,14 @@ import { badRequestError } from "@/lib/api-error-handler"
 
 export async function GET(req: NextRequest) {
   try {
-    // ✅ إنشاء supabase client للمصادقة
     const authSupabase = await createServerClient()
 
-    // ✅ التحقق من الأمان
     const { user, companyId, branchId, member, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
       requireBranch: true,
       requirePermission: { resource: "reports", action: "read" },
-      supabase: authSupabase // ✅ تمرير supabase client
+      supabase: authSupabase
     })
 
     if (error) return error
@@ -45,27 +43,31 @@ export async function GET(req: NextRequest) {
       .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, exchange_rate_used, journal_entries!inner(entry_date, description, company_id, is_deleted, deleted_at, status)")
       .eq("account_id", accountId)
       .eq("journal_entries.company_id", companyId)
-      .neq("journal_entries.is_deleted", true) // ✅ استثناء القيود المحذوفة (is_deleted)
-      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
-      .eq("journal_entries.status", "posted") // ✅ posted فقط — متطابق مع income-statement API
+      .neq("journal_entries.is_deleted", true)
+      .is("journal_entries.deleted_at", null)
+      .eq("journal_entries.status", "posted")
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
-      // v3.74.535 — ordering by journal_entry_lines.id (random UUID) gave a
-      // ledger where the running balance per row didn't match the row's
-      // date. Order by the joined journal_entries.entry_date first, then
-      // JE creation time, then line id as a stable tiebreaker.
-      .order("entry_date", { referencedTable: "journal_entries", ascending: false })
+      // v3.74.547 — PostgREST .order(referencedTable) sorts only the
+      // embedded record, not the parent. We re-sort in memory below.
       .order("id", { ascending: false })
       .limit(limit)
     if (dbError) {
       return serverError(`خطأ في جلب سطور الحساب: ${dbError.message}`)
     }
-    return NextResponse.json({
-      success: true,
-      data: data || []
+
+    const rows = (data || []) as any[]
+    rows.sort((a, b) => {
+      const da = String(a?.journal_entries?.entry_date || '0001-01-01')
+      const db = String(b?.journal_entries?.entry_date || '0001-01-01')
+      if (da !== db) return da < db ? 1 : -1
+      const ia = String(a?.id || '')
+      const ib = String(b?.id || '')
+      return ia < ib ? 1 : ia > ib ? -1 : 0
     })
+
+    return NextResponse.json({ success: true, data: rows })
   } catch (e: any) {
     return serverError(`حدث خطأ أثناء جلب سطور الحساب: ${e?.message}`)
   }
 }
-
