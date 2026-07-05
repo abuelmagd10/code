@@ -1060,6 +1060,16 @@ export class SupplierPaymentCommandService {
     const paymentEntryDate = payment.payment_date
     const firstBill = allocations[0]?.bills
 
+    // v3.74.532 — IAS 21: every journal entry must be recorded in the
+    // company's functional (base) currency, not the payment's original
+    // currency. Previously we posted asNumber(payment.amount) which is
+    // 0.10 USD instead of 4.93 EGP — the settlement (cash / bank) and
+    // AP accounts live in EGP, so raw USD lines corrupt the trial
+    // balance. Same story for allocation.allocated_amount below.
+    const paymentFxRate = Number((payment as any).exchange_rate || (payment as any).exchange_rate_used || 1) || 1
+    const paymentAmountBase = Number((payment as any).base_currency_amount ?? asNumber(payment.amount) * paymentFxRate)
+    const toBase = (amt: number) => Number((amt * paymentFxRate).toFixed(4))
+
     let mainJournalEntryId: string | null = null
     if (needsAdvanceJournal) {
       const mainEntry = await createCompleteJournalEntry(
@@ -1077,7 +1087,7 @@ export class SupplierPaymentCommandService {
         [
           {
             account_id: mapping.supplier_advance!,
-            debit_amount: asNumber(payment.amount),
+            debit_amount: paymentAmountBase,
             credit_amount: 0,
             description: "سلف للموردين",
             branch_id: payment.branch_id || firstBill?.branch_id || actor.actorBranchId || null,
@@ -1086,7 +1096,7 @@ export class SupplierPaymentCommandService {
           {
             account_id: settlementAccountId,
             debit_amount: 0,
-            credit_amount: asNumber(payment.amount),
+            credit_amount: paymentAmountBase,
             description: "نقد/بنك",
             branch_id: payment.branch_id || firstBill?.branch_id || actor.actorBranchId || null,
             cost_center_id: payment.cost_center_id || firstBill?.cost_center_id || null,
@@ -1122,7 +1132,8 @@ export class SupplierPaymentCommandService {
         [
           {
             account_id: mapping.accounts_payable,
-            debit_amount: asNumber(allocation.allocated_amount),
+            // v3.74.532 — convert allocation to base currency (see toBase above).
+            debit_amount: toBase(asNumber(allocation.allocated_amount)),
             credit_amount: 0,
             description: "الذمم الدائنة",
             branch_id: branchId,
@@ -1131,7 +1142,7 @@ export class SupplierPaymentCommandService {
           {
             account_id: needsAdvanceJournal ? mapping.supplier_advance! : settlementAccountId,
             debit_amount: 0,
-            credit_amount: asNumber(allocation.allocated_amount),
+            credit_amount: toBase(asNumber(allocation.allocated_amount)),
             description: needsAdvanceJournal ? "تسوية سلف الموردين" : "نقد/بنك",
             branch_id: branchId,
             cost_center_id: costCenterId,
