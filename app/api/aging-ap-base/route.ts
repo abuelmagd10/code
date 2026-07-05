@@ -56,7 +56,10 @@ export async function GET(req: NextRequest) {
     // ✅ Use 'received' and 'partially_paid' for bills (not 'sent' which is for invoices)
     const { data: bills, error: billsError } = await admin
       .from("bills")
-      .select("id, bill_number, bill_date, due_date, total_amount, returned_amount, status, suppliers(id, name)")
+      // v3.74.536 — include paid_amount so callers can compute the paidMap
+      // from the already-correct (FX-converted, status-filtered) column
+      // maintained by fn_recalc_bill_paid_status.
+      .select("id, bill_number, bill_date, due_date, total_amount, paid_amount, returned_amount, status, suppliers(id, name)")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .in("status", ["received", "partially_paid"])
@@ -65,20 +68,13 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب الفواتير: ${billsError.message}`)
     }
 
-    const { data: pays, error: paysError } = await admin
-      .from("payments")
-      .select("bill_id, amount, payment_date")
-      .eq("company_id", companyId)
-      .lte("payment_date", endDate)
-
-    if (paysError) {
-      return serverError(`خطأ في جلب المدفوعات: ${paysError.message}`)
-    }
+    // v3.74.536 — paidMap built from bills.paid_amount instead of summing
+    // raw payments.amount (which ignored FX + status). endDate is treated
+    // as "today"; historical aging as-of past dates is out of scope for
+    // this SSOT endpoint (use aging-ap-gl for that).
     const paidMap: Record<string, number> = {}
-    for (const p of (pays || [])) {
-      const billId = String((p as any).bill_id || '')
-      if (!billId) continue
-      paidMap[billId] = (paidMap[billId] || 0) + Number((p as any).amount || 0)
+    for (const b of (bills || [])) {
+      paidMap[String((b as any).id)] = Number((b as any).paid_amount || 0)
     }
 
     return NextResponse.json({
@@ -88,4 +84,4 @@ export async function GET(req: NextRequest) {
   } catch (e: any) {
     return serverError(`حدث خطأ أثناء جلب تقرير الذمم الدائنة: ${e?.message || "unknown_error"}`)
   }
-}
+}

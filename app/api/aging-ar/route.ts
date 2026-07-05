@@ -52,33 +52,20 @@ export async function GET(req: NextRequest) {
     // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     const { data: invs } = await supabase
       .from("invoices")
-      .select("id, customer_id, due_date, total_amount, returned_amount")
+      // v3.74.536 — pull paid_amount from invoices directly (already FX-
+      // converted and approval-filtered by fn_recalc_invoice_paid_status).
+      .select("id, customer_id, due_date, total_amount, paid_amount, returned_amount")
       .eq("company_id", companyId)
       .match(branchFilter)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
       .in("status", ["sent", "partially_paid"])
 
-    const { data: pays } = await supabase
-      .from("payments")
-      .select("invoice_id, amount, payment_date")
-      .eq("company_id", companyId)
-      .match(branchFilter)
-      .lte("payment_date", endDate)
-
-    const paidMap: Record<string, number> = {}
-    for (const p of pays || []) {
-      const iid = String((p as any).invoice_id || "")
-      if (!iid) continue
-      paidMap[iid] = (paidMap[iid] || 0) + Number((p as any).amount || 0)
-    }
-
     const end = new Date(endDate)
     const bucketsByCustomer: Record<string, { not_due: number; d0_30: number; d31_60: number; d61_90: number; d91_plus: number; total: number }> = {}
     for (const inv of invs || []) {
-      const id = String((inv as any).id)
       const custId = String((inv as any).customer_id)
       const total = Number((inv as any).total_amount || 0)
-      const paid = Number(paidMap[id] || 0)
+      const paid = Number((inv as any).paid_amount || 0)
       const returned = Number((inv as any).returned_amount || 0)
       // صافي المتبقي = الإجمالي - المدفوع - المرتجعات
       const outstanding = Math.max(total - paid - returned, 0)

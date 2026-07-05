@@ -73,10 +73,17 @@ export async function GET(req: NextRequest) {
     // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     let paymentsQuery = admin
       .from("payments")
+      // v3.74.536 — pull base_currency_amount + status so we can
+      // (a) filter to approved only, and (b) sum in base currency
+      // instead of the raw payment currency.
       .select(`
         id,
         payment_date,
         amount,
+        base_currency_amount,
+        original_currency,
+        exchange_rate,
+        status,
         payment_method,
         reference_number,
         notes,
@@ -88,6 +95,7 @@ export async function GET(req: NextRequest) {
         chart_of_accounts(account_name, account_code)
       `)
       .eq("company_id", companyId)
+      .eq("status", "approved")
       .match(branchFilter)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المدفوعات المحذوفة
       .gte("payment_date", from)
@@ -163,7 +171,11 @@ export async function GET(req: NextRequest) {
         transactions: []
       }
 
-      const amount = Number(payment.amount || 0)
+      // v3.74.536 — base_currency_amount for aggregation (raw amount kept
+      // for the individual transaction row so the user still sees the
+      // native FC value they entered). Fallback: amount when the payment
+      // is in the base currency (base_currency_amount not populated).
+      const amount = Number((payment as any).base_currency_amount ?? payment.amount ?? 0)
       const isPayment = !!payment.supplier_id
       const isReceipt = !!payment.customer_id
 
@@ -193,7 +205,6 @@ export async function GET(req: NextRequest) {
     let totalReceipts = 0
 
     for (const group of grouped.values()) {
-      totalPayments += group.payments
       totalReceipts += group.receipts
     }
 

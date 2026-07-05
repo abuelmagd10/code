@@ -1,0 +1,33 @@
+-- v3.74.536 — Reports audit after v3.74.532-535 accounting-integrity
+-- fixes. Trial balance / balance sheet / GL-based aging reports all
+-- read correctly because journal_entry_lines is now in base currency.
+-- But 5 operational reports were still summing raw payments.amount:
+--
+--   /api/aging-ap        (bills)      → SUM(p.amount) with no FX
+--   /api/aging-ap-base   (bills)      → SUM(p.amount) with no FX
+--   /api/aging-ar        (invoices)   → SUM(p.amount) with no FX
+--   /api/aging-ar-base   (invoices)   → SUM(p.amount) with no FX
+--   /api/daily-payments-receipts      → SUM(p.amount) with no FX
+--
+-- For BILL-0001 (0.10 USD payment @ 49.28 = 4.93 EGP) the aging reports
+-- would compute outstanding = 7.34 - 0.10 - 1.03 = 6.21 EGP instead of
+-- the true 1.38 EGP. Same class of bug on the sales side.
+--
+-- Fix (Node only, no DB change):
+--   - aging-ap, aging-ap-base       : read bills.paid_amount directly
+--   - aging-ar, aging-ar-base       : read invoices.paid_amount directly
+--     (both columns are now correctly FX-converted and approval-filtered
+--      by fn_recalc_bill_paid_status / fn_recalc_invoice_paid_status)
+--   - daily-payments-receipts       : sum base_currency_amount instead
+--     of amount, and filter status='approved' so pending / rejected
+--     payments don't inflate the daily cash-flow totals.
+--
+-- Reports NOT changed in this release:
+--   - aging-ap-gl / aging-ar-gl (already GL-based, correct)
+--   - trial-balance, balance-sheet, income-statement (GL-based)
+--   - account-lines, cash box ledger (GL-based, ordering fixed in v3.74.535)
+--
+-- Historical as-of-date aging remains the responsibility of the GL
+-- endpoints; the operational reports treat endDate as "today".
+--
+-- No DB schema change. Doc stamp for the release-script version-grep.

@@ -55,10 +55,12 @@ export async function GET(req: NextRequest) {
     // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
     const { data: invs } = await admin
       .from("invoices")
-      .select("id, customer_id, due_date, total_amount")
+      // v3.74.536 — include paid_amount so paidMap can be built from
+      // the already-correct column instead of summing raw payments.
+      .select("id, customer_id, due_date, total_amount, paid_amount")
       .eq("company_id", companyId)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
-      .in("status", ["sent", "partially_paid"]) 
+      .in("status", ["sent", "partially_paid"])
 
     const customerIds = Array.from(new Set((invs || []).map((i: any) => i.customer_id).filter(Boolean)))
     let customers: Record<string, { id: string; name: string }> = {}
@@ -71,20 +73,12 @@ export async function GET(req: NextRequest) {
       for (const c of (custs || [])) { customers[String((c as any).id)] = { id: String((c as any).id), name: String((c as any).name || '') } }
     }
 
-    const { data: pays, error: paysError } = await admin
-      .from("payments")
-      .select("invoice_id, amount, payment_date")
-      .eq("company_id", companyId)
-      .lte("payment_date", endDate)
-
-    if (paysError) {
-      return serverError(`خطأ في جلب المدفوعات: ${paysError.message}`)
-    }
+    // v3.74.536 — build paidMap from invoices.paid_amount instead of
+    // summing raw payments.amount (which ignored FX + status). Use
+    // aging-ar-gl for historical as-of-date accuracy.
     const paidMap: Record<string, number> = {}
-    for (const p of (pays || [])) {
-      const invId = String((p as any).invoice_id || '')
-      if (!invId) continue
-      paidMap[invId] = (paidMap[invId] || 0) + Number((p as any).amount || 0)
+    for (const inv of (invs || [])) {
+      paidMap[String((inv as any).id)] = Number((inv as any).paid_amount || 0)
     }
 
     return NextResponse.json({
