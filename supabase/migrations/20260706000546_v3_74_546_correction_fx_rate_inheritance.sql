@@ -1,0 +1,32 @@
+-- v3.74.546 — correction executed successfully after v3.74.545 but
+-- posted a corrupt payment. The user proposed
+--   { "amount": 3, "original_currency": "EGP" }   (no exchange_rate)
+-- The RPC's fallback was
+--   v_new_rate := COALESCE((v_proposed->>'exchange_rate')::numeric,
+--                          NULLIF(v_original.exchange_rate, 0), 1);
+-- which reused the ORIGINAL rate (49.28 — for USD → EGP) and multiplied
+-- it by the new EGP amount, giving base = 3 × 49.28 = 147.84 EGP.
+-- Bill BILL-0001 ended up with paid_amount = 150.84 EGP against a
+-- 7.34-EGP total.
+--
+-- Root cause: exchange_rate belongs to the ORIGINAL currency. When the
+-- currency changes, the old rate cannot carry forward.
+--
+-- New rate logic (see the two apply_migration files):
+--   1. New currency == company base currency  → rate = 1.
+--   2. User provided a valid exchange_rate    → use it.
+--   3. Currency was NOT changed               → keep original rate.
+--   4. Currency changed with no rate provided → default to 1.
+--
+-- The base-currency lookup was also moved BEFORE the rate calculation
+-- (previously it happened later and was inaccessible to the rate branch).
+--
+-- Applied to both execute_vendor_payment_correction and
+-- execute_payment_correction (customer refund correction workflow).
+--
+-- Additionally, the corrupt data on the test company was repaired
+-- in the same migration burst (payment 03221a4e-... base 3.00,
+-- JE 59917668-... lines 3.00 each, bill 4579b8d0-... paid_amount
+-- rebuilt from truth). Trial balance verified balanced after repair.
+--
+-- Doc stamp only.
