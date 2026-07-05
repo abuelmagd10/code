@@ -86,12 +86,27 @@ export async function getDailyIncomeByBranch(
 
   // 2) Step 1: Fetch journal entry IDs + branch_id for the given date/company/branch
   //    We do this as a SEPARATE query to avoid unreliable nested join filters in Supabase JS
+  //
+  // v3.74.548 — Daily income is a "what really moved" report, so it must
+  // exclude administrative reversals and the payment rows they cancelled.
+  // Concretely:
+  //   * reference_type = 'payment_reversal'  →  VOID reversal JE — filtered
+  //     out below by .neq. Its debit-cash side would otherwise show as an
+  //     inflow on the correction execution day.
+  //   * reference_type = 'payment' with the referenced payment voided —
+  //     filtered out below AFTER the fetch by a payments.voided_at check.
+  //     Keeping the original would double-count the payment (once for the
+  //     original, once for the correction_repost) plus show the void'd
+  //     amount as a genuine cash movement it no longer is.
+  //   * reference_type = 'payment_correction_repost'  →  kept: this is
+  //     the CORRECTED payment and is the true business event.
   let jeQuery = supabase
     .from("journal_entries")
-    .select("id, branch_id")
+    .select("id, branch_id, reference_type, reference_id")
     .eq("company_id", companyId)
     .eq("status", "posted")
     .eq("entry_date", dateOnly)
+    .neq("reference_type", "payment_reversal")
 
   if (options?.branchId) {
     jeQuery = jeQuery.eq("branch_id", options.branchId)
@@ -101,9 +116,32 @@ export async function getDailyIncomeByBranch(
   // Cost center is an optional allocation tag; many journal entries don't carry it,
   // so filtering by it would silently exclude valid transactions.
 
-  const { data: journalEntries, error: jeErr } = await jeQuery
+  const { data: journalEntriesRaw, error: jeErr } = await jeQuery
   if (jeErr) throw new Error(`Failed to load journal entries: ${jeErr.message}`)
-  if (!journalEntries || journalEntries.length === 0) return []
+  if (!journalEntriesRaw || journalEntriesRaw.length === 0) return []
+
+  // v3.74.548 — filter out JEs of voided originals.
+  const paymentRefIds = journalEntriesRaw
+    .filter((je: any) => je.reference_type === "payment" && je.reference_id)
+    .map((je: any) => je.reference_id) as string[]
+
+  let voidedIds = new Set<string>()
+  if (paymentRefIds.length > 0) {
+    const { data: pays } = await supabase
+      .from("payments")
+      .select("id, voided_at")
+      .in("id", paymentRefIds)
+    voidedIds = new Set(
+      (pays || [])
+        .filter((p: any) => p.voided_at)
+        .map((p: any) => p.id as string)
+    )
+  }
+
+  const journalEntries = journalEntriesRaw.filter(
+    (je: any) => !(je.reference_type === "payment" && voidedIds.has(je.reference_id))
+  )
+  if (journalEntries.length === 0) return []
 
   const jeIds = journalEntries.map((je: any) => je.id)
   const jeBranchMap = new Map<string, string | null>(

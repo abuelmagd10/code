@@ -1,0 +1,22 @@
+-- v3.74.548 — dashboard "الدخل اليومي (نقد + بنك)" widget still showed
+-- the +4.93 EGP cash inflow on 2026-07-05 even after the correction
+-- reduced the actual payment to 3.00 EGP EGP. Root cause: the widget
+-- reads from GL (journal_entry_lines) directly and does not filter
+-- administrative journal entries.
+--
+-- The 2026-07-05 spike came from the payment_reversal JE emitted by
+-- execute_vendor_payment_correction: it debits Cash 4.93 to undo the
+-- original credit-Cash 4.93 from 2026-07-03. Both sides net to zero
+-- economically but the widget only sees the debit side on 07-05.
+--
+-- Similarly, on the original payment_date the widget would show the
+-- original JE (credit Cash 4.93) plus the correction_repost JE
+-- (credit Cash 3.00), double-counting the payment.
+--
+-- Fix (Node side, lib/dashboard-daily-income.ts): exclude
+--   * reference_type = 'payment_reversal'                (always)
+--   * reference_type = 'payment' where payments.voided_at IS NOT NULL
+-- and keep 'payment_correction_repost' as the sole business event
+-- for the corrected payment.
+--
+-- Doc stamp only.

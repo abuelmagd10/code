@@ -3,10 +3,10 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.547"') { Write-Host "+ 3.74.547" -ForegroundColor Green }
+if ($v -match 'APP_VERSION = "3.74.548"') { Write-Host "+ 3.74.548" -ForegroundColor Green }
 else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-if (-not (Test-Path 'supabase/migrations/20260706000547_v3_74_547_ai_alerts_and_ledger_sort.sql')) {
+if (-not (Test-Path 'supabase/migrations/20260706000548_v3_74_548_daily_income_excludes_reversals_and_voids.sql')) {
     Write-Host "X doc-stamp migration missing" -ForegroundColor Red; exit 1
 }
 Write-Host "+ doc-stamp migration present" -ForegroundColor Green
@@ -22,31 +22,31 @@ git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) { Write-Host "Nothing to commit" -ForegroundColor Yellow }
 else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_547.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_548.txt"
     $msgLines = @(
-        'fix(reports): v3.74.547 - AI alerts remaining + banking ledger order',
+        'fix(dashboard): v3.74.548 - daily income excludes reversals + voided originals',
         '',
-        '1) ai_get_proactive_alerts subtracted only paid_amount, not',
-        '   returned_amount. BILL-0001 showed remaining 4.34 instead of',
-        '   the true 3.31 (7.34 total - 3.00 paid - 1.03 returned). Fixed',
-        '   in the RPC (applied via mcp__apply_migration; this commit',
-        '   holds the doc stamp).',
+        'Dashboard cash+bank daily income widget still displayed 4.93 EGP on',
+        '2026-07-05 - the reversal-cash-in side of the correction. The widget',
+        'reads GL directly and could not tell that the JE was a rollback.',
         '',
-        '2) Bank/account ledger was ordered by row UUID because',
-        '   PostgREST .order(referencedTable) only sorts the embedded',
-        '   record, not the parent. Now we re-sort the fetched rows in',
-        '   Node by (journal_entries.entry_date DESC, id DESC) so the',
-        '   running-balance loop sees a truly chronological input.',
+        'Fix (lib/dashboard-daily-income.ts)',
+        '  1. Add .neq(reference_type, ''payment_reversal'') on the JE fetch',
+        '     - kills the VOID reversal from the day view.',
+        '  2. After fetch, look up payments referenced by',
+        '     reference_type = ''payment'' JEs and drop any whose voided_at',
+        '     is set - kills the original from its payment_date.',
+        '  3. Keep payment_correction_repost as the sole business event',
+        '     for the corrected amount.',
         '',
         'Files',
-        '  app/api/account-lines/route.ts       (in-memory sort)',
-        '  app/banking/[id]/page.tsx            (fallback in-memory sort)',
-        '  supabase/migrations/20260706000547_...sql (doc stamp)',
-        '  lib/version.ts -> 3.74.547'
+        '  lib/dashboard-daily-income.ts        (JE filter + voided lookup)',
+        '  supabase/migrations/20260706000548_...sql (doc stamp)',
+        '  lib/version.ts -> 3.74.548'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
     Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
 }
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.547 pushed" -ForegroundColor Green }
+if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.548 pushed" -ForegroundColor Green }
