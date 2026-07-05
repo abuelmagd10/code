@@ -2219,11 +2219,15 @@ function ApprovalsContent() {
 
       // v3.74.474 — supplier payments history (approved / rejected /
       // completed). The pending inbox tab handles pending rows.
+      // v3.74.534 — enriched with the same story the pending card
+      // carries: bill number + PO + amount in payment ccy + FX base
+      // equivalent + payment method + source account name.
       try {
         const { data: pays } = await supabase
           .from("payments")
           .select(`
             id, reference_number, amount, currency_code, original_currency, status,
+            exchange_rate, base_currency_amount, payment_method, account_id,
             created_at, approved_at, approved_by, rejected_by, created_by, rejection_reason,
             branch_id, warehouse_id,
             supplier_id, branches(name)
@@ -2235,19 +2239,76 @@ function ApprovalsContent() {
           .limit(100)
         // v3.74.503 — no FK payments→suppliers; fetch names separately.
         const histSupIds = Array.from(new Set((pays || []).map((p: any) => p.supplier_id).filter(Boolean)))
-        const histSupsRes = histSupIds.length
-          ? await supabase.from("suppliers").select("id, name").in("id", histSupIds)
-          : { data: [] as any[] }
+        const histPayIds = (pays || []).map((p: any) => p.id)
+        const histAcctIds = Array.from(new Set((pays || []).map((p: any) => p.account_id).filter(Boolean)))
+        const [histSupsRes, histAllocsRes, histAcctsRes] = await Promise.all([
+          histSupIds.length
+            ? supabase.from("suppliers").select("id, name").in("id", histSupIds)
+            : Promise.resolve({ data: [] as any[] }),
+          // v3.74.534 — allocations to resolve bill_no + PO for each payment
+          histPayIds.length
+            ? supabase.from("payment_allocations").select("payment_id, bill_id, allocated_amount").in("payment_id", histPayIds)
+            : Promise.resolve({ data: [] as any[] }),
+          histAcctIds.length
+            ? supabase.from("chart_of_accounts").select("id, account_name").in("id", histAcctIds)
+            : Promise.resolve({ data: [] as any[] }),
+        ])
         const histSupMap = new Map(((histSupsRes.data || []) as any[]).map((s: any) => [s.id, s.name]))
+        const histAcctMap = new Map(((histAcctsRes.data || []) as any[]).map((a: any) => [a.id, a.account_name]))
+        const histAllocsByPay = new Map<string, any[]>()
+        for (const a of (histAllocsRes.data || []) as any[]) {
+          if (!histAllocsByPay.has(a.payment_id)) histAllocsByPay.set(a.payment_id, [])
+          histAllocsByPay.get(a.payment_id)!.push(a)
+        }
+        const histAllBillIds = Array.from(new Set(((histAllocsRes.data || []) as any[]).map(a => a.bill_id).filter(Boolean)))
+        const histBillsRes = histAllBillIds.length
+          ? await supabase.from("bills").select("id, bill_number, purchase_order_id").in("id", histAllBillIds)
+          : { data: [] as any[] }
+        const histBillMap = new Map(((histBillsRes.data || []) as any[]).map((b: any) => [b.id, b]))
+        const histPoIds = Array.from(new Set(((histBillsRes.data || []) as any[]).map((b: any) => b.purchase_order_id).filter(Boolean)))
+        const histPosRes = histPoIds.length
+          ? await supabase.from("purchase_orders").select("id, po_number").in("id", histPoIds)
+          : { data: [] as any[] }
+        const histPoMap = new Map(((histPosRes.data || []) as any[]).map((po: any) => [po.id, po.po_number]))
         for (const p of (pays || []) as any[]) {
           const status = p.status === "rejected" ? "rejected" : "approved"
+          const allocs = histAllocsByPay.get(p.id) || []
+          const primaryAlloc = allocs.length
+            ? allocs.slice().sort((a: any, b: any) => Number(b.allocated_amount || 0) - Number(a.allocated_amount || 0))[0]
+            : null
+          const primaryBill = primaryAlloc?.bill_id ? histBillMap.get(primaryAlloc.bill_id) : null
+          const poNo = primaryBill?.purchase_order_id ? histPoMap.get(primaryBill.purchase_order_id) : null
+          const acctName = p.account_id ? histAcctMap.get(p.account_id) : null
+          const payCcy = p.original_currency || p.currency_code || "EGP"
+          const details: string[] = []
+          if (primaryBill?.bill_number) {
+            let line = `🧾 فاتورة: ${primaryBill.bill_number}`
+            if (poNo) line += ` · 📄 أمر شراء: ${poNo}`
+            if (allocs.length > 1) line += ` · + ${allocs.length - 1} فاتورة أخرى`
+            details.push(line)
+          }
+          const baseStr = payCcy !== "EGP" && p.base_currency_amount != null
+            ? ` ≈ ${Number(p.base_currency_amount).toFixed(2)} EGP · سعر الصرف: ${Number(p.exchange_rate || 0).toFixed(4)}`
+            : ""
+          details.push(`💰 القيمة: ${Number(p.amount).toFixed(2)} ${payCcy}${baseStr}`)
+          const methodLabel = p.payment_method === "cash" ? "نقدى"
+            : p.payment_method === "bank" || p.payment_method === "bank_transfer" ? "تحويل بنكى"
+            : p.payment_method === "check" || p.payment_method === "cheque" ? "شيك"
+            : p.payment_method ?? "—"
+          let payLine = `💳 ${methodLabel}`
+          if (acctName) payLine += ` · 🏦 ${acctName}`
+          details.push(payLine)
+
           merged.push({
             id: `pay-${p.id}`,
             category: "supplier_payment",
             doc_label: `دفعة مورد · ${p.reference_number ?? p.id.slice(0, 8)}`,
             doc_href: null,
             party_label: histSupMap.get(p.supplier_id) ?? null,
-            value_label: `${Number(p.amount).toFixed(2)} ${p.original_currency || p.currency_code || "EGP"}`,
+            // v3.74.534 — value_label now carries the base equivalent inline
+            value_label: payCcy !== "EGP" && p.base_currency_amount != null
+              ? `${Number(p.amount).toFixed(2)} ${payCcy} ≈ ${Number(p.base_currency_amount).toFixed(2)} EGP`
+              : `${Number(p.amount).toFixed(2)} ${payCcy}`,
             status: status as any,
             requested_by_email: null,
             requested_by_id: p.created_by ?? null,
@@ -2256,6 +2317,7 @@ function ApprovalsContent() {
             decided_by_id: p.approved_by ?? p.rejected_by ?? null,
             decided_at: p.approved_at ?? null,
             decision_note: p.rejection_reason ?? null,
+            detail_lines: details,
           })
         }
       } catch { /* keep going */ }

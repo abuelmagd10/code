@@ -1,0 +1,30 @@
+-- v3.74.534 — Owner asked for the /approvals history card to carry the
+-- same story the live approval card carries. Before this release the
+-- supplier-payment history row said only:
+--   دفعة مورد · de99fa71
+--   محمد الصاوى
+--   0.10 USD
+--   طلب/قرار + دولين + الحالة
+-- Nothing about the bill, PO, FX equivalent, method or source account.
+--
+-- v3.74.534 populates the existing `detail_lines` field on the
+-- supplier-payment history entry with three bullet lines rendered by
+-- the shared UnifiedHistoryCard:
+--   🧾 فاتورة: BILL-0001 · 📄 أمر شراء: PO-0001 (+ N فاتورة أخرى إن وجد)
+--   💰 القيمة: 0.10 USD ≈ 4.93 EGP · سعر الصرف: 49.28
+--   💳 نقدى · 🏦 خزينة الشركة مدينة نصر
+--
+-- value_label on the same row now includes the base-EGP equivalent
+-- inline, so the top of the card also stops lying about currency.
+--
+-- Loader changes (app/approvals/page.tsx):
+--   - Select adds exchange_rate, base_currency_amount, payment_method,
+--     account_id.
+--   - Batch-fetches: suppliers (existing), payment_allocations for
+--     the bill link, chart_of_accounts for the source-account name.
+--   - Second batch-fetches: bills (bill_number + purchase_order_id)
+--     for the allocations, purchase_orders (po_number).
+--   - Picks the largest allocation as the "primary" bill (matches the
+--     v3.74.523 pending-inbox behaviour).
+--
+-- No DB schema change. Doc stamp for the release-script version-grep.
