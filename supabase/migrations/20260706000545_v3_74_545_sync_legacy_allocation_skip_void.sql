@@ -1,0 +1,24 @@
+-- v3.74.545 — after v3.74.544 unblocked payment_supplier_approval_insert_trg
+-- for correction RPCs, the next trigger in the chain
+-- (sync_legacy_payment_allocation) failed with CHECK constraint
+-- payment_allocations_allocated_amount_check violated. The trigger
+-- was blindly copying NEW.amount into payment_allocations, but
+-- VOID rows carry a negative amount to offset the original payment.
+-- allocated_amount > 0 is enforced, so the INSERT died with 23514.
+--
+-- Fix (applied via mcp__apply_migration on the prod DB — this file
+-- is the doc stamp for the repo):
+--   1. sync_legacy_payment_allocation (vendor side)
+--      RETURN NEW early when voids_payment_id IS NOT NULL OR amount <= 0.
+--   2. sync_legacy_customer_payment_allocation (sales-side mirror)
+--      Same short-circuit; execute_payment_correction on the customer
+--      refund workflow would hit the identical bug.
+--
+-- Semantic note: a VOID row is a mechanical offset on the payments
+-- table so history stays balanced. The user-facing "how much of this
+-- payment paid this bill" is already unwound by the correction RPC
+-- updating bills.paid_amount = paid_amount - v_orig_base. The
+-- allocations row would just be a duplicate of that reversal in the
+-- wrong sign — better to have none than a negative one.
+--
+-- Doc stamp only.
