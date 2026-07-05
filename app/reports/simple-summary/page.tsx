@@ -621,31 +621,42 @@ export default function SimpleSummaryReport() {
                       <p className="text-xl font-bold">{numberFmt.format(data.profit.net)}</p>
                     </div>
                   </div>
-                  {/* توضيح الفرق بين رأس المال والأصول */}
-                  {data.assets && data.assets.total > 0 && (
-                    <div className="mt-4 bg-white/10 rounded-lg p-3">
-                      <p className="text-sm">
-                        💡 {t(
-                          `Difference between Capital and Assets: ${numberFmt.format(data.assets.total - data.capital.total)} ${baseCode} (${data.assets.total >= data.capital.total ? 'Gain' : 'Loss'})`,
-                          `الفرق بين رأس المال والأصول: ${numberFmt.format(data.assets.total - data.capital.total)} ${ccyAr} (${data.assets.total >= data.capital.total ? 'ربح' : 'خسارة'})`
+                  {/* v3.74.537 — proper accounting equation:
+                      Assets − Liabilities − Capital = Retained Earnings.
+                      Previously we called (Assets − Capital) profit, but
+                      that ignores what suppliers are still owed and
+                      mislabels a real payable as fake profit. */}
+                  {data.assets && data.assets.total > 0 && (() => {
+                    const liab = ((data as any).liabilities?.total) || 0
+                    const netEquityChange = data.assets.total - liab - data.capital.total
+                    const isGain = netEquityChange >= 0
+                    return (
+                      <div className="mt-4 bg-white/10 rounded-lg p-3">
+                        <p className="text-sm">
+                          💡 {t(
+                            `Assets − Liabilities − Capital: ${numberFmt.format(netEquityChange)} ${baseCode} (${isGain ? 'Gain' : 'Loss'})`,
+                            `الأصول − الالتزامات − رأس المال: ${numberFmt.format(netEquityChange)} ${ccyAr} (${isGain ? 'ربح' : 'خسارة'})`
+                          )}
+                        </p>
+                        {liab > 0 && (
+                          <p className="text-xs opacity-80 mt-1">
+                            {t(
+                              `Liabilities: ${numberFmt.format(liab)} ${baseCode}`,
+                              `الالتزامات: ${numberFmt.format(liab)} ${ccyAr}`
+                            )}
+                          </p>
                         )}
-                      </p>
-                    </div>
-                  )}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
 
             </div>
           ) : (
             <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-12">
-                  <Info className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 dark:text-gray-400">
-                    {t('No data available. Please select a date range and click "Update Report".',
-                      'لا توجد بيانات متاحة. يرجى اختيار نطاق تاريخ والنقر على "تحديث التقرير".')}
-                  </p>
-                </div>
+              <CardContent className="pt-6 text-center text-muted-foreground">
+                {t('Loading...', 'جارٍ التحميل...')}
               </CardContent>
             </Card>
           )}
@@ -654,4 +665,3 @@ export default function SimpleSummaryReport() {
     </div>
   )
 }
-

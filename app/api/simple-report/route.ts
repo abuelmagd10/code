@@ -359,6 +359,37 @@ export async function GET(request: NextRequest) {
 
     const totalAssets = assetsList.reduce((sum, a) => sum + a.amount, 0)
 
+    // v3.74.537 — liabilities were missing from this report entirely, so
+    // the frontend was labelling (assets − capital) as "profit". With
+    // unpaid supplier balances (e.g. BILL-0001 net 1.38 EGP still owed)
+    // that mislabels a real payable as phantom profit.
+    // Accounting equation: Assets = Liabilities + Equity + Retained Earnings
+    // → true owner equity change = assets − liabilities − capital.
+    const liabilitiesByAccount: { [key: string]: { name: string; code: string; amount: number } } = {}
+    const liabilityLines = (journalLinesData || []).filter((line: any) => {
+      const coa = Array.isArray(line.chart_of_accounts) ? line.chart_of_accounts[0] : line.chart_of_accounts
+      const entryDate = line.journal_entries?.entry_date
+      return coa?.account_type === "liability" && entryDate && entryDate <= toDate
+    })
+    for (const line of liabilityLines) {
+      const coaRaw = line.chart_of_accounts as any
+      const coa = Array.isArray(coaRaw) ? coaRaw[0] : coaRaw
+      const accountName = coa?.account_name || "أخرى"
+      const accountCode = coa?.account_code || "0000"
+      const debit = Number(line.debit_amount || 0)
+      const credit = Number(line.credit_amount || 0)
+      // Liabilities increase with credit, decrease with debit → net credit balance
+      const amount = credit - debit
+      if (!liabilitiesByAccount[accountCode]) {
+        liabilitiesByAccount[accountCode] = { name: accountName, code: accountCode, amount: 0 }
+      }
+      liabilitiesByAccount[accountCode].amount += amount
+    }
+    const liabilitiesList = Object.values(liabilitiesByAccount)
+      .filter(l => Math.abs(l.amount) > 0.01)
+      .sort((a, b) => a.code.localeCompare(b.code))
+    const totalLiabilities = liabilitiesList.reduce((sum, l) => sum + l.amount, 0)
+
     return apiSuccess({
       capital: { total: Math.max(0, totalCapital) },
       purchases: { total: totalPurchases, count: purchasesCount },
@@ -368,6 +399,10 @@ export async function GET(request: NextRequest) {
       cogs: { total: totalCOGS },
       profit: { gross: grossProfit, net: netProfit },
       assets: { total: totalAssets, items: assetsList },
+      // v3.74.537 — new liabilities block. Frontend computes the
+      // capital-vs-assets gap as (assets − liabilities − capital) so
+      // unpaid supplier balances no longer show up as fake profit.
+      liabilities: { total: totalLiabilities, items: liabilitiesList },
       period: { from: fromDate, to: toDate }
     })
   } catch (error: any) {

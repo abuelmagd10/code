@@ -1,0 +1,27 @@
+-- v3.74.537 — Simple summary report showed a phantom "1 EGP profit"
+-- because the frontend computed (assets − capital) and labelled the
+-- gap as profit/loss, while the API returned no liabilities block at
+-- all. For BILL-0001 (7.34 EGP bill, 4.93 EGP paid, 1.03 EGP returned,
+-- 1.38 EGP still owed to the supplier):
+--
+--   assets = 30,001.31 (cash + inventory + VAT input)
+--   capital = 30,000
+--   real liabilities = 1.38
+--   true retained earnings = 30,001.31 − 1.38 − 30,000 = -0.07 (≈ 0)
+--
+-- The old report said "1 EGP profit" — that "profit" is actually the
+-- unpaid supplier balance masquerading as owner equity.
+--
+-- Fix (Node only, no DB change):
+--   simple-report route: added a liabilities block (per-account list +
+--     total) computed from journal_entry_lines where account_type =
+--     "liability" and entry_date <= toDate. Same shape as the existing
+--     assets block.
+--   simple-summary page: label swapped from
+--     "الفرق بين رأس المال والأصول"
+--   to
+--     "الأصول − الالتزامات − رأس المال" (Assets − Liabilities − Capital)
+--     with the correct math. If there are any liabilities, a secondary
+--     line surfaces them so the reader understands why the gap exists.
+--
+-- No DB schema change. Doc stamp for the release-script version-grep.
