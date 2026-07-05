@@ -3,10 +3,10 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.551"') { Write-Host "+ 3.74.551" -ForegroundColor Green }
+if ($v -match 'APP_VERSION = "3.74.552"') { Write-Host "+ 3.74.552" -ForegroundColor Green }
 else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-if (-not (Test-Path 'supabase/migrations/20260706000551_v3_74_551_daily_movement_flat_rtl_header.sql')) {
+if (-not (Test-Path 'supabase/migrations/20260706000552_v3_74_552_po_and_so_page_void_and_returns.sql')) {
     Write-Host "X doc-stamp migration missing" -ForegroundColor Red; exit 1
 }
 Write-Host "+ doc-stamp migration present" -ForegroundColor Green
@@ -22,24 +22,31 @@ git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) { Write-Host "Nothing to commit" -ForegroundColor Yellow }
 else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_551.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_552.txt"
     $msgLines = @(
-        'style(dashboard): v3.74.551 - flat RTL-safe header for daily movement table',
+        'fix(orders): v3.74.552 - PO/SO detail hides voided pays + subtracts returns',
         '',
-        'The two-row header (rowSpan/colSpan) collided in RTL - branch',
-        'label overlapped the sub-columns. Refactor to a single flat',
-        'header with two-line labels (bucket + direction) per column,',
-        'and swap text-right for text-end throughout so alignment mirrors',
-        'correctly in both languages.',
+        'PO detail was showing 4.34 EGP remaining after the correction executed,',
+        'because netRemaining did not subtract returned_amount. The payments',
+        'tab also displayed the voided original + VOID row alongside the',
+        'corrected payment. Mirrored on sales-orders/[id].',
+        '',
+        'Fixes',
+        '  * payments query: .is(voided_at,null).is(voids_payment_id,null)',
+        '  * select base_currency_amount + amount',
+        '  * totalPaid sums base_currency_amount (FC -> EGP)',
+        '  * Amount column renders base_currency_amount',
+        '  * netRemaining = total - paid - returned',
         '',
         'Files',
-        '  components/DashboardDailyIncomeCard.tsx',
-        '  supabase/migrations/20260706000551_...sql (doc stamp)',
-        '  lib/version.ts -> 3.74.551'
+        '  app/purchase-orders/[id]/page.tsx',
+        '  app/sales-orders/[id]/page.tsx',
+        '  supabase/migrations/20260706000552_...sql (doc stamp)',
+        '  lib/version.ts -> 3.74.552'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
     Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
 }
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.551 pushed" -ForegroundColor Green }
+if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.552 pushed" -ForegroundColor Green }

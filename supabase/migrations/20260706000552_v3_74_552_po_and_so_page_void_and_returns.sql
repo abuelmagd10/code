@@ -1,0 +1,19 @@
+-- v3.74.552 — after the correction was executed on BILL-0001, the PO
+-- detail page (/purchase-orders/[id]) still displayed:
+--   * صافي المتبقي 4.34 EGP — should be 3.31 (7.34 - 3.00 - 1.03).
+--     netRemaining subtracted only paid, not returned.
+--   * ثلاث دفعات فى تبويب "المدفوعات": الأصلية الملغاة (0.10 USD)،
+--     VOID row (-0.10 USD)، والمصحّحة (3.00 EGP). كلها بجنيه.
+--   * جميع القيم بجنيه رغم أن الأصل بالدولار.
+--
+-- Fix (client-side only, /purchase-orders/[id]/page.tsx +
+-- /sales-orders/[id]/page.tsx mirror):
+--   1. Payments query filters .is("voided_at", null) and
+--      .is("voids_payment_id", null) so voided rows + VOID pair hide.
+--   2. Query selects base_currency_amount + amount.
+--   3. totalPaid uses base_currency_amount (FC → EGP equivalent).
+--   4. Display column uses base_currency_amount as well.
+--   5. netRemaining = totalBilled - totalPaid - totalReturned
+--      (sales side already had the returns subtraction).
+--
+-- Doc stamp only — no DB change.

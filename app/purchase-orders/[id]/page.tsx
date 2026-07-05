@@ -234,10 +234,13 @@ export default function PurchaseOrderDetailPage() {
       // Load payments for all linked bills
       if (uniqueBills.length > 0) {
         const billIdsArray = uniqueBills.map((b: any) => b.id)
+        // v3.74.552 — hide voided originals + VOID rows; use base amount.
         const { data: paymentsData } = await supabase
           .from("payments")
-          .select("id, reference_number, payment_date, amount, payment_method, notes, bill_id")
+          .select("id, reference_number, payment_date, amount, base_currency_amount, payment_method, notes, bill_id, voided_at, voids_payment_id")
           .in("bill_id", billIdsArray)
+          .is("voided_at", null)
+          .is("voids_payment_id", null)
           .order("payment_date", { ascending: false })
         setLinkedPayments(paymentsData || [])
 
@@ -333,10 +336,13 @@ export default function PurchaseOrderDetailPage() {
       const billIdsArray = billsData.map((b: any) => b.id)
 
       // جلب المدفوعات
+      // v3.74.552 — hide voided originals + VOID rows; use base amount.
       const { data: paymentsData } = await supabase
         .from("payments")
-        .select("id, reference_number, payment_date, amount, payment_method, notes, bill_id")
+        .select("id, reference_number, payment_date, amount, base_currency_amount, payment_method, notes, bill_id, voided_at, voids_payment_id")
         .in("bill_id", billIdsArray)
+        .is("voided_at", null)
+        .is("voids_payment_id", null)
         .order("payment_date", { ascending: false })
       if (paymentsData) setLinkedPayments(paymentsData)
 
@@ -413,8 +419,14 @@ export default function PurchaseOrderDetailPage() {
   const total = Number(po?.total_amount || po?.total || 0)
 
   // ✅ حساب إجمالي المدفوع من جميع المدفوعات (نفس منطق صفحة الفواتير)
+  // v3.74.552 — read base_currency_amount so FC payments contribute
+  // their EGP-equivalent (not raw USD/GBP). Voided rows are already
+  // excluded by the query filter.
   const totalPaid = useMemo(() => {
-    return linkedPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
+    return linkedPayments.reduce((sum: number, p: any) => {
+      const base = p.base_currency_amount != null ? Number(p.base_currency_amount) : Number(p.amount || 0)
+      return sum + base
+    }, 0)
   }, [linkedPayments])
 
   // ✅ حساب إجمالي المرتجعات من جميع الفواتير المرتبطة (نفس منطق صفحة الفواتير)
@@ -434,11 +446,12 @@ export default function PurchaseOrderDetailPage() {
       }, 0)
       : 0
 
-    // ✅ صافي المتبقي = إجمالي الفواتير - المدفوع
-    // نفس منطق صفحة الفواتير تماماً: netRemaining = bill.total_amount - paidTotal
-    // في صفحة أمر الشراء: netRemaining = totalBilled - totalPaid
-    // (نستخدم totalBilled لأن هذا هو إجمالي الفواتير المرتبطة)
-    const netRemaining = totalBilled - totalPaid
+    // ✅ صافي المتبقي = إجمالي الفواتير - المدفوع - المرتجعات
+    // v3.74.552 — مطابقاً لصفحة الفواتير + AI + التقارير:
+    //   remaining = total - paid - returned
+    // بدون طرح المرتجعات كان الرقم بيبان أكبر من الحقيقة (مثال:
+    // 4.34 بدل 3.31 على BILL-0001).
+    const netRemaining = totalBilled - totalPaid - totalReturned
 
     return {
       totalBilled, // ✅ إجمالي الفواتير (total_amount من كل فاتورة)
@@ -1268,7 +1281,7 @@ export default function PurchaseOrderDetailPage() {
                             <tr key={pay.id} className="border-b dark:border-gray-700">
                               <td className="py-2 px-2 font-medium text-gray-900 dark:text-white">{pay.reference_number || '-'}</td>
                               <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{pay.payment_date}</td>
-                              <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">{symbol}{Number(pay.amount).toFixed(2)}</td>
+                              <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">{symbol}{Number((pay as any).base_currency_amount ?? pay.amount).toFixed(2)}</td>
                               <td className="py-2 px-2 text-gray-700 dark:text-gray-300">
                                 {pay.payment_method === 'cash' ? (appLang === 'en' ? 'Cash' : 'نقدي') :
                                   pay.payment_method === 'bank_transfer' ? (appLang === 'en' ? 'Bank Transfer' : 'تحويل بنكي') :

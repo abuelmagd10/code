@@ -227,10 +227,14 @@ export default function SalesOrderDetailPage() {
       // Load payments for all linked invoices
       if (uniqueInvoices.length > 0) {
         const invIds = uniqueInvoices.map((inv: any) => inv.id)
+        // v3.74.552 — mirror the purchase-side fix: hide voided originals
+        // + VOID rows, read base_currency_amount.
         const { data: paymentsData } = await supabase
           .from("payments")
-          .select("id, reference_number, payment_date, amount, payment_method, notes, invoice_id")
+          .select("id, reference_number, payment_date, amount, base_currency_amount, payment_method, notes, invoice_id, voided_at, voids_payment_id")
           .in("invoice_id", invIds)
+          .is("voided_at", null)
+          .is("voids_payment_id", null)
           .order("payment_date", { ascending: false })
         setLinkedPayments(paymentsData || [])
 
@@ -306,7 +310,11 @@ export default function SalesOrderDetailPage() {
     const totalInvoiced = linkedInvoices.reduce((sum, inv) => {
       return sum + Number(inv.total_amount || 0)
     }, 0)
-    const totalPaid = linkedPayments.reduce((sum, pay) => sum + (pay.amount || 0), 0)
+    // v3.74.552 — use base_currency_amount to mirror the vendor side.
+    const totalPaid = linkedPayments.reduce((sum, pay) => {
+      const base = (pay as any).base_currency_amount != null ? Number((pay as any).base_currency_amount) : Number(pay.amount || 0)
+      return sum + base
+    }, 0)
     // المرتجعات من invoices.returned_amount
     const totalReturned = linkedInvoices.reduce((sum, inv) => sum + Number((inv as any).returned_amount || 0), 0)
     const netRemaining = Math.max(0, totalInvoiced - totalPaid - totalReturned)
@@ -804,7 +812,7 @@ export default function SalesOrderDetailPage() {
                                 <td className="py-3 px-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">
                                   <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">{getPaymentMethodLabel(pay.payment_method)}</span>
                                 </td>
-                                <td className="py-3 px-2 font-medium text-green-600 dark:text-green-400 text-right">{symbol}{pay.amount.toFixed(2)}</td>
+                                <td className="py-3 px-2 font-medium text-green-600 dark:text-green-400 text-right">{symbol}{Number((pay as any).base_currency_amount ?? pay.amount).toFixed(2)}</td>
                                 <td className="py-3 px-2 text-gray-500 dark:text-gray-400 text-xs hidden md:table-cell truncate max-w-[150px]">{pay.notes || '-'}</td>
                               </tr>
                             ))}
