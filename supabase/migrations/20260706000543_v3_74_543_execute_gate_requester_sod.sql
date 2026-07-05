@@ -1,0 +1,13 @@
+-- v3.74.543 — Owner screenshot after v3.74.542: the correction card
+-- in /approvals shows "جاهز للتنفيذ" but no button. Reason: gate was
+-- {isOwnerOrGm && ...}, so the requester who is supposed to execute
+-- by SoD saw nothing to click.
+--
+-- Fix (UI only): allow the button when
+--   isOwnerOrGm  OR  (isApproved && current user is the requester)
+-- for both correction-style cards:
+--   vendor_payment_correction (violet)
+--   customer_refund           (cyan)
+-- The DB RPC still enforces the exact SoD rule (executor ≠ approver);
+-- this change is purely surfacing the button to the right person.
+-- Doc stamp only.

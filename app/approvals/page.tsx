@@ -1004,6 +1004,10 @@ function ApprovalsContent() {
   // v3.74.489 — also store branch/warehouse so we can lock the history
   // filter to the user's scope when they are not owner/admin/GM.
   const [myRole, setMyRole] = useState<string | null>(null)
+  // v3.74.543 — track own user id so the correction card can show
+  // the "تنفيذ" button to the original requester (SoD: the executor
+  // must not be the approver, so we allow the requester too).
+  const [myUserId, setMyUserId] = useState<string | null>(null)
   const [myBranchId, setMyBranchId] = useState<string | null>(null)
   const [myWarehouseId, setMyWarehouseId] = useState<string | null>(null)
   // Branch + warehouse master lists for the history filter dropdowns.
@@ -1016,6 +1020,8 @@ function ApprovalsContent() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      // v3.74.543 — remember own user id for SoD gates
+      setMyUserId(user.id)
       const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
       if (!cid) return
       const { data: member } = await supabase
@@ -4564,8 +4570,9 @@ function ApprovalsContent() {
                               </Link>
                             </div>
                           </div>
-                          {/* v3.74.509 — قرار الاسترداد للمالك/المدير العام فقط */}
-                          {isOwnerOrGm && (
+                          {/* v3.74.509 — قرار الاسترداد للمالك/المدير العام فقط
+                              v3.74.543 — بعد الاعتماد المُقتَرِح ينفّذ (SoD) */}
+                          {(isOwnerOrGm || (isApproved && myUserId && r.requested_by === myUserId)) && (
                           <div className="flex gap-2 mt-3">
                             <Button
                               size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
@@ -4755,8 +4762,10 @@ function ApprovalsContent() {
                               </Link>
                             </div>
                           </div>
-                          {/* v3.74.509 — قرار التصحيح للمالك/المدير العام فقط */}
-                          {isOwnerOrGm && (
+                          {/* v3.74.509 — قرار التصحيح للمالك/المدير العام فقط
+                              v3.74.543 — بعد الاعتماد المُقتَرِح (منشئ الطلب)
+                              هو من يُنَفّذ (SoD) — الزر يظهر له أيضاً. */}
+                          {(isOwnerOrGm || (isApproved && myUserId && r.requested_by === myUserId)) && (
                           <div className="flex gap-2 mt-3">
                             <Button
                               size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
