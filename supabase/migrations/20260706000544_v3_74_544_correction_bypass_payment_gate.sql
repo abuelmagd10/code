@@ -1,0 +1,31 @@
+-- v3.74.544 — Owner clicked Execute (now visible thanks to v3.74.543
+-- SoD gate fix) and hit:
+--   دفع المورد يحتاج اعتماد المالك / المدير العام.
+--   لا يجوز إنشاء دفعة بحالة "approved" مباشرة.
+-- Trigger payment_supplier_approval_insert_trg was rejecting the two
+-- INSERT INTO payments statements inside execute_vendor_payment_correction
+-- (the VOID row + the corrected replacement). Both rows are legitimately
+-- approved by the correction workflow (the correction request itself
+-- was already approved by owner/GM per SoD), but the trigger had no
+-- way to know that from the row context alone.
+--
+-- Fix (see the two SQL files applied via mcp__apply_migration on the
+-- prod DB — this file is the doc stamp for the repo):
+--   1) Trigger now checks current_setting('app.correction_bypass', true)
+--      and short-circuits with RETURN NEW when it equals 'on'.
+--   2) execute_vendor_payment_correction now runs
+--        PERFORM set_config('app.correction_bypass', 'on', true);
+--      right after the initial validation and before the first
+--      INSERT INTO payments. The third argument (true) scopes the GUC
+--      to the current transaction, so it evaporates as soon as the
+--      RPC returns and cannot leak to any other statement.
+--
+-- Security note — clients cannot set this GUC:
+--   - PostgREST does not expose set_config to REST clients.
+--   - The trigger + RPC are SECURITY DEFINER, so no privilege
+--     escalation vector is opened.
+--   - Customer-side payments (customer_id/invoice_id) never trigger
+--     payment_supplier_approval_insert_trg because it only fires
+--     when supplier_id IS NOT NULL OR bill_id IS NOT NULL.
+--
+-- Doc stamp only — the actual DDL was applied via mcp__apply_migration.
