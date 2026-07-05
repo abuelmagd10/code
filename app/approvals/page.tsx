@@ -1366,7 +1366,7 @@ function ApprovalsContent() {
             : Promise.resolve({ data: [] as any[] }),
           allocBillIds.length
             ? supabase.from("bills")
-                .select("id, bill_number, total_amount, paid_amount, currency_code, purchase_order_id")
+                .select("id, bill_number, total_amount, paid_amount, returned_amount, currency_code, purchase_order_id")
                 .in("id", allocBillIds)
             : Promise.resolve({ data: [] as any[] }),
           // v3.74.522 — chart_of_accounts uses `original_currency`, NOT
@@ -1431,8 +1431,12 @@ function ApprovalsContent() {
             account_currency: acctRow?.original_currency ?? null,
             bill_total: billTotal,
             bill_paid: billPaid,
+            // v3.74.529 — outstanding must subtract returned_amount too,
+            // otherwise the card contradicts the bill view page (which
+            // was fixed in v3.74.527 to do the same subtraction). For
+            // BILL-0001: 7.34 - 0.00 - 1.03 = 6.31 EGP.
             bill_outstanding: billTotal != null && billPaid != null
-              ? Number((billTotal - billPaid).toFixed(2))
+              ? Number((billTotal - billPaid - Number(primaryBill?.returned_amount || 0)).toFixed(2))
               : null,
             // v3.74.527 — bill currency for the outstanding label. Defaults
             // to base (EGP) when the bill row didn't stamp a currency.

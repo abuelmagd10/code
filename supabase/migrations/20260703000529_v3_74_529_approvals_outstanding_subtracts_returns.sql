@@ -1,0 +1,25 @@
+-- v3.74.529 — Owner's screenshot after v3.74.528 push:
+--   /bills/[id]   → "الصافى المتبقى: £6.31"   (v3.74.527 fix, correct)
+--   /approvals    → "متبقى الفاتورة: 7.34 EGP" (still wrong)
+--
+-- Both surfaces should agree on the outstanding number. The v3.74.527
+-- fix touched the bill view page; it missed the /approvals card's own
+-- outstanding computation, which lives in the loader on
+-- app/approvals/page.tsx.
+--
+-- The loader was doing:
+--   bill_outstanding = billTotal - billPaid
+-- ignoring returned_amount. For BILL-0001 that gave 7.34 - 0.00 = 7.34.
+-- The bill view now correctly subtracts returns and shows 6.31.
+--
+-- Fix:
+--   * Add returned_amount to the bills SELECT inside the supplier
+--     payment loader block.
+--   * Update the mapper:
+--       bill_outstanding = billTotal - billPaid - returned_amount
+--     For BILL-0001: 7.34 - 0.00 - 1.03 = 6.31 ✅
+--
+-- This makes the /approvals card mirror /bills/[id]'s Three-Way Match
+-- panel exactly.
+--
+-- No DB schema change. Doc stamp for the release-script version-grep.
