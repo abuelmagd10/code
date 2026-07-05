@@ -3,10 +3,10 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.550"') { Write-Host "+ 3.74.550" -ForegroundColor Green }
+if ($v -match 'APP_VERSION = "3.74.551"') { Write-Host "+ 3.74.551" -ForegroundColor Green }
 else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-if (-not (Test-Path 'supabase/migrations/20260706000550_v3_74_550_daily_income_use_payments_journal_link.sql')) {
+if (-not (Test-Path 'supabase/migrations/20260706000551_v3_74_551_daily_movement_flat_rtl_header.sql')) {
     Write-Host "X doc-stamp migration missing" -ForegroundColor Red; exit 1
 }
 Write-Host "+ doc-stamp migration present" -ForegroundColor Green
@@ -22,28 +22,24 @@ git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) { Write-Host "Nothing to commit" -ForegroundColor Yellow }
 else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_550.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_551.txt"
     $msgLines = @(
-        'fix(dashboard): v3.74.550 - daily movement finds voided JE via payments link',
+        'style(dashboard): v3.74.551 - flat RTL-safe header for daily movement table',
         '',
-        'v3.74.548 hid voided originals by matching JE.reference_type=payment',
-        'against payment_ids. Reality: the original bill-payment JE in this',
-        'system uses reference_type=bill_payment with reference_id pointing',
-        'at the bill, so the filter missed it and 07-03 showed both the',
-        'voided original (-4.93) and the corrected repost (-3.00) = -7.93.',
-        '',
-        'Rewrite: query payments.journal_entry_id IN (fetched JE ids) and',
-        'drop any JE whose linked payment has voided_at set. Works',
-        'regardless of what reference_type the JE happens to use.',
+        'The two-row header (rowSpan/colSpan) collided in RTL - branch',
+        'label overlapped the sub-columns. Refactor to a single flat',
+        'header with two-line labels (bucket + direction) per column,',
+        'and swap text-right for text-end throughout so alignment mirrors',
+        'correctly in both languages.',
         '',
         'Files',
-        '  lib/dashboard-daily-income.ts',
-        '  supabase/migrations/20260706000550_...sql (doc stamp)',
-        '  lib/version.ts -> 3.74.550'
+        '  components/DashboardDailyIncomeCard.tsx',
+        '  supabase/migrations/20260706000551_...sql (doc stamp)',
+        '  lib/version.ts -> 3.74.551'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
     Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
 }
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.550 pushed" -ForegroundColor Green }
+if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.551 pushed" -ForegroundColor Green }

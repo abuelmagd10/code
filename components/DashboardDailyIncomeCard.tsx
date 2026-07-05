@@ -215,27 +215,41 @@ export default function DashboardDailyIncomeCard({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 dark:border-slate-700">
-                    <th rowSpan={2} className="text-left py-2 font-medium text-gray-700 dark:text-gray-300 align-bottom">
+                  {/* v3.74.551 — flat single-row header (no rowSpan/colSpan)
+                      to keep RTL alignment predictable. Each column has a
+                      two-line label: bucket (نقد / بنك) on top, direction
+                      (وارد / صادر / صافى) below. */}
+                  <tr className="border-b border-gray-200 dark:border-slate-700 text-xs">
+                    <th className="text-start py-2 font-medium text-gray-700 dark:text-gray-300">
                       {isAr ? "الفرع" : "Branch"}
                     </th>
-                    <th colSpan={3} className="text-center py-1 font-medium text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-slate-700">
-                      {isAr ? "نقد بالخزنة" : "Cash in Treasury"}
+                    <th className="text-end py-2 font-medium">
+                      <div className="text-gray-500 dark:text-gray-400 leading-tight">{isAr ? "نقد" : "Cash"}</div>
+                      <div className="text-emerald-700 dark:text-emerald-400">{isAr ? "وارد" : "In"}</div>
                     </th>
-                    <th colSpan={3} className="text-center py-1 font-medium text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-slate-700">
-                      {isAr ? "إيداعات بنكية" : "Bank Deposits"}
+                    <th className="text-end py-2 font-medium">
+                      <div className="text-gray-500 dark:text-gray-400 leading-tight">{isAr ? "نقد" : "Cash"}</div>
+                      <div className="text-rose-700 dark:text-rose-400">{isAr ? "صادر" : "Out"}</div>
                     </th>
-                    <th rowSpan={2} className="text-right py-2 font-medium text-gray-700 dark:text-gray-300 align-bottom">
+                    <th className="text-end py-2 font-medium">
+                      <div className="text-gray-500 dark:text-gray-400 leading-tight">{isAr ? "نقد" : "Cash"}</div>
+                      <div className="text-gray-700 dark:text-gray-300">{isAr ? "صافى" : "Net"}</div>
+                    </th>
+                    <th className="text-end py-2 font-medium border-r border-gray-200 dark:border-slate-700 ps-3">
+                      <div className="text-gray-500 dark:text-gray-400 leading-tight">{isAr ? "بنك" : "Bank"}</div>
+                      <div className="text-emerald-700 dark:text-emerald-400">{isAr ? "وارد" : "In"}</div>
+                    </th>
+                    <th className="text-end py-2 font-medium">
+                      <div className="text-gray-500 dark:text-gray-400 leading-tight">{isAr ? "بنك" : "Bank"}</div>
+                      <div className="text-rose-700 dark:text-rose-400">{isAr ? "صادر" : "Out"}</div>
+                    </th>
+                    <th className="text-end py-2 font-medium">
+                      <div className="text-gray-500 dark:text-gray-400 leading-tight">{isAr ? "بنك" : "Bank"}</div>
+                      <div className="text-gray-700 dark:text-gray-300">{isAr ? "صافى" : "Net"}</div>
+                    </th>
+                    <th className="text-end py-2 font-medium border-r border-gray-200 dark:border-slate-700 ps-3 text-gray-800 dark:text-gray-200">
                       {isAr ? "الصافى الكلى" : "Net Total"}
                     </th>
-                  </tr>
-                  <tr className="border-b border-gray-200 dark:border-slate-700 text-xs">
-                    <th className="text-right py-1 font-medium text-emerald-700 dark:text-emerald-400">{isAr ? "وارد" : "In"}</th>
-                    <th className="text-right py-1 font-medium text-rose-700 dark:text-rose-400">{isAr ? "صادر" : "Out"}</th>
-                    <th className="text-right py-1 font-medium text-gray-700 dark:text-gray-300">{isAr ? "صافى" : "Net"}</th>
-                    <th className="text-right py-1 font-medium text-emerald-700 dark:text-emerald-400">{isAr ? "وارد" : "In"}</th>
-                    <th className="text-right py-1 font-medium text-rose-700 dark:text-rose-400">{isAr ? "صادر" : "Out"}</th>
-                    <th className="text-right py-1 font-medium text-gray-700 dark:text-gray-300">{isAr ? "صافى" : "Net"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,13 +266,13 @@ export default function DashboardDailyIncomeCard({
                         <td className="py-2 text-gray-900 dark:text-gray-100">
                           {row.branchName ?? (isAr ? "الشركة (بدون فرع)" : "Company (no branch)")}
                         </td>
-                        <td className="py-2 text-right text-emerald-700 dark:text-emerald-400">{formatNum(cIn).toLocaleString("en-US")}</td>
-                        <td className="py-2 text-right text-rose-700 dark:text-rose-400">{formatNum(cOut).toLocaleString("en-US")}</td>
-                        <td className={`py-2 text-right font-medium ${cash >= 0 ? "text-gray-800 dark:text-gray-200" : "text-rose-700 dark:text-rose-400"}`}>{formatNum(cash).toLocaleString("en-US")}</td>
-                        <td className="py-2 text-right text-emerald-700 dark:text-emerald-400">{formatNum(bIn).toLocaleString("en-US")}</td>
-                        <td className="py-2 text-right text-rose-700 dark:text-rose-400">{formatNum(bOut).toLocaleString("en-US")}</td>
-                        <td className={`py-2 text-right font-medium ${bank >= 0 ? "text-gray-800 dark:text-gray-200" : "text-rose-700 dark:text-rose-400"}`}>{formatNum(bank).toLocaleString("en-US")}</td>
-                        <td className={`py-2 text-right font-semibold ${total >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+                        <td className="py-2 text-end text-emerald-700 dark:text-emerald-400">{formatNum(cIn).toLocaleString("en-US")}</td>
+                        <td className="py-2 text-end text-rose-700 dark:text-rose-400">{formatNum(cOut).toLocaleString("en-US")}</td>
+                        <td className={`py-2 text-end font-medium ${cash >= 0 ? "text-gray-800 dark:text-gray-200" : "text-rose-700 dark:text-rose-400"}`}>{formatNum(cash).toLocaleString("en-US")}</td>
+                        <td className="py-2 text-end text-emerald-700 dark:text-emerald-400">{formatNum(bIn).toLocaleString("en-US")}</td>
+                        <td className="py-2 text-end text-rose-700 dark:text-rose-400">{formatNum(bOut).toLocaleString("en-US")}</td>
+                        <td className={`py-2 text-end font-medium ${bank >= 0 ? "text-gray-800 dark:text-gray-200" : "text-rose-700 dark:text-rose-400"}`}>{formatNum(bank).toLocaleString("en-US")}</td>
+                        <td className={`py-2 text-end font-semibold ${total >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
                           {formatNum(total).toLocaleString("en-US")} {currency}
                          </td>
                       </tr>
@@ -271,25 +285,25 @@ export default function DashboardDailyIncomeCard({
                       <td className="py-2 text-gray-900 dark:text-gray-100">
                         {isAr ? "الإجمالي الكلي" : "Grand Total"}
                       </td>
-                      <td className="py-2 text-right text-emerald-700 dark:text-emerald-400">
+                      <td className="py-2 text-end text-emerald-700 dark:text-emerald-400">
                         {formatNum(data.reduce((s, r) => s + (r.cashIn ?? 0), 0)).toLocaleString("en-US")}
                       </td>
-                      <td className="py-2 text-right text-rose-700 dark:text-rose-400">
+                      <td className="py-2 text-end text-rose-700 dark:text-rose-400">
                         {formatNum(data.reduce((s, r) => s + (r.cashOut ?? 0), 0)).toLocaleString("en-US")}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         {formatNum(data.reduce((s, r) => s + (r.cashIncome ?? 0), 0)).toLocaleString("en-US")}
                       </td>
-                      <td className="py-2 text-right text-emerald-700 dark:text-emerald-400">
+                      <td className="py-2 text-end text-emerald-700 dark:text-emerald-400">
                         {formatNum(data.reduce((s, r) => s + (r.bankIn ?? 0), 0)).toLocaleString("en-US")}
                       </td>
-                      <td className="py-2 text-right text-rose-700 dark:text-rose-400">
+                      <td className="py-2 text-end text-rose-700 dark:text-rose-400">
                         {formatNum(data.reduce((s, r) => s + (r.bankOut ?? 0), 0)).toLocaleString("en-US")}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         {formatNum(data.reduce((s, r) => s + (r.bankIncome ?? 0), 0)).toLocaleString("en-US")}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 text-end">
                         {formatNum(data.reduce((s, r) => s + (r.totalIncome ?? (r.cashIncome ?? 0) + (r.bankIncome ?? 0)), 0)).toLocaleString("en-US")} {currency}
                       </td>
                     </tr>

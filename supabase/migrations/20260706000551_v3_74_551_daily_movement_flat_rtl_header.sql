@@ -1,0 +1,9 @@
+-- v3.74.551 — the two-row header with rowSpan/colSpan didn't render
+-- cleanly in RTL: "الفرع" collided with the "وارد" sub-label and the
+-- group headers (نقد بالخزنة / إيداعات بنكية) didn't span correctly.
+-- Refactor to a single flat header row with two-line labels per
+-- column (bucket on top, direction below), and switch every alignment
+-- utility from text-right to text-end so both Arabic and English
+-- render mirrored correctly.
+--
+-- Doc stamp only — no DB change.
