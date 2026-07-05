@@ -139,6 +139,14 @@ interface PendingCustomerRefund {
   refund_account_name: string | null
   requested_by_email: string | null
   rejection_reason: string | null
+  // v3.74.540 — proposed changes stored in customer_refund_requests.metadata
+  // → proposed_changes when the row is a correction-of-payment request.
+  proposed_amount: number | null
+  proposed_currency: string | null
+  proposed_account_name: string | null
+  proposed_method: string | null
+  proposed_date: string | null
+  proposed_reference: string | null
   type: "customer_refund"
 }
 
@@ -1550,6 +1558,7 @@ function ApprovalsContent() {
           .select(`
             id, amount, currency, exchange_rate, base_amount,
             refund_method, refund_account_id, rejection_reason,
+            metadata,
             status, notes, created_at,
             customer_id, requested_by, approved_by, approved_at,
             customers(name),
@@ -1559,12 +1568,15 @@ function ApprovalsContent() {
           .in("status", ["pending", "approved"])
           .order("created_at", { ascending: true })
           .limit(100)
-        // Batch-fetch refund account names + requester emails (no FK).
+        // v3.74.540 — batch-fetch refund account names + requester emails +
+        // any proposed account_id inside metadata.proposed_changes.
         const crAcctIds = Array.from(new Set(((crs || []) as any[]).map(r => r.refund_account_id).filter(Boolean)))
+        const crProposedAcctIds = Array.from(new Set((crs || []).map((r: any) => (r.metadata?.proposed_changes?.account_id) as string | undefined).filter(Boolean)))
+        const allCrAcctIds = Array.from(new Set([...crAcctIds, ...crProposedAcctIds]))
         const crUserIds = Array.from(new Set(((crs || []) as any[]).map(r => r.requested_by).filter(Boolean)))
         const [crAcctsRes, crUsersRes] = await Promise.all([
-          crAcctIds.length
-            ? supabase.from("chart_of_accounts").select("id, account_name").in("id", crAcctIds)
+          allCrAcctIds.length
+            ? supabase.from("chart_of_accounts").select("id, account_name").in("id", allCrAcctIds)
             : Promise.resolve({ data: [] as any[] }),
           crUserIds.length
             ? supabase.from("company_members").select("user_id, email").eq("company_id", cid).in("user_id", crUserIds)
@@ -1572,26 +1584,35 @@ function ApprovalsContent() {
         ])
         const crAcctMap = new Map(((crAcctsRes.data || []) as any[]).map((a: any) => [a.id, a.account_name]))
         const crUserMap = new Map(((crUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
-        setCustomerRefunds((crs || []).map((r: any) => ({
-          id: r.id,
-          customer_name: r.customers?.name ?? null,
-          invoice_no: r.invoices?.invoice_number ?? null,
-          amount: Number(r.amount || 0),
-          status: r.status,
-          notes: r.notes ?? null,
-          requested_at: r.created_at,
-          requested_by: r.requested_by ?? null,
-          approved_by: r.approved_by ?? null,
-          // v3.74.528 — enrichment
-          currency: String(r.currency || "EGP"),
-          base_amount: r.base_amount != null ? Number(r.base_amount) : null,
-          exchange_rate: r.exchange_rate != null ? Number(r.exchange_rate) : null,
-          refund_method: r.refund_method ?? null,
-          refund_account_name: r.refund_account_id ? (crAcctMap.get(r.refund_account_id) ?? null) : null,
-          requested_by_email: r.requested_by ? (crUserMap.get(r.requested_by) ?? null) : null,
-          rejection_reason: r.rejection_reason ?? null,
-          type: "customer_refund" as const,
-        })))
+        setCustomerRefunds((crs || []).map((r: any) => {
+          const proposed = (r.metadata?.proposed_changes || {}) as Record<string, any>
+          return {
+            id: r.id,
+            customer_name: r.customers?.name ?? null,
+            invoice_no: r.invoices?.invoice_number ?? null,
+            amount: Number(r.amount || 0),
+            status: r.status,
+            notes: r.notes ?? null,
+            requested_at: r.created_at,
+            requested_by: r.requested_by ?? null,
+            approved_by: r.approved_by ?? null,
+            currency: String(r.currency || "EGP"),
+            base_amount: r.base_amount != null ? Number(r.base_amount) : null,
+            exchange_rate: r.exchange_rate != null ? Number(r.exchange_rate) : null,
+            refund_method: r.refund_method ?? null,
+            refund_account_name: r.refund_account_id ? (crAcctMap.get(r.refund_account_id) ?? null) : null,
+            requested_by_email: r.requested_by ? (crUserMap.get(r.requested_by) ?? null) : null,
+            rejection_reason: r.rejection_reason ?? null,
+            // v3.74.540 — proposed changes
+            proposed_amount: proposed.amount != null ? Number(proposed.amount) : null,
+            proposed_currency: proposed.original_currency ? String(proposed.original_currency) : null,
+            proposed_account_name: proposed.account_id ? (crAcctMap.get(proposed.account_id) ?? null) : null,
+            proposed_method: proposed.payment_method ? String(proposed.payment_method) : null,
+            proposed_date: proposed.payment_date ? String(proposed.payment_date) : null,
+            proposed_reference: proposed.reference_number ? String(proposed.reference_number) : null,
+            type: "customer_refund" as const,
+          }
+        }))
       } catch {
         setCustomerRefunds([])
       }
@@ -4466,6 +4487,48 @@ function ApprovalsContent() {
                                     </span>
                                   )}
                                 </p>
+                                {/* v3.74.540 — proposed changes panel (only if
+                                    the request is a payment correction with a
+                                    metadata.proposed_changes payload). */}
+                                {(r.proposed_amount != null || r.proposed_currency || r.proposed_account_name || r.proposed_method || r.proposed_date || r.proposed_reference) && (
+                                  <div className="mt-1 p-2 rounded bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 text-xs">
+                                    <p className="font-semibold text-cyan-700 dark:text-cyan-300 mb-0.5">
+                                      🔧 {t("التعديلات المقترحة", "Proposed changes")}
+                                    </p>
+                                    <ul className="text-xs text-cyan-900 dark:text-cyan-200 ms-4 list-disc">
+                                      {r.proposed_amount != null && (
+                                        <li>
+                                          {t("القيمة", "Amount")}: <span className="line-through text-muted-foreground">{fmtMoney(r.amount)}</span>
+                                          <span className="font-semibold ms-1">→ {fmtMoney(r.proposed_amount)}</span>
+                                          {r.proposed_currency && <> {r.proposed_currency}</>}
+                                        </li>
+                                      )}
+                                      {r.proposed_currency && r.proposed_amount == null && (
+                                        <li>
+                                          {t("العملة", "Currency")}: <span className="line-through text-muted-foreground">{r.currency}</span>
+                                          <span className="font-semibold ms-1">→ {r.proposed_currency}</span>
+                                        </li>
+                                      )}
+                                      {r.proposed_account_name && (
+                                        <li>{t("الحساب", "Account")}: <span className="font-semibold">{r.proposed_account_name}</span></li>
+                                      )}
+                                      {r.proposed_method && (
+                                        <li>{t("طريقة الدفع", "Method")}: <span className="font-semibold">
+                                          {r.proposed_method === "cash" ? t("نقدى", "Cash")
+                                            : r.proposed_method === "bank" || r.proposed_method === "bank_transfer" ? t("تحويل بنكى", "Bank transfer")
+                                            : r.proposed_method === "check" || r.proposed_method === "cheque" ? t("شيك", "Check")
+                                            : r.proposed_method}
+                                        </span></li>
+                                      )}
+                                      {r.proposed_date && (
+                                        <li>{t("التاريخ", "Date")}: <span className="font-semibold">{r.proposed_date}</span></li>
+                                      )}
+                                      {r.proposed_reference && (
+                                        <li>{t("المرجع", "Reference")}: <span className="font-semibold">{r.proposed_reference}</span></li>
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
                                 {/* v3.74.528 — refund method + destination account */}
                                 {(r.refund_method || r.refund_account_name) && (
                                   <p className="text-xs text-muted-foreground mt-1">

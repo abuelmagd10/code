@@ -41,7 +41,9 @@ export async function POST(
     }
 
     // v3.74.114 - sanitize proposedChanges to a whitelist of editable fields.
-    // amount/payment_date/account_id/payment_method/reference_number/notes
+    // v3.74.540 — added original_currency + exchange_rate (matching the
+    // v3.74.538 fix on the vendor side). A customer payment recorded
+    // in the wrong currency needs those keys to reach the DB function.
     const proposed: Record<string, unknown> = {}
     const src = body?.proposedChanges || {}
     if (src && typeof src === 'object') {
@@ -55,6 +57,16 @@ export async function POST(
       if ((src as any).payment_method) proposed.payment_method = String((src as any).payment_method)
       if ((src as any).reference_number !== undefined) proposed.reference_number = String((src as any).reference_number || '')
       if ((src as any).notes !== undefined) proposed.notes = String((src as any).notes || '')
+      // v3.74.540 — currency + FX (mirror of vendor side v3.74.538)
+      const ccy = (src as any).original_currency
+      if (ccy !== undefined && ccy !== null && String(ccy).trim() !== '') {
+        proposed.original_currency = String(ccy).toUpperCase().trim()
+      }
+      const rate = (src as any).exchange_rate
+      if (rate !== undefined && rate !== null && rate !== '') {
+        const r = Number(rate)
+        if (Number.isFinite(r) && r > 0) proposed.exchange_rate = r
+      }
     }
 
     const { data, error } = await supabase.rpc("create_payment_correction_request", {

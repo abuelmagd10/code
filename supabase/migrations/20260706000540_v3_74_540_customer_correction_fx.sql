@@ -1,0 +1,12 @@
+-- v3.74.540 — Mirror of v3.74.538 on the customer side.
+--   1. request-correction API whitelist: added original_currency +
+--      exchange_rate so a customer payment recorded in the wrong
+--      currency can be corrected.
+--   2. execute_payment_correction (DB): same three FX bugs as vendor
+--      side. Rewritten to use base_currency_amount for invoice
+--      paid_amount rollback + new balance, to post JE lines in base
+--      currency, and to insert the new payment with the user-proposed
+--      currency + rate. v_has_changes now includes currency + rate.
+--   3. approvals card (customer_refund) surfaces metadata.proposed_
+--      changes so owner sees old-vs-new diff before approving.
+-- Migration applied on prod. This file is a doc stamp.
