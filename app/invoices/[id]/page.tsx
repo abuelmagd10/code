@@ -3233,7 +3233,7 @@ export default function InvoiceDetailPage() {
                     // لا نعرض هذا القسم إذا كان هناك مرتجعات (تم عرضها في الجدول)
                     if (hasReturns) return null
 
-                    const actualRemaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                    const actualRemaining = Math.max(0, invoice.total_amount - invoice.paid_amount - (invoice.returned_amount || 0))
 
                     return (
                       <div className={`mt-4 p-3 rounded-lg border ${actualRemaining === 0
@@ -3381,7 +3381,7 @@ export default function InvoiceDetailPage() {
                   <button
                     data-ai-help="invoices.apply_credit_button"
                     onClick={() => {
-                      const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                      const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount - (invoice.returned_amount || 0))
                       setCreditApplyAmount(String(Math.min(ledgerCreditBalance, remaining).toFixed(2)))
                       setShowApplyCreditDialog(true)
                     }}
@@ -3426,7 +3426,7 @@ export default function InvoiceDetailPage() {
                     </label>
                     {/* v3.74.87: cap input to min(credit, invoiceRemaining); warn on overshoot */}
                     {(() => {
-                      const invoiceRemaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                      const invoiceRemaining = Math.max(0, invoice.total_amount - invoice.paid_amount - (invoice.returned_amount || 0))
                       const maxApplicable = Math.min(ledgerCreditBalance, invoiceRemaining)
                       const entered = Number(creditApplyAmount || 0)
                       const willCap = entered > maxApplicable && maxApplicable > 0
@@ -4015,7 +4015,7 @@ export default function InvoiceDetailPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount)
+                          const remaining = Math.max(0, invoice.total_amount - invoice.paid_amount - (invoice.returned_amount || 0))
                           setCreditApplyAmount(String(Math.min(ledgerCreditBalance, remaining).toFixed(2)))
                           setShowApplyCreditDialog(true)
                         }}
@@ -4472,8 +4472,8 @@ export default function InvoiceDetailPage() {
                       </div>
                       <div className="bg-white dark:bg-slate-800 p-2 rounded">
                         <p className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
-                        <p className={`font-semibold ${(invoice.total_amount - invoice.paid_amount) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                          {Math.max(0, invoice.total_amount - invoice.paid_amount).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
+                        <p className={`font-semibold ${(invoice.total_amount - invoice.paid_amount - (invoice.returned_amount || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {Math.max(0, invoice.total_amount - invoice.paid_amount - (invoice.returned_amount || 0)).toLocaleString('ar-EG', { minimumFractionDigits: 2 })} {currencySymbol}
                         </p>
                       </div>
                     </div>

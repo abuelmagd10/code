@@ -307,11 +307,15 @@ export class SalesInvoiceEditCommandService {
   private async recalculatePaymentStatus(command: SalesInvoiceEditCommand, previousStatus: string | null) {
     const { data: payments, error } = await this.adminSupabase
       .from("payments")
-      .select("amount")
+      .select("amount, base_currency_amount, voided_at, voids_payment_id")
       .eq("invoice_id", command.invoiceId)
+      .is("voided_at", null)
+      .is("voids_payment_id", null)
     if (error) throw new Error(error.message || "Failed to recalculate invoice payment status")
 
-    const totalPaid = (payments || []).reduce((sum: number, payment: any) => sum + Number(payment.amount || 0), 0)
+    // v3.74.553 — sum in base currency and skip voided rows.
+    const totalPaid = (payments || []).reduce((sum: number, payment: any) =>
+      sum + Number(payment.base_currency_amount ?? payment.amount ?? 0), 0)
     let newStatus = previousStatus === "draft" ? "draft" : "sent"
     if (totalPaid >= command.totals.total && totalPaid > 0) newStatus = "paid"
     else if (totalPaid > 0) newStatus = "partially_paid"

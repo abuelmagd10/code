@@ -326,11 +326,15 @@ export class SalesInvoiceUpdateCommandService {
   private async recalculatePaymentStatus(companyId: string, invoiceId: string, totalAmount: number, previousStatus: string | null) {
     const { data: payments, error: paymentsError } = await this.adminSupabase
       .from("payments")
-      .select("amount")
+      .select("amount, base_currency_amount, voided_at, voids_payment_id")
       .eq("invoice_id", invoiceId)
+      .is("voided_at", null)
+      .is("voids_payment_id", null)
     if (paymentsError) throw new Error(paymentsError.message || "Failed to recalculate invoice payments")
 
-    const totalPaid = (payments || []).reduce((sum: number, payment: any) => sum + Number(payment.amount || 0), 0)
+    // v3.74.553 — sum in base currency and skip voided rows.
+    const totalPaid = (payments || []).reduce((sum: number, payment: any) =>
+      sum + Number(payment.base_currency_amount ?? payment.amount ?? 0), 0)
     let nextStatus = previousStatus === "draft" ? "draft" : "sent"
     if (totalPaid > 0 && totalPaid >= totalAmount) {
       nextStatus = "paid"

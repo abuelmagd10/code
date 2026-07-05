@@ -114,7 +114,10 @@ export default function CustomerCreditDetailPage() {
       return
     }
     const selectedInv = openInvoices.find(i => i.id === selectedInvoiceId)
-    const remaining = selectedInv ? Number(selectedInv.total_amount) - Number(selectedInv.paid_amount) : 0
+    // v3.74.553 — subtract returned_amount so credit apply respects returns.
+    const remaining = selectedInv
+      ? Number(selectedInv.total_amount) - Number(selectedInv.paid_amount) - Number((selectedInv as any).returned_amount || 0)
+      : 0
     const maxApply = Math.min(balance, remaining)
 
     if (Number(applyAmount) > maxApply) {
@@ -288,7 +291,8 @@ export default function CustomerCreditDetailPage() {
                     setSelectedInvoiceId(e.target.value)
                     const inv = openInvoices.find(i => i.id === e.target.value)
                     if (inv) {
-                      const remaining = Number(inv.total_amount) - Number(inv.paid_amount)
+                      // v3.74.553 — subtract returned_amount
+                    const remaining = Number(inv.total_amount) - Number(inv.paid_amount) - Number((inv as any).returned_amount || 0)
                       setApplyAmount(String(Math.min(balance, remaining).toFixed(2)))
                     }
                   }}
@@ -296,7 +300,8 @@ export default function CustomerCreditDetailPage() {
                 >
                   <option value="">{appLang === 'en' ? '— Select —' : '— اختر —'}</option>
                   {openInvoices.map(inv => {
-                    const remaining = Number(inv.total_amount) - Number(inv.paid_amount)
+                    // v3.74.553 — subtract returned_amount
+                    const remaining = Number(inv.total_amount) - Number(inv.paid_amount) - Number((inv as any).returned_amount || 0)
                     return (
                       <option key={inv.id} value={inv.id}>
                         {inv.invoice_number} — {appLang === 'en' ? 'Remaining: ' : 'متبقي: '}{currencySymbol}{remaining.toFixed(2)}

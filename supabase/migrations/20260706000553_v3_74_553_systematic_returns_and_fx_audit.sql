@@ -1,0 +1,19 @@
+-- v3.74.553 — systematic audit for two lingering bug classes.
+--
+-- Class 2 (FX): 2 invoice payment-status recalc services summed
+-- payment.amount (FC) instead of base_currency_amount, giving wrong
+-- paid/status transitions when the payment was in USD/GBP:
+--   lib/services/sales-invoice-update-command.service.ts (line 333)
+--   lib/services/sales-invoice-edit-command.service.ts   (line 314)
+-- Both also now filter out voided rows so a corrected invoice
+-- doesn't count the original + the repost.
+--
+-- Class 3 (returned): 7 remaining places computed
+-- total_amount - paid_amount without subtracting returned_amount:
+--   app/customer-credits/[customerId]/page.tsx (x3)
+--   app/invoices/[id]/page.tsx (x4)
+-- Symptoms: apply-credit dialog over-reported available capacity;
+-- invoice remaining/balance labels showed the wrong number after a
+-- partial return.
+--
+-- Doc stamp only — no DB change.
