@@ -1,0 +1,13 @@
+-- v3.74.550 — 07-03 still displayed both original (-4.93) + repost
+-- (-3.00) = -7.93 EGP. Root cause: the v3.74.548 filter matched on
+-- reference_type='payment', but the ORIGINAL bill-payment JE in this
+-- system carries reference_type='bill_payment' with reference_id
+-- pointing at the bill, not the payment. So the filter missed it.
+--
+-- Rewrite (Node side, lib/dashboard-daily-income.ts): stop guessing
+-- from reference_type. Instead look up payments where
+-- journal_entry_id IN (fetched JE ids), and drop any JE whose linked
+-- payment has voided_at set. This works regardless of what
+-- reference_type the JE happens to use.
+--
+-- Doc stamp only — no DB change.

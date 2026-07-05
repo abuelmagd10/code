@@ -134,27 +134,28 @@ export async function getDailyIncomeByBranch(
   if (jeErr) throw new Error(`Failed to load journal entries: ${jeErr.message}`)
   if (!journalEntriesRaw || journalEntriesRaw.length === 0) return []
 
-  // v3.74.548 — filter out JEs of voided originals.
-  const paymentRefIds = journalEntriesRaw
-    .filter((je: any) => je.reference_type === "payment" && je.reference_id)
-    .map((je: any) => je.reference_id) as string[]
-
-  let voidedIds = new Set<string>()
-  if (paymentRefIds.length > 0) {
-    const { data: pays } = await supabase
-      .from("payments")
-      .select("id, voided_at")
-      .in("id", paymentRefIds)
-    voidedIds = new Set(
-      (pays || [])
-        .filter((p: any) => p.voided_at)
-        .map((p: any) => p.id as string)
-    )
-  }
-
-  const journalEntries = journalEntriesRaw.filter(
-    (je: any) => !(je.reference_type === "payment" && voidedIds.has(je.reference_id))
-  )
+  // v3.74.550 — reference_type isn't a reliable marker: legacy payment
+  // JEs may carry reference_type='bill_payment' (with bill_id in
+  // reference_id) instead of 'payment' (with payment_id). Fix the
+  // filter by asking payments directly: which JEs are payment JEs
+  // (via payments.journal_entry_id) and which of those are voided?
+  const jeIdsForLookup = journalEntriesRaw.map((je: any) => je.id) as string[]
+  const voidedJeIds = new Set<string>()
+  if (jeIdsForLookup.length > 0) {
+    const { data: pays } = await supabase
+      .from("payments")
+      .select("journal_entry_id, voided_at")
+      .in("journal_entry_id", jeIdsForLookup)
+    for (const p of pays || []) {
+      const jid = (p as any).journal_entry_id
+      const voided = (p as any).voided_at
+      if (jid && voided) voidedJeIds.add(jid)
+    }
+  }
+
+  const journalEntries = journalEntriesRaw.filter(
+    (je: any) => !voidedJeIds.has(je.id)
+  )
   if (journalEntries.length === 0) return []
 
   const jeIds = journalEntries.map((je: any) => je.id)
