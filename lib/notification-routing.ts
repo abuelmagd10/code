@@ -113,27 +113,13 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   // the requester opens an approved-for-execution ping, the page lands on
   // Approved so they immediately see the row they need to execute; executed
   // confirmations land on Executed.
-  'customer_refund_request': (id, eventKey) => {
-    const ek = eventKey || ''
-    let status: 'pending' | 'approved' | 'executed' | 'cancelled' | null = null
-    if (/:approved(_|$)/.test(ek)) status = 'approved'
-    else if (/:executed(:|$)/.test(ek)) status = 'executed'
-    else if (/:rejected(:|$)/.test(ek)) status = 'cancelled'
-    else if (/:requested(:|$)/.test(ek)) status = 'pending'
-    const qs = status ? `status=${status}&` : ''
-    return `/customer-refund-requests?${qs}highlight=${id}`
-  },
-  // v3.74.127 — vendor payment correction workflow mirrors customer side.
-  'vendor_payment_correction_request': (id, eventKey) => {
-    const ek = eventKey || ''
-    let status: 'pending' | 'approved' | 'executed' | 'cancelled' | null = null
-    if (/:approved(_|$)/.test(ek)) status = 'approved'
-    else if (/:executed(:|$)/.test(ek)) status = 'executed'
-    else if (/:rejected(:|$)/.test(ek)) status = 'cancelled'
-    else if (/:requested(:|$)/.test(ek)) status = 'pending'
-    const qs = status ? `status=${status}&` : ''
-    return `/vendor-payment-correction-requests?${qs}highlight=${id}`
-  },
+  // v3.74.542 — the correction workflows are fully handled inside the
+  // unified /approvals inbox (approve + execute both available there
+  // since v3.74.476). Route notifications straight to the right tab
+  // + highlight so the recipient lands on the exact row, matching the
+  // pattern used for goods-receipt/dispatch/sales-return in v3.74.484.
+  'customer_refund_request': (id) => `/approvals?tab=cref&highlight=${id}`,
+  'vendor_payment_correction_request': (id) => `/approvals?tab=vcor&highlight=${id}`,
 
   // المالية
   'payment': (id) => `/payments?highlight=${id}`,

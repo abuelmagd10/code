@@ -1,0 +1,26 @@
+-- v3.74.542 — Owner asked: why do vendor / customer payment
+-- correction requests still push the executor to a standalone page
+-- when we already unified every other approval workflow into
+-- /approvals (goods-receipt, dispatch, sales-return, discounts,
+-- material issue, product receive, etc)?
+--
+-- Answer: the /approvals inbox card was already handling both
+-- APPROVE and EXECUTE for these two workflows since v3.74.476. The
+-- button text switches automatically:
+--   pending  → "اعتماد" + "رفض"
+--   approved → "تنفيذ التصحيح"
+-- The only pieces still pointing at the standalone pages were the
+-- notification routes.
+--
+-- Fix (Node only):
+--   lib/notification-routing.ts
+--     'customer_refund_request'          → /approvals?tab=cref&highlight=<id>
+--     'vendor_payment_correction_request' → /approvals?tab=vcor&highlight=<id>
+--
+-- The standalone /customer-refund-requests and /vendor-payment-
+-- correction-requests pages remain reachable through the sidebar and
+-- direct URLs as a fallback for anyone bookmarked there, matching how
+-- v3.74.490-492 kept the retired inventory pages live for a while
+-- after their notifications were rerouted.
+--
+-- Doc stamp only.
