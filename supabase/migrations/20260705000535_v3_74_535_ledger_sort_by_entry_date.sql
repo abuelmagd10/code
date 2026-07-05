@@ -1,0 +1,25 @@
+-- v3.74.535 — Owner noticed the cash box ledger was displaying rows in
+-- a nonsensical order: a 2026-07-03 payment sat between two 2026-05-01
+-- capital contributions, and the running-balance column implied the
+-- payment had drained an account that only held 10,000 EGP, even
+-- though 30,000 had been contributed by 2026-05-02.
+--
+-- Root cause: both the API (app/api/account-lines/route.ts) and the
+-- direct-Supabase fallback (app/banking/[id]/page.tsx) called
+--   .order("id", { ascending: false })
+-- on journal_entry_lines. The id column is a random UUID, not a
+-- sequential/temporal key, so the order was essentially random. The
+-- ledger component then reversed the result to compute a running
+-- balance from "oldest to newest" - but that "oldest" was UUID-first,
+-- not date-first, so every row's running balance was wrong even
+-- though the final total (which is just Σdebits - Σcredits) matched
+-- the true balance.
+--
+-- Fix (Node only, no DB change):
+--   Replace .order("id", ...) with
+--     .order("entry_date", { referencedTable: "journal_entries", ascending: false })
+--     .order("id", { ascending: false })   -- tiebreaker
+--   in BOTH surfaces. Final total is unaffected; per-row running
+--   balance now moves along the real timeline.
+--
+-- No DB schema change. Doc stamp for the release-script version-grep.

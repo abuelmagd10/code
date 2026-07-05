@@ -50,6 +50,11 @@ export async function GET(req: NextRequest) {
       .eq("journal_entries.status", "posted") // ✅ posted فقط — متطابق مع income-statement API
       .gte("journal_entries.entry_date", from)
       .lte("journal_entries.entry_date", to)
+      // v3.74.535 — ordering by journal_entry_lines.id (random UUID) gave a
+      // ledger where the running balance per row didn't match the row's
+      // date. Order by the joined journal_entries.entry_date first, then
+      // JE creation time, then line id as a stable tiebreaker.
+      .order("entry_date", { referencedTable: "journal_entries", ascending: false })
       .order("id", { ascending: false })
       .limit(limit)
     if (dbError) {
@@ -63,3 +68,4 @@ export async function GET(req: NextRequest) {
     return serverError(`حدث خطأ أثناء جلب سطور الحساب: ${e?.message}`)
   }
 }
+

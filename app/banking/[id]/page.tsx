@@ -229,6 +229,8 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
           .select("id, debit_amount, credit_amount, description, display_debit, display_credit, display_currency, original_debit, original_credit, original_currency, journal_entries!inner(entry_date, description, company_id, deleted_at)")
           .eq("account_id", accountId)
           .is("journal_entries.deleted_at", null)
+          // v3.74.535 — chronological order (was: order by random UUID)
+          .order("entry_date", { referencedTable: "journal_entries", ascending: false })
           .order("id", { ascending: false })
           .limit(100)
         setLines((directLines || []) as any)
