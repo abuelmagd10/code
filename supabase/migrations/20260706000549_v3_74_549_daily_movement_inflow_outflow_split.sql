@@ -1,0 +1,19 @@
+-- v3.74.549 — the widget was called "Daily Income" but its number is a
+-- NET (debit - credit) and can be legitimately negative on days
+-- dominated by payments. Users were confused by "income = -3 EGP".
+--
+-- Renamed to "صافى الحركة اليومية (نقد + بنك)" and split each row
+-- into three sub-columns per bucket (Cash / Bank):
+--   وارد = SUM(debit_amount)
+--   صادر = SUM(credit_amount)
+--   صافى = وارد - صادر
+-- The Net Total column stays the same computed value but is now
+-- colored (green when >= 0, red when < 0) to make the sign obvious.
+--
+-- Governance untouched:
+--   - branch isolation still enforced in the SQL via
+--     `.eq("branch_id", options.branchId)` for non-privileged users
+--   - reference_type filter (v3.74.548) still excludes reversals
+--   - voided payments still hidden via post-fetch lookup
+--
+-- Doc stamp only — no DB change.
