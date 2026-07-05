@@ -1,0 +1,9 @@
+-- v3.74.554 — the systematic cards audit was clean except for one
+-- context bug in the bill return dialog. When opening the "return
+-- items" form, remainingAmount was computed as total - paid without
+-- subtracting previously-returned. The actual return processing was
+-- correct (RPC enforces the real max), but the number shown to the
+-- user in the dialog was misleading. Aligned with every other
+-- surface: total - paid - returned.
+--
+-- Doc stamp only.

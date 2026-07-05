@@ -728,7 +728,9 @@ export default function BillViewPage() {
     const originalTotal = Number(bill.total_amount || 0)
     const paidAmount = Number((bill as any).paid_amount || paidTotal || 0)
     const previouslyReturned = Number((bill as any).returned_amount || 0)
-    const remainingAmount = Math.max(0, Number(bill.total_amount || 0) - paidAmount)
+    // v3.74.554 — return dialog context: subtract prior returns so the
+    // user sees the true outstanding, matching every other surface.
+    const remainingAmount = Math.max(0, Number(bill.total_amount || 0) - paidAmount - previouslyReturned)
     let paymentStatus: 'unpaid' | 'partial' | 'paid' = 'unpaid'
     if (paidAmount >= originalTotal) {
       paymentStatus = 'paid'
