@@ -96,6 +96,12 @@ export async function GET(req: NextRequest) {
       `)
       .eq("company_id", companyId)
       .eq("status", "approved")
+      // v3.74.538 — exclude voided originals and VOID reversal rows.
+      // Correction leaves both types alive as approved; showing them
+      // in a "daily receipts / payments" would double-report an event
+      // that in reality was a single correction.
+      .is("voided_at", null)
+      .is("voids_payment_id", null)
       .match(branchFilter)
       .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء المدفوعات المحذوفة
       .gte("payment_date", from)

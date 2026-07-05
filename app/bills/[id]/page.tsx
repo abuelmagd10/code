@@ -495,9 +495,13 @@ export default function BillViewPage() {
         setProducts(map)
       }
       // v3.22.1: include FX columns so paidTotal converts payment currency → bill currency
+      // v3.74.538 — exclude voided originals AND VOID reversal rows so
+      // a corrected payment doesn't triple-render (original + VOID + new).
       const { data: payData } = await supabase.from("payments")
         .select("id, bill_id, amount, status, currency_code, exchange_rate, base_currency_amount")
-        .eq("bill_id", id).eq("status", "approved")  // ✅ فقط المعتمدة — المرفوضة والمعلقة لا تدخل في الحساب
+        .eq("bill_id", id).eq("status", "approved")
+        .is("voided_at", null)
+        .is("voids_payment_id", null)
       setPayments((payData || []) as any)
 
       // Load detailed payments with user info — approved only
@@ -505,7 +509,10 @@ export default function BillViewPage() {
         .from("payments")
         .select("id, bill_id, amount, payment_date, payment_method, reference_number, notes, created_at")
         .eq("bill_id", id)
-        .eq("status", "approved")  // ✅ المعتمدة فقط
+        .eq("status", "approved")
+        // v3.74.538 — same void filter as the summary query above
+        .is("voided_at", null)
+        .is("voids_payment_id", null)
         .order("payment_date", { ascending: false })
       setPaymentsDetail((payDetailData || []) as any)
 

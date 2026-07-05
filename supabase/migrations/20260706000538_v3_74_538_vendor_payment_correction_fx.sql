@@ -1,0 +1,15 @@
+-- v3.74.538 — Vendor payment correction (execute step) had three FX bugs:
+--   1. Rollback bills.paid_amount used original.amount (raw) instead of
+--      base_currency_amount, so bill paid balance drifted by the FX gap.
+--   2. New JE lines used raw new amount, not base — corrupted trial
+--      balance same class as v3.74.532 fixed for direct approval.
+--   3. New payment row was force-inserted as base currency, ignoring
+--      the user's proposed original_currency + exchange_rate.
+-- Also v_has_changes was blind to currency/rate changes, so a
+-- currency-only correction skipped the re-post entirely.
+--
+-- Also fixed the API route (vendor-request-correction) to whitelist
+-- original_currency + exchange_rate so those changes actually reach
+-- the DB function.
+--
+-- Migration applied on prod already; this file is a doc stamp.

@@ -42,6 +42,10 @@ export async function POST(
     }
 
     // Same whitelist as customer side
+    // v3.74.538 — extended to include currency + exchange_rate so a
+    // payment recorded in the wrong currency can be corrected through
+    // the vendor-side approval workflow (same fix as v3.74.524 on the
+    // resubmit-after-reject path for still-pending payments).
     const proposed: Record<string, unknown> = {}
     const src = body?.proposedChanges || {}
     if (src && typeof src === 'object') {
@@ -55,6 +59,16 @@ export async function POST(
       if ((src as any).payment_method) proposed.payment_method = String((src as any).payment_method)
       if ((src as any).reference_number !== undefined) proposed.reference_number = String((src as any).reference_number || '')
       if ((src as any).notes !== undefined) proposed.notes = String((src as any).notes || '')
+      // v3.74.538 — currency + FX
+      const ccy = (src as any).original_currency
+      if (ccy !== undefined && ccy !== null && String(ccy).trim() !== '') {
+        proposed.original_currency = String(ccy).toUpperCase().trim()
+      }
+      const rate = (src as any).exchange_rate
+      if (rate !== undefined && rate !== null && rate !== '') {
+        const r = Number(rate)
+        if (Number.isFinite(r) && r > 0) proposed.exchange_rate = r
+      }
     }
 
     const { data, error } = await supabase.rpc("create_vendor_payment_correction_request", {
