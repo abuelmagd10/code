@@ -183,7 +183,7 @@ export default function BillViewPage() {
   const [returnMethod, setReturnMethod] = useState<'cash' | 'bank' | 'credit'>('cash')
   const [returnAccountId, setReturnAccountId] = useState<string>('')
   const [returnNotes, setReturnNotes] = useState<string>('')
-  const [accounts, setAccounts] = useState<Array<{ id: string; account_code: string | null; account_name: string; sub_type: string | null }>>([])
+  const [accounts, setAccounts] = useState<Array<{ id: string; account_code: string | null; account_name: string; sub_type: string | null; original_currency: string | null }>>([])
   const [returnProcessing, setReturnProcessing] = useState(false)
   // Multi-currency for returns
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -597,7 +597,7 @@ export default function BillViewPage() {
           }
           let refundAccsQuery = supabase
             .from("chart_of_accounts")
-            .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id")
+            .select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, original_currency")
             .eq("company_id", companyId)
             .eq("is_active", true)
           if (!isRefundPrivileged2 && userBranchForRefund) {
@@ -2636,19 +2636,43 @@ export default function BillViewPage() {
                   </Select>
                 </div>
 
-                {returnMethod !== 'credit' && (
-                  <div className="space-y-2">
-                    <Label>{appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
-                    <Select value={returnAccountId} onValueChange={setReturnAccountId}>
-                      <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
-                      <SelectContent>
-                        {accounts.map(acc => (
-                          <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                {returnMethod !== 'credit' && (() => {
+                  // v3.74.555 — filter refund account dropdown by method + currency.
+                  //   method=cash → sub_type=cash (or name matches)
+                  //   method=bank → sub_type=bank (or name matches)
+                  //   currency: (acc.original_currency || base) === returnCurrency
+                  const nameHasCash = (nm: string) => /cash|خزينة|نقد|صندوق/i.test(nm)
+                  const nameHasBank = (nm: string) => /bank|بنك|بنكي|مصرف/i.test(nm)
+                  const filtered = accounts.filter((acc: any) => {
+                    const st = String(acc.sub_type || '').toLowerCase()
+                    const nm = String(acc.account_name || '')
+                    const isCash = st === 'cash' || (st !== 'bank' && nameHasCash(nm))
+                    const isBank = st === 'bank' || (st !== 'cash' && nameHasBank(nm))
+                    if (returnMethod === 'cash' && !isCash) return false
+                    if (returnMethod === 'bank' && !isBank) return false
+                    const accCcy = String(acc.original_currency || appCurrency).toUpperCase()
+                    return accCcy === String(returnCurrency).toUpperCase()
+                  })
+                  return (
+                    <div className="space-y-2">
+                      <Label>{appLang === 'en' ? 'Refund Account' : 'حساب الاسترداد'}</Label>
+                      <Select value={returnAccountId} onValueChange={setReturnAccountId}>
+                        <SelectTrigger><SelectValue placeholder={appLang === 'en' ? 'Auto-select' : 'اختيار تلقائي'} /></SelectTrigger>
+                        <SelectContent>
+                          {filtered.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">
+                              {appLang === 'en'
+                                ? `No ${returnMethod === 'cash' ? 'cash' : 'bank'} accounts in ${returnCurrency}`
+                                : `لا توجد حسابات ${returnMethod === 'cash' ? 'نقدية' : 'بنكية'} بعملة ${returnCurrency}`}
+                            </div>
+                          ) : filtered.map(acc => (
+                            <SelectItem key={acc.id} value={acc.id}>{acc.account_code || ''} {acc.account_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )
+                })()}
               </div>
             ) : (
               /* الفاتورة غير مدفوعة: إشعار مدين فقط */

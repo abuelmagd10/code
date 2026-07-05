@@ -3,7 +3,7 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.554"') { Write-Host "+ 3.74.554" -ForegroundColor Green }
+if ($v -match 'APP_VERSION = "3.74.555"') { Write-Host "+ 3.74.555" -ForegroundColor Green }
 else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 Write-Host "Running tsc..." -ForegroundColor Cyan
@@ -17,24 +17,30 @@ git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) { Write-Host "Nothing to commit" -ForegroundColor Yellow }
 else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_554.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_555.txt"
     $msgLines = @(
-        'fix(bills): v3.74.554 - return dialog subtracts prior returns',
+        'feat(returns): v3.74.555 - refund account dropdown filters by method + ccy',
         '',
-        'Cards audit found one remaining consistency issue: the return-items',
-        'dialog on the bill page computed remainingAmount as total - paid',
-        'without subtracting previously-returned. The actual return',
-        'processing was safe (RPC enforced the real max), but the dialog',
-        'context was misleading. Now aligned with every other surface.',
+        'Purchase-return dialog (bills page): the refund-account dropdown',
+        'listed every account regardless of method or currency. Now:',
+        '  method=cash → cash-type accounts only',
+        '  method=bank → bank-type accounts only',
+        '  AND account currency == selected returnCurrency.',
+        'Shows a helpful placeholder when no account matches.',
+        '',
+        'Sales-return dialog (invoice page): already filtered by cash/bank',
+        'but not by currency; added currency match to mirror the payment',
+        'dialog on the same page.',
         '',
         'Files',
         '  app/bills/[id]/page.tsx',
-        '  supabase/migrations/20260706000554_...sql (doc stamp)',
-        '  lib/version.ts -> 3.74.554'
+        '  app/invoices/[id]/page.tsx',
+        '  supabase/migrations/20260706000555_...sql (doc stamp)',
+        '  lib/version.ts -> 3.74.555'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
     Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
 }
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.554 pushed" -ForegroundColor Green }
+if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.555 pushed" -ForegroundColor Green }

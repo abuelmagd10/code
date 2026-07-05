@@ -1,0 +1,19 @@
+-- v3.74.555 — the "new purchase return" dialog (bills page) let the
+-- user pick any refund account regardless of the selected refund
+-- method or currency. If the user chose "استرداد بنكي" + EGP, the
+-- dropdown still listed USD cash boxes. Mirrored issue on the sales
+-- return dialog on the invoice page.
+--
+-- Fix (Node side):
+--   * app/bills/[id]/page.tsx: state carries original_currency; the
+--     "Refund Account" Select applies:
+--       method='cash'  → sub_type='cash' (or name matches نقد/خزينة)
+--       method='bank'  → sub_type='bank' (or name matches بنك/مصرف)
+--       AND (account.original_currency || base) === selected returnCurrency
+--     Shows a friendly "no accounts in this ccy" placeholder when
+--     the filter empties.
+--   * app/invoices/[id]/page.tsx: the sales return dialog already
+--     filtered by sub_type; now also matches the invoice currency
+--     (mirroring the payment-dialog logic used above in the same file).
+--
+-- Doc stamp only.

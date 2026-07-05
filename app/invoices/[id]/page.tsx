@@ -4657,8 +4657,13 @@ export default function InvoiceDetailPage() {
                     )
                   }
                   const accCoa = (a: any) => String(a?.sub_type || '').toLowerCase()
-                  const cashOnly  = (cashBankAccounts || []).filter((a: any) => accCoa(a) === 'cash')
-                  const bankOnly  = (cashBankAccounts || []).filter((a: any) => accCoa(a) === 'bank')
+                  // v3.74.555 — filter by invoice currency so the user can
+                  // only pick a cash/bank account that actually holds that
+                  // currency (mirror of the payment dialog logic above).
+                  const invCcy = String((invoice as any)?.currency_code || appCurrency).toUpperCase()
+                  const accCcy = (a: any) => String(a?.original_currency || appCurrency).toUpperCase()
+                  const cashOnly  = (cashBankAccounts || []).filter((a: any) => accCoa(a) === 'cash' && accCcy(a) === invCcy)
+                  const bankOnly  = (cashBankAccounts || []).filter((a: any) => accCoa(a) === 'bank' && accCcy(a) === invCcy)
                   const eligibleAccounts = returnMethod === 'cash' ? cashOnly
                                          : returnMethod === 'bank_transfer' ? bankOnly
                                          : []
