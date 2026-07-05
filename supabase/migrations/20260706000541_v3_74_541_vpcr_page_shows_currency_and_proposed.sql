@@ -1,0 +1,16 @@
+-- v3.74.541 — The standalone /vendor-payment-correction-requests
+-- listing showed only the naked amount ("0.10") with no currency label,
+-- no base-EGP equivalent, and no diff between the current payment and
+-- the accountant's proposed changes. Executor / approver saw a lonely
+-- number and had to open the source payment to interpret it.
+--
+-- Fix (UI only):
+--   CorrectionRequest interface: added __original_currency,
+--     __base_amount, __exchange_rate (populated by a second query).
+--   Loader: batch-fetches payments by original_payment_id, resolves
+--     currency + base + exchange_rate for every visible row.
+--   Amount column: renders "0.10 USD" primary, "≈ 4.93 EGP · FX 49.28"
+--     secondary, and a violet "→ 3 EGP" line when the accountant
+--     proposed a new amount / currency (from metadata.proposed_changes).
+--
+-- Doc stamp only.

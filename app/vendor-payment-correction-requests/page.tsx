@@ -60,6 +60,11 @@ interface CorrectionRequest {
   suppliers?: { name: string }
   bills?: { bill_number: string }
   metadata?: Record<string, any>
+  // v3.74.541 — resolved via a second query from payments so we can show
+  // "0.10 USD ≈ 4.93 EGP" instead of a naked "0.10".
+  __original_currency?: string
+  __base_amount?: number
+  __exchange_rate?: number
 }
 
 const STATUS_CONFIG = {
@@ -145,7 +150,28 @@ export default function VendorPaymentCorrectionRequestsPage() {
         .order("created_at", { ascending: false })
 
       if (error) throw error
-      setRequests((data as any) || [])
+      // v3.74.541 — the amount column showed a naked number ("0.10")
+      // with no currency. Batch-fetch the original payment to resolve
+      // currency + base_amount + exchange_rate for each request.
+      const origIds = Array.from(new Set(((data || []) as any[]).map(r => r.original_payment_id).filter(Boolean)))
+      const origMap = new Map<string, any>()
+      if (origIds.length > 0) {
+        const { data: origPays } = await supabase
+          .from("payments")
+          .select("id, original_currency, currency_code, exchange_rate, base_currency_amount")
+          .in("id", origIds)
+        for (const p of ((origPays || []) as any[])) origMap.set(p.id, p)
+      }
+      const enriched = ((data || []) as any[]).map((r: any) => {
+        const orig = r.original_payment_id ? origMap.get(r.original_payment_id) : null
+        return {
+          ...r,
+          __original_currency: orig?.original_currency || orig?.currency_code || "EGP",
+          __base_amount: orig?.base_currency_amount != null ? Number(orig.base_currency_amount) : null,
+          __exchange_rate: orig?.exchange_rate != null ? Number(orig.exchange_rate) : null,
+        }
+      })
+      setRequests(enriched as any)
     } catch (err: any) {
       toast({
         title: appLang === 'en' ? "Error" : "خطأ",
@@ -308,11 +334,34 @@ export default function VendorPaymentCorrectionRequestsPage() {
     {
       key: "amount",
       header: appLang === 'en' ? "Amount" : "المبلغ",
-      format: (_v: any, r: CorrectionRequest) => (
-        <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-          {Number(r.amount).toLocaleString()}
-        </span>
-      )
+      // v3.74.541 — show currency + base + proposed diff so the
+      // executor / approver sees the full picture at a glance.
+      format: (_v: any, r: CorrectionRequest) => {
+        const currency = r.__original_currency || "EGP"
+        const base = r.__base_amount
+        const rate = r.__exchange_rate
+        const proposed = (r.metadata?.proposed_changes || {}) as Record<string, any>
+        const propAmt = proposed.amount != null ? Number(proposed.amount) : null
+        const propCcy = proposed.original_currency ? String(proposed.original_currency) : null
+        return (
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+              {Number(r.amount).toLocaleString()} {currency}
+            </span>
+            {currency !== "EGP" && base != null && (
+              <span className="text-[10px] text-muted-foreground">
+                ≈ {base.toLocaleString()} EGP
+                {rate != null && <> · {appLang === 'en' ? 'FX' : 'سعر الصرف'}: {rate.toFixed(4)}</>}
+              </span>
+            )}
+            {(propAmt != null || propCcy) && (
+              <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-400">
+                → {propAmt != null ? Number(propAmt).toLocaleString() : Number(r.amount).toLocaleString()} {propCcy || currency}
+              </span>
+            )}
+          </div>
+        )
+      }
     },
     {
       key: "reason",
