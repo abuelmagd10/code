@@ -341,7 +341,35 @@ export async function POST(request: NextRequest) {
         ;(balanceRows ?? []).forEach((r: any) => {
           totals[r.product_id] = (totals[r.product_id] || 0) + Math.max(0, Number(r.available_quantity) || 0)
         })
-        const balances = productIds.map(pid => ({ product_id: pid, available: totals[pid] }))
+
+        // v3.74.556 — subtract quantities reserved by pending purchase
+        // returns. The v3.74.174 warehouse-stock trigger already blocks
+        // over-committing between purchase returns, but sales flows were
+        // reading raw inventory_available_balance and could promise stock
+        // that was actually earmarked for a return awaiting warehouse
+        // dispatch. Race scenario: warehouse has 4, PR for 1 approved
+        // (pending_warehouse), employee sells 4 → sale succeeds and the
+        // return can no longer be executed. Fixed here by pre-reading
+        // the same reservation set the PR trigger uses.
+        const { data: pendingReturnsRows } = await supabase
+          .from('purchase_return_items')
+          .select('product_id, quantity, purchase_returns!inner(company_id, branch_id, workflow_status)')
+          .eq('purchase_returns.company_id', scopedCompanyId)
+          .eq('purchase_returns.branch_id', finalData.branch_id)
+          .in('product_id', productIds)
+          .in('purchase_returns.workflow_status', [
+            'pending_admin_approval', 'pending_approval',
+            'pending_warehouse',      'partial_approval'
+          ])
+        const pendingReturnQty: Record<string, number> = {}
+        for (const r of (pendingReturnsRows ?? []) as any[]) {
+          pendingReturnQty[r.product_id] = (pendingReturnQty[r.product_id] || 0) + Number(r.quantity || 0)
+        }
+        const balances = productIds.map(pid => ({
+          product_id: pid,
+          available: Math.max(0, (totals[pid] || 0) - (pendingReturnQty[pid] || 0)),
+          reserved_by_pending_returns: pendingReturnQty[pid] || 0
+        }))
 
         const insufficient = balances
           .map(b => {

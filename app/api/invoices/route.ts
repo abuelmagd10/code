@@ -216,7 +216,30 @@ export async function POST(req: NextRequest) {
         ;(balanceRows ?? []).forEach((r: any) => {
           totals[r.product_id] = (totals[r.product_id] || 0) + Math.max(0, Number(r.available_quantity) || 0)
         })
-        const balances = productIds.map(pid => ({ product_id: pid, available: totals[pid] }))
+
+        // v3.74.556 — same reservation subtraction as sales-orders/route.ts
+        // (see full rationale there). Prevents an invoice from being
+        // written for stock already earmarked by a pending purchase
+        // return awaiting warehouse dispatch.
+        const { data: pendingReturnsRows } = await supabase
+          .from('purchase_return_items')
+          .select('product_id, quantity, purchase_returns!inner(company_id, branch_id, workflow_status)')
+          .eq('purchase_returns.company_id', companyId)
+          .eq('purchase_returns.branch_id', finalBranchId)
+          .in('product_id', productIds)
+          .in('purchase_returns.workflow_status', [
+            'pending_admin_approval', 'pending_approval',
+            'pending_warehouse',      'partial_approval'
+          ])
+        const pendingReturnQty: Record<string, number> = {}
+        for (const r of (pendingReturnsRows ?? []) as any[]) {
+          pendingReturnQty[r.product_id] = (pendingReturnQty[r.product_id] || 0) + Number(r.quantity || 0)
+        }
+        const balances = productIds.map(pid => ({
+          product_id: pid,
+          available: Math.max(0, (totals[pid] || 0) - (pendingReturnQty[pid] || 0)),
+          reserved_by_pending_returns: pendingReturnQty[pid] || 0
+        }))
 
         const insufficient = balances
           .map(b => {

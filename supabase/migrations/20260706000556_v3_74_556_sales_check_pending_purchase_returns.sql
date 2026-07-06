@@ -1,0 +1,26 @@
+-- v3.74.556 — sales flows now subtract stock reserved by pending
+-- purchase returns, closing the following race:
+--
+--   Warehouse has 4 units.
+--   Purchase return for 1 approved, pending_warehouse dispatch
+--     → 1 is reserved logically; physical stock is still 4.
+--   Employee creates a sales order or invoice for 4 units.
+--   Before this fix: sales-side saw 4 (raw view), let it through,
+--     and when the warehouse tried to execute the return the stock
+--     was gone. Either the return failed or inventory went negative.
+--
+-- Fix
+--   1) DB helper get_effective_available_stock(company_id,
+--      warehouse_id, product_id) — canonical "how many can I promise?"
+--      Subtracts pending purchase_return_items whose parent is in
+--      any pending workflow_status (pending_admin_approval,
+--      pending_approval, pending_warehouse, partial_approval — same
+--      set the v3.74.174 warehouse trigger uses).
+--   2) app/api/sales-orders/route.ts + app/api/invoices/route.ts:
+--      after loading inventory_available_balance, subtract the
+--      pending-return reservation per product for the same
+--      (company, branch). Insufficient-stock rejection now uses
+--      the corrected number.
+--
+-- Doc stamp for the Node side; the helper DDL was applied via
+-- mcp__apply_migration.
