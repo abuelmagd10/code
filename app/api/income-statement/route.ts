@@ -91,7 +91,11 @@ export async function GET(req: NextRequest) {
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "posted")
-      .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
+      // v3.74.565 — match the filter used by account-balances so a JE
+      // marked is_deleted=true (but with deleted_at still null) never
+      // leaks into the income statement.
+      .or("is_deleted.is.null,is_deleted.eq.false")
+      .is("deleted_at", null)
       .gte("entry_date", from)
       .lte("entry_date", to)
 
@@ -194,4 +198,4 @@ export async function GET(req: NextRequest) {
     console.error("Income statement error:", e)
     return serverError(`حدث خطأ أثناء إنشاء قائمة الدخل: ${e?.message || "unknown_error"}`)
   }
-}
+}

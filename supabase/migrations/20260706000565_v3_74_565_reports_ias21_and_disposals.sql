@@ -1,0 +1,25 @@
+-- v3.74.565 — three-part fix from the financial-statements + fixed-
+-- assets + revaluation audits.
+--
+-- A) Reports — void filter consistency.
+--    /api/income-statement was filtering only deleted_at (missing
+--    is_deleted). /api/simple-report line 127 same. Both fixed to
+--    match the belt-and-suspenders defense used by account-balances,
+--    trial-balance, general-ledger, and journal-amounts:
+--      .neq("journal_entries.is_deleted", true) (or the .or variant)
+--      + .is("journal_entries.deleted_at", null)
+--
+-- B) Fixed Assets — dispose_asset() upgraded:
+--    * fixed_assets.disposal_date/amount/reason/journal_id now written
+--    * JE lines stamp IAS 21 columns (rate=1, base ccy = company base)
+--    * financial-period lock on the disposal date
+--    * SoD guard (creator ≠ disposer unless owner/GM/admin)
+--    * Arabic descriptions on JE lines
+--    * broader Gain/Loss account lookup (matches Arabic naming too)
+--
+-- C) FX Revaluation — a full IAS 21 FX-revaluation RPC (revalue all
+--    FC monetary accounts at closing rate) is a large feature and
+--    deferred. Small deployments can continue to book period-end FX
+--    adjustments as manual JEs.
+--
+-- Doc stamp; DDL applied via mcp__apply_migration.

@@ -125,7 +125,9 @@ export async function GET(request: NextRequest) {
       .in("journal_entry_id", journalEntryIds)
       .eq("journal_entries.company_id", companyId)
       .eq("journal_entries.status", "posted")
-      .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
+      // v3.74.565 — same defense as v3.74.565 income-statement fix.
+      .neq("journal_entries.is_deleted", true)
+      .is("journal_entries.deleted_at", null)
 
     if (linesError) {
       return serverError(`خطأ في جلب سطور القيود: ${linesError.message}`)
