@@ -62,6 +62,10 @@ interface Props {
   serviceId: string
   bookingQty: number
   lang: "ar" | "en"
+  // v3.74.577 — governance inputs: who may edit the addons.
+  bookingBranchId?: string | null
+  staffUserId?: string | null
+  assignedStaffUserIds?: string[] | null
   onChange?: () => void
 }
 
@@ -72,6 +76,9 @@ export function BookingAddons({
   serviceId,
   bookingQty,
   lang,
+  bookingBranchId = null,
+  staffUserId = null,
+  assignedStaffUserIds = null,
   onChange,
 }: Props) {
   // v3.74.574 — look up the parent product on the service ourselves so
@@ -83,6 +90,39 @@ export function BookingAddons({
   const t = (ar: string, en: string) => (isAr ? ar : en)
 
   const locked = ["completed", "cancelled", "no_show"].includes(bookingStatus)
+
+  // v3.74.577 — mirror of assert_booking_addons_permission (server is the
+  // real gate; this only hides the controls from unauthorized roles):
+  //   owner/admin/general_manager  → always
+  //   booking_officer              → own branch (unbranched = any)
+  //   the assigned staff member    → his own booking only
+  const [mayEdit, setMayEdit] = useState(false)
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user || !companyId) return
+        const { data: member } = await supabase
+          .from("company_members")
+          .select("role, branch_id")
+          .eq("company_id", companyId)
+          .eq("user_id", user.id)
+          .maybeSingle()
+        const role = String((member as any)?.role || "")
+        const memberBranch = (member as any)?.branch_id ?? null
+        const allowed =
+          ["owner", "admin", "general_manager"].includes(role) ||
+          (role === "booking_officer" && (!memberBranch || !bookingBranchId || memberBranch === bookingBranchId)) ||
+          (!!staffUserId && staffUserId === user.id) ||
+          (assignedStaffUserIds ?? []).includes(user.id)
+        if (alive) setMayEdit(allowed)
+      } catch { /* stay read-only on failure */ }
+    })()
+    return () => { alive = false }
+  }, [supabase, companyId, bookingBranchId, staffUserId, assignedStaffUserIds])
+
+  const readOnly = locked || !mayEdit
 
   const [bundleItems, setBundleItems] = useState<BundleItem[]>([])
   const [extras, setExtras] = useState<ExtraItem[]>([])
@@ -194,7 +234,7 @@ export function BookingAddons({
   useEffect(() => { load() }, [load])
 
   const toggleOptional = async (item: BundleItem, checked: boolean) => {
-    if (locked) return
+    if (readOnly) return
     try {
       if (checked) {
         const { error } = await supabase.rpc("add_booking_bundle_selection", {
@@ -232,7 +272,7 @@ export function BookingAddons({
   }, [pickedProduct]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const addExtra = async () => {
-    if (locked || !pickedProductId) return
+    if (readOnly || !pickedProductId) return
     const qty = Number(extraQty)
     const price = Number(extraPrice)
     if (!(qty > 0) || !(price >= 0)) {
@@ -260,7 +300,7 @@ export function BookingAddons({
   }
 
   const removeExtra = async (extraId: string) => {
-    if (locked) return
+    if (readOnly) return
     try {
       const { error } = await supabase.rpc("remove_booking_extra_item", {
         p_company_id: companyId,
@@ -277,6 +317,16 @@ export function BookingAddons({
 
   return (
     <div className="space-y-4">
+      {/* v3.74.577 — read-only notice for unauthorized roles */}
+      {!locked && !mayEdit && (
+        <p className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded px-3 py-2">
+          {t(
+            "عرض فقط — تعديل الإضافات متاح للمالك/الإدارة، مسئول الحجز فى فرعه، والموظف المكلف بهذا الحجز",
+            "View only — addons can be edited by owner/management, the branch booking officer, and the staff assigned to this booking",
+          )}
+        </p>
+      )}
+
       {/* ── Section 1: Bundle items ── */}
       <Card>
         <CardHeader>
@@ -299,7 +349,7 @@ export function BookingAddons({
                   {bi.is_optional ? (
                     <Checkbox
                       checked={bi.selected}
-                      disabled={locked}
+                      disabled={readOnly}
                       onCheckedChange={(v) => toggleOptional(bi, !!v)}
                     />
                   ) : (
@@ -335,7 +385,7 @@ export function BookingAddons({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!locked && (
+          {!readOnly && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
               <div className="md:col-span-2">
                 <label className="text-xs text-muted-foreground">{t("المنتج", "Product")}</label>
@@ -383,7 +433,7 @@ export function BookingAddons({
                   <div className="text-sm tabular-nums font-medium">
                     {ex.line_total.toFixed(2)}
                   </div>
-                  {!locked && (
+                  {!readOnly && (
                     <Button variant="ghost" size="sm" onClick={() => removeExtra(ex.id)}>
                       <Trash2 className="w-4 h-4 text-destructive" />
                     </Button>

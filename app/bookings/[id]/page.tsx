@@ -302,6 +302,9 @@ export default function BookingDetailPage() {
                 serviceId={String(booking.service_id ?? "")}
                 bookingQty={Number(booking.quantity ?? 1)}
                 lang={appLang}
+                bookingBranchId={(booking as any).branch_id ?? null}
+                staffUserId={(booking as any).staff_user_id ?? null}
+                assignedStaffUserIds={(booking as any).assigned_staff_user_ids ?? null}
                 onChange={loadBooking}
               />
             </div>
