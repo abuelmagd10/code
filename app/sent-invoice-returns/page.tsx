@@ -50,14 +50,28 @@ export default function SentInvoiceReturnsPage() {
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
+      } catch { }
+    }
+    handler()
+    window.addEventListener('app_language_changed', handler)
+    return () => { window.removeEventListener('app_language_changed', handler) }
+  }, [])
+
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar
 
   // البحث عن الفاتورة
   const searchInvoice = async () => {
     if (!invoiceNumber.trim()) {
       toast({
         variant: "destructive",
-        title: "خطأ",
-        description: "يرجى إدخال رقم الفاتورة"
+        title: t("Error", "خطأ"),
+        description: t("Please enter the invoice number", "يرجى إدخال رقم الفاتورة")
       })
       return
     }
@@ -78,8 +92,8 @@ export default function SentInvoiceReturnsPage() {
       if (invoiceErr || !invoiceData) {
         toast({
           variant: "destructive",
-          title: "خطأ",
-          description: "الفاتورة غير موجودة"
+          title: t("Error", "خطأ"),
+          description: t("Invoice not found", "الفاتورة غير موجودة")
         })
         return
       }
@@ -87,8 +101,8 @@ export default function SentInvoiceReturnsPage() {
       if (invoiceData.status !== 'sent') {
         toast({
           variant: "destructive",
-          title: "خطأ",
-          description: `هذه الفاتورة ليست في حالة مرسلة. الحالة الحالية: ${invoiceData.status}`
+          title: t("Error", "خطأ"),
+          description: appLang === 'en' ? `This invoice is not in Sent status. Current status: ${invoiceData.status}` : `هذه الفاتورة ليست في حالة مرسلة. الحالة الحالية: ${invoiceData.status}`
         })
         return
       }
@@ -104,8 +118,8 @@ export default function SentInvoiceReturnsPage() {
       if (itemsErr || !itemsData) {
         toast({
           variant: "destructive",
-          title: "خطأ",
-          description: "فشل في جلب بنود الفاتورة"
+          title: t("Error", "خطأ"),
+          description: t("Failed to load invoice items", "فشل في جلب بنود الفاتورة")
         })
         return
       }
@@ -119,15 +133,15 @@ export default function SentInvoiceReturnsPage() {
       })))
 
       toast({
-        title: "نجح",
-        description: "تم العثور على الفاتورة"
+        title: t("Success", "نجح"),
+        description: t("Invoice found", "تم العثور على الفاتورة")
       })
 
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "خطأ",
-        description: error.message || "حدث خطأ أثناء البحث"
+        title: t("Error", "خطأ"),
+        description: error.message || t("An error occurred while searching", "حدث خطأ أثناء البحث")
       })
     } finally {
       setIsLoading(false)
@@ -178,8 +192,8 @@ export default function SentInvoiceReturnsPage() {
     if (validReturnItems.length === 0) {
       toast({
         variant: "destructive",
-        title: "خطأ",
-        description: "يرجى تحديد كميات المرتجع"
+        title: t("Error", "خطأ"),
+        description: t("Please specify the return quantities", "يرجى تحديد كميات المرتجع")
       })
       return
     }
@@ -201,12 +215,12 @@ export default function SentInvoiceReturnsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "حدث خطأ أثناء معالجة المرتجع")
+        throw new Error(data.error || t("An error occurred while processing the return", "حدث خطأ أثناء معالجة المرتجع"))
       }
 
       toast({
-        title: "نجح",
-        description: data.data?.message || "تم معالجة المرتجع بنجاح"
+        title: t("Success", "نجح"),
+        description: data.data?.message || t("Return processed successfully", "تم معالجة المرتجع بنجاح")
       })
 
       // إعادة تعيين النموذج
@@ -218,8 +232,8 @@ export default function SentInvoiceReturnsPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "خطأ",
-        description: error.message || "حدث خطأ أثناء معالجة المرتجع"
+        title: t("Error", "خطأ"),
+        description: error.message || t("An error occurred while processing the return", "حدث خطأ أثناء معالجة المرتجع")
       })
     } finally {
       setIsProcessing(false)
@@ -234,10 +248,10 @@ export default function SentInvoiceReturnsPage() {
 
         {/* Header — Added ERPPageHeader (v3.55.0) */}
         <ERPPageHeader
-          title="مرتجعات الفواتير المُرسَلة"
-          description="معالجة مرتجعات الفواتير في حالة Sent (دون قيود مالية جديدة)"
+          title={t("Sent Invoice Returns", "مرتجعات الفواتير المُرسَلة")}
+          description={t("Process returns for invoices in Sent status (without new financial entries)", "معالجة مرتجعات الفواتير في حالة Sent (دون قيود مالية جديدة)")}
           variant="list"
-          lang="ar"
+          lang={appLang}
         />
 
         {/* تحذير هام */}
@@ -245,22 +259,22 @@ export default function SentInvoiceReturnsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-orange-800 dark:text-orange-200">
               <AlertTriangle className="w-5 h-5" />
-              تنبيه هام - معالجة مرتجعات الفواتير المرسلة (Sent)
+              {t("Important Notice - Processing Returns for Sent Invoices", "تنبيه هام - معالجة مرتجعات الفواتير المرسلة (Sent)")}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-orange-700 dark:text-orange-300">
             <div className="space-y-2">
-              <p><strong>✅ المسموح فقط:</strong></p>
+              <p><strong>{t("✅ Allowed only:", "✅ المسموح فقط:")}</strong></p>
               <ul className="list-disc list-inside space-y-1 mr-4">
-                <li>تعديل بيانات الفاتورة نفسها (تحديث الكميات والصافي والإجمالي)</li>
-                <li>تحديث ذمم العميل (AR) في القيد الأصلي</li>
-                <li>تحديث حركات المخزون</li>
+                <li>{t("Editing the invoice data itself (updating quantities, net, and total)", "تعديل بيانات الفاتورة نفسها (تحديث الكميات والصافي والإجمالي)")}</li>
+                <li>{t("Updating customer receivables (AR) in the original journal entry", "تحديث ذمم العميل (AR) في القيد الأصلي")}</li>
+                <li>{t("Updating inventory movements", "تحديث حركات المخزون")}</li>
               </ul>
-              <p><strong>🚫 ممنوع تماماً:</strong></p>
+              <p><strong>{t("🚫 Strictly forbidden:", "🚫 ممنوع تماماً:")}</strong></p>
               <ul className="list-disc list-inside space-y-1 mr-4">
-                <li>إنشاء أي قيد مالي جديد</li>
-                <li>إنشاء قيد Cash أو COGS أو Revenue إضافي</li>
-                <li>المساس بأي فواتير أو قيود أخرى</li>
+                <li>{t("Creating any new financial entry", "إنشاء أي قيد مالي جديد")}</li>
+                <li>{t("Creating an additional Cash, COGS, or Revenue entry", "إنشاء قيد Cash أو COGS أو Revenue إضافي")}</li>
+                <li>{t("Touching any other invoices or journal entries", "المساس بأي فواتير أو قيود أخرى")}</li>
               </ul>
             </div>
           </CardContent>
@@ -269,12 +283,12 @@ export default function SentInvoiceReturnsPage() {
         {/* البحث عن الفاتورة */}
         <Card>
           <CardHeader>
-            <CardTitle>البحث عن فاتورة مرسلة</CardTitle>
+            <CardTitle>{t("Search for a Sent Invoice", "البحث عن فاتورة مرسلة")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
               <div className="flex-1">
-                <Label htmlFor="invoice_number">رقم الفاتورة</Label>
+                <Label htmlFor="invoice_number">{t("Invoice Number", "رقم الفاتورة")}</Label>
                 <Input
                   id="invoice_number"
                   value={invoiceNumber}
@@ -288,7 +302,7 @@ export default function SentInvoiceReturnsPage() {
                   onClick={searchInvoice}
                   disabled={isLoading}
                 >
-                  {isLoading ? "جاري البحث..." : "بحث"}
+                  {isLoading ? t("Searching...", "جاري البحث...") : t("Search", "بحث")}
                 </Button>
               </div>
             </div>
@@ -300,7 +314,7 @@ export default function SentInvoiceReturnsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span>فاتورة {invoice.invoice_number}</span>
+                <span>{t("Invoice", "فاتورة")} {invoice.invoice_number}</span>
                 <Badge className="bg-blue-100 text-blue-800">
                   {invoice.status}
                 </Badge>
@@ -309,19 +323,19 @@ export default function SentInvoiceReturnsPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-500">المجموع الفرعي:</span>
+                  <span className="text-gray-500">{t("Subtotal:", "المجموع الفرعي:")}</span>
                   <div className="font-medium">{Number(invoice.subtotal).toFixed(2)}</div>
                 </div>
                 <div>
-                  <span className="text-gray-500">الضريبة:</span>
+                  <span className="text-gray-500">{t("Tax:", "الضريبة:")}</span>
                   <div className="font-medium">{Number(invoice.tax_amount).toFixed(2)}</div>
                 </div>
                 <div>
-                  <span className="text-gray-500">الإجمالي:</span>
+                  <span className="text-gray-500">{t("Total:", "الإجمالي:")}</span>
                   <div className="font-medium">{Number(invoice.total_amount).toFixed(2)}</div>
                 </div>
                 <div>
-                  <span className="text-gray-500">المرتجع السابق:</span>
+                  <span className="text-gray-500">{t("Previously Returned:", "المرتجع السابق:")}</span>
                   <div className="font-medium">{Number(invoice.returned_amount || 0).toFixed(2)}</div>
                 </div>
               </div>
@@ -331,13 +345,13 @@ export default function SentInvoiceReturnsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-gray-600 border-b">
-                      <th className="text-right p-3">المنتج</th>
-                      <th className="text-right p-3">الكمية الأصلية</th>
-                      <th className="text-right p-3">المرتجع السابق</th>
-                      <th className="text-right p-3">المتاح للمرتجع</th>
-                      <th className="text-right p-3">كمية المرتجع</th>
-                      <th className="text-right p-3">السعر</th>
-                      <th className="text-right p-3">الإجمالي</th>
+                      <th className="text-right p-3">{t("Product", "المنتج")}</th>
+                      <th className="text-right p-3">{t("Original Quantity", "الكمية الأصلية")}</th>
+                      <th className="text-right p-3">{t("Previously Returned", "المرتجع السابق")}</th>
+                      <th className="text-right p-3">{t("Available for Return", "المتاح للمرتجع")}</th>
+                      <th className="text-right p-3">{t("Return Quantity", "كمية المرتجع")}</th>
+                      <th className="text-right p-3">{t("Price", "السعر")}</th>
+                      <th className="text-right p-3">{t("Total", "الإجمالي")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -389,15 +403,15 @@ export default function SentInvoiceReturnsPage() {
                   <div className="flex justify-end">
                     <div className="w-64 space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span>المجموع الفرعي:</span>
+                        <span>{t("Subtotal:", "المجموع الفرعي:")}</span>
                         <span>{returnTotals.subtotal.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>الضريبة:</span>
+                        <span>{t("Tax:", "الضريبة:")}</span>
                         <span>{returnTotals.tax.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-lg border-t pt-2">
-                        <span>إجمالي المرتجع:</span>
+                        <span>{t("Return Total:", "إجمالي المرتجع:")}</span>
                         <span>{returnTotals.total.toFixed(2)}</span>
                       </div>
                     </div>
@@ -416,7 +430,7 @@ export default function SentInvoiceReturnsPage() {
                     setInvoiceNumber("")
                   }}
                 >
-                  إلغاء
+                  {t("Cancel", "إلغاء")}
                 </Button>
                 <Button
                   onClick={processReturn}
@@ -424,7 +438,7 @@ export default function SentInvoiceReturnsPage() {
                   className="bg-green-600 hover:bg-green-700"
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  {isProcessing ? "جاري المعالجة..." : "معالجة المرتجع"}
+                  {isProcessing ? t("Processing...", "جاري المعالجة...") : t("Process Return", "معالجة المرتجع")}
                 </Button>
               </div>
             </CardContent>

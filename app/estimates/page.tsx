@@ -63,6 +63,20 @@ export default function EstimatesPage() {
   const supabase = useSupabase();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [appLang, setAppLang] = useState<'ar' | 'en'>('ar');
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar');
+      } catch { }
+    };
+    handler();
+    window.addEventListener('app_language_changed', handler);
+    return () => { window.removeEventListener('app_language_changed', handler); };
+  }, []);
+
+  const t = (en: string, ar: string) => appLang === 'en' ? en : ar;
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
@@ -206,7 +220,11 @@ export default function EstimatesPage() {
                     .in("user_id", userIds)
                 : { data: [] as any[] };
               const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
-              const roleLabels: Record<string, string> = {
+              const roleLabels: Record<string, string> = appLang === 'en' ? {
+                owner: 'Owner', admin: 'Admin', manager: 'Branch Manager',
+                supervisor: 'Supervisor', staff: 'Staff', accountant: 'Accountant',
+                sales: 'Sales', viewer: 'Viewer',
+              } : {
                 owner: 'مالك', admin: 'مدير', manager: 'مدير فرع',
                 supervisor: 'مشرف', staff: 'موظف', accountant: 'محاسب',
                 sales: 'مبيعات', viewer: 'مشاهد',
@@ -278,7 +296,7 @@ export default function EstimatesPage() {
         const { data: prod, error: prodErr } = await productsQuery;
         if (prodErr) {
           console.error("Failed to load products:", prodErr);
-          toastActionError(toast, "خطأ في تحميل المنتجات", prodErr.message);
+          toastActionError(toast, t("Product Loading", "خطأ في تحميل المنتجات"), prodErr.message);
         }
         setProducts(prod || []);
 
@@ -328,14 +346,14 @@ export default function EstimatesPage() {
         }
       } catch (err: any) {
         console.error("Estimates load error:", err);
-        toastActionError(toast, "خطأ في التحميل", err?.message || "");
+        toastActionError(toast, t("Loading", "خطأ في التحميل"), err?.message || "");
       } finally {
         setLoading(false);
       }
     };
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, toast, branchFilter.selectedBranchId]);
+  }, [supabase, toast, appLang, branchFilter.selectedBranchId]);
 
   const resetForm = () => {
     setCustomerId("");
@@ -400,11 +418,11 @@ export default function EstimatesPage() {
 
   const saveEstimate = async () => {
     if (!customerId) {
-      sonnerToast.error("الرجاء اختيار العميل");
+      sonnerToast.error(t("Please select a customer", "الرجاء اختيار العميل"));
       return;
     }
     if (!estimateNumber) {
-      sonnerToast.error("رقم العرض مطلوب");
+      sonnerToast.error(t("Estimate number is required", "رقم العرض مطلوب"));
       return;
     }
 
@@ -414,7 +432,7 @@ export default function EstimatesPage() {
     // had product_id=null and quantity=0. Estimates feed directly into
     // sales orders via convertToSO, so junk lines here propagate forward.
     if (!items || items.length === 0) {
-      sonnerToast.error("لا يمكن حفظ العرض بدون بنود. الرجاء إضافة منتج واحد على الأقل.");
+      sonnerToast.error(t("The estimate cannot be saved without line items. Please add at least one product.", "لا يمكن حفظ العرض بدون بنود. الرجاء إضافة منتج واحد على الأقل."));
       return;
     }
     const invalidEstimateRows: number[] = [];
@@ -428,7 +446,9 @@ export default function EstimatesPage() {
     });
     if (invalidEstimateRows.length > 0) {
       sonnerToast.error(
-        `بنود ناقصة فى السطر/السطور: ${invalidEstimateRows.join("، ")}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`
+        appLang === 'en'
+          ? `Incomplete line item(s) on row(s): ${invalidEstimateRows.join(", ")}. Each line must have a product, a quantity greater than zero, and a unit price.`
+          : `بنود ناقصة فى السطر/السطور: ${invalidEstimateRows.join("، ")}. كل بند يجب أن يحتوى على منتج، كمية أكبر من صفر، وسعر وحدة.`
       );
       return;
     }
@@ -438,7 +458,7 @@ export default function EstimatesPage() {
     // 🔐 Required for RLS: company_id must be in payload (can_modify_data check)
     const companyId = await getActiveCompanyId(supabase);
     if (!companyId) {
-      toastActionError(toast, "خطأ", "العرض", "تعذر تحديد الشركة");
+      toastActionError(toast, t("Save", "خطأ"), t("estimate", "العرض"), t("Could not determine the active company", "تعذر تحديد الشركة"));
       setLoading(false);
       return;
     }
@@ -466,7 +486,7 @@ export default function EstimatesPage() {
       const { error } = await supabase.from("estimates").update(payload).eq("id", editing.id);
       if (error) {
         console.error("Estimate update error:", error);
-        toastActionError(toast, "التحديث", "العرض", error.message || "تعذر تحديث العرض");
+        toastActionError(toast, t("Update", "التحديث"), t("estimate", "العرض"), error.message || t("Could not update the estimate", "تعذر تحديث العرض"));
         setLoading(false);
         return;
       }
@@ -477,7 +497,7 @@ export default function EstimatesPage() {
       const { data, error } = await supabase.from("estimates").insert(payload).select("id").single();
       if (error) {
         console.error("Estimate insert error:", error);
-        toastActionError(toast, "الإنشاء", "العرض", error.message || "تعذر إنشاء العرض");
+        toastActionError(toast, t("Create", "الإنشاء"), t("estimate", "العرض"), error.message || t("Could not create the estimate", "تعذر إنشاء العرض"));
         setLoading(false);
         return;
       }
@@ -497,11 +517,11 @@ export default function EstimatesPage() {
       }));
       const { error: ie } = await supabase.from("estimate_items").insert(rows);
       if (ie) {
-        toast({ title: "تم إنشاء العرض بدون البنود لخطأ ما", variant: "destructive" });
+        toast({ title: t("The estimate was created without its line items due to an error", "تم إنشاء العرض بدون البنود لخطأ ما"), variant: "destructive" });
       }
     }
 
-    toastActionSuccess(toast, editing ? "التحديث" : "الإنشاء", "العرض");
+    toastActionSuccess(toast, editing ? t("Update", "التحديث") : t("Create", "الإنشاء"), t("estimate", "العرض"));
     setOpen(false);
     resetForm();
     // 🔐 Reload with same explicit governance as initial load (no applyDataVisibilityFilter
@@ -567,7 +587,7 @@ export default function EstimatesPage() {
       window.location.href = "/sales-orders/new?from=estimate&estimate_id=" + encodeURIComponent(estimate.id);
     } catch (err: any) {
       console.error("convertToSO prepare error:", err);
-      toast({ title: "تعذر تحضير البيانات للتحويل", variant: "destructive" });
+      toast({ title: t("Could not prepare the data for conversion", "تعذر تحضير البيانات للتحويل"), variant: "destructive" });
       setLoading(false);
     }
   };
@@ -585,14 +605,14 @@ export default function EstimatesPage() {
 
   const deleteEstimate = async (estimate: Estimate) => {
     if (!canDeleteEstimate(estimate)) {
-      toast({ title: "لا تملك صلاحية حذف هذا العرض", variant: "destructive" });
+      toast({ title: t("You do not have permission to delete this estimate", "لا تملك صلاحية حذف هذا العرض"), variant: "destructive" });
       return;
     }
     if (estimate.converted_so_id) {
-      toast({ title: "لا يمكن حذف عرض مُحَوَّل لأمر بيع", variant: "destructive" });
+      toast({ title: t("An estimate converted to a sales order cannot be deleted", "لا يمكن حذف عرض مُحَوَّل لأمر بيع"), variant: "destructive" });
       return;
     }
-    if (!window.confirm("هل أنت متأكد من حذف عرض السعر " + estimate.estimate_number + "؟")) return;
+    if (!window.confirm(appLang === 'en' ? ("Are you sure you want to delete estimate " + estimate.estimate_number + "?") : ("هل أنت متأكد من حذف عرض السعر " + estimate.estimate_number + "؟"))) return;
     setLoading(true);
     try {
       // First clear estimate_items (RLS allows this via parent join)
@@ -600,15 +620,15 @@ export default function EstimatesPage() {
       const { error } = await supabase.from("estimates").delete().eq("id", estimate.id);
       if (error) {
         console.error("Delete estimate error:", error);
-        toastActionError(toast, "الحذف", "العرض", error.message || "تعذر الحذف");
+        toastActionError(toast, t("Delete", "الحذف"), t("estimate", "العرض"), error.message || t("Could not delete", "تعذر الحذف"));
         setLoading(false);
         return;
       }
-      toastActionSuccess(toast, "الحذف", "العرض");
+      toastActionSuccess(toast, t("Delete", "الحذف"), t("estimate", "العرض"));
       setEstimates((prev) => prev.filter((x) => x.id !== estimate.id));
     } catch (err: any) {
       console.error("Delete estimate exception:", err);
-      toastActionError(toast, "الحذف", "العرض", err?.message || "");
+      toastActionError(toast, t("Delete", "الحذف"), t("estimate", "العرض"), err?.message || "");
     } finally {
       setLoading(false);
     }
@@ -620,23 +640,23 @@ export default function EstimatesPage() {
       <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         {/* رأس الصفحة — Migrated to ERPPageHeader (v3.55.0), governance v3.55.5 */}
         <ERPPageHeader
-          title="العروض السعرية"
-          description="إدارة عروض الأسعار للعملاء"
+          title={t("Estimates", "العروض السعرية")}
+          description={t("Manage customer price quotations", "إدارة عروض الأسعار للعملاء")}
           variant="list"
-          lang="ar"
-          actions={<Button onClick={onOpenNew}>عرض جديد</Button>}
+          lang={appLang}
+          actions={<Button onClick={onOpenNew}>{t("New Estimate", "عرض جديد")}</Button>}
           extra={
             (userContext?.role === 'manager' || userContext?.role === 'accountant') ? (
               <p className="text-xs text-blue-600 dark:text-blue-400">
-                🏢 تعرض العروض الخاصة بفرعك فقط
+                {t("🏢 Showing estimates for your branch only", "🏢 تعرض العروض الخاصة بفرعك فقط")}
               </p>
             ) : (userContext?.role === 'staff' || userContext?.role === 'sales' || userContext?.role === 'employee') ? (
               <p className="text-xs text-blue-600 dark:text-blue-400">
-                👨‍💼 تعرض العروض التي أنشأتها فقط
+                {t("👨‍💼 Showing only the estimates you created", "👨‍💼 تعرض العروض التي أنشأتها فقط")}
               </p>
             ) : (
               <p className="text-xs text-green-600 dark:text-green-400">
-                👑 جميع العروض السعرية مرئية
+                {t("👑 All estimates are visible", "👑 جميع العروض السعرية مرئية")}
               </p>
             )
           }
@@ -644,7 +664,7 @@ export default function EstimatesPage() {
 
         {/* Filters Section — fully aligned with /sales-orders */}
         <FilterContainer
-          title="الفلاتر"
+          title={t("Filters", "الفلاتر")}
           activeCount={activeFilterCount + (branchFilter.selectedBranchId ? 1 : 0)}
           onClear={() => { clearFilters(); branchFilter.resetFilter(); }}
           defaultOpen={false}
@@ -652,7 +672,7 @@ export default function EstimatesPage() {
           <div className="space-y-4">
             {/* BranchFilter (privileged only — auto-hides internally) */}
             <BranchFilter
-              lang="ar"
+              lang={appLang}
               externalHook={branchFilter}
               className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800"
             />
@@ -661,22 +681,22 @@ export default function EstimatesPage() {
             {canViewAllEstimates && employees.length > 0 && (
               <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                 <UserCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">فلترة حسب الموظف:</span>
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">{t("Filter by employee:", "فلترة حسب الموظف:")}</span>
                 <Select value={filterEmployeeId} onValueChange={(value) => setFilterEmployeeId(value)}>
                   <SelectTrigger className="w-[220px] h-9 bg-white dark:bg-slate-800">
-                    <SelectValue placeholder="جميع الموظفين" />
+                    <SelectValue placeholder={t("All employees", "جميع الموظفين")} />
                   </SelectTrigger>
                   <SelectContent>
                     <div className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 border-b">
                       <Input
                         value={employeeSearchQuery}
                         onChange={(e) => setEmployeeSearchQuery(e.target.value)}
-                        placeholder="بحث في الموظفين..."
+                        placeholder={t("Search employees...", "بحث في الموظفين...")}
                         className="text-sm h-8"
                         autoComplete="off"
                       />
                     </div>
-                    <SelectItem value="all">جميع الموظفين</SelectItem>
+                    <SelectItem value="all">{t("All employees", "جميع الموظفين")}</SelectItem>
                     {employees
                       .filter(emp => {
                         if (!employeeSearchQuery.trim()) return true;
@@ -697,7 +717,7 @@ export default function EstimatesPage() {
                 {filterEmployeeId !== "all" && (
                   <Button variant="ghost" size="sm" onClick={() => setFilterEmployeeId("all")} className="h-8 px-3 text-blue-600 hover:text-blue-800 hover:bg-blue-100">
                     <X className="w-4 h-4 mr-1" />
-                    مسح
+                    {t("Clear", "مسح")}
                   </Button>
                 )}
               </div>
@@ -709,7 +729,7 @@ export default function EstimatesPage() {
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="بحث برقم العرض، اسم العميل..."
+                    placeholder={t("Search by estimate number, customer name...", "بحث برقم العرض، اسم العميل...")}
                     value={searchQuery}
                     onChange={(e) => { const val = e.target.value; startTransition(() => setSearchQuery(val)); }}
                     className={"w-full h-10 px-4 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700 text-sm " + (isPending ? "opacity-70" : "")}
@@ -727,18 +747,18 @@ export default function EstimatesPage() {
 
               <MultiSelect
                 options={[
-                  { value: "draft",     label: "مسودة" },
-                  { value: "sent",      label: "مُرسَل" },
-                  { value: "accepted",  label: "مقبول" },
-                  { value: "rejected",  label: "مرفوض" },
-                  { value: "expired",   label: "منتهي" },
-                  { value: "converted", label: "محوَّل لأمر بيع" },
+                  { value: "draft",     label: t("Draft", "مسودة") },
+                  { value: "sent",      label: t("Sent", "مُرسَل") },
+                  { value: "accepted",  label: t("Accepted", "مقبول") },
+                  { value: "rejected",  label: t("Rejected", "مرفوض") },
+                  { value: "expired",   label: t("Expired", "منتهي") },
+                  { value: "converted", label: t("Converted to Sales Order", "محوَّل لأمر بيع") },
                 ]}
                 selected={filterStatuses}
                 onChange={(val) => startTransition(() => setFilterStatuses(val))}
-                placeholder="جميع الحالات"
-                searchPlaceholder="بحث في الحالات..."
-                emptyMessage="لا توجد حالات"
+                placeholder={t("All statuses", "جميع الحالات")}
+                searchPlaceholder={t("Search statuses...", "بحث في الحالات...")}
+                emptyMessage={t("No statuses found", "لا توجد حالات")}
                 className="h-10 text-sm"
               />
 
@@ -746,9 +766,9 @@ export default function EstimatesPage() {
                 options={customers.map(c => ({ value: c.id, label: c.name }))}
                 selected={filterCustomers}
                 onChange={(val) => startTransition(() => setFilterCustomers(val))}
-                placeholder="جميع العملاء"
-                searchPlaceholder="بحث في العملاء..."
-                emptyMessage="لا يوجد عملاء"
+                placeholder={t("All customers", "جميع العملاء")}
+                searchPlaceholder={t("Search customers...", "بحث في العملاء...")}
+                emptyMessage={t("No customers found", "لا يوجد عملاء")}
                 className="h-10 text-sm"
               />
 
@@ -756,14 +776,14 @@ export default function EstimatesPage() {
                 options={products.map(p => ({ value: p.id, label: p.name }))}
                 selected={filterProducts}
                 onChange={(val) => startTransition(() => setFilterProducts(val))}
-                placeholder="فلترة بالمنتجات"
-                searchPlaceholder="بحث في المنتجات..."
-                emptyMessage="لا توجد منتجات"
+                placeholder={t("Filter by products", "فلترة بالمنتجات")}
+                searchPlaceholder={t("Search products...", "بحث في المنتجات...")}
+                emptyMessage={t("No products found", "لا توجد منتجات")}
                 className="h-10 text-sm"
               />
 
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 dark:text-gray-400">من تاريخ</label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">{t("From date", "من تاريخ")}</label>
                 <Input
                   type="date"
                   value={dateFrom}
@@ -773,7 +793,7 @@ export default function EstimatesPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-gray-500 dark:text-gray-400">إلى تاريخ</label>
+                <label className="text-xs text-gray-500 dark:text-gray-400">{t("To date", "إلى تاريخ")}</label>
                 <Input
                   type="date"
                   value={dateTo}
@@ -786,7 +806,7 @@ export default function EstimatesPage() {
             {activeFilterCount > 0 && (
               <div className="flex justify-start items-center pt-2 border-t">
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  عرض {filteredEstimates.length} من {estimates.length} عَرض سعرى
+                  {t("Showing", "عرض")} {filteredEstimates.length} {t("of", "من")} {estimates.length} {t("estimates", "عَرض سعرى")}
                 </span>
               </div>
             )}
@@ -794,20 +814,20 @@ export default function EstimatesPage() {
         </FilterContainer>
 
         <Card className="p-3">
-          {loading && <div className="text-sm">جارٍ التحميل...</div>}
+          {loading && <div className="text-sm">{t("Loading...", "جارٍ التحميل...")}</div>}
           {!loading && (
             <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
               <table className="w-full text-sm">
                 <thead className="border-b bg-gray-50 dark:bg-slate-800">
                   <tr>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">رقم العرض</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">العميل</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">الفرع</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right hidden sm:table-cell">التاريخ</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">المجموع</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">الحالة</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">أمر البيع المرتبط</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">إجراءات</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">{t("Estimate #", "رقم العرض")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">{t("Customer", "العميل")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">{t("Branch", "الفرع")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right hidden sm:table-cell">{t("Date", "التاريخ")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">{t("Total", "المجموع")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">{t("Status", "الحالة")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">{t("Linked Sales Order", "أمر البيع المرتبط")}</th>
+                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">{t("Actions", "إجراءات")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -824,7 +844,7 @@ export default function EstimatesPage() {
                             {e.branches.name}
                           </span>
                         ) : (
-                          <span className="text-gray-400 dark:text-gray-500 text-xs">رئيسي</span>
+                          <span className="text-gray-400 dark:text-gray-500 text-xs">{t("Main", "رئيسي")}</span>
                         )}
                       </td>
                       <td className="px-3 py-3 text-right hidden sm:table-cell text-gray-600 dark:text-gray-300">{e.estimate_date}</td>
@@ -848,14 +868,14 @@ export default function EstimatesPage() {
                       </td>
                       <td className="px-3 py-3 text-center space-x-2">
                         <Button variant="secondary" onClick={() => onEdit(e)} disabled={!!e.converted_so_id}>
-                          تعديل
+                          {t("Edit", "تعديل")}
                         </Button>
                         <Button variant="outline" onClick={() => convertToSO(e)} disabled={!!e.converted_so_id || e.status === "converted"}>
-                          {e.converted_so_id ? "مُحَوَّل" : "تحويل لأمر بيع"}
+                          {e.converted_so_id ? t("Converted", "مُحَوَّل") : t("Convert to Sales Order", "تحويل لأمر بيع")}
                         </Button>
                         {canDeleteEstimate(e) && (
                           <Button variant="destructive" onClick={() => deleteEstimate(e)}>
-                            حذف
+                            {t("Delete", "حذف")}
                           </Button>
                         )}
                       </td>
@@ -870,55 +890,55 @@ export default function EstimatesPage() {
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
-              <DialogTitle>{editing ? "تعديل العرض" : "عرض سعري جديد"}</DialogTitle>
+              <DialogTitle>{editing ? t("Edit Estimate", "تعديل العرض") : t("New Estimate", "عرض سعري جديد")}</DialogTitle>
             </DialogHeader>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs">العميل</label>
+                <label className="text-xs">{t("Customer", "العميل")}</label>
                 <CustomerSearchSelect
                   customers={customers}
                   value={customerId}
                   onValueChange={setCustomerId}
-                  placeholder="اختر العميل"
-                  searchPlaceholder="ابحث بالاسم أو الهاتف..."
+                  placeholder={t("Select a customer", "اختر العميل")}
+                  searchPlaceholder={t("Search by name or phone...", "ابحث بالاسم أو الهاتف...")}
                 />
               </div>
               <div>
-                <label className="text-xs">رقم العرض</label>
+                <label className="text-xs">{t("Estimate Number", "رقم العرض")}</label>
                 <Input value={estimateNumber} onChange={(e) => setEstimateNumber(e.target.value)} />
               </div>
               <div>
-                <label className="text-xs">تاريخ العرض</label>
+                <label className="text-xs">{t("Estimate Date", "تاريخ العرض")}</label>
                 <Input type="date" value={estimateDate} onChange={(e) => setEstimateDate(e.target.value)} />
               </div>
               <div>
-                <label className="text-xs">تاريخ الانتهاء</label>
+                <label className="text-xs">{t("Expiry Date", "تاريخ الانتهاء")}</label>
                 <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs">ملاحظات</label>
+                <label className="text-xs">{t("Notes", "ملاحظات")}</label>
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
               </div>
             </div>
 
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">بنود العرض</h3>
-                <Button variant="secondary" onClick={addItem}>إضافة بند</Button>
+                <h3 className="text-sm font-medium">{t("Estimate Items", "بنود العرض")}</h3>
+                <Button variant="secondary" onClick={addItem}>{t("Add Item", "إضافة بند")}</Button>
               </div>
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left">
-                      <th>المنتج</th>
-                      <th>الوصف</th>
-                      <th>الكمية</th>
-                      <th>سعر الوحدة</th>
-                      <th>خصم %</th>
-                      <th>ضريبة %</th>
-                      <th>الإجمالي</th>
-                      <th>حذف</th>
+                      <th>{t("Product", "المنتج")}</th>
+                      <th>{t("Description", "الوصف")}</th>
+                      <th>{t("Quantity", "الكمية")}</th>
+                      <th>{t("Unit Price", "سعر الوحدة")}</th>
+                      <th>{t("Discount %", "خصم %")}</th>
+                      <th>{t("Tax %", "ضريبة %")}</th>
+                      <th>{t("Total", "الإجمالي")}</th>
+                      <th>{t("Delete", "حذف")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -932,10 +952,10 @@ export default function EstimatesPage() {
                               updateItem(idx, { product_id: v, unit_price: prod?.unit_price ?? it.unit_price });
                             }}
                           >
-                            <SelectTrigger><SelectValue placeholder="اختر الصنف" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t("Select an item", "اختر الصنف")} /></SelectTrigger>
                             <SelectContent>
                               {products.length === 0 ? (
-                                <div className="p-2 text-xs text-gray-500 text-center">لا توجد منتجات متاحة</div>
+                                <div className="p-2 text-xs text-gray-500 text-center">{t("No products available", "لا توجد منتجات متاحة")}</div>
                               ) : (
                                 products.map((p) => (
                                   <SelectItem key={p.id} value={p.id}>{p.item_type === 'service' ? '🔧 ' : '📦 '}{p.name}</SelectItem>
@@ -961,7 +981,7 @@ export default function EstimatesPage() {
                         </td>
                         <td>{it.line_total.toFixed(2)}</td>
                         <td>
-                          <Button variant="destructive" onClick={() => removeItem(idx)}>حذف</Button>
+                          <Button variant="destructive" onClick={() => removeItem(idx)}>{t("Delete", "حذف")}</Button>
                         </td>
                       </tr>
                     ))}
@@ -970,16 +990,16 @@ export default function EstimatesPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs">ضريبة إجمالية</label>
+                  <label className="text-xs">{t("Total Tax", "ضريبة إجمالية")}</label>
                   <NumericInput value={taxAmount} onChange={(val) => setTaxAmount(val)} decimalPlaces={2} />
                 </div>
-                <div className="flex items-end">المجموع الفرعي: {totals.subtotal.toFixed(2)}</div>
-                <div className="flex items-end">الإجمالي: {totals.total.toFixed(2)}</div>
+                <div className="flex items-end">{t("Subtotal:", "المجموع الفرعي:")} {totals.subtotal.toFixed(2)}</div>
+                <div className="flex items-end">{t("Total:", "الإجمالي:")} {totals.total.toFixed(2)}</div>
               </div>
             </div>
 
             <DialogFooter className="mt-4">
-              <Button onClick={saveEstimate} disabled={loading}>{editing ? "حفظ" : "إنشاء"}</Button>
+              <Button onClick={saveEstimate} disabled={loading}>{editing ? t("Save", "حفظ") : t("Create", "إنشاء")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
