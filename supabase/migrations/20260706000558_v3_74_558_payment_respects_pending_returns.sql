@@ -1,0 +1,24 @@
+-- v3.74.558 — payment allocation now respects pending purchase/sales
+-- returns that will further reduce the outstanding once executed.
+--
+-- Scenario the user hit
+--   Bill 7.34, paid 3.00 (corrected), returned 1.03 (completed).
+--   Second return for 0.88 approved, awaiting warehouse dispatch —
+--   bills.returned_amount has NOT been touched yet.
+--   Someone files a payment for 3.31 (the "displayed" outstanding).
+--   Old check: total - paid - returned = 3.31 → passes.
+--   New check: subtract pending returns 0.88 → true available = 2.43.
+--
+-- Applied via mcp__apply_migration:
+--   * get_bill_effective_outstanding(bill_id)
+--   * get_invoice_effective_outstanding(invoice_id)
+-- These use the same pending workflow_status set as the v3.74.557
+-- reservation model.
+--
+-- Node callers (doc stamp here):
+--   * lib/services/supplier-payment-command.service.ts — vendor side
+--   * lib/services/customer-payment-command.service.ts — mirrored
+-- Both now call the RPC and surface an Arabic detail line so the
+-- user sees why the payment was rejected.
+--
+-- Doc stamp only.

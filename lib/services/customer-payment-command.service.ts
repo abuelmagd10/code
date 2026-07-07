@@ -418,8 +418,25 @@ export class CustomerPaymentCommandService {
     const appliedInInvoiceCurrency = Math.round(asNumber(amount) * conversionFactor * 10000) / 10000
     // ─────────────────────────────────────────────────────────────────────────
 
-    const outstanding = Math.max(asNumber(invoice.total_amount) - asNumber(invoice.returned_amount) - asNumber(invoice.paid_amount), 0)
-    if (appliedInInvoiceCurrency > outstanding + 0.01) throw new Error("Allocation amount exceeds the invoice outstanding balance")
+    // v3.74.558 — mirror of the vendor-side fix. Subtract pending
+    // sales return requests so an approved payment can't exceed what
+    // will actually be owed once the return executes.
+    let outstanding = Math.max(asNumber(invoice.total_amount) - asNumber(invoice.returned_amount) - asNumber(invoice.paid_amount), 0)
+    let pendingReturnsAmount = 0
+    try {
+      const { data: eff } = await this.adminSupabase.rpc('get_invoice_effective_outstanding', { p_invoice_id: invoiceId })
+      const effNum = Number(eff)
+      if (Number.isFinite(effNum) && effNum >= 0) {
+        pendingReturnsAmount = Math.max(0, outstanding - effNum)
+        outstanding = effNum
+      }
+    } catch (_) { /* naive fallback */ }
+    if (appliedInInvoiceCurrency > outstanding + 0.01) {
+      const detail = pendingReturnsAmount > 0
+        ? ` — مَحجوز لِمرتَجَعات مبيعات مَعلَّقة: ${pendingReturnsAmount.toFixed(2)}. الحَد الأَقصى للدَّفعَة: ${outstanding.toFixed(2)}`
+        : ''
+      throw new Error("Allocation amount exceeds the invoice outstanding balance" + detail)
+    }
 
     const { data: application, error } = await this.adminSupabase.from("advance_applications").insert({
       company_id: actor.companyId,

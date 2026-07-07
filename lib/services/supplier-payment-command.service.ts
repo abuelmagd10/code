@@ -477,12 +477,27 @@ export class SupplierPaymentCommandService {
       throw new Error("Allocation amount exceeds the remaining unallocated payment balance")
     }
 
-    const netOutstanding = Math.max(
+    // v3.74.558 — subtract pending purchase returns. bills.returned_amount
+    // reflects only EXECUTED returns; a return approved but awaiting
+    // warehouse dispatch has not touched it. Canonical helper on the DB.
+    let netOutstanding = Math.max(
       asNumber(bill.total_amount) - asNumber(bill.returned_amount) - asNumber(bill.paid_amount),
       0
     )
+    let pendingReturnsAmount = 0
+    try {
+      const { data: eff } = await this.adminSupabase.rpc('get_bill_effective_outstanding', { p_bill_id: billId })
+      const effNum = Number(eff)
+      if (Number.isFinite(effNum) && effNum >= 0) {
+        pendingReturnsAmount = Math.max(0, netOutstanding - effNum)
+        netOutstanding = effNum
+      }
+    } catch (_) { /* naive fallback */ }
     if (amount > netOutstanding + 0.01) {
-      throw new Error("Allocation amount exceeds the bill net outstanding balance")
+      const detail = pendingReturnsAmount > 0
+        ? ` — مَحجوز لِمرتَجَعات مَعلَّقة: ${pendingReturnsAmount.toFixed(2)}. الحَد الأَقصى للدَّفعَة: ${netOutstanding.toFixed(2)}`
+        : ''
+      throw new Error("Allocation amount exceeds the bill net outstanding balance" + detail)
     }
 
     const commandTraceId = await this.createTrace({

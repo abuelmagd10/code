@@ -3,7 +3,7 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.557"') { Write-Host "+ 3.74.557" -ForegroundColor Green }
+if ($v -match 'APP_VERSION = "3.74.558"') { Write-Host "+ 3.74.558" -ForegroundColor Green }
 else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 Write-Host "Running tsc..." -ForegroundColor Cyan
@@ -17,34 +17,32 @@ git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) { Write-Host "Nothing to commit" -ForegroundColor Yellow }
 else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_557.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_558.txt"
     $msgLines = @(
-        'fix(stock): v3.74.557 - full reservation model (PRs + invoices + transfers)',
+        'fix(payments): v3.74.558 - allocation respects pending returns',
         '',
-        'Extends v3.74.556. Sales-side flows and the purchase-return trigger',
-        'now block over-committing against three reservation sources:',
-        '  1. pending purchase returns',
-        '  2. sent-but-not-dispatched invoices',
-        '  3. outbound transfers not yet arrived',
+        'Bill outstanding formula was total - paid - returned, but',
+        'bills.returned_amount reflects only EXECUTED returns. A return',
+        'approved but awaiting warehouse dispatch would let a payment',
+        'exceed the true remaining and push the bill negative on execute.',
         '',
-        'DB changes',
-        '  * get_effective_available_stock() extended',
-        '  * check_purchase_return_item_warehouse_stock() reads the same set',
-        '',
-        'Node changes',
-        '  * app/api/sales-orders/route.ts',
-        '  * app/api/invoices/route.ts',
-        '  each reads pending PRs + pending-dispatch invoices + outbound',
-        '  transfers across the branch warehouses and subtracts from the',
-        '  view total before the insufficient-stock reject.',
+        'Fix',
+        '  * DB helpers get_bill_effective_outstanding(),',
+        '    get_invoice_effective_outstanding() subtract pending PR/SR.',
+        '  * supplier-payment-command.service.ts + customer-payment-',
+        '    command.service.ts call the RPC before the allocation guard.',
+        '  * Error message names the reserved amount so the user sees',
+        '    exactly why the payment was blocked.',
         '',
         'Files',
-        '  supabase/migrations/20260706000557_...sql (doc stamp)',
-        '  lib/version.ts -> 3.74.557'
+        '  lib/services/supplier-payment-command.service.ts',
+        '  lib/services/customer-payment-command.service.ts',
+        '  supabase/migrations/20260706000558_...sql (doc stamp)',
+        '  lib/version.ts -> 3.74.558'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
     Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
 }
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.557 pushed" -ForegroundColor Green }
+if ($LASTEXITCODE -eq 0) { Write-Host "`n+ v3.74.558 pushed" -ForegroundColor Green }
