@@ -342,15 +342,31 @@ export async function POST(request: NextRequest) {
           totals[r.product_id] = (totals[r.product_id] || 0) + Math.max(0, Number(r.available_quantity) || 0)
         })
 
-        // v3.74.556 — subtract quantities reserved by pending purchase
-        // returns. The v3.74.174 warehouse-stock trigger already blocks
-        // over-committing between purchase returns, but sales flows were
-        // reading raw inventory_available_balance and could promise stock
-        // that was actually earmarked for a return awaiting warehouse
-        // dispatch. Race scenario: warehouse has 4, PR for 1 approved
-        // (pending_warehouse), employee sells 4 → sale succeeds and the
-        // return can no longer be executed. Fixed here by pre-reading
-        // the same reservation set the PR trigger uses.
+        // v3.74.556 + v3.74.557 — subtract reservations. Same set the DB
+        // helper get_effective_available_stock uses:
+        //   1) purchase returns in a pending workflow
+        //   2) invoices sent but warehouse dispatch pending
+        //   3) outbound inventory transfers not yet arrived
+        // Aggregated by product across warehouses in the branch (matches
+        // the granularity of the view above).
+        const branchWarehouseIds = await (async () => {
+          const { data: whs } = await supabase
+            .from('warehouses')
+            .select('id')
+            .eq('company_id', scopedCompanyId)
+            .eq('branch_id', finalData.branch_id)
+          return (whs ?? []).map((w: any) => w.id as string)
+        })()
+
+        const pendingReturnQty: Record<string, number> = {}
+        const pendingInvoiceQty: Record<string, number> = {}
+        const pendingTransferQty: Record<string, number> = {}
+        productIds.forEach(pid => {
+          pendingReturnQty[pid] = 0
+          pendingInvoiceQty[pid] = 0
+          pendingTransferQty[pid] = 0
+        })
+
         const { data: pendingReturnsRows } = await supabase
           .from('purchase_return_items')
           .select('product_id, quantity, purchase_returns!inner(company_id, branch_id, workflow_status)')
@@ -361,15 +377,46 @@ export async function POST(request: NextRequest) {
             'pending_admin_approval', 'pending_approval',
             'pending_warehouse',      'partial_approval'
           ])
-        const pendingReturnQty: Record<string, number> = {}
         for (const r of (pendingReturnsRows ?? []) as any[]) {
           pendingReturnQty[r.product_id] = (pendingReturnQty[r.product_id] || 0) + Number(r.quantity || 0)
         }
-        const balances = productIds.map(pid => ({
-          product_id: pid,
-          available: Math.max(0, (totals[pid] || 0) - (pendingReturnQty[pid] || 0)),
-          reserved_by_pending_returns: pendingReturnQty[pid] || 0
-        }))
+
+        if (branchWarehouseIds.length > 0) {
+          const { data: pendingInvoiceRows } = await supabase
+            .from('invoice_items')
+            .select('product_id, quantity, invoices!inner(company_id, warehouse_id, warehouse_status, status)')
+            .eq('invoices.company_id', scopedCompanyId)
+            .in('invoices.warehouse_id', branchWarehouseIds)
+            .eq('invoices.warehouse_status', 'pending')
+            .in('invoices.status', ['sent', 'partially_paid', 'paid'])
+            .in('product_id', productIds)
+          for (const r of (pendingInvoiceRows ?? []) as any[]) {
+            pendingInvoiceQty[r.product_id] = (pendingInvoiceQty[r.product_id] || 0) + Number(r.quantity || 0)
+          }
+
+          const { data: pendingTransferRows } = await supabase
+            .from('inventory_transfer_items')
+            .select('product_id, quantity_sent, inventory_transfers!inner(company_id, source_warehouse_id, status, deleted_at)')
+            .eq('inventory_transfers.company_id', scopedCompanyId)
+            .in('inventory_transfers.source_warehouse_id', branchWarehouseIds)
+            .in('inventory_transfers.status', ['pending', 'approved', 'in_transit'])
+            .is('inventory_transfers.deleted_at', null)
+            .in('product_id', productIds)
+          for (const r of (pendingTransferRows ?? []) as any[]) {
+            pendingTransferQty[r.product_id] = (pendingTransferQty[r.product_id] || 0) + Number(r.quantity_sent || 0)
+          }
+        }
+
+        const balances = productIds.map(pid => {
+          const reserved = (pendingReturnQty[pid] || 0) + (pendingInvoiceQty[pid] || 0) + (pendingTransferQty[pid] || 0)
+          return {
+            product_id: pid,
+            available: Math.max(0, (totals[pid] || 0) - reserved),
+            reserved_by_pending_returns:  pendingReturnQty[pid] || 0,
+            reserved_by_pending_invoices: pendingInvoiceQty[pid] || 0,
+            reserved_by_pending_transfers: pendingTransferQty[pid] || 0,
+          }
+        })
 
         const insufficient = balances
           .map(b => {

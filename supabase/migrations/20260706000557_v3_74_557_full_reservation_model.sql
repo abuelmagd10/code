@@ -1,0 +1,33 @@
+-- v3.74.557 — full stock-reservation model.
+--
+-- The v3.74.556 helper counted only pending purchase returns as
+-- reservations. The user's scenarios 1 and 3 need the same protection
+-- for pending invoice dispatches and outbound transfers:
+--
+-- Scenario 1 — Invoice sent (3 units), warehouse dispatch pending.
+--   Someone tries to file a purchase return for the same product.
+--   Expected: rejected — the qty is earmarked for the customer.
+--
+-- Scenario 2 — Purchase return for 3 (warehouse has 3), pending
+--   approval. Someone tries to write an invoice for 1 more.
+--   Expected: rejected — already covered by v3.74.556.
+--
+-- Scenario 3 — Outbound inventory transfer pending arrival. Any new
+--   sale or purchase-return of the same product from the source
+--   warehouse should see reduced availability.
+--
+-- Fix (applied via mcp__apply_migration, doc-stamped here):
+--   1. get_effective_available_stock() now subtracts:
+--      - pending purchase_return_items (as before)
+--      - invoice_items on invoices with warehouse_status='pending'
+--        and status IN ('sent','partially_paid','paid')
+--      - inventory_transfer_items on transfers with source_warehouse_id
+--        matching and status IN ('pending','approved','in_transit')
+--   2. check_purchase_return_item_warehouse_stock() trigger now uses
+--      the same three reservation sources and emits a richer error
+--      message so the user knows why they were blocked.
+--   3. app/api/sales-orders/route.ts + app/api/invoices/route.ts pull
+--      the same three reservation buckets and subtract them from the
+--      view total before the insufficient-stock check.
+--
+-- Doc stamp only.
