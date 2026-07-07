@@ -1,0 +1,12 @@
+-- v3.74.562 — expenses module hardening.
+-- Audit found FX + overdraft validator hookup were already solid, but
+-- these gaps remained:
+--   A. SoD (created_by ≠ approved_by ≠ paid_by) — DB trigger
+--   B. Delete blocked once posted or approved — DB trigger
+--   C. Financial fields frozen after approval — DB trigger
+--   D. Overdraft race: two concurrent pending expenses could both
+--      pass balance check. cash-balance-validator now also subtracts
+--      queued pending_approval/approved expenses on the same
+--      payment_account_id (Node side).
+--
+-- DDL applied via mcp__apply_migration; this file is the doc stamp.

@@ -249,7 +249,8 @@ export default function ExpensesPage() {
     approved: expenses.filter(e => e.status === "approved").length,
     paid: expenses.filter(e => e.status === "paid").length,
     rejected: expenses.filter(e => e.status === "rejected").length,
-    totalAmount: expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
+    // v3.74.562 — sum in base currency so FC expenses contribute correctly.
+    totalAmount: expenses.reduce((sum, e) => sum + Number(((e as any).base_currency_amount ?? e.amount) || 0), 0)
   }
 
   // Derive unique categories from data

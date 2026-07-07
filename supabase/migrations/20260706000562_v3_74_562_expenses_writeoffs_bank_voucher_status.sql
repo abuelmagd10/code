@@ -1,0 +1,21 @@
+-- v3.74.562 — three consolidated audit fixes.
+--
+-- A) Expenses + Bank Vouchers overdraft: cash-balance-validator already
+--    queried both tables since v3.74.561/562, but the bank-voucher
+--    branch was subtracting POSTED vouchers too (they already appear
+--    in the GL, so it was double-counting). Now filters to
+--    .in('status', ['pending','approved']) only.
+--
+-- B) Expenses list total: /app/expenses/page.tsx summed raw amount,
+--    which produced a nonsense figure across mixed-currency expenses.
+--    Switched to base_currency_amount ?? amount.
+--
+-- C) Bank Voucher approval card: /app/approvals/page.tsx selected
+--    only amount; now also loads base_amount + currency and displays
+--    the base value so cross-currency approvers see the impact.
+--
+-- Also v3.74.562 — pending inventory write-offs reserve stock. The
+-- effective-available-stock helper now subtracts inventory_write_off_items
+-- for write-offs in pending/draft workflow status.
+--
+-- Doc stamp for the Node fixes; DDL applied via mcp__apply_migration.

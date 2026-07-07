@@ -1,0 +1,10 @@
+-- v3.74.563 — pending manufacturing material issues now reserve
+-- component stock. A production order whose material-issue approval
+-- is still in pending/approved but not yet released earmarks the
+-- BOM components from the issue warehouse. Formula per BOM line:
+--   quantity_per × (planned - completed) × (1 + scrap_percent/100)
+--
+-- get_effective_available_stock() now subtracts this alongside PR,
+-- invoice-dispatch, transfer-out, and write-off reservations.
+--
+-- Doc stamp; DDL applied via mcp__apply_migration.

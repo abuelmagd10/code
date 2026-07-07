@@ -1881,9 +1881,12 @@ function ApprovalsContent() {
           })
         }
         // Bank Voucher Requests
+        // v3.74.561 — select base_amount + currency so the sum sees
+        // the FX-correct number (mixing raw amount across currencies
+        // used to display meaningless totals).
         const { data: bvs } = await supabase
           .from("bank_voucher_requests")
-          .select(`id, reference_number, amount, status, created_at, branch_id, branches(name)`)
+          .select(`id, reference_number, amount, base_amount, currency, status, created_at, branch_id, branches(name)`)
           .eq("company_id", cid)
           .eq("status", "pending")
           .order("created_at", { ascending: true })
@@ -1893,7 +1896,7 @@ function ApprovalsContent() {
             id: `bv-${r.id}`, kind: "bank_voucher",
             doc_no: r.reference_number ?? null,
             party_or_label: null,
-            amount: Number(r.amount || 0),
+            amount: Number(r.base_amount ?? r.amount ?? 0),
             branch_name: r.branches?.name ?? null,
             warehouse_name: null,
             href: `/bank-vouchers/${r.id}`,

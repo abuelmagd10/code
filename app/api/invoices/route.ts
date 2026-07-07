@@ -254,6 +254,53 @@ export async function POST(req: NextRequest) {
           pendingReturnQty[r.product_id] = (pendingReturnQty[r.product_id] || 0) + Number(r.quantity || 0)
         }
 
+        // v3.74.563 — pending manufacturing material issues (mirror).
+        if (branchWarehouseIds.length > 0) {
+          const { data: mmiaRows } = await supabase
+            .from('manufacturing_material_issue_approvals')
+            .select('production_order_id, warehouse_id, status')
+            .eq('company_id', companyId)
+            .in('warehouse_id', branchWarehouseIds)
+            .in('status', [
+              'pending_admin_approval','pending_approval',
+              'pending_warehouse','partial_approval','partially_approved'
+            ])
+          const mmiaProdOrderIds = Array.from(new Set((mmiaRows ?? []).map((m: any) => m.production_order_id).filter(Boolean)))
+          if (mmiaProdOrderIds.length > 0) {
+            const { data: prodOrders } = await supabase
+              .from('manufacturing_production_orders')
+              .select('id, planned_quantity, bom_version_id')
+              .in('id', mmiaProdOrderIds)
+            const bomIds = Array.from(new Set((prodOrders ?? []).map((p: any) => p.bom_version_id).filter(Boolean)))
+            const { data: bomLines } = bomIds.length > 0
+              ? await supabase
+                  .from('manufacturing_bom_lines')
+                  .select('bom_version_id, component_product_id, quantity_per, scrap_percent')
+                  .in('bom_version_id', bomIds)
+                  .in('component_product_id', productIds)
+              : { data: [] }
+            const poById: Record<string, any> = {}
+            for (const p of (prodOrders ?? []) as any[]) poById[p.id] = p
+            const linesByBom: Record<string, any[]> = {}
+            for (const l of (bomLines ?? []) as any[]) {
+              if (!linesByBom[l.bom_version_id]) linesByBom[l.bom_version_id] = []
+              linesByBom[l.bom_version_id].push(l)
+            }
+            for (const m of (mmiaRows ?? []) as any[]) {
+              const po = poById[m.production_order_id]
+              if (!po) continue
+              const plannedQty = Number(po.planned_quantity || 0)
+              const lines = linesByBom[po.bom_version_id] || []
+              for (const bl of lines) {
+                const pid = bl.component_product_id
+                if (!pid || !productIds.includes(pid)) continue
+                const need = plannedQty * Number(bl.quantity_per || 0) * (1 + Number(bl.scrap_percent || 0) / 100)
+                pendingReturnQty[pid] = (pendingReturnQty[pid] || 0) + need
+              }
+            }
+          }
+        }
+
         if (branchWarehouseIds.length > 0) {
           const { data: pendingInvoiceRows } = await supabase
             .from('invoice_items')

@@ -69,7 +69,9 @@ export async function POST(
           companyId: context.companyId,
           requestId: id,
           voucherType: requestRow.voucher_type,
-          amount: Number(requestRow.amount || 0),
+          // v3.74.561 — send base_amount so cross-currency notifications
+          // reflect the accounting impact, not the raw FC number.
+          amount: Number(requestRow.base_amount ?? requestRow.amount ?? 0),
           currency: String(requestRow.currency || "EGP"),
           branchId: requestRow.branch_id,
           costCenterId: requestRow.cost_center_id,

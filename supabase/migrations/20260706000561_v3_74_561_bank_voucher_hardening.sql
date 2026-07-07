@@ -1,0 +1,27 @@
+-- v3.74.561 — bank_voucher_requests hardening.
+--
+-- Audit found the module already had FX-correct posting and calls
+-- assertCashOutflowAllowed, but was missing four safety nets:
+--
+-- A. SoD guard (DB trigger, applied via mcp__apply_migration)
+--    reviewed_by ≠ created_by, posted_by ≠ reviewed_by. Enforced on
+--    INSERT and UPDATE via trg_bank_voucher_sod_guard.
+--
+-- B. Delete guard (DB trigger)
+--    trg_block_bank_voucher_delete rejects DELETE when status is
+--    'posted' or 'approved' or a journal entry has been linked.
+--
+-- C. Immutable-fields guard (DB trigger)
+--    trg_block_bank_voucher_immutable_edits freezes amount, currency,
+--    exchange_rate, account, counter, voucher_type, entry_date once
+--    the row leaves draft/pending. Notes and workflow states still
+--    editable.
+--
+-- D. Overdraft race (Node, this repo)
+--    lib/accounting/cash-balance-validator.ts now also subtracts
+--    pending/approved-but-not-yet-posted outflow bank vouchers on
+--    the same account when computing effective balance. Closes:
+--    two approvers each pushing a 3000 EGP voucher through a 5000
+--    EGP account.
+--
+-- Doc stamp.
