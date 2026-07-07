@@ -1,0 +1,36 @@
+-- v3.74.573 — bundle system + walk-in extras backend for bookings.
+--
+-- Background: two tables tracked "products used in a service" but
+-- only one was wired to complete_booking_atomic:
+--   * OLD: service_products / get_service_consumables — where the
+--          RPC actually read from.
+--   * NEW: product_bundle_items — where the UI's "Bundle Items"
+--          settings screen writes.
+-- Because the UI wrote to the new table but the RPC read from the
+-- old one, saved bundles never applied to real bookings.
+--
+-- Fix (three migrations applied via mcp__apply_migration):
+--
+--   1) Two new tables:
+--      booking_bundle_selections — staff opt-in for OPTIONAL bundle
+--         items (mandatory ones auto-apply, no row needed).
+--      booking_extra_items       — walk-in product sales that aren't
+--         part of the service. Own unit_price so promos don't force
+--         a catalog override.
+--      Both with RLS + editable-only-when-booking-not-completed guard.
+--
+--   2) get_booking_line_additions(booking_id) — canonical view of
+--      every extra line the invoice must carry: mandatory bundle
+--      children, opted-in optional children, walk-in extras. Applies
+--      price_handling ('included' / 'free_gift' → 0, else product
+--      unit_price) and surfaces auto_deduct_inventory.
+--
+--   3) complete_booking_atomic() rewritten to iterate that view:
+--      inserts one invoice line per row (marked 'service' for
+--      included/free_gift bundle items, 'product' for the rest),
+--      writes negative inventory_transactions for anything with
+--      auto_deduct_inventory=true, and recomputes booking.total_amount
+--      + invoice.total_amount / status based on the priced additions.
+--
+-- Doc stamp only. UI panels (checkbox list for optional bundle items +
+-- walk-in extras editor) come in a follow-up client-side change.

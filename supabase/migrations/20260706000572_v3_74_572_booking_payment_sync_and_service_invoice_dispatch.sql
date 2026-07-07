@@ -1,0 +1,26 @@
+-- v3.74.572 — booking BKG-2026-00001 (service SVC-0003 "تقشير", 500 EGP)
+-- surfaced two related bugs.
+--
+-- Full picture per the user's directive to check the linked service +
+-- products:
+--   Service SVC-0003 "تقشير" has NO rows in service_products, so the
+--   activate_booking_atomic / complete_booking_atomic v3.74.387 gate +
+--   deduction path is a no-op for it. The invoice line is a single
+--   item_type='service' worth 500 EGP with no goods to dispatch.
+--
+-- Bug A — payment_status stayed 'unpaid' and paid_amount = 0 on the
+--   booking even after the linked invoice was fully paid. No sync
+--   trigger existed. Fix: sync_booking_from_invoice_trg propagates
+--   invoice.paid_amount + status → bookings on UPDATE and on INSERT
+--   (when paid at creation).
+--
+-- Bug B — the invoice's warehouse_status was 'pending' although
+--   every line was item_type='service'. Fix:
+--   auto_approve_service_only_invoice_trg auto-approves the dispatch
+--   the moment the invoice is inserted if no goods lines exist.
+--   Owner still gets a manual override path — the trigger only fires
+--   when warehouse_status is still 'pending'.
+--
+-- Also patched the two rows into sync.
+--
+-- Doc stamp only. DDL applied via mcp__apply_migration.
