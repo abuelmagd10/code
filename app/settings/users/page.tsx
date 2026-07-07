@@ -3587,12 +3587,12 @@ export default function UsersSettingsPage() {
                               <GitBranch className="w-4 h-4 text-purple-600" />
                               <div>
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  {user?.display_name || user?.email || 'موظف'}
+                                  {user?.display_name || user?.email || t('Employee', 'موظف')}
                                 </p>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="outline" className="text-[10px]">{branch?.name || 'فرع'}</Badge>
-                                  {uba.is_primary && <Badge className="text-[10px] bg-purple-100 text-purple-700">رئيسي</Badge>}
-                                  {uba.can_view_prices && <Badge className="text-[10px] bg-amber-100 text-amber-700">أسعار</Badge>}
+                                  <Badge variant="outline" className="text-[10px]">{branch?.name || t('Branch', 'فرع')}</Badge>
+                                  {uba.is_primary && <Badge className="text-[10px] bg-purple-100 text-purple-700">{t('Primary', 'رئيسي')}</Badge>}
+                                  {uba.can_view_prices && <Badge className="text-[10px] bg-amber-100 text-amber-700">{t('Prices', 'أسعار')}</Badge>}
                                 </div>
                               </div>
                             </div>
@@ -3609,7 +3609,7 @@ export default function UsersSettingsPage() {
                   ) : (
                     <div className="text-center py-8 text-gray-400">
                       <GitBranch className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">لا يوجد وصول متعدد للفروع</p>
+                      <p className="text-sm">{t('No multi-branch access', 'لا يوجد وصول متعدد للفروع')}</p>
                     </div>
                   )}
                 </TabsContent>
@@ -3682,7 +3682,7 @@ export default function UsersSettingsPage() {
                       )
                     })}
                   {members.filter(m => m.user_id !== vacGrantorId).length === 0 && (
-                    <p className="text-xs text-gray-400 text-center py-3">لا يوجد موظفون آخرون</p>
+                    <p className="text-xs text-gray-400 text-center py-3">{t('No other employees', 'لا يوجد موظفون آخرون')}</p>
                   )}
                 </div>
                 {vacGranteeIds.length > 0 && (
@@ -3695,7 +3695,7 @@ export default function UsersSettingsPage() {
               {/* تواريخ */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>تاريخ البَدء</Label>
+                  <Label>{t('Start date', 'تاريخ البَدء')}</Label>
                   <Input
                     type="date"
                     value={vacStartDate}
@@ -3703,7 +3703,7 @@ export default function UsersSettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>تاريخ الانتهاء</Label>
+                  <Label>{t('End date', 'تاريخ الانتهاء')}</Label>
                   <Input
                     type="date"
                     value={vacEndDate}
@@ -3716,7 +3716,7 @@ export default function UsersSettingsPage() {
               {/* نوع البَيانات — v3.73.1: smart filter on source user's record counts */}
               <div className="space-y-2">
                 <Label className="flex items-center justify-between">
-                  <span>نوع البَيانات المُفَوَّضة</span>
+                  <span>{t('Delegated data type', 'نوع البَيانات المُفَوَّضة')}</span>
                   {sourceCountsLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                 </Label>
                 <Select value={vacResourceType} onValueChange={setVacResourceType} disabled={!vacGrantorId}>
@@ -3760,7 +3760,7 @@ export default function UsersSettingsPage() {
 
               {/* السَّبَب (اختيارى) */}
               <div className="space-y-2">
-                <Label>السَّبَب أو مُلاحظات (اختيارى)</Label>
+                <Label>{t('Reason or notes (optional)', 'السَّبَب أو مُلاحظات (اختيارى)')}</Label>
                 <Input
                   type="text"
                   value={vacReason}
@@ -3773,9 +3773,9 @@ export default function UsersSettingsPage() {
               {/* مُلَخّص */}
               {vacGrantorId && vacGranteeIds.length > 0 && vacEndDate && (
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
-                  <p className="font-medium mb-1">📋 المُلَخّص:</p>
-                  <p>سَيتم تَفويض بَيانات <strong>{members.find(m => m.user_id === vacGrantorId)?.display_name || 'الموظف الغائب'}</strong> إلى <strong>{vacGranteeIds.length} بَديل</strong></p>
-                  <p>من <strong>{vacStartDate}</strong> إلى <strong>{vacEndDate}</strong> — ستنتهى تلقائياً.</p>
+                  <p className="font-medium mb-1">📋 {t('Summary:', 'المُلَخّص:')}</p>
+                  <p>{t('Data of', 'سَيتم تَفويض بَيانات')} <strong>{members.find(m => m.user_id === vacGrantorId)?.display_name || t('the absent employee', 'الموظف الغائب')}</strong> {t('will be delegated to', 'إلى')} <strong>{vacGranteeIds.length} {t('substitute(s)', 'بَديل')}</strong></p>
+                  <p>{t('From', 'من')} <strong>{vacStartDate}</strong> {t('to', 'إلى')} <strong>{vacEndDate}</strong> — {t('ends automatically.', 'ستنتهى تلقائياً.')}</p>
                 </div>
               )}
             </div>
@@ -3868,7 +3868,7 @@ export default function UsersSettingsPage() {
               {/* الموظفين الهدف (للنقل والمشاركة) */}
               {permissionAction !== 'branch_access' && (
                 <div className="space-y-2">
-                  <Label>الموظفين الهدف (يمكن اختيار أكثر من واحد)</Label>
+                  <Label>{t('Target employees (multiple allowed)', 'الموظفين الهدف (يمكن اختيار أكثر من واحد)')}</Label>
                   <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
                     {members.filter(m => m.user_id !== selectedSourceUser && !m.is_current).map(m => (
                       <label key={m.user_id} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded cursor-pointer">
@@ -3896,7 +3896,7 @@ export default function UsersSettingsPage() {
               {/* اختيار الفروع (للوصول المتعدد) */}
               {permissionAction === 'branch_access' && (
                 <div className="space-y-2">
-                  <Label>الفروع (يمكن اختيار أكثر من فرع)</Label>
+                  <Label>{t('Branches (multiple allowed)', 'الفروع (يمكن اختيار أكثر من فرع)')}</Label>
                   <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
                     {branches.map(b => (
                       <label key={b.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded cursor-pointer">
@@ -3911,7 +3911,7 @@ export default function UsersSettingsPage() {
                           }}
                         />
                         <span className="text-sm">{b.name}</span>
-                        {b.is_main && <Badge className="text-[10px] bg-purple-100 text-purple-700">رئيسي</Badge>}
+                        {b.is_main && <Badge className="text-[10px] bg-purple-100 text-purple-700">{t('Main', 'رئيسي')}</Badge>}
                       </label>
                     ))}
                   </div>
@@ -3922,7 +3922,7 @@ export default function UsersSettingsPage() {
               {permissionAction !== 'branch_access' && (
                 <div className="space-y-2">
                   <Label className="flex items-center justify-between">
-                    <span>نوع البيانات</span>
+                    <span>{t('Data type', 'نوع البيانات')}</span>
                     {sourceCountsLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                   </Label>
                   <Select value={selectedResourceType} onValueChange={setSelectedResourceType} disabled={!selectedSourceUser}>
@@ -3969,7 +3969,7 @@ export default function UsersSettingsPage() {
               {permissionAction === 'transfer' && selectedResourceType === 'customers' && selectedSourceUser && (
                 <div className="space-y-2">
                   <Label className="flex items-center justify-between">
-                    <span>اختر العُملاء (اتركه فارغاً لنَقل الكُل)</span>
+                    <span>{t('Select customers (leave empty to transfer all)', 'اختر العُملاء (اتركه فارغاً لنَقل الكُل)')}</span>
                     {sourceCustomersLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                   </Label>
                   {sourceCustomers.length === 0 && !sourceCustomersLoading ? (
@@ -4001,13 +4001,13 @@ export default function UsersSettingsPage() {
               {/* الفرع (للنقل فقط): نقل عملاء/أوامر فرع معين للموظف الجديد */}
               {permissionAction === 'transfer' && (
                 <div className="space-y-2">
-                  <Label>الفرع (اختياري)</Label>
+                  <Label>{t('Branch (optional)', 'الفرع (اختياري)')}</Label>
                   <Select value={transferBranchId || "all_branches"} onValueChange={(v) => setTransferBranchId(v === "all_branches" ? "" : v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="الكل — نقل كل البيانات" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all_branches">الكل — نقل كل البيانات</SelectItem>
+                      <SelectItem value="all_branches">{t('All — transfer all data', 'الكل — نقل كل البيانات')}</SelectItem>
                       {branches.map(b => (
                         <SelectItem key={b.id} value={b.id}>
                           {b.name}
@@ -4025,15 +4025,15 @@ export default function UsersSettingsPage() {
               {/* صلاحيات إضافية للمشاركة */}
               {permissionAction === 'share' && (
                 <div className="space-y-2 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                  <Label className="text-sm font-medium">صلاحيات إضافية</Label>
+                  <Label className="text-sm font-medium">{t('Additional permissions', 'صلاحيات إضافية')}</Label>
                   <div className="flex gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <Checkbox checked={shareCanEdit} onCheckedChange={(c) => setShareCanEdit(!!c)} />
-                      <span className="text-sm">تعديل</span>
+                      <span className="text-sm">{t('Edit', 'تعديل')}</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <Checkbox checked={shareCanDelete} onCheckedChange={(c) => setShareCanDelete(!!c)} />
-                      <span className="text-sm">حذف</span>
+                      <span className="text-sm">{t('Delete', 'حذف')}</span>
                     </label>
                   </div>
                 </div>
@@ -4043,7 +4043,7 @@ export default function UsersSettingsPage() {
               {permissionAction === 'transfer' && (
                 <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded-lg text-sm">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>⚠️ النقل سيغير ملكية البيانات نهائياً. الموظف المصدر سيفقد الوصول.</span>
+                  <span>⚠️ {t('Transfer permanently changes data ownership. The source employee loses access.', 'النقل سيغير ملكية البيانات نهائياً. الموظف المصدر سيفقد الوصول.')}</span>
                 </div>
               )}
             </div>
