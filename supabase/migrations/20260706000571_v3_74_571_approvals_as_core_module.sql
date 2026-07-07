@@ -1,0 +1,13 @@
+-- v3.74.571 — sidebar STILL hid the approvals inbox after v3.74.569
+-- because there is a second gate BEYOND canAccessPage: sidebar filters
+-- the top-level groups through isModuleEnabled(group.key, enabled_modules).
+-- The module-manifest ModuleKey union did not include 'approvals', so
+-- the filter returned false for any company that had a non-null
+-- enabled_modules array (i.e. any company past the initial legacy
+-- backfill). Result: the group vanished even for owners.
+--
+-- Fix (Node): add 'approvals' to ModuleKey, MODULE_LABELS, and CORE_MODULES
+-- so it is always visible. Core because the inbox unifies every workflow's
+-- pending items — turning it off would leave approvers with no way in.
+--
+-- Doc stamp only.

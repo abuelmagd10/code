@@ -12,6 +12,7 @@
 
 export type ModuleKey =
   | 'dashboard'
+  | 'approvals'
   | 'sales'
   | 'accounting'
   | 'settings'
@@ -25,6 +26,11 @@ export type ModuleKey =
 /** Always-on modules. The owner cannot disable these. */
 export const CORE_MODULES: readonly ModuleKey[] = [
   'dashboard',
+  // v3.74.571 — approvals inbox is core: it unifies EVERY workflow's
+  // pending items (payments, corrections, refunds, sales/purchase
+  // returns, goods receipt, dispatch, discounts...) so hiding it via
+  // the module toggle would leave approvers with no way in.
+  'approvals',
   'sales',
   'purchases',
   'inventory',
@@ -43,6 +49,7 @@ export const OPTIONAL_MODULES: readonly ModuleKey[] = [
 /** Bilingual labels for the settings UI. */
 export const MODULE_LABELS: Record<ModuleKey, { ar: string; en: string; description?: { ar: string; en: string } }> = {
   dashboard:         { ar: 'لوحة التحكم',          en: 'Dashboard' },
+  approvals:         { ar: 'صندوق الموافقات',       en: 'Approvals Inbox' },
   sales:             { ar: 'المبيعات',             en: 'Sales' },
   accounting:        { ar: 'الحسابات',             en: 'Accounting' },
   settings:          { ar: 'الإعدادات',            en: 'Settings' },
