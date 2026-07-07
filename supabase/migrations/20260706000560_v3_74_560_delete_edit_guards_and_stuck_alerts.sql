@@ -1,0 +1,25 @@
+-- v3.74.560 — priorities #4 / #5 / #6 / #7 combined.
+--
+-- #4 Block deletion of bills/invoices while pending workflows exist.
+--    New triggers block_bill_delete_with_pending() +
+--    block_invoice_delete_with_pending(). The existing
+--    transactional_document_delete_gate_trg already stops non-draft
+--    deletes; these add the pending-workflow angle so a draft with
+--    live workflows also can't disappear.
+--
+-- #5 Freeze immutable fields (total_amount, currency, exchange_rate,
+--    party, date) after ANY payment/return exists.
+--    block_bill_immutable_edits() + block_invoice_immutable_edits().
+--    Edits to notes / due_date / status / workflow states still pass.
+--
+-- #6 Nested corrections: verified — DUPLICATE_REQUEST guard already
+--    lives in create_vendor_payment_correction_request and
+--    create_payment_correction_request. No change needed.
+--
+-- #7 Stuck pending workflow alerts in ai_get_proactive_alerts:
+--    * stuck_pending_payments
+--    * stuck_purchase_returns
+--    * stuck_correction_requests
+--    Threshold 7 days idle. Routes to /approvals.
+--
+-- Doc stamp only; DDL applied via mcp__apply_migration.
