@@ -1,0 +1,21 @@
+-- v3.74.564 — journal entries integrity fixes uncovered in the audit.
+--
+-- Bug A (high): the trigger prevent_posted_journal_modification blocks
+-- DELETE on posted JEs with a message that says "Create a reversal
+-- entry instead" — but no reversal RPC existed. Users were stuck.
+-- Fix: new RPC reverse_journal_entry(journal_id, reason, user_id,
+-- entry_date) creates a mirror JE with swapped debits/credits,
+-- preserves IAS 21 columns, enforces SoD (creator ≠ reverser unless
+-- owner/GM), and respects financial-period lock on the reversal date.
+--
+-- Bug B (med): post_depreciation() wrote debit_amount/credit_amount
+-- only, leaving IAS 21 columns NULL. Fixed: original_debit,
+-- original_credit, original_currency, exchange_rate_used are stamped
+-- (base-currency asset uses rate=1 with the base ccy as original).
+-- Also added financial-period lock and explicit status='posted'.
+--
+-- Bug C (med): manual JEs post immediately by any accountant role —
+-- no SoD. Deferred to a follow-up because it needs a workflow state
+-- machine on top of what already exists; leaves the RPC unchanged.
+--
+-- Doc stamp; DDL applied via mcp__apply_migration.
