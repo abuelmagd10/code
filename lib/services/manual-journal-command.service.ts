@@ -90,6 +90,15 @@ export class ManualJournalCommandService {
         }),
       })
 
+      // v3.74.567 — SoD for manual JEs. Owner / general_manager may
+      // still post directly; other roles (admin, manager, accountant)
+      // are downgraded to draft and must be posted by a privileged
+      // second user via a follow-up UPDATE (which the immutable-fields
+      // trigger permits for status-only transitions).
+      const PRIVILEGED_POST_ROLES = new Set(["owner", "general_manager"])
+      const initialStatus = PRIVILEGED_POST_ROLES.has(String(actor.actorRole || "").toLowerCase())
+        ? "posted"
+        : "draft"
       const { data: entry, error: entryError } = await this.adminSupabase
         .from("journal_entries")
         .insert({
@@ -100,7 +109,7 @@ export class ManualJournalCommandService {
           reference_id: null,
           branch_id: prepared.branchId,
           cost_center_id: prepared.costCenterId,
-          status: "posted",
+          status: initialStatus,
           created_by: actor.actorId,
         })
         .select("id")

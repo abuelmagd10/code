@@ -1,0 +1,9 @@
+-- v3.74.566 — run_fx_revaluation(company_id, revaluation_date, user_id)
+-- Full IAS 21 FX revaluation for FC monetary accounts (bank, cash,
+-- AR, AP). Reads native balance vs current base balance, computes
+-- delta using the closing rate from exchange_rates, books one
+-- balanced JE with per-account revaluation + unrealized FX gain/loss
+-- to P&L. SoD (owner/GM/admin only), period lock enforced. Skips
+-- accounts with zero delta. Idempotent per (company, date).
+--
+-- Doc stamp; DDL applied via mcp__apply_migration.

@@ -1,0 +1,5 @@
+-- v3.74.567 — Manual JE SoD.
+-- Non-privileged manual JEs now insert with status='draft'; only owner/
+-- general_manager auto-post. post_manual_journal_draft(je, user) moves
+-- draft → posted, enforcing SoD (creator ≠ poster unless owner/GM) and
+-- financial-period lock. Doc stamp.

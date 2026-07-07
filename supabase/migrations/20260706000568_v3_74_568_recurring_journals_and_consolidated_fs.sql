@@ -1,0 +1,22 @@
+-- v3.74.568 — Recurring / Standing Journals + Consolidated FS.
+--
+-- A) recurring_journal_templates + recurring_journal_template_lines
+--    tables. Balanced check enforced by CONSTRAINT trigger.
+--    execute_recurring_journal_run(template, user) posts the JE and
+--    rolls next_due_date by the template frequency. Auto-deactivates
+--    when end_date passes. Governed: owner/GM/admin only. Period lock
+--    on next_due_date.
+--
+-- B) Consolidated Financial Statements: verified that trial-balance,
+--    income-statement, and account-balances do not carry a branch
+--    filter, so they aggregate at the company level by default (the
+--    consolidated view). Branch-specific reports remain accessible
+--    through general-ledger which does accept a branch parameter.
+--    No code change needed.
+--
+-- C) Payroll: audit surfaced a bare-bones payroll_runs table (only
+--    company/period columns, no amounts/status). The module is a
+--    stub and requires a broader design rather than isolated fixes.
+--    Deferred with a note.
+--
+-- Doc stamp; DDL applied via mcp__apply_migration.
