@@ -66,6 +66,8 @@ interface Props {
   bookingBranchId?: string | null
   staffUserId?: string | null
   assignedStaffUserIds?: string[] | null
+  // v3.74.578 — post-execution edit window needs the invoice status.
+  invoiceId?: string | null
   onChange?: () => void
 }
 
@@ -79,6 +81,7 @@ export function BookingAddons({
   bookingBranchId = null,
   staffUserId = null,
   assignedStaffUserIds = null,
+  invoiceId = null,
   onChange,
 }: Props) {
   // v3.74.574 — look up the parent product on the service ourselves so
@@ -89,14 +92,36 @@ export function BookingAddons({
   const isAr = lang !== "en"
   const t = (ar: string, en: string) => (isAr ? ar : en)
 
-  const locked = ["completed", "cancelled", "no_show"].includes(bookingStatus)
+  // v3.74.578 — stage-aware governance mirror of the server rules
+  // (assert_booking_addons_permission + assert_booking_editable_for_bundle):
+  //   * cancelled / no_show                      → locked for everyone
+  //   * completed + invoice NOT draft            → locked for everyone
+  //     (changes go through the sales-return cycle)
+  //   * completed + invoice draft ("edit window") → owner/admin/GM and the
+  //     ASSIGNED staff only (booking_officer's rights end at execution)
+  //   * before completion → owner/admin/GM, booking_officer (own branch),
+  //     assigned staff
+  const executed = bookingStatus === "completed"
+  const [invoiceStatus, setInvoiceStatus] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    if (!executed || !invoiceId) { setInvoiceStatus(null); return }
+    ;(async () => {
+      const { data } = await supabase
+        .from("invoices")
+        .select("status")
+        .eq("id", invoiceId)
+        .maybeSingle()
+      if (alive) setInvoiceStatus((data as any)?.status ?? null)
+    })()
+    return () => { alive = false }
+  }, [supabase, executed, invoiceId])
 
-  // v3.74.577 — mirror of assert_booking_addons_permission (server is the
-  // real gate; this only hides the controls from unauthorized roles):
-  //   owner/admin/general_manager  → always
-  //   booking_officer              → own branch (unbranched = any)
-  //   the assigned staff member    → his own booking only
-  const [mayEdit, setMayEdit] = useState(false)
+  const draftWindow = executed && invoiceStatus === "draft"
+  const locked =
+    ["cancelled", "no_show"].includes(bookingStatus) || (executed && !draftWindow)
+
+  const [me, setMe] = useState<{ uid: string; role: string; branch: string | null } | null>(null)
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -109,18 +134,26 @@ export function BookingAddons({
           .eq("company_id", companyId)
           .eq("user_id", user.id)
           .maybeSingle()
-        const role = String((member as any)?.role || "")
-        const memberBranch = (member as any)?.branch_id ?? null
-        const allowed =
-          ["owner", "admin", "general_manager"].includes(role) ||
-          (role === "booking_officer" && (!memberBranch || !bookingBranchId || memberBranch === bookingBranchId)) ||
-          (!!staffUserId && staffUserId === user.id) ||
-          (assignedStaffUserIds ?? []).includes(user.id)
-        if (alive) setMayEdit(allowed)
+        if (alive) setMe({
+          uid: user.id,
+          role: String((member as any)?.role || ""),
+          branch: (member as any)?.branch_id ?? null,
+        })
       } catch { /* stay read-only on failure */ }
     })()
     return () => { alive = false }
-  }, [supabase, companyId, bookingBranchId, staffUserId, assignedStaffUserIds])
+  }, [supabase, companyId])
+
+  const mayEdit = useMemo(() => {
+    if (!me) return false
+    if (["owner", "admin", "general_manager"].includes(me.role)) return true
+    const isAssigned =
+      (!!staffUserId && staffUserId === me.uid) ||
+      (assignedStaffUserIds ?? []).includes(me.uid)
+    if (executed) return isAssigned // officer's window closes at execution
+    if (me.role === "booking_officer" && (!me.branch || !bookingBranchId || me.branch === bookingBranchId)) return true
+    return isAssigned
+  }, [me, executed, bookingBranchId, staffUserId, assignedStaffUserIds])
 
   const readOnly = locked || !mayEdit
 
@@ -317,12 +350,37 @@ export function BookingAddons({
 
   return (
     <div className="space-y-4">
-      {/* v3.74.577 — read-only notice for unauthorized roles */}
+      {/* v3.74.577/578 — read-only notice for unauthorized roles */}
       {!locked && !mayEdit && (
         <p className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded px-3 py-2">
+          {executed
+            ? t(
+                "عرض فقط — بعد تنفيذ أمر الحجز يقتصر التعديل على الموظف المنفذ والإدارة ما دامت الفاتورة مسودة",
+                "View only — after execution, only the assigned staff and management may edit while the invoice is still a draft",
+              )
+            : t(
+                "عرض فقط — تعديل الإضافات متاح للمالك/الإدارة، مسئول الحجز فى فرعه، والموظف المكلف بهذا الحجز",
+                "View only — addons can be edited by owner/management, the branch booking officer, and the staff assigned to this booking",
+              )}
+        </p>
+      )}
+
+      {/* v3.74.578 — active post-execution edit window */}
+      {draftWindow && mayEdit && (
+        <p className="text-xs text-blue-800 dark:text-blue-200 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded px-3 py-2">
           {t(
-            "عرض فقط — تعديل الإضافات متاح للمالك/الإدارة، مسئول الحجز فى فرعه، والموظف المكلف بهذا الحجز",
-            "View only — addons can be edited by owner/management, the branch booking officer, and the staff assigned to this booking",
+            "أمر الحجز منفَّذ والفاتورة ما زالت مسودة — أى تعديل هنا يُزامن الفاتورة والمخزون تلقائياً ويُخطر المحاسب والإدارة",
+            "Booking executed, invoice still draft — edits here auto-sync the invoice and inventory, and notify the accountant and management",
+          )}
+        </p>
+      )}
+
+      {/* v3.74.578 — window closed */}
+      {executed && !draftWindow && (
+        <p className="text-xs text-muted-foreground bg-gray-50 dark:bg-gray-900/40 border rounded px-3 py-2">
+          {t(
+            "الفاتورة معتمدة — أى تعديل بعد الاعتماد يتم عبر مرتجع المبيعات",
+            "Invoice posted — any further change goes through the sales-return cycle",
           )}
         </p>
       )}
