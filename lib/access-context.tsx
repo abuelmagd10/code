@@ -290,6 +290,23 @@ async function fetchAccessProfile(
         "branches",
         "warehouses",
         "cost_centers",
+        // v3.74.569 — explicit inclusion so the sidebar item never
+        // hides even when canAccessPage falls through the
+        // .includes(resource) branch instead of the is_owner short-circuit.
+        "approvals",
+        "expenses",
+        "customer_credits",
+        "customer_refund_requests",
+        "vendor_payment_correction_requests",
+        "sales_returns",
+        "sales_return_requests",
+        "purchase_returns",
+        "inventory_transfers",
+        "inventory_goods_receipt",
+        "dispatch_approvals",
+        "write_offs",
+        "third_party_inventory",
+        "bookings",
         // ... إلخ
       ]
       allowed_actions = ["*"] // كل العمليات
@@ -316,6 +333,10 @@ async function fetchAccessProfile(
           'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
           'dispatch_approvals', 'inventory_goods_receipt',
           'payments', 'expenses', 'banking',
+          // v3.74.569 — approvals inbox is where the accountant executes
+          // corrections and receives feedback on their submissions
+          'approvals',
+          'vendor_payment_correction_requests', 'customer_refund_requests',
         ],
         // 3. مسؤول المشتريات
         // v3.74.297 — Added products + services. The purchasing officer
@@ -326,6 +347,8 @@ async function fetchAccessProfile(
           'suppliers', 'purchase_orders', 'inventory',
           'dispatch_approvals', 'inventory_goods_receipt',
           'products', 'services',
+          // v3.74.569
+          'approvals',
         ],
         // 4. مسؤول الحجوزات — 2 pages verbatim
         booking_officer: ['bookings', 'customers'],
@@ -335,8 +358,10 @@ async function fetchAccessProfile(
         store_manager: [
           'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
           'dispatch_approvals', 'inventory_goods_receipt',
-          'sales_return_requests', // v3.74.14 — warehouse approver for sales returns
-          'purchase_returns',       // v3.74.166 — warehouse approver for purchase returns
+          'sales_return_requests',
+          'purchase_returns',
+          // v3.74.569 — warehouse dispatches PR items via approvals card
+          'approvals',
         ],
         // 7. المدير (branch manager) — union, READ-ONLY at can_write level
         manager: [

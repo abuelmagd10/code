@@ -1,0 +1,17 @@
+-- v3.74.569 — /approvals disappeared from the sidebar for some roles.
+-- Root cause: lib/access-context.tsx defaultRolePages hardcoded the
+-- allowed_pages list per role, and 'approvals' was missing from:
+--   * isFullAccess owner branch (never included at all)
+--   * accountant, purchasing_officer, store_manager
+-- The isFullAccess branch used to short-circuit via profile.is_owner,
+-- but when the profile falls through to allowed_pages.includes(),
+-- 'approvals' had no entry so canAccessPage returned false and the
+-- sidebar filter hid the tile.
+--
+-- Fix (Node): added 'approvals' + related workflow pages
+-- (customer_credits, refund/correction request pages, sales_returns,
+-- purchase_returns, inventory_transfers, dispatch_approvals, etc.)
+-- to the owner list and appended 'approvals' to accountant,
+-- purchasing_officer, and store_manager.
+--
+-- Doc stamp only.
