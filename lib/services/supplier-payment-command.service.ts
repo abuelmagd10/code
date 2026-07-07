@@ -301,6 +301,27 @@ export class SupplierPaymentCommandService {
 
     const branchId = await this.resolveBranchId(actor.companyId, command.branchId || null, command.allocations)
 
+    // v3.74.559 — pre-validate each allocation against the bill's effective
+    // outstanding (subtracts pending PRs + pending payment approvals).
+    // Prevents the race where two users each file a payment for what
+    // the UI says is "the remaining", both get approved, and the bill
+    // goes negative.
+    if (Array.isArray(command.allocations) && command.allocations.length > 0) {
+      for (const alloc of command.allocations) {
+        if (!alloc.billId || !alloc.amount) continue
+        try {
+          const { data: eff } = await this.adminSupabase.rpc('get_bill_effective_outstanding', { p_bill_id: alloc.billId })
+          const effNum = Number(eff)
+          if (Number.isFinite(effNum) && Number(alloc.amount) > effNum + 0.01) {
+            throw new Error(`Allocation on bill exceeds effective outstanding. المتاح الفعلى: ${effNum.toFixed(2)} (بعد خصم المرتجعات والدفعات المعلَّقة)`)
+          }
+        } catch (e: any) {
+          if (String(e?.message || '').includes('exceeds')) throw e
+          /* silent fallback if RPC unreachable */
+        }
+      }
+    }
+
     // v3.26.0: Enterprise rule — prevent cash overdraft on supplier payments
     // Block if the chosen cash/bank account would go negative after this payment.
     if (command.accountId) {
@@ -477,25 +498,27 @@ export class SupplierPaymentCommandService {
       throw new Error("Allocation amount exceeds the remaining unallocated payment balance")
     }
 
-    // v3.74.558 — subtract pending purchase returns. bills.returned_amount
-    // reflects only EXECUTED returns; a return approved but awaiting
-    // warehouse dispatch has not touched it. Canonical helper on the DB.
-    let netOutstanding = Math.max(
+    // v3.74.558 + v3.74.559 — canonical outstanding respects both
+    // pending purchase returns AND pending payment approvals on the
+    // same bill. Anything less would let two concurrent pending
+    // payments both pass and push the bill negative on approval.
+    const naiveOutstanding = Math.max(
       asNumber(bill.total_amount) - asNumber(bill.returned_amount) - asNumber(bill.paid_amount),
       0
     )
-    let pendingReturnsAmount = 0
+    let netOutstanding = naiveOutstanding
+    let reservedTotal = 0
     try {
       const { data: eff } = await this.adminSupabase.rpc('get_bill_effective_outstanding', { p_bill_id: billId })
       const effNum = Number(eff)
       if (Number.isFinite(effNum) && effNum >= 0) {
-        pendingReturnsAmount = Math.max(0, netOutstanding - effNum)
+        reservedTotal = Math.max(0, naiveOutstanding - effNum)
         netOutstanding = effNum
       }
     } catch (_) { /* naive fallback */ }
     if (amount > netOutstanding + 0.01) {
-      const detail = pendingReturnsAmount > 0
-        ? ` — مَحجوز لِمرتَجَعات مَعلَّقة: ${pendingReturnsAmount.toFixed(2)}. الحَد الأَقصى للدَّفعَة: ${netOutstanding.toFixed(2)}`
+      const detail = reservedTotal > 0
+        ? ` — مَحجوز لِمرتَجَعات ودَفعات مَعلَّقة: ${reservedTotal.toFixed(2)}. الحَد الأَقصى للدَّفعَة: ${netOutstanding.toFixed(2)}`
         : ''
       throw new Error("Allocation amount exceeds the bill net outstanding balance" + detail)
     }

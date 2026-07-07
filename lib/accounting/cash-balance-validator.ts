@@ -167,7 +167,29 @@ export async function assertCashOutflowAllowed(
   const accIsFC = !!accCcy && baseCurrency != null && accCcy !== baseCurrency
 
   const useNative = accIsFC && opts.nativeAmount != null && snap.nativeBalance != null
-  const currentBalance = useNative ? (snap.nativeBalance as number) : snap.balance
+  const currentBalanceRaw = useNative ? (snap.nativeBalance as number) : snap.balance
+
+  // v3.74.559 — subtract queued pending_approval supplier payments on
+  // the same cash/bank account so an owner approving a batch cannot
+  // silently overdraft.
+  let queuedOutflow = 0
+  try {
+    const { data: queued } = await supabase
+      .from('payments')
+      .select('amount, base_currency_amount, supplier_id, bill_id')
+      .eq('account_id', opts.accountId)
+      .eq('status', 'pending_approval')
+      .is('voided_at', null)
+      .is('voids_payment_id', null)
+    for (const p of (queued || []) as any[]) {
+      const isOutflow = (p.supplier_id != null) || (p.bill_id != null)
+      if (!isOutflow) continue
+      const val = useNative ? Number(p.amount || 0) : Number(p.base_currency_amount ?? p.amount ?? 0)
+      queuedOutflow += Math.abs(val)
+    }
+  } catch (_) { /* silent fallback */ }
+
+  const currentBalance = currentBalanceRaw - queuedOutflow
   const attempted = useNative ? Number(opts.nativeAmount) : Number(opts.amount || 0)
   const newBalance = currentBalance - attempted
 

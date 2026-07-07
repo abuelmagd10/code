@@ -23,14 +23,32 @@ export async function POST(
       return NextResponse.json({ error: "invoiceId and a positive amount are required" }, { status: 400 })
     }
 
-    // التحقق من الرصيد المتاح أولاً
-    const { data: balance } = await supabase.rpc("get_customer_credit_balance", {
-      p_company_id: companyId,
-      p_customer_id: customerId
-    })
+    // v3.74.559 — effective balance subtracts credits earmarked by pending
+    // customer refund requests. Falls back to the naive balance if the
+    // helper is not deployed for any reason.
+    let effectiveBalance: number | null = null
+    try {
+      const { data: eff } = await supabase.rpc("get_customer_credit_effective_balance", {
+        p_customer_id: customerId,
+        p_company_id: companyId,
+      })
+      if (eff != null && Number.isFinite(Number(eff))) effectiveBalance = Number(eff)
+    } catch (_) { /* silent fallback */ }
+    if (effectiveBalance == null) {
+      const { data: balance } = await supabase.rpc("get_customer_credit_balance", {
+        p_company_id: companyId,
+        p_customer_id: customerId,
+      })
+      effectiveBalance = balance != null ? Number(balance) : 0
+    }
 
-    if (!balance || Number(balance) < 0.01) {
-      return NextResponse.json({ error: "NO_CREDIT_AVAILABLE: لا يوجد رصيد دائن متاح لهذا العميل" }, { status: 400 })
+    if (!effectiveBalance || effectiveBalance < 0.01) {
+      return NextResponse.json({ error: "NO_CREDIT_AVAILABLE: لا يوجد رصيد دائن متاح لهذا العميل (بعد خصم استردادات معلَّقة)" }, { status: 400 })
+    }
+    if (Number(amount) > effectiveBalance + 0.01) {
+      return NextResponse.json({
+        error: `EXCEEDS_EFFECTIVE_BALANCE: المبلغ يتجاوز الرصيد الفعلى ${effectiveBalance.toFixed(2)} (بعد خصم استردادات معلَّقة)`
+      }, { status: 400 })
     }
 
     // تطبيق الرصيد عبر الـ RPC الذري
@@ -39,7 +57,7 @@ export async function POST(
       p_customer_id: customerId,
       p_invoice_id: invoiceId,
       p_amount: Number(amount),
-      p_user_id: user.id
+      p_user_id: user.id,
     })
 
     if (applyErr) {
@@ -52,7 +70,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      data: result
+      data: result,
     })
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })

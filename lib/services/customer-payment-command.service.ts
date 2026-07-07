@@ -173,6 +173,22 @@ export class CustomerPaymentCommandService {
     const totalAllocated = command.allocations.reduce((sum, allocation) => sum + asNumber(allocation.amount), 0)
     if (totalAllocated > command.amount + 0.01) throw new Error("Total allocations cannot exceed payment amount")
 
+    // v3.74.559 — mirror of vendor guard. Reject each allocation whose
+    // amount exceeds the invoice's effective outstanding (which subtracts
+    // pending sales returns AND pending customer payments already queued).
+    for (const alloc of (command.allocations || [])) {
+      if (!alloc.invoiceId || !alloc.amount) continue
+      try {
+        const { data: eff } = await this.adminSupabase.rpc('get_invoice_effective_outstanding', { p_invoice_id: alloc.invoiceId })
+        const effNum = Number(eff)
+        if (Number.isFinite(effNum) && Number(alloc.amount) > effNum + 0.01) {
+          throw new Error(`Allocation on invoice exceeds effective outstanding. المتاح الفعلى: ${effNum.toFixed(2)} (بعد خصم مرتَجَعات ودَفعات مبيعات مَعلَّقة)`)
+        }
+      } catch (e: any) {
+        if (String(e?.message || '').includes('exceeds')) throw e
+      }
+    }
+
     const traceId = await this.createTrace({
       companyId: actor.companyId,
       sourceEntity: "payment_request",
@@ -418,22 +434,23 @@ export class CustomerPaymentCommandService {
     const appliedInInvoiceCurrency = Math.round(asNumber(amount) * conversionFactor * 10000) / 10000
     // ─────────────────────────────────────────────────────────────────────────
 
-    // v3.74.558 — mirror of the vendor-side fix. Subtract pending
-    // sales return requests so an approved payment can't exceed what
-    // will actually be owed once the return executes.
-    let outstanding = Math.max(asNumber(invoice.total_amount) - asNumber(invoice.returned_amount) - asNumber(invoice.paid_amount), 0)
-    let pendingReturnsAmount = 0
+    // v3.74.558 + v3.74.559 — mirror of vendor fix. Effective outstanding
+    // subtracts pending sales return requests AND pending payment
+    // approvals on the same invoice.
+    const naiveOutstanding = Math.max(asNumber(invoice.total_amount) - asNumber(invoice.returned_amount) - asNumber(invoice.paid_amount), 0)
+    let outstanding = naiveOutstanding
+    let reservedTotal = 0
     try {
       const { data: eff } = await this.adminSupabase.rpc('get_invoice_effective_outstanding', { p_invoice_id: invoiceId })
       const effNum = Number(eff)
       if (Number.isFinite(effNum) && effNum >= 0) {
-        pendingReturnsAmount = Math.max(0, outstanding - effNum)
+        reservedTotal = Math.max(0, naiveOutstanding - effNum)
         outstanding = effNum
       }
     } catch (_) { /* naive fallback */ }
     if (appliedInInvoiceCurrency > outstanding + 0.01) {
-      const detail = pendingReturnsAmount > 0
-        ? ` — مَحجوز لِمرتَجَعات مبيعات مَعلَّقة: ${pendingReturnsAmount.toFixed(2)}. الحَد الأَقصى للدَّفعَة: ${outstanding.toFixed(2)}`
+      const detail = reservedTotal > 0
+        ? ` — مَحجوز لِمرتَجَعات ودَفعات مَعلَّقة: ${reservedTotal.toFixed(2)}. الحَد الأَقصى للدَّفعَة: ${outstanding.toFixed(2)}`
         : ''
       throw new Error("Allocation amount exceeds the invoice outstanding balance" + detail)
     }

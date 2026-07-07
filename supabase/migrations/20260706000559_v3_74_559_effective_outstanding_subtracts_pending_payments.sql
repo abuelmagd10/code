@@ -1,0 +1,31 @@
+-- v3.74.559 — closes the "two concurrent pending payments" race.
+--
+-- Before: bills.paid_amount was only bumped when a payment reached
+-- 'approved'. A payment sitting in 'pending_approval' had no effect
+-- on the naive outstanding, so two users could each file a payment
+-- for the full displayed remaining and both would pass the guard.
+-- On approval the bill would go negative.
+--
+-- Fix (applied via mcp__apply_migration):
+--   get_bill_effective_outstanding() and get_invoice_effective_outstanding()
+--   now also subtract the sum of pending_approval payment allocations
+--   (in base currency, with the payments -> payment_allocations shape).
+--
+-- Node callers (this doc stamp):
+--   supplier-payment-command.service.ts: pre-validates each allocation
+--     against the effective outstanding at createPayment time (before
+--     the RPC), and the applyBill guard already went through the RPC
+--     helper.
+--   customer-payment-command.service.ts: mirror.
+--
+-- Doc stamp only.
+
+-- Also v3.74.559 — bank overdraft check (lib/accounting/cash-balance-validator.ts)
+-- now subtracts queued pending_approval supplier payments on the same
+-- cash/bank account. Closes: owner approves a batch of pending
+-- payments totaling more than the balance.
+--
+-- Also v3.74.559 — new helper get_customer_credit_effective_balance()
+-- and app/api/customer-credits/[customerId]/apply/route.ts now uses
+-- it. Closes: pending customer refund earmarks credit but UI still
+-- shows the full number to apply on an invoice.
