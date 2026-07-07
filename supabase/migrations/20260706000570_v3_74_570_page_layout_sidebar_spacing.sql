@@ -1,0 +1,18 @@
+-- v3.74.570 — several pages rendered with the title clipped to a
+-- couple of letters ("تة") on desktop because their <main> tag was
+-- missing the md:mr-64 margin that leaves room for the fixed sidebar,
+-- plus the pt-20 md:pt-8 top padding that keeps the header clear of
+-- the mobile hamburger.
+--
+-- Standardised on the same pattern used by the other list pages:
+--   <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 ...">
+--   + wrapper div gets `${appLang === 'ar' ? 'rtl' : 'ltr'}` and `dir`.
+--
+-- Fixed:
+--   app/fixed-assets/reports/page.tsx       (the one in the screenshot)
+--   app/fixed-assets/page.tsx               (loading state)
+--   app/fixed-assets/[id]/edit/page.tsx     (loading state)
+--   app/admin/apply-governance/page.tsx
+--   app/settings/commissions/runs/[id]/page.tsx
+--
+-- Doc stamp only.

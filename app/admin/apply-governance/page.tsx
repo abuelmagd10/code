@@ -60,7 +60,7 @@ export default function ApplyGovernancePage() {
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       <div className="flex-1 flex flex-col overflow-hidden">
         <CompanyHeader />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 md:mr-64 overflow-y-auto p-6 pt-20 md:pt-8 overflow-x-hidden">
           <div className="max-w-4xl mx-auto">
             <Card>
               <CardHeader>

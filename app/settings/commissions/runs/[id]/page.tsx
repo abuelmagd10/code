@@ -445,7 +445,7 @@ export default function RunDetailsPage() {
     return (
         <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
             <div className="flex-1 flex flex-col overflow-hidden">
-                <main className="flex-1 overflow-y-auto p-6 space-y-6">
+                <main className="flex-1 md:mr-64 overflow-y-auto p-6 space-y-6 pt-20 md:pt-8 overflow-x-hidden">
                     {/* Header */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">

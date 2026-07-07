@@ -286,8 +286,8 @@ export default function FixedAssetsReportsPage() {
 
   if (!canAccess) {
     return (
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto flex items-center justify-center">
+      <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 flex items-center justify-center">
           <Card className="max-w-md">
             <CardHeader>
               <CardTitle>{appLang === 'en' ? 'Access Denied' : 'رفض الوصول'}</CardTitle>
@@ -302,8 +302,10 @@ export default function FixedAssetsReportsPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
-      <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
+    <div className={`flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900 ${appLang === 'ar' ? 'rtl' : 'ltr'}`} dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+      {/* v3.74.570 — md:mr-64 leaves room for the sidebar; pt-20 md:pt-8
+          keeps the header clear of the mobile hamburger. */}
+      <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 space-y-4 sm:space-y-6 overflow-x-hidden">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
