@@ -1,0 +1,12 @@
+-- v3.74.574 — client-side follow-up to v3.74.573.
+--
+-- Booking detail page (app/bookings/[id]/page.tsx) now embeds the
+-- BookingAddons panel with two sections:
+--   1) الأصناف المرفقة  — checklist for optional bundle items;
+--      mandatory rows shown with a "required" chip.
+--   2) منتجات إضافية للبيع — walk-in extras editor (product picker +
+--      qty + unit_price + add button + line list + remove).
+-- Both panels lock when the booking status is completed, cancelled,
+-- or no_show. All writes go through the v3.74.573 RPCs.
+--
+-- Doc stamp only — the change is client-side.

@@ -14,6 +14,8 @@ import { BookingDiscountApprovalBanner, type DiscountGate } from "@/components/b
 import { BookingPayments } from "@/components/bookings/BookingPayments"
 import { BookingRating } from "@/components/bookings/BookingRating"
 import { BookingNotes } from "@/components/bookings/BookingNotes"
+// v3.74.574 — bundle items + walk-in extras editor.
+import { BookingAddons } from "@/components/bookings/BookingAddons"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
 import { Clock, User, Wrench, DollarSign, CalendarDays, Info } from "lucide-react"
@@ -289,6 +291,19 @@ export default function BookingDetailPage() {
                   } />
                 </CardContent>
               </Card>
+            </div>
+
+            {/* v3.74.574 — Bundle items + walk-in extras. Spans full row. */}
+            <div className="mt-4">
+              <BookingAddons
+                companyId={String((booking as any).company_id ?? "")}
+                bookingId={id}
+                bookingStatus={booking.status}
+                serviceId={String(booking.service_id ?? "")}
+                bookingQty={Number(booking.quantity ?? 1)}
+                lang={appLang}
+                onChange={loadBooking}
+              />
             </div>
           </TabsContent>
 
