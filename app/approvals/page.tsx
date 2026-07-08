@@ -197,6 +197,9 @@ interface PendingMiscApproval {
   warehouse_name: string | null
   href: string
   requested_at: string
+  // v3.74.579 — اسم طالب الاعتماد (يُحل عبر /api/members-emails فقط حيث
+  // يحمل الاستعلام حقل مستخدم أصلاً — نقل الصلاحيات transferred_by حالياً)
+  requested_by_label?: string | null
   type: "misc_approval"
 }
 
@@ -1756,6 +1759,23 @@ function ApprovalsContent() {
         ])
         const vpcPayMap = new Map(((vpcPaysRes.data || []) as any[]).map((p: any) => [p.id, p]))
         const vpcUserMap = new Map(((vpcUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
+        // v3.74.579 — الاسم أولاً والإيميل fallback (نمط v3.74.512)
+        if (vpcUserIds.length) {
+          try {
+            const res = await fetch("/api/members-emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userIds: vpcUserIds, companyId: cid }),
+            })
+            if (res.ok) {
+              const j = await res.json().catch(() => ({}))
+              for (const uid of vpcUserIds as string[]) {
+                const label = (j?.names || {})[uid] || (j?.map || {})[uid]
+                if (label) vpcUserMap.set(uid, label)
+              }
+            }
+          } catch { /* best-effort */ }
+        }
         // v3.74.539 — batch-fetch chart_of_accounts to resolve any
         // proposed account_id into an account name.
         const vpcProposedAcctIds = Array.from(new Set((vpc || []).map((r: any) => (r.metadata?.proposed_changes?.account_id) as string | undefined).filter(Boolean)))
@@ -2055,6 +2075,26 @@ function ApprovalsContent() {
           .eq("status", "pending")
           .order("created_at", { ascending: true })
           .limit(50)
+        // v3.74.579 — اسم طالب نقل الصلاحيات (transferred_by مُحمَّل أصلاً
+        // فى الاستعلام؛ يُحل الاسم دفعة واحدة بنمط v3.74.512)
+        const ptUserIds = Array.from(new Set((pts || []).map((r: any) => r.transferred_by).filter(Boolean)))
+        const ptUserMap = new Map<string, string>()
+        if (ptUserIds.length > 0) {
+          try {
+            const res = await fetch("/api/members-emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userIds: ptUserIds, companyId: cid }),
+            })
+            if (res.ok) {
+              const j = await res.json().catch(() => ({}))
+              for (const id of ptUserIds as string[]) {
+                const label = (j?.names || {})[id] || (j?.map || {})[id]
+                if (label) ptUserMap.set(id, label)
+              }
+            }
+          } catch { /* best-effort */ }
+        }
         for (const r of (pts || []) as any[]) {
           misc.push({
             id: `pt-${r.id}`, kind: "permission_transfer",
@@ -2065,6 +2105,7 @@ function ApprovalsContent() {
             warehouse_name: null,
             href: `/permissions/transfers`,
             requested_at: r.created_at,
+            requested_by_label: r.transferred_by ? (ptUserMap.get(r.transferred_by) ?? null) : null,
             type: "misc_approval",
           })
         }
@@ -3095,6 +3136,11 @@ function ApprovalsContent() {
               <p className="text-xs text-muted-foreground mt-0.5">
                 🏢 {b.branch_name} · 📅 {fmtDate(b.submitted_at)}
               </p>
+              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                ℹ️ {t("عند الاعتماد: تصبح هذه النسخة من قائمة المواد هى المعتمدة وتُستخدم فى أوامر الإنتاج الجديدة — لا يتحرك أى مخزون",
+                      "On approval: this BOM version becomes the approved one used for new production orders — no stock moves")}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -3160,6 +3206,11 @@ function ApprovalsContent() {
               <p className="text-xs text-muted-foreground font-mono">{r.routing_code} · v{r.version_no}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 🏢 {r.branch_name} · 📅 {fmtDate(r.submitted_at)}
+              </p>
+              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                ℹ️ {t("عند الاعتماد: يصبح هذا المسار التصنيعى هو المعتمد وتُستخدم مراحله فى أوامر الإنتاج الجديدة — لا يتحرك أى مخزون",
+                      "On approval: this routing version becomes the approved one and its steps are used for new production orders — no stock moves")}
               </p>
             </div>
           </div>
@@ -3229,6 +3280,14 @@ function ApprovalsContent() {
                 <p className="text-xs text-muted-foreground font-mono">{m.order_no}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   🏢 {m.branch_name} · 🏭 {m.warehouse_name} · 📅 {fmtDate(m.requested_at)}
+                </p>
+                {/* v3.74.579 — ماذا يحدث عند الاعتماد (حسب المرحلة) */}
+                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                  ℹ️ {isWarehouseStage
+                    ? t(`عند تنفيذ الصرف: تُخصم المواد الخام فعلياً من مخزن «${m.warehouse_name}» لصالح أمر الإنتاج`,
+                        `On dispatch: the raw materials are actually deducted from "${m.warehouse_name}" for the production order`)
+                    : t("عند اعتماد الإدارة: يُخطَر مسئول المخزن لتنفيذ الصرف — لا تُخصم المواد قبل تأكيده",
+                        "On management approval: the store manager is notified to dispatch — materials are not deducted until he confirms")}
                 </p>
               </div>
             </div>
@@ -3310,6 +3369,11 @@ function ApprovalsContent() {
               <p className="text-xs text-muted-foreground font-mono">{p.order_no} · {t("الكمية", "Qty")}: {p.planned_quantity}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 🏢 {p.branch_name} · 📅 {fmtDate(p.submitted_at)}
+              </p>
+              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                ℹ️ {t("عند الاعتماد: يُسمح ببدء تنفيذ أمر الإنتاج وطلب صرف المواد الخام له — لا يُخصم المخزون إلا بعد اعتماد الصرف",
+                      "On approval: the production order can start and material issue can be requested — stock is only deducted after the issue is approved")}
               </p>
             </div>
           </div>
@@ -4042,6 +4106,15 @@ function ApprovalsContent() {
                                   </p>
                                 )}
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(m.requested_at)}</p>
+                                {m.requested_by_label && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    ✍️ {t("طلب الاعتماد", "Requested by")}: <span className="font-medium">{m.requested_by_label}</span>
+                                  </p>
+                                )}
+                                {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {t("الموافقة تنفّذ الطلب الموضح أعلاه من صفحته المخصصة", "Approval executes the request shown above from its dedicated page")}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
@@ -4095,6 +4168,11 @@ function ApprovalsContent() {
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(w.requested_at)}</p>
+                              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند الاعتماد (من صفحة التفاصيل): يُخصم المخزون المُهلَك نهائياً وتُسجَّل قيمته كمصروف على الحسابات المختارة",
+                                      "On approval (from the details page): the written-off stock is deducted permanently and its cost is posted as an expense to the chosen accounts")}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -4148,6 +4226,17 @@ function ApprovalsContent() {
                                   {it.from_warehouse ?? "—"} → {it.to_warehouse ?? "—"}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(it.requested_at)}</p>
+                                {/* v3.74.579 — ماذا يحدث عند الموافقة (حسب المرحلة) */}
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {it.status === "pending_approval"
+                                    ? t("عند الاعتماد الإدارى: يُخطَر مخزن المصدر لبدء النقل — لا يتحرك المخزون بعد",
+                                        "On management approval: the source warehouse is notified to start the transfer — no stock moves yet")
+                                    : it.status === "in_transit"
+                                      ? t("عند استلام الوجهة: تُضاف الكميات إلى مخزن الوجهة ويكتمل التحويل",
+                                          "On destination receive: the quantities are added to the destination warehouse and the transfer completes")
+                                      : t("عند بدء النقل: تُخصم الكميات من مخزن المصدر وتصبح البضاعة فى الطريق إلى الوجهة",
+                                          "On dispatch: the quantities are deducted from the source warehouse and the goods are in transit to the destination")}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
@@ -4203,6 +4292,11 @@ function ApprovalsContent() {
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
+                              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند اعتماد الاستلام: تُضاف الكمية المنتجة إلى مخزون المنتج التام بتكلفة التصنيع الفعلية، وقد يكتمل أمر الإنتاج تلقائياً إذا اكتملت الكمية",
+                                      "On receipt approval: the produced quantity is added to finished-goods stock at actual manufacturing cost, and the production order auto-completes when fully received")}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -4322,6 +4416,11 @@ function ApprovalsContent() {
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(b.requested_at)}</p>
+                              {/* v3.74.579 — ماذا يحدث عند التأكيد */}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند تأكيد الاستلام: تُضاف كميات الفاتورة إلى المخزون فى المخزن المحدد",
+                                      "On receipt confirmation: the bill quantities are added to stock in the specified warehouse")}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -4508,6 +4607,11 @@ function ApprovalsContent() {
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(d.requested_at)}</p>
+                              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند اعتماد الصرف: تُخصم كميات الفاتورة من المخزن فعلياً وتخرج البضاعة للشحن إلى العميل",
+                                      "On dispatch approval: the invoice quantities are deducted from the warehouse and the goods leave for shipment to the customer")}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -4926,6 +5030,14 @@ function ApprovalsContent() {
                                     </ul>
                                   </div>
                                 )}
+                                {/* v3.74.579 — ماذا يحدث فى الخطوة القادمة */}
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {isApproved
+                                    ? t("عند التنفيذ: تُعكس الدفعة الأصلية بقيد عكسى وتُسجَّل دفعة مصححة بالقيم المقترحة وتُحدَّث أرصدة المورد والفاتورة تلقائياً",
+                                        "On execution: the original payment is reversed and a corrected payment is posted with the proposed values — supplier and bill balances update automatically")
+                                    : t("عند الاعتماد: يصبح التصحيح جاهزاً للتنفيذ — لا يتغير شىء فى الدفعة أو الأرصدة قبل خطوة التنفيذ",
+                                        "On approval: the correction becomes ready to execute — nothing changes on the payment or balances before the execution step")}
+                                </p>
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
                                 {r.requested_by_email && (
                                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -5084,6 +5196,14 @@ function ApprovalsContent() {
                                 )}
                                 <p className="text-xs text-muted-foreground mt-1">
                                   📅 {fmtDate(s.requested_at)}
+                                </p>
+                                {/* v3.74.579 — ماذا يحدث بعد هذه الخطوة */}
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {isWh
+                                    ? t("عند اعتماد المخزن: تُعاد الكمية المرتجعة إلى المخزون فعلياً ويُقيَّد المبلغ لصالح العميل (رصيد دائن أو استرداد حسب الطلب)",
+                                        "On warehouse approval: the returned goods are added back to stock and the amount is credited/refunded to the customer per the request")
+                                    : t("عند الاعتماد الإدارى: يُخطَر مسئول المخزن لاستلام البضاعة المرتجعة — لا يتحرك المخزون ولا تُقيَّد أموال قبل تأكيده",
+                                        "On management approval: the store manager is notified to receive the returned goods — no stock or money moves until he confirms")}
                                 </p>
                               </div>
                             </div>
