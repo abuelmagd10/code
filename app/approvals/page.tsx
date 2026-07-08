@@ -78,6 +78,8 @@ interface PendingSupplierPayment {
   bill_total: number | null
   bill_paid: number | null
   bill_outstanding: number | null
+  // v3.74.579 — سياق الفاتورة الكامل للمعتمِد (إجمالى/مدفوع/مرتجع)
+  bill_returned: number | null
   base_amount: number | null
   base_currency: string | null
   exchange_rate: number | null
@@ -306,6 +308,13 @@ interface PendingPurchaseReturn {
   warehouse_name: string | null
   requested_at: string
   workflow_status: string | null
+  // v3.74.579 — بيانات توضيحية للمستخدم: البنود + المنفذ + طريقة التسوية
+  currency: string
+  requested_by_label: string | null
+  detail_lines: string[]
+  settlement_method: string | null
+  refund_account_name: string | null
+  reason: string | null
   type: "purchase_return"
 }
 
@@ -1410,6 +1419,24 @@ function ApprovalsContent() {
         const payBillMap = new Map(((payBillsRes.data || []) as any[]).map((b: any) => [b.id, b]))
         const payAcctMap = new Map(((payAcctsRes.data || []) as any[]).map((a: any) => [a.id, a]))
         const payUserMap = new Map(((payUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
+        // v3.74.579 — الاسم أولاً (موظف مرتبط/اسم الحساب) والإيميل fallback،
+        // بنفس نمط سجل القرارات v3.74.512.
+        if (payUserIds.length) {
+          try {
+            const res = await fetch("/api/members-emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userIds: payUserIds, companyId: cid }),
+            })
+            if (res.ok) {
+              const j = await res.json().catch(() => ({}))
+              for (const uid of payUserIds as string[]) {
+                const label = (j?.names || {})[uid] || (j?.map || {})[uid]
+                if (label) payUserMap.set(uid, label)
+              }
+            }
+          } catch { /* best-effort */ }
+        }
 
         // v3.74.523 — resolve PO numbers for the bills that carry one.
         // Same round-trip pattern (no FK embed).
@@ -1454,6 +1481,7 @@ function ApprovalsContent() {
             account_currency: acctRow?.original_currency ?? null,
             bill_total: billTotal,
             bill_paid: billPaid,
+            bill_returned: primaryBill?.returned_amount != null ? Number(primaryBill.returned_amount) : null,
             // v3.74.529 — outstanding must subtract returned_amount too,
             // otherwise the card contradicts the bill view page (which
             // was fixed in v3.74.527 to do the same subtraction). For
@@ -1489,6 +1517,7 @@ function ApprovalsContent() {
           .select(`
             id, return_number, total_amount, status, workflow_status,
             created_at, created_by,
+            settlement_method, refund_account_id, reason, original_currency,
             supplier_id, branch_id, warehouse_id, bill_id,
             suppliers(name),
             branches(name),
@@ -1500,6 +1529,53 @@ function ApprovalsContent() {
           .in("workflow_status", ["pending_admin_approval", "pending_approval", "pending_warehouse"])
           .order("created_at", { ascending: true })
           .limit(100)
+
+        // v3.74.579 — بيانات توضيحية: بنود المرتجع (نفس نمط السجل v3.74.512)
+        // + حساب الاسترداد + اسم المنفذ بدل الإيميل.
+        const qPretIds = (prs || []).map((r: any) => r.id)
+        const qPretItemsMap = new Map<string, string[]>()
+        if (qPretIds.length > 0) {
+          try {
+            const { data: qPretItems } = await supabase
+              .from("purchase_return_items")
+              .select("purchase_return_id, description, quantity, unit_price, line_total, products(name)")
+              .in("purchase_return_id", qPretIds)
+            for (const it of (qPretItems || []) as any[]) {
+              const name = it.products?.name ?? it.description ?? "?"
+              const line = `${name} · ${Number(it.quantity)} × ${Number(it.unit_price).toFixed(2)} = ${Number(it.line_total).toFixed(2)}`
+              const arr = qPretItemsMap.get(it.purchase_return_id) || []
+              arr.push(line)
+              qPretItemsMap.set(it.purchase_return_id, arr)
+            }
+          } catch { /* items are best-effort */ }
+        }
+        const qPretAcctIds = Array.from(new Set((prs || []).map((r: any) => r.refund_account_id).filter(Boolean)))
+        const qPretAcctMap = new Map<string, string>()
+        if (qPretAcctIds.length > 0) {
+          try {
+            const { data: accts } = await supabase
+              .from("chart_of_accounts").select("id, account_name").in("id", qPretAcctIds)
+            for (const a of (accts || []) as any[]) qPretAcctMap.set(a.id, a.account_name)
+          } catch { /* best-effort */ }
+        }
+        const qPretUserIds = Array.from(new Set((prs || []).map((r: any) => r.created_by).filter(Boolean)))
+        const qPretUserMap = new Map<string, string>()
+        if (qPretUserIds.length > 0) {
+          try {
+            const res = await fetch("/api/members-emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userIds: qPretUserIds, companyId: cid }),
+            })
+            if (res.ok) {
+              const j = await res.json().catch(() => ({}))
+              for (const id of qPretUserIds as string[]) {
+                const label = (j?.names || {})[id] || (j?.map || {})[id]
+                if (label) qPretUserMap.set(id, label)
+              }
+            }
+          } catch { /* best-effort */ }
+        }
         setPurchaseReturns((prs || []).map((r: any) => ({
           id: r.id,
           return_no: r.return_number ?? null,
@@ -1513,6 +1589,12 @@ function ApprovalsContent() {
           warehouse_name: r.warehouses?.name ?? null,
           requested_at: r.created_at,
           workflow_status: r.workflow_status ?? null,
+          currency: String(r.original_currency || "EGP"),
+          requested_by_label: r.created_by ? (qPretUserMap.get(r.created_by) ?? null) : null,
+          detail_lines: qPretItemsMap.get(r.id) || [],
+          settlement_method: r.settlement_method ?? null,
+          refund_account_name: r.refund_account_id ? (qPretAcctMap.get(r.refund_account_id) ?? null) : null,
+          reason: r.reason ?? null,
           type: "purchase_return" as const,
         })))
       } catch {
@@ -1590,6 +1672,23 @@ function ApprovalsContent() {
         ])
         const crAcctMap = new Map(((crAcctsRes.data || []) as any[]).map((a: any) => [a.id, a.account_name]))
         const crUserMap = new Map(((crUsersRes.data || []) as any[]).map((u: any) => [u.user_id, u.email]))
+        // v3.74.579 — الاسم أولاً والإيميل fallback (نمط v3.74.512)
+        if (crUserIds.length) {
+          try {
+            const res = await fetch("/api/members-emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userIds: crUserIds, companyId: cid }),
+            })
+            if (res.ok) {
+              const j = await res.json().catch(() => ({}))
+              for (const uid of crUserIds as string[]) {
+                const label = (j?.names || {})[uid] || (j?.map || {})[uid]
+                if (label) crUserMap.set(uid, label)
+              }
+            }
+          } catch { /* best-effort */ }
+        }
         setCustomerRefunds((crs || []).map((r: any) => {
           const proposed = (r.metadata?.proposed_changes || {}) as Record<string, any>
           return {
@@ -2379,29 +2478,62 @@ function ApprovalsContent() {
       } catch { /* keep going */ }
 
       // v3.74.476 — customer refund history.
+      // v3.74.579 — تفاصيل توضيحية على غرار الخصومات: عملة، فاتورة، طريقة
+      // الصرف والحساب، من طلب/اعتمد/نفّذ (تُحل الأسماء دفعة واحدة لاحقاً).
       try {
         const { data: crs } = await supabase
           .from("customer_refund_requests")
-          .select(`id, status, amount, created_at, executed_at, approved_at, notes, customer_id, customers(name)`)
+          .select(`
+            id, status, amount, currency, created_at, executed_at, approved_at,
+            notes, rejection_reason, refund_method, refund_account_id,
+            requested_by, approved_by, executed_by, rejected_by,
+            customer_id, customers(name), invoice_id, invoices(invoice_number)
+          `)
           .eq("company_id", cid)
           .in("status", ["executed", "rejected", "cancelled"])
           .order("created_at", { ascending: false })
           .limit(100)
+        const crefAcctIds = Array.from(new Set(((crs || []) as any[]).map(r => r.refund_account_id).filter(Boolean)))
+        const crefAcctMap = new Map<string, string>()
+        if (crefAcctIds.length > 0) {
+          try {
+            const { data: accts } = await supabase
+              .from("chart_of_accounts").select("id, account_name").in("id", crefAcctIds)
+            for (const a of (accts || []) as any[]) crefAcctMap.set(a.id, a.account_name)
+          } catch { /* best-effort */ }
+        }
         for (const r of (crs || []) as any[]) {
           const status = r.status === "rejected" ? "rejected" : (r.status === "cancelled" ? "cancelled" : "approved")
+          const ccy = String(r.currency || "EGP")
+          const details: string[] = []
+          if (r.invoices?.invoice_number) details.push(`🧾 فاتورة: ${r.invoices.invoice_number}`)
+          const methodLabel = r.refund_method === "cash" ? "نقدى"
+            : r.refund_method === "bank" || r.refund_method === "bank_transfer" ? "تحويل بنكى"
+            : r.refund_method === "check" || r.refund_method === "cheque" ? "شيك"
+            : r.refund_method ?? null
+          const acctName = r.refund_account_id ? crefAcctMap.get(r.refund_account_id) : null
+          if (methodLabel || acctName) {
+            details.push(`💳 ${methodLabel ?? "—"}${acctName ? ` · 🏦 ${acctName}` : ""}`)
+          }
+          if (r.status === "executed" && r.executed_at) {
+            details.push(`✅ نُفِّذ الصرف فعلياً فى ${new Date(r.executed_at).toLocaleDateString("ar-EG")}`)
+          }
           merged.push({
             id: `cref-${r.id}`,
             category: "customer_refund",
             doc_label: `استرداد عميل · ${r.id.slice(0, 8)}`,
             doc_href: "/customer-refund-requests",
             party_label: r.customers?.name ?? null,
-            value_label: `${Number(r.amount).toFixed(2)}`,
+            value_label: `${Number(r.amount).toFixed(2)} ${ccy}`,
             status: status as any,
             requested_by_email: null,
+            requested_by_id: r.requested_by ?? null,
             requested_at: r.created_at,
             decided_by_email: null,
+            decided_by_id: r.executed_by ?? r.approved_by ?? r.rejected_by ?? null,
             decided_at: r.executed_at ?? r.approved_at ?? null,
-            decision_note: r.notes ?? null,
+            decision_note: r.rejection_reason ?? r.notes ?? null,
+            detail_lines: details.length ? details : null,
           })
         }
       } catch { /* keep going */ }
@@ -2410,7 +2542,7 @@ function ApprovalsContent() {
       try {
         const { data: vpc } = await supabase
           .from("vendor_payment_correction_requests")
-          .select(`id, status, amount, created_at, executed_at, approved_at, rejection_reason, notes, supplier_id, suppliers(name)`)
+          .select(`id, status, amount, created_at, executed_at, approved_at, rejection_reason, notes, requested_by, approved_by, executed_by, supplier_id, suppliers(name)`)
           .eq("company_id", cid)
           .in("status", ["executed", "rejected", "cancelled"])
           .order("created_at", { ascending: false })
@@ -2426,8 +2558,11 @@ function ApprovalsContent() {
             value_label: `${Number(r.amount).toFixed(2)}`,
             status: status as any,
             requested_by_email: null,
+            // v3.74.579 — من طلب/قرر (يُحل الاسم دفعة واحدة كباقى السجل)
+            requested_by_id: r.requested_by ?? null,
             requested_at: r.created_at,
             decided_by_email: null,
+            decided_by_id: r.executed_by ?? r.approved_by ?? null,
             decided_at: r.executed_at ?? r.approved_at ?? null,
             decision_note: r.rejection_reason ?? r.notes ?? null,
           })
@@ -2696,6 +2831,8 @@ function ApprovalsContent() {
             created_at, approved_at, rejected_at, rejection_reason,
             branch_id, warehouse_id, bill_id,
             created_by, approved_by, rejected_by,
+            settlement_method, refund_account_id, reason, original_currency,
+            confirmed_at,
             supplier_id, suppliers(name), branches(name), bills(bill_number)
           `)
           .eq("company_id", cid)
@@ -2727,17 +2864,42 @@ function ApprovalsContent() {
           } catch { /* items are best-effort */ }
         }
 
+        // v3.74.579 — أسماء حسابات الاسترداد النقدى (إن وُجدت)
+        const pretHistAcctIds = Array.from(new Set(((prs || []) as any[]).map(r => r.refund_account_id).filter(Boolean)))
+        const pretHistAcctMap = new Map<string, string>()
+        if (pretHistAcctIds.length > 0) {
+          try {
+            const { data: accts } = await supabase
+              .from("chart_of_accounts").select("id, account_name").in("id", pretHistAcctIds)
+            for (const a of (accts || []) as any[]) pretHistAcctMap.set(a.id, a.account_name)
+          } catch { /* best-effort */ }
+        }
+
         for (const r of (prs || []) as any[]) {
           const status = r.workflow_status === "rejected" ? "rejected"
             : (r.rejected_at && !r.approved_at) ? "rejected" : "approved"
           const decided_at = r.approved_at ?? r.rejected_at ?? null
+          // v3.74.579 — تفاصيل توضيحية: التسوية + السبب + حالة الإخراج
+          const details: string[] = [...(pretItemsMap.get(r.id) ?? [])]
+          const acctName = r.refund_account_id ? pretHistAcctMap.get(r.refund_account_id) : null
+          details.push(`💳 التسوية: ${acctName
+            ? `استرداد نقدى · 🏦 ${acctName}`
+            : r.settlement_method === "vendor_credit"
+              ? "رصيد دائن لدى المورد"
+              : "خصم من رصيد الفاتورة / رصيد دائن"}`)
+          if (r.reason) details.push(`📝 السبب: ${r.reason}`)
+          if (r.confirmed_at) {
+            details.push(`📦 أُخرجت البضاعة من المخزن فى ${new Date(r.confirmed_at).toLocaleDateString("ar-EG")}`)
+          } else if (status === "approved" && r.workflow_status === "pending_warehouse") {
+            details.push("⏳ بانتظار تأكيد إخراج البضاعة من مسئول المخزن")
+          }
           merged.push({
             id: `pret-${r.id}`,
             category: "purchase_return",
             doc_label: `مرتجع مشتريات · ${r.return_number ?? r.id.slice(0, 8)}${r.bills?.bill_number ? ` · 🧾 ${r.bills.bill_number}` : ""}`,
             doc_href: `/purchase-returns/${r.id}`,
             party_label: r.suppliers?.name ?? null,
-            value_label: `${Number(r.total_amount).toFixed(2)}`,
+            value_label: `${Number(r.total_amount).toFixed(2)} ${String(r.original_currency || "EGP")}`,
             status: status as any,
             requested_by_email: null,
             requested_by_id: r.created_by ?? null,
@@ -2748,7 +2910,7 @@ function ApprovalsContent() {
             decision_note: r.rejection_reason ?? null,
             branch_id: r.branch_id ?? null,
             warehouse_id: r.warehouse_id ?? null,
-            detail_lines: pretItemsMap.get(r.id) ?? null,
+            detail_lines: details.length ? details : null,
           })
         }
       } catch { /* keep going */ }
@@ -3639,6 +3801,15 @@ function ApprovalsContent() {
                                   Overpayment comparison uses base-currency
                                   amounts so USD 0.10 vs. EGP 7.34 isn't compared
                                   as raw numbers. */}
+                              {/* v3.74.579 — سياق الفاتورة الكامل: كم كانت، كم دُفع، كم أُرجع */}
+                              {p.bill_total != null && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  🧮 {t("إجمالى الفاتورة", "Bill total")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_total)}</span>
+                                  {p.bill_paid != null && <> · {t("مدفوع سابقاً", "Paid so far")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_paid)}</span></>}
+                                  {p.bill_returned != null && p.bill_returned > 0 && <> · {t("مرتجعات", "Returns")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_returned)}</span></>}
+                                  {" "}{p.bill_currency || "EGP"}
+                                </p>
+                              )}
                               {p.bill_outstanding != null && (() => {
                                 const billCcy = p.bill_currency || "EGP"
                                 // Convert both sides to base (EGP) for a fair
@@ -3711,6 +3882,11 @@ function ApprovalsContent() {
                                   📝 {p.notes}
                                 </p>
                               )}
+                              {/* v3.74.579 — ماذا يحدث عند الاعتماد */}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند الاعتماد: يُسجَّل قيد الدفع، يُخصم المبلغ من الحساب المحدد، ويُخفَّض المتبقى على الفاتورة ورصيد المورد",
+                                      "On approval: the payment is posted, the amount leaves the selected account, and the bill outstanding + supplier balance are reduced")}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -4538,16 +4714,26 @@ function ApprovalsContent() {
                                     </ul>
                                   </div>
                                 )}
-                                {/* v3.74.528 — refund method + destination account */}
-                                {(r.refund_method || r.refund_account_name) && (
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    💳 {r.refund_method === "cash" ? t("نقدى", "Cash")
-                                        : r.refund_method === "bank" || r.refund_method === "bank_transfer" ? t("تحويل بنكى", "Bank transfer")
-                                        : r.refund_method === "check" || r.refund_method === "cheque" ? t("شيك", "Check")
-                                        : r.refund_method ?? t("طريقة الاسترداد", "Method")}
-                                    {r.refund_account_name && <> · 🏦 <span className="font-medium text-foreground">{r.refund_account_name}</span></>}
-                                  </p>
-                                )}
+                                {/* v3.74.528 — refund method + destination account.
+                                    v3.74.579 — يظهر دائماً: لو لم تُحدد الطريقة/الحساب
+                                    يعرف المعتمِد أنها ستُحدد عند التنفيذ. */}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  💳 {t("طريقة الصرف", "Payout")}: {r.refund_method === "cash" ? t("نقدى", "Cash")
+                                      : r.refund_method === "bank" || r.refund_method === "bank_transfer" ? t("تحويل بنكى", "Bank transfer")
+                                      : r.refund_method === "check" || r.refund_method === "cheque" ? t("شيك", "Check")
+                                      : r.refund_method
+                                        ? r.refund_method
+                                        : <span className="text-amber-600">{t("لم تُحدد بعد — تُختار عند التنفيذ", "Not set yet — chosen at execution")}</span>}
+                                  {r.refund_account_name && <> · 🏦 <span className="font-medium text-foreground">{r.refund_account_name}</span></>}
+                                </p>
+                                {/* v3.74.579 — ماذا يحدث فى الخطوة القادمة */}
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {isApproved
+                                    ? t("عند التنفيذ: يُصرف المبلغ فعلياً من الحساب المختار ويُقيَّد على حساب العميل (المنفذ يجب أن يكون غير المعتمِد)",
+                                        "On execution: the amount actually leaves the chosen account and is posted against the customer (executor must differ from approver)")
+                                    : t("عند الاعتماد: يصبح الطلب جاهزاً للتنفيذ — لا تخرج أموال قبل خطوة التنفيذ",
+                                        "On approval: the request becomes ready to execute — no money leaves before the execution step")}
+                                </p>
                                 <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(r.requested_at)}</p>
                                 {r.requested_by_email && (
                                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -5032,7 +5218,28 @@ function ApprovalsContent() {
                               </p>
                               <p className="text-xs mt-1">
                                 <span className="font-semibold text-orange-700 dark:text-orange-300">
-                                  {t("قيمة المرتجع", "Return amount")}: {fmtMoney(r.total)}
+                                  {t("قيمة المرتجع", "Return amount")}: {fmtMoney(r.total)} {r.currency}
+                                </span>
+                              </p>
+                              {/* v3.74.579 — بنود المرتجع (ماذا يُرجَع بالضبط) */}
+                              {r.detail_lines.length > 0 && (
+                                <div className="mt-1 p-2 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300">
+                                    📦 {t("البنود", "Items")} ({r.detail_lines.length})
+                                  </p>
+                                  <ul className="text-xs ms-4 list-disc text-muted-foreground mt-0.5">
+                                    {r.detail_lines.map((l, i) => (<li key={i}>{l}</li>))}
+                                  </ul>
+                                </div>
+                              )}
+                              {/* v3.74.579 — طريقة التسوية مع المورد */}
+                              <p className="text-xs text-muted-foreground mt-1">
+                                💳 {t("التسوية", "Settlement")}: <span className="font-medium text-foreground">
+                                  {r.refund_account_name
+                                    ? `${t("استرداد نقدى", "Cash refund")} · 🏦 ${r.refund_account_name}`
+                                    : r.settlement_method === "vendor_credit"
+                                      ? t("رصيد دائن لدى المورد", "Vendor credit")
+                                      : t("خصم من رصيد الفاتورة / رصيد دائن", "Offset against bill / vendor credit")}
                                 </span>
                               </p>
                               {r.branch_name && (
@@ -5042,6 +5249,22 @@ function ApprovalsContent() {
                               )}
                               <p className="text-xs text-muted-foreground mt-1">
                                 📅 {fmtDate(r.requested_at)}
+                                {r.requested_by_label && (
+                                  <> · ✍️ {t("طلب المرتجع", "Requested by")}: <span className="font-medium text-foreground">{r.requested_by_label}</span></>
+                                )}
+                              </p>
+                              {r.reason && (
+                                <p className="text-xs mt-1 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border-l-2 border-amber-400">
+                                  📝 {t("السبب", "Reason")}: {r.reason}
+                                </p>
+                              )}
+                              {/* v3.74.579 — ماذا يحدث بعد هذه الخطوة */}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {isWarehouseStage
+                                  ? t("عند تأكيد الإخراج: يُخصم المخزون فعلياً وتُسوَّى قيمة المرتجع مع المورد (رصيد دائن أو استرداد)",
+                                      "On goods-out confirmation: stock is deducted and the return value is settled with the supplier (credit or refund)")
+                                  : t("عند الاعتماد: يُخطَر مسئول مخزن الفرع لإخراج البضاعة — لا يتحرك المخزون قبل تأكيده",
+                                      "On approval: the branch store manager is notified to release the goods — stock doesn't move until he confirms")}
                               </p>
                             </div>
                           </div>
