@@ -67,6 +67,8 @@ interface Product {
   selling_price?: number | null
   /** v3.74.496: صور الصنف (بحد أقصى 3) */
   image_urls?: string[] | null
+  /** v3.74.580: مدة الصلاحية الافتراضية (يوم) — تُحسب منها صلاحية كل دفعة FIFO تلقائياً */
+  shelf_life_days?: number | null
 }
 
 interface Branch {
@@ -132,6 +134,8 @@ export default function ProductsPage() {
     unit: "piece",
     quantity_on_hand: 0,
     reorder_level: 0,
+    /** v3.74.580: مدة الصلاحية (يوم) — 0 = بدون (تُحفظ null) */
+    shelf_life_days: 0,
     item_type: "product" as 'product' | 'service',
     /** النوع التفصيلي للمنتج — يحدد أهليته للتصنيع والـ BOM */
     product_type: "purchased" as 'manufactured' | 'raw_material' | 'purchased' | 'service',
@@ -575,6 +579,10 @@ export default function ProductsPage() {
         // For services, set inventory fields to 0/null
         reorder_level: formData.item_type === 'service' ? 0 : formData.reorder_level,
         unit: formData.item_type === 'service' ? 'service' : formData.unit,
+        // v3.74.580: مدة الصلاحية (يوم) — null عند تركها فارغة، أعداد صحيحة موجبة فقط، للخدمات دائماً null
+        shelf_life_days: formData.item_type === 'service'
+          ? null
+          : (formData.shelf_life_days && formData.shelf_life_days > 0 ? Math.round(formData.shelf_life_days) : null),
         income_account_id: formData.income_account_id || null,
         expense_account_id: formData.expense_account_id || null,
         tax_code_id: formData.tax_code_id || null,
@@ -664,6 +672,7 @@ export default function ProductsPage() {
       unit: "piece",
       quantity_on_hand: 0,
       reorder_level: 0,
+      shelf_life_days: 0,
       item_type: "product",
       product_type: "purchased",
       income_account_id: "",
@@ -693,6 +702,8 @@ export default function ProductsPage() {
       branch_id: product.branch_id || "",
       warehouse_id: product.warehouse_id || "",
       tax_code_id: product.tax_code_id || "",
+      // v3.74.580: مدة الصلاحية (يوم) — null فى القاعدة = 0 فى النموذج
+      shelf_life_days: product.shelf_life_days ?? 0,
       // تحميل product_type الحالي للمنتج — يسمح للمستخدم بتعديله
       product_type: (product.product_type as any) || (product.item_type === 'service' ? 'service' : 'purchased'),
     }
@@ -1386,6 +1397,29 @@ export default function ProductsPage() {
                                 onChange={(val) => setFormData({ ...formData, reorder_level: Math.round(val) })}
                               />
                             </div>
+                          </div>
+
+                          {/* v3.74.580: مدة الصلاحية الافتراضية — تُحسب منها صلاحية كل دفعة FIFO تلقائياً */}
+                          <div className="space-y-2">
+                            <Label htmlFor="shelf_life_days">
+                              {appLang === 'en' ? 'Shelf life (days)' : 'مدة الصلاحية (يوم)'}
+                              <span className="mr-1 text-xs text-muted-foreground font-normal">
+                                {appLang === 'en' ? '(optional)' : '(اختياري)'}
+                              </span>
+                            </Label>
+                            <NumericInput
+                              id="shelf_life_days"
+                              step="1"
+                              min={0}
+                              value={formData.shelf_life_days}
+                              onChange={(val) => setFormData({ ...formData, shelf_life_days: Math.max(0, Math.round(val)) })}
+                              decimalPlaces={0}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {appLang === 'en'
+                                ? 'Each batch expiry is auto-calculated as receipt date + this period'
+                                : 'تُحسب صلاحية كل دفعة تلقائياً من تاريخ الاستلام + هذه المدة'}
+                            </p>
                           </div>
                         </>
                       )}

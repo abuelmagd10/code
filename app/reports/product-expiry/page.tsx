@@ -7,13 +7,40 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Download, ArrowRight, AlertTriangle, Calendar, Package } from "lucide-react"
+import { Download, ArrowRight, AlertTriangle, Calendar, Package, Save, ChevronDown, ChevronUp, History, CheckCircle2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { useToast } from "@/hooks/use-toast"
+import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 
-interface ExpiryItem {
+/**
+ * v3.74.580 — التقرير أصبح يعرض المخزون الحى من fifo_cost_lots
+ * (دفعات لها تاريخ صلاحية وكمية متبقية > 0) مع تعديل تاريخ الصلاحية
+ * لكل دفعة عبر RPC update_lot_expiry (بصلاحيات المستخدم المسجل).
+ * تجميع الإهلاك القديم أصبح قسماً ثانوياً (writeoff_history).
+ */
+
+interface LiveLot {
+  id: string
+  product_id: string
+  product_name: string
+  product_sku: string
+  branch_id: string | null
+  branch_name: string
+  warehouse_id: string | null
+  warehouse_name: string
+  lot_date: string
+  expiry_date: string
+  remaining_quantity: number
+  unit_cost: number
+  total_cost: number
+  days_until_expiry: number
+  status: "expired" | "expiring_soon" | "valid"
+}
+
+interface WriteOffHistoryItem {
   product_id: string
   product_name: string
   product_sku: string
@@ -28,7 +55,7 @@ interface ExpiryItem {
 }
 
 interface Summary {
-  total_items: number
+  total_lots: number
   expired_count: number
   expiring_soon_count: number
   valid_count: number
@@ -36,36 +63,34 @@ interface Summary {
   total_cost: number
 }
 
+const EMPTY_SUMMARY: Summary = {
+  total_lots: 0,
+  expired_count: 0,
+  expiring_soon_count: 0,
+  valid_count: 0,
+  total_quantity: 0,
+  total_cost: 0
+}
+
 export default function ProductExpiryPage() {
   const supabase = useSupabase()
   const router = useRouter()
-  const [expiryData, setExpiryData] = useState<ExpiryItem[]>([])
-  const [summary, setSummary] = useState<Summary>({
-    total_items: 0,
-    expired_count: 0,
-    expiring_soon_count: 0,
-    valid_count: 0,
-    total_quantity: 0,
-    total_cost: 0
-  })
+  const { toast } = useToast()
+  const [lots, setLots] = useState<LiveLot[]>([])
+  const [writeoffHistory, setWriteoffHistory] = useState<WriteOffHistoryItem[]>([])
+  const [summary, setSummary] = useState<Summary>(EMPTY_SUMMARY)
   const [products, setProducts] = useState<Array<{ id: string; name: string; sku: string }>>([])
   const [isLoading, setIsLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
-  // Helper function to format date
-  const formatLocalDate = (date: Date): string => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
+  // v3.74.580: تعديل تاريخ الصلاحية inline لكل دفعة
+  const [editDates, setEditDates] = useState<Record<string, string>>({})
+  const [savingLotId, setSavingLotId] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
 
-  const today = new Date()
-  const defaultTo = formatLocalDate(new Date(today.getFullYear(), 11, 31))
-  const defaultFrom = formatLocalDate(today)
-
-  const [fromDate, setFromDate] = useState<string>(defaultFrom)
-  const [toDate, setToDate] = useState<string>(defaultTo)
+  const [fromDate, setFromDate] = useState<string>("")
+  const [toDate, setToDate] = useState<string>("")
   const [selectedProduct, setSelectedProduct] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'expiring_soon' | 'valid'>('all')
 
@@ -84,16 +109,17 @@ export default function ProductExpiryPage() {
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  // Load products
+  // Load products + company id (لاستدعاء RPC تعديل الصلاحية)
   useEffect(() => {
     const loadProducts = async () => {
-      const companyId = await getActiveCompanyId(supabase)
-      if (!companyId) return
+      const cid = await getActiveCompanyId(supabase)
+      if (!cid) return
+      setCompanyId(cid)
 
       const { data } = await supabase
         .from("products")
         .select("id, name, sku")
-        .eq("company_id", companyId)
+        .eq("company_id", cid)
         .or("item_type.is.null,item_type.eq.product")
         .order("name")
 
@@ -103,9 +129,7 @@ export default function ProductExpiryPage() {
   }, [supabase])
 
   useEffect(() => {
-    if (fromDate && toDate) {
-      loadData()
-    }
+    loadData()
   }, [fromDate, toDate, selectedProduct, statusFilter])
 
   /**
@@ -119,87 +143,108 @@ export default function ProductExpiryPage() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-      const params = new URLSearchParams({
-        from: fromDate,
-        to: toDate,
-        status: statusFilter
-      })
+      const params = new URLSearchParams({ status: statusFilter })
+      if (fromDate) params.set('from', fromDate)
+      if (toDate) params.set('to', toDate)
       if (selectedProduct) params.set('product_id', selectedProduct)
 
       const res = await fetch(`/api/product-expiry?${params.toString()}`)
       if (!res.ok) {
         console.error("API Error:", res.status)
-        setExpiryData([])
-        setSummary({
-          total_items: 0,
-          expired_count: 0,
-          expiring_soon_count: 0,
-          valid_count: 0,
-          total_quantity: 0,
-          total_cost: 0
-        })
+        setLots([])
+        setWriteoffHistory([])
+        setSummary(EMPTY_SUMMARY)
         return
       }
 
       const data = await res.json()
-      setExpiryData(Array.isArray(data.data) ? data.data : [])
-      setSummary(data.summary || {
-        total_items: 0,
-        expired_count: 0,
-        expiring_soon_count: 0,
-        valid_count: 0,
-        total_quantity: 0,
-        total_cost: 0
-      })
+      setLots(Array.isArray(data.data) ? data.data : [])
+      setWriteoffHistory(Array.isArray(data.writeoff_history) ? data.writeoff_history : [])
+      setSummary(data.summary || EMPTY_SUMMARY)
     } catch (error) {
       console.error("Error loading expiry data:", error)
-      setExpiryData([])
-      setSummary({
-        total_items: 0,
-        expired_count: 0,
-        expiring_soon_count: 0,
-        valid_count: 0,
-        total_quantity: 0,
-        total_cost: 0
-      })
+      setLots([])
+      setWriteoffHistory([])
+      setSummary(EMPTY_SUMMARY)
     } finally {
       setIsLoading(false)
     }
   }
 
+  /**
+   * v3.74.580 — حفظ تاريخ صلاحية الدفعة عبر RPC update_lot_expiry
+   * ⚠️ يُستدعى بجلسة المستخدم المسجل (browser client) — الـ RPC يفرض الأدوار بنفسه
+   *    ويرفض غير المصرح لهم برسالة عربية واضحة نعرضها كما هى.
+   */
+  const handleSaveExpiry = async (lot: LiveLot) => {
+    const newDate = editDates[lot.id]
+    if (!newDate || newDate === lot.expiry_date) return
+    if (!companyId) {
+      toastActionError(toast, t('Company not found', 'لم يتم العثور على الشركة'))
+      return
+    }
+    try {
+      setSavingLotId(lot.id)
+      const { error } = await supabase.rpc('update_lot_expiry', {
+        p_company_id: companyId,
+        p_lot_id: lot.id,
+        p_expiry_date: newDate,
+      })
+      if (error) throw error
+      toastActionSuccess(toast, t('Batch expiry date updated', 'تم تحديث تاريخ صلاحية الدفعة'))
+      setEditDates(prev => {
+        const next = { ...prev }
+        delete next[lot.id]
+        return next
+      })
+      loadData()
+    } catch (e: any) {
+      // إظهار رسالة الـ RPC (عربية) كما هى
+      toastActionError(toast, e?.message || t('Failed to update expiry date', 'فشل تحديث تاريخ الصلاحية'))
+    } finally {
+      setSavingLotId(null)
+    }
+  }
+
   const handleExportCsv = () => {
-    const headers = ["product_sku", "product_name", "expiry_date", "quantity", "unit_cost", "total_cost", "days_until_expiry", "status", "branch_name", "warehouse_name"]
-    const rowsCsv = expiryData.map((item) => [
-      item.product_sku,
-      item.product_name,
-      item.expiry_date,
-      item.quantity.toString(),
-      item.unit_cost.toFixed(2),
-      item.total_cost.toFixed(2),
-      item.days_until_expiry.toString(),
-      item.status,
-      item.branch_name || "",
-      item.warehouse_name || ""
+    const headers = ["product_sku", "product_name", "branch_name", "warehouse_name", "lot_date", "expiry_date", "remaining_quantity", "unit_cost", "total_cost", "days_until_expiry", "status"]
+    const rowsCsv = lots.map((lot) => [
+      lot.product_sku,
+      lot.product_name,
+      lot.branch_name || "",
+      lot.warehouse_name || "",
+      lot.lot_date || "",
+      lot.expiry_date,
+      lot.remaining_quantity.toString(),
+      lot.unit_cost.toFixed(2),
+      lot.total_cost.toFixed(2),
+      lot.days_until_expiry.toString(),
+      lot.status
     ])
     const csv = [headers.join(","), ...rowsCsv.map((r) => r.join(","))].join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
     const url = URL.createObjectURL(blob)
     const aEl = document.createElement("a")
     aEl.href = url
-    aEl.download = `product-expiry-${fromDate}-${toDate}.csv`
+    aEl.download = `product-expiry-lots-${new Date().toISOString().slice(0, 10)}.csv`
     aEl.click()
     URL.revokeObjectURL(url)
   }
 
   const getStatusBadge = (status: string, days: number) => {
     if (status === "expired") {
-      return <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">{t("Expired", "منتهي الصلاحية")}</Badge>
+      return <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">{t("Expired", "منتهى الصلاحية")}</Badge>
     } else if (status === "expiring_soon") {
-      return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">{t(`Expiring in ${days} days`, `ينتهي خلال ${days} يوم`)}</Badge>
+      return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{t(`Expiring in ${days} days`, `ينتهى خلال ${days} يوم`)}</Badge>
     } else {
-      return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">{t("Valid", "صالح")}</Badge>
+      return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">{t("Valid", "سارى")}</Badge>
     }
   }
+
+  // إجمالى التكلفة المعرضة للخطر (منتهى + يقترب من الانتهاء)
+  const atRiskCost = lots
+    .filter((l) => l.status !== 'valid')
+    .reduce((sum, l) => sum + l.total_cost, 0)
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -218,7 +263,7 @@ export default function ProductExpiryPage() {
                       {t("Product Expiry Report", "تقرير صلاحيات المنتجات")}
                     </h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {t("Track product expiration dates", "تتبع تواريخ انتهاء صلاحية المنتجات")}
+                      {t("Live stock batches by expiry date", "دفعات المخزون الحى حسب تاريخ الصلاحية")}
                     </p>
                   </div>
                 </div>
@@ -232,36 +277,36 @@ export default function ProductExpiryPage() {
 
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="dark:bg-gray-800">
+            <Card className="dark:bg-gray-800 border-r-4 border-r-red-500">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Total Items", "إجمالي العناصر")}</p>
-                    <p className="text-2xl font-bold">{summary.total_items}</p>
-                  </div>
-                  <Package className="w-8 h-8 text-blue-500" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="dark:bg-gray-800">
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Expired", "منتهي الصلاحية")}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Expired", "منتهى الصلاحية")}</p>
                     <p className="text-2xl font-bold text-red-600">{summary.expired_count}</p>
                   </div>
                   <AlertTriangle className="w-8 h-8 text-red-500" />
                 </div>
               </CardContent>
             </Card>
-            <Card className="dark:bg-gray-800">
+            <Card className="dark:bg-gray-800 border-r-4 border-r-amber-500">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Expiring Soon", "ينتهي قريباً")}</p>
-                    <p className="text-2xl font-bold text-yellow-600">{summary.expiring_soon_count}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Expiring Soon (≤30 days)", "يقترب من الانتهاء (≤30 يوم)")}</p>
+                    <p className="text-2xl font-bold text-amber-600">{summary.expiring_soon_count}</p>
                   </div>
-                  <AlertTriangle className="w-8 h-8 text-yellow-500" />
+                  <AlertTriangle className="w-8 h-8 text-amber-500" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="dark:bg-gray-800 border-r-4 border-r-green-500">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Valid", "سارى")}</p>
+                    <p className="text-2xl font-bold text-green-600">{summary.valid_count}</p>
+                  </div>
+                  <CheckCircle2 className="w-8 h-8 text-green-500" />
                 </div>
               </CardContent>
             </Card>
@@ -269,10 +314,11 @@ export default function ProductExpiryPage() {
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("Total Cost", "إجمالي التكلفة")}</p>
-                    <p className="text-2xl font-bold">{numberFmt.format(summary.total_cost)}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("At-Risk Cost", "تكلفة معرضة للخطر")}</p>
+                    <p className="text-2xl font-bold">{numberFmt.format(atRiskCost)}</p>
+                    <p className="text-xs text-gray-400">{t("Expired + expiring soon", "منتهى + يقترب من الانتهاء")}</p>
                   </div>
-                  <Package className="w-8 h-8 text-green-500" />
+                  <Package className="w-8 h-8 text-orange-500" />
                 </div>
               </CardContent>
             </Card>
@@ -283,11 +329,11 @@ export default function ProductExpiryPage() {
             <CardContent className="py-4">
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
-                  <Label className="text-xs">{t("From Date", "من تاريخ")}</Label>
+                  <Label className="text-xs">{t("Expiry From", "الصلاحية من تاريخ")}</Label>
                   <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full" />
                 </div>
                 <div>
-                  <Label className="text-xs">{t("To Date", "إلى تاريخ")}</Label>
+                  <Label className="text-xs">{t("Expiry To", "الصلاحية إلى تاريخ")}</Label>
                   <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full" />
                 </div>
                 <div>
@@ -298,9 +344,9 @@ export default function ProductExpiryPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{t("All", "الكل")}</SelectItem>
-                      <SelectItem value="expired">{t("Expired", "منتهي الصلاحية")}</SelectItem>
-                      <SelectItem value="expiring_soon">{t("Expiring Soon", "ينتهي قريباً")}</SelectItem>
-                      <SelectItem value="valid">{t("Valid", "صالح")}</SelectItem>
+                      <SelectItem value="expired">{t("Expired", "منتهى الصلاحية")}</SelectItem>
+                      <SelectItem value="expiring_soon">{t("Expiring Soon", "يقترب من الانتهاء")}</SelectItem>
+                      <SelectItem value="valid">{t("Valid", "سارى")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -330,18 +376,18 @@ export default function ProductExpiryPage() {
             </CardContent>
           </Card>
 
-          {/* Table */}
+          {/* Live Lots Table */}
           <Card className="dark:bg-gray-800">
             <CardHeader>
-              <CardTitle>{t("Expiry Data", "بيانات الصلاحيات")} ({expiryData.length})</CardTitle>
+              <CardTitle>{t("Live Stock Batches", "دفعات المخزون الحى")} ({lots.length})</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (
                 <div className="text-center py-8 text-gray-500">{t("Loading...", "جاري التحميل...")}</div>
-              ) : expiryData.length === 0 ? (
+              ) : lots.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Calendar className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                  <p>{t("No expiry data found", "لا توجد بيانات صلاحيات")}</p>
+                  <p>{t("No live batches with expiry dates found", "لا توجد دفعات حية لها تاريخ صلاحية")}</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -349,37 +395,54 @@ export default function ProductExpiryPage() {
                     <thead>
                       <tr className="border-b dark:border-gray-700">
                         <th className="text-right py-3 px-2">{t("Product", "المنتج")}</th>
-                        <th className="text-right py-3 px-2">{t("Expiry Date", "تاريخ الصلاحية")}</th>
-                        <th className="text-right py-3 px-2">{t("Quantity", "الكمية")}</th>
-                        <th className="text-right py-3 px-2">{t("Unit Cost", "تكلفة الوحدة")}</th>
-                        <th className="text-right py-3 px-2">{t("Total Cost", "إجمالي التكلفة")}</th>
-                        <th className="text-right py-3 px-2">{t("Days Until Expiry", "أيام حتى الانتهاء")}</th>
+                        <th className="text-right py-3 px-2">{t("Branch", "الفرع")}</th>
+                        <th className="text-right py-3 px-2">{t("Warehouse", "المخزن")}</th>
+                        <th className="text-right py-3 px-2">{t("Batch Date", "تاريخ الدفعة")}</th>
+                        <th className="text-right py-3 px-2">{t("Expiry Date", "تاريخ الانتهاء")}</th>
+                        <th className="text-right py-3 px-2">{t("Remaining Qty", "الكمية المتبقية")}</th>
+                        <th className="text-right py-3 px-2">{t("Days Left", "باقى (أيام)")}</th>
                         <th className="text-right py-3 px-2">{t("Status", "الحالة")}</th>
-                        <th className="text-right py-3 px-2">{t("Branch/Warehouse", "الفرع/المخزن")}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {expiryData.map((item, idx) => (
-                        <tr key={idx} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700">
+                      {lots.map((lot) => (
+                        <tr key={lot.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700">
                           <td className="py-3 px-2">
                             <div>
-                              <div className="font-medium">{item.product_name}</div>
-                              <div className="text-xs text-gray-500">{item.product_sku}</div>
+                              <div className="font-medium">{lot.product_name}</div>
+                              <div className="text-xs text-gray-500">{lot.product_sku}</div>
                             </div>
                           </td>
-                          <td className="py-3 px-2">{item.expiry_date}</td>
-                          <td className="py-3 px-2">{item.quantity}</td>
-                          <td className="py-3 px-2">{numberFmt.format(item.unit_cost)}</td>
-                          <td className="py-3 px-2 font-semibold">{numberFmt.format(item.total_cost)}</td>
-                          <td className={`py-3 px-2 font-semibold ${item.days_until_expiry < 0 ? 'text-red-600' : item.days_until_expiry <= 30 ? 'text-yellow-600' : 'text-green-600'}`}>
-                            {item.days_until_expiry}
+                          <td className="py-3 px-2">{lot.branch_name || "—"}</td>
+                          <td className="py-3 px-2">{lot.warehouse_name || "—"}</td>
+                          <td className="py-3 px-2">{lot.lot_date || "—"}</td>
+                          <td className="py-3 px-2">
+                            {/* v3.74.580: تعديل تاريخ الصلاحية inline — الـ RPC يفرض الصلاحيات بنفسه */}
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="date"
+                                className="w-36 h-8 text-xs"
+                                value={editDates[lot.id] ?? lot.expiry_date}
+                                onChange={(e) => setEditDates(prev => ({ ...prev, [lot.id]: e.target.value }))}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2"
+                                disabled={savingLotId === lot.id || !editDates[lot.id] || editDates[lot.id] === lot.expiry_date}
+                                onClick={() => handleSaveExpiry(lot)}
+                                title={t("Save expiry date", "حفظ تاريخ الصلاحية")}
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                          <td className="py-3 px-2">{lot.remaining_quantity}</td>
+                          <td className={`py-3 px-2 font-semibold ${lot.days_until_expiry < 0 ? 'text-red-600' : lot.days_until_expiry <= 30 ? 'text-amber-600' : 'text-green-600'}`}>
+                            {lot.days_until_expiry}
                           </td>
                           <td className="py-3 px-2">
-                            {getStatusBadge(item.status, item.days_until_expiry)}
-                          </td>
-                          <td className="py-3 px-2 text-xs">
-                            {item.branch_name && <div>{item.branch_name}</div>}
-                            {item.warehouse_name && <div className="text-gray-500">{item.warehouse_name}</div>}
+                            {getStatusBadge(lot.status, lot.days_until_expiry)}
                           </td>
                         </tr>
                       ))}
@@ -388,6 +451,63 @@ export default function ProductExpiryPage() {
                 </div>
               )}
             </CardContent>
+          </Card>
+
+          {/* v3.74.580: تاريخ الإهلاك — قسم ثانوى قابل للطى */}
+          <Card className="dark:bg-gray-800">
+            <CardHeader className="cursor-pointer" onClick={() => setShowHistory(!showHistory)}>
+              <CardTitle className="flex items-center justify-between text-base">
+                <span className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-gray-400" />
+                  {t("Write-off History (expired items)", "سجل الإهلاك السابق (أصناف منتهية)")} ({writeoffHistory.length})
+                </span>
+                {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </CardTitle>
+            </CardHeader>
+            {showHistory && (
+              <CardContent>
+                {writeoffHistory.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500 text-sm">
+                    {t("No write-off history with expiry dates", "لا يوجد سجل إهلاك بتواريخ صلاحية")}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b dark:border-gray-700">
+                          <th className="text-right py-3 px-2">{t("Product", "المنتج")}</th>
+                          <th className="text-right py-3 px-2">{t("Expiry Date", "تاريخ الانتهاء")}</th>
+                          <th className="text-right py-3 px-2">{t("Quantity", "الكمية")}</th>
+                          <th className="text-right py-3 px-2">{t("Unit Cost", "تكلفة الوحدة")}</th>
+                          <th className="text-right py-3 px-2">{t("Total Cost", "إجمالي التكلفة")}</th>
+                          <th className="text-right py-3 px-2">{t("Branch/Warehouse", "الفرع/المخزن")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {writeoffHistory.map((item, idx) => (
+                          <tr key={idx} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700">
+                            <td className="py-3 px-2">
+                              <div>
+                                <div className="font-medium">{item.product_name}</div>
+                                <div className="text-xs text-gray-500">{item.product_sku}</div>
+                              </div>
+                            </td>
+                            <td className="py-3 px-2">{item.expiry_date}</td>
+                            <td className="py-3 px-2">{item.quantity}</td>
+                            <td className="py-3 px-2">{numberFmt.format(item.unit_cost)}</td>
+                            <td className="py-3 px-2 font-semibold">{numberFmt.format(item.total_cost)}</td>
+                            <td className="py-3 px-2 text-xs">
+                              {item.branch_name && <div>{item.branch_name}</div>}
+                              {item.warehouse_name && <div className="text-gray-500">{item.warehouse_name}</div>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            )}
           </Card>
         </div>
       </main>

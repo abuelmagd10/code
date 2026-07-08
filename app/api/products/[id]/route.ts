@@ -132,6 +132,15 @@ export async function PUT(
       product_type: classification.productType,
       // For services, ensure warehouse_id is null
       ...(classification.itemType === 'service' && { warehouse_id: null }),
+      // v3.74.580: مدة الصلاحية (يوم) — أعداد صحيحة موجبة فقط، وإلا null (للخدمات دائماً null)
+      ...(body.shelf_life_days !== undefined && {
+        shelf_life_days:
+          classification.itemType === 'service'
+            ? null
+            : (Number.isFinite(Number(body.shelf_life_days)) && Number(body.shelf_life_days) > 0
+              ? Math.round(Number(body.shelf_life_days))
+              : null),
+      }),
     }
 
     const { data, error: dbError } = await supabase

@@ -167,6 +167,21 @@ export async function POST(req: Request) {
       if (imgErr) console.error('Failed to save product images:', imgErr)
     }
 
+    // v3.74.580: حفظ مدة الصلاحية (يوم) — الـ RPC لا يستقبلها، لذا نحدثها بعد الإنشاء
+    // (أعداد صحيحة موجبة فقط، وإلا تبقى null — منها يُحسب expiry_date لكل دفعة FIFO تلقائياً)
+    {
+      const shelfRaw = Number(body.shelf_life_days)
+      const shelfLifeDays = Number.isFinite(shelfRaw) && shelfRaw > 0 ? Math.round(shelfRaw) : null
+      if (shelfLifeDays !== null) {
+        const { error: shelfErr } = await supabase
+          .from('products')
+          .update({ shelf_life_days: shelfLifeDays })
+          .eq('id', rpcResult.product_id)
+          .eq('company_id', companyId)
+        if (shelfErr) console.error('Failed to save shelf life days:', shelfErr)
+      }
+    }
+
     // 4️⃣ Async Audit Logging (Fire and Forget)
     asyncAuditLog({
       companyId,
