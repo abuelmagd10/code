@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, Wallet, ArrowLeft, ArrowRight } from "lucide-react"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -49,6 +50,17 @@ export default function BankAccountsByBranchReport() {
   })
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   useEffect(() => { loadData() }, [])
 
@@ -152,6 +164,22 @@ export default function BankAccountsByBranchReport() {
   }, [branchSummary])
 
   const formatNumber = (n: number) => new Intl.NumberFormat(appLang === 'en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+        <main className={`flex-1 ${appLang === 'ar' ? 'md:mr-64' : 'md:ml-64'} p-4 md:p-8 pt-20 md:pt-8`}>
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">
+                {appLang === 'en' ? 'You do not have permission to view this report.' : 'ليس لديك صلاحية لعرض هذا التقرير.'}
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { getFXAccounts } from "@/lib/currency-service"
 import { ArrowLeft, TrendingUp, TrendingDown, Download, RefreshCw } from "lucide-react"
 import Link from "next/link"
@@ -39,6 +40,17 @@ export default function FXGainsLossesReportPage() {
   const [totalGains, setTotalGains] = useState(0)
   const [totalLosses, setTotalLosses] = useState(0)
   const [baseCurrency, setBaseCurrency] = useState('EGP')
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   useEffect(() => {
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
@@ -144,6 +156,22 @@ export default function FXGainsLossesReportPage() {
   const isNetGain = netResult >= 0
 
   if (loading) return <div className="p-8 text-center">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</div>
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+        <div className="flex-1 md:mr-64 p-4 md:p-6 pt-20 md:pt-8 max-w-6xl mx-auto">
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">
+                {appLang === 'en' ? 'You do not have permission to view this report.' : 'ليس لديك صلاحية لعرض هذا التقرير.'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>

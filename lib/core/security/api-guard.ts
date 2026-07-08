@@ -32,6 +32,8 @@ export type AppResource =
     | 'inventory'
     | 'invoices'
     | 'reports'
+    // v3.74.581 — التقارير المالية (قائمة الدخل/الميزانية/...) للإدارة العليا فقط
+    | 'financial_reports'
     | 'settings'
     | 'hr'
     | 'branches';

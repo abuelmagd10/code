@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false, // قائمة الدخل تعرض بيانات الشركة كاملة
-      requirePermission: { resource: "reports", action: "read" },
+      requirePermission: { resource: "financial_reports", action: "read" },
       supabase: authSupabase // ✅ تمرير supabase client
     })
 

@@ -5,9 +5,42 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { FileText, Download, BarChart3 } from "lucide-react"
 import Link from "next/link"
+import { useSupabase } from "@/lib/supabase/hooks"
+import { canAction } from "@/lib/authz"
+
+// v3.74.581 — owner matrix: FINANCIAL reports (top management only → resource 'financial_reports')
+// Operational (branch-scoped) reports keep the regular 'reports' access.
+const FINANCIAL_REPORT_HREFS = new Set<string>([
+  "/reports/simple-summary",
+  "/reports/income-statement",
+  "/reports/balance-sheet",
+  "/reports/equity-changes",
+  "/reports/cash-flow",
+  "/reports/trial-balance",
+  "/reports/vat-output",
+  "/reports/vat-input",
+  "/reports/vat-summary",
+  "/reports/aging-ap",
+  "/reports/inventory-valuation",
+  "/reports/sales-bonuses",
+  "/reports/daily-payments-receipts",
+  "/reports/bank-reconciliation",
+  "/reports/fx-gains-losses",
+  "/reports/branch-cost-center",
+  "/reports/branch-comparison",
+  "/reports/cost-center-analysis",
+  "/reports/bank-accounts-by-branch",
+  "/reports/bank-transactions",
+  "/reports/financial-trace-explorer",
+  "/reports/financial-integrity-checks",
+  "/reports/financial-replay-recovery",
+  "/reports/login-activity",
+])
 
 export default function ReportsPage() {
+  const supabase = useSupabase()
   const [isLoading, setIsLoading] = useState(true)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   useEffect(() => {
     const handler = () => {
@@ -24,6 +57,17 @@ export default function ReportsPage() {
   useEffect(() => {
     setIsLoading(false)
   }, [])
+
+  // v3.74.581 — load financial_reports permission once; financial cards hidden when denied
+  useEffect(() => {
+    (async () => {
+      try {
+        setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      } catch {
+        setCanViewFinancial(false)
+      }
+    })()
+  }, [supabase])
   const [search, setSearch] = useState("")
 
   // 🚀 تحسين الأداء - استخدام useTransition للبحث
@@ -203,17 +247,22 @@ export default function ReportsPage() {
               placeholder={t('Search reports...', 'بحث في التقارير...')}
               className={`w-full px-3 py-2 border rounded-lg text-sm sm:col-span-2 h-10 sm:h-11 ${isPending ? 'opacity-70' : ''}`}
             />
-            <Link href="/reports/update-account-balances">
-              <Button variant="outline" className="w-full h-10 sm:h-11 text-xs sm:text-sm">{t('Update Balances', 'حفظ الأرصدة')}</Button>
-            </Link>
+            {canViewFinancial ? (
+              <Link href="/reports/update-account-balances">
+                <Button variant="outline" className="w-full h-10 sm:h-11 text-xs sm:text-sm">{t('Update Balances', 'حفظ الأرصدة')}</Button>
+              </Link>
+            ) : null}
           </div>
 
           {groups.map((group) => {
             const items = group.items.filter((it) => {
+              // v3.74.581 — hide financial reports from users without financial_reports access
+              if (!canViewFinancial && it.href && FINANCIAL_REPORT_HREFS.has(it.href)) return false
               const s = search.trim().toLowerCase()
               if (!s) return true
               return it.title.toLowerCase().includes(s) || it.description.toLowerCase().includes(s)
             })
+            if (items.length === 0) return null
             return (
               <div key={group.title} className="space-y-3">
                 <h2 className="text-xl font-bold">{group.title}</h2>

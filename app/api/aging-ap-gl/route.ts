@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const { companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      requirePermission: { resource: "reports", action: "read" },
+      requirePermission: { resource: "financial_reports", action: "read" },
       supabase: authSupabase,
     })
     if (error) return error

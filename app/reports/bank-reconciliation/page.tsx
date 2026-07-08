@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { canAction } from "@/lib/authz"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterBankAccounts } from "@/lib/accounts"
@@ -49,6 +50,17 @@ export default function BankReconciliationPage() {
   }, [])
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
   const numberFmt = new Intl.NumberFormat(appLang === 'en' ? "en-EG" : "ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   useEffect(() => {
     loadAccounts()
@@ -162,6 +174,22 @@ export default function BankReconciliationPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">
+                {t("You do not have permission to view this report.", "ليس لديك صلاحية لعرض هذا التقرير.")}
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
   }
 
   return (

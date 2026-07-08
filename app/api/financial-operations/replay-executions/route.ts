@@ -30,7 +30,7 @@ const isReplayExecutionPolicyViolation = (message: string) =>
 
 export async function POST(request: NextRequest) {
   const { context, errorResponse } = await apiGuard(request, {
-    resource: "reports",
+    resource: "financial_reports",
     action: "approve",
   })
   if (errorResponse || !context) return errorResponse

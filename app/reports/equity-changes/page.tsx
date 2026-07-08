@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { Download, ArrowRight, Loader2, Calendar } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { CompanyHeader } from "@/components/company-header"
@@ -42,6 +43,17 @@ export default function EquityChangesPage() {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     })
+
+    // v3.74.581 — financial report: requires financial_reports (top management only)
+    const [permChecked, setPermChecked] = useState(false)
+    const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+    useEffect(() => {
+        (async () => {
+            setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+            setPermChecked(true)
+        })()
+    }, [supabase])
 
     useEffect(() => {
         setHydrated(true)
@@ -121,6 +133,22 @@ export default function EquityChangesPage() {
             "Closing Balance": "الرصيد الختامي"
         }
         return map[rowName] || rowName
+    }
+
+    if (permChecked && !canViewFinancial) {
+        return (
+            <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+                <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+                    <Card className="border-red-200 dark:border-red-800">
+                        <CardContent className="pt-6">
+                            <p className="text-red-600 dark:text-red-400">
+                                {appLang === 'en' ? 'You do not have permission to view this report.' : 'ليس لديك صلاحية لعرض هذا التقرير.'}
+                            </p>
+                        </CardContent>
+                    </Card>
+                </main>
+            </div>
+        )
     }
 
     return (

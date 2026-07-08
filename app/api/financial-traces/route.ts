@@ -13,7 +13,7 @@ const getParam = (params: URLSearchParams, ...names: string[]) => {
 
 export async function GET(request: NextRequest) {
   const { context, errorResponse } = await apiGuard(request, {
-    resource: "reports",
+    resource: "financial_reports",
     action: "read",
   })
   if (errorResponse || !context) return errorResponse

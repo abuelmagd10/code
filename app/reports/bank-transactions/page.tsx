@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Calendar, FileText } from "lucide-react"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -46,6 +47,17 @@ export default function BankTransactionsReport() {
   })
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   useEffect(() => { loadData() }, [])
 
@@ -165,6 +177,22 @@ export default function BankTransactionsReport() {
     invoice_payment: appLang === 'en' ? 'Invoice Payment' : 'دفع فاتورة',
     bill_payment: appLang === 'en' ? 'Bill Payment' : 'دفع مشتريات',
     manual: appLang === 'en' ? 'Manual Entry' : 'قيد يدوي',
+  }
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+        <main className="flex-1 md:mr-64 p-4 md:p-6 pt-20 md:pt-8 bg-gray-50 dark:bg-gray-900">
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">
+                {appLang === 'en' ? 'You do not have permission to view this report.' : 'ليس لديك صلاحية لعرض هذا التقرير.'}
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
   }
 
   return (

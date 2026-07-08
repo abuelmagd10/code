@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { Building2, MapPin, TrendingUp, TrendingDown, FileText, Download, ArrowLeft, ArrowRight, PieChart } from "lucide-react"
 import Link from "next/link"
 
@@ -55,6 +56,17 @@ export default function CostCenterAnalysisPage() {
   }, [])
 
   const t = (en: string, ar: string) => (appLang === 'en' ? en : ar)
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   // Load initial data
   useEffect(() => {
@@ -175,6 +187,22 @@ export default function CostCenterAnalysisPage() {
   }), { totalSales: 0, totalPurchases: 0, totalReturns: 0, netRevenue: 0, grossProfit: 0 })
 
   const getPercentage = (value: number, total: number) => total === 0 ? 0 : Math.round((value / total) * 100)
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">
+                {t("You do not have permission to view this report.", "ليس لديك صلاحية لعرض هذا التقرير.")}
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">

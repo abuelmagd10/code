@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { canAction } from "@/lib/authz"
 import { filterLeafAccounts } from "@/lib/accounts"
 import { ArrowRight, Download } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -22,6 +23,17 @@ export default function UpdateAccountBalancesPage() {
   const [computed, setComputed] = useState<Record<string, { debit: number; credit: number }>>({})
   const [fixing, setFixing] = useState<boolean>(false)
   const [autoFixed, setAutoFixed] = useState<boolean>(false)
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   useEffect(() => {
     loadAccounts()
@@ -193,6 +205,20 @@ export default function UpdateAccountBalancesPage() {
   }
   // مجموع صافي الأرصدة (مدين - دائن)
   const total = useMemo(() => Object.values(computed).reduce((s, v) => s + (v.debit - v.credit), 0), [computed])
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">ليس لديك صلاحية لعرض هذا التقرير.</p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">

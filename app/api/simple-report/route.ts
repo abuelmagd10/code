@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       requireAuth: true,
       requireCompany: true,
       requireBranch: false,
-      requirePermission: { resource: "reports", action: "read" },
+      requirePermission: { resource: "financial_reports", action: "read" },
       supabase: authSupabase
     })
 

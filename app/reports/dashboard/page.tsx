@@ -7,9 +7,23 @@ import { Button } from '@/components/ui/button'
 import { DollarSign, TrendingUp, TrendingDown, Scale, Wallet } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useAccess } from '@/lib/access-context'
+import { useSupabase } from '@/lib/supabase/hooks'
+import { canAction } from '@/lib/authz'
 
 export default function FinancialDashboardPage() {
     const { profile, isLoading: isAccessLoading } = useAccess()
+    const supabase = useSupabase()
+
+    // v3.74.581 — financial report: requires financial_reports (top management only)
+    const [permChecked, setPermChecked] = useState(false)
+    const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+    useEffect(() => {
+        (async () => {
+            setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+            setPermChecked(true)
+        })()
+    }, [supabase])
     const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
     const [loading, setLoading] = useState(false)
@@ -35,6 +49,7 @@ export default function FinancialDashboardPage() {
         }
     }, [profile?.company_id, startDate, endDate]) // Added startDate, endDate to dependencies
 
+    if (permChecked && !canViewFinancial) return <div className="p-8 text-center text-muted-foreground">You do not have permission to view this report.</div>
     if (loading || isAccessLoading) return <div className="p-8 text-center text-muted-foreground">Loading financial data...</div>
     if (!summary) return <div className="p-8 text-center text-muted-foreground">No data available</div>
 

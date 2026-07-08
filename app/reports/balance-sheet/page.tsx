@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import Link from "next/link"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { computeBalanceSheetTotalsFromBalances } from "@/lib/ledger"
 import { Download, ArrowRight, Printer } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -55,6 +56,17 @@ export default function BalanceSheetPage() {
   // Print support
   const printContentRef = useRef<HTMLDivElement>(null)
   const [companyDetails, setCompanyDetails] = useState<any>(null)
+
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
 
   useEffect(() => {
     loadBalances(endDate)
@@ -213,6 +225,22 @@ export default function BalanceSheetPage() {
     a.download = `balance-sheet-${endDate}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="border-red-200 dark:border-red-800">
+            <CardContent className="pt-6">
+              <p className="text-red-600 dark:text-red-400">
+                {appLang === 'en' ? 'You do not have permission to view this report.' : 'ليس لديك صلاحية لعرض هذا التقرير.'}
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
   }
 
   return (

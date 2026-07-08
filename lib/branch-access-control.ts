@@ -44,7 +44,8 @@ export async function checkBranchAccess(
   // التحقق من الوصول للفرع
   if (config.requiredBranchId && member.branch_id !== config.requiredBranchId) {
     // السماح للمالك والمدير العام بالوصول لجميع الفروع
-    if (!['owner', 'admin'].includes(member.role)) {
+    // v3.74.581 — GM is company-wide (comment always said so; key was missing)
+    if (!['owner', 'admin', 'general_manager'].includes(member.role)) {
       return {
         hasAccess: false,
         error: 'لا يمكن الوصول لهذا الفرع'
@@ -143,7 +144,8 @@ export async function getUserBranchData(userId: string, companyId: string) {
 
 export function buildBranchFilter(userBranchId: string, userRole: string) {
   // المالك والمدير العام يرون جميع الفروع
-  if (['owner', 'admin'].includes(userRole)) {
+  // v3.74.581 — GM is company-wide (comment always said so; key was missing)
+  if (['owner', 'admin', 'general_manager'].includes(userRole)) {
     return {}
   }
 
@@ -152,7 +154,8 @@ export function buildBranchFilter(userBranchId: string, userRole: string) {
 }
 
 export function buildCostCenterFilter(userCostCenterId: string, userRole: string) {
-  if (['owner', 'admin'].includes(userRole)) {
+  // v3.74.581 — GM is company-wide (comment always said so; key was missing)
+  if (['owner', 'admin', 'general_manager'].includes(userRole)) {
     return {}
   }
 
@@ -160,7 +163,8 @@ export function buildCostCenterFilter(userCostCenterId: string, userRole: string
 }
 
 export function buildWarehouseFilter(userWarehouseId: string, userRole: string) {
-  if (['owner', 'admin', 'store_manager'].includes(userRole)) {
+  // v3.74.581 — GM is company-wide (comment always said so; key was missing)
+  if (['owner', 'admin', 'general_manager', 'store_manager'].includes(userRole)) {
     return {}
   }
 
@@ -170,7 +174,8 @@ export function buildWarehouseFilter(userWarehouseId: string, userRole: string) 
 // =====================================================
 // 📌 الأدوار والثوابت
 // =====================================================
-export const FULL_ACCESS_ROLES = ['owner', 'admin']
+// v3.74.581 — GM is company-wide (comment always said so; key was missing)
+export const FULL_ACCESS_ROLES = ['owner', 'admin', 'general_manager']
 export const BRANCH_LEVEL_ROLES = ['manager', 'general_manager', 'accountant', 'supervisor']
 
 // =====================================================

@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
       requireAuth: true,
       requireCompany: true,
       requireBranch: true,
-      requirePermission: { resource: "inventory", action: "read" },
-      allowedRoles: ['owner', 'admin', 'store_manager', 'accountant'],
+      requirePermission: { resource: "financial_reports", action: "read" },
+      allowedRoles: ['owner', 'admin', 'general_manager'],
       supabase: authSupabase // ✅ تمرير supabase client
     })
 

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { canAction } from "@/lib/authz"
 import { AlertCircle, CheckCircle, RefreshCw } from "lucide-react"
 
 interface AuditResult {
@@ -32,6 +33,17 @@ export default function BalanceSheetAuditPage() {
   const [result, setResult] = useState<AuditResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // v3.74.581 — financial report: requires financial_reports (top management only)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canViewFinancial, setCanViewFinancial] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
+      setPermChecked(true)
+    })()
+  }, [supabase])
+
   const runAudit = async () => {
     setLoading(true)
     setError(null)
@@ -58,6 +70,20 @@ export default function BalanceSheetAuditPage() {
   useEffect(() => { runAudit() }, [])
 
   const fmt = (n: number) => new Intl.NumberFormat('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+
+  if (permChecked && !canViewFinancial) {
+    return (
+      <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="border-red-500">
+            <CardContent className="pt-6">
+              <p className="text-red-600">ليس لديك صلاحية لعرض هذا التقرير.</p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950">
