@@ -238,7 +238,35 @@ export default function BookingDetailPage() {
                   {booking.customer_email && (
                     <InfoRow label={t("البريد", "Email")}          value={booking.customer_email} />
                   )}
-                  <InfoRow label={t("الموظف", "Staff")}            value={booking.staff_email ?? <span className="italic text-muted-foreground">—</span>} />
+                  {/* v3.74.589 — أسماء الموظفين المرتبطين بالحجز (تعيين متعدد)
+                      كانت الصفحة تعرض إيميل الموظف الفردى فقط وتتجاهل
+                      assigned_staff_names القادمة من v_bookings_full. */}
+                  {(() => {
+                    const assignedNames: string[] = (((booking as any).assigned_staff_names ?? []) as (string | null)[])
+                      .filter((n): n is string => !!n && n.trim().length > 0)
+                    if (assignedNames.length > 0) {
+                      return (
+                        <InfoRow
+                          label={assignedNames.length > 1 ? t("الموظفون المرتبطون", "Assigned Staff") : t("الموظف", "Staff")}
+                          value={
+                            <span className="flex flex-wrap gap-1 justify-end">
+                              {assignedNames.map((n, i) => (
+                                <span key={i} className="text-xs bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded px-1.5 py-0.5">
+                                  {n}
+                                </span>
+                              ))}
+                            </span>
+                          }
+                        />
+                      )
+                    }
+                    return (
+                      <InfoRow
+                        label={t("الموظف", "Staff")}
+                        value={(booking as any).staff_name || booking.staff_email || <span className="italic text-muted-foreground">—</span>}
+                      />
+                    )
+                  })()}
                   <InfoRow label={t("الفرع", "Branch")}            value={booking.branch_name ?? "—"} />
                 </CardContent>
               </Card>
