@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { Download, ArrowRight, AlertTriangle, Calendar, Package, Save, ChevronDown, ChevronUp, History, CheckCircle2 } from "lucide-react"
+import { Download, ArrowRight, AlertTriangle, Calendar, Package, Save, ChevronDown, ChevronUp, History, CheckCircle2, Scissors, Plus, Trash2, Boxes } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -20,6 +21,10 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
  * (دفعات لها تاريخ صلاحية وكمية متبقية > 0) مع تعديل تاريخ الصلاحية
  * لكل دفعة عبر RPC update_lot_expiry (بصلاحيات المستخدم المسجل).
  * تجميع الإهلاك القديم أصبح قسماً ثانوياً (writeoff_history).
+ *
+ * v3.74.586 — أعمدة رقم اللوط والكراتين + شارة FEFO (الأقرب انتهاءً) +
+ * تقسيم اللوط غير المستهلك إلى لوطات فرعية عبر RPC split_fifo_lot
+ * (بصلاحيات المستخدم المسجل — الـ RPC يفرض الأدوار بنفسه).
  */
 
 interface LiveLot {
@@ -27,6 +32,10 @@ interface LiveLot {
   product_id: string
   product_name: string
   product_sku: string
+  lot_number: string | null
+  original_quantity: number
+  units_per_carton: number | null
+  cartons: number | null
   branch_id: string | null
   branch_name: string
   warehouse_id: string | null
@@ -38,6 +47,11 @@ interface LiveLot {
   total_cost: number
   days_until_expiry: number
   status: "expired" | "expiring_soon" | "valid"
+}
+
+interface SplitRow {
+  quantity: string
+  expiry_date: string
 }
 
 interface WriteOffHistoryItem {
@@ -88,6 +102,11 @@ export default function ProductExpiryPage() {
   const [editDates, setEditDates] = useState<Record<string, string>>({})
   const [savingLotId, setSavingLotId] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+
+  // v3.74.586: تقسيم اللوط غير المستهلك إلى لوطات فرعية
+  const [splitLot, setSplitLot] = useState<LiveLot | null>(null)
+  const [splitRows, setSplitRows] = useState<SplitRow[]>([])
+  const [isSplitting, setIsSplitting] = useState(false)
 
   const [fromDate, setFromDate] = useState<string>("")
   const [toDate, setToDate] = useState<string>("")
@@ -205,6 +224,98 @@ export default function ProductExpiryPage() {
       setSavingLotId(null)
     }
   }
+
+  /**
+   * v3.74.586 — تقسيم اللوط غير المستهلك (المتبقى = الأصلى) إلى لوطات فرعية
+   * عبر RPC split_fifo_lot بجلسة المستخدم المسجل — الـ RPC يفرض الأدوار بنفسه
+   * ويرفض غير المصرح لهم برسالة عربية واضحة نعرضها كما هى.
+   */
+  const openSplitDialog = (lot: LiveLot) => {
+    setSplitLot(lot)
+    setSplitRows([
+      { quantity: "", expiry_date: lot.expiry_date },
+      { quantity: "", expiry_date: lot.expiry_date },
+    ])
+  }
+
+  const closeSplitDialog = () => {
+    if (isSplitting) return
+    setSplitLot(null)
+    setSplitRows([])
+  }
+
+  // «تقسيم بالكراتين» — صفوف بعدد عبوات الكرتونة والباقى فى الصف الأخير
+  const prefillByCartons = () => {
+    if (!splitLot || !splitLot.units_per_carton || splitLot.units_per_carton <= 0) return
+    const upc = splitLot.units_per_carton
+    const total = splitLot.original_quantity
+    const rows: SplitRow[] = []
+    let remaining = total
+    while (remaining > upc) {
+      rows.push({ quantity: String(upc), expiry_date: splitLot.expiry_date })
+      remaining -= upc
+    }
+    rows.push({ quantity: String(remaining), expiry_date: splitLot.expiry_date })
+    if (rows.length < 2) return // الكمية لا تكفى لأكثر من كرتونة واحدة
+    setSplitRows(rows)
+  }
+
+  const splitTarget = splitLot ? Number(splitLot.original_quantity || 0) : 0
+  const splitSum = splitRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)
+  const splitSumOk = splitLot !== null && Math.abs(splitSum - splitTarget) < 0.000001
+  const splitRowsValid = splitRows.length >= 2 && splitRows.every(r => Number(r.quantity) > 0 && !!r.expiry_date)
+  const canSubmitSplit = !!splitLot && !!companyId && splitSumOk && splitRowsValid && !isSplitting
+
+  const handleSplitSubmit = async () => {
+    if (!splitLot || !canSubmitSplit) return
+    if (!companyId) {
+      toastActionError(toast, t('Company not found', 'لم يتم العثور على الشركة'))
+      return
+    }
+    try {
+      setIsSplitting(true)
+      const { data, error } = await supabase.rpc('split_fifo_lot', {
+        p_company_id: companyId,
+        p_lot_id: splitLot.id,
+        p_splits: splitRows.map(r => ({
+          quantity: Number(r.quantity),
+          expiry_date: r.expiry_date,
+        })),
+      })
+      if (error) throw error
+      const result = data as { success?: boolean; lots_created?: number; lot_numbers?: string[] } | null
+      if (!result?.success) {
+        throw new Error((result as any)?.error || t('Failed to split lot', 'فشل تقسيم اللوط'))
+      }
+      const lotNumbers = (result.lot_numbers || []) as string[]
+      // عرض أرقام اللوطات الجديدة ليكتبها المدير على الكراتين
+      toast({
+        title: t('Lot split successfully', 'تم تقسيم اللوط بنجاح'),
+        description: `${t('New lot numbers', 'أرقام اللوطات الجديدة')}: ${lotNumbers.join(' ، ')}`,
+        duration: 15000,
+      })
+      setSplitLot(null)
+      setSplitRows([])
+      loadData()
+    } catch (e: any) {
+      // إظهار رسالة الـ RPC (عربية) كما هى
+      toastActionError(toast, e?.message || t('Failed to split lot', 'فشل تقسيم اللوط'))
+    } finally {
+      setIsSplitting(false)
+    }
+  }
+
+  // v3.74.586 — FEFO: داخل كل (منتج + مخزن) اللوط صاحب أقرب تاريخ انتهاء غير فارغ
+  const fefoLotIds = (() => {
+    const best = new Map<string, LiveLot>()
+    for (const l of lots) {
+      if (!l.expiry_date) continue
+      const key = `${l.product_id}__${l.warehouse_id || ''}`
+      const cur = best.get(key)
+      if (!cur || String(l.expiry_date) < String(cur.expiry_date)) best.set(key, l)
+    }
+    return new Set(Array.from(best.values()).map(l => l.id))
+  })()
 
   const handleExportCsv = () => {
     const headers = ["product_sku", "product_name", "branch_name", "warehouse_name", "lot_date", "expiry_date", "remaining_quantity", "unit_cost", "total_cost", "days_until_expiry", "status"]
@@ -395,13 +506,16 @@ export default function ProductExpiryPage() {
                     <thead>
                       <tr className="border-b dark:border-gray-700">
                         <th className="text-right py-3 px-2">{t("Product", "المنتج")}</th>
+                        <th className="text-right py-3 px-2">{t("Lot", "اللوط")}</th>
                         <th className="text-right py-3 px-2">{t("Branch", "الفرع")}</th>
                         <th className="text-right py-3 px-2">{t("Warehouse", "المخزن")}</th>
                         <th className="text-right py-3 px-2">{t("Batch Date", "تاريخ الدفعة")}</th>
                         <th className="text-right py-3 px-2">{t("Expiry Date", "تاريخ الانتهاء")}</th>
                         <th className="text-right py-3 px-2">{t("Remaining Qty", "الكمية المتبقية")}</th>
+                        <th className="text-right py-3 px-2">{t("Cartons", "كراتين")}</th>
                         <th className="text-right py-3 px-2">{t("Days Left", "باقى (أيام)")}</th>
                         <th className="text-right py-3 px-2">{t("Status", "الحالة")}</th>
+                        <th className="text-right py-3 px-2">{t("Actions", "إجراءات")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -411,8 +525,15 @@ export default function ProductExpiryPage() {
                             <div>
                               <div className="font-medium">{lot.product_name}</div>
                               <div className="text-xs text-gray-500">{lot.product_sku}</div>
+                              {/* v3.74.586: شارة FEFO — أقرب لوط انتهاءً داخل (المنتج + المخزن) */}
+                              {fefoLotIds.has(lot.id) && (
+                                <Badge className="mt-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-[10px] font-normal">
+                                  {t("Expires first — issue from this one", "الأقرب انتهاءً — اصرف منه أولاً")}
+                                </Badge>
+                              )}
                             </div>
                           </td>
+                          <td className="py-3 px-2 font-mono text-xs">{lot.lot_number || "—"}</td>
                           <td className="py-3 px-2">{lot.branch_name || "—"}</td>
                           <td className="py-3 px-2">{lot.warehouse_name || "—"}</td>
                           <td className="py-3 px-2">{lot.lot_date || "—"}</td>
@@ -438,11 +559,32 @@ export default function ProductExpiryPage() {
                             </div>
                           </td>
                           <td className="py-3 px-2">{lot.remaining_quantity}</td>
+                          <td className="py-3 px-2">
+                            {/* v3.74.586: الكمية بالكراتين (عند تعريف عدد العبوات فى الكرتونة) */}
+                            {lot.cartons !== null && lot.cartons !== undefined ? lot.cartons : "—"}
+                          </td>
                           <td className={`py-3 px-2 font-semibold ${lot.days_until_expiry < 0 ? 'text-red-600' : lot.days_until_expiry <= 30 ? 'text-amber-600' : 'text-green-600'}`}>
                             {lot.days_until_expiry}
                           </td>
                           <td className="py-3 px-2">
                             {getStatusBadge(lot.status, lot.days_until_expiry)}
+                          </td>
+                          <td className="py-3 px-2">
+                            {/* v3.74.586: تقسيم اللوط — متاح فقط للوط غير المستهلك (المتبقى = الأصلى) */}
+                            {lot.original_quantity === lot.remaining_quantity ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2"
+                                onClick={() => openSplitDialog(lot)}
+                                title={t("Split this lot into sub-lots", "تقسيم هذا اللوط إلى لوطات فرعية")}
+                              >
+                                <Scissors className="w-3.5 h-3.5 ml-1" />
+                                {t("Split", "تقسيم")}
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -509,6 +651,113 @@ export default function ProductExpiryPage() {
               </CardContent>
             )}
           </Card>
+
+          {/* v3.74.586: حوار تقسيم اللوط غير المستهلك إلى لوطات فرعية (RPC split_fifo_lot) */}
+          <Dialog open={!!splitLot} onOpenChange={(open) => { if (!open) closeSplitDialog() }}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Scissors className="w-4 h-4" />
+                  {t("Split Lot", "تقسيم اللوط")} {splitLot?.lot_number ? <span className="font-mono text-sm">{splitLot.lot_number}</span> : null}
+                </DialogTitle>
+                <DialogDescription>
+                  {splitLot && (
+                    <>
+                      <span className="font-medium">{splitLot.product_name}</span>
+                      {" — "}
+                      {t("Lot quantity", "كمية اللوط")}: <span className="font-semibold">{splitLot.original_quantity}</span>
+                      {splitLot.units_per_carton && splitLot.cartons !== null && (
+                        <> {" "}({t(`≈ ${splitLot.cartons} cartons of ${splitLot.units_per_carton}`, `≈ ${splitLot.cartons} كرتونة × ${splitLot.units_per_carton} عبوة`)})</>
+                      )}
+                    </>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+
+              {splitLot && (
+                <div className="space-y-3">
+                  {/* تقسيم بالكراتين — تعبئة تلقائية بصفوف بعدد عبوات الكرتونة */}
+                  {splitLot.units_per_carton && splitLot.units_per_carton > 0 && splitLot.original_quantity > splitLot.units_per_carton ? (
+                    <Button type="button" size="sm" variant="secondary" onClick={prefillByCartons} disabled={isSplitting}>
+                      <Boxes className="w-3.5 h-3.5 ml-1" />
+                      {t("Split by cartons", "تقسيم بالكراتين")}
+                      <span className="mr-1 text-xs text-muted-foreground">({splitLot.units_per_carton} {t("units each", "عبوة لكل صف")})</span>
+                    </Button>
+                  ) : null}
+
+                  {/* صفوف التقسيم — كمية + تاريخ صلاحية لكل لوط فرعى */}
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-[1fr_1fr_2rem] gap-2 text-xs text-gray-500">
+                      <span>{t("Quantity", "الكمية")}</span>
+                      <span>{t("Expiry Date", "تاريخ الانتهاء")}</span>
+                      <span></span>
+                    </div>
+                    {splitRows.map((row, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_1fr_2rem] gap-2 items-center">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="any"
+                          className="h-9"
+                          value={row.quantity}
+                          onChange={(e) => setSplitRows(prev => prev.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r))}
+                          disabled={isSplitting}
+                        />
+                        <Input
+                          type="date"
+                          className="h-9"
+                          value={row.expiry_date}
+                          onChange={(e) => setSplitRows(prev => prev.map((r, i) => i === idx ? { ...r, expiry_date: e.target.value } : r))}
+                          disabled={isSplitting}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-9 px-2 text-red-500 hover:text-red-600"
+                          onClick={() => setSplitRows(prev => prev.filter((_, i) => i !== idx))}
+                          disabled={isSplitting || splitRows.length <= 2}
+                          title={t("Remove row", "حذف الصف")}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSplitRows(prev => [...prev, { quantity: "", expiry_date: splitLot.expiry_date }])}
+                    disabled={isSplitting}
+                  >
+                    <Plus className="w-3.5 h-3.5 ml-1" />
+                    {t("Add row", "إضافة صف")}
+                  </Button>
+
+                  {/* مؤشر المجموع الحى — يجب أن يساوى كمية اللوط بالضبط */}
+                  <div className={`text-sm font-semibold rounded-md px-3 py-2 ${splitSumOk ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'}`}>
+                    {t("Sum", "المجموع")}: {Math.round(splitSum * 1000) / 1000} / {splitTarget}
+                    {!splitSumOk && (
+                      <span className="mr-2 font-normal text-xs">
+                        {t("(must equal the lot quantity exactly)", "(يجب أن يساوى كمية اللوط بالضبط)")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={closeSplitDialog} disabled={isSplitting}>
+                  {t("Cancel", "إلغاء")}
+                </Button>
+                <Button onClick={handleSplitSubmit} disabled={!canSubmitSplit}>
+                  {isSplitting ? t("Splitting...", "جارى التقسيم...") : t("Split", "تقسيم")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </main>
     </div>

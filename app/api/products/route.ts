@@ -182,6 +182,21 @@ export async function POST(req: Request) {
       }
     }
 
+    // v3.74.586: حفظ عدد العبوات فى الكرتونة — الـ RPC لا يستقبلها، لذا نحدثها بعد الإنشاء
+    // (أعداد صحيحة موجبة فقط، وإلا تبقى null — تُستخدم لعرض الكميات بالكراتين عند الاستلام والتقارير)
+    {
+      const cartonRaw = Number(body.units_per_carton)
+      const unitsPerCarton = Number.isFinite(cartonRaw) && cartonRaw > 0 ? Math.round(cartonRaw) : null
+      if (unitsPerCarton !== null) {
+        const { error: cartonErr } = await supabase
+          .from('products')
+          .update({ units_per_carton: unitsPerCarton })
+          .eq('id', rpcResult.product_id)
+          .eq('company_id', companyId)
+        if (cartonErr) console.error('Failed to save units per carton:', cartonErr)
+      }
+    }
+
     // 4️⃣ Async Audit Logging (Fire and Forget)
     asyncAuditLog({
       companyId,

@@ -69,6 +69,8 @@ interface Product {
   image_urls?: string[] | null
   /** v3.74.580: مدة الصلاحية الافتراضية (يوم) — تُحسب منها صلاحية كل دفعة FIFO تلقائياً */
   shelf_life_days?: number | null
+  /** v3.74.586: عدد العبوات فى الكرتونة — لعرض الكميات بالكراتين عند الاستلام والتقارير */
+  units_per_carton?: number | null
 }
 
 interface Branch {
@@ -136,6 +138,8 @@ export default function ProductsPage() {
     reorder_level: 0,
     /** v3.74.580: مدة الصلاحية (يوم) — 0 = بدون (تُحفظ null) */
     shelf_life_days: 0,
+    /** v3.74.586: عدد العبوات فى الكرتونة — 0 = بدون (تُحفظ null) */
+    units_per_carton: 0,
     item_type: "product" as 'product' | 'service',
     /** النوع التفصيلي للمنتج — يحدد أهليته للتصنيع والـ BOM */
     product_type: "purchased" as 'manufactured' | 'raw_material' | 'purchased' | 'service',
@@ -583,6 +587,10 @@ export default function ProductsPage() {
         shelf_life_days: formData.item_type === 'service'
           ? null
           : (formData.shelf_life_days && formData.shelf_life_days > 0 ? Math.round(formData.shelf_life_days) : null),
+        // v3.74.586: عدد العبوات فى الكرتونة — null عند تركها فارغة، أعداد صحيحة موجبة فقط، للخدمات دائماً null
+        units_per_carton: formData.item_type === 'service'
+          ? null
+          : (formData.units_per_carton && formData.units_per_carton > 0 ? Math.round(formData.units_per_carton) : null),
         income_account_id: formData.income_account_id || null,
         expense_account_id: formData.expense_account_id || null,
         tax_code_id: formData.tax_code_id || null,
@@ -673,6 +681,7 @@ export default function ProductsPage() {
       quantity_on_hand: 0,
       reorder_level: 0,
       shelf_life_days: 0,
+      units_per_carton: 0,
       item_type: "product",
       product_type: "purchased",
       income_account_id: "",
@@ -704,6 +713,8 @@ export default function ProductsPage() {
       tax_code_id: product.tax_code_id || "",
       // v3.74.580: مدة الصلاحية (يوم) — null فى القاعدة = 0 فى النموذج
       shelf_life_days: product.shelf_life_days ?? 0,
+      // v3.74.586: عدد العبوات فى الكرتونة — null فى القاعدة = 0 فى النموذج
+      units_per_carton: product.units_per_carton ?? 0,
       // تحميل product_type الحالي للمنتج — يسمح للمستخدم بتعديله
       product_type: (product.product_type as any) || (product.item_type === 'service' ? 'service' : 'purchased'),
     }
@@ -1419,6 +1430,29 @@ export default function ProductsPage() {
                               {appLang === 'en'
                                 ? 'Each batch expiry is auto-calculated as receipt date + this period'
                                 : 'تُحسب صلاحية كل دفعة تلقائياً من تاريخ الاستلام + هذه المدة'}
+                            </p>
+                          </div>
+
+                          {/* v3.74.586: عدد العبوات فى الكرتونة — لعرض الكميات بالكراتين عند الاستلام والتقارير */}
+                          <div className="space-y-2">
+                            <Label htmlFor="units_per_carton">
+                              {appLang === 'en' ? 'Units per carton' : 'عدد العبوات فى الكرتونة'}
+                              <span className="mr-1 text-xs text-muted-foreground font-normal">
+                                {appLang === 'en' ? '(optional)' : '(اختياري)'}
+                              </span>
+                            </Label>
+                            <NumericInput
+                              id="units_per_carton"
+                              step="1"
+                              min={0}
+                              value={formData.units_per_carton}
+                              onChange={(val) => setFormData({ ...formData, units_per_carton: Math.max(0, Math.round(val)) })}
+                              decimalPlaces={0}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {appLang === 'en'
+                                ? 'Used to display quantities as cartons at receiving and in reports'
+                                : 'يُستخدم لعرض الكميات بالكراتين عند الاستلام والتقارير'}
                             </p>
                           </div>
                         </>

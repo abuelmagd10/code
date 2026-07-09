@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     // ═══════════════════════════════════════════════════════════════
     let lotsQuery = admin
       .from("fifo_cost_lots")
-      .select("id, product_id, branch_id, warehouse_id, lot_date, expiry_date, remaining_quantity, unit_cost")
+      .select("id, product_id, branch_id, warehouse_id, lot_date, expiry_date, remaining_quantity, original_quantity, lot_number, unit_cost")
       .eq("company_id", companyId)
       .not("expiry_date", "is", null)
       .gt("remaining_quantity", 0)
@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
 
     const [productsRes, branchesRes, warehousesRes] = await Promise.all([
       productIds.length > 0
-        ? admin.from("products").select("id, name, sku").in("id", productIds)
+        ? admin.from("products").select("id, name, sku, units_per_carton").in("id", productIds)
         : Promise.resolve({ data: [] as any[] }),
       branchIds.length > 0
         ? admin.from("branches").select("id, name, branch_name").in("id", branchIds)
@@ -134,9 +134,15 @@ export async function GET(req: NextRequest) {
         : Promise.resolve({ data: [] as any[] }),
     ])
 
-    const productMap = new Map<string, { name: string; sku: string }>()
+    const productMap = new Map<string, { name: string; sku: string; units_per_carton: number | null }>()
     for (const p of productsRes.data || []) {
-      productMap.set(String(p.id), { name: p.name || "Unknown", sku: p.sku || "" })
+      const upcRaw = Number(p.units_per_carton)
+      productMap.set(String(p.id), {
+        name: p.name || "Unknown",
+        sku: p.sku || "",
+        // v3.74.586: عدد العبوات فى الكرتونة — لعرض الكميات بالكراتين
+        units_per_carton: Number.isFinite(upcRaw) && upcRaw > 0 ? Math.round(upcRaw) : null,
+      })
     }
     const branchMap = new Map<string, string>()
     for (const b of branchesRes.data || []) {
@@ -153,11 +159,19 @@ export async function GET(req: NextRequest) {
         const product = productMap.get(String(lot.product_id))
         const qty = Number(lot.remaining_quantity || 0)
         const unitCost = Number(lot.unit_cost || 0)
+        // v3.74.586: عدد الكراتين المكافئ = الكمية المتبقية ÷ عدد العبوات فى الكرتونة (رقمين عشريين)
+        const unitsPerCarton = product?.units_per_carton ?? null
+        const cartons = unitsPerCarton ? Math.round((qty / unitsPerCarton) * 100) / 100 : null
         return {
           id: String(lot.id),
           product_id: String(lot.product_id),
           product_name: product?.name || "Unknown",
           product_sku: product?.sku || "",
+          // v3.74.586: رقم اللوط + الكمية الأصلية (لإتاحة تقسيم اللوط غير المستهلك) + الكراتين
+          lot_number: lot.lot_number ? String(lot.lot_number) : null,
+          original_quantity: Number(lot.original_quantity || 0),
+          units_per_carton: unitsPerCarton,
+          cartons,
           branch_id: lot.branch_id ? String(lot.branch_id) : null,
           branch_name: lot.branch_id ? (branchMap.get(String(lot.branch_id)) || "") : "",
           warehouse_id: lot.warehouse_id ? String(lot.warehouse_id) : null,

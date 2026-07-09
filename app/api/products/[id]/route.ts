@@ -141,6 +141,15 @@ export async function PUT(
               ? Math.round(Number(body.shelf_life_days))
               : null),
       }),
+      // v3.74.586: عدد العبوات فى الكرتونة — أعداد صحيحة موجبة فقط، وإلا null (للخدمات دائماً null)
+      ...(body.units_per_carton !== undefined && {
+        units_per_carton:
+          classification.itemType === 'service'
+            ? null
+            : (Number.isFinite(Number(body.units_per_carton)) && Number(body.units_per_carton) > 0
+              ? Math.round(Number(body.units_per_carton))
+              : null),
+      }),
     }
 
     const { data, error: dbError } = await supabase
