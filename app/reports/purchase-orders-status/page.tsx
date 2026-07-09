@@ -36,6 +36,8 @@ export default function PurchaseOrdersStatusReport() {
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
+  // v3.74.583 — عضو بدون فرع مرتبط (غير إداري) → لا بيانات
+  const [noBranch, setNoBranch] = useState(false)
 
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ'
@@ -78,24 +80,52 @@ export default function PurchaseOrdersStatusReport() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // v3.74.583 — عزل الفروع: الأدوار الإدارية ترى كل الفروع، والباقي مقيد بفرعه فقط
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).maybeSingle()
+      const isOwner = companyData?.user_id === user.id
+      const normalizedRole = String(isOwner ? "owner" : (memberData?.role || "viewer")).trim().toLowerCase().replace(/\s+/g, "_")
+      const isManagement = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
+      const userBranchId = memberData?.branch_id || null
+      if (!isManagement && !userBranchId) {
+        // عضو غير إداري بدون فرع مرتبط — لا نعرض بيانات أي فرع
+        setNoBranch(true)
+        setPurchaseOrders([])
+        setBilledData({})
+        return
+      }
+      setNoBranch(false)
+
       // ✅ جلب أوامر الشراء (تقرير تشغيلي - من purchase_orders مباشرة)
       // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       // Note: purchase_orders has no is_deleted column — soft-delete tracked via status
-      const { data: poData } = await supabase
+      let poQuery = supabase
         .from("purchase_orders")
         .select("id, po_number, po_date, due_date, supplier_id, suppliers(name), status, total_amount, currency")
         .eq("company_id", companyId)
-        .order("po_date", { ascending: false })
+      // v3.74.583 — تقييد غير الإداريين بفرعهم
+      if (!isManagement && userBranchId) poQuery = poQuery.eq("branch_id", userBranchId)
+      const { data: poData } = await poQuery.order("po_date", { ascending: false })
 
       setPurchaseOrders(poData || [])
 
       // ✅ جلب الفواتير المرتبطة (تقرير تشغيلي - من bills مباشرة)
-      const { data: billsData } = await supabase
+      let billsQuery = supabase
         .from("bills")
         .select("purchase_order_id, total_amount")
         .eq("company_id", companyId)
         .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .not("purchase_order_id", "is", null)
+      // v3.74.583 — تقييد غير الإداريين بفرعهم
+      if (!isManagement && userBranchId) billsQuery = billsQuery.eq("branch_id", userBranchId)
+      const { data: billsData } = await billsQuery
 
       const billedMap: Record<string, BilledData> = {}
       ;(billsData || []).forEach((bill: any) => {
@@ -202,6 +232,15 @@ export default function PurchaseOrdersStatusReport() {
               </p>
             </div>
           </div>
+
+          {/* v3.74.583 — تنبيه: لا يوجد فرع مرتبط بالحساب */}
+          {noBranch && (
+            <Card className="dark:bg-gray-800 dark:border-gray-700 border-orange-200">
+              <CardContent className="pt-6 text-center text-orange-600 dark:text-orange-400 font-medium">
+                {t('No branch linked to your account — contact management', 'لا يوجد فرع مرتبط بحسابك — راجع الإدارة')}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

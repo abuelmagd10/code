@@ -46,6 +46,8 @@ export default function ShippingReportPage() {
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [userBranchId, setUserBranchId] = useState<string | null>(null)
   const [canFilterBranch, setCanFilterBranch] = useState(false)
+  // v3.74.583 — عضو بدون فرع مرتبط (غير إداري) → لا بيانات
+  const [noBranch, setNoBranch] = useState(false)
 
   // Stats
   const [stats, setStats] = useState({
@@ -141,9 +143,13 @@ export default function ShippingReportPage() {
         .eq("company_id", cid)
         .eq("user_id", user?.id)
         .maybeSingle()
-      const privileged = member?.role && ['owner','admin','general_manager','gm','super_admin'].includes(String(member.role).toLowerCase())
+      // v3.74.583 — مالك الشركة إداري حتى بدون سجل عضوية
+      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", cid).maybeSingle()
+      const isOwner = !!user && !!companyData?.user_id && companyData.user_id === user.id
+      const privileged = isOwner || (member?.role && ['owner','admin','general_manager','gm','super_admin'].includes(String(member.role).toLowerCase()))
       setCanFilterBranch(!!privileged)
       setUserBranchId(member?.branch_id || null)
+      setNoBranch(!privileged && !member?.branch_id)
       if (privileged) {
         const { data: branchesData } = await supabase.from("branches").select("id, name").eq("company_id", cid).order("name")
         setBranches(branchesData || [])
@@ -174,8 +180,9 @@ export default function ShippingReportPage() {
       // Branch filter / branch isolation
       if (branchFilterId) {
         mapped = mapped.filter((s: any) => s.invoices?.branch_id === branchFilterId)
-      } else if (!privileged && member?.branch_id) {
-        mapped = mapped.filter((s: any) => s.invoices?.branch_id === member.branch_id)
+      } else if (!privileged) {
+        // v3.74.583 — غير الإداريين مقيدون بفرعهم؛ بدون فرع مرتبط → لا بيانات
+        mapped = member?.branch_id ? mapped.filter((s: any) => s.invoices?.branch_id === member.branch_id) : []
       }
 
       setShipments(mapped)
@@ -254,6 +261,15 @@ export default function ShippingReportPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* v3.74.583 — تنبيه: لا يوجد فرع مرتبط بالحساب */}
+          {noBranch && (
+            <Alert className="bg-orange-50 dark:bg-orange-900/20 border-orange-200">
+              <AlertDescription className="text-orange-800 dark:text-orange-200">
+                {t("No branch linked to your account — contact management", "لا يوجد فرع مرتبط بحسابك — راجع الإدارة")}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-4">

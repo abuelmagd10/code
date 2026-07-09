@@ -38,6 +38,8 @@ export default function PurchaseBillsDetailReportPage() {
   const [status, setStatus] = useState<string>('all')
   const [rows, setRows] = useState<BillRow[]>([])
   const [loading, setLoading] = useState(false)
+  // v3.74.583 — عضو بدون فرع مرتبط (غير إداري) → لا بيانات
+  const [noBranch, setNoBranch] = useState(false)
   const numberFmt = new Intl.NumberFormat(appLang==='en' ? 'en-EG' : 'ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   useEffect(() => {
@@ -65,6 +67,29 @@ export default function PurchaseBillsDetailReportPage() {
     setLoading(true)
     try {
       const cid = await getCompanyId(supabase)
+
+      // v3.74.583 — عزل الفروع: الأدوار الإدارية ترى كل الفروع، والباقي مقيد بفرعه فقط
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setRows([]); return }
+      const { data: memberData } = await supabase
+        .from('company_members')
+        .select('role, branch_id')
+        .eq('company_id', cid)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const { data: companyData } = await supabase.from('companies').select('user_id').eq('id', cid).maybeSingle()
+      const isOwner = companyData?.user_id === user.id
+      const normalizedRole = String(isOwner ? 'owner' : (memberData?.role || 'viewer')).trim().toLowerCase().replace(/\s+/g, '_')
+      const isManagement = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+      const userBranchId = memberData?.branch_id || null
+      if (!isManagement && !userBranchId) {
+        // عضو غير إداري بدون فرع مرتبط — لا نعرض بيانات أي فرع
+        setNoBranch(true)
+        setRows([])
+        return
+      }
+      setNoBranch(false)
+
       // ✅ جلب الفواتير (تقرير تشغيلي - من bills مباشرة)
       // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       let q = supabase
@@ -75,6 +100,8 @@ export default function PurchaseBillsDetailReportPage() {
         .gte('bill_date', fromDate)
         .lte('bill_date', toDate)
         .order('bill_date', { ascending: true })
+      // v3.74.583 — تقييد غير الإداريين بفرعهم
+      if (!isManagement && userBranchId) q = q.eq('branch_id', userBranchId)
       // ✅ Use 'received' instead of 'sent' for bills (sent is for invoices)
       if (status === 'all') q = q.in('status', ['received','partially_paid','paid'])
       else if (status === 'sent') q = q.eq('status', 'received') // Map 'sent' to 'received' for bills
@@ -121,6 +148,14 @@ export default function PurchaseBillsDetailReportPage() {
               <Button variant="outline" onClick={() => router.push('/reports')}><ArrowRight className="w-4 h-4 mr-2" />{(hydrated && appLang==='en') ? 'Back' : 'العودة'}</Button>
             </div>
           </div>
+          {/* v3.74.583 — تنبيه: لا يوجد فرع مرتبط بالحساب */}
+          {noBranch && (
+            <Card className="border-orange-200">
+              <CardContent className="pt-6 text-center text-orange-600 dark:text-orange-400 font-medium" suppressHydrationWarning>
+                {(hydrated && appLang==='en') ? 'No branch linked to your account — contact management' : 'لا يوجد فرع مرتبط بحسابك — راجع الإدارة'}
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle suppressHydrationWarning>{(hydrated && appLang==='en') ? 'Filters' : 'المرشحات'}</CardTitle>

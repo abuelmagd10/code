@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
@@ -28,6 +29,19 @@ export async function GET(req: NextRequest) {
       : type === "no_show" ? ["no_show"]
       : ["cancelled", "no_show"]
 
+    // v3.74.583 — عزل الفروع: الأدوار الإدارية ترى كل الفروع، والباقي مقيد بفرعه فقط
+    const branchFilter = buildBranchFilter(branchId || "", member.role)
+    const branchScoped = Object.keys(branchFilter).length > 0
+    if (branchScoped && !branchId) {
+      // عضو غير إداري بدون فرع مرتبط — نتيجة فارغة (لا يوجد فرع مرتبط بحسابك — راجع الإدارة)
+      return NextResponse.json({
+        success: true,
+        data: [],
+        pagination: { total: 0, page, limit, totalPages: 0 },
+        summary: { total: 0, cancelled: 0, no_show: 0, lost_revenue: 0 },
+      })
+    }
+
     let query = supabase
       .from("v_bookings_full")
       .select(
@@ -41,7 +55,8 @@ export async function GET(req: NextRequest) {
       .order("cancelled_at", { ascending: false })
       .range(offset, offset + limit - 1)
 
-    if (member.role === "manager" && branchId) {
+    // v3.74.583 — غير الإداريين يرون فرعهم فقط (كانت مقتصرة على manager)
+    if (branchScoped && branchId) {
       query = query.eq("branch_id", branchId)
     }
 
@@ -57,7 +72,8 @@ export async function GET(req: NextRequest) {
       .gte("booking_date", from)
       .lte("booking_date", to)
 
-    if (member.role === "manager" && branchId) {
+    // v3.74.583 — غير الإداريين يرون فرعهم فقط (كانت مقتصرة على manager)
+    if (branchScoped && branchId) {
       summaryQuery = summaryQuery.eq("branch_id", branchId)
     }
 

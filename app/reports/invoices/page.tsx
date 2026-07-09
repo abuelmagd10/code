@@ -26,6 +26,8 @@ export default function InvoicesReportPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [customerId, setCustomerId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
+  // v3.74.583 — عضو بدون فرع مرتبط (غير إداري) → لا بيانات
+  const [noBranch, setNoBranch] = useState(false)
   const router = useRouter()
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   useEffect(() => {
@@ -110,6 +112,28 @@ export default function InvoicesReportPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // v3.74.583 — عزل الفروع: الأدوار الإدارية ترى كل الفروع، والباقي مقيد بفرعه فقط
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: memberData } = await supabase
+        .from("company_members")
+        .select("role, branch_id")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .maybeSingle()
+      const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).maybeSingle()
+      const isOwner = companyData?.user_id === user.id
+      const normalizedRole = String(isOwner ? "owner" : (memberData?.role || "viewer")).trim().toLowerCase().replace(/\s+/g, "_")
+      const isManagement = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
+      const userBranchId = memberData?.branch_id || null
+      if (!isManagement && !userBranchId) {
+        // عضو غير إداري بدون فرع مرتبط — لا نعرض بيانات أي فرع
+        setNoBranch(true)
+        setInvoices([])
+        return
+      }
+      setNoBranch(false)
+
       // ✅ جلب الفواتير (تقرير تشغيلي - من invoices مباشرة)
       // ⚠️ ملاحظة: هذا تقرير تشغيلي وليس محاسبي رسمي
       let query = supabase
@@ -118,6 +142,9 @@ export default function InvoicesReportPage() {
         .eq("company_id", companyId)
         .or("is_deleted.is.null,is_deleted.eq.false") // ✅ استثناء الفواتير المحذوفة
         .in("status", ["sent", "partially_paid", "paid"]) // استبعاد المسودات والملغاة
+
+      // v3.74.583 — تقييد غير الإداريين بفرعهم
+      if (!isManagement && userBranchId) query = query.eq("branch_id", userBranchId)
 
       if (fromDate) query = query.gte("invoice_date", fromDate)
       if (toDate) query = query.lte("invoice_date", toDate)
@@ -206,6 +233,15 @@ export default function InvoicesReportPage() {
               </Button>
             </div>
           </div>
+
+          {/* v3.74.583 — تنبيه: لا يوجد فرع مرتبط بالحساب */}
+          {noBranch && (
+            <Card className="border-orange-200">
+              <CardContent className="pt-6 text-center text-orange-600 dark:text-orange-400 font-medium">
+                {t('No branch linked to your account — contact management', 'لا يوجد فرع مرتبط بحسابك — راجع الإدارة')}
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="print:hidden">
             <CardHeader className="pb-2">

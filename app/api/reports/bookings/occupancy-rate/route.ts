@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
+import { buildBranchFilter } from "@/lib/branch-access-control"
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,6 +15,19 @@ export async function GET(req: NextRequest) {
     })
     if (error) return error
     if (!companyId) return badRequestError("معرف الشركة مطلوب")
+
+    // v3.74.583 — عزل الفروع: الأدوار الإدارية ترى كل الفروع، والباقي مقيد بفرعه فقط
+    const branchFilter = buildBranchFilter(branchId || "", member.role)
+    const branchScoped = Object.keys(branchFilter).length > 0
+    if (branchScoped && !branchId) {
+      // عضو غير إداري بدون فرع مرتبط — نتيجة فارغة (لا يوجد فرع مرتبط بحسابك — راجع الإدارة)
+      return NextResponse.json({
+        success: true,
+        data: [],
+        raw: [],
+        summary: { total_services: 0, avg_occupancy: 0, total_active_bookings: 0 },
+      })
+    }
 
     const supabase = await createServerClient()
     const { searchParams } = new URL(req.url)
@@ -29,7 +43,8 @@ export async function GET(req: NextRequest) {
       .lte("booking_date", to)
       .order("booking_date", { ascending: true })
 
-    if (member.role === "manager" && branchId) {
+    // v3.74.583 — غير الإداريين يرون فرعهم فقط (كانت مقتصرة على manager)
+    if (branchScoped && branchId) {
       query = query.eq("branch_id", branchId)
     }
 
