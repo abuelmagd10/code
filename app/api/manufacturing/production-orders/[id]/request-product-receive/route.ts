@@ -113,6 +113,8 @@ export async function POST(
       p_priority: "high",
       p_severity: "warning",
       p_category: "approvals",
+      // v3.74.588 — طلب اعتماد استلام منتج تصنيع من المخزن (مرحلة طلب)
+      p_kind: "action",
     }
     try {
       await admin.rpc("create_notification", { ...notifBase, p_assigned_to_role: "warehouse_manager", p_event_key: `mpra_request_wm_${approval.id}` })

@@ -18,6 +18,8 @@ export type NotificationSeverity = 'info' | 'warning' | 'error' | 'critical'
 export type NotificationCategory =
   | 'finance' | 'inventory' | 'sales' | 'approvals' | 'system'
   | 'billing' | 'hr' | 'manufacturing'
+// v3.74.588 — تصنيف صريح عند الإنشاء: 'action' = مطلوب قرار/تنفيذ، 'info' = للعلم فقط
+export type NotificationKind = 'action' | 'info'
 
 export type ApprovalStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'executed' | 'cancelled'
 export type WorkflowType = 'financial' | 'inventory' | 'refund' | 'transfer' | 'adjustment'
@@ -54,6 +56,8 @@ export interface Notification {
   event_key?: string
   severity?: NotificationSeverity
   category?: NotificationCategory
+  // v3.74.588 — نوع الإشعار (إجراء مطلوب / للعلم)
+  kind?: NotificationKind
   branch_name?: string
   warehouse_name?: string
 }
@@ -144,6 +148,8 @@ export async function createNotification(params: {
   eventKey?: string
   severity?: NotificationSeverity
   category?: NotificationCategory
+  // v3.74.588 — تصنيف صريح: 'action' لطلبات الاعتماد/التنفيذ، الافتراضي 'info'
+  kind?: NotificationKind
 }) {
   const supabase = createClient()
 
@@ -175,7 +181,9 @@ export async function createNotification(params: {
     // ✅ المعاملات الجديدة
     p_event_key: params.eventKey || null,
     p_severity: normalizeNotificationSeverity(params.severity),
-    p_category: params.category || 'system'
+    p_category: params.category || 'system',
+    // v3.74.588 — تمرير نوع الإشعار (المعامل له DEFAULT 'info' في قاعدة البيانات)
+    p_kind: params.kind || 'info'
   })
 
   if (error) {
@@ -246,7 +254,32 @@ export async function getUserNotifications(params: {
     })))
   }
 
-  return data as Notification[]
+  const rows = (data || []) as Notification[]
+
+  // v3.74.588 — دالة get_user_notifications في قاعدة البيانات لا تُعيد عمود kind،
+  // فنُكمله بقراءة مباشرة خفيفة (best-effort) عبر RLS حتى تعمل شارة «إجراء مطلوب»
+  // والأرشفة التلقائية الذكية عند فتح المرجع. أي فشل هنا لا يؤثر على عرض الإشعارات.
+  if (rows.length > 0) {
+    try {
+      const { data: kindRows } = await supabase
+        .from('notifications')
+        .select('id, kind')
+        .in('id', rows.map((r) => r.id))
+      if (kindRows) {
+        const kindMap = new Map<string, string>(
+          (kindRows as { id: string; kind: string | null }[]).map((r) => [r.id, r.kind || 'info'])
+        )
+        for (const r of rows) {
+          const k = kindMap.get(r.id)
+          if (k === 'action' || k === 'info') r.kind = k
+        }
+      }
+    } catch (kindErr) {
+      console.warn('⚠️ [GET_NOTIFICATIONS] kind enrichment failed (non-fatal):', kindErr)
+    }
+  }
+
+  return rows
 }
 
 /**

@@ -231,6 +231,8 @@ export class SalesInvoicePostingCommandService {
           ),
           p_severity: normalizeNotificationSeverity("warning"),
           p_category: "inventory",
+          // v3.74.588 — طلب تأكيد إخراج البضاعة من المخزن (مرحلة تنفيذ) — يُغلق تلقائياً عبر trigger حالة المخزن
+          p_kind: "action",
         })
         if (notificationError) {
           console.warn(

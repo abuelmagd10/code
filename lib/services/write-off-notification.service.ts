@@ -80,6 +80,7 @@ export class WriteOffNotificationService {
         priority: "high",
         severity: "warning",
         category: "inventory",
+        kind: "action", // v3.74.588 — إهلاك بانتظار الاعتماد (مرحلة طلب)
         eventAction: "approval_requested",
       },
       "⚠️ [WRITE_OFF] Failed to send approval request notification:"
@@ -115,6 +116,7 @@ export class WriteOffNotificationService {
         priority: "high",
         severity: "warning",
         category: "inventory",
+        kind: "action", // v3.74.588 — إهلاك معدّل يحتاج إعادة اعتماد (مرحلة طلب)
         eventAction: "modified_reapproval_required",
       },
       "⚠️ [WRITE_OFF] Failed to send modified write-off notification:"
@@ -344,6 +346,8 @@ export class WriteOffNotificationService {
       priority: "low" | "normal" | "high" | "urgent"
       severity: "info" | "warning" | "error" | "critical"
       category: "finance" | "inventory" | "sales" | "approvals" | "system"
+      // v3.74.588 — 'action' لمراحل الطلب، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     },
     warningLabel: string
@@ -375,6 +379,8 @@ export class WriteOffNotificationService {
       priority: "low" | "normal" | "high" | "urgent"
       severity: "info" | "warning" | "error" | "critical"
       category: "finance" | "inventory" | "sales" | "approvals" | "system"
+      // v3.74.588 — 'action' لمراحل الطلب، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     }
   ) {
@@ -401,6 +407,8 @@ export class WriteOffNotificationService {
       ),
       p_severity: normalizeNotificationSeverity(payload.severity),
       p_category: payload.category,
+      // v3.74.588 — تمرير نوع الإشعار (DEFAULT 'info' في قاعدة البيانات)
+      p_kind: payload.kind || "info",
     })
 
     if (error) {

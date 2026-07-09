@@ -146,7 +146,8 @@ export async function POST(
     await notifyWarehouseStaff({
       admin, companyId,
       warehouseId:    effectiveWarehouseId,
-      notifBase,
+      // v3.74.588 — مطلوب من مسؤول المخزن إتمام الاعتماد (مرحلة طلب) — إشعار مقدم الطلب أدناه يبقى info
+      notifBase:      { ...notifBase, p_kind: "action" },
       eventKeyPrefix: "mmia_mgmt_approved",
       referenceId:    id,
     })

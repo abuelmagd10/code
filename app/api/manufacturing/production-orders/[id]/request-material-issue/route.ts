@@ -138,6 +138,8 @@ export async function POST(
       p_priority:         "high",
       p_severity:         "warning",
       p_category:         "approvals",
+      // v3.74.588 — طلب اعتماد صرف مواد من مسؤول المخزن (مرحلة طلب)
+      p_kind:             "action",
     }
     await notifyWarehouseStaff({
       admin, companyId,

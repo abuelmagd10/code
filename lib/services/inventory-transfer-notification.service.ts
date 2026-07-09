@@ -98,6 +98,7 @@ export class InventoryTransferNotificationService {
         priority: "high",
         severity: "warning",
         category: "approvals",
+        kind: "action", // v3.74.588 — طلب نقل بانتظار اعتماد الإدارة (مرحلة طلب)
         eventAction: isResubmission ? "approval_resubmitted" : "approval_requested",
       },
       "⚠️ [TRANSFER_NOTIFICATION] Approval request notification failed:"
@@ -138,6 +139,7 @@ export class InventoryTransferNotificationService {
         priority: "high",
         severity: "warning",
         category: "approvals",
+        kind: "action", // v3.74.588 — طلب نقل معدّل يحتاج إعادة اعتماد (مرحلة طلب)
         eventAction: "modified_reapproval_required",
       },
       "⚠️ [TRANSFER_NOTIFICATION] Modified notification failed:"
@@ -200,6 +202,7 @@ export class InventoryTransferNotificationService {
             params.appLang === "en"
               ? `Transfer ${params.transferNumber} has been approved by ${params.approvedByName || "Management"} and is awaiting dispatch from your warehouse.`
               : `تَمَّ اعتماد طَلَب النَّقل ${params.transferNumber} من قِبَل ${params.approvedByName || "الإدارة"} ويَنتَظِر بَدء الإِرسال من مَخزَنك.`,
+          kind: "action", // v3.74.588 — طلب بدء إرسال من مخزن المصدر (مرحلة تنفيذ)
           eventAction: "approved_source_warehouse_notified",
         },
         "⚠️ [TRANSFER_NOTIFICATION] Source warehouse approval notification failed:"
@@ -259,6 +262,7 @@ export class InventoryTransferNotificationService {
           params.appLang === "en"
             ? "A new stock transfer request requires your approval"
             : "طلب نقل مخزون جديد يحتاج إلى موافقتك",
+        kind: "action", // v3.74.588 — طلب موافقة مخزن الوجهة (مرحلة طلب)
         eventAction: "destination_request_created",
       },
       "⚠️ [TRANSFER_NOTIFICATION] Destination request notification failed:"
@@ -287,6 +291,7 @@ export class InventoryTransferNotificationService {
             params.appLang === "en"
               ? `Transfer ${params.transferNumber} has been created and is awaiting dispatch from your warehouse.`
               : `تَمَّ إِنشاء طَلَب النَّقل ${params.transferNumber} ويَنتَظِر بَدء الإِرسال من مَخزَنك.`,
+          kind: "action", // v3.74.588 — طلب بدء إرسال من مخزن المصدر (مرحلة تنفيذ)
           eventAction: "created_source_warehouse_notified",
         },
         "⚠️ [TRANSFER_NOTIFICATION] Source warehouse on-create notification failed:"
@@ -312,6 +317,7 @@ export class InventoryTransferNotificationService {
           params.appLang === "en"
             ? `Transfer ${params.transferNumber} is now in transit and your warehouse should prepare to receive it`
             : `طلب النقل ${params.transferNumber} أصبح في الطريق وعلى مخزنك الاستعداد للاستلام`,
+        kind: "action", // v3.74.588 — طلب تأكيد استلام النقل بمخزن الوجهة (مرحلة تأكيد)
         eventAction: "destination_transfer_started",
       },
       "⚠️ [TRANSFER_NOTIFICATION] Destination started notification failed:"
@@ -463,6 +469,8 @@ export class InventoryTransferNotificationService {
     payload: {
       title: string
       message: string
+      // v3.74.588 — 'action' لمراحل الطلب/التأكيد، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     },
     warningLabel: string
@@ -492,6 +500,7 @@ export class InventoryTransferNotificationService {
         priority: "high",
         severity: "info",
         category: "inventory",
+        kind: payload.kind, // v3.74.588
         eventAction: payload.eventAction,
       },
       warningLabel
@@ -513,6 +522,8 @@ export class InventoryTransferNotificationService {
     payload: {
       title: string
       message: string
+      // v3.74.588 — 'action' لمراحل الطلب/التأكيد، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     },
     warningLabel: string
@@ -546,6 +557,7 @@ export class InventoryTransferNotificationService {
         priority: "high",
         severity: "info",
         category: "inventory",
+        kind: payload.kind, // v3.74.588
         eventAction: payload.eventAction,
       },
       warningLabel
@@ -606,6 +618,8 @@ export class InventoryTransferNotificationService {
       priority: "low" | "normal" | "high" | "urgent"
       severity: "info" | "warning" | "error" | "critical"
       category: "finance" | "inventory" | "sales" | "approvals" | "system"
+      // v3.74.588 — 'action' لمراحل الطلب/التأكيد، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     },
     warningLabel: string
@@ -637,6 +651,8 @@ export class InventoryTransferNotificationService {
       priority: "low" | "normal" | "high" | "urgent"
       severity: "info" | "warning" | "error" | "critical"
       category: "finance" | "inventory" | "sales" | "approvals" | "system"
+      // v3.74.588 — 'action' لمراحل الطلب/التأكيد، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     }
   ) {
@@ -667,6 +683,8 @@ export class InventoryTransferNotificationService {
       ),
       p_severity: normalizeNotificationSeverity(payload.severity),
       p_category: payload.category,
+      // v3.74.588 — تمرير نوع الإشعار (DEFAULT 'info' في قاعدة البيانات)
+      p_kind: payload.kind || "info",
     })
 
     if (error) {

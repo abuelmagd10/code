@@ -118,6 +118,7 @@ export async function PATCH(
         priority: "high" as const,
         severity: "warning" as const,
         category: "approvals" as const,
+        kind: "action" as const, // v3.74.588 — إعادة اعتماد بعد تعديل (مرحلة طلب)
       }
       try { await createNotification({ ...notifBase, assignedToRole: "admin",           eventKey: `po_reapproval_admin_${id}` }) } catch { /* non-critical */ }
       try { await createNotification({ ...notifBase, assignedToRole: "owner",           eventKey: `po_reapproval_owner_${id}` }) } catch { /* non-critical */ }

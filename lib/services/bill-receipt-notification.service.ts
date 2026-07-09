@@ -46,6 +46,8 @@ type NotificationPayload = {
   eventKey: string
   severity?: "info" | "warning" | "error" | "critical"
   category?: "finance" | "inventory" | "sales" | "approvals" | "system"
+  // v3.74.588 — 'action' لمراحل الطلب، الافتراضي 'info'
+  kind?: "action" | "info"
 }
 
 export type BillReceiptNotificationIntent = NotificationPayload & {
@@ -232,6 +234,7 @@ export class BillReceiptNotificationService {
       ),
       severity: "warning",
       category: "inventory",
+      kind: "action", // v3.74.588 — طلب اعتماد استلام البضاعة بالمخزن (مرحلة طلب)
     })
   }
 
@@ -431,6 +434,7 @@ export class BillReceiptNotificationService {
         ),
         severity: "warning",
         category: "approvals",
+        kind: "action", // v3.74.588 — فاتورة معدّلة بانتظار إعادة الاعتماد (مرحلة طلب)
       })
     }
   }
@@ -601,6 +605,8 @@ export class BillReceiptNotificationService {
       p_event_key: payload.eventKey,
       p_severity: normalizeNotificationSeverity(payload.severity),
       p_category: payload.category || "system",
+      // v3.74.588 — تمرير نوع الإشعار (DEFAULT 'info' في قاعدة البيانات)
+      p_kind: payload.kind || "info",
     })
 
     if (error) {

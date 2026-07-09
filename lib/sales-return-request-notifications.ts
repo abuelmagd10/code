@@ -23,6 +23,8 @@ async function dispatchNotifications(
     priority?: 'normal' | 'high' | 'urgent'
     severity?: 'info' | 'warning' | 'error' | 'critical'
     category?: string
+    // v3.74.588 — تصنيف صريح: 'action' لمراحل الطلب/التأكيد، الافتراضي 'info'
+    kind?: 'action' | 'info'
     eventAction: string
   }
 ) {
@@ -49,7 +51,9 @@ async function dispatchNotifications(
         ...resolver.buildRecipientScopeSegments(recipient)
       ),
       p_severity: normalizeNotificationSeverity(params.severity),
-      p_category: params.category || 'sales'
+      p_category: params.category || 'sales',
+      // v3.74.588 — تمرير نوع الإشعار (DEFAULT 'info' في قاعدة البيانات)
+      p_kind: params.kind || 'info'
     })
   }
 }
@@ -78,6 +82,7 @@ export async function notifySalesReturnLevel1Requested(
     priority: 'high',
     severity: 'warning',
     category: 'approvals',
+    kind: 'action', // v3.74.588 — طلب اعتماد إداري (مرحلة طلب)
     eventAction: 'level_1_requested'
   })
 }
@@ -103,6 +108,7 @@ export async function notifySalesReturnWarehouseRequested(
     priority: 'high',
     severity: 'warning',
     category: 'inventory',
+    kind: 'action', // v3.74.588 — طلب تأكيد استلام المرتجع بالمخزن (مرحلة طلب)
     eventAction: 'warehouse_receipt_pending'
   })
 }

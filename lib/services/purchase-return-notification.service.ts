@@ -58,6 +58,8 @@ type NotificationPayload = {
   priority: "low" | "normal" | "high" | "urgent"
   severity: "info" | "warning" | "error" | "critical"
   category: "finance" | "inventory" | "sales" | "approvals" | "system"
+  // v3.74.588 — 'action' لمراحل الطلب، الافتراضي 'info'
+  kind?: "action" | "info"
   eventAction: string
 }
 
@@ -160,6 +162,7 @@ export class PurchaseReturnNotificationService {
         priority: "high",
         severity: "warning",
         category: "approvals",
+        kind: "action", // v3.74.588 — مرتجع مشتريات بانتظار اعتماد الإدارة (مرحلة طلب)
         eventAction: isResubmission ? "approval_resubmitted" : "approval_requested",
       },
       "⚠️ [PURCHASE_RETURN_NOTIFICATION] Failed to send approval-request notification:"
@@ -252,6 +255,7 @@ export class PurchaseReturnNotificationService {
               priority: "high",
               severity: "warning",
               category: "inventory",
+              kind: "action", // v3.74.588 — طلب تأكيد تسليم البضاعة من المخزن (مرحلة طلب)
               eventAction: "warehouse_pending",
             }
           )
@@ -785,6 +789,8 @@ export class PurchaseReturnNotificationService {
       ),
       p_severity: normalizeNotificationSeverity(payload.severity),
       p_category: payload.category,
+      // v3.74.588 — تمرير نوع الإشعار (DEFAULT 'info' في قاعدة البيانات)
+      p_kind: payload.kind || "info",
     })
 
     if (error) {

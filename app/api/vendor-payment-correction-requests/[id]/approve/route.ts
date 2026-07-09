@@ -82,7 +82,9 @@ export async function POST(
           p_priority: "high",
           p_event_key: `payments:vendor_payment_correction:${id}:approved_requester:user:${requesterId}`,
           p_severity: "info",
-          p_category: "approvals"
+          p_category: "approvals",
+          // v3.74.588 — مطلوب من مقدّم الطلب الضغط على "تنفيذ" (مرحلة تنفيذ)
+          p_kind: "action"
         })
       }
     } catch (notifErr: any) {

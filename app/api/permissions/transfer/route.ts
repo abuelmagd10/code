@@ -180,6 +180,8 @@ export async function POST(request: Request) {
               category: "approvals",
               event_key: `permission_transfer:${transfer.id}:pending:user:${approverId}`,
               status: "unread",
+              // v3.74.588 — طلب نقل صلاحيات بانتظار اعتماد مسؤول ثانٍ (مرحلة طلب)
+              kind: "action",
             })
           } catch {
             // per-approver failure is non-critical; keep notifying others.

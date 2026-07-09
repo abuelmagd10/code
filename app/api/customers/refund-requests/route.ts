@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
         p_event_key: `customer_refund_request:${refundReq.id}:created:admin`,
         p_severity: "warning",
         p_category: "approvals",
+        // v3.74.588 — طلب صرف رصيد عميل بانتظار الاعتماد (مرحلة طلب)
+        p_kind: "action",
       })
     } catch (notifErr) {
       console.warn("[CUSTOMER_REFUND_REQUEST_CREATE] notification error (non-fatal):", notifErr)

@@ -84,6 +84,7 @@ export class BankVoucherNotificationService {
         priority: "high",
         severity: "warning",
         category: "approvals",
+        kind: "action", // v3.74.588 — طلب إيداع/سحب بانتظار الاعتماد (مرحلة طلب)
         eventAction: "approval_requested",
       },
       "⚠️ [BANK_VOUCHER_NOTIFICATION] Approval-request notification failed:"
@@ -248,6 +249,8 @@ export class BankVoucherNotificationService {
       priority: "low" | "normal" | "high" | "urgent"
       severity: "info" | "warning" | "error" | "critical"
       category: "finance" | "inventory" | "sales" | "approvals" | "system"
+      // v3.74.588 — 'action' لمراحل الطلب، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     },
     warningLabel: string
@@ -278,6 +281,8 @@ export class BankVoucherNotificationService {
       priority: "low" | "normal" | "high" | "urgent"
       severity: "info" | "warning" | "error" | "critical"
       category: "finance" | "inventory" | "sales" | "approvals" | "system"
+      // v3.74.588 — 'action' لمراحل الطلب، الافتراضي 'info'
+      kind?: "action" | "info"
       eventAction: string
     }
   ) {
@@ -304,6 +309,8 @@ export class BankVoucherNotificationService {
       ),
       p_severity: normalizeNotificationSeverity(payload.severity),
       p_category: payload.category,
+      // v3.74.588 — تمرير نوع الإشعار (DEFAULT 'info' في قاعدة البيانات)
+      p_kind: payload.kind || "info",
     })
 
     if (error) {

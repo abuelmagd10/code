@@ -78,6 +78,7 @@ export async function POST(
       priority: "high" as const,
       severity: "warning" as const,
       category: "approvals" as const,
+      kind: "action" as const, // v3.74.588 — أمر إنتاج بانتظار الاعتماد (مرحلة طلب)
     }
     try { await createNotification({ ...notificationBase, assignedToRole: "admin",           eventKey: `po_submitted_admin_${id}` }) } catch { /* non-critical */ }
     try { await createNotification({ ...notificationBase, assignedToRole: "owner",           eventKey: `po_submitted_owner_${id}` }) } catch { /* non-critical */ }

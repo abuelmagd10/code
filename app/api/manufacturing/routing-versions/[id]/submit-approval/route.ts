@@ -83,6 +83,7 @@ export async function POST(
       priority: "high" as const,
       severity: "warning" as const,
       category: "approvals" as const,
+      kind: "action" as const, // v3.74.588 — نسخة مسار تصنيع بانتظار الاعتماد (مرحلة طلب)
     }
     try { await createNotification({ ...notificationBase, assignedToRole: "admin",           eventKey: `rv_submitted_admin_${id}` }) } catch { /* non-critical */ }
     try { await createNotification({ ...notificationBase, assignedToRole: "owner",           eventKey: `rv_submitted_owner_${id}` }) } catch { /* non-critical */ }

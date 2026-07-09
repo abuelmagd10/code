@@ -1096,6 +1096,12 @@ export function NotificationCenter({
                             <Badge variant="outline" className={`text-xs ${priorityStyles.badge}`}>
                               {getPriorityLabel(notification.priority)}
                             </Badge>
+                            {/* v3.74.588 — شارة "إجراء مطلوب" لإشعارات kind='action' غير المنجزة */}
+                            {notification.kind === 'action' && (notification.status === 'unread' || notification.status === 'read') && (
+                              <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700">
+                                {appLang === 'en' ? 'Action required' : 'إجراء مطلوب'}
+                              </Badge>
+                            )}
                             {notification.status === 'unread' && (
                               <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
                             )}
@@ -1205,8 +1211,14 @@ export function NotificationCenter({
                                   notification.category || undefined
                                 )
                                 if (route) {
-                                  // أرشفة الإشعار تلقائياً عند فتح المرجع
-                                  if (notification.status !== 'archived') {
+                                  // v3.74.588 — أرشفة تلقائية عند فتح المرجع لإشعارات "للعلم" فقط (kind='info')
+                                  // إشعارات "إجراء مطلوب" (kind='action') لا تُؤرشف هنا — تُغلق تلقائياً عبر
+                                  // قاعدة البيانات عند اتخاذ القرار على المستند المرجعي.
+                                  // best-effort: أي فشل في الأرشفة لا يمنع التنقل.
+                                  if (
+                                    notification.kind === 'info' &&
+                                    (notification.status === 'unread' || notification.status === 'read')
+                                  ) {
                                     try {
                                       await updateNotificationStatus(notification.id, 'archived', userId)
                                       setNotifications(prev => prev.filter(n => n.id !== notification.id))

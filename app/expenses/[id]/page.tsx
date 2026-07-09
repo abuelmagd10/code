@@ -285,7 +285,8 @@ export default function ExpenseDetailPage() {
               priority: "high",
               eventKey: `expense:${expense.id}:pending_approval:${approver.user_id}`, // ✅ deterministic per approver
               severity: "warning",
-              category: "approvals"
+              category: "approvals",
+              kind: "action" // v3.74.588 — مصروف بانتظار الاعتماد (مرحلة طلب)
             })
           }
         }

@@ -249,6 +249,8 @@ export async function POST(
           p_event_key: `finance:payment_approval:${id}:resubmitted_after_reject:role:${targetRole}:${Date.now()}`,
           p_severity: "warning",
           p_category: "approvals",
+          // v3.74.588 — دفعة معدّلة بانتظار إعادة الاعتماد (مرحلة طلب)
+          p_kind: "action",
         })
       }
     } catch (notifErr: any) {

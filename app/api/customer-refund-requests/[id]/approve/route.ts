@@ -107,7 +107,9 @@ export async function POST(
             ...resolver.buildRecipientScopeSegments(recipient)
           ),
           p_severity: normalizeNotificationSeverity("info"),
-          p_category: "finance"
+          p_category: "finance",
+          // v3.74.588 — طلب معتمد وجاهز للتنفيذ: مطلوب تنفيذ الصرف (مرحلة تنفيذ)
+          p_kind: "action"
         })
       }
 
@@ -149,7 +151,9 @@ export async function POST(
             ...resolver.buildRecipientScopeSegments(requesterRecipient)
           ),
           p_severity: normalizeNotificationSeverity("info"),
-          p_category: "approvals"
+          p_category: "approvals",
+          // v3.74.588 — مطلوب من مقدّم الطلب الضغط على "تنفيذ" (مرحلة تنفيذ)
+          p_kind: "action"
         })
       }
     } catch (notifErr: any) {

@@ -126,6 +126,8 @@ export async function POST(
             p_event_key: `payments:payment_correction:${requestId}:requested:role:${targetRole}`,
             p_severity: "warning",
             p_category: "approvals",
+            // v3.74.588 — طلب تصحيح دفعة بانتظار اعتماد الإدارة (مرحلة طلب)
+            p_kind: "action",
           })
         }
       } catch (notifErr: any) {
