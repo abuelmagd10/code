@@ -7,6 +7,7 @@ import { FileText, Download, BarChart3 } from "lucide-react"
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { canAction } from "@/lib/authz"
+import { getActiveCompanyId } from "@/lib/company" // v3.74.582
 
 // v3.74.581 — owner matrix: FINANCIAL reports (top management only → resource 'financial_reports')
 // Operational (branch-scoped) reports keep the regular 'reports' access.
@@ -37,6 +38,79 @@ const FINANCIAL_REPORT_HREFS = new Set<string>([
   "/reports/login-activity",
 ])
 
+// v3.74.582 — role-relevance filtering: each role only sees its role-relevant
+// report cards. Top management (owner/admin/general_manager) sees ALL cards —
+// financial ones still additionally guarded by the canAction('financial_reports')
+// check above. "*" = all OPERATIONAL (non-financial) report cards.
+const ALL_OPERATIONAL = "*"
+const TOP_MANAGEMENT_ROLES = new Set<string>(["owner", "admin", "general_manager"])
+const ROLE_REPORT_MAP: Record<string, string[]> = {
+  owner: [ALL_OPERATIONAL],
+  admin: [ALL_OPERATIONAL],
+  general_manager: [ALL_OPERATIONAL],
+  // manager (branch manager, supervisory view-only) + viewer → all operational cards
+  manager: [ALL_OPERATIONAL],
+  viewer: [ALL_OPERATIONAL],
+  accountant: [
+    "/reports/sales",
+    "/reports/sales-by-product",
+    "/reports/sales-invoices-detail",
+    "/reports/sales-discounts",
+    "/reports/top-products",
+    "/reports/invoices",
+    "/reports/purchases",
+    "/reports/purchase-bills-detail",
+    "/reports/purchase-orders-status",
+    "/reports/shipping",
+    "/reports/shipping-costs",
+  ],
+  store_manager: [
+    "/reports/product-expiry",
+    "/reports/warehouse-inventory",
+    "/reports/inventory-count",
+    "/reports/inventory-audit",
+  ],
+  purchasing_officer: [
+    "/reports/purchases",
+    "/reports/purchase-bills-detail",
+    "/reports/purchase-orders-status",
+    "/reports/purchase-prices-by-period",
+    "/reports/supplier-price-comparison",
+    "/reports/product-expiry",
+  ],
+  booking_officer: [
+    "/reports/bookings/revenue-by-service",
+    "/reports/bookings/bookings-by-staff",
+    "/reports/bookings/cancelled-bookings",
+    "/reports/bookings/occupancy-rate",
+    "/reports/bookings/top-services",
+    "/reports/bookings/bookings-by-branch",
+  ],
+  manufacturing_officer: [
+    "/reports/manufacturing/production-orders",
+    "/reports/manufacturing/material-consumption",
+    "/reports/manufacturing/bom-cost",
+  ],
+  // any other role (staff, hr_officer, unknown) → no report cards
+}
+
+// v3.74.582 — cards linking to non-report module pages (/journal-entries,
+// /banking, /inventory, /hr/*, /fixed-assets/*, /settings/*) are module
+// shortcuts gated by their own pages → visible to top management only.
+// Report hrefs are matched by base path (query string stripped, so
+// /reports/shipping?status=pending matches /reports/shipping).
+function isCardVisibleForRole(role: string | null, href: string | undefined): boolean {
+  if (!role) return false
+  if (TOP_MANAGEMENT_ROLES.has(role)) return true
+  if (!href) return false
+  const base = href.split("?")[0]
+  if (!base.startsWith("/reports")) return false
+  const allowed = ROLE_REPORT_MAP[role] ?? []
+  // "*" roles see every operational card; financial ones stay top-management-only
+  if (allowed.includes(ALL_OPERATIONAL)) return !FINANCIAL_REPORT_HREFS.has(base)
+  return allowed.includes(base)
+}
+
 export default function ReportsPage() {
   const supabase = useSupabase()
   const [isLoading, setIsLoading] = useState(true)
@@ -65,6 +139,32 @@ export default function ReportsPage() {
         setCanViewFinancial(await canAction(supabase, "financial_reports", "read"))
       } catch {
         setCanViewFinancial(false)
+      }
+    })()
+  }, [supabase])
+
+  // v3.74.582 — fetch the member's role FRESH on mount (never cached in
+  // localStorage) so role changes take effect on the next page load.
+  const [memberRole, setMemberRole] = useState<string | null>(null)
+  const [roleLoaded, setRoleLoaded] = useState(false)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const cid = await getActiveCompanyId(supabase)
+        if (!cid) return
+        const { data: myMember } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", cid)
+          .eq("user_id", user.id)
+          .maybeSingle()
+        setMemberRole(String(myMember?.role || ""))
+      } catch {
+        setMemberRole("")
+      } finally {
+        setRoleLoaded(true)
       }
     })()
   }, [supabase])
@@ -214,6 +314,32 @@ export default function ReportsPage() {
     },
   ]
 
+  // v3.74.582 — apply role-relevance + financial gating first (this drives the
+  // empty state), then the text search on top of that. Groups with zero visible
+  // cards do not render their headers.
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((it) => {
+        // v3.74.581 — hide financial reports from users without financial_reports access
+        if (!canViewFinancial && it.href && FINANCIAL_REPORT_HREFS.has(it.href)) return false
+        // v3.74.582 — each role only sees its role-relevant report cards
+        return isCardVisibleForRole(memberRole, it.href)
+      }),
+    }))
+    .filter((group) => group.items.length > 0)
+
+  const searchedGroups = visibleGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((it) => {
+        const s = search.trim().toLowerCase()
+        if (!s) return true
+        return it.title.toLowerCase().includes(s) || it.description.toLowerCase().includes(s)
+      }),
+    }))
+    .filter((group) => group.items.length > 0)
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -254,15 +380,17 @@ export default function ReportsPage() {
             ) : null}
           </div>
 
-          {groups.map((group) => {
-            const items = group.items.filter((it) => {
-              // v3.74.581 — hide financial reports from users without financial_reports access
-              if (!canViewFinancial && it.href && FINANCIAL_REPORT_HREFS.has(it.href)) return false
-              const s = search.trim().toLowerCase()
-              if (!s) return true
-              return it.title.toLowerCase().includes(s) || it.description.toLowerCase().includes(s)
-            })
-            if (items.length === 0) return null
+          {/* v3.74.582 — friendly empty state when no report cards remain for this role */}
+          {roleLoaded && visibleGroups.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-8 text-center">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {t("No reports available for your current role", "لا توجد تقارير متاحة لدورك الحالى")}
+              </p>
+            </div>
+          ) : null}
+
+          {searchedGroups.map((group) => {
+            const items = group.items
             return (
               <div key={group.title} className="space-y-3">
                 <h2 className="text-xl font-bold">{group.title}</h2>

@@ -17,7 +17,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { usePermissions } from "@/lib/permissions-context"
-import { canAdvancedAction, type AdvancedAction } from "@/lib/authz"
+import { canAdvancedAction, clearUserPermissionCache, type AdvancedAction } from "@/lib/authz" // v3.74.582 — clearUserPermissionCache after role/branch updates
 import Link from "next/link"
 import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy, CreditCard, Calendar, UserCheck } from "lucide-react"
 import SeatStatusBanner from "@/components/billing/SeatStatusBanner"
@@ -1110,6 +1110,9 @@ export default function UsersSettingsPage() {
 
       if (updateError) throw updateError
 
+      // v3.74.582 — branch updated; clear this tab's cached authz permissions for the member
+      clearUserPermissionCache(editingMemberId)
+
       // ✅ تحديث user_branch_access - فرع واحد فقط
       // حذف جميع الفروع القديمة أولاً
       await supabase
@@ -1375,6 +1378,10 @@ export default function UsersSettingsPage() {
         .update({ role })
         .eq("id", id)
       if (error) { setActionError(error.message || t("Update failed", "تعذر التحديث")); return }
+
+      // v3.74.582 — drop this member's cached authz permissions in this tab so
+      // the role change applies immediately (cache otherwise expires after 60s)
+      clearUserPermissionCache(m.user_id)
 
       // إنشاء إشعار للمستخدم عند تغيير دوره
       if (oldRole !== role) {
@@ -1826,6 +1833,8 @@ export default function UsersSettingsPage() {
                               const res = await fetch("/api/member-role", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId, userId: m.user_id, role: nr }) })
                               const js = await res.json()
                               if (res.ok && js?.ok) {
+                                // v3.74.582 — role changed via API route; clear this tab's authz cache for the member
+                                clearUserPermissionCache(m.user_id)
                                 setMembers((prev) => prev.map((x) => x.user_id === m.user_id ? { ...x, role: nr } : x))
                                 toastActionSuccess(toast, t("Update", "تحديث"), t("Role", "الدور"))
 
