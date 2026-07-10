@@ -386,7 +386,80 @@ export function BookingAddons({
         </p>
       )}
 
-      {/* ── Section 1: Bundle items ── */}
+      {/* ── Section 1: Walk-in extras ──
+          v3.74.594 — نُقل هذا القسم أعلى الأصناف المرفقة (قرار المالك):
+          القائمة المنسدلة تحتاج مساحة أسفلها لتنفرد، وكان القسم آخر
+          الصفحة فتُحشر القائمة فى المساحة الضيقة المتبقية. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Package className="w-4 h-4 text-emerald-500" />
+            {t("منتجات إضافية للبيع", "Walk-in Extras")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!readOnly && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+              <div className="md:col-span-2">
+                <label className="text-xs text-muted-foreground">{t("المنتج", "Product")}</label>
+                {/* v3.74.591 — نفس تجربة اختيار المنتج فى فاتورة البيع */}
+                <ProductSearchSelect
+                  products={products}
+                  value={pickedProductId}
+                  onValueChange={setPickedProductId}
+                  lang={lang}
+                  productsOnly
+                  showPrice
+                  showStock
+                  currency={typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">{t("الكمية", "Qty")}</label>
+                <Input type="number" min={0} step={1} value={extraQty} onChange={(e) => setExtraQty(e.target.value)} />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">{t("السعر", "Unit Price")}</label>
+                  <Input type="number" min={0} step="0.01" value={extraPrice} onChange={(e) => setExtraPrice(e.target.value)} />
+                </div>
+                <Button onClick={addExtra} disabled={!pickedProductId} className="mb-0 self-end">
+                  <Plus className="w-4 h-4" /> {t("إضافة", "Add")}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {extras.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t("لا توجد منتجات إضافية", "No extras added")}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {extras.map((ex) => (
+                <li key={ex.id} className="flex items-center gap-3 border-b last:border-0 py-2">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{ex.product_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {ex.quantity} × {ex.unit_price.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="text-sm tabular-nums font-medium">
+                    {ex.line_total.toFixed(2)}
+                  </div>
+                  {!readOnly && (
+                    <Button variant="ghost" size="sm" onClick={() => removeExtra(ex.id)}>
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Section 2: Bundle items ── */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -428,77 +501,6 @@ export function BookingAddons({
                       : bi.price_handling === "free_gift" ? t("هدية", "Gift")
                       : t(`+ ${bi.child_unit_price.toFixed(2)}`, `+ ${bi.child_unit_price.toFixed(2)}`)}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Section 2: Walk-in extras ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Package className="w-4 h-4 text-emerald-500" />
-            {t("منتجات إضافية للبيع", "Walk-in Extras")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!readOnly && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
-              <div className="md:col-span-2">
-                <label className="text-xs text-muted-foreground">{t("المنتج", "Product")}</label>
-                {/* v3.74.591 — نفس تجربة اختيار المنتج فى فاتورة البيع */}
-                <ProductSearchSelect
-                  products={products}
-                  value={pickedProductId}
-                  onValueChange={setPickedProductId}
-                  lang={lang}
-                  productsOnly
-                  showPrice
-                  showStock
-                  currency={typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"}
-                  side="top"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">{t("الكمية", "Qty")}</label>
-                <Input type="number" min={0} step={1} value={extraQty} onChange={(e) => setExtraQty(e.target.value)} />
-              </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-xs text-muted-foreground">{t("السعر", "Unit Price")}</label>
-                  <Input type="number" min={0} step="0.01" value={extraPrice} onChange={(e) => setExtraPrice(e.target.value)} />
-                </div>
-                <Button onClick={addExtra} disabled={!pickedProductId} className="mb-0 self-end">
-                  <Plus className="w-4 h-4" /> {t("إضافة", "Add")}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {extras.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t("لا توجد منتجات إضافية", "No extras added")}
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {extras.map((ex) => (
-                <li key={ex.id} className="flex items-center gap-3 border-b last:border-0 py-2">
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{ex.product_name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {ex.quantity} × {ex.unit_price.toFixed(2)}
-                    </div>
-                  </div>
-                  <div className="text-sm tabular-nums font-medium">
-                    {ex.line_total.toFixed(2)}
-                  </div>
-                  {!readOnly && (
-                    <Button variant="ghost" size="sm" onClick={() => removeExtra(ex.id)}>
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
-                  )}
                 </li>
               ))}
             </ul>
