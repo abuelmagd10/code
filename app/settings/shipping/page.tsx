@@ -54,6 +54,15 @@ export default function ShippingSettingsPage() {
   const [showSecret, setShowSecret] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
+  // v3.74.598 — ربط اختيارى بفرع واحد من نموذج الإضافة/التعديل
+  // ("" = بدون ربط: تظهر لكل الفروع)
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [linkedBranchId, setLinkedBranchId] = useState<string>("")
+
+  // منافذ البيع الخاصة بالفروع (تلقائية — لا تُحذف واسمها يتزامن مع الفرع)
+  const isBranchOutlet = (p: ShippingProvider | null) =>
+    !!p && String(p.provider_code || '').toLowerCase() === 'branch_outlet'
+
   // Form state
   const [formData, setFormData] = useState({
     provider_name: "",
@@ -220,16 +229,34 @@ export default function ShippingSettingsPage() {
 
       if (error) throw error
       let list = data || []
-      if (!privileged && userBranchId) {
+      if (!privileged && list.length > 0) {
+        // v3.74.598 — الدلالة الجديدة: الشركة بدون أى ربط فروع = عامة (تظهر للجميع)،
+        // والشركة المرتبطة تظهر فقط لفروعها المرتبطة.
+        const providerIds: string[] = list.map((p: ShippingProvider) => String(p.id))
         const { data: links } = await supabase
           .from("branch_shipping_providers")
-          .select("shipping_provider_id")
-          .eq("branch_id", userBranchId)
+          .select("shipping_provider_id, branch_id")
+          .in("shipping_provider_id", providerIds)
           .or("is_active.is.null,is_active.eq.true")
-        const allowedIds = new Set((links || []).map((r: { shipping_provider_id: string }) => r.shipping_provider_id))
-        list = list.filter((p: ShippingProvider) => allowedIds.has(p.id))
+        const mappedIds = new Set<string>((links || []).map((r: { shipping_provider_id: string }) => String(r.shipping_provider_id)))
+        const allowedIds = new Set<string>(
+          (links || [])
+            .filter((r: { branch_id: string }) => userBranchId && String(r.branch_id) === String(userBranchId))
+            .map((r: { shipping_provider_id: string }) => String(r.shipping_provider_id))
+        )
+        list = list.filter((p: ShippingProvider) => !mappedIds.has(String(p.id)) || allowedIds.has(String(p.id)))
       }
       setProviders(list)
+
+      // قائمة الفروع لحقل الربط الاختيارى فى نموذج الإضافة/التعديل
+      if (privileged || canWrite) {
+        const { data: branchesData } = await supabase
+          .from("branches")
+          .select("id, name")
+          .eq("company_id", cid)
+          .order("name")
+        setBranches(branchesData || [])
+      }
       if (canWrite) loadBranchMapping()
     } catch (err) {
       console.error("Error loading shipping providers:", err)
@@ -248,6 +275,7 @@ export default function ShippingSettingsPage() {
     setShowApiKey(false)
     setShowSecret(false)
     setTestResult(null)
+    setLinkedBranchId("")
     setIsDialogOpen(true)
   }
 
@@ -273,6 +301,24 @@ export default function ShippingSettingsPage() {
     setShowSecret(false)
     setTestResult(null)
     setIsDialogOpen(true)
+
+    // تحميل الربط الحالى بالفرع (إن وجد) — نموذج ربط بفرع واحد
+    setLinkedBranchId("")
+    ;(async () => {
+      try {
+        const { data: linkRows } = await supabase
+          .from("branch_shipping_providers")
+          .select("branch_id")
+          .eq("shipping_provider_id", provider.id)
+          .or("is_active.is.null,is_active.eq.true")
+          .limit(1)
+        if (linkRows && linkRows.length > 0) {
+          setLinkedBranchId(String(linkRows[0].branch_id))
+        }
+      } catch (e) {
+        console.error("load provider branch link", e)
+      }
+    })()
   }
 
   const handleSave = async () => {
@@ -304,19 +350,53 @@ export default function ShippingSettingsPage() {
         updated_at: new Date().toISOString()
       }
 
+      let savedProviderId: string | null = null
+
       if (editingProvider) {
         const { error } = await supabase
           .from("shipping_providers")
           .update(providerData)
           .eq("id", editingProvider.id)
         if (error) throw error
+        savedProviderId = editingProvider.id
         toastActionSuccess(toast, t("Update", "التحديث"), t("Shipping Provider", "شركة الشحن"))
       } else {
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from("shipping_providers")
           .insert({ ...providerData, created_by: user?.id })
+          .select("id")
+          .single()
         if (error) throw error
+        savedProviderId = inserted?.id ? String(inserted.id) : null
         toastActionSuccess(toast, t("Create", "الإنشاء"), t("Shipping Provider", "شركة الشحن"))
+      }
+
+      // v3.74.598 — مزامنة الربط الاختيارى بالفرع (نموذج ربط بفرع واحد):
+      // اختيار فرع = صف واحد فى branch_shipping_providers ويُزال أى ربط بفروع أخرى،
+      // وبدون اختيار = حذف كل صفوف الربط لتصبح الشركة عامة (تظهر لكل الفروع).
+      // منافذ البيع الخاصة بالفروع تُدار تلقائياً ولا نلمس ربطها من هنا.
+      if (savedProviderId && !isBranchOutlet(editingProvider)) {
+        try {
+          const { error: unlinkError } = await supabase
+            .from("branch_shipping_providers")
+            .delete()
+            .eq("shipping_provider_id", savedProviderId)
+          if (unlinkError) throw unlinkError
+          if (linkedBranchId) {
+            const { error: linkError } = await supabase
+              .from("branch_shipping_providers")
+              .insert({
+                branch_id: linkedBranchId,
+                shipping_provider_id: savedProviderId,
+                is_active: true,
+                updated_at: new Date().toISOString()
+              })
+            if (linkError) throw linkError
+          }
+        } catch (linkErr: any) {
+          console.error("Error syncing branch link:", linkErr)
+          toastActionError(toast, t("Branch link", "ربط الفرع"), t("Provider", "شركة الشحن"), linkErr?.message)
+        }
       }
 
       setIsDialogOpen(false)
@@ -331,6 +411,17 @@ export default function ShippingSettingsPage() {
   }
 
   const handleDelete = async (id: string) => {
+    // منافذ البيع الخاصة بالفروع تلقائية ولا يمكن حذفها (قاعدة البيانات تمنع الحذف أيضاً)
+    const target = providers.find((p) => p.id === id) || null
+    if (isBranchOutlet(target)) {
+      toastActionError(
+        toast,
+        t("Delete", "الحذف"),
+        t("Provider", "شركة الشحن"),
+        t("Branch sales outlets are automatic and cannot be deleted. They are deactivated automatically with their branch.", "منافذ البيع الخاصة بالفروع تلقائية ولا يمكن حذفها، ويتم تعطيلها تلقائياً مع تعطيل الفرع.")
+      )
+      return
+    }
     if (!confirm(t("Are you sure you want to delete this provider?", "هل أنت متأكد من حذف شركة الشحن هذه؟"))) return
 
     try {
@@ -460,13 +551,13 @@ export default function ShippingSettingsPage() {
                       <strong>{t("External shipping company:", "شركة شحن خارجية:")}</strong> {t("Add the company name (e.g., Aramex, SMSA) and enter API details if available for integration.", "أضف اسم الشركة (مثل أرامكس، سمسا) وأدخل بيانات API إن وجدت للتكامل.")}
                     </li>
                     <li>
-                      <strong>{t("Branch Pickup:", "الاستلام من الموقع:")}</strong> {t("Add an entry named 'Branch Pickup' or 'استلام من الموقع' with any value in the API URL field (e.g., 'manual').", "أضف شركة باسم 'استلام من الموقع' وضع أي قيمة في حقل رابط API (مثل 'manual').")}
+                      <strong>{t("Internal Delivery (optional):", "مندوب داخلى (اختيارى):")}</strong> {t("Add an entry named 'Internal Delivery' or 'مندوب داخلى' for your own delivery staff.", "أضف شركة باسم 'مندوب داخلى' لطاقم التوصيل الخاص بك.")}
                     </li>
                     <li>
-                      <strong>{t("Internal Delivery:", "مندوب داخلي:")}</strong> {t("Add an entry named 'Internal Delivery' or 'مندوب داخلي' for your own delivery staff.", "أضف شركة باسم 'مندوب داخلي' لطاقم التوصيل الخاص بك.")}
+                      <strong>{t("Branch sales outlets are automatic:", "منافذ البيع الخاصة بالفروع تلقائية:")}</strong> {t("An outlet is created automatically with each branch, renamed when the branch is renamed, deactivated when the branch is deactivated, and cannot be deleted. No manual entry is needed for branch pickup.", "يُنشأ منفذ البيع تلقائياً مع كل فرع، ويتغير اسمه مع تغيير اسم الفرع، ويُعطّل مع تعطيل الفرع، ولا يمكن حذفه. لا حاجة لإنشاء إدخال يدوى للاستلام من الفرع.")}
                     </li>
                     <li>
-                      <strong>{t("Express/Standard Shipping:", "شحن سريع/عادي:")}</strong> {t("You can create separate entries for different service levels.", "يمكنك إنشاء إدخالات منفصلة لمستويات الخدمة المختلفة.")}
+                      <strong>{t("Link to a branch (optional):", "الربط بفرع (اختيارى):")}</strong> {t("From the add/edit form you can link a provider to a specific branch; unlinked providers appear for all branches.", "من نموذج الإضافة/التعديل يمكنك ربط الشركة بفرع محدد؛ الشركات غير المرتبطة تظهر لكل الفروع.")}
                     </li>
                   </ul>
                   <p className="text-xs text-blue-600 dark:text-blue-300 mt-3 flex items-center gap-1">
@@ -487,7 +578,7 @@ export default function ShippingSettingsPage() {
                   {t("Branch–Shipping Provider Mapping", "ربط شركات الشحن بالفروع")}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  {t("Choose which shipping providers are available per branch. Branch users will only see linked providers.", "حدد شركات الشحن المتاحة لكل فرع. مستخدمو الفرع يرون فقط الشركات المرتبطة بفرعهم.")}
+                  {t("Choose which shipping providers are available per branch. Branch users see providers linked to their branch plus unlinked (global) providers.", "حدد شركات الشحن المتاحة لكل فرع. مستخدمو الفرع يرون الشركات المرتبطة بفرعهم بالإضافة إلى الشركات غير المرتبطة بأى فرع (العامة).")}
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -550,7 +641,7 @@ export default function ShippingSettingsPage() {
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    {t("No branch–provider links yet. Add links so branch users only see allowed providers. If none are set, all providers remain visible (backward compatible).", "لا توجد روابط فرع–شركة بعد. أضف روابط حتى يرى مستخدمو الفرع فقط الشركات المسموح بها. إن لم تُضف أي ربط تبقى كل الشركات ظاهرة (توافق رجعي).")}
+                    {t("No branch–provider links yet. An unlinked provider is global and appears for all branches; once linked, it appears only for its linked branches.", "لا توجد روابط فرع–شركة بعد. الشركة غير المرتبطة عامة وتظهر لكل الفروع؛ وبمجرد ربطها تظهر فقط لفروعها المرتبطة.")}
                   </p>
                 )}
               </CardContent>
@@ -607,6 +698,12 @@ export default function ShippingSettingsPage() {
 
                     {/* شارات البيئة ونوع المصادقة */}
                     <div className="flex flex-wrap gap-2 mb-3">
+                      {isBranchOutlet(provider) && (
+                        <Badge variant="outline" className="border-purple-500 text-purple-600">
+                          <Building2 className="w-3 h-3 ml-1" />
+                          {t("Automatic — branch outlet", "تلقائى — منفذ فرع")}
+                        </Badge>
+                      )}
                       <Badge variant="outline" className={provider.environment === 'production' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
                         {provider.environment === 'production' ? (
                           <><Shield className="w-3 h-3 ml-1" />{t("Production", "إنتاج")}</>
@@ -662,9 +759,12 @@ export default function ShippingSettingsPage() {
                           <Button variant="ghost" size="sm" onClick={() => openEditDialog(provider)}>
                             <Edit2 className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => handleDelete(provider.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          {/* منافذ البيع الخاصة بالفروع لا تُحذف (قاعدة البيانات تمنع الحذف أيضاً) */}
+                          {!isBranchOutlet(provider) && (
+                            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => handleDelete(provider.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -690,13 +790,36 @@ export default function ShippingSettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>{t("Provider Name", "اسم شركة الشحن")} <span className="text-red-500">*</span></Label>
-                  <Input value={formData.provider_name} onChange={(e) => setFormData({ ...formData, provider_name: e.target.value })} placeholder={t("e.g. Aramex, DHL", "مثال: أرامكس، DHL")} />
+                  <Input value={formData.provider_name} onChange={(e) => setFormData({ ...formData, provider_name: e.target.value })} placeholder={t("e.g. Aramex, DHL", "مثال: أرامكس، DHL")} disabled={isBranchOutlet(editingProvider)} />
+                  {isBranchOutlet(editingProvider) && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {t("Outlet name is synced automatically with the branch name and cannot be edited here.", "اسم منفذ البيع يتزامن تلقائياً مع اسم الفرع ولا يمكن تعديله من هنا.")}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label>{t("Provider Code", "رمز الشركة")}</Label>
-                  <Input value={formData.provider_code} onChange={(e) => setFormData({ ...formData, provider_code: e.target.value })} placeholder="aramex, bosta, dhl, manual" />
+                  <Input value={formData.provider_code} onChange={(e) => setFormData({ ...formData, provider_code: e.target.value })} placeholder="aramex, bosta, dhl, manual" disabled={isBranchOutlet(editingProvider)} />
                 </div>
               </div>
+
+              {/* ربط اختيارى بفرع — منافذ البيع الخاصة بالفروع تُدار تلقائياً */}
+              {!isBranchOutlet(editingProvider) && (
+                <div>
+                  <Label>{t("Link to a branch (optional) — unlinked appears for all branches", "ربط بفرع (اختيارى) — بدون ربط تظهر لكل الفروع")}</Label>
+                  <Select value={linkedBranchId || "none"} onValueChange={(v) => setLinkedBranchId(v === "none" ? "" : v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("All branches (no link)", "كل الفروع (بدون ربط)")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("All branches (no link)", "كل الفروع (بدون ربط)")}</SelectItem>
+                      {branches.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* نوع المصادقة والبيئة */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

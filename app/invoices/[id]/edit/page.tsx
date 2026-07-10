@@ -348,7 +348,7 @@ export default function EditInvoicePage() {
     if (!shippingProviderId) {
       toast({
         title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        description: appLang === 'en' ? "Please select a shipping company or sales outlet" : "يرجى اختيار شركة الشحن أو منفذ البيع",
         variant: "destructive"
       })
       return
@@ -1314,7 +1314,7 @@ export default function EditInvoicePage() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="flex items-center gap-1">
-                      {appLang === 'en' ? 'Shipping Company:' : 'شركة الشحن:'}
+                      {appLang === 'en' ? 'Shipping Company & Sales Outlets:' : 'شركة الشحن ومنافذ البيع:'}
                       <span className="text-red-500">*</span>
                     </span>
                     <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>

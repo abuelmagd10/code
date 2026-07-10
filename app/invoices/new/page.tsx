@@ -751,7 +751,7 @@ export default function NewInvoicePage() {
     if (!shippingProviderId) {
       toast({
         title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        description: appLang === 'en' ? "Please select a shipping company or sales outlet" : "يرجى اختيار شركة الشحن أو منفذ البيع",
         variant: "destructive"
       })
       return
@@ -1844,18 +1844,18 @@ export default function NewInvoicePage() {
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                       <Label suppressHydrationWarning className="text-base font-semibold text-gray-900 dark:text-white">
-                        {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                        {appLang === 'en' ? 'Shipping Company & Sales Outlets' : 'شركة الشحن ومنافذ البيع'}
                         <span className="text-red-500 ml-1">*</span>
                       </Label>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2" data-ai-help="invoices.shipping_provider">
                         <Label suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-                          {appLang === 'en' ? 'Select Shipping Company' : 'اختر شركة الشحن'}
+                          {appLang === 'en' ? 'Select Shipping Company or Sales Outlet' : 'اختر شركة الشحن أو منفذ البيع'}
                         </Label>
                         <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>
                           <SelectTrigger className={`bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600 ${!shippingProviderId ? 'border-red-300 dark:border-red-700' : ''}`}>
-                            <SelectValue placeholder={appLang === 'en' ? 'Choose shipping company...' : 'اختر شركة الشحن...'} />
+                            <SelectValue placeholder={appLang === 'en' ? 'Choose shipping company or sales outlet...' : 'اختر شركة الشحن أو منفذ البيع...'} />
                           </SelectTrigger>
                           <SelectContent className="bg-white dark:bg-slate-900">
                             <SelectItem value="none" className="hover:bg-gray-100 dark:hover:bg-slate-800">

@@ -429,7 +429,7 @@ export default function EditSalesOrderPage() {
     if (!shippingProviderId) {
       toast({
         title: appLang === 'en' ? "Shipping Required" : "الشحن مطلوب",
-        description: appLang === 'en' ? "Please select a shipping company" : "يرجى اختيار شركة الشحن",
+        description: appLang === 'en' ? "Please select a shipping company or sales outlet" : "يرجى اختيار شركة الشحن أو منفذ البيع",
         variant: "destructive"
       })
       return
@@ -1010,7 +1010,7 @@ export default function EditSalesOrderPage() {
                   </div>
                   <div className="space-y-2">
                     <Label suppressHydrationWarning className="flex items-center gap-1">
-                      {appLang === 'en' ? 'Shipping Company' : 'شركة الشحن'}
+                      {appLang === 'en' ? 'Shipping Company & Sales Outlets' : 'شركة الشحن ومنافذ البيع'}
                       <span className="text-red-500">*</span>
                     </Label>
                     <Select value={shippingProviderId || "none"} onValueChange={(v) => setShippingProviderId(v === "none" ? "" : v)}>

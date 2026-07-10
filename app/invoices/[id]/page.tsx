@@ -1455,15 +1455,38 @@ export default function InvoiceDetailPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      // Load shipping providers
+      // Load shipping providers & sales outlets (active only).
+      // v3.74.598 — role-scoped list: privileged roles (owner/admin/GM) see all
+      // company providers; other roles see providers mapped to their branch
+      // (branch_shipping_providers) plus unmapped (global) providers.
       const { data: providers } = await supabase
         .from("shipping_providers")
         .select("*")
         .eq("company_id", companyId)
         .eq("is_active", true)
-      setShippingProviders(providers || [])
-      if (providers && providers.length > 0) {
-        setSelectedProviderId(providers[0].id)
+
+      let providerList = providers || []
+      if (!isPrivilegedUser && providerList.length > 0) {
+        const providerIds: string[] = providerList.map((p: any) => String(p.id))
+        const { data: links } = await supabase
+          .from("branch_shipping_providers")
+          .select("shipping_provider_id, branch_id")
+          .in("shipping_provider_id", providerIds)
+          .or("is_active.is.null,is_active.eq.true")
+        const mappedIds = new Set<string>(
+          (links || []).map((l: { shipping_provider_id: string }) => String(l.shipping_provider_id))
+        )
+        const allowedForBranch = new Set<string>(
+          (links || [])
+            .filter((l: { branch_id: string }) => userBranchId && String(l.branch_id) === String(userBranchId))
+            .map((l: { shipping_provider_id: string }) => String(l.shipping_provider_id))
+        )
+        providerList = providerList.filter((p: any) => !mappedIds.has(String(p.id)) || allowedForBranch.has(String(p.id)))
+      }
+
+      setShippingProviders(providerList)
+      if (providerList.length > 0) {
+        setSelectedProviderId(providerList[0].id)
       }
 
       // Pre-fill recipient data from customer
@@ -4759,7 +4782,7 @@ export default function InvoiceDetailPage() {
               <div className="space-y-4 py-2">
                 {/* Provider Selection */}
                 <div className="space-y-2">
-                  <Label>{appLang === 'en' ? 'Shipping Provider' : 'شركة الشحن'}</Label>
+                  <Label>{appLang === 'en' ? 'Shipping Company & Sales Outlets' : 'شركة الشحن ومنافذ البيع'}</Label>
                   {shippingProviders.length === 0 ? (
                     <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-700 dark:text-amber-300 text-sm">
                       {appLang === 'en' ? 'No shipping providers configured. Please add one in Settings → Shipping.' : 'لم يتم إعداد شركات شحن. يرجى إضافة واحدة من الإعدادات ← الشحن.'}
