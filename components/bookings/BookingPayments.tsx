@@ -167,8 +167,19 @@ export function BookingPayments({
         </div>
       )}
 
-      {/* Add payment form */}
-      {canEdit && outstanding > 0 && (
+      {/* v3.74.595 — تسجيل الدفعات من صفحة الحجز موقوف (قرار حوكمة):
+          الدورة الصحيحة: تنفيذ أمر الحجز ← فاتورة بيع مرتبطة ← محاسب
+          الفرع يستكمل التحصيل من الفاتورة عبر دورة المدفوعات. الخادم
+          والـRPC يرفضان أيضاً (add_booking_payment_atomic معطلة). */}
+      {outstanding > 0 && (
+        <p className="text-xs text-blue-800 dark:text-blue-200 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded px-3 py-2">
+          ℹ️ {t(
+            "التحصيل يتم بعد تنفيذ الحجز من فاتورة البيع المرتبطة — عبر محاسب الفرع فى دورة المدفوعات",
+            "Collection happens after execution on the linked sales invoice — by the branch accountant through the payments cycle",
+          )}
+        </p>
+      )}
+      {false && canEdit && outstanding > 0 && (
         <>
           {!showForm ? (
             <Button

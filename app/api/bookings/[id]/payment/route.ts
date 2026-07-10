@@ -27,6 +27,19 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const { user, companyId } = context!
     const { id } = await params
 
+    // v3.74.595 — قرار حوكمة: الدفعات لا تُسجل من صفحة الحجز.
+    // الدورة: تنفيذ ← فاتورة بيع مرتبطة ← محاسب الفرع يحصّل من الفاتورة
+    // عبر دورة المدفوعات. الـRPC فى القاعدة معطلة أيضاً (دفاع مزدوج).
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "الدفعات لا تُسجل من صفحة الحجز — بعد تنفيذ أمر الحجز تُنشأ فاتورة بيع مرتبطة ويستكمل محاسب الفرع التحصيل منها عبر دورة المدفوعات",
+      },
+      { status: 410 },
+    )
+
+    // eslint-disable-next-line no-unreachable
     const body = await parseJsonBody(req, addPaymentSchema)
 
     const supabase = await createClient()
