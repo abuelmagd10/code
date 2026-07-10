@@ -54,6 +54,12 @@ interface ProductSearchSelectProps {
    * If provided, this overrides quantity_on_hand for stock display
    */
   branchStockMap?: Record<string, number>
+  /**
+   * v3.74.592 — اتجاه فتح القائمة. مرر 'top' عندما يكون الحقل قرب أسفل
+   * الصفحة (مثل قسم منتجات البيع فى صفحة الحجز) حتى لا تُحشر القائمة
+   * فى المساحة الضيقة أسفل الحقل.
+   */
+  side?: 'top' | 'bottom' | 'left' | 'right'
 }
 
 /**
@@ -77,6 +83,7 @@ export function ProductSearchSelect({
   lang = 'ar',
   productsOnly = false,
   branchStockMap,
+  side,
 }: ProductSearchSelectProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'service'>(productsOnly ? 'product' : 'all')
@@ -159,7 +166,7 @@ export function ProductSearchSelect({
           ) : (placeholder || labels.placeholder)}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className="min-w-[350px]">
+      <SelectContent className="min-w-[350px]" side={side}>
         <div
           className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 space-y-2"
           onPointerDown={(e) => e.stopPropagation()}

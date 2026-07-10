@@ -458,6 +458,7 @@ export function BookingAddons({
                   showPrice
                   showStock
                   currency={typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"}
+                  side="top"
                 />
               </div>
               <div>
