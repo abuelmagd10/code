@@ -1,0 +1,31 @@
+-- =====================================================================
+-- v3.74.601 — Fix latent crash in invoice amendment trigger + shield
+-- the booking resync from double-governance.
+-- (applied to production via Supabase MCP on 2026-07-10; mirrored here.
+--  Authoritative full text = MCP migration
+--  v3_74_601_fix_invoice_amendment_trigger_and_resync.)
+--
+-- Bug (surfaced by the booking addons post-execution edit, 42703 →
+-- add_booking_extra_item 400): invoice_amendment_reset_approval_trg
+-- computed the requester as
+--   COALESCE(NEW.last_edited_by_user_id, NEW.created_by_user_id, NEW.created_by)
+-- but invoices carries ONLY created_by_user_id — the other two columns
+-- exist on BILLS (the function was copied from the bills counterpart).
+-- Any material change to a draft sales invoice outside a skip-config
+-- path would crash. Fixed: v_requester := NEW.created_by_user_id.
+--
+-- Also: resync_booking_invoice now sets
+--   app.skip_discount_approval = 'booking_resync' (transaction-local)
+-- before touching the invoice. Booking-side edits carry their OWN
+-- governance (addons role gates + accountant/management notifications
+-- + booking discount approvals); opening a parallel sales_invoice
+-- amendment approval for the same change would double-govern.
+-- Bonus: the resync's 4 notifications now pass p_kind
+-- ('action' for the accountant, 'info' for owner/GM/manager) per the
+-- v3.74.588 smart-notification lifecycle.
+-- =====================================================================
+
+-- See MCP migration for the full CREATE OR REPLACE bodies of:
+--   * public.invoice_amendment_reset_approval_trg()  (requester fix)
+--   * public.resync_booking_invoice(uuid, uuid, uuid) (skip flag +
+--     notification kinds)
