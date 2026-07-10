@@ -105,6 +105,11 @@ export default function EditInvoicePage() {
   // 🔐 ERP Access Control - سياق المستخدم
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [canOverrideContext, setCanOverrideContext] = useState(false)
+  // v3.74.603 — only these roles may edit a sales-order-linked invoice
+  // directly (their direct-creation path); everyone else edits the
+  // sales order itself.
+  const SO_EDIT_PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+  const isPrivilegedForSoEdit = SO_EDIT_PRIVILEGED_ROLES.includes(userContext?.role || '')
 
   const [formData, setFormData] = useState({
     customer_id: "",
@@ -226,15 +231,24 @@ export default function EditInvoicePage() {
         // The booking order (bookings.invoice_id → this invoice) is the
         // source of truth; the render below swaps the form for a
         // blocking notice with a link to the booking.
-        const { data: bkgRows } = await supabase
-          .from("bookings")
-          .select("id, booking_no")
-          .eq("company_id", loadCompanyId)
-          .eq("invoice_id", invoiceId)
-          .limit(1)
-        if (bkgRows && bkgRows.length > 0) {
-          setLinkedBookingId(bkgRows[0].id)
-          setLinkedBookingNo(bkgRows[0].booking_no || null)
+        // v3.74.603 — linkage is now resolved via the SECURITY DEFINER
+        // RPC get_invoice_source instead of a direct bookings SELECT:
+        // RLS hid the booking row for some roles (e.g. accountant), so
+        // the form rendered when it should have been blocked. The RPC
+        // also returns the linked sales order (id + so_number).
+        let invoiceSource: { booking_id?: string | null; booking_no?: string | null; sales_order_id?: string | null; so_number?: string | null } | null = null
+        try {
+          const { data: srcData, error: srcError } = await supabase
+            .rpc('get_invoice_source', { p_invoice_id: invoiceId })
+          invoiceSource = !srcError && srcData
+            ? (srcData as { booking_id?: string | null; booking_no?: string | null; sales_order_id?: string | null; so_number?: string | null })
+            : null
+        } catch {
+          invoiceSource = null
+        }
+        if (invoiceSource?.booking_id) {
+          setLinkedBookingId(String(invoiceSource.booking_id))
+          setLinkedBookingNo(invoiceSource.booking_no ? String(invoiceSource.booking_no) : null)
           return
         }
 
@@ -272,16 +286,11 @@ export default function EditInvoicePage() {
         setCostCenterId(invoice.cost_center_id || null)
         setWarehouseId(invoice.warehouse_id || null)
 
-        // جلب رقم أمر البيع المرتبط إن وجد
+        // جلب رقم أمر البيع المرتبط إن وجد — v3.74.603: من الـ RPC
+        // بدل SELECT مباشر على sales_orders (كان الـ RLS يخفي الصف
+        // لبعض الأدوار فيضيع رقم أمر البيع من التحذير).
         if (invoice.sales_order_id) {
-          const { data: soData } = await supabase
-            .from("sales_orders")
-            .select("so_number")
-            .eq("id", invoice.sales_order_id)
-            .single()
-          if (soData) {
-            setLinkedSalesOrderNumber(soData.so_number)
-          }
+          setLinkedSalesOrderNumber(invoiceSource?.so_number ? String(invoiceSource.so_number) : null)
         }
       }
 
@@ -366,6 +375,20 @@ export default function EditInvoicePage() {
         description: appLang === 'en'
           ? "This invoice was generated from a booking order — edit the booking itself."
           : "هذه الفاتورة مولّدة من أمر حجز — التعديل يتم من أمر الحجز نفسه.",
+      })
+      return
+    }
+
+    // v3.74.603 — belt-and-suspenders: the API route returns 403 too,
+    // but never even attempt to save a sales-order-linked invoice for
+    // non-privileged roles (owner/admin/general_manager only).
+    if (linkedSalesOrderId && !isPrivilegedForSoEdit) {
+      toast({
+        variant: "destructive",
+        title: appLang === 'en' ? "Sales-order invoice" : "فاتورة أمر بيع",
+        description: appLang === 'en'
+          ? "This invoice belongs to a sales order — edits are made on the sales order itself, and its items and total are reflected automatically on the invoice."
+          : "هذه الفاتورة تابعة لأمر بيع — التعديل يتم من أمر البيع نفسه وتنعكس بنوده وإجماليه تلقائياً على الفاتورة.",
       })
       return
     }
@@ -1015,6 +1038,49 @@ export default function EditInvoicePage() {
                   <Button asChild>
                     <Link href={`/bookings/${linkedBookingId}`}>
                       {(hydrated && appLang === 'en') ? 'Open booking order' : 'فتح أمر الحجز'}
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/invoices/${invoiceId}`}>
+                      {(hydrated && appLang === 'en') ? 'Back to invoice' : 'العودة للفاتورة'}
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // v3.74.603 — sales-order-linked invoice: only owner/admin/
+  // general_manager may edit the invoice directly. Everyone else gets a
+  // blocking notice pointing at the sales order (its edit page rebuilds
+  // the invoice items + totals automatically). Mirrors the booking
+  // notice above; the server route enforces the same rule with a 403.
+  if (!isLoading && !linkedBookingId && linkedSalesOrderId && !isPrivilegedForSoEdit) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="max-w-2xl mx-auto mt-8">
+            <Card className="border-blue-300 dark:border-blue-700">
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>
+                  {(hydrated && appLang === 'en') ? 'Sales-order invoice' : 'فاتورة أمر بيع'}
+                  {linkedSalesOrderNumber ? ` — ${linkedSalesOrderNumber}` : ''}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>
+                  {(hydrated && appLang === 'en')
+                    ? 'This invoice belongs to a sales order — edits are made on the sales order itself, and its items and total are reflected automatically on the invoice.'
+                    : 'هذه الفاتورة تابعة لأمر بيع — التعديل يتم من أمر البيع نفسه وتنعكس بنوده وإجماليه تلقائياً على الفاتورة.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href={`/sales-orders/${linkedSalesOrderId}`}>
+                      {(hydrated && appLang === 'en') ? 'Open sales order' : 'فتح أمر البيع'}
                     </Link>
                   </Button>
                   <Button asChild variant="outline">

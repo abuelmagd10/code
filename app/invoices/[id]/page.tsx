@@ -787,40 +787,29 @@ export default function InvoiceDetailPage() {
           }
         }
 
-        // Load linked sales order if exists.
-        // v3.74.10 — use maybeSingle so we don't get a console 406 when the
-        // SO row is hidden by RLS for this user (e.g. accountant viewing an
-        // invoice whose linked SO is in another branch). 0 rows is fine here.
-        if (invoiceData.sales_order_id) {
-          const { data: soData } = await supabase
-            .from("sales_orders")
-            .select("id, so_number")
-            .eq("id", invoiceData.sales_order_id)
-            .maybeSingle()
-          if (soData) {
-            setLinkedSalesOrder(soData)
-          } else {
-            setLinkedSalesOrder(null)
-          }
-        } else {
-          setLinkedSalesOrder(null)
-        }
-
-        // v3.74.600 — is this invoice generated from a booking order?
+        // v3.74.603 — resolve the invoice source (booking / sales order)
+        // through the SECURITY DEFINER RPC get_invoice_source instead of
+        // direct SELECTs on bookings / sales_orders. Those direct reads
+        // were subject to RLS: for e.g. an accountant the booking row was
+        // hidden, linkedBooking stayed null and the Edit button leaked
+        // (v3.74.600 regression). The RPC is RLS-proof for company members.
         try {
-          const { data: bkgRows } = await supabase
-            .from("bookings")
-            .select("id, booking_no")
-            .eq("invoice_id", invoiceId)
-            .eq("company_id", invoiceData.company_id)
-            .limit(1)
+          const { data: srcData, error: srcError } = await supabase
+            .rpc('get_invoice_source', { p_invoice_id: invoiceId })
+          const src = !srcError && srcData ? (srcData as { booking_id?: string | null; booking_no?: string | null; sales_order_id?: string | null; so_number?: string | null }) : null
           setLinkedBooking(
-            bkgRows && bkgRows.length > 0
-              ? { id: bkgRows[0].id, booking_no: bkgRows[0].booking_no || null }
+            src?.booking_id
+              ? { id: String(src.booking_id), booking_no: src.booking_no ? String(src.booking_no) : null }
+              : null,
+          )
+          setLinkedSalesOrder(
+            src?.sales_order_id
+              ? { id: String(src.sales_order_id), so_number: src.so_number ? String(src.so_number) : '' }
               : null,
           )
         } catch {
           setLinkedBooking(null)
+          setLinkedSalesOrder(null)
         }
 
         const { data: itemsData } = await supabase
@@ -2668,6 +2657,19 @@ export default function InvoiceDetailPage() {
                   </Link>
                 )}
 
+                {/* v3.74.603 — sales-order invoice badge. Shown when the
+                    Edit button is hidden for this role; links to the sales
+                    order, where items & totals are actually edited. */}
+                {!linkedBooking && linkedSalesOrder && !isPrivilegedUser && (
+                  <Link
+                    href={`/sales-orders/${linkedSalesOrder.id}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 print:hidden"
+                  >
+                    {appLang === 'en' ? 'Sales-order invoice' : 'فاتورة أمر بيع'}
+                    {linkedSalesOrder.so_number ? ` — ${linkedSalesOrder.so_number}` : ''}
+                  </Link>
+                )}
+
                 {/* Previous/Next Navigation */}
                 {prevInvoiceId && (
                   <Button asChild variant="outline" size="sm">
@@ -2719,7 +2721,12 @@ export default function InvoiceDetailPage() {
                   // v3.74.600 — booking-generated invoices are never
                   // edited directly (the booking order is the source of
                   // truth), so the Edit button hides for everyone.
-                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent && !linkedBooking;
+                  // v3.74.603 — sales-order-linked invoices are directly
+                  // editable ONLY by owner/admin/general_manager; everyone
+                  // else edits the sales order itself (its edit page
+                  // rebuilds invoice items + totals automatically).
+                  const soEditBlocked = !!linkedSalesOrder && !isPrivilegedUser;
+                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent && !linkedBooking && !soEditBlocked;
 
                   if (canEditInvoice) {
                     return (

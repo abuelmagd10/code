@@ -27,6 +27,43 @@ export async function POST(
   if (errorResponse || !context) return errorResponse
 
   try {
+    const adminSupabase = createServiceClient()
+
+    // v3.74.603 — sales-order-linked invoices are directly editable ONLY
+    // by owner/admin/general_manager (their direct-creation path).
+    // Everyone else edits the SALES ORDER itself (its edit page rebuilds
+    // the invoice items + totals automatically). Checked with the
+    // service-role client so RLS can never hide the linkage.
+    // Booking-linked invoices stay blocked for everyone inside
+    // SalesInvoiceUpdateCommandService.assertNotBookingLinked (also
+    // service-role, so RLS-proof).
+    const SO_EDIT_PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+    const memberRole = String(context.member?.role || "").toLowerCase()
+    if (!SO_EDIT_PRIVILEGED_ROLES.has(memberRole)) {
+      const { data: linkRow, error: linkError } = await adminSupabase
+        .from("invoices")
+        .select("sales_order_id")
+        .eq("id", id)
+        .eq("company_id", context.companyId)
+        .maybeSingle()
+      if (linkError) {
+        return NextResponse.json(
+          { success: false, error: "Failed to verify invoice source linkage" },
+          { status: 500 }
+        )
+      }
+      if (linkRow?.sales_order_id) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "هذه الفاتورة تابعة لأمر بيع — التعديل يتم من أمر البيع نفسه وتنعكس بنوده وإجماليه تلقائياً على الفاتورة. / This invoice belongs to a sales order — edits are made on the sales order itself, and its items and total are reflected automatically on the invoice.",
+          },
+          { status: 403 }
+        )
+      }
+    }
+
     const body = await request.json()
     const items = Array.isArray(body?.items) ? body.items : []
     const commandItems: SalesInvoiceUpdateItem[] = items.map((item: any) => ({
@@ -74,7 +111,7 @@ export async function POST(
     )
     const requestHash = buildFinancialRequestHash({ ...command, actorId: context.user.id })
 
-    const service = new SalesInvoiceUpdateCommandService(createServiceClient())
+    const service = new SalesInvoiceUpdateCommandService(adminSupabase)
     const result = await service.updateInvoice(
       {
         actorId: context.user.id,
