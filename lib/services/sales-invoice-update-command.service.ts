@@ -107,6 +107,14 @@ export class SalesInvoiceUpdateCommandService {
 
     const invoice = await this.loadInvoice(command.companyId, command.invoiceId)
     if (!invoice) throw new Error("Invoice was not found")
+
+    // v3.74.600 — booking-generated invoices are NOT directly editable.
+    // The booking ORDER is the source of truth until the accountant
+    // posts: items & discount are edited on the booking itself and
+    // resync onto the invoice (complete_booking_atomic /
+    // resync_booking_invoice). No role exception — blocked for everyone.
+    await this.assertNotBookingLinked(command.companyId, command.invoiceId)
+
     if (invoice.status === "paid" || invoice.status === "partially_paid") {
       throw new Error("Cannot edit a paid or partially paid invoice")
     }
@@ -187,6 +195,25 @@ export class SalesInvoiceUpdateCommandService {
         await this.adminSupabase.from("financial_operation_traces").delete().eq("transaction_id", traceId)
       }
       throw error
+    }
+  }
+
+  // v3.74.600 — hard guard: an invoice generated from a booking order
+  // (bookings.invoice_id → this invoice) must never be edited directly.
+  // The message intentionally contains "not editable" so the API route's
+  // error mapper returns HTTP 400 instead of 500.
+  private async assertNotBookingLinked(companyId: string, invoiceId: string) {
+    const { data, error } = await this.adminSupabase
+      .from("bookings")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("invoice_id", invoiceId)
+      .limit(1)
+    if (error) throw new Error(error.message || "Failed to check booking link for invoice")
+    if (Array.isArray(data) && data.length > 0) {
+      throw new Error(
+        "هذه الفاتورة مولّدة من أمر حجز — التعديل يتم من أمر الحجز نفسه (الأصناف والخصم) وتنعكس تلقائياً على الفاتورة. / This invoice was generated from a booking order and is not editable here — edit the booking itself (items & discount) and changes reflect automatically on the invoice."
+      )
     }
   }
 

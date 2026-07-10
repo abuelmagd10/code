@@ -45,6 +45,7 @@ interface BookingPayload {
   start_time:      string
   end_time:        string
   quantity:        number
+  unit_price:      number
   discount_amount: number
   total_amount:    number
   notes:           string | null
@@ -122,6 +123,16 @@ export default function EditBookingPage() {
 
   const isEditable = booking?.status === "draft" && !booking?.invoice_id
 
+  // v3.74.600 — the discount stays editable a step longer than the rest
+  // of the form: while status IN ('draft','confirmed') AND no invoice
+  // yet. This mirrors the DB trigger's window
+  // (bkg_request_discount_approval_trg), which opens an owner/GM
+  // approval whenever the discount is set or changed in that window.
+  const discountEditable =
+    !!booking &&
+    (booking.status === "draft" || booking.status === "confirmed") &&
+    !booking.invoice_id
+
   const branchStaff = useMemo(() => {
     if (!booking?.branch_id) return staff
     return staff.filter((m) => !m.branch_id || m.branch_id === booking.branch_id)
@@ -152,6 +163,24 @@ export default function EditBookingPage() {
 
       if (Number(quantity)       !== Number(booking.quantity))        body.quantity        = quantity
       if (Number(discountAmount) !== Number(booking.discount_amount)) body.discount_amount = discountAmount
+
+      // v3.74.600 — amount discount must satisfy 0 ≤ discount < gross
+      // (gross = unit_price × qty, i.e. the pre-discount total).
+      if (body.discount_amount !== undefined) {
+        const gross = Number(booking.unit_price || 0) * (Number(quantity) || Number(booking.quantity) || 1)
+        if (Number(discountAmount) < 0 || (gross > 0 && Number(discountAmount) >= gross)) {
+          toastActionError(
+            toast,
+            t("خصم غير صالح", "Invalid discount"),
+            t(
+              "الخصم يجب أن يكون أكبر من أو يساوى صفر وأقل من إجمالى الخدمة قبل الخصم",
+              "Discount must be ≥ 0 and less than the pre-discount total",
+            ),
+          )
+          setSaving(false)
+          return
+        }
+      }
       if ((notes || "")          !== (booking.notes || ""))           body.notes           = notes || null
 
       if (Object.keys(body).length === 0) {
@@ -208,11 +237,22 @@ export default function EditBookingPage() {
             </Link>
           </div>
 
-          {!isEditable && (
+          {!isEditable && !discountEditable && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 text-amber-800 dark:text-amber-300 px-4 py-3 text-sm">
               {t(
                 "هذا الحجز لا يمكن تعديله — تم تنفيذه أو إلغاؤه.",
                 "This booking can no longer be edited — it has been executed or cancelled.",
+              )}
+            </div>
+          )}
+
+          {/* v3.74.600 — confirmed booking: schedule fields lock, but the
+              discount stays editable until an invoice is issued. */}
+          {!isEditable && discountEditable && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 px-4 py-3 text-sm">
+              {t(
+                "الحجز مؤكد — يمكن تعديل الخصم فقط فى هذه المرحلة (حتى إصدار الفاتورة).",
+                "Booking is confirmed — only the discount can be edited at this stage (until the invoice is issued).",
               )}
             </div>
           )}
@@ -312,16 +352,33 @@ export default function EditBookingPage() {
                     />
                   </div>
                   <div>
-                    <Label>{t("الخصم", "Discount")}</Label>
+                    {/* v3.74.600 — amount-only discount, editable while
+                        draft/confirmed + no invoice (the trigger's window). */}
+                    <Label>{t("الخصم (قيمة)", "Discount (amount)")}</Label>
                     <Input
                       type="number"
                       min={0}
                       step="0.01"
                       value={discountAmount}
                       onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
-                      disabled={!isEditable}
+                      disabled={!discountEditable}
                       dir="ltr"
                     />
+                    {discountEditable ? (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        {t(
+                          "أى خصم يتطلب اعتماد المالك/المدير العام قبل تفعيل الحجز",
+                          "Any discount requires owner/GM approval before the booking can be activated",
+                        )}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t(
+                          "بعد تنفيذ الحجز وإصدار الفاتورة، تعديلات الخصم تتم من نافذة إضافات الحجز أو مرتجعات المبيعات.",
+                          "After execution and invoicing, discount changes go through the booking add-ons window or sales returns.",
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -335,7 +392,7 @@ export default function EditBookingPage() {
                   />
                 </div>
 
-                {isEditable && (
+                {(isEditable || discountEditable) && (
                   <div className="flex justify-end gap-2 pt-2">
                     <Link href={`/bookings/${booking.id}${q}`}>
                       <Button type="button" variant="outline">

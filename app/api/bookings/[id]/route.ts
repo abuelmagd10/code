@@ -119,18 +119,29 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const supabase = await createClient()
 
     // Sanity: booking must be a still-editable draft.
+    // v3.74.600 — exception: a discount-ONLY patch is also allowed while
+    // status = 'confirmed' (mirrors the bkg_request_discount_approval_trg
+    // window: draft/confirmed + no invoice). Everything else stays
+    // draft-only.
     const { data: current, error: cErr } = await supabase
       .from('bookings')
-      .select('id, status, invoice_id, service_id')
+      .select('id, status, invoice_id, service_id, unit_price, quantity')
       .eq('id', id)
       .eq('company_id', companyId)
       .maybeSingle()
     if (cErr) throw cErr
     if (!current) throw new BookingApiError(404, 'الحجز غير موجود')
-    if (current.status !== 'draft') {
+
+    const sentKeys = Object.keys(body).filter((k) => (body as any)[k] !== undefined)
+    const isDiscountOnlyPatch =
+      sentKeys.length > 0 && sentKeys.every((k) => k === 'discount_amount')
+
+    if (current.status !== 'draft' && !(current.status === 'confirmed' && isDiscountOnlyPatch)) {
       throw new BookingApiError(
         409,
-        'لا يمكن تعديل الحجز فى الحالة الحالية. التعديل متاح فقط للحجوزات فى حالة مسودة.',
+        current.status === 'confirmed'
+          ? 'الحجز مؤكد — المسموح تعديله فى هذه المرحلة هو الخصم فقط.'
+          : 'لا يمكن تعديل الحجز فى الحالة الحالية. التعديل متاح فقط للحجوزات فى حالة مسودة.',
       )
     }
     if (current.invoice_id) {
@@ -138,6 +149,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         409,
         'لا يمكن تعديل الحجز بعد تنفيذ الخدمة وإصدار الفاتورة.',
       )
+    }
+
+    // v3.74.600 — amount discount must satisfy 0 ≤ discount < gross
+    // (gross = unit_price × qty before discount). The zod schema already
+    // enforces ≥ 0; here we cap the upper bound server-side.
+    if (body.discount_amount !== undefined) {
+      const effectiveQty = Number(body.quantity ?? current.quantity ?? 1)
+      const gross = Number(current.unit_price || 0) * effectiveQty
+      if (gross > 0 && Number(body.discount_amount) >= gross) {
+        throw new BookingApiError(
+          400,
+          'قيمة الخصم يجب أن تكون أقل من إجمالى الخدمة قبل الخصم.',
+        )
+      }
     }
 
     // If the schedule (date / start_time / staff / service) is being

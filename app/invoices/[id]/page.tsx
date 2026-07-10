@@ -337,6 +337,11 @@ export default function InvoiceDetailPage() {
   // Linked Sales Order
   const [linkedSalesOrder, setLinkedSalesOrder] = useState<{ id: string; so_number: string } | null>(null)
 
+  // v3.74.600 — booking-generated invoice marker (bookings.invoice_id →
+  // this invoice). Hides the Edit button and shows a header badge; edits
+  // go through the booking order itself.
+  const [linkedBooking, setLinkedBooking] = useState<{ id: string; booking_no: string | null } | null>(null)
+
   // 🔐 صرف رصيد العميل الدائن من الفاتورة
   // 💰 الرصيد الفعلي من جدول customer_credits (المصدر الموثوق)
   const [customerCreditFromDB, setCustomerCreditFromDB] = useState(0)
@@ -799,6 +804,23 @@ export default function InvoiceDetailPage() {
           }
         } else {
           setLinkedSalesOrder(null)
+        }
+
+        // v3.74.600 — is this invoice generated from a booking order?
+        try {
+          const { data: bkgRows } = await supabase
+            .from("bookings")
+            .select("id, booking_no")
+            .eq("invoice_id", invoiceId)
+            .eq("company_id", invoiceData.company_id)
+            .limit(1)
+          setLinkedBooking(
+            bkgRows && bkgRows.length > 0
+              ? { id: bkgRows[0].id, booking_no: bkgRows[0].booking_no || null }
+              : null,
+          )
+        } catch {
+          setLinkedBooking(null)
         }
 
         const { data: itemsData } = await supabase
@@ -2634,6 +2656,18 @@ export default function InvoiceDetailPage() {
             lang={appLang}
             actions={
               <div className="flex items-center gap-2 flex-wrap">
+                {/* v3.74.600 — booking-order invoice badge. Links to the
+                    booking, where items & discount are actually edited. */}
+                {linkedBooking && (
+                  <Link
+                    href={`/bookings/${linkedBooking.id}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20 px-2.5 py-1 text-xs font-medium text-orange-700 dark:text-orange-300 print:hidden"
+                  >
+                    {appLang === 'en' ? 'Booking-order invoice' : 'فاتورة أمر حجز'}
+                    {linkedBooking.booking_no ? ` — ${linkedBooking.booking_no}` : ''}
+                  </Link>
+                )}
+
                 {/* Previous/Next Navigation */}
                 {prevInvoiceId && (
                   <Button asChild variant="outline" size="sm">
@@ -2682,7 +2716,10 @@ export default function InvoiceDetailPage() {
                   const isCancelled = actualStatus === 'cancelled';
                   const isSent = actualStatus === 'sent';
                   
-                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent;
+                  // v3.74.600 — booking-generated invoices are never
+                  // edited directly (the booking order is the source of
+                  // truth), so the Edit button hides for everyone.
+                  const canEditInvoice = permUpdate && !isPaid && !isReturned && !isWarehouseApproved && !isCancelled && !isSent && !linkedBooking;
 
                   if (canEditInvoice) {
                     return (

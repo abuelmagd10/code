@@ -10,6 +10,7 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useParams, useRouter } from "next/navigation"
+import Link from "next/link"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
@@ -65,6 +66,11 @@ export default function EditInvoicePage() {
   const [invoiceStatus, setInvoiceStatus] = useState<string>("draft")
   const [linkedSalesOrderId, setLinkedSalesOrderId] = useState<string | null>(null)
   const [linkedSalesOrderNumber, setLinkedSalesOrderNumber] = useState<string | null>(null)
+  // v3.74.600 — booking-generated invoice? If so this page renders a
+  // blocking notice instead of the edit form (the booking order is the
+  // source of truth; edits happen there and resync onto the invoice).
+  const [linkedBookingId, setLinkedBookingId] = useState<string | null>(null)
+  const [linkedBookingNo, setLinkedBookingNo] = useState<string | null>(null)
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
     if (typeof window === 'undefined') return 'ar'
@@ -216,6 +222,22 @@ export default function EditInvoicePage() {
         .eq("invoice_id", invoiceId)
 
       if (invoice) {
+        // v3.74.600 — booking-generated invoices are NOT editable here.
+        // The booking order (bookings.invoice_id → this invoice) is the
+        // source of truth; the render below swaps the form for a
+        // blocking notice with a link to the booking.
+        const { data: bkgRows } = await supabase
+          .from("bookings")
+          .select("id, booking_no")
+          .eq("company_id", loadCompanyId)
+          .eq("invoice_id", invoiceId)
+          .limit(1)
+        if (bkgRows && bkgRows.length > 0) {
+          setLinkedBookingId(bkgRows[0].id)
+          setLinkedBookingNo(bkgRows[0].booking_no || null)
+          return
+        }
+
         // ✅ منع تعديل الفواتير المدفوعة أو المدفوعة جزئياً
         if (invoice.status === 'paid' || invoice.status === 'partially_paid') {
           toast({
@@ -334,6 +356,19 @@ export default function EditInvoicePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // v3.74.600 — belt-and-suspenders: the server command blocks this
+    // too, but never even attempt to save a booking-generated invoice.
+    if (linkedBookingId) {
+      toast({
+        variant: "destructive",
+        title: appLang === 'en' ? "Booking-order invoice" : "فاتورة أمر حجز",
+        description: appLang === 'en'
+          ? "This invoice was generated from a booking order — edit the booking itself."
+          : "هذه الفاتورة مولّدة من أمر حجز — التعديل يتم من أمر الحجز نفسه.",
+      })
+      return
+    }
 
     if (!formData.customer_id) {
       toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please select a customer" : "يرجى اختيار عميل", variant: "destructive" })
@@ -953,6 +988,47 @@ export default function EditInvoicePage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  // v3.74.600 — booking-generated invoice: block the whole edit form and
+  // point the user at the booking order instead (same rule the server
+  // command enforces; this is only the friendly surface of it).
+  if (!isLoading && linkedBookingId) {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="max-w-2xl mx-auto mt-8">
+            <Card className="border-amber-300 dark:border-amber-700">
+              <CardHeader>
+                <CardTitle suppressHydrationWarning>
+                  {(hydrated && appLang === 'en') ? 'Booking-order invoice' : 'فاتورة أمر حجز'}
+                  {linkedBookingNo ? ` — ${linkedBookingNo}` : ''}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>
+                  {(hydrated && appLang === 'en')
+                    ? 'This invoice was generated from a booking order — edits are made on the booking order itself (items & discount) and reflect automatically on the invoice.'
+                    : 'هذه الفاتورة مولّدة من أمر حجز — التعديل يتم من أمر الحجز نفسه (الأصناف والخصم) وتنعكس تلقائياً على الفاتورة.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href={`/bookings/${linkedBookingId}`}>
+                      {(hydrated && appLang === 'en') ? 'Open booking order' : 'فتح أمر الحجز'}
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/invoices/${invoiceId}`}>
+                      {(hydrated && appLang === 'en') ? 'Back to invoice' : 'العودة للفاتورة'}
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   return (

@@ -234,6 +234,20 @@ export function BookingForm({
 
   const handleSubmit = async (data: BookingFormValues) => {
     if (!selectedSlot) return // slot required
+    // v3.74.600 — amount discount must stay below the pre-discount line
+    // total (DB math: totals = unit_price × qty − discount). Range check
+    // only; the bkg_request_discount_approval_trg trigger opens the
+    // owner/GM approval on the server for ANY discount.
+    if (subtotal > 0 && (Number(data.discount_amount) || 0) >= subtotal) {
+      form.setError("discount_amount", {
+        type: "manual",
+        message: t(
+          "الخصم يجب أن يكون أقل من إجمالى الخدمة قبل الخصم",
+          "Discount must be less than the pre-discount total",
+        ),
+      })
+      return
+    }
     await onSubmit(data)
   }
 
@@ -589,13 +603,15 @@ export function BookingForm({
                 )}
               />
 
-              {/* Discount */}
+              {/* Discount — v3.74.600: amount-only (the DB trigger stamps
+                  discount_type='amount'); any value routes through the
+                  owner/GM discount approval before activation. */}
               <FormField
                 control={form.control}
                 name="discount_amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t("الخصم", "Discount")}</FormLabel>
+                    <FormLabel>{t("الخصم (قيمة)", "Discount (amount)")}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -603,9 +619,18 @@ export function BookingForm({
                         step={0.01}
                         {...field}
                         value={field.value ?? 0}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        onChange={(e) => {
+                          form.clearErrors("discount_amount")
+                          field.onChange(parseFloat(e.target.value) || 0)
+                        }}
                       />
                     </FormControl>
+                    <FormDescription className="text-xs text-amber-700 dark:text-amber-400">
+                      {t(
+                        "أى خصم يتطلب اعتماد المالك/المدير العام قبل تفعيل الحجز",
+                        "Any discount requires owner/GM approval before the booking can be activated",
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

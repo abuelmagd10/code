@@ -99,6 +99,13 @@ export class SalesInvoiceEditCommandService {
 
     const invoice = await this.loadInvoice(command.companyId, command.invoiceId)
     if (!invoice) throw new Error("Invoice was not found")
+
+    // v3.74.600 — booking-generated invoices are NOT directly editable
+    // (mirrors sales-invoice-update-command.service.ts; kept here too in
+    // case this command is ever wired back in). The booking order is the
+    // source of truth until the accountant posts.
+    await this.assertNotBookingLinked(command.companyId, command.invoiceId)
+
     if (invoice.status === "paid" || invoice.status === "partially_paid") {
       throw new Error("This invoice has payments. Please create a return or credit note instead.")
     }
@@ -398,6 +405,23 @@ export class SalesInvoiceEditCommandService {
       .maybeSingle()
     if (error || !data) return null
     return data
+  }
+
+  // v3.74.600 — hard guard: booking-generated invoices (bookings.invoice_id
+  // → this invoice) are edited from the booking order, never directly.
+  private async assertNotBookingLinked(companyId: string, invoiceId: string) {
+    const { data, error } = await this.adminSupabase
+      .from("bookings")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("invoice_id", invoiceId)
+      .limit(1)
+    if (error) throw new Error(error.message || "Failed to check booking link for invoice")
+    if (Array.isArray(data) && data.length > 0) {
+      throw new Error(
+        "هذه الفاتورة مولّدة من أمر حجز — التعديل يتم من أمر الحجز نفسه (الأصناف والخصم) وتنعكس تلقائياً على الفاتورة. / This invoice was generated from a booking order and is not editable here — edit the booking itself (items & discount) and changes reflect automatically on the invoice."
+      )
+    }
   }
 
   private async createTrace(params: {
