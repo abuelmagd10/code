@@ -166,7 +166,9 @@ export function ProductSearchSelect({
           ) : (placeholder || labels.placeholder)}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className="min-w-[350px]" side={side}>
+      {/* v3.74.593 — عند طلب اتجاه صريح نعطّل منطق تفادى الاصطدام حتى لا
+          يعيد Radix القائمة للاتجاه الافتراضى (أسفل) رغم الطلب */}
+      <SelectContent className="min-w-[350px]" side={side} avoidCollisions={side ? false : undefined}>
         <div
           className="p-2 sticky top-0 bg-white dark:bg-slate-950 z-10 space-y-2"
           onPointerDown={(e) => e.stopPropagation()}
