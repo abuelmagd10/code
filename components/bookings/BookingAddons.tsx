@@ -20,7 +20,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+// v3.74.591 — نفس مكوّن اختيار المنتج المستخدم فى فاتورة البيع (بحث + صور + مخزون)
+import { ProductSearchSelect, type ProductOption as SearchProductOption } from "@/components/ProductSearchSelect"
 import { Package, Plus, Trash2, Sparkles } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -48,12 +49,8 @@ interface ExtraItem {
   line_total: number
 }
 
-interface ProductOption {
-  id: string
-  name: string
-  sku: string
-  unit_price: number
-}
+// v3.74.591 — نستخدم نوع مكوّن البحث نفسه (يشمل الصور والمخزون)
+type ProductOption = SearchProductOption
 
 interface Props {
   companyId: string
@@ -242,9 +239,10 @@ export function BookingAddons({
       )
 
       // Product catalog for the walk-in picker
+      // v3.74.591 — نجلب الصور والمخزون لعرضها فى مكوّن البحث (نمط فاتورة البيع)
       const { data: prods } = await supabase
         .from("products")
-        .select("id, name, sku, unit_price, item_type")
+        .select("id, name, sku, unit_price, item_type, quantity_on_hand, image_urls")
         .eq("company_id", companyId)
         .in("item_type", ["product", "raw_material", "manufactured"])
         .order("name", { ascending: true })
@@ -253,8 +251,11 @@ export function BookingAddons({
         (prods || []).map((p: any) => ({
           id: p.id,
           name: p.name,
-          sku: p.sku,
+          sku: p.sku ?? null,
           unit_price: Number(p.unit_price || 0),
+          item_type: "product" as const,
+          quantity_on_hand: p.quantity_on_hand != null ? Number(p.quantity_on_hand) : undefined,
+          image_urls: p.image_urls ?? null,
         })),
       )
     } catch (e: any) {
@@ -300,7 +301,7 @@ export function BookingAddons({
 
   useEffect(() => {
     if (pickedProduct && Number(extraPrice) === 0) {
-      setExtraPrice(String(pickedProduct.unit_price))
+      setExtraPrice(String(pickedProduct.unit_price ?? 0))
     }
   }, [pickedProduct]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -447,16 +448,17 @@ export function BookingAddons({
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
               <div className="md:col-span-2">
                 <label className="text-xs text-muted-foreground">{t("المنتج", "Product")}</label>
-                <Select value={pickedProductId} onValueChange={setPickedProductId}>
-                  <SelectTrigger><SelectValue placeholder={t("— اختر —", "— Select —")} /></SelectTrigger>
-                  <SelectContent>
-                    {products.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} <span className="text-xs text-muted-foreground font-mono">({p.sku})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* v3.74.591 — نفس تجربة اختيار المنتج فى فاتورة البيع */}
+                <ProductSearchSelect
+                  products={products}
+                  value={pickedProductId}
+                  onValueChange={setPickedProductId}
+                  lang={lang}
+                  productsOnly
+                  showPrice
+                  showStock
+                  currency={typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"}
+                />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">{t("الكمية", "Qty")}</label>
