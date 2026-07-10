@@ -34,6 +34,8 @@ interface BookingContext {
   branch_id:    string | null
   branch_name:  string | null
   staff_user_id: string | null
+  // v3.74.590 — التعيين المتعدد: كل الموظفين المرتبطين بالحجز
+  assigned_staff_user_ids: string[] | null
   total_amount:  number
   paid_amount:   number
   invoice_id:    string | null
@@ -96,7 +98,7 @@ export class BookingNotificationService {
       .select([
         "booking_no", "customer_name", "service_name", "service_type",
         "booking_date", "start_time", "branch_id", "branch_name",
-        "staff_user_id", "total_amount", "paid_amount",
+        "staff_user_id", "assigned_staff_user_ids", "total_amount", "paid_amount",
         "invoice_id", "cancellation_reason",
       ].join(","))
       .eq("id", bookingId)
@@ -121,12 +123,30 @@ export class BookingNotificationService {
       branch_id:           null,
       branch_name:         null,
       staff_user_id:       null,
+      assigned_staff_user_ids: null,
       total_amount:        0,
       paid_amount:         0,
       invoice_id:          null,
       cancellation_reason: null,
     }
     return { ...base, ...override }
+  }
+
+  // ── Staff recipients ────────────────────────────────────────────────────────
+  // v3.74.590 — الحجز قد يكون معيّناً لعدة موظفين (booking_staff_assignments
+  // عبر v_bookings_full.assigned_staff_user_ids) إضافة إلى staff_user_id
+  // الفردى. كل نقاط إشعار الموظف تمر من هنا لضمان وصول الإشعار للجميع
+  // بلا تكرار.
+  private staffRecipients(
+    ctx: BookingContext,
+    resolver: NotificationRecipientResolverService
+  ): ResolvedNotificationRecipient[] {
+    const ids = new Set<string>()
+    if (ctx.staff_user_id) ids.add(ctx.staff_user_id)
+    for (const id of ctx.assigned_staff_user_ids ?? []) {
+      if (id) ids.add(id)
+    }
+    return Array.from(ids).map(id => resolver.resolveUserRecipient(id, null, ctx.branch_id))
   }
 
   // ── Label helpers ───────────────────────────────────────────────────────────
@@ -188,12 +208,8 @@ export class BookingNotificationService {
       eventAction:   "confirmed",
     }
 
-    const recipients: ResolvedNotificationRecipient[] = []
-
-    // Staff member gets personal notification
-    if (ctx.staff_user_id) {
-      recipients.push(resolver.resolveUserRecipient(ctx.staff_user_id, null, ctx.branch_id))
-    }
+    // v3.74.590 — كل الموظفين المعينين على الحجز يستلمون إشعار التأكيد
+    const recipients: ResolvedNotificationRecipient[] = this.staffRecipients(ctx, resolver)
 
     await this.dispatch(p, ctx, recipients, payload, "⚠️ [BookingNotification] notifyBookingConfirmed failed:")
   }
@@ -264,12 +280,13 @@ export class BookingNotificationService {
     const accountantRecipients = resolver.resolveBranchAccountantRecipients(ctx.branch_id, null)
     await this.dispatch(p, ctx, accountantRecipients, accountantPayload, "⚠️ [BookingNotification] notifyBookingCompleted (accountant) failed:")
 
-    // Staff member
-    if (ctx.staff_user_id) {
+    // Staff members — v3.74.590: يشمل كل المعينين على الحجز
+    const staffRecipients = this.staffRecipients(ctx, resolver)
+    if (staffRecipients.length > 0) {
       await this.dispatch(
         p,
         ctx,
-        [resolver.resolveUserRecipient(ctx.staff_user_id, null, ctx.branch_id)],
+        staffRecipients,
         staffPayload,
         "⚠️ [BookingNotification] notifyBookingCompleted (staff) failed:"
       )
@@ -311,10 +328,8 @@ export class BookingNotificationService {
       ...resolver.resolveRoleRecipients(["manager"], ctx.branch_id, null, null),
     ]
 
-    // Notify staff member personally
-    if (ctx.staff_user_id) {
-      recipients.push(resolver.resolveUserRecipient(ctx.staff_user_id, null, ctx.branch_id))
-    }
+    // Notify staff members personally — v3.74.590: كل المعينين
+    recipients.push(...this.staffRecipients(ctx, resolver))
 
     await this.dispatch(p, ctx, recipients, payload, "⚠️ [BookingNotification] notifyBookingCancelled failed:")
   }
@@ -430,11 +445,10 @@ export class BookingNotificationService {
       eventAction:   `reminder_${p.hoursBeforeService}h`,
     }
 
-    const recipients: ResolvedNotificationRecipient[] = []
+    // v3.74.590 — التذكير يصل لكل الموظفين المعينين على الحجز
+    const recipients: ResolvedNotificationRecipient[] = this.staffRecipients(ctx, resolver)
 
-    if (ctx.staff_user_id) {
-      recipients.push(resolver.resolveUserRecipient(ctx.staff_user_id, null, ctx.branch_id))
-    } else {
+    if (recipients.length === 0) {
       // Fallback: notify branch manager
       recipients.push(...resolver.resolveRoleRecipients(["manager"], ctx.branch_id, null, null))
     }
