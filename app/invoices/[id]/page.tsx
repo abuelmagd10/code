@@ -430,9 +430,8 @@ export default function InvoiceDetailPage() {
       }))
       .filter((it) => it.max_qty > 0)
   ), [items])
-  const canShowReturnButtons = useMemo(() => (
-    // v3.74.608 — للمالك والمدير العام فقط
-    canDirectReturn &&
+  // v3.74.609 — الشروط الأساسية لإمكانية المرتجع (بمعزل عن الدور)
+  const canReturnBase = useMemo(() => (
     !!invoice &&
     invoice.status !== "cancelled" &&
     invoice.status !== "draft" &&
@@ -442,7 +441,9 @@ export default function InvoiceDetailPage() {
     returnableInvoiceItems.length > 0 &&
     invoiceApprovalStatus === 'approved' &&
     !activeSalesReturnRequest
-  ), [activeSalesReturnRequest, canDirectReturn, invoice, invoiceApprovalStatus, returnableInvoiceItems])
+  ), [activeSalesReturnRequest, invoice, invoiceApprovalStatus, returnableInvoiceItems])
+  // v3.74.608 — التنفيذ المباشر للمالك والمدير العام فقط
+  const canShowReturnButtons = canDirectReturn && canReturnBase
   const canShowPartialReturnButton = useMemo(() => (
     canShowReturnButtons &&
     returnableInvoiceItems.length === 1 &&
@@ -4032,6 +4033,21 @@ export default function InvoiceDetailPage() {
                   {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
                 </Button>
               </>
+            ) : null}
+            {/* v3.74.609 — الأدوار غير المخولة بالتنفيذ المباشر تجد زر
+                الدورة الرسمية فى نفس المكان: طلب مرتجع → اعتماد إدارى
+                → استلام مخزنى */}
+            {!canDirectReturn && canReturnBase ? (
+              <Button
+                variant="outline"
+                className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                data-ai-help="invoices.request_return_button"
+                asChild
+              >
+                <Link href="/sales-return-requests">
+                  {appLang === 'en' ? 'Request Return' : 'طلب مرتجع'}
+                </Link>
+              </Button>
             ) : null}
             {/* 💰 زر صرف رصيد العميل الدائن - يظهر لـ: owner/admin/general_manager (اختيار الفرع) و accountant (فرعه فقط) */}
             {customerCreditAmount > 0 && canSeeCreditRefundButton && invoice.customer_id && invoice.status !== "cancelled" && invoice.status !== "draft" ? (
