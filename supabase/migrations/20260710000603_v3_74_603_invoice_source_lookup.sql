@@ -20,40 +20,47 @@
 --     subtotal/tax/total/status)
 -- =====================================================================
 
+-- v3.74.603b — FIX: the first version used plpgsql RECORDs; referencing
+-- fields of a never-assigned record raises 55000 — hit whenever the
+-- invoice had a booking but NO sales order (exactly INV-2026-00001),
+-- so the client rpc() errored and the UI treated it as "no linkage"
+-- (the Edit button kept leaking). Scalars are null-safe.
 CREATE OR REPLACE FUNCTION public.get_invoice_source(p_invoice_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
 DECLARE
-  v_inv RECORD;
-  v_booking RECORD;
-  v_so RECORD;
+  v_company_id uuid;
+  v_sales_order_id uuid;
+  v_booking_id uuid;
+  v_booking_no text;
+  v_so_number text;
 BEGIN
-  SELECT id, company_id, sales_order_id INTO v_inv
+  SELECT company_id, sales_order_id INTO v_company_id, v_sales_order_id
   FROM public.invoices WHERE id = p_invoice_id;
   IF NOT FOUND THEN RETURN NULL; END IF;
 
   IF auth.uid() IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM public.company_members cm
-    WHERE cm.company_id = v_inv.company_id AND cm.user_id = auth.uid()
+    WHERE cm.company_id = v_company_id AND cm.user_id = auth.uid()
   ) THEN
     RETURN NULL;
   END IF;
 
-  SELECT id, booking_no INTO v_booking
-  FROM public.bookings WHERE invoice_id = p_invoice_id LIMIT 1;
+  SELECT b.id, b.booking_no INTO v_booking_id, v_booking_no
+  FROM public.bookings b WHERE b.invoice_id = p_invoice_id LIMIT 1;
 
-  IF v_inv.sales_order_id IS NOT NULL THEN
-    SELECT id, so_number INTO v_so
-    FROM public.sales_orders WHERE id = v_inv.sales_order_id;
+  IF v_sales_order_id IS NOT NULL THEN
+    SELECT so.so_number INTO v_so_number
+    FROM public.sales_orders so WHERE so.id = v_sales_order_id;
   END IF;
 
   RETURN jsonb_build_object(
-    'booking_id',     v_booking.id,
-    'booking_no',     v_booking.booking_no,
-    'sales_order_id', v_inv.sales_order_id,
-    'so_number',      v_so.so_number
+    'booking_id',     v_booking_id,
+    'booking_no',     v_booking_no,
+    'sales_order_id', v_sales_order_id,
+    'so_number',      v_so_number
   );
 END;
 $$;
