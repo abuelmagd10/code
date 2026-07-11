@@ -1,0 +1,26 @@
+-- =====================================================================
+-- v3.74.607 — Notification dedup must be PER RECIPIENT
+-- (applied to production via Supabase MCP on 2026-07-11; mirrored here.
+--  Full body = MCP migration v3_74_607_notification_dedup_per_recipient)
+--
+-- Owner test: accountant filed a sales return request; owner/admin/GM
+-- got NO bell notification although the approvals card showed. DB
+-- truth: 5 notifications were created (owner, admin, GM, manager,
+-- accountant) sharing ONE event_key — and create_notification's
+-- approvals dedup treats a same-key row as a stale predecessor and
+-- ARCHIVES it before inserting the fresh one. So each recipient's
+-- insert archived all previous recipients' rows; only the LAST
+-- recipient (accountant) kept an unread copy. Structural bug hitting
+-- every multi-recipient approval flow that shares an event_key.
+--
+-- Fix: both dedup branches (approvals archive-and-refresh + the
+-- non-approvals return-existing) now additionally match the SAME
+-- recipient: assigned_to_role IS NOT DISTINCT FROM p_assigned_to_role
+-- AND assigned_to_user IS NOT DISTINCT FROM p_assigned_to_user — in
+-- the existence lookup, the archive UPDATE, and the unique_violation
+-- recovery lookup. Different recipients of one event now coexist;
+-- true duplicates for the same recipient still dedup as designed.
+--
+-- + repair: the four wrongly-archived rows (owner/admin/GM/manager)
+--   of request 029cbf63-048c-44b8-86c2-a3bdacfeff54 revived to unread.
+-- =====================================================================
