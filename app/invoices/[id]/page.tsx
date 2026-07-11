@@ -366,6 +366,11 @@ export default function InvoiceDetailPage() {
   const userCostCenterId = accessProfile?.cost_center_id || null
   const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
   const isPrivilegedUser = PRIVILEGED_ROLES.includes(currentUserRole)
+  // v3.74.608 — المرتجع المباشر (كامل/جزئى) مسار سريع للمالك والمدير
+  // العام فقط (نفس مجموعة اعتماد دفعات الموردين v3.74.132). باقى
+  // الأدوار طريقها دورة "طلب مرتجع مبيعات". القاعدة ترفض أيضاً
+  // (ترجر sales_returns_direct_gate) — الواجهة تخفى والخادم يحكم.
+  const canDirectReturn = ['owner', 'general_manager'].includes(currentUserRole)
   // 🔐 الأدوار التي يمكنها رؤية وتنفيذ زر صرف رصيد العميل
   const CREDIT_REFUND_ROLES = ['owner', 'admin', 'general_manager', 'accountant', 'manager']
   const canSeeCreditRefundButton = CREDIT_REFUND_ROLES.includes(currentUserRole) || permPayWrite
@@ -426,6 +431,8 @@ export default function InvoiceDetailPage() {
       .filter((it) => it.max_qty > 0)
   ), [items])
   const canShowReturnButtons = useMemo(() => (
+    // v3.74.608 — للمالك والمدير العام فقط
+    canDirectReturn &&
     !!invoice &&
     invoice.status !== "cancelled" &&
     invoice.status !== "draft" &&
@@ -435,7 +442,7 @@ export default function InvoiceDetailPage() {
     returnableInvoiceItems.length > 0 &&
     invoiceApprovalStatus === 'approved' &&
     !activeSalesReturnRequest
-  ), [activeSalesReturnRequest, invoice, invoiceApprovalStatus, returnableInvoiceItems])
+  ), [activeSalesReturnRequest, canDirectReturn, invoice, invoiceApprovalStatus, returnableInvoiceItems])
   const canShowPartialReturnButton = useMemo(() => (
     canShowReturnButtons &&
     returnableInvoiceItems.length === 1 &&
@@ -2154,7 +2161,15 @@ export default function InvoiceDetailPage() {
       // 📌 للفواتير المرسلة: نربط حركات المخزون بالقيد الأصلي للفاتورة (إن وجد)
       // 📌 للفواتير المدفوعة: نربطها بقيد المرتجع الجديد
       const inventoryJournalEntryId = invoice.status === 'sent' ? originalInvoiceEntryId : returnEntryId
-      const invTx = returnItems.filter(it => it.return_qty > 0 && it.product_id).map(it => ({
+      // v3.74.606 — بنود الخدمات (سطر الخدمة + الأصناف المرفقة المستهلكة
+      // وقت تنفيذ الحجز، item_type='service') لا تعود للمخزن أبداً:
+      // العلبة المستهلكة على العميل لا يُعاد رصّها على الرف. كانت تُدرج
+      // فى حركات sale_return فيتضخم المخزون وهمياً ويكشف الجرد عجزاً.
+      const invTx = returnItems.filter(it => {
+        if (!(it.return_qty > 0 && it.product_id)) return false
+        const orig = items.find(i => i.id === it.item_id)
+        return ((orig as any)?.item_type ?? 'product') !== 'service'
+      }).map(it => ({
         company_id: mapping.companyId,
         product_id: it.product_id,
         transaction_type: "sale_return",
