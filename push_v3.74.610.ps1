@@ -3,18 +3,18 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.608.ps1") { Remove-Item -LiteralPath "push_v3.74.608.ps1" -Force }
+if (Test-Path "push_v3.74.609.ps1") { Remove-Item -LiteralPath "push_v3.74.609.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.609"') {
-    Write-Host "+ 3.74.609" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.610"') {
+    Write-Host "+ 3.74.610" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 $pg = Get-Content -LiteralPath "app/invoices/[id]/page.tsx" -Raw
-if ($pg -notmatch 'canReturnBase' -or $pg -notmatch 'طلب مرتجع') {
-    Write-Host "X request-return button missing" -ForegroundColor Red; exit 1
+if ($pg -notmatch 'isServiceOnlyInvoice' -or $pg -notmatch 'إلغاء الخدمة') {
+    Write-Host "X service-cancel label missing" -ForegroundColor Red; exit 1
 }
-Write-Host "+ request-return button for non-management roles" -ForegroundColor Green
+Write-Host "+ service-only invoices show 'Cancel Service' label" -ForegroundColor Green
 
 Write-Host "Running tsc..." -ForegroundColor Cyan
 $tsc = & npx tsc --noEmit -p tsconfig.json 2>&1
@@ -31,26 +31,26 @@ if ($tscErr -eq 0) {
 git add -- `
     "app/invoices/[id]/page.tsx" `
     "lib/version.ts" `
-    "push_v3.74.609.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.608.ps1" 2>$null
+    "push_v3.74.610.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.609.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_609.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_610.txt"
     $msgLines = @(
-        'feat(returns): v3.74.609 - Request Return button for non-management roles',
+        'feat(returns): v3.74.610 - service-only invoices label the button "Cancel Service"',
         '',
-        'v3.74.608 hid the direct return buttons from non-owner/GM roles',
-        'but left them with no alternative in place on the invoice page -',
-        'the owner immediately asked how the accountant files a request',
-        'from there. Now the SAME spot shows, for roles without the',
-        'express lane, an orange "Request Return / طلب مرتجع" button',
-        'linking to the sales-return-requests module (management approval',
-        '+ warehouse receive cycle), under the SAME returnability',
-        'conditions (extracted to canReturnBase; direct buttons =',
-        'canDirectReturn && canReturnBase).'
+        'Owner-approved cosmetic refinement closing the service-invoice',
+        'returns design: the SAME full-return engine (owner/GM express',
+        'lane, service lines never restock per v3.74.606, revenue',
+        'reversal + customer credit for paid amounts) is presented on',
+        'PURE-SERVICE invoices as "إلغاء الخدمة / Cancel Service" -',
+        'matching the user mental model: nothing physical comes back,',
+        'purely a financial reversal. Mixed/product invoices keep',
+        '"Full Return". isServiceOnlyInvoice = every line item_type =',
+        'service.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -59,5 +59,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.609 pushed - every role has a return path in place" -ForegroundColor Green
+    Write-Host "`n+ v3.74.610 pushed - service invoices speak the user's language" -ForegroundColor Green
 }

@@ -444,6 +444,11 @@ export default function InvoiceDetailPage() {
   ), [activeSalesReturnRequest, invoice, invoiceApprovalStatus, returnableInvoiceItems])
   // v3.74.608 — التنفيذ المباشر للمالك والمدير العام فقط
   const canShowReturnButtons = canDirectReturn && canReturnBase
+  // v3.74.610 — فاتورة خدمية بحتة: نفس محرك المرتجع الكامل، بتسمية
+  // تطابق ذهن المستخدم ("إلغاء الخدمة" — لا بضاعة تعود، عكس مالى فقط)
+  const isServiceOnlyInvoice = useMemo(() => (
+    items.length > 0 && items.every((it: any) => (it.item_type ?? 'product') === 'service')
+  ), [items])
   const canShowPartialReturnButton = useMemo(() => (
     canShowReturnButtons &&
     returnableInvoiceItems.length === 1 &&
@@ -4030,7 +4035,9 @@ export default function InvoiceDetailPage() {
                   data-ai-help="invoices.full_return_button"
                   onClick={() => openReturnDialog('full')}
                 >
-                  {appLang === 'en' ? 'Full Return' : 'مرتجع كامل'}
+                  {isServiceOnlyInvoice
+                    ? (appLang === 'en' ? 'Cancel Service' : 'إلغاء الخدمة')
+                    : (appLang === 'en' ? 'Full Return' : 'مرتجع كامل')}
                 </Button>
               </>
             ) : null}
