@@ -1195,15 +1195,22 @@ export default function InvoiceDetailPage() {
             return
           }
 
+          // v3.74.605 — الخدمات لا مخزون لها: سطر الخدمة (وبنود الأصناف
+          // المرفقة المستهلَكة وقت تنفيذ الحجز، item_type='service') تُستثنى
+          // من فحص التوافر — كانت فاتورة الحجز الخدمية تُرفض بـ"تقشير:
+          // مطلوب 1، متوفر 0". المنتجات الفعلية فقط هى ما يُفحص (وسيخصمها
+          // اعتماد المخزن لاحقاً لوجود جهة تسليم).
           const { data: invoiceItems } = await supabase
             .from("invoice_items")
-            .select("product_id, quantity")
+            .select("product_id, quantity, item_type")
             .eq("invoice_id", invoiceId)
 
-          const itemsToCheck = (invoiceItems || []).map((item: any) => ({
-            product_id: item.product_id,
-            quantity: Number(item.quantity || 0)
-          }))
+          const itemsToCheck = (invoiceItems || [])
+            .filter((item: any) => (item.item_type ?? "product") !== "service")
+            .map((item: any) => ({
+              product_id: item.product_id,
+              quantity: Number(item.quantity || 0)
+            }))
 
           // Pass invoice context for proper inventory filtering (all fields are required)
           const inventoryContext = {
@@ -1213,7 +1220,10 @@ export default function InvoiceDetailPage() {
             cost_center_id: invoice.cost_center_id!,
           }
 
-          const { success, shortages } = await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
+          // v3.74.605 — فاتورة خدمية بحتة = لا شىء يُفحص
+          const { success, shortages } = itemsToCheck.length === 0
+            ? { success: true, shortages: [] as any[] }
+            : await checkInventoryAvailability(supabase, itemsToCheck, undefined, inventoryContext)
 
           if (!success) {
             const { title, description } = getShortageToastContent(shortages, appLang as 'en' | 'ar')
