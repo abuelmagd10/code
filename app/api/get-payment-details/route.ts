@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 /**
  * 🔍 API لجلب تفاصيل دفعة معينة
  */
 export async function GET(req: NextRequest) {
   try {
+    // 🔒 Owner/admin only, and scoped to the caller's own company.
+    const { companyId, error: authError } = await requireOwnerOrAdmin(req)
+    if (authError) return authError
+
     const { searchParams } = new URL(req.url)
     const paymentId = searchParams.get('id')
 
@@ -21,11 +26,12 @@ export async function GET(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // جلب تفاصيل الدفعة
+    // جلب تفاصيل الدفعة (مقيّدة بشركة صاحب الطلب)
     const { data: payment, error } = await supabase
       .from("payments")
       .select("*")
       .eq("id", paymentId)
+      .eq("company_id", companyId)
       .single()
 
     if (error) {

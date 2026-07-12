@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { ErrorHandler } from '../errors/error-handler';
 import { getActiveCompanyId } from '@/lib/company';
+import { checkPermission } from '@/lib/authz';
 
 /**
  * الـ Role Types المدعومة في النظام
@@ -115,11 +116,14 @@ export async function apiGuard(req: Request, options: GuardOptions = {}): Promis
 
             memberData = member;
 
-            // هنا يمكننا إضافة فحص حقيقي لجدول الصلاحيات (`company_role_permissions`)
-            // إذا كان Resource Action مطلوباً
+            // فحص حقيقي لجدول الصلاحيات (`company_role_permissions`) عند الحاجة.
+            // نفس منطق secureApiRequest: owner/admin/general_manager وصول كامل،
+            // والباقي رفض افتراضي ما لم توجد صلاحية صريحة (v3.74 — RBAC enforced).
             if (defaultOptions.resource && defaultOptions.action) {
-                // ... Load RBAC policies from cache or DB here
-                // If fail: return { errorResponse: ErrorHandler.forbidden('صلاحيات غير كافية لإتمام الإجراء المطلوب') };
+                const permResult = await checkPermission(supabase, defaultOptions.resource, defaultOptions.action);
+                if (!permResult.allowed) {
+                    return { errorResponse: ErrorHandler.forbidden('صلاحيات غير كافية لإتمام الإجراء المطلوب') };
+                }
             }
         }
 

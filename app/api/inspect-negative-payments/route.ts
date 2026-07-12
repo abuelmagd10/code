@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 /**
  * 🔍 API لفحص المدفوعات السالبة
  */
 export async function GET(req: NextRequest) {
   try {
+    // 🔒 Owner/admin only, and scoped to the caller's own company.
+    const { companyId, error: authError } = await requireOwnerOrAdmin(req)
+    if (authError) return authError
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // جلب جميع المدفوعات السالبة مع كل التفاصيل
+    // جلب المدفوعات السالبة لشركة صاحب الطلب فقط
     const { data: negativePayments, error: fetchError } = await supabase
       .from("payments")
       .select("*")
+      .eq("company_id", companyId)
       .lt("amount", 0)
       .order("payment_date", { ascending: true })
 

@@ -32,25 +32,14 @@ export async function GET(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return apiError(HTTP_STATUS.UNAUTHORIZED, "غير مصرح", "Unauthorized")
 
-    // جلب الشركة
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-
-    // إذا لم يكن مالك، جرب كعضو
-    let companyId = company?.id
-    if (!companyId) {
-      const { data: member } = await supabase
-        .from("company_members")
-        .select("company_id")
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .single()
-      companyId = member?.company_id
-    }
-
+    // 🔒 Financial data — require the financial_reports:read permission
+    // (owner/admin/general_manager only; accountant and lower are excluded).
+    const { companyId, error: permError } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "financial_reports", action: "read" },
+    })
+    if (permError) return permError
     if (!companyId) return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة", "Company not found")
 
     const admin = await getAdmin()

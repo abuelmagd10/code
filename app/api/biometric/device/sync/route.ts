@@ -1,7 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireOwnerOrAdmin } from '@/lib/api-security';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+    // 🔒 Owner/admin only; company is resolved from the session, not the body.
+    const { companyId, error: authError } = await requireOwnerOrAdmin(request);
+    if (authError) return authError;
+
     // Initialize Supabase client inside handler to avoid build-time env var errors
     const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,9 +15,9 @@ export async function POST(request: Request) {
 
     // This endpoint is hit by an Admin from the ERP dashboard to manually pull from a device
     try {
-        const { device_id, company_id } = await request.json();
+        const { device_id } = await request.json();
 
-        if (!device_id || !company_id) {
+        if (!device_id || !companyId) {
             return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
         }
 
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
             .from('biometric_devices')
             .select('*')
             .eq('id', device_id)
-            .eq('company_id', company_id) // Governance
+            .eq('company_id', companyId) // Governance — from authenticated session
             .single();
 
         if (error || !device) {

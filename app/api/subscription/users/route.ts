@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { apiError, HTTP_STATUS } from "@/lib/api-error-handler"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 function getSupabaseClient() {
   const url = process.env.SUPABASE_URL
@@ -15,12 +16,16 @@ function getSupabaseClient() {
 
 export async function POST(req: NextRequest) {
   try {
+    // 🔒 Only the authenticated owner/admin may change their own company's subscription.
+    const { companyId, error: authError } = await requireOwnerOrAdmin(req)
+    if (authError) return authError
+
     const supabase = getSupabaseClient()
     if (!supabase) {
       return NextResponse.json({ success: false, message: 'Service not configured' })
     }
-    
-    const { companyId, additionalUsers } = await req.json()
+
+    const { additionalUsers } = await req.json()
 
     if (!companyId || !additionalUsers || additionalUsers < 1) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "بيانات غير صحيحة", "Invalid data")
@@ -58,13 +63,14 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    // 🔒 Only the authenticated owner/admin may read their own company's subscription.
+    const { companyId, error: authError } = await requireOwnerOrAdmin(req)
+    if (authError) return authError
+
     const supabase = getSupabaseClient()
     if (!supabase) {
       return NextResponse.json({ success: false, message: 'Service not configured' })
     }
-    
-    const { searchParams } = new URL(req.url)
-    const companyId = searchParams.get('companyId')
 
     if (!companyId) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "معرف الشركة مطلوب", "Company ID required")

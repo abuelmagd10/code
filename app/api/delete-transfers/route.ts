@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { secureApiRequest } from "@/lib/api-security"
 
 /**
  * 🗑️ API لحذف طلبات النقل وإرجاع المنتجات للمخازن المصدرة
  */
 export async function POST(req: NextRequest) {
+  // 🔒 Require an authenticated company member; scope every delete to that company.
+  const { companyId, error: authError } = await secureApiRequest(req, {
+    requireAuth: true,
+    requireCompany: true,
+  })
+  if (authError) return authError
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -22,10 +30,11 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
-    // جلب طلبات النقل
+    // جلب طلبات النقل (مقيّدة بشركة صاحب الطلب فقط)
     const { data: transfers, error: fetchError } = await supabase
       .from("inventory_transfers")
       .select("*")
+      .eq("company_id", companyId)
       .in("transfer_number", transfer_numbers)
 
     if (fetchError) throw fetchError

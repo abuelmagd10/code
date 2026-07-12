@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 /**
  * 🔧 دالة لتوليد رقم مرتجع تلقائي
@@ -28,6 +29,10 @@ async function generateReturnNumber(supabase: any, companyId: string): Promise<s
  * 🔧 API لإصلاح الدفعات المتبقية تلقائياً
  */
 export async function POST(req: NextRequest) {
+  // 🔒 Maintenance tool — restricted to the authenticated owner/admin.
+  const { error: authError } = await requireOwnerOrAdmin(req)
+  if (authError) return authError
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!

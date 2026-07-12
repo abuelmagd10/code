@@ -22,6 +22,15 @@ export async function POST(request: NextRequest) {
   const { context, errorResponse } = await apiGuard(request)
   if (errorResponse || !context) return errorResponse
 
+  // 🔒 قرار المالك: القيود اليدوية (إنشاء/تعديل) مقصورة على المالك والمدير العام فقط.
+  const role = context.member?.role
+  if (role !== "owner" && role !== "general_manager") {
+    return NextResponse.json(
+      { error: "forbidden", message: "القيود اليدوية متاحة للمالك والمدير العام فقط" },
+      { status: 403 }
+    )
+  }
+
   try {
     const body = await request.json()
     const entryId = toNullableString(body?.entryId || body?.entry_id)

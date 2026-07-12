@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 /**
  * 🔧 API لتصحيح المدفوعات السالبة (المرتجعات الخاطئة)
  */
 export async function POST(req: NextRequest) {
   try {
+    // 🔒 Maintenance tool — restricted to the authenticated owner/admin.
+    const { error: authError } = await requireOwnerOrAdmin(req)
+    if (authError) return authError
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!

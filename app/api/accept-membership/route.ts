@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { createClient as createSSR } from "@/lib/supabase/server"
 
 export async function POST(req: NextRequest) {
   try {
     const { email, userId } = await req.json()
     if (!email || !userId) return NextResponse.json({ error: "missing_params" }, { status: 400 })
+
+    // 🔒 The caller may only accept invitations for their OWN authenticated identity.
+    const ssr = await createSSR()
+    const { data: { user } } = await ssr.auth.getUser()
+    if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+    if (user.id !== userId || (user.email || "").toLowerCase() !== String(email).toLowerCase()) {
+      return NextResponse.json({ error: "identity_mismatch" }, { status: 403 })
+    }
+
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
     if (!url || !serviceKey) return NextResponse.json({ error: "server_not_configured" }, { status: 500 })
