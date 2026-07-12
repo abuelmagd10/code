@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-12T16:58:23.722Z
+-- Generated: 2026-07-12T18:06:46.023Z
 -- Routines: 1165
 -- =====================================================================
 
@@ -11597,7 +11597,6 @@ DECLARE
     v_vendor_credit     JSONB;
     v_vendor_credit_items JSONB;
     v_bill_update       JSONB;
-    -- ✅ NEW: Overpayment guard variables
     v_bill_total        NUMERIC;
     v_bill_returned     NUMERIC;
     v_current_paid      NUMERIC;
@@ -11614,7 +11613,6 @@ BEGIN
     v_bill_id     := v_pr.bill_id;
     v_draft_data  := v_pr.draft_financial_data;
 
-    -- ✅ FIX 2: Guard against overpayment BEFORE applying return
     IF v_bill_id IS NOT NULL THEN
         SELECT
             COALESCE(b.total_amount, 0),
@@ -11622,19 +11620,18 @@ BEGIN
         INTO v_bill_total, v_bill_returned
         FROM bills b WHERE id = v_bill_id;
 
-        -- Total approved payments already made on this bill
         SELECT COALESCE(SUM(pa.allocated_amount), 0)
         INTO v_current_paid
         FROM payment_allocations pa
         JOIN payments p ON p.id = pa.payment_id
         WHERE pa.bill_id = v_bill_id
           AND p.status = 'approved'
-          AND COALESCE(p.is_deleted, false) = false;
+          AND COALESCE(p.is_deleted, false) = false
+          AND p.voided_at IS NULL
+          AND p.voids_payment_id IS NULL;
 
-        -- What the net bill amount will be AFTER this return is applied
         v_net_after_return := GREATEST(v_bill_total - v_bill_returned - v_pr.total_amount, 0);
 
-        -- If payments exceed the net amount after return → block
         IF v_current_paid > v_net_after_return THEN
             v_overpayment := v_current_paid - v_net_after_return;
             RAISE EXCEPTION 'RETURN_BLOCKED_OVERPAYMENT: Approving this return of % would cause an overpayment of % on bill (total=%, already_returned=%, paid=%). Please adjust or reverse the payment first.',
@@ -11647,7 +11644,6 @@ BEGIN
         END IF;
     END IF;
 
-    -- Proceed with original logic
     v_transition_result := transition_purchase_return_state(p_purchase_return_id, v_company_id, p_confirmed_by, 'completed', p_notes);
 
     UPDATE purchase_return_items SET is_deducted = true WHERE purchase_return_id = p_purchase_return_id AND is_deducted = false;
@@ -19789,7 +19785,6 @@ DECLARE
   v_bill_currency TEXT;
   v_bill_rate NUMERIC;
 BEGIN
-  -- Cache bill currency context for conversion
   SELECT
     COALESCE(b.total_amount, 0),
     COALESCE(b.returned_amount, 0),
@@ -19798,7 +19793,6 @@ BEGIN
   INTO v_total, v_returned, v_bill_currency, v_bill_rate
   FROM bills b WHERE b.id = p_bill_id;
 
-  -- Sum allocations from payment_allocations (modern flow), converting per-row
   v_paid := COALESCE(
     (SELECT SUM(
       pa.allocated_amount *
@@ -19813,10 +19807,11 @@ BEGIN
      WHERE pa.bill_id = p_bill_id
        AND p.status = 'approved'
        AND COALESCE(p.is_deleted, false) = false
+       AND p.voided_at IS NULL
+       AND p.voids_payment_id IS NULL
     ), 0
   )
   +
-  -- Legacy direct bill_id link on payments
   COALESCE(
     (SELECT SUM(
       p2.amount *
@@ -19830,6 +19825,8 @@ BEGIN
      WHERE p2.bill_id = p_bill_id
        AND p2.status = 'approved'
        AND COALESCE(p2.is_deleted, false) = false
+       AND p2.voided_at IS NULL
+       AND p2.voids_payment_id IS NULL
        AND NOT EXISTS (
          SELECT 1 FROM payment_allocations pa2
          WHERE pa2.payment_id = p2.id AND pa2.bill_id = p_bill_id
@@ -19891,6 +19888,8 @@ BEGIN
      WHERE pa.invoice_id = p_invoice_id
        AND p.status = 'approved'
        AND COALESCE(p.is_deleted, false) = false
+       AND p.voided_at IS NULL
+       AND p.voids_payment_id IS NULL
     ), 0
   )
   +
@@ -19907,6 +19906,8 @@ BEGIN
      WHERE p2.invoice_id = p_invoice_id
        AND p2.status = 'approved'
        AND COALESCE(p2.is_deleted, false) = false
+       AND p2.voided_at IS NULL
+       AND p2.voids_payment_id IS NULL
        AND NOT EXISTS (
          SELECT 1 FROM payment_allocations pa2
          WHERE pa2.payment_id = p2.id AND pa2.invoice_id = p_invoice_id
@@ -38256,6 +38257,8 @@ BEGIN
     WHERE pa.bill_id = NEW.bill_id
       AND p.status = 'approved'
       AND COALESCE(p.is_deleted, false) = false
+      AND p.voided_at IS NULL
+      AND p.voids_payment_id IS NULL
       AND p.id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid);
 
     v_net_available := GREATEST(v_bill_total - v_bill_returned - v_pending_returns, 0);
@@ -38303,6 +38306,8 @@ BEGIN
     WHERE pa2.bill_id = v_alloc.bill_id
       AND p2.status = 'approved'
       AND COALESCE(p2.is_deleted, false) = false
+      AND p2.voided_at IS NULL
+      AND p2.voids_payment_id IS NULL
       AND p2.id != NEW.id;
 
     v_alloc_in_bill_currency := v_alloc.allocated_amount *
@@ -38717,6 +38722,8 @@ BEGIN
   WHERE pa.invoice_id = NEW.invoice_id
     AND p.status = 'approved'
     AND COALESCE(p.is_deleted, false) = false
+    AND p.voided_at IS NULL
+    AND p.voids_payment_id IS NULL
     AND p.id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid);
 
   IF (v_current_paid + NEW.amount) > v_invoice_total THEN
@@ -39165,7 +39172,8 @@ BEGIN
   WHERE pa.bill_id = NEW.bill_id
     AND p.status = 'approved'
     AND COALESCE(p.is_deleted, false) = false
-    -- v3.74.584: a fully-corrected payment is financially unwound
+    AND p.voided_at IS NULL
+    AND p.voids_payment_id IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM vendor_payment_correction_requests v
       WHERE v.original_payment_id = p.id AND v.status = 'executed'
@@ -39185,6 +39193,8 @@ BEGIN
   WHERE pa.bill_id = NEW.bill_id
     AND p.status = 'pending_approval'
     AND COALESCE(p.is_deleted, false) = false
+    AND p.voided_at IS NULL
+    AND p.voids_payment_id IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM vendor_payment_correction_requests v
       WHERE v.original_payment_id = p.id AND v.status = 'executed'
