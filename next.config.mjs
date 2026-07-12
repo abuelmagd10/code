@@ -8,6 +8,17 @@ const nextConfig = {
   // optional native deps that Turbopack/webpack can't safely transform.
   // They're required only by server API routes (Node.js runtime).
   serverExternalPackages: ['pdfkit', 'fontkit'],
+  compiler: {
+    // Strip console.* (except error/warn) from PRODUCTION builds only.
+    // Reduces main-thread work during interactions (better INP) and keeps the
+    // browser console clean in front of clients. Local dev keeps ALL logs, and
+    // console.error / console.warn are preserved so real diagnostics + Sentry
+    // still work.
+    removeConsole:
+      process.env.NODE_ENV === 'production'
+        ? { exclude: ['error', 'warn'] }
+        : false,
+  },
   images: {
     unoptimized: true,
   },
