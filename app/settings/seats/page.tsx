@@ -649,21 +649,30 @@ export default function SeatsManagementPage() {
                 "تاريخ الإضافة" (member join date); it shows the seat
                 license's own purchase + expiry.
                 Standardised onto the shared DataTable component. */}
-            <DataTable
-              columns={seatColumns}
-              data={paginatedSeats}
-              keyField="seat_number"
-              emptyMessage="لا توجد مقاعد بعد. ابدأ بإضافة مقاعد من صفحة الفوترة."
-              rowClassName={(row) => {
-                const isSwapping = swappingSeats.has(row.seat_number)
-                const colour = row.is_over_quota
-                  ? 'bg-red-50/30 dark:bg-red-900/5'
-                  : row.role === 'expired'
-                    ? 'bg-orange-50/40 dark:bg-orange-900/10'
-                    : ''
-                return `${colour} ${isSwapping ? 'opacity-50' : ''}`.trim()
-              }}
-            />
+            {data.seats.length === 0 ? (
+              <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                لا توجد مقاعد بعد. ابدأ بإضافة مقاعد من{' '}
+                <Link href="/settings/billing" className="underline font-semibold text-violet-600 dark:text-violet-400">
+                  صفحة الفوترة
+                </Link>.
+              </div>
+            ) : (
+              <DataTable
+                columns={seatColumns}
+                data={paginatedSeats}
+                keyField="seat_number"
+                emptyMessage="لا توجد مقاعد بعد. ابدأ بإضافة مقاعد من صفحة الفوترة."
+                rowClassName={(row) => {
+                  const isSwapping = swappingSeats.has(row.seat_number)
+                  const colour = row.is_over_quota
+                    ? 'bg-red-50/30 dark:bg-red-900/5'
+                    : row.role === 'expired'
+                      ? 'bg-orange-50/40 dark:bg-orange-900/10'
+                      : ''
+                  return `${colour} ${isSwapping ? 'opacity-50' : ''}`.trim()
+                }}
+              />
+            )}
 
             {data.seats.length > 0 && (
               <DataPagination

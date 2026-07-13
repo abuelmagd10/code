@@ -72,7 +72,9 @@ export default function PayrollPage() {
 
   // Pagination for the two main list tables (payslips / payments)
   // NOTE: hooks are declared before any early return to satisfy React rules.
-  const [payslipsPageSize, setPayslipsPageSize] = useState<number>(10)
+  // v3.74.623 — payslips list is printed as the payroll report, so keep the
+  // page size large enough that all employees appear (and print) at once.
+  const [payslipsPageSize, setPayslipsPageSize] = useState<number>(100)
   const [paymentsPageSize, setPaymentsPageSize] = useState<number>(10)
   const payslipsPagination = usePagination(payslips, { pageSize: payslipsPageSize })
   const paymentsPagination = usePagination(payments, { pageSize: paymentsPageSize })
