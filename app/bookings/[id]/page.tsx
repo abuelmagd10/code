@@ -55,6 +55,13 @@ export default function BookingDetailPage() {
   const supabase = useSupabase()
 
   const [booking, setBooking]     = useState<FullBookingResponse | null>(null)
+  // v3.74.629 — when a booking is completed and linked to an invoice, the
+  // INVOICE is the financial source of truth. A completed booking's total is
+  // frozen by a DB trigger, so it can drift from the invoice (e.g. an
+  // "included" bundle item once counted in the booking but never billed).
+  // We read the invoice figures and show those instead, so the screen never
+  // displays a phantom "outstanding" that doesn't exist on the real invoice.
+  const [invoiceFin, setInvoiceFin] = useState<{ total: number; paid: number } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [canEdit, setCanEdit]     = useState(false)
   // v3.74.374 — discount gate state. Banner sets this; we forward it
@@ -88,13 +95,25 @@ export default function BookingDetailPage() {
         return
       }
       const json = await res.json()
-      setBooking(json.booking as FullBookingResponse)
+      const b = json.booking as FullBookingResponse
+      setBooking(b)
+      // Pull the linked invoice's real figures (source of truth) if any.
+      if (b?.invoice_id) {
+        const { data: inv } = await supabase
+          .from("invoices")
+          .select("total_amount, paid_amount")
+          .eq("id", b.invoice_id)
+          .maybeSingle()
+        setInvoiceFin(inv ? { total: Number(inv.total_amount), paid: Number(inv.paid_amount) } : null)
+      } else {
+        setInvoiceFin(null)
+      }
     } catch (err: any) {
       setLoadError(String(err?.message || err || (isAr ? 'خطأ غير متوقع' : 'Unexpected error')))
     } finally {
       setIsLoading(false)
     }
-  }, [id, isAr])
+  }, [id, isAr, supabase])
 
   useEffect(() => { loadBooking() }, [loadBooking])
 
@@ -310,13 +329,29 @@ export default function BookingDetailPage() {
                   {Number(booking.tax_amount) > 0 && (
                     <InfoRow label={t("ضريبة", "Tax")}             value={<span className="tabular-nums">+ {Number(booking.tax_amount).toFixed(2)}</span>} />
                   )}
-                  <InfoRow label={t("الإجمالي", "Total")}          value={<span className="font-semibold text-green-700 dark:text-green-400 tabular-nums">{Number(booking.total_amount).toFixed(2)}</span>} />
-                  <InfoRow label={t("المدفوع", "Paid")}            value={<span className="tabular-nums text-emerald-600">{Number(booking.paid_amount).toFixed(2)}</span>} />
-                  <InfoRow label={t("المتبقي", "Outstanding")}     value={
-                    <span className={`tabular-nums ${Number(booking.outstanding_amount) > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                      {Number(booking.outstanding_amount).toFixed(2)}
-                    </span>
-                  } />
+                  {(() => {
+                    // Invoice is the source of truth once it exists; otherwise
+                    // fall back to the booking's own figures.
+                    const total = invoiceFin ? invoiceFin.total : Number(booking.total_amount)
+                    const paid  = invoiceFin ? invoiceFin.paid  : Number(booking.paid_amount)
+                    const out   = Math.max(total - paid, 0)
+                    return (
+                      <>
+                        <InfoRow label={t("الإجمالي", "Total")}      value={<span className="font-semibold text-green-700 dark:text-green-400 tabular-nums">{total.toFixed(2)}</span>} />
+                        <InfoRow label={t("المدفوع", "Paid")}        value={<span className="tabular-nums text-emerald-600">{paid.toFixed(2)}</span>} />
+                        <InfoRow label={t("المتبقي", "Outstanding")} value={
+                          <span className={`tabular-nums ${out > 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                            {out.toFixed(2)}
+                          </span>
+                        } />
+                        {invoiceFin && (
+                          <p className="text-[11px] text-muted-foreground pt-2">
+                            {t("القيم من الفاتورة المرتبطة (المرجع المحاسبي).", "Figures from the linked invoice (accounting source of truth).")}
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             </div>

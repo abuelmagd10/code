@@ -3,21 +3,16 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.627.ps1") { Remove-Item -LiteralPath "push_v3.74.627.ps1" -Force }
+if (Test-Path "push_v3.74.628.ps1") { Remove-Item -LiteralPath "push_v3.74.628.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.628"') {
-    Write-Host "+ 3.74.628" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.629"') {
+    Write-Host "+ 3.74.629" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-# Self-checks
-$dt = Get-Content -LiteralPath "components/DataTable.tsx" -Raw
-if ($dt -notmatch "return 'text-start'") { Write-Host "X DataTable alignment fix missing" -ForegroundColor Red; exit 1 }
-$bt = Get-Content -LiteralPath "components/bookings/BookingsTable.tsx" -Raw
-if ($bt -notmatch 'branch_name' -or $bt -notmatch 'الفرع') { Write-Host "X bookings branch column missing" -ForegroundColor Red; exit 1 }
-$cb = Get-Content -LiteralPath "app/reports/bookings/cancelled-bookings/page.tsx" -Raw
-if ($cb -notmatch 'branch_name') { Write-Host "X cancelled-bookings branch missing" -ForegroundColor Red; exit 1 }
-Write-Host "+ alignment fix + branch columns present" -ForegroundColor Green
+$bd = Get-Content -LiteralPath "app/bookings/[id]/page.tsx" -Raw
+if ($bd -notmatch 'invoiceFin') { Write-Host "X booking invoice-truth guard missing" -ForegroundColor Red; exit 1 }
+Write-Host "+ booking financial guard (invoice source of truth) present" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
     Write-Host "Installing exceljs..." -ForegroundColor Cyan
@@ -42,28 +37,26 @@ if ($tscErr -eq 0) {
 
 git add -- `
     "lib/version.ts" `
-    "components/DataTable.tsx" `
-    "components/bookings/BookingsTable.tsx" `
-    "app/api/reports/bookings/cancelled-bookings/route.ts" `
-    "app/reports/bookings/cancelled-bookings/page.tsx" `
+    "app/bookings/[id]/page.tsx" `
     "supabase/schema/functions.sql" `
-    "push_v3.74.628.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.627.ps1" 2>$null
+    "push_v3.74.629.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.628.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_628.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_629.txt"
     $msgLines = @(
-        'fix(bookings): v3.74.628 - show branch + align table headers with data',
+        'fix(bookings): v3.74.629 - show invoice figures as financial source of truth',
         '',
-        '- DataTable: text columns now use logical text-start so header and data',
-        '  line up in RTL (Arabic) instead of both floating physical-left; numbers',
-        '  keep text-right. LTR unchanged.',
-        '- Bookings table: new Branch column (branch_name from v_bookings_full).',
-        '- Cancelled-bookings report: added Branch column (API select + table +',
-        '  CSV) and aligned headers/data via logical text-start/text-end.'
+        '- Booking detail Financial Summary now reads Total/Paid/Outstanding from',
+        '  the LINKED INVOICE when one exists. A completed booking total is frozen',
+        '  by a DB trigger and can drift from the invoice (e.g. an "included" bundle',
+        '  item once counted in the booking but never billed), which showed a',
+        '  phantom outstanding. The invoice is the accounting truth, so no phantom',
+        '  due can appear again.',
+        '- Data: BKG-2026-00001 payment_status reconciled to paid (invoice 500/500).'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -72,5 +65,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.628 pushed - bookings branch + table alignment" -ForegroundColor Green
+    Write-Host "`n+ v3.74.629 pushed - booking invoice-truth guard" -ForegroundColor Green
 }
