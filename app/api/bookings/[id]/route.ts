@@ -163,6 +163,38 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
           'قيمة الخصم يجب أن تكون أقل من إجمالى الخدمة قبل الخصم.',
         )
       }
+
+      // v3.74.630 — Business rule: applying a discount is the ASSIGNED
+      // EXECUTOR's job (still subject to owner/GM approval), NOT the booking
+      // officer's. Management may also set it. Everyone else is blocked.
+      const { data: mem } = await supabase
+        .from('company_members')
+        .select('role')
+        .eq('company_id', companyId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const role = String((mem as any)?.role || '')
+      const isManagement = ['owner', 'admin', 'general_manager'].includes(role)
+      if (!isManagement) {
+        const { data: bk } = await supabase
+          .from('bookings')
+          .select('staff_user_id')
+          .eq('id', id)
+          .maybeSingle()
+        const { data: asg } = await supabase
+          .from('booking_staff_assignments')
+          .select('user_id')
+          .eq('booking_id', id)
+        const isExecutor =
+          (!!(bk as any)?.staff_user_id && (bk as any).staff_user_id === user.id) ||
+          (asg ?? []).some((a: any) => a.user_id === user.id)
+        if (!isExecutor) {
+          throw new BookingApiError(
+            403,
+            'وضع الخصم من اختصاص الموظف المكلّف بتنفيذ الحجز (باعتماد الإدارة). مسؤول الحجز لا يضع خصمًا.',
+          )
+        }
+      }
     }
 
     // If the schedule (date / start_time / staff / service) is being

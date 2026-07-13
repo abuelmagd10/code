@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-13T15:31:49.425Z
+-- Generated: 2026-07-13T17:19:02.590Z
 -- Routines: 1166
 -- =====================================================================
 
@@ -3783,12 +3783,11 @@ AS $function$
 DECLARE
   v_uid uuid := auth.uid();
   v_role text;
-  v_member_branch uuid;
   v_booking public.bookings;
 BEGIN
   IF v_uid IS NULL THEN RETURN; END IF;
 
-  SELECT cm.role, cm.branch_id INTO v_role, v_member_branch
+  SELECT cm.role INTO v_role
   FROM public.company_members cm
   WHERE cm.company_id = p_company_id AND cm.user_id = v_uid
   LIMIT 1;
@@ -3797,23 +3796,17 @@ BEGIN
     RAISE EXCEPTION 'ADDONS_FORBIDDEN: لست عضواً فى هذه الشركة';
   END IF;
 
+  -- Management always allowed (oversight).
   IF v_role IN ('owner','admin','general_manager') THEN RETURN; END IF;
 
   SELECT * INTO v_booking FROM public.bookings b
   WHERE b.id = p_booking_id AND b.company_id = p_company_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'BOOKING_NOT_FOUND'; END IF;
 
-  -- Booking officer: branch scope, and ONLY until execution.
-  IF v_role = 'booking_officer'
-     AND (v_member_branch IS NULL OR v_member_branch = v_booking.branch_id) THEN
-    IF v_booking.status = 'completed' THEN
-      RAISE EXCEPTION 'ADDONS_FORBIDDEN: بعد تنفيذ أمر الحجز يقتصر التعديل على الموظف المنفذ (ما دامت الفاتورة مسودة)';
-    END IF;
-    RETURN;
-  END IF;
-
-  -- The assigned executor: before AND after execution (draft window is
-  -- enforced by assert_booking_editable_for_bundle).
+  -- v3.74.630 — Business rule: selecting the service's attached (bundle)
+  -- items and adding sale products is the ASSIGNED EXECUTOR's job, not the
+  -- booking officer's. The booking officer (call center) only creates and
+  -- confirms the booking. The prior booking_officer allowance was removed.
   IF v_booking.staff_user_id = v_uid
      OR EXISTS (
        SELECT 1 FROM public.booking_staff_assignments bsa
@@ -3822,7 +3815,7 @@ BEGIN
     RETURN;
   END IF;
 
-  RAISE EXCEPTION 'ADDONS_FORBIDDEN: تعديل إضافات الحجز متاح فقط للمالك/الإدارة، مسئول الحجز فى فرعه (قبل التنفيذ)، والموظف المكلف بهذا الحجز';
+  RAISE EXCEPTION 'ADDONS_FORBIDDEN: تعديل أصناف/منتجات الحجز متاح فقط للمالك/الإدارة والموظف المكلّف بتنفيذ هذا الحجز';
 END;
 $function$
 ;

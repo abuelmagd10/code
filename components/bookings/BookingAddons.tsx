@@ -143,14 +143,17 @@ export function BookingAddons({
 
   const mayEdit = useMemo(() => {
     if (!me) return false
+    // Management keeps oversight.
     if (["owner", "admin", "general_manager"].includes(me.role)) return true
+    // v3.74.630 — selecting attached items and adding sale products is the
+    // ASSIGNED EXECUTOR's job only. The booking officer (call center) just
+    // creates/confirms; they no longer edit add-ons here (mirrors the DB
+    // guard assert_booking_addons_permission).
     const isAssigned =
       (!!staffUserId && staffUserId === me.uid) ||
       (assignedStaffUserIds ?? []).includes(me.uid)
-    if (executed) return isAssigned // officer's window closes at execution
-    if (me.role === "booking_officer" && (!me.branch || !bookingBranchId || me.branch === bookingBranchId)) return true
     return isAssigned
-  }, [me, executed, bookingBranchId, staffUserId, assignedStaffUserIds])
+  }, [me, staffUserId, assignedStaffUserIds])
 
   const readOnly = locked || !mayEdit
 
@@ -360,8 +363,8 @@ export function BookingAddons({
                 "View only — after execution, only the assigned staff and management may edit while the invoice is still a draft",
               )
             : t(
-                "عرض فقط — تعديل الإضافات متاح للمالك/الإدارة، مسئول الحجز فى فرعه، والموظف المكلف بهذا الحجز",
-                "View only — addons can be edited by owner/management, the branch booking officer, and the staff assigned to this booking",
+                "عرض فقط — اختيار الأصناف وإضافة المنتجات المباعة من اختصاص الموظف المكلّف بتنفيذ الحجز (والإدارة)",
+                "View only — selecting attached items and adding sale products is done by the assigned executor (and management)",
               )}
         </p>
       )}
