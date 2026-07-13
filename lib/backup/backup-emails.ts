@@ -146,12 +146,6 @@ export async function sendWeeklyBackupEmail(opts: {
   runAt: string
   attachments: Array<{ filename: string; content: Buffer }>
 }): Promise<MailResult> {
-  const transporter = getTransporter()
-  if (!transporter) {
-    console.warn("[backup-emails] SMTP not configured — skipping weekly email to", opts.to)
-    return { sent: false, skipped: true }
-  }
-
   const safeCompany = escapeHtml(opts.companyName)
   const safeRunAt = escapeHtml(opts.runAt)
 
@@ -192,13 +186,53 @@ export async function sendWeeklyBackupEmail(opts: {
 </body>
 </html>`
 
+  const subject = `🗂️ نسختك الأسبوعية — ${opts.companyName}`
+  const text = `مرفق نسخة أسبوعية من بيانات شركة ${opts.companyName} (${opts.runAt}): ملف Excel للاطلاع وملف JSON للاسترجاع. احفظها في مكان آمن.\n\n— 7esab.com`
+
+  // Provider 1 — Resend (the provider the rest of the app uses). Attachments
+  // go as base64. Preferred so this works with the existing production setup.
+  const resendKey = process.env.RESEND_API_KEY
+  if (resendKey) {
+    try {
+      const fromAddr = process.env.EMAIL_FROM || "7ESAB <info@7esab.com>"
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${resendKey}` },
+        body: JSON.stringify({
+          from: fromAddr,
+          to: [opts.to],
+          subject,
+          html,
+          text,
+          attachments: opts.attachments.map((a) => ({
+            filename: a.filename,
+            content: a.content.toString("base64"),
+          })),
+        }),
+      })
+      const body = await res.json().catch(() => ({} as any))
+      if (res.ok && body?.id) return { sent: true }
+      console.error("[backup-emails] weekly Resend rejected:", JSON.stringify({ status: res.status, response: body }))
+      // fall through to SMTP
+    } catch (err) {
+      console.error("[backup-emails] weekly Resend exception:", err instanceof Error ? err.message : String(err))
+      // fall through to SMTP
+    }
+  }
+
+  // Provider 2 — SMTP fallback (nodemailer). Native Buffer attachments.
+  const transporter = getTransporter()
+  if (!transporter) {
+    console.warn("[backup-emails] no email provider configured (Resend/SMTP) — skipping weekly email to", opts.to)
+    return { sent: false, skipped: true }
+  }
   try {
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || '"7esab.com" <noreply@7esab.com>',
+      from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '"7esab.com" <noreply@7esab.com>',
       to: opts.to,
-      subject: `🗂️ نسختك الأسبوعية — ${opts.companyName}`,
+      subject,
       html,
-      text: `مرفق نسخة أسبوعية من بيانات شركة ${opts.companyName} (${opts.runAt}): ملف Excel للاطلاع وملف JSON للاسترجاع. احفظها في مكان آمن.\n\n— 7esab.com`,
+      text,
       attachments: opts.attachments.map((a) => ({ filename: a.filename, content: a.content })),
     })
     return { sent: true }

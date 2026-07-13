@@ -281,6 +281,7 @@ export default function SettingsPage() {
   // Backup states
   const [isExporting, setIsExporting] = useState(false)
   const [isExportingExcel, setIsExportingExcel] = useState(false)
+  const [isEmailingBackup, setIsEmailingBackup] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [importProgress, setImportProgress] = useState(0)
@@ -404,6 +405,38 @@ export default function SettingsPage() {
       toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', 'Excel', err?.message)
     } finally {
       setIsExportingExcel(false)
+    }
+  }
+
+  // v3.74.627 — email the backup (Excel + JSON) to my own inbox right now.
+  // Lets the owner test the weekly-email delivery without waiting for Sunday.
+  const handleEmailBackupNow = async () => {
+    if (!companyId) {
+      toastActionError(toast, language === 'en' ? 'Email' : 'الإرسال', language === 'en' ? 'Backup' : 'النسخة', language === 'en' ? 'No active company' : 'لا توجد شركة نشطة')
+      return
+    }
+    try {
+      setIsEmailingBackup(true)
+      const response = await fetch('/api/backup/email-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: name || 'Company', language }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || (language === 'en' ? 'Failed to send email' : 'فشل إرسال البريد'))
+      }
+      toast({
+        title: language === 'en' ? 'Sent' : 'تم الإرسال',
+        description: language === 'en'
+          ? `Backup emailed to ${payload.to || 'your inbox'}. Check spam too.`
+          : `تم إرسال النسخة إلى ${payload.to || 'بريدك'}. تحقق من مجلد الإزعاج أيضًا.`,
+      })
+    } catch (err: any) {
+      console.error('Email backup error:', err)
+      toastActionError(toast, language === 'en' ? 'Email' : 'الإرسال', language === 'en' ? 'Backup' : 'النسخة', err?.message)
+    } finally {
+      setIsEmailingBackup(false)
     }
   }
 
@@ -2418,6 +2451,26 @@ export default function SettingsPage() {
                       <>
                         <FileSpreadsheet className="w-4 h-4" />
                         {language === 'en' ? 'Export as Excel' : 'تصدير Excel (تقرير مقروء)'}
+                      </>
+                    )}
+                  </Button>
+
+                  {/* v3.74.627 — send the backup to my own inbox now (tests weekly email) */}
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2 gap-2 border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                    onClick={handleEmailBackupNow}
+                    disabled={isEmailingBackup || !companyId}
+                  >
+                    {isEmailingBackup ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {language === 'en' ? 'Sending...' : 'جاري الإرسال...'}
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4" />
+                        {language === 'en' ? 'Email backup to me now' : 'أرسل النسخة إلى بريدي الآن'}
                       </>
                     )}
                   </Button>
