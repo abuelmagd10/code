@@ -20,7 +20,7 @@ import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useTheme } from "next-themes"
 import { useRouter } from "next/navigation"
 import { getActiveCompanyId } from "@/lib/company"
-import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye, Bot, Bell } from "lucide-react"
+import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, ChevronRight, Camera, Upload, Shield, Percent, Save, History, Download, UploadCloud, Database, FileJson, CheckCircle2, AlertCircle, Loader2, HardDrive, RefreshCcw, Calendar, FileText, Package, ShoppingCart, Truck, CreditCard, BookOpen, Users2, Coins, Eye, Bot, Bell, FileSpreadsheet } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings } from "@/lib/page-guides"
 import { Progress } from "@/components/ui/progress"
@@ -280,6 +280,7 @@ export default function SettingsPage() {
 
   // Backup states
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingExcel, setIsExportingExcel] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [importProgress, setImportProgress] = useState(0)
@@ -366,6 +367,43 @@ export default function SettingsPage() {
     } finally {
       setIsExporting(false)
       setTimeout(() => setIsBackupDialogOpen(false), 2000)
+    }
+  }
+
+  // v3.74.625 — Export a human-readable Excel workbook (separate from the JSON
+  // backup, which stays the restore format). Streams an .xlsx attachment.
+  const handleExportExcel = async () => {
+    if (!companyId) {
+      toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', 'Excel', language === 'en' ? 'No active company' : 'لا توجد شركة نشطة')
+      return
+    }
+    try {
+      setIsExportingExcel(true)
+      const response = await fetch('/api/backup/export-excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: name || 'Company' }),
+      })
+      if (!response.ok) {
+        let msg = language === 'en' ? 'Failed to export Excel' : 'فشل تصدير ملف الإكسل'
+        try { const e = await response.json(); msg = e?.error || msg } catch { }
+        throw new Error(msg)
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `ERB-backup-${new Date().toISOString().split('T')[0]}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toastActionSuccess(toast, language === 'en' ? 'Export' : 'التصدير', 'Excel')
+    } catch (err: any) {
+      console.error('Excel export error:', err)
+      toastActionError(toast, language === 'en' ? 'Export' : 'التصدير', 'Excel', err?.message)
+    } finally {
+      setIsExportingExcel(false)
     }
   }
 
@@ -2363,6 +2401,31 @@ export default function SettingsPage() {
                       </>
                     )}
                   </Button>
+
+                  {/* v3.74.625 — تصدير Excel مقروء للمستخدم (منفصل عن نسخة JSON) */}
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2 gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                    onClick={handleExportExcel}
+                    disabled={isExportingExcel || !companyId}
+                  >
+                    {isExportingExcel ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {language === 'en' ? 'Preparing Excel...' : 'جاري تجهيز الإكسل...'}
+                      </>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="w-4 h-4" />
+                        {language === 'en' ? 'Export as Excel' : 'تصدير Excel (تقرير مقروء)'}
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 text-center">
+                    {language === 'en'
+                      ? 'Excel = readable report (Summary + all sections). JSON = full backup for restore.'
+                      : 'الإكسل = تقرير مقروء (ملخص + كل الأقسام). JSON = نسخة كاملة للاسترجاع.'}
+                  </p>
                 </div>
               </div>
 
