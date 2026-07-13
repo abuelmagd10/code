@@ -75,8 +75,15 @@ const getDefaultAlign = (type: ColumnType = 'text'): ColumnAlign => {
  */
 const getAlignClass = (align: ColumnAlign): string => {
   switch (align) {
+    // 'left' is the default for text/custom columns. Use the LOGICAL
+    // `text-start` so it follows the document direction: in RTL (Arabic)
+    // text hugs the right — the natural reading side — so a header and its
+    // data line up instead of both floating to the physical left. In LTR
+    // (English) `text-start` === left, so nothing changes there.
     case 'left':
-      return 'text-left'
+      return 'text-start'
+    // Numbers/dates/currency keep physical right alignment so amounts stay
+    // on a consistent edge across all financial tables (unchanged behavior).
     case 'right':
       return 'text-right'
     case 'center':

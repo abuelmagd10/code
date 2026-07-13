@@ -3,27 +3,26 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.626.ps1") { Remove-Item -LiteralPath "push_v3.74.626.ps1" -Force }
+if (Test-Path "push_v3.74.627.ps1") { Remove-Item -LiteralPath "push_v3.74.627.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.627"') {
-    Write-Host "+ 3.74.627" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.628"') {
+    Write-Host "+ 3.74.628" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-# Self-checks: Resend-first weekly email + email-now route + button
-$emails = Get-Content -LiteralPath "lib/backup/backup-emails.ts" -Raw
-if ($emails -notmatch 'api.resend.com/emails') { Write-Host "X weekly email not using Resend" -ForegroundColor Red; exit 1 }
-if (-not (Test-Path "app/api/backup/email-now/route.ts")) { Write-Host "X email-now route missing" -ForegroundColor Red; exit 1 }
-$set = Get-Content -LiteralPath "app/settings/page.tsx" -Raw
-if ($set -notmatch 'handleEmailBackupNow') { Write-Host "X email-now button/handler missing" -ForegroundColor Red; exit 1 }
-Write-Host "+ Resend-first weekly email + email-now button present" -ForegroundColor Green
+# Self-checks
+$dt = Get-Content -LiteralPath "components/DataTable.tsx" -Raw
+if ($dt -notmatch "return 'text-start'") { Write-Host "X DataTable alignment fix missing" -ForegroundColor Red; exit 1 }
+$bt = Get-Content -LiteralPath "components/bookings/BookingsTable.tsx" -Raw
+if ($bt -notmatch 'branch_name' -or $bt -notmatch 'الفرع') { Write-Host "X bookings branch column missing" -ForegroundColor Red; exit 1 }
+$cb = Get-Content -LiteralPath "app/reports/bookings/cancelled-bookings/page.tsx" -Raw
+if ($cb -notmatch 'branch_name') { Write-Host "X cancelled-bookings branch missing" -ForegroundColor Red; exit 1 }
+Write-Host "+ alignment fix + branch columns present" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
     Write-Host "Installing exceljs..." -ForegroundColor Cyan
     & npm install exceljs --no-audit --no-fund 2>&1 | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) { Write-Host "X npm install exceljs failed" -ForegroundColor Red; exit 1 }
-} else {
-    Write-Host "+ exceljs already installed" -ForegroundColor Green
 }
 
 Write-Host "Regenerating live DB functions snapshot..." -ForegroundColor Cyan
@@ -43,27 +42,28 @@ if ($tscErr -eq 0) {
 
 git add -- `
     "lib/version.ts" `
-    "lib/backup/backup-emails.ts" `
-    "app/api/backup/email-now/route.ts" `
-    "app/settings/page.tsx" `
+    "components/DataTable.tsx" `
+    "components/bookings/BookingsTable.tsx" `
+    "app/api/reports/bookings/cancelled-bookings/route.ts" `
+    "app/reports/bookings/cancelled-bookings/page.tsx" `
     "supabase/schema/functions.sql" `
-    "push_v3.74.627.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.626.ps1" 2>$null
+    "push_v3.74.628.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.627.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_627.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_628.txt"
     $msgLines = @(
-        'feat(backup): v3.74.627 - weekly email via Resend + on-demand "email me now"',
+        'fix(bookings): v3.74.628 - show branch + align table headers with data',
         '',
-        '- sendWeeklyBackupEmail now sends via Resend (the provider the app already',
-        '  uses) with SMTP as fallback, so weekly backups work with the existing',
-        '  production email setup (attachments as base64).',
-        '- New /api/backup/email-now: owner emails their own backup (Excel + JSON)',
-        '  on demand — lets them test delivery without waiting for the weekly cron.',
-        '- settings: "Email backup to me now" button.'
+        '- DataTable: text columns now use logical text-start so header and data',
+        '  line up in RTL (Arabic) instead of both floating physical-left; numbers',
+        '  keep text-right. LTR unchanged.',
+        '- Bookings table: new Branch column (branch_name from v_bookings_full).',
+        '- Cancelled-bookings report: added Branch column (API select + table +',
+        '  CSV) and aligned headers/data via logical text-start/text-end.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -72,5 +72,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.627 pushed - weekly email via Resend + email-now" -ForegroundColor Green
+    Write-Host "`n+ v3.74.628 pushed - bookings branch + table alignment" -ForegroundColor Green
 }

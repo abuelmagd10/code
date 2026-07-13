@@ -105,6 +105,20 @@ export function BookingsTable({ data, lang = "ar", queryLang }: BookingsTablePro
       ),
     },
 
+    // Branch — which branch this booking belongs to. v3.74.628.
+    {
+      key: "branch_name",
+      header: t("الفرع", "Branch"),
+      format: (_, row) => {
+        const r = row as unknown as { branch_name?: string | null }
+        return (
+          <span className="text-sm">
+            {r.branch_name || <span className="italic opacity-50">—</span>}
+          </span>
+        )
+      },
+    },
+
     // Date & Time
     {
       key: "booking_date",
@@ -217,7 +231,7 @@ export function BookingsTable({ data, lang = "ar", queryLang }: BookingsTablePro
       keyField="id"
       emptyMessage={t("لا توجد حجوزات", "No bookings found")}
       lang={isAr ? "ar" : "en"}
-      minWidth="min-w-[900px]"
+      minWidth="min-w-[1000px]"
     />
   )
 }

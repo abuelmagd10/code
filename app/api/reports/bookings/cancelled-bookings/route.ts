@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     let query = supabase
       .from("v_bookings_full")
       .select(
-        "id,booking_no,status,booking_date,start_time,customer_name,customer_phone,service_name,service_type,staff_email,total_amount,cancellation_reason,cancelled_at,created_at",
+        "id,booking_no,status,booking_date,start_time,customer_name,customer_phone,service_name,service_type,staff_email,branch_name,total_amount,cancellation_reason,cancelled_at,created_at",
         { count: "exact" }
       )
       .eq("company_id", companyId)

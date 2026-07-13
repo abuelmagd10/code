@@ -16,6 +16,7 @@ import {
 interface CancelledRow {
   id: string; booking_no: string; status: string; booking_date: string; start_time: string
   customer_name: string; customer_phone: string; service_name: string; staff_email: string
+  branch_name: string | null
   total_amount: number; cancellation_reason: string; cancelled_at: string
 }
 
@@ -66,8 +67,8 @@ export default function CancelledBookingsPage() {
   useEffect(() => { loadData(page) }, [page])
 
   const handleExport = () => {
-    const header = ["booking_no", "status", "booking_date", "start_time", "customer_name", "customer_phone", "service_name", "staff_email", "total_amount", "cancellation_reason", "cancelled_at"]
-    const rows   = data.map((r) => [r.booking_no, r.status, r.booking_date, r.start_time?.slice(0, 5) ?? "", r.customer_name ?? "", r.customer_phone ?? "", r.service_name ?? "", r.staff_email ?? "", Number(r.total_amount).toFixed(2), r.cancellation_reason ?? "", r.cancelled_at?.slice(0, 10) ?? ""])
+    const header = ["booking_no", "status", "booking_date", "start_time", "customer_name", "customer_phone", "service_name", "branch_name", "staff_email", "total_amount", "cancellation_reason", "cancelled_at"]
+    const rows   = data.map((r) => [r.booking_no, r.status, r.booking_date, r.start_time?.slice(0, 5) ?? "", r.customer_name ?? "", r.customer_phone ?? "", r.service_name ?? "", r.branch_name ?? "", r.staff_email ?? "", Number(r.total_amount).toFixed(2), r.cancellation_reason ?? "", r.cancelled_at?.slice(0, 10) ?? ""])
     const csv    = [header.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n")
     const blob   = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" })
     const url    = URL.createObjectURL(blob)
@@ -202,34 +203,36 @@ export default function CancelledBookingsPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b dark:border-gray-700 text-gray-500 dark:text-gray-400">
-                          <th className="text-right py-3 px-2">{t("Booking #", "رقم الحجز")}</th>
+                          <th className="text-start py-3 px-2">{t("Booking #", "رقم الحجز")}</th>
                           <th className="text-center py-3 px-2">{t("Status", "الحالة")}</th>
-                          <th className="text-right py-3 px-2">{t("Date", "التاريخ")}</th>
-                          <th className="text-right py-3 px-2">{t("Customer", "العميل")}</th>
-                          <th className="text-right py-3 px-2">{t("Service", "الخدمة")}</th>
-                          <th className="text-right py-3 px-2">{t("Staff", "الموظف")}</th>
-                          <th className="text-right py-3 px-2">{t("Amount", "المبلغ")}</th>
-                          <th className="text-right py-3 px-2">{t("Reason", "السبب")}</th>
+                          <th className="text-start py-3 px-2">{t("Date", "التاريخ")}</th>
+                          <th className="text-start py-3 px-2">{t("Customer", "العميل")}</th>
+                          <th className="text-start py-3 px-2">{t("Service", "الخدمة")}</th>
+                          <th className="text-start py-3 px-2">{t("Branch", "الفرع")}</th>
+                          <th className="text-start py-3 px-2">{t("Staff", "الموظف")}</th>
+                          <th className="text-end py-3 px-2">{t("Amount", "المبلغ")}</th>
+                          <th className="text-start py-3 px-2">{t("Reason", "السبب")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.map((row) => (
                           <tr key={row.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-700">
-                            <td className="py-3 px-2 font-mono text-xs">{row.booking_no}</td>
+                            <td className="py-3 px-2 font-mono text-xs text-start">{row.booking_no}</td>
                             <td className="py-3 px-2 text-center">
                               <span className={`px-2 py-0.5 rounded text-xs ${row.status === "cancelled" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"}`}>
                                 {row.status === "cancelled" ? t("Cancelled", "ملغي") : t("No-Show", "غياب")}
                               </span>
                             </td>
-                            <td className="py-3 px-2 tabular-nums">{row.booking_date}</td>
-                            <td className="py-3 px-2">
+                            <td className="py-3 px-2 tabular-nums text-start">{row.booking_date}</td>
+                            <td className="py-3 px-2 text-start">
                               <div className="font-medium">{row.customer_name ?? "—"}</div>
                               {row.customer_phone && <div className="text-xs text-gray-400">{row.customer_phone}</div>}
                             </td>
-                            <td className="py-3 px-2">{row.service_name ?? "—"}</td>
-                            <td className="py-3 px-2 text-xs truncate max-w-[140px]">{row.staff_email ?? "—"}</td>
-                            <td className="py-3 px-2 text-right tabular-nums">{fmt.format(Number(row.total_amount))}</td>
-                            <td className="py-3 px-2 text-xs text-gray-500 max-w-[160px] truncate">{row.cancellation_reason ?? "—"}</td>
+                            <td className="py-3 px-2 text-start">{row.service_name ?? "—"}</td>
+                            <td className="py-3 px-2 text-start">{row.branch_name ?? "—"}</td>
+                            <td className="py-3 px-2 text-xs truncate max-w-[140px] text-start">{row.staff_email ?? "—"}</td>
+                            <td className="py-3 px-2 text-end tabular-nums">{fmt.format(Number(row.total_amount))}</td>
+                            <td className="py-3 px-2 text-xs text-gray-500 max-w-[160px] truncate text-start">{row.cancellation_reason ?? "—"}</td>
                           </tr>
                         ))}
                       </tbody>
