@@ -589,10 +589,44 @@ export default function PaymentsPage() {
                 (nullBranchCust as Customer[]).forEach((c: Customer) => {
                   if (!existingIds.has(c.id)) {
                     // ✅ إضافة فقط إذا لم يكن هناك فلتر مركز التكلفة أو إذا كان cost_center_id null أو متطابق
-                    if (!accessFilter.filterByCostCenter || !accessFilter.costCenterId || 
+                    if (!accessFilter.filterByCostCenter || !accessFilter.costCenterId ||
                         !c.cost_center_id || c.cost_center_id === accessFilter.costCenterId) {
                       allCustomers.push(c);
                     }
+                  }
+                });
+              }
+
+              // ✅ استثناء (v3.74.621): عملاء لديهم فاتورة في فرع هذا المستخدم —
+              // حتى لو كان العميل مسجّلاً على فرع آخر. محاسب الفرع يجب أن يتمكن من
+              // تحصيل فواتير فرعه أيًّا كان الفرع الأصلي للعميل.
+              const { data: branchInvCust } = await supabase
+                .from("invoices")
+                .select("customer_id")
+                .eq("company_id", activeCompanyId)
+                .eq("branch_id", accessFilter.branchId)
+                .not("customer_id", "is", null);
+
+              const existingAfterNull = new Set<string>(allCustomers.map((c: Customer) => c.id));
+              const branchInvCustomerIds = Array.from(
+                new Set(
+                  ((branchInvCust || []) as { customer_id: string | null }[])
+                    .map((r) => r.customer_id)
+                    .filter((id): id is string => !!id && !existingAfterNull.has(id))
+                )
+              );
+
+              if (branchInvCustomerIds.length > 0) {
+                const { data: invLinkedCust } = await supabase
+                  .from("customers")
+                  .select("id, name, phone, branch_id, cost_center_id")
+                  .eq("company_id", activeCompanyId)
+                  .in("id", branchInvCustomerIds);
+
+                ((invLinkedCust as Customer[]) || []).forEach((c: Customer) => {
+                  if (!existingAfterNull.has(c.id)) {
+                    allCustomers.push(c);
+                    existingAfterNull.add(c.id);
                   }
                 });
               }
