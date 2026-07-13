@@ -129,3 +129,82 @@ export async function sendBackupFailureNotice(opts: {
     return { sent: false, error: msg }
   }
 }
+
+/**
+ * Weekly backup email — v3.74.626.
+ *
+ * Sent by /api/cron/backup-weekly-email to a company owner with the weekly
+ * data attached: a readable Excel report and the full JSON backup (for
+ * restore). Delivering to the owner's inbox is the reliable, cross-platform
+ * equivalent of "auto-download to the owner's computer" — browsers cannot
+ * write to a chosen local path on a schedule, but email works everywhere and
+ * even when nothing is open.
+ */
+export async function sendWeeklyBackupEmail(opts: {
+  to: string
+  companyName: string
+  runAt: string
+  attachments: Array<{ filename: string; content: Buffer }>
+}): Promise<MailResult> {
+  const transporter = getTransporter()
+  if (!transporter) {
+    console.warn("[backup-emails] SMTP not configured — skipping weekly email to", opts.to)
+    return { sent: false, skipped: true }
+  }
+
+  const safeCompany = escapeHtml(opts.companyName)
+  const safeRunAt = escapeHtml(opts.runAt)
+
+  const html = `<!doctype html>
+<html dir="rtl" lang="ar">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>نسختك الأسبوعية</title></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F3F4F6;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <tr><td style="padding:24px 28px;border-bottom:1px solid #E5E7EB;">
+          <div style="font-size:22px;font-weight:bold;color:#0E9F6E;">🗂️ نسختك الأسبوعية جاهزة</div>
+          <div style="font-size:11px;color:#6B7280;margin-top:2px;">7esab.com — Enterprise Resource Planning</div>
+        </td></tr>
+        <tr><td style="padding:28px;color:#111827;font-size:15px;line-height:1.7;">
+          <p style="margin:0 0 14px;">السلام عليكم،</p>
+          <p style="margin:0 0 14px;">
+            مرفق نسخة أسبوعية من بيانات شركة <strong>${safeCompany}</strong> بتاريخ ${safeRunAt}:
+          </p>
+          <ul style="margin:0 0 14px;padding-inline-start:20px;color:#374151;">
+            <li><strong>ملف Excel</strong> — تقرير مقروء (ملخص + كل الأقسام) للاطلاع والمراجعة.</li>
+            <li><strong>ملف JSON</strong> — نسخة كاملة تُستخدم للاسترجاع عند الحاجة.</li>
+          </ul>
+          <div style="background:#ECFDF5;border:1px solid #6EE7B7;border-radius:10px;padding:14px;margin:18px 0;color:#065F46;font-size:14px;">
+            احفظ هذا البريد أو نزّل المرفقات في مكان آمن على جهازك. تحتوي المرفقات على بيانات حساسة.
+          </div>
+          <div style="text-align:center;margin:24px 0 8px;">
+            <a href="${BACKUP_URL}" style="display:inline-block;background:#0E9F6E;color:#fff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:bold;font-size:15px;">فتح صفحة النسخ الاحتياطية</a>
+          </div>
+        </td></tr>
+        <tr><td style="padding:18px 28px;background:#F9FAFB;border-top:1px solid #E5E7EB;color:#9CA3AF;font-size:12px;text-align:center;">
+          7esab.com • <a href="mailto:info@7esab.com" style="color:#9CA3AF;">info@7esab.com</a><br/>
+          <span style="font-size:11px;">هذا البريد آلى — لا ترد عليه مباشرة.</span>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"7esab.com" <noreply@7esab.com>',
+      to: opts.to,
+      subject: `🗂️ نسختك الأسبوعية — ${opts.companyName}`,
+      html,
+      text: `مرفق نسخة أسبوعية من بيانات شركة ${opts.companyName} (${opts.runAt}): ملف Excel للاطلاع وملف JSON للاسترجاع. احفظها في مكان آمن.\n\n— 7esab.com`,
+      attachments: opts.attachments.map((a) => ({ filename: a.filename, content: a.content })),
+    })
+    return { sent: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error("[backup-emails] weekly sendMail failed:", msg)
+    return { sent: false, error: msg }
+  }
+}

@@ -382,7 +382,7 @@ export default function SettingsPage() {
       const response = await fetch('/api/backup/export-excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName: name || 'Company' }),
+        body: JSON.stringify({ companyName: name || 'Company', language }),
       })
       if (!response.ok) {
         let msg = language === 'en' ? 'Failed to export Excel' : 'فشل تصدير ملف الإكسل'

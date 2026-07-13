@@ -41,10 +41,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}))
     const companyName = body.companyName || "Company"
+    const lang = body.language === "en" ? "en" : "ar"
 
     // Reuse the exact backup dataset — no divergence, no extra queries.
     const backupData = await exportCompanyBackup(companyId, user.id, companyName)
-    const buffer = await buildBackupExcel(backupData)
+    const buffer = await buildBackupExcel(backupData, lang)
 
     // Audit (non-fatal).
     try {
