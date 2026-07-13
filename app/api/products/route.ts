@@ -197,6 +197,18 @@ export async function POST(req: Request) {
       }
     }
 
+    // v3.74.635 — "requires withdrawal approval" flag (RPC doesn't take it).
+    // Products only; when true, using it as an attached/consumed item in a
+    // booking needs the branch warehouse manager to approve its release.
+    if (classification.itemType !== 'service' && body.requires_withdrawal_approval === true) {
+      const { error: wErr } = await supabase
+        .from('products')
+        .update({ requires_withdrawal_approval: true })
+        .eq('id', rpcResult.product_id)
+        .eq('company_id', companyId)
+      if (wErr) console.error('Failed to save requires_withdrawal_approval:', wErr)
+    }
+
     // 4️⃣ Async Audit Logging (Fire and Forget)
     asyncAuditLog({
       companyId,

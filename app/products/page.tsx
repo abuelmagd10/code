@@ -67,6 +67,7 @@ interface Product {
   selling_price?: number | null
   /** v3.74.496: صور الصنف (بحد أقصى 3) */
   image_urls?: string[] | null
+  requires_withdrawal_approval?: boolean
   /** v3.74.580: مدة الصلاحية الافتراضية (يوم) — تُحسب منها صلاحية كل دفعة FIFO تلقائياً */
   shelf_life_days?: number | null
   /** v3.74.586: عدد العبوات فى الكرتونة — لعرض الكميات بالكراتين عند الاستلام والتقارير */
@@ -150,6 +151,8 @@ export default function ProductsPage() {
     branch_id: "",
     warehouse_id: "",
     tax_code_id: "",
+    /** v3.74.635: يتطلب اعتماد سحب من المخزن عند استخدامه كصنف مرفق مستهلك في الحجز */
+    requires_withdrawal_approval: false,
   })
   // v3.74.496: صور الصنف (بحد أقصى 3) + تتبع الصور الأصلية عند التعديل لحذف المحذوف من التخزين
   const [productImages, setProductImages] = useState<AttachmentItem[]>([])
@@ -693,6 +696,7 @@ export default function ProductsPage() {
       // تعيين مستودع فقط للمنتجات
       warehouse_id: isNormalRole ? autoWarehouseId : (userWarehouseId || ""),
       tax_code_id: "",
+      requires_withdrawal_approval: false,
     })
     setFormErrors({})
     // v3.74.496: تفريغ صور الصنف
@@ -1408,6 +1412,27 @@ export default function ProductsPage() {
                                 onChange={(val) => setFormData({ ...formData, reorder_level: Math.round(val) })}
                               />
                             </div>
+                          </div>
+
+                          {/* v3.74.635: يتطلب اعتماد سحب من المخزن (داخل قسم المنتجات) */}
+                          <div className="flex items-start gap-2 rounded-lg border p-3 bg-amber-50/40 dark:bg-amber-900/10">
+                            <input
+                              id="requires_withdrawal_approval"
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 cursor-pointer"
+                              checked={!!formData.requires_withdrawal_approval}
+                              onChange={(e) => setFormData({ ...formData, requires_withdrawal_approval: e.target.checked })}
+                            />
+                            <Label htmlFor="requires_withdrawal_approval" className="text-sm font-normal cursor-pointer">
+                              {appLang === 'en'
+                                ? 'Requires warehouse withdrawal approval when used in a booking'
+                                : 'يتطلب اعتماد سحب من المخزن عند استخدامه كصنف مرفق في الحجز'}
+                              <span className="block text-xs text-muted-foreground mt-0.5">
+                                {appLang === 'en'
+                                  ? 'The branch warehouse manager must approve its release before the service can be completed.'
+                                  : 'يجب أن يعتمد مسؤول مخزن الفرع إخراجه قبل إتمام الخدمة.'}
+                              </span>
+                            </Label>
                           </div>
 
                           {/* v3.74.580: مدة الصلاحية الافتراضية — تُحسب منها صلاحية كل دفعة FIFO تلقائياً */}
