@@ -3,18 +3,16 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.634.ps1") { Remove-Item -LiteralPath "push_v3.74.634.ps1" -Force }
+if (Test-Path "push_v3.74.635.ps1") { Remove-Item -LiteralPath "push_v3.74.635.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.635"') {
-    Write-Host "+ 3.74.635" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.636"') {
+    Write-Host "+ 3.74.636" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-$pp = Get-Content -LiteralPath "app/products/page.tsx" -Raw
-if ($pp -notmatch 'requires_withdrawal_approval') { Write-Host "X product form toggle missing" -ForegroundColor Red; exit 1 }
-$pa = Get-Content -LiteralPath "app/api/products/route.ts" -Raw
-if ($pa -notmatch 'requires_withdrawal_approval') { Write-Host "X products API create passthrough missing" -ForegroundColor Red; exit 1 }
-Write-Host "+ product form toggle + API passthrough present" -ForegroundColor Green
+$us = Get-Content -LiteralPath "app/settings/users/page.tsx" -Raw
+if ($us -notmatch 'mirror the change on the member row itself') { Write-Host "X optimistic member branch update missing" -ForegroundColor Red; exit 1 }
+Write-Host "+ instant member branch update present" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
     Write-Host "Installing exceljs..." -ForegroundColor Cyan
@@ -39,25 +37,24 @@ if ($tscErr -eq 0) {
 
 git add -- `
     "lib/version.ts" `
-    "app/products/page.tsx" `
-    "app/api/products/route.ts" `
+    "app/settings/users/page.tsx" `
     "supabase/schema/functions.sql" `
-    "push_v3.74.635.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.634.ps1" 2>$null
+    "push_v3.74.636.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.635.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_635.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_636.txt"
     $msgLines = @(
-        'feat(products): v3.74.635 - "requires withdrawal approval" toggle on product form',
+        'fix(users): v3.74.636 - branch change updates the member row instantly',
         '',
-        '- Products & Services page: add/edit product dialog now has a checkbox',
-        '  "Requires warehouse withdrawal approval when used in a booking"',
-        '  (products only). Persists on update (passthrough) and on create',
-        '  (post-create follow-up in /api/products). Completes stage 2 of the',
-        '  booking stock-withdrawal feature (self-serve config).'
+        '- After saving a member branch, also mirror branch_id/warehouse_id onto',
+        '  the local members state so the displayed branch updates immediately in',
+        '  every case (including "no branch"), without waiting for the',
+        '  company_members realtime event or a manual refresh. Realtime remains',
+        '  as a secondary sync.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -66,5 +63,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.635 pushed - product withdrawal-approval toggle" -ForegroundColor Green
+    Write-Host "`n+ v3.74.636 pushed - instant member branch update" -ForegroundColor Green
 }

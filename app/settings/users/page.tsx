@@ -1174,6 +1174,16 @@ export default function UsersSettingsPage() {
         return others
       })
 
+      // v3.74.636 — also mirror the change on the member row itself so the
+      // displayed branch updates instantly in EVERY case (including "no
+      // branch", which falls back to member.branch_id), without waiting for
+      // the company_members realtime event or a manual refresh.
+      setMembers(prev => prev.map(m =>
+        m.user_id === editingMemberId
+          ? { ...m, branch_id: effectiveBranchId || undefined, warehouse_id: warehouseId || undefined }
+          : m
+      ))
+
       toastActionSuccess(toast, t("Save", "حفظ"), t("Employee branch", "فرع الموظف"))
 
       // إنشاء إشعار للمستخدم عند تغيير فرعه من الخلفية فقط
