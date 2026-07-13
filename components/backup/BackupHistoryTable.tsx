@@ -162,9 +162,13 @@ export function BackupHistoryTable({
       if (!response.ok || !payload?.url) {
         throw new Error(payload?.error || "Failed")
       }
+      // The signed URL now carries Content-Disposition: attachment (set
+      // server-side), so navigating to it triggers a real file download.
+      // We must NOT use target="_blank" — that opens a new tab and the
+      // browser renders the JSON inline instead of saving it.
       const a = document.createElement("a")
       a.href = payload.url
-      a.target = "_blank"
+      if (payload.filename) a.download = payload.filename
       a.rel = "noopener"
       document.body.appendChild(a)
       a.click()

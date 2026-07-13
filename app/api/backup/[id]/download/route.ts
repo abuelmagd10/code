@@ -42,9 +42,17 @@ export async function GET(
       return NextResponse.json({ error: 'Backup has been deleted' }, { status: 410 })
     }
 
+    // Derive a friendly filename and force an attachment download.
+    // Passing `download` makes Supabase Storage respond with
+    // `Content-Disposition: attachment`, so the browser saves the file
+    // instead of rendering the JSON inline in a new tab. This works
+    // cross-origin (the anchor `download` attr does not on cross-origin URLs).
+    const baseName = (row.storage_path.split('/').pop() || `backup-${id}.json`)
+    const downloadName = baseName.endsWith('.json') ? baseName : `${baseName}.json`
+
     const { data: signed, error: signErr } = await supabase.storage
       .from(row.storage_bucket || 'backups')
-      .createSignedUrl(row.storage_path, SIGNED_URL_TTL_SEC)
+      .createSignedUrl(row.storage_path, SIGNED_URL_TTL_SEC, { download: downloadName })
 
     if (signErr || !signed?.signedUrl) {
       console.error('[Backup Download] Sign error:', signErr)
@@ -54,6 +62,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       url: signed.signedUrl,
+      filename: downloadName,
       expires_in_seconds: SIGNED_URL_TTL_SEC,
     })
   } catch (err: any) {
