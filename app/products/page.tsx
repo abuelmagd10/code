@@ -68,6 +68,7 @@ interface Product {
   /** v3.74.496: صور الصنف (بحد أقصى 3) */
   image_urls?: string[] | null
   requires_withdrawal_approval?: boolean
+  branch_name?: string | null
   /** v3.74.580: مدة الصلاحية الافتراضية (يوم) — تُحسب منها صلاحية كل دفعة FIFO تلقائياً */
   shelf_life_days?: number | null
   /** v3.74.586: عدد العبوات فى الكرتونة — لعرض الكميات بالكراتين عند الاستلام والتقارير */
@@ -977,8 +978,10 @@ export default function ProductsPage() {
         hidden: 'md',
         format: (_, row) => {
           if (!row.branch_id) return <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
-          const branch = branches.find(b => b.id === row.branch_id)
-          return <span className="text-gray-600 dark:text-gray-300 text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{branch ? branch.branch_name : (appLang === 'en' ? 'Unknown' : 'غير معروف')}</span>
+          // v3.74.637 — prefer the branch name returned by the API (works for
+          // every role); fall back to the client branches list.
+          const resolved = row.branch_name || branches.find(b => b.id === row.branch_id)?.branch_name
+          return <span className="text-gray-600 dark:text-gray-300 text-xs bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{resolved || (appLang === 'en' ? 'Unknown' : 'غير معروف')}</span>
         }
       },
       {
