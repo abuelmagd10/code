@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-13T20:14:32.503Z
--- Routines: 1168
+-- Generated: 2026-07-13T20:26:25.800Z
+-- Routines: 1169
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7371,6 +7371,30 @@ BEGIN
   END IF;
   RETURN OLD;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.get_booking_line_additions(p_booking_id) gla
+      JOIN public.products p ON p.id = gla.product_id
+      LEFT JOIN public.booking_stock_withdrawals w
+        ON w.booking_id = p_booking_id
+       AND w.bundle_item_id = gla.bundle_item_id
+       AND w.status = 'approved'
+     WHERE gla.kind <> 'extra'
+       AND COALESCE(p.requires_withdrawal_approval, false) = true
+       AND w.id IS NULL
+  );
 $function$
 ;
 

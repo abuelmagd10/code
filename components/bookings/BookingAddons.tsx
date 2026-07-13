@@ -38,6 +38,13 @@ interface BundleItem {
   child_unit_price: number
   selected?: boolean
   quantity_override?: number | null
+  requires_withdrawal_approval?: boolean
+}
+
+// v3.74.634 — a warehouse-withdrawal request/decision for a consumed item.
+interface WithdrawalRec {
+  id: string
+  status: "pending" | "approved" | "rejected"
 }
 
 interface ExtraItem {
@@ -165,6 +172,8 @@ export function BookingAddons({
   // so the executor sees whether an attached/sale product is on hand at the
   // branch warehouse before using or selling it.
   const [branchStockMap, setBranchStockMap] = useState<Record<string, number>>({})
+  // v3.74.634 — withdrawal requests keyed by bundle_item_id.
+  const [withdrawals, setWithdrawals] = useState<Record<string, WithdrawalRec>>({})
 
   // Walk-in extras form state
   const [pickedProductId, setPickedProductId] = useState<string>("")
@@ -191,7 +200,7 @@ export function BookingAddons({
       if (effectiveParentId) {
         const { data: rawBundle } = await supabase
           .from("product_bundle_items")
-          .select("id, child_product_id, quantity, is_optional, auto_deduct_inventory, price_handling, products:child_product_id(name, sku, unit_price)")
+          .select("id, child_product_id, quantity, is_optional, auto_deduct_inventory, price_handling, products:child_product_id(name, sku, unit_price, requires_withdrawal_approval)")
           .eq("company_id", companyId)
           .eq("parent_product_id", effectiveParentId)
           .order("display_order", { ascending: true })
@@ -208,6 +217,7 @@ export function BookingAddons({
           child_unit_price: Number(row.products?.unit_price ?? 0),
           selected: !row.is_optional,
           quantity_override: null,
+          requires_withdrawal_approval: !!row.products?.requires_withdrawal_approval,
         }))
 
         // Overlay actual staff selections
@@ -289,6 +299,18 @@ export function BookingAddons({
           setBranchStockMap({})
         }
       }
+
+      // v3.74.634 — withdrawal requests for this booking (bundle_item_id -> rec)
+      const { data: wRows } = await supabase
+        .from("booking_stock_withdrawals")
+        .select("id, bundle_item_id, status")
+        .eq("company_id", companyId)
+        .eq("booking_id", bookingId)
+      const wMap: Record<string, WithdrawalRec> = {}
+      for (const w of (wRows || []) as any[]) {
+        if (w.bundle_item_id) wMap[w.bundle_item_id] = { id: w.id, status: w.status }
+      }
+      setWithdrawals(wMap)
     } catch (e: any) {
       console.error("[BookingAddons] load error", e)
     } finally {
@@ -297,6 +319,43 @@ export function BookingAddons({
   }, [supabase, companyId, bookingId, parentProductId, bookingQty, bookingBranchId])
 
   useEffect(() => { load() }, [load])
+
+  // v3.74.634 — executor asks the branch store manager to release a consumed item.
+  const requestWithdrawal = async (bi: BundleItem) => {
+    try {
+      const { error } = await supabase.rpc("request_booking_stock_withdrawal", {
+        p_company_id: companyId,
+        p_booking_id: bookingId,
+        p_bundle_item_id: bi.id,
+        p_reason: null,
+      })
+      if (error) throw error
+      toast({ title: t("تم إرسال الطلب", "Request sent"), description: t("بانتظار اعتماد مسؤول المخزن.", "Awaiting warehouse manager approval.") })
+      await load()
+      onChange?.()
+    } catch (e: any) {
+      toast({ title: t("خطأ", "Error"), description: e?.message || t("تعذّر إرسال الطلب", "Failed to send request"), variant: "destructive" })
+    }
+  }
+
+  // v3.74.634 — store manager / management approves or rejects a request.
+  const decideWithdrawal = async (withdrawalId: string, approve: boolean) => {
+    try {
+      const { error } = await supabase.rpc("decide_booking_stock_withdrawal", {
+        p_withdrawal_id: withdrawalId,
+        p_approve: approve,
+        p_notes: null,
+      })
+      if (error) throw error
+      toast({ title: approve ? t("تم الاعتماد", "Approved") : t("تم الرفض", "Rejected") })
+      await load()
+      onChange?.()
+    } catch (e: any) {
+      toast({ title: t("خطأ", "Error"), description: e?.message || t("تعذّر تنفيذ القرار", "Failed to decide"), variant: "destructive" })
+    }
+  }
+
+  const canDecideWithdrawals = !!me && (["owner", "admin", "general_manager", "store_manager"].includes(me.role))
 
   const toggleOptional = async (item: BundleItem, checked: boolean) => {
     if (readOnly) return
@@ -533,6 +592,50 @@ export function BookingAddons({
                           {q > 0
                             ? `${t("متوفر بمخزن الفرع", "In branch stock")}: ${q}`
                             : t("غير متوفر بمخزن الفرع", "Not in branch stock")}
+                        </div>
+                      )
+                    })()}
+
+                    {/* v3.74.634 — warehouse-withdrawal approval for consumed items */}
+                    {bi.requires_withdrawal_approval && (bi.selected || !bi.is_optional) && (() => {
+                      const w = withdrawals[bi.id]
+                      const status = w?.status
+                      return (
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          {status === "approved" ? (
+                            <span className="text-[11px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                              {t("معتمد للسحب من المخزن", "Approved for release")}
+                            </span>
+                          ) : status === "pending" ? (
+                            <>
+                              <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                                {t("بانتظار اعتماد المخزن", "Awaiting warehouse approval")}
+                              </span>
+                              {canDecideWithdrawals && w && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-green-700 border-green-300" onClick={() => decideWithdrawal(w.id, true)}>
+                                    {t("اعتماد", "Approve")}
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-red-600 border-red-300" onClick={() => decideWithdrawal(w.id, false)}>
+                                    {t("رفض", "Reject")}
+                                  </Button>
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {status === "rejected" && (
+                                <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                                  {t("مرفوض — ألغِ التحديد وأكمل بدونه", "Rejected — uncheck and complete without it")}
+                                </span>
+                              )}
+                              {!readOnly && (
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => requestWithdrawal(bi)}>
+                                  {t("طلب سحب من المخزن", "Request withdrawal")}
+                                </Button>
+                              )}
+                            </>
+                          )}
                         </div>
                       )
                     })()}

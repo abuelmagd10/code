@@ -65,6 +65,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       )
     }
 
+    // v3.74.634 — Withdrawal-approval gate. Block completion if a SELECTED
+    // attached (consumed) item whose product requires withdrawal approval has
+    // not been approved by the branch warehouse manager yet. Only products
+    // flagged requires_withdrawal_approval can block; all others pass through.
+    const { data: blocked, error: gateErr } = await supabase.rpc('booking_blocking_withdrawals_exist', {
+      p_company_id: companyId,
+      p_booking_id: id,
+    })
+    if (gateErr) throw gateErr
+    if (blocked === true) {
+      throw new BookingApiError(
+        409,
+        'يوجد صنف مرفق يتطلب اعتماد سحب من المخزن قبل تنفيذ الحجز. اطلب الاعتماد من مسؤول المخزن، أو ألغِ تحديد الصنف وأكمل بدونه.',
+      )
+    }
+
     // Execute atomic completion
     const { data: result, error } = await supabase.rpc('complete_booking_atomic', {
       p_company_id:   companyId,
