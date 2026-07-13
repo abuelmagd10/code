@@ -161,6 +161,10 @@ export function BookingAddons({
   const [extras, setExtras] = useState<ExtraItem[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
   const [loading, setLoading] = useState(false)
+  // v3.74.631 — available stock in THIS booking's branch (product_id -> qty),
+  // so the executor sees whether an attached/sale product is on hand at the
+  // branch warehouse before using or selling it.
+  const [branchStockMap, setBranchStockMap] = useState<Record<string, number>>({})
 
   // Walk-in extras form state
   const [pickedProductId, setPickedProductId] = useState<string>("")
@@ -261,12 +265,36 @@ export function BookingAddons({
           image_urls: p.image_urls ?? null,
         })),
       )
+
+      // v3.74.631 — branch-specific availability for attached items + the
+      // sale-products picker. One call returns per-(warehouse,product) rows
+      // for this branch; we sum per product. Degrades to empty on any error.
+      if (bookingBranchId) {
+        try {
+          const { data: bal } = await supabase.rpc("get_inventory_available_balance", {
+            p_company_id: companyId,
+            p_branch_id: bookingBranchId,
+            p_warehouse_id: null,
+            p_cost_center_id: null,
+            p_product_id: null,
+          })
+          const map: Record<string, number> = {}
+          for (const r of (bal || []) as any[]) {
+            if (!r?.product_id) continue
+            map[r.product_id] = (map[r.product_id] || 0) + Number(r.available_quantity || 0)
+          }
+          setBranchStockMap(map)
+        } catch (e) {
+          console.error("[BookingAddons] branch stock load", e)
+          setBranchStockMap({})
+        }
+      }
     } catch (e: any) {
       console.error("[BookingAddons] load error", e)
     } finally {
       setLoading(false)
     }
-  }, [supabase, companyId, bookingId, parentProductId, bookingQty])
+  }, [supabase, companyId, bookingId, parentProductId, bookingQty, bookingBranchId])
 
   useEffect(() => { load() }, [load])
 
@@ -414,6 +442,7 @@ export function BookingAddons({
                   productsOnly
                   showPrice
                   showStock
+                  branchStockMap={branchStockMap}
                   currency={typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"}
                 />
               </div>
@@ -495,6 +524,18 @@ export function BookingAddons({
                   <div className="flex-1">
                     <div className="text-sm font-medium">{bi.child_name}</div>
                     <div className="text-xs text-muted-foreground font-mono">{bi.child_sku}</div>
+                    {/* v3.74.631 — branch stock availability */}
+                    {(() => {
+                      const q = branchStockMap[bi.child_product_id]
+                      if (q === undefined) return null
+                      return (
+                        <div className={`text-[11px] mt-0.5 ${q > 0 ? "text-green-600" : "text-red-500"}`}>
+                          {q > 0
+                            ? `${t("متوفر بمخزن الفرع", "In branch stock")}: ${q}`
+                            : t("غير متوفر بمخزن الفرع", "Not in branch stock")}
+                        </div>
+                      )
+                    })()}
                   </div>
                   <div className="text-sm tabular-nums text-muted-foreground">
                     × {bi.quantity}

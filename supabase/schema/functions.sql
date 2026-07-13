@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-13T17:19:02.590Z
+-- Generated: 2026-07-13T17:35:20.666Z
 -- Routines: 1166
 -- =====================================================================
 
@@ -12696,6 +12696,20 @@ BEGIN
     SELECT v_booking_id, uid, p_company_id, p_branch_id
       FROM unnest(v_staff_arr) AS uid
     ON CONFLICT (booking_id, user_id) DO NOTHING;
+  END IF;
+
+  -- v3.74.632 — auto-select ALL optional attached (bundle) items by default,
+  -- so the executor opens the booking with them checked and only unchecks
+  -- what wasn't used/sold. Mandatory items are auto-included elsewhere.
+  IF v_service.product_catalog_id IS NOT NULL THEN
+    INSERT INTO public.booking_bundle_selections
+      (company_id, booking_id, bundle_item_id, quantity_override, selected_by)
+    SELECT p_company_id, v_booking_id, pbi.id, NULL, p_created_by
+      FROM public.product_bundle_items pbi
+     WHERE pbi.parent_product_id = v_service.product_catalog_id
+       AND pbi.company_id = p_company_id
+       AND COALESCE(pbi.is_optional, false) = true
+    ON CONFLICT (booking_id, bundle_item_id) DO NOTHING;
   END IF;
 
   RETURN jsonb_build_object(
