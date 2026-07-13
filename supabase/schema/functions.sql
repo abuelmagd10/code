@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-12T18:06:46.023Z
--- Routines: 1165
+-- Generated: 2026-07-13T10:30:08.641Z
+-- Routines: 1166
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -34587,6 +34587,22 @@ END; $function$
 ;
 
 -- ---------------------------------------------------------------
+-- normalize_booking_payment_status()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.normalize_booking_payment_status()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.payment_status = 'partially_paid' THEN
+    NEW.payment_status := 'partial';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- normalize_phone(phone text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.normalize_phone(phone text)
@@ -48293,7 +48309,7 @@ BEGIN
          payment_status = CASE
            WHEN COALESCE(NEW.paid_amount, 0) <= 0 THEN 'unpaid'
            WHEN COALESCE(NEW.paid_amount, 0) >= total_amount THEN 'paid'
-           ELSE 'partially_paid'
+           ELSE 'partial'
          END,
          updated_at = NOW()
    WHERE invoice_id = NEW.id;

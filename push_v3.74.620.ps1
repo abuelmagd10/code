@@ -3,14 +3,13 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.616.ps1") { Remove-Item -LiteralPath "push_v3.74.616.ps1" -Force }
+if (Test-Path "push_v3.74.618.ps1") { Remove-Item -LiteralPath "push_v3.74.618.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.618"') {
-    Write-Host "+ 3.74.618" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.620"') {
+    Write-Host "+ 3.74.620" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-# --- Keep the live-functions snapshot in sync automatically on every push ---
 Write-Host "Regenerating live DB functions snapshot..." -ForegroundColor Cyan
 & node scripts/dump-db-functions.js
 if ($LASTEXITCODE -ne 0) {
@@ -22,8 +21,8 @@ if (-not (Test-Path "supabase/schema/functions.sql")) {
 }
 
 foreach ($f in @(
-    "supabase/migrations/20260712000617_v3_74_617_recalc_and_return_guards_exclude_voided.sql",
-    "supabase/migrations/20260712000618_v3_74_618_confirm_purchase_return_excludes_voided.sql"
+    "supabase/migrations/20260712000619_v3_74_619_booking_sync_uses_valid_partial_status.sql",
+    "supabase/migrations/20260712000620_v3_74_620_normalize_booking_payment_status.sql"
 )) {
     if (-not (Test-Path $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
@@ -43,33 +42,28 @@ if ($tscErr -eq 0) {
 git add -- `
     "lib/version.ts" `
     "supabase/schema/functions.sql" `
-    "supabase/migrations/20260712000617_v3_74_617_recalc_and_return_guards_exclude_voided.sql" `
-    "supabase/migrations/20260712000618_v3_74_618_confirm_purchase_return_excludes_voided.sql" `
-    "push_v3.74.618.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.616.ps1" 2>$null
+    "supabase/migrations/20260712000619_v3_74_619_booking_sync_uses_valid_partial_status.sql" `
+    "supabase/migrations/20260712000620_v3_74_620_normalize_booking_payment_status.sql" `
+    "push_v3.74.620.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.618.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_618.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_620.txt"
     $msgLines = @(
-        'fix(payments): v3.74.618 - exclude voided payments from all paid-total calcs',
+        'fix(bookings): v3.74.620 - booking payment_status must be a valid enum value',
         '',
-        'Completes the voided-payment sweep from v3.74.615/616. Four more',
-        'functions summed approved payments without excluding voided ones,',
-        'which could set a wrong paid_amount/status or wrongly block a return:',
+        'Paying a booking-linked invoice failed with 500 because booking sync',
+        'wrote payment_status = ''partially_paid'', which the CHECK constraint',
+        'chk_bookings_payment_status rejects (allowed: unpaid/partial/paid).',
         '',
-        '- fn_recalc_bill_paid_status / fn_recalc_invoice_paid_status',
-        '- prevent_return_creating_overpay',
-        '- confirm_purchase_return_delivery_v3',
-        '',
-        'A repo-wide scan now finds zero payment_allocations paid-sums that',
-        'omit the voided_at / voids_payment_id exclusion.',
-        '',
-        'The live-functions snapshot (supabase/schema/functions.sql) is now',
-        'regenerated automatically by this push script, so the repo mirror',
-        'stays in sync with the database on every release.'
+        '- v3.74.619 sync_booking_from_invoice_trg(): write ''partial''.',
+        '- v3.74.620 normalize_booking_payment_status(): BEFORE trigger that',
+        '  coerces any lingering ''partially_paid'' -> ''partial'' (covers',
+        '  resync_booking_invoice and complete_booking_atomic too).',
+        'Both applied to production via MCP; these migrations mirror them.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -78,5 +72,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.618 pushed - voided-payment sweep complete, snapshot auto-synced" -ForegroundColor Green
+    Write-Host "`n+ v3.74.620 pushed - booking payment status fixed" -ForegroundColor Green
 }
