@@ -9,6 +9,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Wallet, TrendingUp, Users, ChevronLeft, Search, ArrowUpRight } from "lucide-react"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
@@ -89,6 +90,77 @@ export default function CustomerCreditsPage() {
     totalBalance: credits.reduce((s, c) => s + c.totalCredit, 0),
     avgBalance: credits.length > 0 ? credits.reduce((s, c) => s + c.totalCredit, 0) / credits.length : 0,
   }), [credits])
+
+  // Standard DataTable columns — same columns/order as the previous manual table
+  const columns: DataTableColumn<CustomerCredit>[] = useMemo(() => [
+    {
+      key: 'customerName',
+      header: appLang === 'en' ? 'Customer' : 'العميل',
+      type: 'text',
+      align: 'right',
+      format: (_v, c) => (
+        <div>
+          <div className="font-medium text-gray-900 dark:text-white">{c.customerName}</div>
+          {c.customerEmail && <div className="text-xs text-gray-400">{c.customerEmail}</div>}
+        </div>
+      ),
+    },
+    {
+      key: 'customerPhone',
+      header: appLang === 'en' ? 'Phone' : 'الهاتف',
+      type: 'text',
+      align: 'right',
+      hidden: 'sm',
+      className: 'text-gray-600 dark:text-gray-400',
+      format: (_v, c) => c.customerPhone || '—',
+    },
+    {
+      key: 'totalCredit',
+      header: appLang === 'en' ? 'Credit Balance' : 'الرصيد الدائن',
+      type: 'currency',
+      align: 'right',
+      format: (_v, c) => (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+          {currencySymbol}{c.totalCredit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      key: 'transactionCount',
+      header: appLang === 'en' ? 'Transactions' : 'الحركات',
+      type: 'number',
+      align: 'center',
+      hidden: 'md',
+      format: (_v, c) => (
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-full">
+          {c.transactionCount}
+        </span>
+      ),
+    },
+    {
+      key: 'lastActivity',
+      header: appLang === 'en' ? 'Last Activity' : 'آخر حركة',
+      type: 'date',
+      align: 'right',
+      hidden: 'md',
+      className: 'text-gray-500 dark:text-gray-400 text-sm',
+      format: (_v, c) => c.lastActivity ? new Date(c.lastActivity).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG') : '—',
+    },
+    {
+      key: 'actions',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_v, c) => (
+        <Link href={`/customer-credits/${c.customerId}`}>
+          <Button variant="outline" size="sm" className="h-8 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20 gap-1">
+            <ArrowUpRight className="h-3 w-3" />
+            {appLang === 'en' ? 'View' : 'عرض'}
+          </Button>
+        </Link>
+      ),
+    },
+  ], [appLang, currencySymbol])
 
   if (loading) return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -181,74 +253,25 @@ export default function CustomerCreditsPage() {
           {/* Table */}
           <Card className="dark:bg-slate-900 dark:border-slate-800">
             <CardContent className="p-0">
-              {paginatedItems.length === 0 ? (
-                <div className="text-center py-16">
-                  <Wallet className="w-14 h-14 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-                  <p className="text-gray-500 dark:text-gray-400 font-medium">
-                    {appLang === 'en' ? 'No customers with credit balance' : 'لا يوجد عملاء لديهم رصيد دائن'}
-                  </p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                    {appLang === 'en' ? 'Credit balances are created when returns are approved on paid invoices' : 'يُنشأ الرصيد عند اعتماد مرتجع على فاتورة مدفوعة'}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[600px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Customer' : 'العميل'}</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300 hidden sm:table-cell">{appLang === 'en' ? 'Phone' : 'الهاتف'}</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Credit Balance' : 'الرصيد الدائن'}</th>
-                        <th className="px-4 py-3 text-center font-semibold text-gray-700 dark:text-gray-300 hidden md:table-cell">{appLang === 'en' ? 'Transactions' : 'الحركات'}</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300 hidden md:table-cell">{appLang === 'en' ? 'Last Activity' : 'آخر حركة'}</th>
-                        <th className="px-4 py-3 text-center font-semibold text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedItems.map((c) => (
-                        <tr key={c.customerId} className="border-b border-gray-100 dark:border-gray-800 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-gray-900 dark:text-white">{c.customerName}</div>
-                            {c.customerEmail && <div className="text-xs text-gray-400">{c.customerEmail}</div>}
-                          </td>
-                          <td className="px-4 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{c.customerPhone || '—'}</td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                              {currencySymbol}{c.totalCredit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center hidden md:table-cell">
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-full">
-                              {c.transactionCount}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm hidden md:table-cell">
-                            {c.lastActivity ? new Date(c.lastActivity).toLocaleDateString(appLang === 'en' ? 'en-US' : 'ar-EG') : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Link href={`/customer-credits/${c.customerId}`}>
-                              <Button variant="outline" size="sm" className="h-8 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20 gap-1">
-                                <ArrowUpRight className="h-3 w-3" />
-                                {appLang === 'en' ? 'View' : 'عرض'}
-                              </Button>
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {filtered.length > 0 && (
-                    <DataPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      totalItems={totalItems}
-                      pageSize={pageSize}
-                      onPageChange={goToPage}
-                      onPageSizeChange={() => {}}
-                      lang={appLang}
-                    />
-                  )}
-                </div>
+              <DataTable
+                columns={columns}
+                data={paginatedItems}
+                keyField="customerId"
+                lang={appLang}
+                minWidth="min-w-[600px]"
+                emptyMessage={appLang === 'en' ? 'No customers with credit balance' : 'لا يوجد عملاء لديهم رصيد دائن'}
+                rowClassName="hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition-colors"
+              />
+              {filtered.length > 0 && (
+                <DataPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  pageSize={pageSize}
+                  onPageChange={goToPage}
+                  onPageSizeChange={() => {}}
+                  lang={appLang}
+                />
               )}
             </CardContent>
           </Card>

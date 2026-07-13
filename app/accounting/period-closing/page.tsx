@@ -19,6 +19,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 interface AccountingPeriod {
   id: string
@@ -70,6 +73,21 @@ export default function PeriodClosingPage() {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+
+  // Pagination (standard DataTable pattern) — hook declared before any conditional returns
+  const [pageSize, setPageSize] = useState(10)
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedPeriods,
+    goToPage,
+    setPageSize: updatePageSize,
+  } = usePagination(periods, { pageSize })
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
 
   useEffect(() => {
     setHydrated(true)
@@ -251,6 +269,58 @@ export default function PeriodClosingPage() {
     )
   }
 
+  // أعمدة الجدول الموحّد (نفس الأعمدة والترتيب الأصلي)
+  const tableColumns: DataTableColumn<AccountingPeriod>[] = [
+    {
+      key: 'period_name',
+      header: (hydrated && appLang === 'en') ? 'Period Name' : 'اسم الفترة',
+      type: 'text',
+      align: 'right',
+      className: 'font-medium',
+    },
+    {
+      key: 'period_start',
+      header: (hydrated && appLang === 'en') ? 'Start Date' : 'تاريخ البداية',
+      type: 'date',
+      align: 'right',
+    },
+    {
+      key: 'period_end',
+      header: (hydrated && appLang === 'en') ? 'End Date' : 'تاريخ النهاية',
+      type: 'date',
+      align: 'right',
+    },
+    {
+      key: 'status',
+      header: (hydrated && appLang === 'en') ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'right',
+      format: (_value, row) => getStatusBadge(row.status, row.is_locked),
+    },
+    {
+      key: 'journal_entry_id',
+      header: (hydrated && appLang === 'en') ? 'Journal Entry' : 'القيد المحاسبي',
+      type: 'custom',
+      align: 'right',
+      format: (_value, row) => (
+        row.journal_entry_id ? (
+          <a href={`/journal-entries?entry_id=${row.journal_entry_id}`} className="text-blue-600 hover:underline">
+            {row.journal_entry_id.substring(0, 8)}...
+          </a>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )
+      ),
+    },
+    {
+      key: 'closed_at',
+      header: (hydrated && appLang === 'en') ? 'Closed At' : 'تاريخ الإقفال',
+      type: 'date',
+      align: 'right',
+      format: (_value, row) => (row.closed_at ? new Date(row.closed_at).toLocaleDateString('ar-EG') : "-"),
+    },
+  ]
+
   const isOwnerOrAdmin = ["owner", "admin"].includes(userRole)
 
   return (
@@ -304,61 +374,39 @@ export default function PeriodClosingPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Period Name' : 'اسم الفترة'}</th>
-                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Start Date' : 'تاريخ البداية'}</th>
-                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'End Date' : 'تاريخ النهاية'}</th>
-                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Status' : 'الحالة'}</th>
-                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Journal Entry' : 'القيد المحاسبي'}</th>
-                        <th className="text-right p-2" suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'Closed At' : 'تاريخ الإقفال'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {periods.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="text-center p-8 text-gray-500">
-                            <div className="flex flex-col items-center gap-3">
-                              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center">
-                                <Lock className="w-6 h-6 text-gray-400" />
-                              </div>
-                              <p suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No accounting periods found' : 'لا توجد فترات محاسبية'}</p>
-                              {isOwnerOrAdmin && (
-                                <Button size="sm" onClick={openCreateDialogForCurrentMonth} className="bg-green-600 hover:bg-green-700">
-                                  <Plus className="w-4 h-4 mr-1" />
-                                  {(hydrated && appLang === 'en') ? 'Create first period' : 'إنشاء أول فترة'}
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : (
-                        periods.map((period) => (
-                          <tr key={period.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-900">
-                            <td className="p-2 font-medium">{period.period_name}</td>
-                            <td className="p-2">{period.period_start}</td>
-                            <td className="p-2">{period.period_end}</td>
-                            <td className="p-2">{getStatusBadge(period.status, period.is_locked)}</td>
-                            <td className="p-2">
-                              {period.journal_entry_id ? (
-                                <a href={`/journal-entries?entry_id=${period.journal_entry_id}`} className="text-blue-600 hover:underline">
-                                  {period.journal_entry_id.substring(0, 8)}...
-                                </a>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="p-2">
-                              {period.closed_at ? new Date(period.closed_at).toLocaleDateString('ar-EG') : "-"}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {periods.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 py-8 text-gray-500">
+                    <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center">
+                      <Lock className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <p suppressHydrationWarning>{(hydrated && appLang === 'en') ? 'No accounting periods found' : 'لا توجد فترات محاسبية'}</p>
+                    {isOwnerOrAdmin && (
+                      <Button size="sm" onClick={openCreateDialogForCurrentMonth} className="bg-green-600 hover:bg-green-700">
+                        <Plus className="w-4 h-4 mr-1" />
+                        {(hydrated && appLang === 'en') ? 'Create first period' : 'إنشاء أول فترة'}
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <DataTable
+                      columns={tableColumns}
+                      data={paginatedPeriods}
+                      keyField="id"
+                      lang={appLang}
+                      emptyMessage={(hydrated && appLang === 'en') ? 'No accounting periods found' : 'لا توجد فترات محاسبية'}
+                    />
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           )}

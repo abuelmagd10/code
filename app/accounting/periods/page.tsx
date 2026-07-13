@@ -19,6 +19,9 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 export const dynamic = 'force-dynamic'
 
@@ -229,6 +232,90 @@ export default function AccountingPeriodsPage() {
         )
     }
 
+    // Pagination state
+    const [pageSize, setPageSize] = useState(10)
+
+    const {
+        currentPage,
+        totalPages,
+        totalItems,
+        paginatedItems: paginatedPeriods,
+        goToPage,
+        setPageSize: updatePageSize
+    } = usePagination(periods, { pageSize })
+
+    const handlePageSizeChange = (newSize: number) => {
+        setPageSize(newSize)
+        updatePageSize(newSize)
+    }
+
+    // تعريف أعمدة الجدول الموحّد (نفس الأعمدة والترتيب الأصلي)
+    const tableColumns: DataTableColumn<AccountingPeriod>[] = [
+        {
+            key: 'period_name',
+            header: appLang === 'en' ? 'Period Name' : 'اسم الفترة',
+            type: 'text',
+            align: 'right',
+            format: (_, row) => (
+                <span className="font-medium text-gray-900 dark:text-white">{row.period_name}</span>
+            )
+        },
+        {
+            key: 'period_start',
+            header: appLang === 'en' ? 'Start Date' : 'تاريخ البداية',
+            type: 'date',
+            align: 'right',
+            format: (_, row) => (
+                <span className="text-gray-700 dark:text-gray-300">
+                    {new Date(row.period_start).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}
+                </span>
+            )
+        },
+        {
+            key: 'period_end',
+            header: appLang === 'en' ? 'End Date' : 'تاريخ النهاية',
+            type: 'date',
+            align: 'right',
+            format: (_, row) => (
+                <span className="text-gray-700 dark:text-gray-300">
+                    {new Date(row.period_end).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}
+                </span>
+            )
+        },
+        {
+            key: 'status',
+            header: appLang === 'en' ? 'Status' : 'الحالة',
+            type: 'status',
+            align: 'center',
+            format: (_, row) => getStatusBadge(row)
+        },
+        {
+            key: 'id',
+            header: appLang === 'en' ? 'Actions' : 'الإجراءات',
+            type: 'actions',
+            align: 'center',
+            format: (_, row) => (
+                !row.is_locked && row.status !== 'closed' ? (
+                    <Button
+                        size="sm"
+                        onClick={() => {
+                            setSelectedPeriod(row)
+                            loadClosingPreview(row)
+                        }}
+                        className="bg-purple-600 hover:bg-purple-700"
+                    >
+                        <Lock className="w-4 h-4 mr-2" />
+                        {appLang === 'en' ? 'Close Period' : 'إغلاق الفترة'}
+                    </Button>
+                ) : (
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {appLang === 'en' ? 'Closed' : 'مغلقة'}
+                    </span>
+                )
+            )
+        }
+    ]
+
     return (
         <>
             <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -309,66 +396,26 @@ export default function AccountingPeriodsPage() {
                                         description={appLang === 'en' ? 'Create your first accounting period' : 'أنشئ أول فترة محاسبية'}
                                     />
                                 ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="min-w-full w-full text-sm">
-                                            <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                                                <tr>
-                                                    <th className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                                                        {appLang === 'en' ? 'Period Name' : 'اسم الفترة'}
-                                                    </th>
-                                                    <th className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                                                        {appLang === 'en' ? 'Start Date' : 'تاريخ البداية'}
-                                                    </th>
-                                                    <th className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                                                        {appLang === 'en' ? 'End Date' : 'تاريخ النهاية'}
-                                                    </th>
-                                                    <th className="px-4 py-3 text-center font-semibold text-gray-900 dark:text-white">
-                                                        {appLang === 'en' ? 'Status' : 'الحالة'}
-                                                    </th>
-                                                    <th className="px-4 py-3 text-center font-semibold text-gray-900 dark:text-white">
-                                                        {appLang === 'en' ? 'Actions' : 'الإجراءات'}
-                                                    </th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {periods.map((period) => (
-                                                    <tr key={period.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                                            {period.period_name}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                                                            {new Date(period.period_start).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                                                            {new Date(period.period_end).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center">
-                                                            {getStatusBadge(period)}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center">
-                                                            {!period.is_locked && period.status !== 'closed' ? (
-                                                                <Button
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        setSelectedPeriod(period)
-                                                                        loadClosingPreview(period)
-                                                                    }}
-                                                                    className="bg-purple-600 hover:bg-purple-700"
-                                                                >
-                                                                    <Lock className="w-4 h-4 mr-2" />
-                                                                    {appLang === 'en' ? 'Close Period' : 'إغلاق الفترة'}
-                                                                </Button>
-                                                            ) : (
-                                                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                                                    {appLang === 'en' ? 'Closed' : 'مغلقة'}
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                    <>
+                                        <DataTable
+                                            columns={tableColumns}
+                                            data={paginatedPeriods}
+                                            keyField="id"
+                                            lang={appLang}
+                                            emptyMessage={appLang === 'en' ? 'No periods found' : 'لا توجد فترات'}
+                                        />
+                                        {periods.length > 0 && (
+                                            <DataPagination
+                                                currentPage={currentPage}
+                                                totalPages={totalPages}
+                                                totalItems={totalItems}
+                                                pageSize={pageSize}
+                                                onPageChange={goToPage}
+                                                onPageSizeChange={handlePageSizeChange}
+                                                lang={appLang}
+                                            />
+                                        )}
+                                    </>
                                 )}
                             </CardContent>
                         </Card>

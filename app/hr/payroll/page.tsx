@@ -9,6 +9,9 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { Printer } from "lucide-react"
 import { PayrollSettingsDialog } from "@/components/hr/payroll-settings-dialog"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 export default function PayrollPage() {
   const supabase = useSupabase()
@@ -66,6 +69,15 @@ export default function PayrollPage() {
     deductions: payslips.reduce((s, p) => s + Number(p.deductions || 0), 0),
     net_salary: payslips.reduce((s, p) => s + Number(p.net_salary || 0), 0),
   }
+
+  // Pagination for the two main list tables (payslips / payments)
+  // NOTE: hooks are declared before any early return to satisfy React rules.
+  const [payslipsPageSize, setPayslipsPageSize] = useState<number>(10)
+  const [paymentsPageSize, setPaymentsPageSize] = useState<number>(10)
+  const payslipsPagination = usePagination(payslips, { pageSize: payslipsPageSize })
+  const paymentsPagination = usePagination(payments, { pageSize: paymentsPageSize })
+  const handlePayslipsPageSizeChange = (n: number) => { setPayslipsPageSize(n); payslipsPagination.setPageSize(n) }
+  const handlePaymentsPageSizeChange = (n: number) => { setPaymentsPageSize(n); paymentsPagination.setPageSize(n) }
 
   useEffect(() => {
     (async () => {
@@ -326,6 +338,118 @@ export default function PayrollPage() {
     ? ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     : ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
 
+  // ===== Standard DataTable column definitions (presentation only) =====
+  // Inline-editable numeric cell renderer for payslips (preserves data-ai-help anchors)
+  const renderEditableSlipCell = (field: keyof typeof editSlip, aiHelp: string) =>
+    (_value: any, row: any) => (
+      <span data-ai-help={aiHelp}>
+        {editingSlipEmp === String(row.employee_id) ? (
+          <Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip[field]} onChange={(ev) => setEditSlip({ ...editSlip, [field]: Number(ev.target.value) })} />
+        ) : (
+          Number(row[field] || 0).toFixed(2)
+        )}
+      </span>
+    )
+
+  const payslipColumns: DataTableColumn<any>[] = [
+    {
+      key: 'employee_id',
+      header: t('Employee', 'الموظف'),
+      type: 'text',
+      align: 'right',
+      format: (_value, row) => {
+        const emp = employees.find((e) => String(e.id) === String(row.employee_id))
+        return emp?.full_name || row.employee_id
+      }
+    },
+    { key: 'base_salary', header: t('Base', 'أساسي'), type: 'currency', align: 'right', format: renderEditableSlipCell('base_salary', 'payroll.base_salary') },
+    { key: 'allowances', header: t('Allowances', 'بدلات'), type: 'currency', align: 'right', format: renderEditableSlipCell('allowances', 'payroll.allowances') },
+    { key: 'bonuses', header: t('Bonuses', 'مكافآت'), type: 'currency', align: 'right', format: renderEditableSlipCell('bonuses', 'payroll.bonuses') },
+    { key: 'sales_bonus', header: t('Sales Bonus', 'بونص مبيعات'), type: 'currency', align: 'right', className: 'text-green-600', format: (_value, row) => Number(row.sales_bonus || 0).toFixed(2) },
+    { key: 'commission', header: t('Commission', 'عمولات'), type: 'currency', align: 'right', className: 'text-blue-600 font-semibold', format: (_value, row) => Number(row.commission || 0).toFixed(2) },
+    { key: 'commission_advance_deducted', header: t('Comm. Advance', 'سلف عمولات'), type: 'currency', align: 'right', className: 'text-orange-600', format: (_value, row) => Number(row.commission_advance_deducted || 0).toFixed(2) },
+    { key: 'advances', header: t('Advances', 'سلف'), type: 'currency', align: 'right', format: renderEditableSlipCell('advances', 'payroll.advances') },
+    { key: 'insurance', header: t('Insurance', 'تأمينات'), type: 'currency', align: 'right', format: renderEditableSlipCell('insurance', 'payroll.insurance') },
+    { key: 'deductions', header: t('Deductions', 'خصومات'), type: 'currency', align: 'right', format: renderEditableSlipCell('deductions', 'payroll.deductions') },
+    { key: 'net_salary', header: t('Net', 'الصافي'), type: 'currency', align: 'right', className: 'font-semibold', format: (_value, row) => (<span data-ai-help="payroll.net_salary">{Number(row.net_salary || 0).toFixed(2)}</span>) },
+    {
+      key: '__actions',
+      header: '',
+      type: 'actions',
+      align: 'center',
+      className: 'no-print',
+      format: (_value, row) => (
+        editingSlipEmp === String(row.employee_id) ? (
+          <div className="flex gap-2">
+            <Button size="sm" onClick={async () => { const res = await fetch('/api/hr/payroll/payslips', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, runId: String(result?.run_id || ''), employeeId: row.employee_id, update: editSlip }) }); const j = await res.json(); if (res.ok) { await loadPayslips(companyId, String(result?.run_id || '')); setEditingSlipEmp(''); toast({ title: t('Updated', 'تم التعديل') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Update failed', 'فشل التعديل') }) } }} disabled={loading}>{t('Save', 'حفظ')}</Button>
+            <Button size="sm" variant="outline" onClick={() => setEditingSlipEmp('')} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setEditingSlipEmp(String(row.employee_id)); setEditSlip({ base_salary: Number(row.base_salary || 0), allowances: Number(row.allowances || 0), bonuses: Number(row.bonuses || 0), advances: Number(row.advances || 0), insurance: Number(row.insurance || 0), deductions: Number(row.deductions || 0) }) }} disabled={loading}>{t('Edit', 'تعديل')}</Button>
+            <Button size="sm" variant="destructive" onClick={async () => { if (!confirm(t('Confirm delete employee payslip?', 'تأكيد حذف قسيمة الموظف؟'))) return; const res = await fetch('/api/hr/payroll/payslips', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, runId: String(result?.run_id || ''), employeeId: row.employee_id }) }); const j = await res.json(); if (res.ok) { await loadPayslips(companyId, String(result?.run_id || '')); toast({ title: t('Deleted', 'تم الحذف') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Delete failed', 'فشل الحذف') }) } }} disabled={loading}>{t('Delete', 'حذف')}</Button>
+          </div>
+        )
+      )
+    }
+  ]
+
+  const paymentColumns: DataTableColumn<any>[] = [
+    { key: 'entry_date', header: t('Date', 'التاريخ'), type: 'date', align: 'right', format: (_value, row) => row.entry_date },
+    {
+      key: 'account_id',
+      header: t('Payment Account', 'الحساب المدفوع منه'),
+      type: 'text',
+      align: 'right',
+      format: (_value, row) => (
+        editingPaymentId === String(row.id) ? (
+          <select className="w-full px-3 py-2 border rounded" value={editPayment.paymentAccountId} onChange={(e) => setEditPayment({ ...editPayment, paymentAccountId: e.target.value })}>
+            <option value="">{t('Select Account', 'اختر حساب')}</option>
+            {paymentAccounts.map((a: any) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
+          </select>
+        ) : ((accountMap[row.account_id]?.code || '') + ' - ' + (accountMap[row.account_id]?.name || row.account_id))
+      )
+    },
+    {
+      key: 'amount',
+      header: t('Amount', 'المبلغ'),
+      type: 'currency',
+      align: 'right',
+      className: 'font-semibold',
+      format: (_value, row) => (
+        editingPaymentId === String(row.id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editPayment.amount} onChange={(ev) => setEditPayment({ ...editPayment, amount: Number(ev.target.value) })} />) : Number(row.amount || 0).toFixed(2)
+      )
+    },
+    {
+      key: 'description',
+      header: t('Description', 'الوصف'),
+      type: 'text',
+      align: 'right',
+      format: (_value, row) => (
+        editingPaymentId === String(row.id) ? (<Input value={editPayment.description} onChange={(ev) => setEditPayment({ ...editPayment, description: ev.target.value })} />) : (row.description || '')
+      )
+    },
+    {
+      key: '__actions',
+      header: '',
+      type: 'actions',
+      align: 'center',
+      format: (_value, row) => (
+        editingPaymentId === String(row.id) ? (
+          <div className="flex gap-2">
+            <Button size="sm" onClick={async () => { const payload: any = { companyId, runId: String(result?.run_id || ''), entryId: row.id }; if (editPayment.amount) payload.amount = editPayment.amount; if (editPayment.paymentAccountId) payload.paymentAccountId = editPayment.paymentAccountId; payload.description = editPayment.description; const res = await fetch('/api/hr/payroll/payments', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const j = await res.json(); if (res.ok) { await loadPayments(companyId, String(result?.run_id || '')); setEditingPaymentId(''); toast({ title: t('Updated', 'تم التعديل') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Update failed', 'فشل التعديل') }) } }} disabled={loading}>{t('Save', 'حفظ')}</Button>
+            <Button size="sm" variant="outline" onClick={() => setEditingPaymentId('')} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setEditingPaymentId(String(row.id)); setEditPayment({ amount: Number(row.amount || 0), paymentAccountId: String(row.account_id || ''), description: String(row.description || '') }) }} disabled={loading}>{t('Edit', 'تعديل')}</Button>
+            <Button size="sm" variant="destructive" onClick={async () => { if (!confirm(t('Confirm delete payment entry?', 'تأكيد حذف قيد الصرف؟'))) return; const res = await fetch('/api/hr/payroll/payments', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, entryId: row.id }) }); const j = await res.json(); if (res.ok) { await loadPayments(companyId, String(result?.run_id || '')); toast({ title: t('Deleted', 'تم الحذف') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Delete failed', 'فشل الحذف') }) } }} disabled={loading}>{t('Delete', 'حذف')}</Button>
+          </div>
+        )
+      )
+    }
+  ]
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -518,73 +642,45 @@ export default function PayrollPage() {
                 {payslips.length === 0 ? (
                   <p className="text-gray-600 dark:text-gray-400" data-ai-help="payroll.no_payslips_message">{t('No payslips for this period.', 'لا توجد قسائم مرتبات لهذه الفترة.')}</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="border-b">
-                        <tr>
-                          <th className="p-2 text-right">{t('Employee', 'الموظف')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.base_salary">{t('Base', 'أساسي')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.allowances">{t('Allowances', 'بدلات')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.bonuses">{t('Bonuses', 'مكافآت')}</th>
-                          <th className="p-2 text-right text-green-600">{t('Sales Bonus', 'بونص مبيعات')}</th>
-                          <th className="p-2 text-right text-blue-600">{t('Commission', 'عمولات')}</th>
-                          <th className="p-2 text-right text-orange-600" data-ai-help="payroll.advances">{t('Comm. Advance', 'سلف عمولات')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.advances">{t('Advances', 'سلف')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.insurance">{t('Insurance', 'تأمينات')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.deductions">{t('Deductions', 'خصومات')}</th>
-                          <th className="p-2 text-right" data-ai-help="payroll.net_salary">{t('Net', 'الصافي')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payslips.map((p) => {
-                          const emp = employees.find((e) => String(e.id) === String(p.employee_id))
-                          return (
-                            <tr key={`${p.employee_id}`} className="border-b">
-                              <td className="p-2">{emp?.full_name || p.employee_id}</td>
-                              <td className="p-2" data-ai-help="payroll.base_salary">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.base_salary} onChange={(ev) => setEditSlip({ ...editSlip, base_salary: Number(ev.target.value) })} />) : Number(p.base_salary || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.allowances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.allowances} onChange={(ev) => setEditSlip({ ...editSlip, allowances: Number(ev.target.value) })} />) : Number(p.allowances || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.bonuses">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.bonuses} onChange={(ev) => setEditSlip({ ...editSlip, bonuses: Number(ev.target.value) })} />) : Number(p.bonuses || 0).toFixed(2)}</td>
-                              <td className="p-2 text-green-600">{Number(p.sales_bonus || 0).toFixed(2)}</td>
-                              <td className="p-2 text-blue-600 font-semibold">{Number(p.commission || 0).toFixed(2)}</td>
-                              <td className="p-2 text-orange-600">{Number(p.commission_advance_deducted || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.advances">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.advances} onChange={(ev) => setEditSlip({ ...editSlip, advances: Number(ev.target.value) })} />) : Number(p.advances || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.insurance">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.insurance} onChange={(ev) => setEditSlip({ ...editSlip, insurance: Number(ev.target.value) })} />) : Number(p.insurance || 0).toFixed(2)}</td>
-                              <td className="p-2" data-ai-help="payroll.deductions">{editingSlipEmp === String(p.employee_id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editSlip.deductions} onChange={(ev) => setEditSlip({ ...editSlip, deductions: Number(ev.target.value) })} />) : Number(p.deductions || 0).toFixed(2)}</td>
-                              <td className="p-2 font-semibold" data-ai-help="payroll.net_salary">{Number(p.net_salary || 0).toFixed(2)}</td>
-                              <td className="p-2 no-print">
-                                {editingSlipEmp === String(p.employee_id) ? (
-                                  <div className="flex gap-2">
-                                    <Button size="sm" onClick={async () => { const res = await fetch('/api/hr/payroll/payslips', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, runId: String(result?.run_id || ''), employeeId: p.employee_id, update: editSlip }) }); const j = await res.json(); if (res.ok) { await loadPayslips(companyId, String(result?.run_id || '')); setEditingSlipEmp(''); toast({ title: t('Updated', 'تم التعديل') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Update failed', 'فشل التعديل') }) } }} disabled={loading}>{t('Save', 'حفظ')}</Button>
-                                    <Button size="sm" variant="outline" onClick={() => setEditingSlipEmp('')} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
-                                  </div>
-                                ) : (
-                                  <div className="flex gap-2">
-                                    <Button size="sm" variant="outline" onClick={() => { setEditingSlipEmp(String(p.employee_id)); setEditSlip({ base_salary: Number(p.base_salary || 0), allowances: Number(p.allowances || 0), bonuses: Number(p.bonuses || 0), advances: Number(p.advances || 0), insurance: Number(p.insurance || 0), deductions: Number(p.deductions || 0) }) }} disabled={loading}>{t('Edit', 'تعديل')}</Button>
-                                    <Button size="sm" variant="destructive" onClick={async () => { if (!confirm(t('Confirm delete employee payslip?', 'تأكيد حذف قسيمة الموظف؟'))) return; const res = await fetch('/api/hr/payroll/payslips', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, runId: String(result?.run_id || ''), employeeId: p.employee_id }) }); const j = await res.json(); if (res.ok) { await loadPayslips(companyId, String(result?.run_id || '')); toast({ title: t('Deleted', 'تم الحذف') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Delete failed', 'فشل الحذف') }) } }} disabled={loading}>{t('Delete', 'حذف')}</Button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot className="border-t">
-                        <tr>
-                          <td className="p-2 font-semibold">{t('Total', 'الإجمالي')}</td>
-                          <td className="p-2 font-semibold">{totals.base_salary.toFixed(2)}</td>
-                          <td className="p-2 font-semibold">{totals.allowances.toFixed(2)}</td>
-                          <td className="p-2 font-semibold">{totals.bonuses.toFixed(2)}</td>
-                          <td className="p-2 font-semibold text-green-600">{totals.sales_bonus.toFixed(2)}</td>
-                          <td className="p-2 font-semibold text-blue-600">{totals.commission.toFixed(2)}</td>
-                          <td className="p-2 font-semibold text-orange-600">{totals.commission_advance_deducted.toFixed(2)}</td>
-                          <td className="p-2 font-semibold">{totals.advances.toFixed(2)}</td>
-                          <td className="p-2 font-semibold">{totals.insurance.toFixed(2)}</td>
-                          <td className="p-2 font-semibold">{totals.deductions.toFixed(2)}</td>
-                          <td className="p-2 font-bold">{totals.net_salary.toFixed(2)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
+                  <>
+                    <DataTable
+                      columns={payslipColumns}
+                      data={payslipsPagination.paginatedItems}
+                      keyField="employee_id"
+                      lang={appLang}
+                      minWidth="min-w-[900px]"
+                      emptyMessage={t('No payslips for this period.', 'لا توجد قسائم مرتبات لهذه الفترة.')}
+                      footer={{
+                        render: () => (
+                          <tr>
+                            <td className="px-3 py-3 text-right font-semibold">{t('Total', 'الإجمالي')}</td>
+                            <td className="px-3 py-3 text-right font-semibold">{totals.base_salary.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold">{totals.allowances.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold">{totals.bonuses.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold text-green-600">{totals.sales_bonus.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold text-blue-600">{totals.commission.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold text-orange-600">{totals.commission_advance_deducted.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold">{totals.advances.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold">{totals.insurance.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-semibold">{totals.deductions.toFixed(2)}</td>
+                            <td className="px-3 py-3 text-right font-bold">{totals.net_salary.toFixed(2)}</td>
+                            <td className="px-3 py-3 no-print"></td>
+                          </tr>
+                        )
+                      }}
+                    />
+                    {payslipsPagination.totalPages > 1 && (
+                      <DataPagination
+                        currentPage={payslipsPagination.currentPage}
+                        totalPages={payslipsPagination.totalPages}
+                        totalItems={payslipsPagination.totalItems}
+                        pageSize={payslipsPagination.pageSize}
+                        onPageChange={payslipsPagination.goToPage}
+                        onPageSizeChange={handlePayslipsPageSizeChange}
+                        lang={appLang}
+                      />
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -595,53 +691,37 @@ export default function PayrollPage() {
                 {payments.length === 0 ? (
                   <p className="text-gray-600 dark:text-gray-400" data-ai-help="payroll.no_payments_message">{t('No payments for this period.', 'لا توجد عمليات صرف لهذه الفترة.')}</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="border-b">
-                        <tr>
-                          <th className="p-2 text-right">{t('Date', 'التاريخ')}</th>
-                          <th className="p-2 text-right">{t('Payment Account', 'الحساب المدفوع منه')}</th>
-                          <th className="p-2 text-right">{t('Amount', 'المبلغ')}</th>
-                          <th className="p-2 text-right">{t('Description', 'الوصف')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.map((p: any, i: number) => (
-                          <tr key={i} className="border-b">
-                            <td className="p-2">{p.entry_date}</td>
-                            <td className="p-2">{editingPaymentId === String(p.id) ? (
-                              <select className="w-full px-3 py-2 border rounded" value={editPayment.paymentAccountId} onChange={(e) => setEditPayment({ ...editPayment, paymentAccountId: e.target.value })}>
-                                <option value="">{t('Select Account', 'اختر حساب')}</option>
-                                {paymentAccounts.map((a: any) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
-                              </select>
-                            ) : ((accountMap[p.account_id]?.code || '') + ' - ' + (accountMap[p.account_id]?.name || p.account_id))}</td>
-                            <td className="p-2 font-semibold">{editingPaymentId === String(p.id) ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editPayment.amount} onChange={(ev) => setEditPayment({ ...editPayment, amount: Number(ev.target.value) })} />) : Number(p.amount || 0).toFixed(2)}</td>
-                            <td className="p-2">{editingPaymentId === String(p.id) ? (<Input value={editPayment.description} onChange={(ev) => setEditPayment({ ...editPayment, description: ev.target.value })} />) : (p.description || '')}</td>
-                            <td className="p-2">
-                              {editingPaymentId === String(p.id) ? (
-                                <div className="flex gap-2">
-                                  <Button size="sm" onClick={async () => { const payload: any = { companyId, runId: String(result?.run_id || ''), entryId: p.id }; if (editPayment.amount) payload.amount = editPayment.amount; if (editPayment.paymentAccountId) payload.paymentAccountId = editPayment.paymentAccountId; payload.description = editPayment.description; const res = await fetch('/api/hr/payroll/payments', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const j = await res.json(); if (res.ok) { await loadPayments(companyId, String(result?.run_id || '')); setEditingPaymentId(''); toast({ title: t('Updated', 'تم التعديل') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Update failed', 'فشل التعديل') }) } }} disabled={loading}>{t('Save', 'حفظ')}</Button>
-                                  <Button size="sm" variant="outline" onClick={() => setEditingPaymentId('')} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
-                                </div>
-                              ) : (
-                                <div className="flex gap-2">
-                                  <Button size="sm" variant="outline" onClick={() => { setEditingPaymentId(String(p.id)); setEditPayment({ amount: Number(p.amount || 0), paymentAccountId: String(p.account_id || ''), description: String(p.description || '') }) }} disabled={loading}>{t('Edit', 'تعديل')}</Button>
-                                  <Button size="sm" variant="destructive" onClick={async () => { if (!confirm(t('Confirm delete payment entry?', 'تأكيد حذف قيد الصرف؟'))) return; const res = await fetch('/api/hr/payroll/payments', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, entryId: p.id }) }); const j = await res.json(); if (res.ok) { await loadPayments(companyId, String(result?.run_id || '')); toast({ title: t('Deleted', 'تم الحذف') }) } else { toast({ title: t('Error', 'خطأ'), description: j?.error || t('Delete failed', 'فشل الحذف') }) } }} disabled={loading}>{t('Delete', 'حذف')}</Button>
-                                </div>
-                              )}
-                            </td>
+                  <>
+                    <DataTable
+                      columns={paymentColumns}
+                      data={paymentsPagination.paginatedItems}
+                      keyField="id"
+                      lang={appLang}
+                      minWidth="min-w-[640px]"
+                      emptyMessage={t('No payments for this period.', 'لا توجد عمليات صرف لهذه الفترة.')}
+                      footer={{
+                        render: () => (
+                          <tr>
+                            <td className="px-3 py-3 text-right font-semibold" colSpan={2}>{t('Total', 'الإجمالي')}</td>
+                            <td className="px-3 py-3 text-right font-bold">{payments.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(2)}</td>
+                            <td className="px-3 py-3"></td>
+                            <td className="px-3 py-3"></td>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="border-t">
-                        <tr>
-                          <td className="p-2 font-semibold" colSpan={2}>{t('Total', 'الإجمالي')}</td>
-                          <td className="p-2 font-bold">{payments.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(2)}</td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
+                        )
+                      }}
+                    />
+                    {paymentsPagination.totalPages > 1 && (
+                      <DataPagination
+                        currentPage={paymentsPagination.currentPage}
+                        totalPages={paymentsPagination.totalPages}
+                        totalItems={paymentsPagination.totalItems}
+                        pageSize={paymentsPagination.pageSize}
+                        onPageChange={paymentsPagination.goToPage}
+                        onPageSizeChange={handlePaymentsPageSizeChange}
+                        lang={appLang}
+                      />
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

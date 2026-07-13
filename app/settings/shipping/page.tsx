@@ -15,6 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 interface ShippingProvider {
   id: string
@@ -94,6 +97,52 @@ export default function ShippingSettingsPage() {
   const [branchMapSaving, setBranchMapSaving] = useState(false)
 
   const t = (en: string, ar: string) => appLang === 'en' ? en : ar
+
+  // ترقيم صفحات جدول ربط الفروع بشركات الشحن (يجب استدعاء الـ hook قبل أى return مبكر)
+  const [branchMapPageSize, setBranchMapPageSize] = useState(10)
+  const {
+    currentPage: bmCurrentPage,
+    totalPages: bmTotalPages,
+    totalItems: bmTotalItems,
+    pageSize: bmPageSize,
+    paginatedItems: bmPaginatedLinks,
+    goToPage: bmGoToPage,
+    setPageSize: bmUpdatePageSize,
+  } = usePagination<BranchLink>(branchMapping?.data ?? [], { pageSize: branchMapPageSize })
+
+  const handleBranchMapPageSizeChange = (newSize: number) => {
+    setBranchMapPageSize(newSize)
+    bmUpdatePageSize(newSize)
+  }
+
+  // أعمدة جدول ربط الفروع بشركات الشحن (نفس الأعمدة/الترتيب: الفرع، الشركة، إجراء الحذف)
+  const branchMappingColumns: DataTableColumn<BranchLink>[] = [
+    {
+      key: 'branch_id',
+      header: t("Branch", "الفرع"),
+      type: 'text',
+      align: 'left',
+      format: (_value, row) => row.branches?.name ?? row.branch_id,
+    },
+    {
+      key: 'shipping_provider_id',
+      header: t("Shipping Provider", "شركة الشحن"),
+      type: 'text',
+      align: 'left',
+      format: (_value, row) => row.shipping_providers?.provider_name ?? row.shipping_provider_id,
+    },
+    {
+      key: 'actions',
+      header: '',
+      type: 'actions',
+      width: 'w-10',
+      format: (_value, row) => (
+        <Button type="button" variant="ghost" size="icon" onClick={() => removeBranchProviderLink(row.branch_id, row.shipping_provider_id)} title={t("Remove link", "إزالة ربط")}>
+          <Trash2 className="w-4 h-4 text-destructive" />
+        </Button>
+      ),
+    },
+  ]
 
   useEffect(() => {
     const handler = () => {
@@ -614,36 +663,27 @@ export default function ShippingSettingsPage() {
                     <span className="mr-2">{t("Add link", "إضافة ربط")}</span>
                   </Button>
                 </div>
-                {branchMapping.data.length > 0 ? (
-                  <div className="rounded-md border overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="text-right p-2">{t("Branch", "الفرع")}</th>
-                          <th className="text-right p-2">{t("Shipping Provider", "شركة الشحن")}</th>
-                          <th className="w-10 p-2" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {branchMapping.data.map((row) => (
-                          <tr key={row.id} className="border-b last:border-0">
-                            <td className="p-2">{row.branches?.name ?? row.branch_id}</td>
-                            <td className="p-2">{row.shipping_providers?.provider_name ?? row.shipping_provider_id}</td>
-                            <td className="p-2">
-                              <Button type="button" variant="ghost" size="icon" onClick={() => removeBranchProviderLink(row.branch_id, row.shipping_provider_id)} title={t("Remove link", "إزالة ربط")}>
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {t("No branch–provider links yet. An unlinked provider is global and appears for all branches; once linked, it appears only for its linked branches.", "لا توجد روابط فرع–شركة بعد. الشركة غير المرتبطة عامة وتظهر لكل الفروع؛ وبمجرد ربطها تظهر فقط لفروعها المرتبطة.")}
-                  </p>
-                )}
+                <div className="rounded-md border">
+                  <DataTable
+                    columns={branchMappingColumns}
+                    data={bmPaginatedLinks}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[480px]"
+                    emptyMessage={t("No branch–provider links yet. An unlinked provider is global and appears for all branches; once linked, it appears only for its linked branches.", "لا توجد روابط فرع–شركة بعد. الشركة غير المرتبطة عامة وتظهر لكل الفروع؛ وبمجرد ربطها تظهر فقط لفروعها المرتبطة.")}
+                  />
+                  {bmTotalItems > 0 && (
+                    <DataPagination
+                      currentPage={bmCurrentPage}
+                      totalPages={bmTotalPages}
+                      totalItems={bmTotalItems}
+                      pageSize={bmPageSize}
+                      onPageChange={bmGoToPage}
+                      onPageSizeChange={handleBranchMapPageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}

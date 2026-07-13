@@ -14,6 +14,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { getActiveCompanyId } from "@/lib/company"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { canAction, canAdvancedAction } from "@/lib/authz"
 import { type UserContext } from "@/lib/validation"
@@ -106,6 +107,7 @@ export default function FixedAssetsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterCategory, setFilterCategory] = useState<string>("all")
+  const [pageSize, setPageSize] = useState(10)
 
   // 🚀 تحسين الأداء - استخدام useTransition للفلاتر
   const [isPending, startTransition] = useTransition()
@@ -398,6 +400,128 @@ export default function FixedAssetsPage() {
     return true
   })
 
+  // Pagination logic (hook must run before any early return)
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedAssets,
+    goToPage,
+    setPageSize: updatePageSize
+  } = usePagination(filteredAssets, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
+  // تعريف أعمدة الجدول (DataTable الموحّد)
+  const tableColumns: DataTableColumn<FixedAsset>[] = [
+    {
+      key: 'asset_code',
+      header: appLang === 'en' ? 'Code' : 'الكود',
+      type: 'text',
+      align: 'right',
+      format: (value) => (
+        <span className="font-mono text-gray-900 dark:text-white">{value}</span>
+      )
+    },
+    {
+      key: 'name',
+      header: appLang === 'en' ? 'Name' : 'الاسم',
+      type: 'text',
+      align: 'right',
+      format: (value, row) => {
+        const CategoryIcon = categoryIcons[row.asset_categories?.code || ''] || Package
+        return (
+          <div className="flex items-center gap-2">
+            <CategoryIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            <span className="font-medium text-gray-900 dark:text-white truncate">{value}</span>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'asset_categories.name',
+      header: appLang === 'en' ? 'Category' : 'الفئة',
+      type: 'text',
+      align: 'right',
+      hidden: 'sm',
+      format: (_, row) => (
+        <span className="text-gray-600 dark:text-gray-400">{row.asset_categories?.name}</span>
+      )
+    },
+    {
+      key: 'purchase_cost',
+      header: appLang === 'en' ? 'Cost' : 'التكلفة',
+      type: 'number',
+      align: 'right',
+      hidden: 'md',
+      format: (value) => (
+        <span className="text-gray-700 dark:text-gray-300">{formatNumber(value)}</span>
+      )
+    },
+    {
+      key: 'book_value',
+      header: appLang === 'en' ? 'Book Value' : 'القيمة الدفترية',
+      type: 'number',
+      align: 'right',
+      hidden: 'lg',
+      format: (value) => (
+        <span className="font-bold text-gray-900 dark:text-white">{formatNumber(value)}</span>
+      )
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'custom',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => (
+        (row as any).branches?.name ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+            {(row as any).branches.name}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      )
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'right',
+      format: (value) => (
+        <Badge className={statusColors[value] || statusColors.draft}>
+          {statusLabels[value]?.[appLang === 'en' ? 'en' : 'ar'] || value}
+        </Badge>
+      )
+    },
+    {
+      key: 'actions',
+      header: appLang === 'en' ? 'Actions' : 'الإجراءات',
+      type: 'actions',
+      align: 'right',
+      format: (_, row) => (
+        <div className="flex gap-1 flex-wrap">
+          <Link href={`/fixed-assets/${row.id}`}>
+            <Button variant="outline" size="sm" title={appLang === 'en' ? 'View details' : 'عرض التفاصيل'}>
+              <Eye className="w-4 h-4" />
+            </Button>
+          </Link>
+          {permUpdate && (
+            <Link href={`/fixed-assets/${row.id}/edit`}>
+              <Button variant="outline" size="sm" title={appLang === 'en' ? 'Edit asset' : 'تعديل الأصل'}>
+                <Edit2 className="w-4 h-4" />
+              </Button>
+            </Link>
+          )}
+        </div>
+      )
+    }
+  ]
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -668,71 +792,25 @@ export default function FixedAssetsPage() {
                   />
                 ) : (
                   <div className="space-y-4">
-                    <div className="overflow-x-auto">
-                      <table className="min-w-[600px] w-full text-sm">
-                        <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                          <tr>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Code' : 'الكود'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Name' : 'الاسم'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Category' : 'الفئة'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Cost' : 'التكلفة'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden lg:table-cell">{appLang === 'en' ? 'Book Value' : 'القيمة الدفترية'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredAssets.map((asset) => {
-                            const CategoryIcon = categoryIcons[asset.asset_categories?.code || ''] || Package
-                            return (
-                              <tr key={asset.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                <td className="px-3 py-3 font-mono text-gray-900 dark:text-white">{asset.asset_code}</td>
-                                <td className="px-3 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <CategoryIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                    <span className="font-medium text-gray-900 dark:text-white truncate">{asset.name}</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{asset.asset_categories?.name}</td>
-                                <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden md:table-cell">{formatNumber(asset.purchase_cost)}</td>
-                                <td className="px-3 py-3 font-bold text-gray-900 dark:text-white hidden lg:table-cell">{formatNumber(asset.book_value)}</td>
-                                <td className="px-3 py-3 text-center hidden md:table-cell">
-                                  {(asset as any).branches?.name ? (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                                      {(asset as any).branches.name}
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-3">
-                                  <Badge className={statusColors[asset.status] || statusColors.draft}>
-                                    {statusLabels[asset.status]?.[appLang === 'en' ? 'en' : 'ar'] || asset.status}
-                                  </Badge>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <div className="flex gap-1 flex-wrap">
-                                    <Link href={`/fixed-assets/${asset.id}`}>
-                                      <Button variant="outline" size="sm" title={appLang === 'en' ? 'View details' : 'عرض التفاصيل'}>
-                                        <Eye className="w-4 h-4" />
-                                      </Button>
-                                    </Link>
-                                    {permUpdate && (
-                                      <Link href={`/fixed-assets/${asset.id}/edit`}>
-                                        <Button variant="outline" size="sm" title={appLang === 'en' ? 'Edit asset' : 'تعديل الأصل'}>
-                                          <Edit2 className="w-4 h-4" />
-                                        </Button>
-                                      </Link>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable
+                      columns={tableColumns}
+                      data={paginatedAssets}
+                      keyField="id"
+                      lang={appLang}
+                      minWidth="min-w-[600px]"
+                      emptyMessage={appLang === 'en' ? 'No assets found' : 'لا توجد أصول'}
+                    />
+                    {filteredAssets.length > 0 && (
+                      <DataPagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        pageSize={pageSize}
+                        onPageChange={goToPage}
+                        onPageSizeChange={handlePageSizeChange}
+                        lang={appLang}
+                      />
+                    )}
                   </div>
                 )}
               </CardContent>

@@ -7,7 +7,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
-import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, Box, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2 } from "lucide-react"
+import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2 } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +19,9 @@ import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { getCachedPage, setCachedPage, invalidateCache } from "@/lib/page-cache"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 interface InventoryTransaction {
   id: string
@@ -709,6 +712,270 @@ export default function InventoryPage() {
   // عد المنتجات منخفضة المخزون فقط من المنتجات المعروضة (حسب المخزن المحدد)
   const lowStockCount = displayedProducts.filter(p => (computedQty[p.id] ?? 0) < 5 && (computedQty[p.id] ?? 0) > 0).length
 
+  // ⚡ Client-side pagination لجدول حالة المخزون (عرض فقط — لا يغير أي منطق تحميل بيانات)
+  const [stockPageSize, setStockPageSize] = useState(20)
+  const {
+    currentPage: stockCurrentPage,
+    totalPages: stockTotalPages,
+    totalItems: stockTotalItems,
+    paginatedItems: paginatedProducts,
+    goToPage: stockGoToPage,
+    setPageSize: updateStockPageSize,
+  } = usePagination(displayedProducts, { pageSize: stockPageSize })
+
+  const handleStockPageSizeChange = (newSize: number) => {
+    setStockPageSize(newSize)
+    updateStockPageSize(newSize)
+  }
+
+  // 📋 تعريف أعمدة جدول حالة المخزون بالنمط الموحد DataTable (نفس ترتيب وأعمدة الجدول الأصلي)
+  const inventoryColumns: DataTableColumn<Product>[] = [
+    {
+      key: 'sku',
+      header: appLang === 'en' ? 'Code' : 'الرمز',
+      align: 'right',
+      format: (_v, product) => (
+        <Badge variant="outline" className="font-mono text-xs bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600">
+          {product.sku || '-'}
+        </Badge>
+      )
+    },
+    {
+      key: 'name',
+      header: appLang === 'en' ? 'Product Name' : 'اسم المنتج',
+      align: 'right',
+      format: (_v, product) => {
+        const purchased = purchaseTotals[product.id] ?? 0
+        const shown = computedQty[product.id] ?? 0
+        const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
+        return (
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+              <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-gray-900 dark:text-white">{product.name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {appLang === 'en' ? 'Stock Rate' : 'نسبة المخزون'}: {stockPercentage}%
+              </p>
+            </div>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'purchased',
+      header: appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات',
+      align: 'center',
+      format: (_v, product) => {
+        const purchased = purchaseTotals[product.id] ?? 0
+        return (
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800" data-ai-help="inventory.total_purchased">
+            <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="font-bold text-emerald-700 dark:text-emerald-300 text-base">
+              {purchased.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'sold',
+      header: appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات',
+      align: 'center',
+      format: (_v, product) => {
+        const sold = soldTotals[product.id] ?? 0
+        return (
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800" data-ai-help="inventory.total_sold">
+            <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
+              {sold.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'saleReturn',
+      header: appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات',
+      align: 'center',
+      format: (_v, product) => {
+        const saleReturn = saleReturnTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${saleReturn > 0
+            ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.sales_returns">
+            <RefreshCcw className={`w-4 h-4 ${saleReturn > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${saleReturn > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {saleReturn.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'purchaseReturn',
+      header: appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات',
+      align: 'center',
+      format: (_v, product) => {
+        const purchaseReturn = purchaseReturnTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${purchaseReturn > 0
+            ? 'bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.purchase_returns">
+            <RefreshCcw className={`w-4 h-4 ${purchaseReturn > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${purchaseReturn > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {purchaseReturn.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'writeOff',
+      header: appLang === 'en' ? 'Write-offs' : 'الهالك',
+      align: 'center',
+      format: (_v, product) => {
+        const writeOff = writeOffTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${writeOff > 0
+            ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.write_offs">
+            <AlertCircle className={`w-4 h-4 ${writeOff > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${writeOff > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {writeOff.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'incoming',
+      header: appLang === 'en' ? 'Incoming Transfers' : 'النقل الواردة',
+      align: 'center',
+      format: (_v, product) => {
+        const incoming = incomingTransfers[product.id] || []
+        const totalIncoming = incoming.reduce((sum, t) => sum + t.quantity, 0)
+
+        if (totalIncoming === 0) {
+          return (
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800" data-ai-help="inventory.incoming_transfers">
+              <ArrowDown className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <span className="font-bold text-base text-gray-500 dark:text-gray-400">
+                0
+              </span>
+            </div>
+          )
+        }
+
+        return (
+          <div className="flex flex-col gap-1" data-ai-help="inventory.incoming_transfers">
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <ArrowDown className="w-4 h-4 text-green-600 dark:text-green-400" />
+              <span className="font-bold text-base text-green-700 dark:text-green-300">
+                {totalIncoming.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
+              {incoming.map((transfer, idx) => (
+                <div key={idx} className="text-right px-2">
+                  {transfer.quantity.toLocaleString()} {appLang === 'en' ? 'from' : 'من'} {transfer.warehouseName}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'outgoing',
+      header: appLang === 'en' ? 'Outgoing Transfers' : 'النقل الصادرة',
+      align: 'center',
+      format: (_v, product) => {
+        const outgoing = outgoingTransfers[product.id] || []
+        const totalOutgoing = outgoing.reduce((sum, t) => sum + t.quantity, 0)
+
+        if (totalOutgoing === 0) {
+          return (
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800" data-ai-help="inventory.outgoing_transfers">
+              <ArrowUp className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <span className="font-bold text-base text-gray-500 dark:text-gray-400">
+                0
+              </span>
+            </div>
+          )
+        }
+
+        return (
+          <div className="flex flex-col gap-1" data-ai-help="inventory.outgoing_transfers">
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+              <ArrowUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="font-bold text-base text-blue-700 dark:text-blue-300">
+                {totalOutgoing.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
+              {outgoing.map((transfer, idx) => (
+                <div key={idx} className="text-right px-2">
+                  {transfer.quantity.toLocaleString()} {appLang === 'en' ? 'to' : 'إلى'} {transfer.warehouseName}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'available',
+      header: appLang === 'en' ? 'Available Stock' : 'المخزون المتاح',
+      align: 'center',
+      format: (_v, product) => {
+        const shown = computedQty[product.id] ?? 0
+        const isLowStock = shown > 0 && shown < 5
+        const isOutOfStock = shown <= 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${isOutOfStock
+            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
+            : isLowStock
+              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+            }`} data-ai-help="inventory.available_stock">
+            {shown.toLocaleString()}
+          </div>
+        )
+      }
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      align: 'center',
+      format: (_v, product) => {
+        const shown = computedQty[product.id] ?? 0
+        const isLowStock = shown > 0 && shown < 5
+        const isOutOfStock = shown <= 0
+        return isOutOfStock ? (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" data-ai-help="inventory.stock_status">
+            <AlertCircle className="w-4 h-4" />
+            <span className="text-sm font-medium">{appLang === 'en' ? 'Out of Stock' : 'نفذ المخزون'}</span>
+          </div>
+        ) : isLowStock ? (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300" data-ai-help="inventory.stock_status">
+            <AlertCircle className="w-4 h-4" />
+            <span className="text-sm font-medium">{appLang === 'en' ? 'Low Stock' : 'مخزون منخفض'}</span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" data-ai-help="inventory.stock_status">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="text-sm font-medium">{appLang === 'en' ? 'In Stock' : 'متوفر'}</span>
+          </div>
+        )
+      }
+    },
+  ]
+
   // منع hydration mismatch - عرض محتوى افتراضي حتى يتم hydration
   if (!hydrated) {
     return (
@@ -931,296 +1198,21 @@ export default function InventoryPage() {
                   rows={8}
                   className="mt-4"
                 />
-              ) : displayedProducts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
-                  <Package className="w-12 h-12 mb-3 text-gray-300 dark:text-gray-600" />
-                  <p>{appLang === 'en' ? 'No products in this warehouse' : 'لا توجد منتجات في هذا المخزن'}</p>
-                </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[800px] w-full text-sm">
-                    <thead>
-                      <tr className="bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800 dark:to-slate-800/80">
-                        <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
-                          <div className="flex items-center gap-2 justify-end">
-                            <Box className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                            <span>{appLang === 'en' ? 'Code' : 'الرمز'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-right font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700">
-                          <div className="flex items-center gap-2 justify-end">
-                            <Package className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                            <span>{appLang === 'en' ? 'Product Name' : 'اسم المنتج'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.total_purchased">
-                          <div className="flex items-center gap-2 justify-center">
-                            <Truck className="w-4 h-4 text-emerald-600" />
-                            <span>{appLang === 'en' ? 'Total Purchased' : 'إجمالي المشتريات'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.total_sold">
-                          <div className="flex items-center gap-2 justify-center">
-                            <ShoppingCart className="w-4 h-4 text-orange-600" />
-                            <span>{appLang === 'en' ? 'Total Sold' : 'إجمالي المبيعات'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.sales_returns">
-                          <div className="flex items-center gap-2 justify-center">
-                            <RefreshCcw className="w-4 h-4 text-purple-600" />
-                            <span>{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.purchase_returns">
-                          <div className="flex items-center gap-2 justify-center">
-                            <RefreshCcw className="w-4 h-4 text-cyan-600" />
-                            <span>{appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.write_offs">
-                          <div className="flex items-center gap-2 justify-center">
-                            <AlertCircle className="w-4 h-4 text-red-600" />
-                            <span>{appLang === 'en' ? 'Write-offs' : 'الهالك'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.incoming_transfers">
-                          <div className="flex items-center gap-2 justify-center">
-                            <ArrowDown className="w-4 h-4 text-green-600" />
-                            <span>{appLang === 'en' ? 'Incoming Transfers' : 'النقل الواردة'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.outgoing_transfers">
-                          <div className="flex items-center gap-2 justify-center">
-                            <ArrowUp className="w-4 h-4 text-blue-600" />
-                            <span>{appLang === 'en' ? 'Outgoing Transfers' : 'النقل الصادرة'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.available_stock">
-                          <div className="flex items-center gap-2 justify-center">
-                            <BarChart3 className="w-4 h-4 text-blue-600" />
-                            <span>{appLang === 'en' ? 'Available Stock' : 'المخزون المتاح'}</span>
-                          </div>
-                        </th>
-                        <th className="px-4 py-4 text-center font-semibold text-gray-700 dark:text-gray-200 border-b-2 border-gray-200 dark:border-slate-700" data-ai-help="inventory.stock_status">
-                          <div className="flex items-center gap-2 justify-center">
-                            <span>{appLang === 'en' ? 'Status' : 'الحالة'}</span>
-                          </div>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                      {displayedProducts.map((product, index) => {
-                        const purchased = purchaseTotals[product.id] ?? 0
-                        const sold = soldTotals[product.id] ?? 0
-                        const saleReturn = saleReturnTotals[product.id] ?? 0
-                        const purchaseReturn = purchaseReturnTotals[product.id] ?? 0
-                        const writeOff = writeOffTotals[product.id] ?? 0
-                        // استخدام الكمية المحسوبة بدلاً من quantity_on_hand مباشرة
-                        const shown = computedQty[product.id] ?? 0 // عند فلترة مخزن معين، لا نستخدم quantity_on_hand الإجمالي
-                        const isLowStock = shown > 0 && shown < 5
-                        const isOutOfStock = shown <= 0
-                        const stockPercentage = purchased > 0 ? Math.round((shown / purchased) * 100) : 0
-
-                        return (
-                          <tr
-                            key={product.id}
-                            className={`hover:bg-blue-50/50 dark:hover:bg-slate-800/70 transition-all duration-200 ${index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50 dark:bg-slate-900/50'
-                              }`}
-                          >
-                            {/* الرمز */}
-                            <td className="px-4 py-4">
-                              <Badge variant="outline" className="font-mono text-xs bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600">
-                                {product.sku || '-'}
-                              </Badge>
-                            </td>
-
-                            {/* اسم المنتج */}
-                            <td className="px-4 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                                  <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-gray-900 dark:text-white">{product.name}</p>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    {appLang === 'en' ? 'Stock Rate' : 'نسبة المخزون'}: {stockPercentage}%
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* إجمالي المشتريات */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.total_purchased">
-                              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
-                                <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                <span className="font-bold text-emerald-700 dark:text-emerald-300 text-base">
-                                  {purchased.toLocaleString()}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* إجمالي المبيعات */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.total_sold">
-                              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
-                                <TrendingDown className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                                <span className="font-bold text-orange-700 dark:text-orange-300 text-base">
-                                  {sold.toLocaleString()}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* مرتجعات المبيعات */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.sales_returns">
-                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${saleReturn > 0
-                                ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
-                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
-                                }`}>
-                                <RefreshCcw className={`w-4 h-4 ${saleReturn > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                                <span className={`font-bold text-base ${saleReturn > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                                  {saleReturn.toLocaleString()}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* مرتجعات المشتريات */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.purchase_returns">
-                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${purchaseReturn > 0
-                                ? 'bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800'
-                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
-                                }`}>
-                                <RefreshCcw className={`w-4 h-4 ${purchaseReturn > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                                <span className={`font-bold text-base ${purchaseReturn > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                                  {purchaseReturn.toLocaleString()}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* الهالك */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.write_offs">
-                              <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${writeOff > 0
-                                ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                                : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
-                                }`}>
-                                <AlertCircle className={`w-4 h-4 ${writeOff > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                                <span className={`font-bold text-base ${writeOff > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                                  {writeOff.toLocaleString()}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* ✅ النقل الواردة (Incoming Transfers) */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.incoming_transfers">
-                              {(() => {
-                                const incoming = incomingTransfers[product.id] || []
-                                const totalIncoming = incoming.reduce((sum, t) => sum + t.quantity, 0)
-                                
-                                if (totalIncoming === 0) {
-                                  return (
-                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800">
-                                      <ArrowDown className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                                      <span className="font-bold text-base text-gray-500 dark:text-gray-400">
-                                        0
-                                      </span>
-                                    </div>
-                                  )
-                                }
-                                
-                                return (
-                                  <div className="flex flex-col gap-1">
-                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                                      <ArrowDown className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                      <span className="font-bold text-base text-green-700 dark:text-green-300">
-                                        {totalIncoming.toLocaleString()}
-                                      </span>
-                                    </div>
-                                    {/* عرض تفاصيل المخازن */}
-                                    <div className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
-                                      {incoming.map((transfer, idx) => (
-                                        <div key={idx} className="text-right px-2">
-                                          {transfer.quantity.toLocaleString()} {appLang === 'en' ? 'from' : 'من'} {transfer.warehouseName}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </td>
-
-                            {/* ✅ النقل الصادرة (Outgoing Transfers) */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.outgoing_transfers">
-                              {(() => {
-                                const outgoing = outgoingTransfers[product.id] || []
-                                const totalOutgoing = outgoing.reduce((sum, t) => sum + t.quantity, 0)
-                                
-                                if (totalOutgoing === 0) {
-                                  return (
-                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800">
-                                      <ArrowUp className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                                      <span className="font-bold text-base text-gray-500 dark:text-gray-400">
-                                        0
-                                      </span>
-                                    </div>
-                                  )
-                                }
-                                
-                                return (
-                                  <div className="flex flex-col gap-1">
-                                    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                                      <ArrowUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                      <span className="font-bold text-base text-blue-700 dark:text-blue-300">
-                                        {totalOutgoing.toLocaleString()}
-                                      </span>
-                                    </div>
-                                    {/* عرض تفاصيل المخازن */}
-                                    <div className="flex flex-col gap-0.5 text-xs text-gray-600 dark:text-gray-400">
-                                      {outgoing.map((transfer, idx) => (
-                                        <div key={idx} className="text-right px-2">
-                                          {transfer.quantity.toLocaleString()} {appLang === 'en' ? 'to' : 'إلى'} {transfer.warehouseName}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </td>
-
-                            {/* المخزون المتاح */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.available_stock">
-                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-lg ${isOutOfStock
-                                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700'
-                                : isLowStock
-                                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-                                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
-                                }`}>
-                                {shown.toLocaleString()}
-                              </div>
-                            </td>
-
-                            {/* الحالة */}
-                            <td className="px-4 py-4 text-center" data-ai-help="inventory.stock_status">
-                              {isOutOfStock ? (
-                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
-                                  <AlertCircle className="w-4 h-4" />
-                                  <span className="text-sm font-medium">{appLang === 'en' ? 'Out of Stock' : 'نفذ المخزون'}</span>
-                                </div>
-                              ) : isLowStock ? (
-                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
-                                  <AlertCircle className="w-4 h-4" />
-                                  <span className="text-sm font-medium">{appLang === 'en' ? 'Low Stock' : 'مخزون منخفض'}</span>
-                                </div>
-                              ) : (
-                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  <span className="text-sm font-medium">{appLang === 'en' ? 'In Stock' : 'متوفر'}</span>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    {/* Footer Summary */}
-                    <tfoot>
+                <>
+                  <DataTable
+                    columns={inventoryColumns}
+                    data={paginatedProducts}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[800px]"
+                    emptyMessage={appLang === 'en' ? 'No products in this warehouse' : 'لا توجد منتجات في هذا المخزن'}
+                    rowClassName={(product) => {
+                      const index = paginatedProducts.findIndex(p => p.id === product.id)
+                      return `hover:bg-blue-50/50 dark:hover:bg-slate-800/70 transition-all duration-200 ${index % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50 dark:bg-slate-900/50'}`
+                    }}
+                    footer={{
+                      render: () => (
                       <tr className="bg-gradient-to-r from-slate-100 to-gray-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
                         <td colSpan={2} className="px-4 py-4 text-right">
                           <span className="font-bold text-gray-700 dark:text-gray-200 text-base">
@@ -1341,9 +1333,21 @@ export default function InventoryPage() {
                           </div>
                         </td>
                       </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                      )
+                    }}
+                  />
+                  {displayedProducts.length > 0 && (
+                    <DataPagination
+                      currentPage={stockCurrentPage}
+                      totalPages={stockTotalPages}
+                      totalItems={stockTotalItems}
+                      pageSize={stockPageSize}
+                      onPageChange={stockGoToPage}
+                      onPageSizeChange={handleStockPageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

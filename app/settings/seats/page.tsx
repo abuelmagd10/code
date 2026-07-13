@@ -14,6 +14,9 @@ import {
   Calendar, RefreshCw, ArrowLeft, Loader2, CreditCard, Lock,
   UserCheck, UserX, ShieldAlert, ChevronUp, ChevronDown,
 } from 'lucide-react'
+import { DataTable, type DataTableColumn } from '@/components/DataTable'
+import { DataPagination } from '@/components/data-pagination'
+import { usePagination } from '@/lib/pagination'
 
 interface Member {
   user_id: string
@@ -81,6 +84,38 @@ function daysUntil(date: string | null): number | null {
   return Math.ceil((d - Date.now()) / 86_400_000)
 }
 
+// v3.74.378 — seat status badge derivation. Extracted from the old
+// SeatRow so the standard DataTable status column can render the same
+// badge. Distinguishes active/expired occupied seats and empty active/
+// empty expired seats.
+function getSeatBadge(seat: SeatAssignment): { label: string; color: string; icon: React.ReactNode } {
+  switch (seat.role) {
+    case 'free_owner':
+      return { label: 'مالك (مجانى)', color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300', icon: <Crown className="w-3 h-3" /> }
+    case 'paid':
+      return { label: 'نشط', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300', icon: <CheckCircle className="w-3 h-3" /> }
+    case 'expired':
+      return { label: 'منتهى', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300', icon: <Clock className="w-3 h-3" /> }
+    case 'over_quota':
+      return { label: 'محظور (فوق الحد)', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', icon: <XCircle className="w-3 h-3" /> }
+    case 'empty':
+    default:
+      if (seat.is_expired) {
+        return { label: 'متاح (منتهى)', color: 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400', icon: <Clock className="w-3 h-3" /> }
+      }
+      return { label: 'متاح', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400', icon: <Lock className="w-3 h-3" /> }
+  }
+}
+
+// v3.74.378 — days until seat license expiry (negative = days since
+// expiry). Used to colour the expiry line in the seat-validity column.
+function getDaysToExpiry(seat: SeatAssignment): number | null {
+  if (!seat.expires_at) return null
+  const d = new Date(seat.expires_at).getTime()
+  if (isNaN(d)) return null
+  return Math.ceil((d - Date.now()) / 86_400_000)
+}
+
 export default function SeatsManagementPage() {
   const [data, setData] = useState<AssignmentsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -90,6 +125,8 @@ export default function SeatsManagementPage() {
   // v3.74.382 — Stage 5: renewal flow state.
   const [renewingSeats, setRenewingSeats] = useState<Set<string>>(new Set())
   const [renewError, setRenewError] = useState<string | null>(null)
+  // Pagination state for the seats list (matches invoices list pattern).
+  const [pageSize, setPageSize] = useState(10)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -179,6 +216,23 @@ export default function SeatsManagementPage() {
     fetchData()
   }, [fetchData])
 
+  // Pagination for the seats list. Hook MUST run before the early
+  // returns below; when data is null we paginate an empty array.
+  const seatsList = data?.seats ?? []
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedSeats,
+    goToPage,
+    setPageSize: updatePageSize,
+  } = usePagination(seatsList, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950">
@@ -208,6 +262,182 @@ export default function SeatsManagementPage() {
   // v3.74.378 — count of paid seats whose license has expired.
   const expiredSeatCount = data.expired_seat_count ?? data.seats.filter((s) => s.seat_number > 0 && s.is_expired).length
   const hasExpiredSeats = expiredSeatCount > 0
+
+  // Standard DataTable columns for the seats list. Reproduces the same
+  // columns/order as the previous hand-rolled table; business logic
+  // (swap + renew handlers) is unchanged — only the presentation moves
+  // into `render` callbacks.
+  const seatColumns: DataTableColumn<SeatAssignment>[] = [
+    {
+      key: 'seat_number',
+      header: 'رقم المقعد',
+      type: 'text',
+      align: 'left',
+      className: 'w-20',
+      format: (_, row) => (
+        <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg font-bold text-gray-900 dark:text-white ${
+          row.role === 'free_owner' ? 'bg-violet-100 dark:bg-violet-900/30' :
+          row.is_over_quota ? 'bg-red-100 dark:bg-red-900/30' :
+          row.role === 'expired' ? 'bg-orange-100 dark:bg-orange-900/30' :
+          row.role === 'empty' && row.is_expired ? 'bg-orange-50 dark:bg-orange-900/20' :
+          row.role === 'empty' ? 'bg-gray-100 dark:bg-slate-800' :
+          'bg-green-100 dark:bg-green-900/30'
+        }`}>
+          #{row.seat_number}
+        </span>
+      ),
+    },
+    {
+      key: 'member',
+      header: 'الموظف',
+      type: 'text',
+      align: 'left',
+      className: 'text-gray-900 dark:text-white font-medium',
+      format: (_, row) =>
+        row.member?.name || (row.member ? '—' : <span className="text-gray-400 font-normal italic">(مقعد فارغ)</span>),
+    },
+    {
+      key: 'email',
+      header: 'البريد',
+      type: 'text',
+      align: 'left',
+      className: 'text-xs text-gray-600 dark:text-gray-400 font-mono',
+      format: (_, row) => row.member?.email || '—',
+    },
+    {
+      key: 'role',
+      header: 'الدور',
+      type: 'text',
+      align: 'left',
+      className: 'text-gray-700 dark:text-gray-300',
+      format: (_, row) => row.member?.role || '—',
+    },
+    {
+      key: 'status',
+      header: 'الحالة',
+      type: 'status',
+      format: (_, row) => {
+        const badge = getSeatBadge(row)
+        return (
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${badge.color}`}>
+            {badge.icon}
+            {badge.label}
+          </span>
+        )
+      },
+    },
+    {
+      // v3.74.378 — seat license validity (purchase + expiry).
+      // v3.74.382 — Stage 5: per-row "جدد" / "مدّد" button when allowed.
+      key: 'validity',
+      header: 'صلاحية المقعد',
+      type: 'custom',
+      align: 'left',
+      className: 'text-xs',
+      format: (_, row) => {
+        const daysToExpiry = getDaysToExpiry(row)
+        const onRenew =
+          data.is_caller_owner && row.license_id && row.seat_number > 0
+            ? () => startRenewal('one', [row.license_id!])
+            : undefined
+        const isRenewing = !!row.license_id && renewingSeats.has(row.license_id)
+
+        if (row.purchased_at && row.expires_at) {
+          return (
+            <div className="space-y-1">
+              <p className="text-gray-500 dark:text-gray-400">
+                اشترى: <span className="text-gray-700 dark:text-gray-300">{fmtDate(row.purchased_at)}</span>
+              </p>
+              <p className={
+                row.is_expired
+                  ? 'text-orange-600 dark:text-orange-400 font-medium'
+                  : daysToExpiry !== null && daysToExpiry <= 3
+                    ? 'text-amber-600 dark:text-amber-400 font-medium'
+                    : 'text-gray-500 dark:text-gray-400'
+              }>
+                ينتهى: <span className="font-medium">{fmtDate(row.expires_at)}</span>
+                {daysToExpiry !== null && (
+                  <span className="ms-1 text-[10px]">
+                    ({row.is_expired
+                      ? `منتهى منذ ${Math.abs(daysToExpiry)} يوم`
+                      : daysToExpiry === 0
+                        ? 'اليوم'
+                        : `بعد ${daysToExpiry} يوم`})
+                  </span>
+                )}
+              </p>
+              {onRenew && (
+                <button
+                  onClick={onRenew}
+                  disabled={isRenewing}
+                  className={`mt-1 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    row.is_expired
+                      ? 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-300'
+                      : 'bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-900/20 dark:hover:bg-violet-900/40 dark:text-violet-300'
+                  }`}
+                >
+                  {isRenewing ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3" />
+                  )}
+                  {row.is_expired ? 'جدد المقعد' : 'مدّد المقعد'}
+                </button>
+              )}
+            </div>
+          )
+        }
+        return <span className="text-gray-400">—</span>
+      },
+    },
+  ]
+
+  if (data.is_caller_owner) {
+    seatColumns.push({
+      key: 'actions',
+      header: 'ترتيب',
+      type: 'actions',
+      className: 'w-24',
+      format: (_, row) => {
+        const m = row.member
+        // Neighbour lookup mirrors the original index-based swap logic,
+        // resolved against the full seats array so ordering is correct
+        // even when the list is paginated.
+        const idx = data.seats.findIndex((x) => x.seat_number === row.seat_number)
+        const prev = idx > 0 ? data.seats[idx - 1] : null
+        const next = idx < data.seats.length - 1 ? data.seats[idx + 1] : null
+        const isSwapping = swappingSeats.has(row.seat_number)
+        const canMoveUp = !!data.is_caller_owner && !!prev && prev.seat_number > 0 && row.seat_number > 0 && row.role !== 'free_owner'
+        const canMoveDown = !!data.is_caller_owner && !!next && next.seat_number > 0 && row.seat_number > 0 && row.role !== 'free_owner'
+        const onMoveUp = prev && prev.seat_number > 0 ? () => swapSeats(row.seat_number, prev.seat_number) : undefined
+        const onMoveDown = next && next.seat_number > 0 ? () => swapSeats(row.seat_number, next.seat_number) : undefined
+
+        if (m && row.role !== 'free_owner') {
+          return (
+            <div className="flex items-center justify-center gap-1">
+              <button
+                onClick={onMoveUp}
+                disabled={!canMoveUp || isSwapping}
+                title="تحريك لأعلى (تبديل مع المقعد الأقل رقماً)"
+                className="p-1.5 rounded-md text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+              >
+                {isSwapping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={onMoveDown}
+                disabled={!canMoveDown || isSwapping}
+                title="تحريك لأسفل (تبديل مع المقعد الأعلى رقماً)"
+                className="p-1.5 rounded-md text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
+              >
+                {isSwapping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+          )
+        }
+        return <span className="text-gray-300 text-xs">—</span>
+      },
+    })
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950" dir="rtl">
@@ -415,57 +645,35 @@ export default function SeatsManagementPage() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-slate-800/50 text-xs text-gray-500 uppercase">
-                  <tr>
-                    <th className="px-5 py-3 text-start font-medium w-20">رقم المقعد</th>
-                    <th className="px-5 py-3 text-start font-medium">الموظف</th>
-                    <th className="px-5 py-3 text-start font-medium">البريد</th>
-                    <th className="px-5 py-3 text-start font-medium">الدور</th>
-                    <th className="px-5 py-3 text-start font-medium">الحالة</th>
-                    {/* v3.74.378 — was "تاريخ الإضافة" (member join
-                        date). Replaced with the seat license's own
-                        purchase + expiry, which is what the owner
-                        actually needs to see now. */}
-                    <th className="px-5 py-3 text-start font-medium">صلاحية المقعد</th>
-                    {data.is_caller_owner && (
-                      <th className="px-5 py-3 text-center font-medium w-24">ترتيب</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 dark:divide-slate-800">
-                  {data.seats.map((s, idx) => {
-                    const prev = idx > 0 ? data.seats[idx - 1] : null
-                    const next = idx < data.seats.length - 1 ? data.seats[idx + 1] : null
-                    return (
-                      <SeatRow
-                        key={`${s.seat_number}-${s.member?.user_id ?? 'empty'}`}
-                        seat={s}
-                        canMoveUp={!!data.is_caller_owner && !!prev && prev.seat_number > 0 && s.seat_number > 0 && s.role !== 'free_owner'}
-                        canMoveDown={!!data.is_caller_owner && !!next && next.seat_number > 0 && s.seat_number > 0 && s.role !== 'free_owner'}
-                        onMoveUp={prev && prev.seat_number > 0 ? () => swapSeats(s.seat_number, prev.seat_number) : undefined}
-                        onMoveDown={next && next.seat_number > 0 ? () => swapSeats(s.seat_number, next.seat_number) : undefined}
-                        isSwapping={swappingSeats.has(s.seat_number)}
-                        showActions={!!data.is_caller_owner}
-                        // v3.74.382 — Stage 5: single-seat renewal.
-                        onRenew={
-                          data.is_caller_owner && s.license_id && s.seat_number > 0
-                            ? () => startRenewal('one', [s.license_id!])
-                            : undefined
-                        }
-                        isRenewing={!!s.license_id && renewingSeats.has(s.license_id)}
-                      />
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {/* v3.74.378 — the "صلاحية المقعد" column replaced the old
+                "تاريخ الإضافة" (member join date); it shows the seat
+                license's own purchase + expiry.
+                Standardised onto the shared DataTable component. */}
+            <DataTable
+              columns={seatColumns}
+              data={paginatedSeats}
+              keyField="seat_number"
+              emptyMessage="لا توجد مقاعد بعد. ابدأ بإضافة مقاعد من صفحة الفوترة."
+              rowClassName={(row) => {
+                const isSwapping = swappingSeats.has(row.seat_number)
+                const colour = row.is_over_quota
+                  ? 'bg-red-50/30 dark:bg-red-900/5'
+                  : row.role === 'expired'
+                    ? 'bg-orange-50/40 dark:bg-orange-900/10'
+                    : ''
+                return `${colour} ${isSwapping ? 'opacity-50' : ''}`.trim()
+              }}
+            />
 
-            {data.seats.length === 0 && (
-              <div className="p-8 text-center text-gray-500 text-sm">
-                لا توجد مقاعد بعد. ابدأ بإضافة مقاعد من <Link href="/settings/billing" className="underline">صفحة الفوترة</Link>.
-              </div>
+            {data.seats.length > 0 && (
+              <DataPagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={goToPage}
+                onPageSizeChange={handlePageSizeChange}
+              />
             )}
           </div>
 
@@ -508,169 +716,3 @@ export default function SeatsManagementPage() {
   )
 }
 
-// ─────────────────────────────────────────
-// Seat Row
-// ─────────────────────────────────────────
-
-interface SeatRowProps {
-  seat: SeatAssignment
-  canMoveUp?: boolean
-  canMoveDown?: boolean
-  onMoveUp?: () => void
-  onMoveDown?: () => void
-  isSwapping?: boolean
-  showActions?: boolean
-  // v3.74.382 — Stage 5: per-row renewal.
-  onRenew?: () => void
-  isRenewing?: boolean
-}
-
-function SeatRow({ seat, canMoveUp, canMoveDown, onMoveUp, onMoveDown, isSwapping, showActions, onRenew, isRenewing }: SeatRowProps) {
-  const m = seat.member
-
-  // v3.74.378 — seatBadge now distinguishes "active with occupant"
-  // from "expired with occupant" and "empty active" from "empty
-  // expired". The role string carries the high-level state; the
-  // expires_at flag refines empty seats.
-  const seatBadge = (() => {
-    switch (seat.role) {
-      case 'free_owner':
-        return { label: 'مالك (مجانى)', color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300', icon: <Crown className="w-3 h-3" /> }
-      case 'paid':
-        return { label: 'نشط', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300', icon: <CheckCircle className="w-3 h-3" /> }
-      case 'expired':
-        return { label: 'منتهى', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300', icon: <Clock className="w-3 h-3" /> }
-      case 'over_quota':
-        return { label: 'محظور (فوق الحد)', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', icon: <XCircle className="w-3 h-3" /> }
-      case 'empty':
-      default:
-        if (seat.is_expired) {
-          return { label: 'متاح (منتهى)', color: 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400', icon: <Clock className="w-3 h-3" /> }
-        }
-        return { label: 'متاح', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400', icon: <Lock className="w-3 h-3" /> }
-    }
-  })()
-
-  // v3.74.378 — days until expiry (negative = days since expiry).
-  // Used to colour the expiry line in the seat-validity column.
-  const daysToExpiry = (() => {
-    if (!seat.expires_at) return null
-    const d = new Date(seat.expires_at).getTime()
-    if (isNaN(d)) return null
-    return Math.ceil((d - Date.now()) / 86_400_000)
-  })()
-
-  return (
-    <tr className={`hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors ${
-      seat.is_over_quota ? 'bg-red-50/30 dark:bg-red-900/5' :
-      seat.role === 'expired' ? 'bg-orange-50/40 dark:bg-orange-900/10' :
-      ''
-    } ${isSwapping ? 'opacity-50' : ''}`}>
-      <td className="px-5 py-3 font-bold text-gray-900 dark:text-white">
-        <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg ${
-          seat.role === 'free_owner' ? 'bg-violet-100 dark:bg-violet-900/30' :
-          seat.is_over_quota ? 'bg-red-100 dark:bg-red-900/30' :
-          seat.role === 'expired' ? 'bg-orange-100 dark:bg-orange-900/30' :
-          seat.role === 'empty' && seat.is_expired ? 'bg-orange-50 dark:bg-orange-900/20' :
-          seat.role === 'empty' ? 'bg-gray-100 dark:bg-slate-800' :
-          'bg-green-100 dark:bg-green-900/30'
-        }`}>
-          #{seat.seat_number}
-        </span>
-      </td>
-      <td className="px-5 py-3 text-gray-900 dark:text-white font-medium">
-        {m?.name || (m ? '—' : <span className="text-gray-400 font-normal italic">(مقعد فارغ)</span>)}
-      </td>
-      <td className="px-5 py-3 text-xs text-gray-600 dark:text-gray-400 font-mono">
-        {m?.email || '—'}
-      </td>
-      <td className="px-5 py-3 text-gray-700 dark:text-gray-300">
-        {m?.role || '—'}
-      </td>
-      <td className="px-5 py-3">
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${seatBadge.color}`}>
-          {seatBadge.icon}
-          {seatBadge.label}
-        </span>
-      </td>
-      <td className="px-5 py-3 text-xs">
-        {/* v3.74.378 — seat license validity. The owner's seat (0)
-            has no license, so we render a placeholder. Over-quota
-            members have no license backing either.
-            v3.74.382 — Stage 5: per-row "جدد" button when allowed. */}
-        {seat.purchased_at && seat.expires_at ? (
-          <div className="space-y-1">
-            <p className="text-gray-500 dark:text-gray-400">
-              اشترى: <span className="text-gray-700 dark:text-gray-300">{fmtDate(seat.purchased_at)}</span>
-            </p>
-            <p className={
-              seat.is_expired
-                ? 'text-orange-600 dark:text-orange-400 font-medium'
-                : daysToExpiry !== null && daysToExpiry <= 3
-                  ? 'text-amber-600 dark:text-amber-400 font-medium'
-                  : 'text-gray-500 dark:text-gray-400'
-            }>
-              ينتهى: <span className="font-medium">{fmtDate(seat.expires_at)}</span>
-              {daysToExpiry !== null && (
-                <span className="ms-1 text-[10px]">
-                  ({seat.is_expired
-                    ? `منتهى منذ ${Math.abs(daysToExpiry)} يوم`
-                    : daysToExpiry === 0
-                      ? 'اليوم'
-                      : `بعد ${daysToExpiry} يوم`})
-                </span>
-              )}
-            </p>
-            {onRenew && (
-              <button
-                onClick={onRenew}
-                disabled={isRenewing}
-                className={`mt-1 inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  seat.is_expired
-                    ? 'bg-orange-100 hover:bg-orange-200 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-300'
-                    : 'bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-900/20 dark:hover:bg-violet-900/40 dark:text-violet-300'
-                }`}
-              >
-                {isRenewing ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                {seat.is_expired ? 'جدد المقعد' : 'مدّد المقعد'}
-              </button>
-            )}
-          </div>
-        ) : (
-          <span className="text-gray-400">—</span>
-        )}
-      </td>
-      {showActions && (
-        <td className="px-5 py-3">
-          {/* Only show up/down for non-owner occupied seats */}
-          {m && seat.role !== 'free_owner' ? (
-            <div className="flex items-center justify-center gap-1">
-              <button
-                onClick={onMoveUp}
-                disabled={!canMoveUp || isSwapping}
-                title="تحريك لأعلى (تبديل مع المقعد الأقل رقماً)"
-                className="p-1.5 rounded-md text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
-              >
-                {isSwapping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronUp className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={onMoveDown}
-                disabled={!canMoveDown || isSwapping}
-                title="تحريك لأسفل (تبديل مع المقعد الأعلى رقماً)"
-                className="p-1.5 rounded-md text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors"
-              >
-                {isSwapping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-            </div>
-          ) : (
-            <span className="text-gray-300 text-xs">—</span>
-          )}
-        </td>
-      )}
-    </tr>
-  )
-}

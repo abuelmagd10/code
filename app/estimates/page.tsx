@@ -21,6 +21,10 @@ import { useBranchFilter } from "@/hooks/use-branch-filter";
 import { getActiveCompanyId } from "@/lib/company";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control";
 import type { UserContext } from "@/lib/validation";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { DataPagination } from "@/components/data-pagination";
+import { usePagination } from "@/lib/pagination";
+import { StatusBadge } from "@/components/DataTableFormatters";
 
 type Customer = { id: string; name: string; phone?: string | null };
 type Member   = { user_id: string; full_name?: string | null; email?: string | null; role?: string };
@@ -101,6 +105,9 @@ export default function EstimatesPage() {
   const [dateTo, setDateTo]     = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  // Pagination state
+  const [pageSize, setPageSize] = useState(10);
+
   // estimate_id -> product_ids index for Products filter
   const [itemsByEstimate, setItemsByEstimate] = useState<Record<string, string[]>>({});
 
@@ -157,6 +164,121 @@ export default function EstimatesPage() {
     setDateTo("");
     setSearchQuery("");
   };
+
+  // Pagination — placed before any early return to keep hook order stable
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedEstimates,
+    goToPage,
+    setPageSize: updatePageSize,
+  } = usePagination(filteredEstimates, { pageSize });
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    updatePageSize(newSize);
+  };
+
+  // Main estimates list columns — standard DataTable (matches /invoices)
+  const estimateColumns: DataTableColumn<Estimate>[] = [
+    {
+      key: 'estimate_number',
+      header: t("Estimate #", "رقم العرض"),
+      type: 'text',
+      align: 'right',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">{value}</span>
+      ),
+    },
+    {
+      key: 'customer_id',
+      header: t("Customer", "العميل"),
+      type: 'text',
+      align: 'right',
+      format: (_, row) => customers.find((c) => c.id === row.customer_id)?.name || "-",
+    },
+    {
+      key: 'branch_id',
+      header: t("Branch", "الفرع"),
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => (
+        row.branches?.name ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            {row.branches.name}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500 text-xs">{t("Main", "رئيسي")}</span>
+        )
+      ),
+    },
+    {
+      key: 'estimate_date',
+      header: t("Date", "التاريخ"),
+      type: 'date',
+      align: 'right',
+      hidden: 'sm',
+      className: 'text-gray-600 dark:text-gray-300',
+      format: (value) => value,
+    },
+    {
+      key: 'total_amount',
+      header: t("Total", "المجموع"),
+      type: 'currency',
+      align: 'right',
+      className: 'font-medium text-gray-900 dark:text-white',
+      format: (value) => Number(value).toFixed(2),
+    },
+    {
+      key: 'status',
+      header: t("Status", "الحالة"),
+      type: 'status',
+      align: 'center',
+      format: (_, row) => <StatusBadge status={row.status} lang={appLang} />,
+    },
+    {
+      key: 'converted_so',
+      header: t("Linked Sales Order", "أمر البيع المرتبط"),
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => (
+        row.converted_so ? (
+          <a
+            href={"/sales-orders/" + row.converted_so.id}
+            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
+          >
+            {row.converted_so.so_number}
+          </a>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>
+        )
+      ),
+    },
+    {
+      key: 'id',
+      header: t("Actions", "إجراءات"),
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => (
+        <div className="flex gap-2 flex-wrap justify-center">
+          <Button variant="secondary" onClick={() => onEdit(row)} disabled={!!row.converted_so_id}>
+            {t("Edit", "تعديل")}
+          </Button>
+          <Button variant="outline" onClick={() => convertToSO(row)} disabled={!!row.converted_so_id || row.status === "converted"}>
+            {row.converted_so_id ? t("Converted", "مُحَوَّل") : t("Convert to Sales Order", "تحويل لأمر بيع")}
+          </Button>
+          {canDeleteEstimate(row) && (
+            <Button variant="destructive" onClick={() => deleteEstimate(row)}>
+              {t("Delete", "حذف")}
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   // Privileged role flag — used to gate BranchFilter + Employee filter
   const canViewAllEstimates = ['owner', 'admin', 'general_manager'].includes(
@@ -816,74 +938,27 @@ export default function EstimatesPage() {
         <Card className="p-3">
           {loading && <div className="text-sm">{t("Loading...", "جارٍ التحميل...")}</div>}
           {!loading && (
-            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
-              <table className="w-full text-sm">
-                <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                  <tr>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">{t("Estimate #", "رقم العرض")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">{t("Customer", "العميل")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">{t("Branch", "الفرع")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right hidden sm:table-cell">{t("Date", "التاريخ")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-right">{t("Total", "المجموع")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">{t("Status", "الحالة")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center hidden md:table-cell">{t("Linked Sales Order", "أمر البيع المرتبط")}</th>
-                    <th className="px-3 py-3 font-semibold text-gray-900 dark:text-white text-center">{t("Actions", "إجراءات")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredEstimates.map((e) => (
-                    <tr
-                      key={e.id}
-                      className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50"
-                    >
-                      <td className="px-3 py-3 text-right font-medium text-blue-600 dark:text-blue-400">{e.estimate_number}</td>
-                      <td className="px-3 py-3 text-right">{customers.find((c) => c.id === e.customer_id)?.name || "-"}</td>
-                      <td className="px-3 py-3 text-center hidden md:table-cell">
-                        {e.branches?.name ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                            {e.branches.name}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500 text-xs">{t("Main", "رئيسي")}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-right hidden sm:table-cell text-gray-600 dark:text-gray-300">{e.estimate_date}</td>
-                      <td className="px-3 py-3 text-right font-medium text-gray-900 dark:text-white">{e.total_amount.toFixed(2)}</td>
-                      <td className="px-3 py-3 text-center">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200">
-                          {e.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-center hidden md:table-cell">
-                        {e.converted_so ? (
-                          <a
-                            href={"/sales-orders/" + e.converted_so.id}
-                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50"
-                          >
-                            {e.converted_so.so_number}
-                          </a>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-center space-x-2">
-                        <Button variant="secondary" onClick={() => onEdit(e)} disabled={!!e.converted_so_id}>
-                          {t("Edit", "تعديل")}
-                        </Button>
-                        <Button variant="outline" onClick={() => convertToSO(e)} disabled={!!e.converted_so_id || e.status === "converted"}>
-                          {e.converted_so_id ? t("Converted", "مُحَوَّل") : t("Convert to Sales Order", "تحويل لأمر بيع")}
-                        </Button>
-                        {canDeleteEstimate(e) && (
-                          <Button variant="destructive" onClick={() => deleteEstimate(e)}>
-                            {t("Delete", "حذف")}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <DataTable
+                columns={estimateColumns}
+                data={paginatedEstimates}
+                keyField="id"
+                lang={appLang}
+                minWidth="min-w-[700px]"
+                emptyMessage={t("No estimates found", "لا توجد عروض سعرية")}
+              />
+              {filteredEstimates.length > 0 && (
+                <DataPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  pageSize={pageSize}
+                  onPageChange={goToPage}
+                  onPageSizeChange={handlePageSizeChange}
+                  lang={appLang}
+                />
+              )}
+            </>
           )}
         </Card>
 

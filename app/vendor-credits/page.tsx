@@ -12,6 +12,7 @@ import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye, Plus } from 
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
 import { buildDataVisibilityFilter, applyDataVisibilityFilter } from "@/lib/data-visibility-control"
@@ -347,6 +348,102 @@ export default function VendorCreditsPage() {
     return <span className={`px-2 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label[appLang]}</span>
   }
 
+  // تعريف أعمدة الجدول الموحّد (DataTable) — نفس الأعمدة والترتيب السابق (عرض فقط)
+  const creditColumns: DataTableColumn<VendorCredit>[] = useMemo(() => [
+    {
+      key: 'credit_number',
+      header: appLang === 'en' ? 'Credit No.' : 'رقم الإشعار',
+      type: 'text',
+      align: 'right',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">{value}</span>
+      )
+    },
+    {
+      key: 'credit_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      hidden: 'sm',
+      className: 'text-gray-600 dark:text-gray-400',
+      format: (value) => new Date(value).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')
+    },
+    {
+      key: 'supplier_id',
+      header: appLang === 'en' ? 'Supplier' : 'المورد',
+      type: 'text',
+      align: 'right',
+      className: 'text-gray-700 dark:text-gray-300',
+      format: (_, row) => getSupplierName(row.supplier_id)
+    },
+    {
+      key: 'total_amount',
+      header: appLang === 'en' ? 'Total' : 'الإجمالي',
+      type: 'currency',
+      align: 'right',
+      className: 'font-medium text-gray-900 dark:text-white',
+      format: (value) => `${currencySymbol}${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    },
+    {
+      key: 'applied_amount',
+      header: appLang === 'en' ? 'Applied' : 'المطبّق',
+      type: 'currency',
+      align: 'right',
+      hidden: 'md',
+      className: 'text-green-600 dark:text-green-400',
+      format: (value) => `${currencySymbol}${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    },
+    {
+      key: 'remaining',
+      header: appLang === 'en' ? 'Remaining' : 'المتبقي',
+      type: 'currency',
+      align: 'right',
+      hidden: 'md',
+      format: (_, row) => (
+        <span className={remaining(row) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>
+          {currencySymbol}{remaining(row).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+        </span>
+      )
+    },
+    {
+      key: 'branch_id',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => {
+        const branchName = (row as any).branches?.name
+        return branchName ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
+            {branchName}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      }
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'center',
+      format: (_, row) => getStatusBadge(row.status)
+    },
+    {
+      key: 'id',
+      header: appLang === 'en' ? 'Actions' : 'إجراءات',
+      type: 'actions',
+      align: 'right',
+      format: (_, row) => (
+        <Link href={`/vendor-credits/${row.id}`}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+            <Eye className="h-4 w-4 text-gray-500" />
+          </Button>
+        </Link>
+      )
+    },
+  ], [appLang, currencySymbol, suppliers])
+
   if (loading) return <div className="flex min-h-screen"><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
 
   return (
@@ -561,50 +658,14 @@ export default function VendorCreditsPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Credit No.' : 'رقم الإشعار'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Supplier' : 'المورد'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Total' : 'الإجمالي'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Applied' : 'المطبّق'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</th>
-                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                        <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'إجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedCredits.map(vc => (
-                        <tr key={vc.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">{vc.credit_number}</td>
-                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400 hidden sm:table-cell">{new Date(vc.credit_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}</td>
-                          <td className="px-3 py-3 text-gray-700 dark:text-gray-300">{getSupplierName(vc.supplier_id)}</td>
-                          <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{currencySymbol}{Number(vc.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                          <td className="px-3 py-3 text-green-600 dark:text-green-400 hidden md:table-cell">{currencySymbol}{Number(vc.applied_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                          <td className={`px-3 py-3 hidden md:table-cell ${remaining(vc) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{currencySymbol}{remaining(vc).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                          <td className="px-3 py-3 text-center hidden md:table-cell">
-                            {(vc as any).branches?.name ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
-                                {(vc as any).branches.name}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 text-center">{getStatusBadge(vc.status)}</td>
-                          <td className="px-3 py-3">
-                            <Link href={`/vendor-credits/${vc.id}`}>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
-                                <Eye className="h-4 w-4 text-gray-500" />
-                              </Button>
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <DataTable
+                    columns={creditColumns}
+                    data={paginatedCredits}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[640px]"
+                    emptyMessage={appLang === 'en' ? 'No vendor credits found' : 'لا توجد إشعارات'}
+                  />
                   {/* Pagination */}
                   {filteredCredits.length > 0 && (
                     <DataPagination

@@ -15,6 +15,9 @@ import Link from "next/link"
 import { ArrowLeftRight, Plus, Package, Warehouse, CheckCircle2, Clock, XCircle, Truck, Eye, Loader2, AlertTriangle, Edit } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 interface Transfer {
   id: string
@@ -54,6 +57,7 @@ export default function InventoryTransfersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [hasAccess, setHasAccess] = useState<boolean>(true)
   const [permWrite, setPermWrite] = useState(false)
+  const [pageSize, setPageSize] = useState(10)
 
   // ✅ إصلاح Hydration: تهيئة اللغة بعد hydration فقط
   useEffect(() => {
@@ -295,6 +299,150 @@ export default function InventoryTransfersPage() {
     ? transfers
     : transfers.filter(t => t.status === statusFilter)
 
+  // 📄 Pagination (presentation-only)
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedTransfers,
+    goToPage,
+    setPageSize: updatePageSize,
+  } = usePagination(filteredTransfers, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
+  // 🧱 أعمدة الجدول الموحّد — نفس الأعمدة والترتيب السابق
+  const transferColumns: DataTableColumn<Transfer>[] = [
+    {
+      key: 'transfer_number',
+      header: appLang === 'en' ? 'Transfer #' : 'رقم النقل',
+      type: 'text',
+      align: 'right',
+      format: (value) => (
+        <span className="font-mono font-medium text-indigo-600">{value}</span>
+      ),
+    },
+    {
+      key: 'source_warehouses',
+      header: appLang === 'en' ? 'From' : 'من',
+      type: 'text',
+      align: 'right',
+      format: (_, row) => (
+        <div className="flex items-center gap-2">
+          <Warehouse className="w-4 h-4 text-gray-400" />
+          {(row.source_warehouses as any)?.name || '-'}
+        </div>
+      ),
+    },
+    {
+      key: 'destination_warehouses',
+      header: appLang === 'en' ? 'To' : 'إلى',
+      type: 'text',
+      align: 'right',
+      format: (_, row) => (
+        <div className="flex items-center gap-2">
+          <Warehouse className="w-4 h-4 text-green-500" />
+          {(row.destination_warehouses as any)?.name || '-'}
+        </div>
+      ),
+    },
+    {
+      key: 'items_count',
+      header: appLang === 'en' ? 'Items' : 'الأصناف',
+      type: 'custom',
+      align: 'center',
+      format: (_, row) => (
+        <Badge variant="secondary">{row.items_count || 0}</Badge>
+      ),
+    },
+    {
+      key: 'total_quantity',
+      header: appLang === 'en' ? 'Quantity' : 'الكمية المنقولة',
+      type: 'custom',
+      align: 'center',
+      format: (_, row) => (
+        <span className="font-semibold text-gray-900 dark:text-white">
+          {row.total_quantity?.toLocaleString() || 0}
+        </span>
+      ),
+    },
+    {
+      key: 'product_names',
+      header: appLang === 'en' ? 'Products' : 'أسماء الأصناف',
+      type: 'text',
+      align: 'right',
+      format: (_, row) => (
+        <div className="max-w-xs truncate" title={row.product_names || ''}>
+          <span className="text-sm text-gray-700 dark:text-gray-300">
+            {row.product_names || '-'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'branch',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'custom',
+      align: 'center',
+      format: (_, row) => (
+        (row as any).branches?.name ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
+            {(row as any).branches.name}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      ),
+    },
+    {
+      key: 'created_by_name',
+      header: appLang === 'en' ? 'Created By' : 'مُنشئ الطلب',
+      type: 'custom',
+      align: 'center',
+      format: (_, row) => (
+        row.created_by_name && row.created_by_name !== '—' ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+            {row.created_by_name}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">—</span>
+        )
+      ),
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'custom',
+      align: 'center',
+      format: (_, row) => getStatusBadge(row.status, !!row.rejection_reason),
+    },
+    {
+      key: 'transfer_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'custom',
+      align: 'center',
+      className: 'text-gray-500',
+      format: (_, row) => new Date(row.transfer_date).toLocaleDateString('ar-EG'),
+    },
+    {
+      key: 'actions',
+      header: appLang === 'en' ? 'Actions' : 'الإجراءات',
+      type: 'actions',
+      align: 'center',
+      format: (_, row) => (
+        <Link href={`/inventory-transfers/${row.id}`}>
+          <Button variant="ghost" size="sm" className="gap-1">
+            <Eye className="w-4 h-4" />
+            {appLang === 'en' ? 'View' : 'عرض'}
+          </Button>
+        </Link>
+      ),
+    },
+  ]
+
   // ✅ حالة التحميل أو عدم hydration
   if (!hydrated || !isReady || permsLoading) {
     return (
@@ -472,93 +620,27 @@ export default function InventoryTransfersPage() {
                   )}
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-slate-800">
-                      <tr>
-                        <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Transfer #' : 'رقم النقل'}</th>
-                        <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'From' : 'من'}</th>
-                        <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'To' : 'إلى'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Items' : 'الأصناف'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Quantity' : 'الكمية المنقولة'}</th>
-                        <th className="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Products' : 'أسماء الأصناف'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Created By' : 'مُنشئ الطلب'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                        <th className="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                      {filteredTransfers.map((transfer) => (
-                        <tr key={transfer.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                          <td className="px-4 py-3">
-                            <span className="font-mono font-medium text-indigo-600">{transfer.transfer_number}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <Warehouse className="w-4 h-4 text-gray-400" />
-                              {(transfer.source_warehouses as any)?.name || '-'}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <Warehouse className="w-4 h-4 text-green-500" />
-                              {(transfer.destination_warehouses as any)?.name || '-'}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Badge variant="secondary">{transfer.items_count || 0}</Badge>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="font-semibold text-gray-900 dark:text-white">
-                              {transfer.total_quantity?.toLocaleString() || 0}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="max-w-xs truncate" title={transfer.product_names || ''}>
-                              <span className="text-sm text-gray-700 dark:text-gray-300">
-                                {transfer.product_names || '-'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {(transfer as any).branches?.name ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
-                                {(transfer as any).branches.name}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {transfer.created_by_name && transfer.created_by_name !== '—' ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                                {transfer.created_by_name}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 dark:text-gray-500">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            {getStatusBadge(transfer.status, !!transfer.rejection_reason)}
-                          </td>
-                          <td className="px-4 py-3 text-center text-gray-500">
-                            {new Date(transfer.transfer_date).toLocaleDateString('ar-EG')}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <Link href={`/inventory-transfers/${transfer.id}`}>
-                              <Button variant="ghost" size="sm" className="gap-1">
-                                <Eye className="w-4 h-4" />
-                                {appLang === 'en' ? 'View' : 'عرض'}
-                              </Button>
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <DataTable
+                    columns={transferColumns}
+                    data={paginatedTransfers}
+                    keyField="id"
+                    lang={appLang}
+                    minWidth="min-w-[900px]"
+                    emptyMessage={appLang === 'en' ? 'No transfer requests yet' : 'لا توجد طلبات نقل بعد'}
+                  />
+                  {filteredTransfers.length > 0 && (
+                    <DataPagination
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      pageSize={pageSize}
+                      onPageChange={goToPage}
+                      onPageSizeChange={handlePageSizeChange}
+                      lang={appLang}
+                    />
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

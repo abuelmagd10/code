@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useTransition, useCallback, useRef } from "react"
+import { useState, useEffect, useTransition, useCallback, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
@@ -24,6 +24,7 @@ import { isDocumentLinkedEntry } from "@/lib/audit-log"
 import { CompanyHeader } from "@/components/company-header"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -404,6 +405,116 @@ export default function JournalEntriesPage() {
     updatePageSize(newSize)
   }
 
+  // تعريف أعمدة الجدول الموحد (DataTable) — نفس الأعمدة والترتيب السابق
+  const tableColumns: DataTableColumn<JournalEntry>[] = useMemo(() => [
+    {
+      key: 'entry_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+      format: (value) => (
+        <span className="font-medium text-blue-600 dark:text-blue-400">
+          {new Date(value).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}
+        </span>
+      )
+    },
+    {
+      key: 'description',
+      header: appLang === 'en' ? 'Description' : 'الوصف',
+      type: 'text',
+      align: 'right',
+      hidden: 'sm',
+      className: 'text-gray-700 dark:text-gray-300 max-w-[200px] truncate',
+      format: (_, row) => row.description || '-'
+    },
+    {
+      key: 'reference_type',
+      header: appLang === 'en' ? 'Type' : 'النوع',
+      type: 'text',
+      align: 'right',
+      hidden: 'md',
+      format: (_, row) => (
+        <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
+          {row.reference_type}
+        </span>
+      )
+    },
+    {
+      key: 'branch',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'center',
+      hidden: 'md',
+      format: (_, row) => (
+        (row as any).branches?.name ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">
+            {(row as any).branches.name}
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
+        )
+      )
+    },
+    {
+      key: 'amount',
+      header: appLang === 'en' ? 'Amount' : 'المبلغ',
+      type: 'currency',
+      align: 'right',
+      format: (_, row) => {
+        // جلب المبلغ من API أولاً
+        let amt = Number(amountById[row.id] || 0)
+
+        // Fallback: إذا كان المبلغ 0، احسبه من debitCreditById
+        if (amt === 0 && debitCreditById[row.id]) {
+          const dc = debitCreditById[row.id]
+          const debit = dc.debit || 0
+          const credit = dc.credit || 0
+          // للقيود المتوازنة، اعرض المبلغ الأكبر
+          if (Math.abs(debit - credit) < 0.01) {
+            amt = Math.max(debit, credit)
+          } else {
+            amt = debit - credit
+          }
+        }
+
+        const isCash = Boolean(cashBasisById[row.id])
+        const cls = amt > 0 ? "text-green-600 dark:text-green-400" : (amt < 0 ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400")
+        const sign = amt > 0 ? "+" : ""
+        return (
+          <div className="flex items-center gap-2">
+            <span className={cls + " font-semibold"}>{sign}{numberFmt.format(amt)} {currencySymbol}</span>
+            {isCash ? (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800">{appLang === 'en' ? 'Net cash' : 'صافي نقد'}</span>) : null}
+          </div>
+        )
+      }
+    },
+    {
+      key: 'actions',
+      header: appLang === 'en' ? 'Actions' : 'الإجراءات',
+      type: 'actions',
+      align: 'right',
+      format: (_, row) => (
+        <div className="flex gap-1 flex-wrap items-center">
+          <Link href={`/journal-entries/${row.id}`}>
+            <Button variant="outline" size="sm">
+              <Eye className="w-4 h-4" />
+            </Button>
+          </Link>
+
+          {/* شارة للقيود المرتبطة بمستند */}
+          {isDocumentLinkedEntry(row.reference_type) && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs"
+              title={appLang === 'en' ? 'Document-linked entry (Read-only)' : 'قيد مرتبط بمستند (للقراءة فقط)'}
+            >
+              <Lock className="w-3 h-3" />
+            </span>
+          )}
+        </div>
+      )
+    }
+  ], [appLang, currencySymbol, amountById, cashBasisById, debitCreditById, numberFmt])
+
   return (
     <>
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -701,93 +812,16 @@ export default function JournalEntriesPage() {
                       description={appLang === 'en' ? 'Create your first journal entry to get started' : 'أنشئ أول قيد يومي للبدء'}
                     />
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-[480px] w-full text-sm">
-                        <thead className="border-b bg-gray-50 dark:bg-slate-800">
-                          <tr>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden sm:table-cell">{appLang === 'en' ? 'Description' : 'الوصف'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Type' : 'النوع'}</th>
-                            <th className="px-3 py-3 text-center font-semibold text-gray-900 dark:text-white hidden md:table-cell">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                            <th className="px-3 py-3 text-right font-semibold text-gray-900 dark:text-white">{appLang === 'en' ? 'Actions' : 'الإجراءات'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paginatedEntries.map((entry) => (
-                            <tr key={entry.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                              <td className="px-3 py-3 font-medium text-blue-600 dark:text-blue-400">
-                                {new Date(entry.entry_date).toLocaleDateString(appLang === 'en' ? 'en' : 'ar')}
-                              </td>
-                              <td className="px-3 py-3 text-gray-700 dark:text-gray-300 hidden sm:table-cell max-w-[200px] truncate">{entry.description || '-'}</td>
-                              <td className="px-3 py-3 hidden md:table-cell">
-                                <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-xs font-medium">
-                                  {entry.reference_type}
-                                </span>
-                              </td>
-                              <td className="px-3 py-3 text-center hidden md:table-cell">
-                                {(entry as any).branches?.name ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">
-                                    {(entry as any).branches.name}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400 dark:text-gray-500">{appLang === 'en' ? 'Main' : 'رئيسي'}</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-3">
-                                {(() => {
-                                  // جلب المبلغ من API أولاً
-                                  let amt = Number(amountById[entry.id] || 0)
-                                  
-                                  // Fallback: إذا كان المبلغ 0، احسبه من debitCreditById
-                                  if (amt === 0 && debitCreditById[entry.id]) {
-                                    const dc = debitCreditById[entry.id]
-                                    const debit = dc.debit || 0
-                                    const credit = dc.credit || 0
-                                    // للقيود المتوازنة، اعرض المبلغ الأكبر
-                                    if (Math.abs(debit - credit) < 0.01) {
-                                      amt = Math.max(debit, credit)
-                                    } else {
-                                      amt = debit - credit
-                                    }
-                                  }
-                                  
-                                  const isCash = Boolean(cashBasisById[entry.id])
-                                  const cls = amt > 0 ? "text-green-600 dark:text-green-400" : (amt < 0 ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400")
-                                  const sign = amt > 0 ? "+" : ""
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <span className={cls + " font-semibold"}>{sign}{numberFmt.format(amt)} {currencySymbol}</span>
-                                      {isCash ? (<span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-800">{appLang === 'en' ? 'Net cash' : 'صافي نقد'}</span>) : null}
-                                    </div>
-                                  )
-                                })()}
-                              </td>
-                              <td className="px-3 py-3">
-                                <div className="flex gap-1 flex-wrap items-center">
-                                  <Link href={`/journal-entries/${entry.id}`}>
-                                    <Button variant="outline" size="sm">
-                                      <Eye className="w-4 h-4" />
-                                    </Button>
-                                  </Link>
-
-                                  {/* 🆕 شارة للقيود المرتبطة بمستند */}
-                                  {/* شارة للقيود المرتبطة بمستند */}
-                                  {isDocumentLinkedEntry(entry.reference_type) && (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs"
-                                      title={appLang === 'en' ? 'Document-linked entry (Read-only)' : 'قيد مرتبط بمستند (للقراءة فقط)'}
-                                    >
-                                      <Lock className="w-3 h-3" />
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          {(() => {
+                    <>
+                      <DataTable
+                        columns={tableColumns}
+                        data={paginatedEntries}
+                        keyField="id"
+                        lang={appLang}
+                        minWidth="min-w-[480px]"
+                        emptyMessage={appLang === 'en' ? 'No entries match the current filters' : 'لا توجد قيود مطابقة للفلاتر الحالية'}
+                        footer={{
+                          render: () => {
                             // حساب الإجماليات من جميع القيود المعروضة (ليس فقط الصفحة الحالية)
                             const totalDebit = displayedEntries.reduce((sum, entry) => {
                               const dc = debitCreditById[entry.id] || { debit: 0, credit: 0 }
@@ -803,7 +837,7 @@ export default function JournalEntriesPage() {
                             const isBalanced = difference < 0.01
 
                             return (
-                              <tr className="font-bold bg-gradient-to-r from-gray-100 to-slate-100 dark:from-slate-800 dark:to-slate-700 border-t-2 border-gray-300 dark:border-slate-600">
+                              <tr>
                                 <td className="px-3 py-4 text-right" colSpan={3}>
                                   <span className="text-gray-700 dark:text-gray-200">
                                     {appLang === 'en' ? 'Totals' : 'الإجماليات'} ({displayedEntries.length} {appLang === 'en' ? 'entries' : 'قيد'})
@@ -833,9 +867,9 @@ export default function JournalEntriesPage() {
                                 <td className="px-3 py-4"></td>
                               </tr>
                             )
-                          })()}
-                        </tfoot>
-                      </table>
+                          }
+                        }}
+                      />
                       {displayedEntries.length > 0 && (
                         <DataPagination
                           currentPage={currentPage}
@@ -847,7 +881,7 @@ export default function JournalEntriesPage() {
                           lang={appLang}
                         />
                       )}
-                    </div>
+                    </>
                   )}
                 </CardContent>
               </Card>

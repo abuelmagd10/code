@@ -28,6 +28,9 @@ import {
   type Currency,
 } from "@/lib/currency-service";
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector";
+import { DataTable, type DataTableColumn } from "@/components/DataTable";
+import { DataPagination } from "@/components/data-pagination";
+import { usePagination } from "@/lib/pagination";
 
 type Account = {
   id: string;
@@ -650,6 +653,112 @@ export default function BankingPage() {
     }
   };
 
+  // v3.75.0 — Recent Transfers list migrated to the standard DataTable.
+  // Presentation only: columns reproduce the exact same fields/order and
+  // preserve the FC rate sub-line + currency/status badge rendering.
+  const transferColumns: DataTableColumn<any>[] = useMemo(
+    () => [
+      {
+        key: "entry_date",
+        header: appLang === "en" ? "Date" : "التاريخ",
+        type: "date",
+        align: "right",
+      },
+      {
+        key: "from_account",
+        header: appLang === "en" ? "From" : "من",
+        type: "text",
+        align: "right",
+        format: (value: any) => value || "-",
+      },
+      {
+        key: "to_account",
+        header: appLang === "en" ? "To" : "إلى",
+        type: "text",
+        align: "right",
+        format: (value: any) => value || "-",
+      },
+      {
+        key: "total_debit",
+        header: appLang === "en" ? "Amount" : "المبلغ",
+        type: "currency",
+        align: "right",
+        format: (value: any, row: any) => {
+          const isFC =
+            row.currency_code &&
+            row.currency_code.toUpperCase() !== appCurrency.toUpperCase();
+          return (
+            <span className="font-medium">
+              {Number(value).toLocaleString("en-US", { minimumFractionDigits: 2 })} {appCurrency}
+              {isFC && (
+                <span className="block text-[10px] text-gray-500">
+                  rate: {Number(row.exchange_rate).toFixed(4)}
+                </span>
+              )}
+            </span>
+          );
+        },
+      },
+      {
+        key: "currency_code",
+        header: appLang === "en" ? "Currency" : "العملة",
+        type: "text",
+        align: "right",
+        format: (value: any, row: any) => {
+          const isFC =
+            row.currency_code &&
+            row.currency_code.toUpperCase() !== appCurrency.toUpperCase();
+          return (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${isFC ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"}`}
+            >
+              {value}
+            </span>
+          );
+        },
+      },
+      {
+        key: "description",
+        header: appLang === "en" ? "Description" : "الوصف",
+        type: "text",
+        align: "right",
+        format: (value: any) => (
+          <span className="text-xs text-gray-500 max-w-xs truncate">{value || "-"}</span>
+        ),
+      },
+      {
+        key: "status",
+        header: appLang === "en" ? "Status" : "الحالة",
+        type: "text",
+        align: "right",
+        format: (value: any) => (
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${value === "posted" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"}`}
+          >
+            {value}
+          </span>
+        ),
+      },
+    ],
+    [appLang, appCurrency],
+  );
+
+  // Pagination for the Recent Transfers list
+  const [transfersPageSize, setTransfersPageSize] = useState(10);
+  const {
+    currentPage: transfersCurrentPage,
+    totalPages: transfersTotalPages,
+    totalItems: transfersTotalItems,
+    paginatedItems: paginatedTransfers,
+    goToPage: transfersGoToPage,
+    setPageSize: updateTransfersPageSize,
+  } = usePagination(recentTransfers, { pageSize: transfersPageSize });
+
+  const handleTransfersPageSizeChange = (newSize: number) => {
+    setTransfersPageSize(newSize);
+    updateTransfersPageSize(newSize);
+  };
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -990,57 +1099,24 @@ export default function BankingPage() {
                   {loadingTransfers ? (appLang === "en" ? "Loading..." : "تحميل...") : (appLang === "en" ? "Refresh" : "تحديث")}
                 </Button>
               </div>
-              {recentTransfers.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  {appLang === "en" ? "No transfers yet" : "لا توجد تحويلات بعد"}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b dark:border-gray-700 text-xs text-gray-500">
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "Date" : "التاريخ"}</th>
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "From" : "من"}</th>
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "To" : "إلى"}</th>
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "Amount" : "المبلغ"}</th>
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "Currency" : "العملة"}</th>
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "Description" : "الوصف"}</th>
-                        <th className="text-right py-2 px-2">{appLang === "en" ? "Status" : "الحالة"}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentTransfers.map(tr => {
-                        const isFC = tr.currency_code && tr.currency_code.toUpperCase() !== appCurrency.toUpperCase()
-                        return (
-                          <tr key={tr.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-800">
-                            <td className="py-2 px-2">{tr.entry_date}</td>
-                            <td className="py-2 px-2">{tr.from_account || '-'}</td>
-                            <td className="py-2 px-2">{tr.to_account || '-'}</td>
-                            <td className="py-2 px-2 font-medium">
-                              {tr.total_debit.toLocaleString('en-US', { minimumFractionDigits: 2 })} {appCurrency}
-                              {isFC && (
-                                <span className="block text-[10px] text-gray-500">
-                                  rate: {Number(tr.exchange_rate).toFixed(4)}
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2 px-2">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${isFC ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
-                                {tr.currency_code}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 text-xs text-gray-500 max-w-xs truncate">{tr.description || '-'}</td>
-                            <td className="py-2 px-2">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${tr.status === 'posted' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
-                                {tr.status}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+              <DataTable
+                columns={transferColumns}
+                data={paginatedTransfers}
+                keyField="id"
+                lang={appLang}
+                minWidth="min-w-[700px]"
+                emptyMessage={appLang === "en" ? "No transfers yet" : "لا توجد تحويلات بعد"}
+              />
+              {recentTransfers.length > 0 && (
+                <DataPagination
+                  currentPage={transfersCurrentPage}
+                  totalPages={transfersTotalPages}
+                  totalItems={transfersTotalItems}
+                  pageSize={transfersPageSize}
+                  onPageChange={transfersGoToPage}
+                  onPageSizeChange={handleTransfersPageSizeChange}
+                  lang={appLang}
+                />
               )}
             </CardContent>
           </Card>

@@ -9,6 +9,9 @@ import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
 import { Users } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 export default function EmployeesPage() {
   const supabase = useSupabase()
@@ -20,6 +23,7 @@ export default function EmployeesPage() {
   const [editForm, setEditForm] = useState<{ full_name: string; email?: string; phone?: string; job_title?: string; department?: string; joined_date?: string; base_salary: number; branch_id?: string }>({ full_name: "", base_salary: 0 })
   const [form, setForm] = useState({ full_name: "", email: "", phone: "", job_title: "", department: "", joined_date: new Date().toISOString().split('T')[0], base_salary: 0, branch_id: "" })
   const [loading, setLoading] = useState(false)
+  const [pageSize, setPageSize] = useState(10)
   // v3.74.506 — ربط الموظف بالفرع (مرتبات مدير الفرع محصورة بفرعه)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [myRole, setMyRole] = useState<string>("")
@@ -94,6 +98,162 @@ export default function EmployeesPage() {
     } catch { toast({ title: t('Network error', 'خطأ الشبكة') }) } finally { setLoading(false) }
   }
 
+  // Pagination (hook declared before any early return to preserve hook order)
+  const {
+    currentPage,
+    totalPages,
+    totalItems,
+    paginatedItems: paginatedEmployees,
+    goToPage,
+    setPageSize: updatePageSize,
+  } = usePagination(employees, { pageSize })
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    updatePageSize(newSize)
+  }
+
+  // تعريف أعمدة الجدول الموحد (DataTable) — يحافظ على نفس الأعمدة والترتيب والمنطق
+  const employeeColumns: DataTableColumn<any>[] = [
+    {
+      key: 'full_name',
+      header: t('Name', 'الاسم'),
+      type: 'text',
+      align: 'left',
+      format: (_v, e) => (
+        <span data-ai-help="employees.full_name">
+          {editingId === e.id ? (
+            <Input value={editForm.full_name} onChange={(ev) => setEditForm({ ...editForm, full_name: ev.target.value })} />
+          ) : e.full_name}
+        </span>
+      ),
+    },
+    {
+      key: 'email',
+      header: t('Email', 'البريد'),
+      type: 'text',
+      align: 'left',
+      format: (_v, e) => (
+        <span data-ai-help="employees.contact_info">
+          {editingId === e.id ? (
+            <Input value={editForm.email || ''} onChange={(ev) => setEditForm({ ...editForm, email: ev.target.value })} />
+          ) : e.email}
+        </span>
+      ),
+    },
+    {
+      key: 'phone',
+      header: t('Phone', 'الهاتف'),
+      type: 'text',
+      align: 'left',
+      format: (_v, e) => (
+        <span data-ai-help="employees.contact_info">
+          {editingId === e.id ? (
+            <Input value={editForm.phone || ''} onChange={(ev) => setEditForm({ ...editForm, phone: ev.target.value })} />
+          ) : e.phone}
+        </span>
+      ),
+    },
+    {
+      key: 'job_title',
+      header: t('Job Title', 'الوظيفة'),
+      type: 'text',
+      align: 'left',
+      format: (_v, e) => (
+        <span data-ai-help="employees.job_title">
+          {editingId === e.id ? (
+            <Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />
+          ) : e.job_title}
+        </span>
+      ),
+    },
+    {
+      key: 'department',
+      header: t('Department', 'القسم'),
+      type: 'text',
+      align: 'left',
+      format: (_v, e) => (
+        <span data-ai-help="employees.department">
+          {editingId === e.id ? (
+            <Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />
+          ) : e.department}
+        </span>
+      ),
+    },
+    {
+      key: 'joined_date',
+      header: t('Joined Date', 'تاريخ التعيين'),
+      type: 'text',
+      align: 'left',
+      format: (_v, e) => (
+        <span data-ai-help="employees.joined_date">
+          {editingId === e.id ? (
+            <Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />
+          ) : e.joined_date}
+        </span>
+      ),
+    },
+    {
+      key: 'base_salary',
+      header: t('Salary', 'الراتب'),
+      type: 'number',
+      align: 'right',
+      format: (_v, e) => (
+        <span data-ai-help="employees.base_salary">
+          {editingId === e.id ? (
+            <Input type="number" inputMode="decimal" step="0.01" min="0" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />
+          ) : Number(e.base_salary || 0).toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      // v3.74.507 — عمود الفرع: الموظف المرتبط بمستخدم يُستمد فرعه تلقائياً من
+      // الإعدادات ← المستخدمين (أعضاء الشركة) ولا يُعدل هنا؛ الإدخال اليدوى
+      // للموظفين غير المستخدمين فقط.
+      key: 'branch_id',
+      header: t('Branch', 'الفرع'),
+      type: 'text',
+      align: 'center',
+      format: (_v, e) => (
+        <span data-ai-help="employees.branch">
+          {e.user_id ? (
+            <span title={t('Derived from Settings → Users', 'مستمد من الإعدادات ← المستخدمين')} className="inline-flex items-center gap-1">
+              {branches.find(b => b.id === e.branch_id)?.name || '—'}
+              <span className="text-[10px] px-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">{t('from Users', 'من المستخدمين')}</span>
+            </span>
+          ) : editingId === e.id && myRole !== 'manager' ? (
+            <Select value={editForm.branch_id || "none"} onValueChange={(v) => setEditForm({ ...editForm, branch_id: v === "none" ? "" : v })}>
+              <SelectTrigger className="min-w-[120px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">{t('No branch', 'بدون فرع')}</SelectItem>
+                {branches.map((b) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          ) : (branches.find(b => b.id === e.branch_id)?.name || '—')}
+        </span>
+      ),
+    },
+    {
+      key: 'id',
+      header: t('Actions', 'الإجراءات'),
+      type: 'actions',
+      align: 'center',
+      format: (_v, e) => (
+        editingId === e.id ? (
+          <div className="flex gap-2">
+            <Button size="sm" onClick={saveEdit} disabled={loading} data-ai-help="employees.save_button">{t('Save', 'حفظ')}</Button>
+            <Button size="sm" variant="outline" onClick={cancelEdit} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => startEdit(e)} disabled={loading} data-ai-help="employees.edit_button">{t('Edit', 'تعديل')}</Button>
+            <Button size="sm" variant="destructive" onClick={() => deleteEmployee(String(e.id))} disabled={loading} data-ai-help="employees.delete_button">{t('Delete', 'حذف')}</Button>
+          </div>
+        )
+      ),
+    },
+  ]
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -145,57 +305,24 @@ export default function EmployeesPage() {
           <Card data-ai-help="employees.list">
             <CardHeader><CardTitle>{t('Employees List', 'قائمة الموظفين')}</CardTitle></CardHeader>
             <CardContent>
-              {employees.length === 0 ? (<p className="text-gray-600 dark:text-gray-400" data-ai-help="employees.no_employees_message">{t('No employees yet.', 'لا يوجد موظفون بعد.')}</p>) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="border-b"><tr><th className="p-2 text-right" data-ai-help="employees.full_name">{t('Name', 'الاسم')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Email', 'البريد')}</th><th className="p-2 text-right" data-ai-help="employees.contact_info">{t('Phone', 'الهاتف')}</th><th className="p-2 text-right" data-ai-help="employees.job_title">{t('Job Title', 'الوظيفة')}</th><th className="p-2 text-right" data-ai-help="employees.department">{t('Department', 'القسم')}</th><th className="p-2 text-right" data-ai-help="employees.joined_date">{t('Joined Date', 'تاريخ التعيين')}</th><th className="p-2 text-right" data-ai-help="employees.base_salary">{t('Salary', 'الراتب')}</th><th className="p-2 text-right" data-ai-help="employees.branch">{t('Branch', 'الفرع')}</th><th className="p-2 text-right">{t('Actions', 'الإجراءات')}</th></tr></thead>
-                    <tbody>
-                      {employees.map((e) => (
-                        <tr key={e.id} className="border-b">
-                          <td className="p-2" data-ai-help="employees.full_name">{editingId === e.id ? (<Input value={editForm.full_name} onChange={(ev) => setEditForm({ ...editForm, full_name: ev.target.value })} />) : e.full_name}</td>
-                          <td className="p-2" data-ai-help="employees.contact_info">{editingId === e.id ? (<Input value={editForm.email || ''} onChange={(ev) => setEditForm({ ...editForm, email: ev.target.value })} />) : e.email}</td>
-                          <td className="p-2" data-ai-help="employees.contact_info">{editingId === e.id ? (<Input value={editForm.phone || ''} onChange={(ev) => setEditForm({ ...editForm, phone: ev.target.value })} />) : e.phone}</td>
-                          <td className="p-2" data-ai-help="employees.job_title">{editingId === e.id ? (<Input value={editForm.job_title || ''} onChange={(ev) => setEditForm({ ...editForm, job_title: ev.target.value })} />) : e.job_title}</td>
-                          <td className="p-2" data-ai-help="employees.department">{editingId === e.id ? (<Input value={editForm.department || ''} onChange={(ev) => setEditForm({ ...editForm, department: ev.target.value })} />) : e.department}</td>
-                          <td className="p-2" data-ai-help="employees.joined_date">{editingId === e.id ? (<Input type="date" value={editForm.joined_date || ''} onChange={(ev) => setEditForm({ ...editForm, joined_date: ev.target.value })} />) : e.joined_date}</td>
-                          <td className="p-2" data-ai-help="employees.base_salary">{editingId === e.id ? (<Input type="number" inputMode="decimal" step="0.01" min="0" value={editForm.base_salary} onChange={(ev) => setEditForm({ ...editForm, base_salary: Number(ev.target.value) })} />) : Number(e.base_salary || 0).toFixed(2)}</td>
-                          {/* v3.74.507 — عمود الفرع: الموظف المرتبط بمستخدم يُستمد فرعه
-                              تلقائياً من الإعدادات ← المستخدمين (أعضاء الشركة) ولا يُعدل هنا؛
-                              الإدخال اليدوى للموظفين غير المستخدمين فقط. */}
-                          <td className="p-2" data-ai-help="employees.branch">
-                            {e.user_id ? (
-                              <span title={t('Derived from Settings → Users', 'مستمد من الإعدادات ← المستخدمين')} className="inline-flex items-center gap-1">
-                                {branches.find(b => b.id === e.branch_id)?.name || '—'}
-                                <span className="text-[10px] px-1 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">{t('from Users', 'من المستخدمين')}</span>
-                              </span>
-                            ) : editingId === e.id && myRole !== 'manager' ? (
-                              <Select value={editForm.branch_id || "none"} onValueChange={(v) => setEditForm({ ...editForm, branch_id: v === "none" ? "" : v })}>
-                                <SelectTrigger className="min-w-[120px]"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">{t('No branch', 'بدون فرع')}</SelectItem>
-                                  {branches.map((b) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}
-                                </SelectContent>
-                              </Select>
-                            ) : (branches.find(b => b.id === e.branch_id)?.name || '—')}
-                          </td>
-                          <td className="p-2">
-                            {editingId === e.id ? (
-                              <div className="flex gap-2">
-                                <Button size="sm" onClick={saveEdit} disabled={loading} data-ai-help="employees.save_button">{t('Save', 'حفظ')}</Button>
-                                <Button size="sm" variant="outline" onClick={cancelEdit} disabled={loading}>{t('Cancel', 'إلغاء')}</Button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => startEdit(e)} disabled={loading} data-ai-help="employees.edit_button">{t('Edit', 'تعديل')}</Button>
-                                <Button size="sm" variant="destructive" onClick={() => deleteEmployee(String(e.id))} disabled={loading} data-ai-help="employees.delete_button">{t('Delete', 'حذف')}</Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              <DataTable
+                columns={employeeColumns}
+                data={paginatedEmployees}
+                keyField="id"
+                lang={appLang}
+                minWidth="min-w-[700px]"
+                emptyMessage={t('No employees yet.', 'لا يوجد موظفون بعد.')}
+              />
+              {employees.length > 0 && (
+                <DataPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  pageSize={pageSize}
+                  onPageChange={goToPage}
+                  onPageSizeChange={handlePageSizeChange}
+                  lang={appLang}
+                />
               )}
             </CardContent>
           </Card>

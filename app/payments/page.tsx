@@ -52,6 +52,9 @@ import { CustomerPaymentAllocationUI } from "@/components/payments/CustomerPayme
 import { PaymentDetailsModal } from "@/components/payments/PaymentDetailsModal"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { Eye } from "lucide-react"
+import { DataTable, type DataTableColumn } from "@/components/DataTable"
+import { DataPagination } from "@/components/data-pagination"
+import { usePagination } from "@/lib/pagination"
 
 // v3.74.78 — مكون صَغير يَعرِض رَصيد العَميل الدائن عِندَ اختياره فى نَموذَج الدَّفع.
 // يَجلِب الرَّصيد من /api/customer-credits/[customerId] وَيَختَفى لَو لا يوجَد رَصيد.
@@ -2034,6 +2037,35 @@ export default function PaymentsPage() {
     [supplierPayments, spSearch, spStatus, spDateFrom, spDateTo, suppliers, spSupplierIds, spUnlinkedOnly, allocBillByPayment],
   )
 
+  // ✅ Pagination — mirror app/invoices/page.tsx (usePagination + DataPagination)
+  const [cpPageSize, setCpPageSize] = useState(10)
+  const {
+    currentPage: cpCurrentPage,
+    totalPages: cpTotalPages,
+    totalItems: cpTotalItems,
+    paginatedItems: paginatedCustomerPayments,
+    goToPage: cpGoToPage,
+    setPageSize: cpUpdatePageSize,
+  } = usePagination(filteredCustomerPayments, { pageSize: cpPageSize })
+  const handleCpPageSizeChange = (newSize: number) => {
+    setCpPageSize(newSize)
+    cpUpdatePageSize(newSize)
+  }
+
+  const [spPageSize, setSpPageSize] = useState(10)
+  const {
+    currentPage: spCurrentPage,
+    totalPages: spTotalPages,
+    totalItems: spTotalItems,
+    paginatedItems: paginatedSupplierPayments,
+    goToPage: spGoToPage,
+    setPageSize: spUpdatePageSize,
+  } = usePagination(filteredSupplierPayments, { pageSize: spPageSize })
+  const handleSpPageSizeChange = (newSize: number) => {
+    setSpPageSize(newSize)
+    spUpdatePageSize(newSize)
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -2203,6 +2235,631 @@ export default function PaymentsPage() {
     )
   }
 
+
+  // ✅ DataTable column configs (plain consts — declared after the early `if (loading)`
+  //    return, so they must NOT be React hooks). Rendering only; all business logic,
+  //    handlers and data are unchanged from the previous inline <table> markup.
+  const customerPaymentColumns: DataTableColumn<Payment>[] = [
+    {
+      key: 'payment_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+    },
+    {
+      key: 'customer_id',
+      header: appLang === 'en' ? 'Customer' : 'اسم العميل',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => {
+        const customerName = customers.find((c: any) => c.id === (p as any).customer_id)?.name
+          || (appLang === 'en' ? '-' : '—')
+        return <span className="font-medium text-gray-800 dark:text-gray-200">{customerName}</span>
+      },
+    },
+    {
+      key: 'branch',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          {/* ✅ عرض الفرع: من الفاتورة المرتبطة (invoiceBranchMap) → من الدفعة → fallback */}
+          {(p.invoice_id && invoiceBranchMap[p.invoice_id] ? branchNames[invoiceBranchMap[p.invoice_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
+        </span>
+      ),
+    },
+    {
+      key: 'amount',
+      header: appLang === 'en' ? 'Amount' : 'المبلغ',
+      type: 'currency',
+      align: 'right',
+      format: (_, p) => renderPaymentAmount(p, baseCurrency),
+    },
+    {
+      key: 'account_id',
+      header: appLang === 'en' ? 'Account' : 'الحساب (نقد/بنك)',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => {
+        const accountRow = accounts.find((a: any) => a.id === (p as any).account_id) as any
+        const accountLabel = accountRow
+          ? (accountRow.account_code ? `${accountRow.account_code} - ` : '') + (accountRow.account_name || '')
+          : (appLang === 'en' ? '-' : '—')
+        return <span className="text-xs text-gray-700 dark:text-gray-300">{accountLabel}</span>
+      },
+    },
+    {
+      key: 'reference_number',
+      header: appLang === 'en' ? 'Reference' : 'مرجع',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => p.reference_number || '-',
+    },
+    {
+      key: 'linked_invoice',
+      header: appLang === 'en' ? 'Linked Invoice' : 'الفاتورة المرتبطة',
+      type: 'custom',
+      align: 'right',
+      format: (_, p) => {
+        const refundSuffix = (rawNotes: string) => {
+          const m = rawNotes.match(/INV-\d+/)
+          const srcInv = m ? m[0] : null
+          if (!srcInv) return ''
+          const isOverpay = rawNotes.includes('زيادَة دَفع') || rawNotes.includes('overpayment')
+          const isReturn  = rawNotes.includes('مَرتَجَع') || rawNotes.includes('return')
+          if (isOverpay && !isReturn) return appLang === 'en' ? `(from overpayment on ${srcInv})` : `(من زيادَة دَفع عَلى ${srcInv})`
+          if (isReturn  && !isOverpay) return appLang === 'en' ? `(from return ${srcInv})`        : `(من مَرتَجَع ${srcInv})`
+          return appLang === 'en' ? `(source: ${srcInv})` : `(المَصدَر: ${srcInv})`
+        }
+
+        if (p.invoice_id) {
+          return (
+            <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
+              {invoiceNumbers[p.invoice_id] || p.invoice_id}
+            </Link>
+          )
+        }
+
+        const voidsId = (p as any).voids_payment_id as string | undefined
+        if (voidsId) {
+          const orig = customerPayments.find(x => x.id === voidsId) as any
+          if (orig?.invoice_id) {
+            return (
+              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                {appLang === 'en' ? 'Correction of payment on' : 'تَصحيح دَفعَة على'}
+                <Link href={`/invoices/${orig.invoice_id}`} className="text-blue-600 hover:underline mx-1">
+                  {invoiceNumbers[orig.invoice_id] || orig.invoice_id}
+                </Link>
+              </span>
+            )
+          }
+          if (orig && Number(orig.amount || 0) < 0) {
+            const suffix = refundSuffix(String(orig.notes || ''))
+            return (
+              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                {appLang === 'en' ? 'Correction of credit refund' : 'تَصحيح صَرف رَصيد دائن'}
+                {suffix && <span className="text-gray-500 dark:text-gray-400 mx-1">{suffix}</span>}
+              </span>
+            )
+          }
+          return (
+            <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+              {appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة'}
+            </span>
+          )
+        }
+
+        if (Number(p.amount || 0) < 0) {
+          const notes = String(p.notes || '')
+          const suffix = refundSuffix(notes)
+          return (
+            <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Refund of customer credit' : 'صَرف رَصيد دائن')}>
+              {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
+              {suffix && <span className="text-gray-500 dark:text-gray-400 mx-1">{suffix}</span>}
+            </span>
+          )
+        }
+
+        return (
+          <span className="text-gray-400 text-xs" title={String(p.notes || '')}>
+            {appLang === 'en' ? 'Not linked' : 'غير مرتبط'}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'sales_order',
+      header: appLang === 'en' ? 'Sales Order' : 'أمر البيع',
+      type: 'custom',
+      align: 'right',
+      format: (_, p) => (
+        p.invoice_id && invoiceToSalesOrderMap[p.invoice_id] ? (
+          <Link href={`/sales-orders/${invoiceToSalesOrderMap[p.invoice_id].id}`} className="text-green-600 hover:underline">
+            {invoiceToSalesOrderMap[p.invoice_id].so_number}
+          </Link>
+        ) : (
+          <span className="text-gray-400">-</span>
+        )
+      ),
+    },
+    {
+      key: 'actions',
+      header: appLang === 'en' ? 'Action' : 'إجراء',
+      type: 'actions',
+      align: 'right',
+      format: (_, p) => (
+        <div className="flex gap-2">
+          <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
+            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          </Button>
+          {(p as any).voids_payment_id ? (
+            <>
+              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                {appLang === 'en' ? 'Correction / Void' : 'تَصحيح / إِلغاء'}
+              </span>
+              {permUpdate && (
+                <Button variant="ghost" disabled={!online} onClick={() => {
+                  setEditingPayment(p)
+                  setEditFields({
+                    payment_date: p.payment_date,
+                    payment_method: p.payment_method || "cash",
+                    reference_number: p.reference_number || "",
+                    notes: p.notes || "",
+                    account_id: p.account_id || "",
+                  })
+                  setEditOpen(true)
+                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                </Button>
+              )}
+            </>
+          ) : (p as any).voided_by_payment_id ? (
+            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+              {appLang === 'en' ? 'Voided' : 'مُلغاة بتَصحيح'}
+            </span>
+          ) : Number(p.amount || 0) < 0 ? (
+            <>
+              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد'}
+              </span>
+              {permUpdate && (
+                <Button variant="ghost" disabled={!online} onClick={() => {
+                  setEditingPayment(p)
+                  setEditFields({
+                    payment_date: p.payment_date,
+                    payment_method: p.payment_method || "cash",
+                    reference_number: p.reference_number || "",
+                    notes: p.notes || "",
+                    account_id: p.account_id || "",
+                  })
+                  setEditOpen(true)
+                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                disabled={!online}
+                title={appLang === 'en' ? 'Request a reversal of this refund (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذا الصَّرف — يَحتاج اعتماد المالِك/المُدير العام'}
+                onClick={() => {
+                  setCorrectionPayment(p)
+                  setCorrectionReason("")
+                  setCorrectionFields({
+                    amount: String(Math.abs(Number(p.amount || 0))),
+                    payment_date: p.payment_date || "",
+                    account_id: p.account_id || "",
+                    payment_method: p.payment_method || "cash",
+                    reference_number: p.reference_number || "",
+                    notes: p.notes || "",
+                    original_currency: "",
+                    exchange_rate: "",
+                  })
+                  setShowAllCorrectionAccounts(false)
+                  setCorrectionOpen(true)
+                }}
+              >
+                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
+              </Button>
+            </>
+          ) : (
+            <>
+              {!p.invoice_id && permWrite && (
+                <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
+              )}
+              {permUpdate && (
+                <Button variant="ghost" disabled={!online} onClick={() => {
+                  setEditingPayment(p)
+                  setEditFields({
+                    payment_date: p.payment_date,
+                    payment_method: p.payment_method || "cash",
+                    reference_number: p.reference_number || "",
+                    notes: p.notes || "",
+                    account_id: p.account_id || "",
+                  })
+                  setEditOpen(true)
+                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                disabled={!online}
+                title={appLang === 'en' ? 'Request a reversal of this payment (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذه الدَّفعَة — يَحتاج اعتماد المالِك/المُدير العام'}
+                onClick={() => {
+                  setCorrectionPayment(p)
+                  setCorrectionReason("")
+                  setCorrectionFields({
+                    amount: String(Math.abs(Number(p.amount || 0))),
+                    payment_date: p.payment_date || "",
+                    account_id: p.account_id || "",
+                    payment_method: p.payment_method || "cash",
+                    reference_number: p.reference_number || "",
+                    notes: p.notes || "",
+                    original_currency: "",
+                    exchange_rate: "",
+                  })
+                  setShowAllCorrectionAccounts(false)
+                  setCorrectionOpen(true)
+                }}
+              >
+                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
+              </Button>
+            </>
+          )}
+        </div>
+      ),
+    },
+  ]
+
+  // v3.74.146 — per-row derived values for the supplier payments table.
+  const getSupplierRowMeta = (p: Payment) => {
+    const userRole = userContext?.role || ''
+    let canApprove = false;
+    if (p.status === 'pending_approval' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
+    if (p.status === 'pending_manager' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
+    if (p.status === 'pending_director' && ['owner', 'admin', 'general_manager'].includes(userRole)) canApprove = true;
+
+    const isPending = p.status?.startsWith('pending_')
+    const isRejected = p.status === 'rejected'
+
+    const paidAmt = getDisplayAmount(p)
+    const effectiveBillIdForAmount = p.bill_id || allocBillByPayment[p.id] || null
+    const billAmtInfo = effectiveBillIdForAmount ? billAmountsMap[effectiveBillIdForAmount] : null
+    const billTotalAmt = billAmtInfo?.total ?? null
+    const billReturnedAmt = billAmtInfo?.returned ?? 0
+    const netBillAmt = billTotalAmt !== null ? Math.max(0, billTotalAmt - billReturnedAmt) : null
+    const isOverpayment = netBillAmt !== null && paidAmt > netBillAmt + 0.001
+    const advanceAmt = isOverpayment ? paidAmt - (netBillAmt ?? 0) : 0
+
+    const supplierName = suppliers.find((s: any) => s.id === (p as any).supplier_id)?.name
+      || (appLang === 'en' ? '-' : '—')
+
+    return { canApprove, isPending, isRejected, paidAmt, netBillAmt, isOverpayment, advanceAmt, supplierName }
+  }
+
+  const supplierPaymentColumns: DataTableColumn<Payment>[] = [
+    {
+      key: 'payment_date',
+      header: appLang === 'en' ? 'Date' : 'التاريخ',
+      type: 'date',
+      align: 'right',
+    },
+    {
+      key: 'supplier_id',
+      header: appLang === 'en' ? 'Supplier' : 'اسم المورد',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => {
+        const { supplierName } = getSupplierRowMeta(p)
+        return <span className="font-medium text-gray-800 dark:text-gray-200">{supplierName}</span>
+      },
+    },
+    {
+      key: 'branch',
+      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+          {((p as any).bill?.bill_branches?.name)
+            || ((p as any).bill?.branch_id ? branchNames[(p as any).bill.branch_id] : null)
+            || ((p as any).bill?.purchase_order?.po_branches?.name)
+            || ((p as any).bill?.purchase_order?.branch_id ? branchNames[(p as any).bill.purchase_order.branch_id] : null)
+            || (p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null)
+            || (allocBillByPayment[p.id] && billBranchMap[allocBillByPayment[p.id]] ? branchNames[billBranchMap[allocBillByPayment[p.id]]] : null)
+            || (p.branch_id ? branchNames[p.branch_id] : null)
+            || p.branches?.name
+            || (appLang === 'en' ? 'Main' : 'رئيسي')}
+        </span>
+      ),
+    },
+    {
+      key: 'amount',
+      header: appLang === 'en' ? 'Paid Amount' : 'المدفوع',
+      type: 'currency',
+      align: 'right',
+      format: (_, p) => {
+        const { isOverpayment, advanceAmt } = getSupplierRowMeta(p)
+        return (
+          <div className="flex flex-col gap-0.5 items-end">
+            {renderPaymentAmount(p, baseCurrency)}
+            {isOverpayment && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
+                +{advanceAmt.toFixed(2)} {currencySymbol} {appLang === 'en' ? 'Advance' : 'سلفة'}
+              </span>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      key: 'net_bill',
+      header: appLang === 'en' ? 'Net Bill' : 'صافي الفاتورة',
+      type: 'currency',
+      align: 'right',
+      format: (_, p) => {
+        const { netBillAmt, isOverpayment } = getSupplierRowMeta(p)
+        return netBillAmt !== null ? (
+          <span className={`font-medium ${isOverpayment ? 'text-amber-700 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
+            {netBillAmt.toFixed(2)} {currencySymbol}
+          </span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        )
+      },
+    },
+    {
+      key: 'reference_number',
+      header: appLang === 'en' ? 'Reference' : 'مرجع',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => p.reference_number || '-',
+    },
+    {
+      key: 'account_id',
+      header: appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)',
+      type: 'text',
+      align: 'right',
+      format: (_, p) => (p.account_id ? (accountNames[p.account_id] || "-") : "-"),
+    },
+    {
+      key: 'linked_bill',
+      header: appLang === 'en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة',
+      type: 'custom',
+      align: 'right',
+      format: (_, p) => {
+        const effectiveBillId = p.bill_id || allocBillByPayment[p.id] || null
+        if (effectiveBillId) {
+          return (
+            <Link href={`/bills/${effectiveBillId}`} className="text-blue-600 hover:underline">
+              {billNumbers[effectiveBillId] || effectiveBillId}
+            </Link>
+          )
+        }
+
+        const voidsId = (p as any).voids_payment_id as string | undefined
+        if (voidsId) {
+          const orig = supplierPayments.find(x => x.id === voidsId) as any
+          if (orig?.bill_id) {
+            return (
+              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                {appLang === 'en' ? 'Correction of payment on' : 'تَصحيح دَفعَة على'}
+                <Link href={`/bills/${orig.bill_id}`} className="text-blue-600 hover:underline mx-1">
+                  {billNumbers[orig.bill_id] || orig.bill_id}
+                </Link>
+              </span>
+            )
+          }
+          if (orig && Number(orig.amount || 0) < 0) {
+            return (
+              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+                {appLang === 'en' ? 'Correction of supplier refund' : 'تَصحيح صَرف لِمُورِّد'}
+              </span>
+            )
+          }
+          return (
+            <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
+              {appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة'}
+            </span>
+          )
+        }
+
+        if (Number(p.amount || 0) < 0) {
+          const notes = String(p.notes || '')
+          const m = notes.match(/BILL-\d+/)
+          const srcBill = m ? m[0] : null
+          return (
+            <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Supplier refund' : 'صَرف لِمُورِّد')}>
+              {appLang === 'en' ? 'Supplier refund' : 'صَرف رَصيد المُورِّد'}
+              {srcBill && (
+                <span className="text-gray-500 dark:text-gray-400 mx-1">
+                  {appLang === 'en' ? `(from ${srcBill})` : `(من ${srcBill})`}
+                </span>
+              )}
+            </span>
+          )
+        }
+
+        return (
+          <span className="text-gray-400 text-xs" title={String(p.notes || '')}>
+            {appLang === 'en' ? 'Not linked' : 'غير مرتبط'}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'linked_po',
+      header: appLang === 'en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط',
+      type: 'custom',
+      align: 'right',
+      format: (_, p) => {
+        if (p.purchase_order_id) {
+          const poNumber = poNumbers[p.purchase_order_id]
+          return poNumber ? (<Link href={`/purchase-orders/${p.purchase_order_id}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : p.purchase_order_id
+        }
+        const billIdForPo = p.bill_id || allocBillByPayment[p.id] || null
+        if (billIdForPo && billToPoMap[billIdForPo]) {
+          const poId = billToPoMap[billIdForPo]
+          const poNumber = poNumbers[poId]
+          return poNumber ? (<Link href={`/purchase-orders/${poId}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : poId
+        }
+        return "غير مرتبط"
+      },
+    },
+    {
+      key: 'status',
+      header: appLang === 'en' ? 'Status' : 'الحالة',
+      type: 'status',
+      align: 'right',
+      format: (_, p) => {
+        const { isPending, isRejected } = getSupplierRowMeta(p)
+        return (
+          <>
+            {isPending && (
+              <div className="flex flex-col gap-1">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                  ⏳ {appLang === 'en' ? 'Pending' : 'في الانتظار'}
+                </span>
+                <span className="text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold px-1">
+                  {p.status === 'pending_manager' && (appLang === 'en' ? 'Manager Approval' : 'اعتماد مدير الإدارة')}
+                  {p.status === 'pending_director' && (appLang === 'en' ? 'Director Approval' : 'اعتماد الإدارة العليا')}
+                </span>
+              </div>
+            )}
+            {p.status === 'approved' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                ✅ {appLang === 'en' ? 'Approved' : 'معتمد'}
+              </span>
+            )}
+            {isRejected && (
+              <div>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                  ❌ {appLang === 'en' ? 'Rejected' : 'مرفوض'}
+                </span>
+                {p.rejection_reason && <p className="text-xs text-red-600 mt-0.5">{p.rejection_reason}</p>}
+              </div>
+            )}
+            {!p.status && <span className="text-xs text-gray-400">—</span>}
+          </>
+        )
+      },
+    },
+    {
+      key: 'actions',
+      header: appLang === 'en' ? 'Action' : 'إجراء',
+      type: 'actions',
+      align: 'right',
+      format: (_, p) => {
+        const { canApprove, isPending, isRejected } = getSupplierRowMeta(p)
+        return (
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
+              <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            </Button>
+            {(p as any).voids_payment_id ? (
+              <>
+                <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                  {appLang === 'en' ? 'Correction / Void' : 'تَصحيح / إِلغاء'}
+                </span>
+                {permUpdate && (
+                  <Button variant="ghost" disabled={!online} onClick={() => {
+                    setEditingPayment(p)
+                    setEditFields({
+                      payment_date: p.payment_date,
+                      payment_method: p.payment_method || "cash",
+                      reference_number: p.reference_number || "",
+                      notes: p.notes || "",
+                      account_id: p.account_id || "",
+                    })
+                    setEditOpen(true)
+                  }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                    {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                  </Button>
+                )}
+              </>
+            ) : (p as any).voided_by_payment_id ? (
+              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                {appLang === 'en' ? 'Voided' : 'مُلغاة بتَصحيح'}
+              </span>
+            ) : (
+              <>
+                {!p.bill_id && !allocBillByPayment[p.id] && permWrite && (
+                  <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
+                )}
+                {(() => {
+                  const hasDirectPO = !!p.purchase_order_id
+                  const effectiveBillIdForPo = p.bill_id || allocBillByPayment[p.id] || null
+                  const hasPOViaBill = !!(effectiveBillIdForPo && billToPoMap[effectiveBillIdForPo])
+                  const hasAnyPO = hasDirectPO || hasPOViaBill
+                  return !hasAnyPO && permWrite && (
+                  <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
+                  )
+                })()}
+                {permUpdate && (
+                  <Button variant="ghost" disabled={!online} onClick={() => {
+                    setEditingPayment(p)
+                    setEditFields({
+                      payment_date: p.payment_date,
+                      payment_method: p.payment_method || "cash",
+                      reference_number: p.reference_number || "",
+                      notes: p.notes || "",
+                      account_id: p.account_id || "",
+                    })
+                    setEditOpen(true)
+                  }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
+                    {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  disabled={!online}
+                  title={
+                    isRejected
+                      ? (appLang === 'en' ? 'Edit this rejected payment and resubmit for approval' : 'تَعديل هذِه الدَّفعَة المَرفوضَة وإِعادَة إِرسالها للاعتماد')
+                      : (appLang === 'en' ? 'Request correction of this vendor payment (needs owner/general manager approval)' : 'طَلَب تَصحيح هذه الدَّفعَة لِلمُورِّد — يَحتاج اعتماد المالِك/المُدير العام')
+                  }
+                  onClick={() => {
+                    setCorrectionPayment(p)
+                    setCorrectionReason("")
+                    setCorrectionFields({
+                      amount: String(Math.abs(Number(p.amount || 0))),
+                      payment_date: p.payment_date || "",
+                      account_id: p.account_id || "",
+                      payment_method: p.payment_method || "cash",
+                      reference_number: p.reference_number || "",
+                      notes: p.notes || "",
+                      original_currency: "",
+                      exchange_rate: "",
+                    })
+                    setShowAllCorrectionAccounts(false)
+                    setCorrectionOpen(true)
+                  }}
+                >
+                  {isRejected
+                    ? (appLang === 'en' ? 'Edit & resubmit' : 'تَعديل وإِعادَة الإِرسال')
+                    : (appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح')}
+                </Button>
+              </>
+            )}
+            {canApprove && isPending && (
+              <>
+                <Button variant="outline" size="sm" className="text-green-700 border-green-300 hover:bg-green-50" disabled={saving} onClick={() => approvePayment(p)}>
+                  {appLang === 'en' ? '✅ Approve' : '✅ اعتماد'}
+                </Button>
+                <Button variant="outline" size="sm" className="text-red-700 border-red-300 hover:bg-red-50" disabled={saving} onClick={() => { setRejectingPayment(p); setRejectionReason(''); setRejectOpen(true) }}>
+                  {appLang === 'en' ? '❌ Reject' : '❌ رفض'}
+                </Button>
+              </>
+            )}
+          </div>
+        )
+      },
+    },
+  ]
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
       {/* Main Content - تحسين للهاتف */}
@@ -2499,292 +3156,25 @@ export default function PaymentsPage() {
             )}
 
             <div className="border-t pt-4">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                    {/* v3.74.211 — Customer name + cash/bank account columns. */}
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Customer' : 'اسم العميل'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Amount' : 'المبلغ'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account' : 'الحساب (نقد/بنك)'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Invoice' : 'الفاتورة المرتبطة'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Sales Order' : 'أمر البيع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCustomerPayments.map((p) => {
-                    // v3.74.211 — look up customer name + account from the
-                    // already-loaded lists. Falls back to a "-" placeholder
-                    // when the row references a customer or account we
-                    // could not resolve (e.g. shared visibility).
-                    const customerName = customers.find((c: any) => c.id === (p as any).customer_id)?.name
-                      || (appLang === 'en' ? '-' : '—')
-                    const accountRow = accounts.find((a: any) => a.id === (p as any).account_id) as any
-                    const accountLabel = accountRow
-                      ? (accountRow.account_code ? `${accountRow.account_code} - ` : '') + (accountRow.account_name || '')
-                      : (appLang === 'en' ? '-' : '—')
-                    return (
-                    <tr key={p.id} className="border-b">
-                      <td className="px-2 py-2">{p.payment_date}</td>
-                      <td className="px-2 py-2 font-medium text-gray-800 dark:text-gray-200">{customerName}</td>
-                      <td className="px-2 py-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                          {/* ✅ عرض الفرع: من الفاتورة المرتبطة (invoiceBranchMap) → من الدفعة → fallback */}
-                          {(p.invoice_id && invoiceBranchMap[p.invoice_id] ? branchNames[invoiceBranchMap[p.invoice_id]] : null) || p.branches?.name || (p.branch_id ? branchNames[p.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2">{renderPaymentAmount(p, baseCurrency)}</td>
-                      <td className="px-2 py-2 text-xs text-gray-700 dark:text-gray-300">{accountLabel}</td>
-                      <td className="px-2 py-2">{p.reference_number || "-"}</td>
-                      <td className="px-2 py-2">
-                        {(() => {
-                          // v3.74.122 - customer payments always trace to a source
-                          // (an invoice, a sales return, an overpayment, or a void
-                          // of one of the above). Render the trace so nothing in
-                          // this column ever falls back to a meaningless
-                          // "Not linked" — that was misleading the operator
-                          // looking at correction (void) rows.
-
-                          // Helper: extract the "from return/overpayment INV-N" suffix
-                          // out of a refund payment's notes. Reused for both pure
-                          // refund rows and the void rows that point at them.
-                          const refundSuffix = (rawNotes: string) => {
-                            const m = rawNotes.match(/INV-\d+/)
-                            const srcInv = m ? m[0] : null
-                            if (!srcInv) return ''
-                            const isOverpay = rawNotes.includes('زيادَة دَفع') || rawNotes.includes('overpayment')
-                            const isReturn  = rawNotes.includes('مَرتَجَع') || rawNotes.includes('return')
-                            if (isOverpay && !isReturn) return appLang === 'en' ? `(from overpayment on ${srcInv})` : `(من زيادَة دَفع عَلى ${srcInv})`
-                            if (isReturn  && !isOverpay) return appLang === 'en' ? `(from return ${srcInv})`        : `(من مَرتَجَع ${srcInv})`
-                            return appLang === 'en' ? `(source: ${srcInv})` : `(المَصدَر: ${srcInv})`
-                          }
-
-                          // 1) Direct invoice link — the common case.
-                          if (p.invoice_id) {
-                            return (
-                              <Link href={`/invoices/${p.invoice_id}`} className="text-blue-600 hover:underline">
-                                {invoiceNumbers[p.invoice_id] || p.invoice_id}
-                              </Link>
-                            )
-                          }
-
-                          // 2) Void / correction row (voids_payment_id is set).
-                          // Inherit the label from the payment it voids so the
-                          // operator sees exactly what was undone.
-                          const voidsId = (p as any).voids_payment_id as string | undefined
-                          if (voidsId) {
-                            const orig = customerPayments.find(x => x.id === voidsId) as any
-                            // Case A: original was tied to an invoice.
-                            if (orig?.invoice_id) {
-                              return (
-                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
-                                  {appLang === 'en' ? 'Correction of payment on' : 'تَصحيح دَفعَة على'}
-                                  <Link href={`/invoices/${orig.invoice_id}`} className="text-blue-600 hover:underline mx-1">
-                                    {invoiceNumbers[orig.invoice_id] || orig.invoice_id}
-                                  </Link>
-                                </span>
-                              )
-                            }
-                            // Case B: original was a credit refund (negative, no invoice).
-                            if (orig && Number(orig.amount || 0) < 0) {
-                              const suffix = refundSuffix(String(orig.notes || ''))
-                              return (
-                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
-                                  {appLang === 'en' ? 'Correction of credit refund' : 'تَصحيح صَرف رَصيد دائن'}
-                                  {suffix && <span className="text-gray-500 dark:text-gray-400 mx-1">{suffix}</span>}
-                                </span>
-                              )
-                            }
-                            // Case C: original not in the loaded list — generic
-                            // correction label so we still don't say "not linked".
-                            return (
-                              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
-                                {appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة'}
-                              </span>
-                            )
-                          }
-
-                          // 3) Credit refund row (negative amount, no invoice, not a void).
-                          if (Number(p.amount || 0) < 0) {
-                            const notes = String(p.notes || '')
-                            const suffix = refundSuffix(notes)
-                            return (
-                              <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Refund of customer credit' : 'صَرف رَصيد دائن')}>
-                                {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد دائن'}
-                                {suffix && <span className="text-gray-500 dark:text-gray-400 mx-1">{suffix}</span>}
-                              </span>
-                            )
-                          }
-
-                          // 4) Catch-all (rare): nothing to trace, surface the
-                          // notes as a hint so the row isn't a dead end.
-                          return (
-                            <span className="text-gray-400 text-xs" title={String(p.notes || '')}>
-                              {appLang === 'en' ? 'Not linked' : 'غير مرتبط'}
-                            </span>
-                          )
-                        })()}
-                      </td>
-                      <td className="px-2 py-2">
-                        {p.invoice_id && invoiceToSalesOrderMap[p.invoice_id] ? (
-                          <Link href={`/sales-orders/${invoiceToSalesOrderMap[p.invoice_id].id}`} className="text-green-600 hover:underline">
-                            {invoiceToSalesOrderMap[p.invoice_id].so_number}
-                          </Link>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex gap-2">
-                          <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
-                            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          </Button>
-                          {/* v3.74.122 - VOID/correction rows (voids_payment_id is set) are
-                              themselves audit records. They MUST NOT be applied to an invoice
-                              or sent through another correction workflow; either action would
-                              corrupt the audit trail. Show a read-only badge + (optionally)
-                              Edit notes so an auditor can annotate, and stop there. The
-                              "Apply to Invoice" button used to leak in here because amount > 0. */}
-                          {(p as any).voids_payment_id ? (
-                            <>
-                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                {appLang === 'en' ? 'Correction / Void' : 'تَصحيح / إِلغاء'}
-                              </span>
-                              {permUpdate && (
-                                <Button variant="ghost" disabled={!online} onClick={() => {
-                                  setEditingPayment(p)
-                                  setEditFields({
-                                    payment_date: p.payment_date,
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    account_id: p.account_id || "",
-                                  })
-                                  setEditOpen(true)
-                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
-                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
-                                </Button>
-                              )}
-                            </>
-                          ) : (p as any).voided_by_payment_id ? (
-                            // The original of a VOID — already reversed. Read-only too, with a
-                            // distinct gray badge so it doesn't get confused with an active row.
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                              {appLang === 'en' ? 'Voided' : 'مُلغاة بتَصحيح'}
-                            </span>
-                          ) : Number(p.amount || 0) < 0 ? (
-                            <>
-                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                                {appLang === 'en' ? 'Credit refund' : 'صَرف رَصيد'}
-                              </span>
-                              {/* v3.74.110 - a refund disbursement may also have been recorded
-                                  by mistake. Surface the same governance-managed correction
-                                  flow (Edit notes + Request correction) here so it can be
-                                  reversed via the workflow instead of a direct delete. */}
-                              {permUpdate && (
-                                <Button variant="ghost" disabled={!online} onClick={() => {
-                                  setEditingPayment(p)
-                                  setEditFields({
-                                    payment_date: p.payment_date,
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    account_id: p.account_id || "",
-                                  })
-                                  setEditOpen(true)
-                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
-                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
-                                </Button>
-                              )}
-                              <Button
-                                variant="outline"
-                                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                                disabled={!online}
-                                title={appLang === 'en' ? 'Request a reversal of this refund (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذا الصَّرف — يَحتاج اعتماد المالِك/المُدير العام'}
-                                onClick={() => {
-                                  // v3.74.114 - open full dialog instead of prompt
-                                  setCorrectionPayment(p)
-                                  setCorrectionReason("")
-                                  setCorrectionFields({
-                                    amount: String(Math.abs(Number(p.amount || 0))),
-                                    payment_date: p.payment_date || "",
-                                    account_id: p.account_id || "",
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    original_currency: "",
-                                    exchange_rate: "",
-                                  })
-                                  setShowAllCorrectionAccounts(false)
-                                  setCorrectionOpen(true)
-                                }}
-                              >
-                                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              {!p.invoice_id && permWrite && (
-                                <Button variant="outline" onClick={() => openApplyToInvoice(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Invoice' : 'تطبيق على فاتورة'}</Button>
-                              )}
-                              {/* v3.74.105 - Edit is allowed only for notes/reference_number.
-                                  Sensitive fields (amount/account/invoice/date) must go through
-                                  Request Correction so the change leaves an audit trail. */}
-                              {permUpdate && (
-                                <Button variant="ghost" disabled={!online} onClick={() => {
-                                  setEditingPayment(p)
-                                  setEditFields({
-                                    payment_date: p.payment_date,
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    account_id: p.account_id || "",
-                                  })
-                                  setEditOpen(true)
-                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
-                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
-                                </Button>
-                              )}
-                              {/* v3.74.105 - Delete is no longer offered on posted payments.
-                                  Use Request Correction instead so an owner/general_manager can
-                                  review the Reversal before it touches the GL. */}
-                              <Button
-                                variant="outline"
-                                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                                disabled={!online}
-                                title={appLang === 'en' ? 'Request a reversal of this payment (needs owner/general manager approval)' : 'طَلَب تَصحيح / إِلغاء هذه الدَّفعَة — يَحتاج اعتماد المالِك/المُدير العام'}
-                                onClick={() => {
-                                  // v3.74.114 - open full dialog instead of prompt
-                                  setCorrectionPayment(p)
-                                  setCorrectionReason("")
-                                  setCorrectionFields({
-                                    amount: String(Math.abs(Number(p.amount || 0))),
-                                    payment_date: p.payment_date || "",
-                                    account_id: p.account_id || "",
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    original_currency: "",
-                                    exchange_rate: "",
-                                  })
-                                  setShowAllCorrectionAccounts(false)
-                                  setCorrectionOpen(true)
-                                }}
-                              >
-                                {appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح'}
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+              <DataTable
+                columns={customerPaymentColumns}
+                data={paginatedCustomerPayments}
+                keyField="id"
+                lang={appLang}
+                minWidth="min-w-[900px]"
+                emptyMessage={appLang === 'en' ? 'No customer payments found' : 'لا توجد مدفوعات عملاء'}
+              />
+              {filteredCustomerPayments.length > 0 && (
+                <DataPagination
+                  currentPage={cpCurrentPage}
+                  totalPages={cpTotalPages}
+                  totalItems={cpTotalItems}
+                  pageSize={cpPageSize}
+                  onPageChange={cpGoToPage}
+                  onPageSizeChange={handleCpPageSizeChange}
+                  lang={appLang}
+                />
+              )}
             </div>
           </CardContent>
         </Card>
@@ -3133,343 +3523,30 @@ export default function PaymentsPage() {
             )}
 
             <div className="border-t pt-4">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50 dark:bg-slate-900">
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Date' : 'التاريخ'}</th>
-                    {/* v3.74.212 — supplier name column, mirrors the customer-side change in v3.74.211. */}
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Supplier' : 'اسم المورد'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Branch' : 'الفرع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Paid Amount' : 'المدفوع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Net Bill' : 'صافي الفاتورة'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Reference' : 'مرجع'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Account (Cash/Bank)' : 'الحساب (نقد/بنك)'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Supplier Bill' : 'فاتورة المورد المرتبطة'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Linked Purchase Order' : 'أمر الشراء المرتبط'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Status' : 'الحالة'}</th>
-                    <th className="px-2 py-2 text-right">{appLang === 'en' ? 'Action' : 'إجراء'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredSupplierPayments.map((p) => {
-                    const userRole = userContext?.role || ''
-                    // ✅ Multi-Level Approval check
-                    let canApprove = false;
-                    if (p.status === 'pending_approval' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
-                    if (p.status === 'pending_manager' && ['owner', 'admin', 'general_manager', 'manager'].includes(userRole)) canApprove = true;
-                    if (p.status === 'pending_director' && ['owner', 'admin', 'general_manager'].includes(userRole)) canApprove = true;
-
-                    const isPending = p.status?.startsWith('pending_')
-                    const isRejected = p.status === 'rejected'
-
-                    // ✅ Net Bill Amount & Overpayment detection
-                    // v3.74.146 — also look through payment_allocations
-                    // when payments.bill_id is null (allocation-only link).
-                    const paidAmt = getDisplayAmount(p)
-                    const effectiveBillIdForAmount = p.bill_id || allocBillByPayment[p.id] || null
-                    const billAmtInfo = effectiveBillIdForAmount ? billAmountsMap[effectiveBillIdForAmount] : null
-                    const billTotalAmt = billAmtInfo?.total ?? null
-                    const billReturnedAmt = billAmtInfo?.returned ?? 0
-                    const netBillAmt = billTotalAmt !== null ? Math.max(0, billTotalAmt - billReturnedAmt) : null
-                    const isOverpayment = netBillAmt !== null && paidAmt > netBillAmt + 0.001
-                    const advanceAmt = isOverpayment ? paidAmt - (netBillAmt ?? 0) : 0
-
-                    // v3.74.212 — supplier name lookup, mirrors v3.74.211 on the customer side.
-                    const supplierName = suppliers.find((s: any) => s.id === (p as any).supplier_id)?.name
-                      || (appLang === 'en' ? '-' : '—')
-
-                    return (
-                    <tr key={p.id} className={`border-b ${isPending ? 'bg-yellow-50 dark:bg-yellow-900/10' : isRejected ? 'bg-red-50 dark:bg-red-900/10 opacity-60' : ''}`}>
-                      <td className="px-2 py-2">{p.payment_date}</td>
-                      <td className="px-2 py-2 font-medium text-gray-800 dark:text-gray-200">{supplierName}</td>
-                      <td className="px-2 py-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
-                          {/* ✅ priority: bill.branch → PO.branch → billBranchMap → payment.branch
-                              v3.74.146 — also check allocation-linked bill_id. */}
-                          {((p as any).bill?.bill_branches?.name)
-                            || ((p as any).bill?.branch_id ? branchNames[(p as any).bill.branch_id] : null)
-                            || ((p as any).bill?.purchase_order?.po_branches?.name)
-                            || ((p as any).bill?.purchase_order?.branch_id ? branchNames[(p as any).bill.purchase_order.branch_id] : null)
-                            || (p.bill_id && billBranchMap[p.bill_id] ? branchNames[billBranchMap[p.bill_id]] : null)
-                            || (allocBillByPayment[p.id] && billBranchMap[allocBillByPayment[p.id]] ? branchNames[billBranchMap[allocBillByPayment[p.id]]] : null)
-                            || (p.branch_id ? branchNames[p.branch_id] : null)
-                            || p.branches?.name
-                            || (appLang === 'en' ? 'Main' : 'رئيسي')}
-                        </span>
-                      </td>
-                      {/* ✅ Paid Amount with Overpayment badge — v3.11.0 FX-aware */}
-                      <td className="px-2 py-2">
-                        <div className="flex flex-col gap-0.5 items-end">
-                          {renderPaymentAmount(p, baseCurrency)}
-                          {isOverpayment && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
-                              +{advanceAmt.toFixed(2)} {currencySymbol} {appLang === 'en' ? 'Advance' : 'سلفة'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      {/* ✅ Net Bill Amount column */}
-                      <td className="px-2 py-2 text-right">
-                        {netBillAmt !== null ? (
-                          <span className={`font-medium ${isOverpayment ? 'text-amber-700 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
-                            {netBillAmt.toFixed(2)} {currencySymbol}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">{p.reference_number || "-"}</td>
-                      <td className="px-2 py-2">{p.account_id ? (accountNames[p.account_id] || "-") : "-"}</td>
-                      <td className="px-2 py-2">
-                        {(() => {
-                          // v3.74.126 — mirror the customer-side logic (v3.74.122):
-                          //   1. Direct bill link → blue link (unchanged)
-                          //   2. VOID/correction row → trace to original supplier
-                          //      payment and label "تَصحيح دَفعَة على BILL-N"
-                          //   3. Negative-amount row (supplier refund) → purple label
-                          //   4. Anything left → "غير مرتبط" with notes as tooltip
-
-                          // 1) Direct bill linkage on the payment row,
-                          //    OR linkage stored in payment_allocations
-                          //    (v3.74.146 — surface allocation-only links).
-                          const effectiveBillId = p.bill_id || allocBillByPayment[p.id] || null
-                          if (effectiveBillId) {
-                            return (
-                              <Link href={`/bills/${effectiveBillId}`} className="text-blue-600 hover:underline">
-                                {billNumbers[effectiveBillId] || effectiveBillId}
-                              </Link>
-                            )
-                          }
-
-                          // 2) VOID row — trace to original supplier payment.
-                          const voidsId = (p as any).voids_payment_id as string | undefined
-                          if (voidsId) {
-                            const orig = supplierPayments.find(x => x.id === voidsId) as any
-                            if (orig?.bill_id) {
-                              return (
-                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
-                                  {appLang === 'en' ? 'Correction of payment on' : 'تَصحيح دَفعَة على'}
-                                  <Link href={`/bills/${orig.bill_id}`} className="text-blue-600 hover:underline mx-1">
-                                    {billNumbers[orig.bill_id] || orig.bill_id}
-                                  </Link>
-                                </span>
-                              )
-                            }
-                            if (orig && Number(orig.amount || 0) < 0) {
-                              return (
-                                <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
-                                  {appLang === 'en' ? 'Correction of supplier refund' : 'تَصحيح صَرف لِمُورِّد'}
-                                </span>
-                              )
-                            }
-                            return (
-                              <span className="text-amber-600 dark:text-amber-400 text-xs" title={String(p.notes || '')}>
-                                {appLang === 'en' ? 'Payment correction' : 'تَصحيح دَفعَة'}
-                              </span>
-                            )
-                          }
-
-                          // 3) Supplier refund / advance (negative amount, no bill).
-                          if (Number(p.amount || 0) < 0) {
-                            const notes = String(p.notes || '')
-                            const m = notes.match(/BILL-\d+/) // surface source bill if mentioned
-                            const srcBill = m ? m[0] : null
-                            return (
-                              <span className="text-purple-600 dark:text-purple-400 text-xs" title={notes || (appLang === 'en' ? 'Supplier refund' : 'صَرف لِمُورِّد')}>
-                                {appLang === 'en' ? 'Supplier refund' : 'صَرف رَصيد المُورِّد'}
-                                {srcBill && (
-                                  <span className="text-gray-500 dark:text-gray-400 mx-1">
-                                    {appLang === 'en' ? `(from ${srcBill})` : `(من ${srcBill})`}
-                                  </span>
-                                )}
-                              </span>
-                            )
-                          }
-
-                          // 4) Truly unlinked (rare).
-                          return (
-                            <span className="text-gray-400 text-xs" title={String(p.notes || '')}>
-                              {appLang === 'en' ? 'Not linked' : 'غير مرتبط'}
-                            </span>
-                          )
-                        })()}
-                      </td>
-                      <td className="px-2 py-2">
-                        {(() => {
-                          if (p.purchase_order_id) {
-                            const poNumber = poNumbers[p.purchase_order_id]
-                            return poNumber ? (<Link href={`/purchase-orders/${p.purchase_order_id}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : p.purchase_order_id
-                          }
-                          // v3.74.146 — same allocation fallback for the
-                          // linked-PO column.
-                          const billIdForPo = p.bill_id || allocBillByPayment[p.id] || null
-                          if (billIdForPo && billToPoMap[billIdForPo]) {
-                            const poId = billToPoMap[billIdForPo]
-                            const poNumber = poNumbers[poId]
-                            return poNumber ? (<Link href={`/purchase-orders/${poId}`} className="text-blue-600 hover:underline">{poNumber}</Link>) : poId
-                          }
-                          return "غير مرتبط"
-                        })()}
-                      </td>
-                      {/* ✅ Status Badge */}
-                      <td className="px-2 py-2">
-                        {isPending && (
-                          <div className="flex flex-col gap-1">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                              ⏳ {appLang === 'en' ? 'Pending' : 'في الانتظار'}
-                            </span>
-                            <span className="text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold px-1">
-                              {p.status === 'pending_manager' && (appLang === 'en' ? 'Manager Approval' : 'اعتماد مدير الإدارة')}
-                              {p.status === 'pending_director' && (appLang === 'en' ? 'Director Approval' : 'اعتماد الإدارة العليا')}
-                            </span>
-                          </div>
-                        )}
-                        {p.status === 'approved' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                            ✅ {appLang === 'en' ? 'Approved' : 'معتمد'}
-                          </span>
-                        )}
-                        {isRejected && (
-                          <div>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                              ❌ {appLang === 'en' ? 'Rejected' : 'مرفوض'}
-                            </span>
-                            {p.rejection_reason && <p className="text-xs text-red-600 mt-0.5">{p.rejection_reason}</p>}
-                          </div>
-                        )}
-                        {!p.status && <span className="text-xs text-gray-400">—</span>}
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex gap-2 flex-wrap">
-                          <Button variant="ghost" size="icon" title={appLang === 'en' ? 'View Details' : 'عرض التفاصيل'} onClick={() => setSelectedPaymentDetailsId(p.id)}>
-                            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          </Button>
-                          {/* v3.74.126 — mirror customer-side v3.74.123 governance:
-                              VOID rows and already-voided originals become read-only.
-                              Apply-to-Bill / Apply-to-PO / Edit / Delete are gated
-                              behind the "is this an active normal payment?" check
-                              so an auditor can't accidentally re-allocate a
-                              correction record or reuse a reversed payment. */}
-                          {(p as any).voids_payment_id ? (
-                            <>
-                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                                {appLang === 'en' ? 'Correction / Void' : 'تَصحيح / إِلغاء'}
-                              </span>
-                              {permUpdate && (
-                                <Button variant="ghost" disabled={!online} onClick={() => {
-                                  setEditingPayment(p)
-                                  setEditFields({
-                                    payment_date: p.payment_date,
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    account_id: p.account_id || "",
-                                  })
-                                  setEditOpen(true)
-                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
-                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
-                                </Button>
-                              )}
-                            </>
-                          ) : (p as any).voided_by_payment_id ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                              {appLang === 'en' ? 'Voided' : 'مُلغاة بتَصحيح'}
-                            </span>
-                          ) : (
-                            <>
-                              {/* v3.74.146 — also treat allocation-linked
-                                  payments as "already on a bill" so the
-                                  Apply-to-Bill button hides for them too. */}
-                              {!p.bill_id && !allocBillByPayment[p.id] && permWrite && (
-                                <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
-                              )}
-                              {(() => {
-                                // ✅ إخفاء زر "على أمر شراء" إذا كان هناك أمر شراء مرتبط (مباشر أو عبر الفاتورة)
-                                // v3.74.146 — also consider the bill_id
-                                // resolved from payment_allocations when
-                                // chaining through billToPoMap.
-                                const hasDirectPO = !!p.purchase_order_id
-                                const effectiveBillIdForPo = p.bill_id || allocBillByPayment[p.id] || null
-                                const hasPOViaBill = !!(effectiveBillIdForPo && billToPoMap[effectiveBillIdForPo])
-                                const hasAnyPO = hasDirectPO || hasPOViaBill
-                                return !hasAnyPO && permWrite && (
-                                <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
-                                )
-                              })()}
-                              {permUpdate && (
-                                <Button variant="ghost" disabled={!online} onClick={() => {
-                                  setEditingPayment(p)
-                                  setEditFields({
-                                    payment_date: p.payment_date,
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    account_id: p.account_id || "",
-                                  })
-                                  setEditOpen(true)
-                                }} title={appLang === 'en' ? 'Edit notes / reference only' : 'تَعديل الملاحظات والمَرجع فَقَط'}>
-                                  {appLang === 'en' ? 'Edit notes' : 'تَعديل وَصفى'}
-                                </Button>
-                              )}
-                              {/* v3.74.127/v3.74.144 — smart correction button.
-                                  Status-aware behaviour:
-                                  - rejected: fast path. The payment never posted accounting,
-                                    so we open the SAME dialog but submit to a different
-                                    endpoint that directly edits the payment and resets it to
-                                    pending_approval (no need for the full correction workflow).
-                                  - approved/sent/cleared: governance path. Goes through
-                                    vendor_payment_correction_requests with owner approval +
-                                    documented reversal. */}
-                              <Button
-                                variant="outline"
-                                className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                                disabled={!online}
-                                title={
-                                  isRejected
-                                    ? (appLang === 'en' ? 'Edit this rejected payment and resubmit for approval' : 'تَعديل هذِه الدَّفعَة المَرفوضَة وإِعادَة إِرسالها للاعتماد')
-                                    : (appLang === 'en' ? 'Request correction of this vendor payment (needs owner/general manager approval)' : 'طَلَب تَصحيح هذه الدَّفعَة لِلمُورِّد — يَحتاج اعتماد المالِك/المُدير العام')
-                                }
-                                onClick={() => {
-                                  setCorrectionPayment(p)
-                                  setCorrectionReason("")
-                                  setCorrectionFields({
-                                    amount: String(Math.abs(Number(p.amount || 0))),
-                                    payment_date: p.payment_date || "",
-                                    account_id: p.account_id || "",
-                                    payment_method: p.payment_method || "cash",
-                                    reference_number: p.reference_number || "",
-                                    notes: p.notes || "",
-                                    original_currency: "",
-                                    exchange_rate: "",
-                                  })
-                                  setShowAllCorrectionAccounts(false)
-                                  setCorrectionOpen(true)
-                                }}
-                              >
-                                {isRejected
-                                  ? (appLang === 'en' ? 'Edit & resubmit' : 'تَعديل وإِعادَة الإِرسال')
-                                  : (appLang === 'en' ? 'Request correction' : 'طَلَب تَصحيح')}
-                              </Button>
-                            </>
-                          )}
-                          {/* ✅ Approve/Reject buttons for privileged roles on pending payments */}
-                          {canApprove && isPending && (
-                            <>
-                              <Button variant="outline" size="sm" className="text-green-700 border-green-300 hover:bg-green-50" disabled={saving} onClick={() => approvePayment(p)}>
-                                {appLang === 'en' ? '✅ Approve' : '✅ اعتماد'}
-                              </Button>
-                              <Button variant="outline" size="sm" className="text-red-700 border-red-300 hover:bg-red-50" disabled={saving} onClick={() => { setRejectingPayment(p); setRejectionReason(''); setRejectOpen(true) }}>
-                                {appLang === 'en' ? '❌ Reject' : '❌ رفض'}
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+              <DataTable
+                columns={supplierPaymentColumns}
+                data={paginatedSupplierPayments}
+                keyField="id"
+                lang={appLang}
+                minWidth="min-w-[1000px]"
+                emptyMessage={appLang === 'en' ? 'No supplier payments found' : 'لا توجد مدفوعات موردين'}
+                rowClassName={(p) => {
+                  const isPending = p.status?.startsWith('pending_')
+                  const isRejected = p.status === 'rejected'
+                  return isPending ? 'bg-yellow-50 dark:bg-yellow-900/10' : isRejected ? 'bg-red-50 dark:bg-red-900/10 opacity-60' : ''
+                }}
+              />
+              {filteredSupplierPayments.length > 0 && (
+                <DataPagination
+                  currentPage={spCurrentPage}
+                  totalPages={spTotalPages}
+                  totalItems={spTotalItems}
+                  pageSize={spPageSize}
+                  onPageChange={spGoToPage}
+                  onPageSizeChange={handleSpPageSizeChange}
+                  lang={appLang}
+                />
+              )}
             </div>
           </CardContent>
         </Card>
