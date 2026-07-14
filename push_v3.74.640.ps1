@@ -3,17 +3,19 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.638.ps1") { Remove-Item -LiteralPath "push_v3.74.638.ps1" -Force }
+if (Test-Path "push_v3.74.639.ps1") { Remove-Item -LiteralPath "push_v3.74.639.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.639"') {
-    Write-Host "+ 3.74.639" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.640"') {
+    Write-Host "+ 3.74.640" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 $pg = Get-Content -LiteralPath "app/products/page.tsx" -Raw
-if ($pg -notmatch 'const acctDefaults = accounts\.length > 0') { Write-Host "X account auto-fill fix missing in resetFormData" -ForegroundColor Red; exit 1 }
-if ($pg -notmatch 'income_account_id: acctDefaults\.incomeId') { Write-Host "X income_account_id not wired to acctDefaults" -ForegroundColor Red; exit 1 }
-Write-Host "+ resetFormData now pre-fills accounting accounts (no more 'None')" -ForegroundColor Green
+if ($pg -notmatch 'const resolveDefaultAccountsFor = \(') { Write-Host "X resolveDefaultAccountsFor helper missing" -ForegroundColor Red; exit 1 }
+if ($pg -notmatch "resolveDefaultAccountsFor\('service', 'service'\)") { Write-Host "X service toggle not wired to helper" -ForegroundColor Red; exit 1 }
+$hits = ([regex]::Matches($pg, 'resolveDefaultAccountsFor\(')).Count
+if ($hits -lt 6) { Write-Host "X expected >=6 resolveDefaultAccountsFor calls, found $hits" -ForegroundColor Red; exit 1 }
+Write-Host "+ synchronous account resolution wired into every type switch ($hits call sites)" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
     Write-Host "Installing exceljs..." -ForegroundColor Cyan
@@ -40,23 +42,24 @@ git add -- `
     "lib/version.ts" `
     "app/products/page.tsx" `
     "supabase/schema/functions.sql" `
-    "push_v3.74.639.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.638.ps1" 2>$null
+    "push_v3.74.640.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.639.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_639.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_640.txt"
     $msgLines = @(
-        'fix(products): v3.74.639 - accounting linkage now actually pre-fills on a fresh form',
+        'fix(products): v3.74.640 - service items get service revenue, not sales revenue',
         '',
-        '- resetFormData computes default income/expense accounts from the loaded',
-        '  chart of accounts and sets them directly, instead of relying on a',
-        '  useEffect that did not re-run when opening a new form with the default',
-        '  item/product type unchanged.',
-        '- Fixes the mismatch where the notice said "accounts selected automatically"',
-        '  but the dropdowns showed "None".'
+        '- The accounting accounts were resolved by a useEffect that did not re-run',
+        '  reliably on type switch, so a service could keep the product-mode',
+        '  income account (Sales Revenue) instead of Service Revenue.',
+        '- Added resolveDefaultAccountsFor(itemType, productType) and call it',
+        '  synchronously inside resetFormData and every item/product type toggle',
+        '  (product, service, manufactured, raw_material, purchased) when creating',
+        '  a new item. Editing preserves stored accounts.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -65,5 +68,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.639 pushed - accounting accounts pre-fill correctly" -ForegroundColor Green
+    Write-Host "`n+ v3.74.640 pushed - correct accounts per item type" -ForegroundColor Green
 }

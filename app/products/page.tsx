@@ -668,6 +668,19 @@ export default function ProductsPage() {
     }
   }
 
+  // v3.74.640 — حلّ الحسابات المحاسبية الافتراضية بشكل *متزامن* لأى نوع صنف.
+  // كان الاعتماد سابقاً على useEffect لا يُعاد تشغيله بموثوقية عند تبديل النوع
+  // أو فتح النموذج، فتتسرّب حسابات وضع "المنتج" (إيراد مبيعات) إلى الخدمة.
+  // نستدعى هذه الدالة داخل كل مُبدِّل نوع + عند فتح النموذج لضمان التطابق دائماً.
+  const resolveDefaultAccountsFor = (
+    itemType: "product" | "service",
+    productType: string
+  ): { incomeId: string; expenseId: string } => {
+    if (accounts.length === 0) return { incomeId: "", expenseId: "" }
+    const d = getDefaultProductAccountingAccounts(productType as ProductType, accounts, itemType)
+    return { incomeId: d.incomeId, expenseId: d.expenseId }
+  }
+
   const resetFormData = () => {
     // للأدوار العليا: prefill القيم إذا كانت موجودة (قابلة للتعديل)
 
@@ -675,13 +688,9 @@ export default function ProductsPage() {
     const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
     const autoWarehouseId = userWarehouseId || warehouses.find(w => w.branch_id === userBranchId)?.id || ""
 
-    // v3.74.639 — املأ الربط المحاسبي افتراضياً مباشرةً عند فتح نموذج جديد.
-    // سابقاً كان التحديد التلقائي يعتمد على useEffect لا يُعاد تشغيله عند فتح
-    // "إضافة جديد" إذا لم يتغيّر نوع الصنف، فتظهر الحسابات "بدون" رغم رسالة
-    // "تم التحديد تلقائياً". هذا يضمن ملء الحسابات ما دام دليل الحسابات محمّلاً.
-    const acctDefaults = accounts.length > 0
-      ? getDefaultProductAccountingAccounts("purchased" as ProductType, accounts, "product")
-      : { incomeId: "", expenseId: "" }
+    // v3.74.639/640 — املأ الربط المحاسبي افتراضياً مباشرةً عند فتح نموذج جديد
+    // (النوع الافتراضى: منتج شراء ⇒ إيراد مبيعات + تكلفة مبيعات).
+    const acctDefaults = resolveDefaultAccountsFor("product", "purchased")
 
     setFormData({
       sku: "",
@@ -1208,10 +1217,17 @@ export default function ProductsPage() {
                               const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
 
                               // 🔐 Enterprise Logic: عند التغيير إلى Product
+                              const newProductType = formData.product_type === 'service' ? 'purchased' : formData.product_type
                               const newData: any = {
                                 ...formData,
                                 item_type: 'product',
-                                product_type: formData.product_type === 'service' ? 'purchased' : formData.product_type,
+                                product_type: newProductType,
+                              }
+                              // v3.74.640 — حدّث الربط المحاسبي فوراً ليطابق النوع الجديد
+                              if (!editingId) {
+                                const acc = resolveDefaultAccountsFor('product', newProductType)
+                                newData.income_account_id = acc.incomeId
+                                newData.expense_account_id = acc.expenseId
                               }
                               if (isNormalRole) {
                                 // للأدوار العادية: فرض جميع القيم
@@ -1239,6 +1255,12 @@ export default function ProductsPage() {
 
                               // 🔐 Enterprise Logic: عند التغيير إلى Service
                               const newData: any = { ...formData, item_type: 'service', product_type: 'service', warehouse_id: "" }
+                              // v3.74.640 — للخدمة: إيراد خدمات + مصروف تشغيلى (وليس إيراد مبيعات/تكلفة مبيعات)
+                              if (!editingId) {
+                                const acc = resolveDefaultAccountsFor('service', 'service')
+                                newData.income_account_id = acc.incomeId
+                                newData.expense_account_id = acc.expenseId
+                              }
                               if (isNormalRole) {
                                 // للأدوار العادية: فرض Branch و Cost Center فقط
                                 newData.branch_id = userBranchId || ""
@@ -1271,7 +1293,11 @@ export default function ProductsPage() {
                               type="button"
                               variant={formData.product_type === 'manufactured' ? 'default' : 'outline'}
                               className={`flex-1 flex-col h-auto py-2 gap-1 text-xs ${formData.product_type === 'manufactured' ? 'ring-2 ring-primary ring-offset-1' : ''}`}
-                              onClick={() => setFormData({ ...formData, product_type: 'manufactured' })}
+                              onClick={() => {
+                                const d: any = { ...formData, product_type: 'manufactured' }
+                                if (!editingId) { const a = resolveDefaultAccountsFor('product', 'manufactured'); d.income_account_id = a.incomeId; d.expense_account_id = a.expenseId }
+                                setFormData(d)
+                              }}
                               title={appLang === 'en' ? 'Can own BOM and Routing in Manufacturing module' : 'يمكنه امتلاك هيكل BOM وخط تصنيع'}
                             >
                               <Sparkles className="w-4 h-4" />
@@ -1281,7 +1307,11 @@ export default function ProductsPage() {
                               type="button"
                               variant={formData.product_type === 'raw_material' ? 'default' : 'outline'}
                               className="flex-1 flex-col h-auto py-2 gap-1 text-xs"
-                              onClick={() => setFormData({ ...formData, product_type: 'raw_material' })}
+                              onClick={() => {
+                                const d: any = { ...formData, product_type: 'raw_material' }
+                                if (!editingId) { const a = resolveDefaultAccountsFor('product', 'raw_material'); d.income_account_id = a.incomeId; d.expense_account_id = a.expenseId }
+                                setFormData(d)
+                              }}
                               title={appLang === 'en' ? 'Used as input component in BOM structures' : 'يُستخدم مكوّناً في هياكل BOM'}
                             >
                               <Package className="w-4 h-4" />
@@ -1291,7 +1321,11 @@ export default function ProductsPage() {
                               type="button"
                               variant={formData.product_type === 'purchased' ? 'default' : 'outline'}
                               className="flex-1 flex-col h-auto py-2 gap-1 text-xs"
-                              onClick={() => setFormData({ ...formData, product_type: 'purchased' })}
+                              onClick={() => {
+                                const d: any = { ...formData, product_type: 'purchased' }
+                                if (!editingId) { const a = resolveDefaultAccountsFor('product', 'purchased'); d.income_account_id = a.incomeId; d.expense_account_id = a.expenseId }
+                                setFormData(d)
+                              }}
                               title={appLang === 'en' ? 'Standard purchased item' : 'صنف شراء عادي'}
                             >
                               <Wrench className="w-4 h-4" />
