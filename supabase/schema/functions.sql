@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-14T12:53:31.809Z
--- Routines: 1171
+-- Generated: 2026-07-14T13:17:03.273Z
+-- Routines: 1172
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -18932,6 +18932,25 @@ BEGIN
     'new_journal_entry_id', v_new_journal_post_id,
     'original_had_journal', v_has_orig_journal
   );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- expense_paid_requires_journal_guard()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.expense_paid_requires_journal_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.status IN ('paid','posted')
+     AND NEW.journal_entry_id IS NULL
+     AND COALESCE(NEW.amount, 0) > 0 THEN
+    RAISE EXCEPTION 'لا يُمكِن تَعليم المَصروف كمَدفوع/مُرحَّل بدون قَيد مُحاسَبي. رحِّل القَيد أولاً (تأكَّد من إعداد حساب المَصروف وحساب الدَّفع).'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
 END;
 $function$
 ;
