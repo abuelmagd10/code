@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-14T11:30:42.545Z
--- Routines: 1169
+-- Generated: 2026-07-14T12:13:09.417Z
+-- Routines: 1171
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -1455,7 +1455,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.apply_customer_debit_note(p_debit_note_id uuid, p_applied_to_type character varying, p_applied_to_id uuid, p_amount_to_apply numeric, p_applied_by uuid, p_notes text DEFAULT NULL::text)
  RETURNS TABLE(success boolean, message text, application_id uuid, journal_entry_id uuid)
  LANGUAGE plpgsql
-AS $function$ DECLARE v_debit_note RECORD; v_remaining_amount DECIMAL(15,2); v_application_id UUID; v_journal_id UUID; v_invoice RECORD; v_ar_account_id UUID; v_revenue_account_id UUID; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status != 'approved' THEN RETURN QUERY SELECT FALSE, 'Debit note must be approved before application (current status: ' || v_debit_note.approval_status || ')', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.created_by = p_applied_by THEN RETURN QUERY SELECT FALSE, 'Creator cannot apply their own debit note (separation of duties)', NULL::UUID, NULL::UUID; RETURN; END IF; v_remaining_amount := v_debit_note.total_amount - v_debit_note.applied_amount; IF p_amount_to_apply > v_remaining_amount THEN RETURN QUERY SELECT FALSE, 'Amount exceeds remaining balance (' || v_remaining_amount::TEXT || ')', NULL::UUID, NULL::UUID; RETURN; END IF; IF p_applied_to_type = 'invoice' THEN SELECT * INTO v_invoice FROM invoices WHERE id = p_applied_to_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Invoice not found', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_invoice.company_id != v_debit_note.company_id THEN RETURN QUERY SELECT FALSE, 'Company mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.branch_id IS NOT NULL AND v_invoice.branch_id != v_debit_note.branch_id THEN RETURN QUERY SELECT FALSE, 'Branch mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_invoice.customer_id != v_debit_note.customer_id THEN RETURN QUERY SELECT FALSE, 'Customer mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; END IF; SELECT id INTO v_ar_account_id FROM chart_of_accounts WHERE company_id = v_debit_note.company_id AND account_type = 'accounts_receivable' AND is_active = TRUE LIMIT 1; SELECT ca.id INTO v_revenue_account_id FROM customer_debit_note_items dni LEFT JOIN products p ON dni.product_id = p.id LEFT JOIN chart_of_accounts ca ON p.revenue_account_id = ca.id WHERE dni.customer_debit_note_id = p_debit_note_id LIMIT 1; IF v_revenue_account_id IS NULL THEN SELECT id INTO v_revenue_account_id FROM chart_of_accounts WHERE company_id = v_debit_note.company_id AND account_type = 'revenue' AND is_active = TRUE LIMIT 1; END IF; IF v_ar_account_id IS NULL OR v_revenue_account_id IS NULL THEN RETURN QUERY SELECT FALSE, 'Required accounts not found', NULL::UUID, NULL::UUID; RETURN; END IF; INSERT INTO customer_debit_note_applications (company_id, branch_id, customer_debit_note_id, applied_to_type, applied_to_id, applied_date, amount_applied, notes, application_method, applied_by) VALUES (v_debit_note.company_id, v_debit_note.branch_id, p_debit_note_id, p_applied_to_type, p_applied_to_id, CURRENT_DATE, p_amount_to_apply, p_notes, 'manual', p_applied_by) RETURNING id INTO v_application_id; INSERT INTO journal_entries (company_id, branch_id, cost_center_id, reference_type, reference_id, entry_date, description, status, created_by) VALUES (v_debit_note.company_id, v_debit_note.branch_id, v_debit_note.cost_center_id, 'customer_debit_application', v_application_id, CURRENT_DATE, 'Customer Debit Note Applied - ' || v_debit_note.debit_note_number, 'posted', p_applied_by) RETURNING id INTO v_journal_id; INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES (v_journal_id, v_ar_account_id, p_amount_to_apply, 0, 'AR - Customer Debit Note Applied'); INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES (v_journal_id, v_revenue_account_id, 0, p_amount_to_apply, 'Revenue - Customer Debit Note Applied'); UPDATE customer_debit_note_applications SET journal_entry_id = v_journal_id WHERE id = v_application_id; UPDATE customer_debit_notes SET applied_amount = applied_amount + p_amount_to_apply, status = CASE WHEN (applied_amount + p_amount_to_apply) >= total_amount THEN 'applied' ELSE 'partially_applied' END WHERE id = p_debit_note_id; IF p_applied_to_type = 'invoice' THEN UPDATE invoices SET total_amount = total_amount + p_amount_to_apply, balance_due = balance_due + p_amount_to_apply WHERE id = p_applied_to_id; END IF; RETURN QUERY SELECT TRUE, 'Debit note applied successfully - journal entry created', v_application_id, v_journal_id; END; $function$
+AS $function$ DECLARE v_debit_note RECORD; v_remaining_amount DECIMAL(15,2); v_application_id UUID; v_journal_id UUID; v_invoice RECORD; v_ar_account_id UUID; v_revenue_account_id UUID; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status != 'approved' THEN RETURN QUERY SELECT FALSE, 'Debit note must be approved before application (current status: ' || v_debit_note.approval_status || ')', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.created_by = p_applied_by AND public.erp_company_senior_count(v_debit_note.company_id) > 1 THEN RETURN QUERY SELECT FALSE, 'Creator cannot apply their own debit note (separation of duties)', NULL::UUID, NULL::UUID; RETURN; END IF; v_remaining_amount := v_debit_note.total_amount - v_debit_note.applied_amount; IF p_amount_to_apply > v_remaining_amount THEN RETURN QUERY SELECT FALSE, 'Amount exceeds remaining balance (' || v_remaining_amount::TEXT || ')', NULL::UUID, NULL::UUID; RETURN; END IF; IF p_applied_to_type = 'invoice' THEN SELECT * INTO v_invoice FROM invoices WHERE id = p_applied_to_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Invoice not found', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_invoice.company_id != v_debit_note.company_id THEN RETURN QUERY SELECT FALSE, 'Company mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.branch_id IS NOT NULL AND v_invoice.branch_id != v_debit_note.branch_id THEN RETURN QUERY SELECT FALSE, 'Branch mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_invoice.customer_id != v_debit_note.customer_id THEN RETURN QUERY SELECT FALSE, 'Customer mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; END IF; SELECT id INTO v_ar_account_id FROM chart_of_accounts WHERE company_id = v_debit_note.company_id AND account_type = 'accounts_receivable' AND is_active = TRUE LIMIT 1; SELECT ca.id INTO v_revenue_account_id FROM customer_debit_note_items dni LEFT JOIN products p ON dni.product_id = p.id LEFT JOIN chart_of_accounts ca ON p.revenue_account_id = ca.id WHERE dni.customer_debit_note_id = p_debit_note_id LIMIT 1; IF v_revenue_account_id IS NULL THEN SELECT id INTO v_revenue_account_id FROM chart_of_accounts WHERE company_id = v_debit_note.company_id AND account_type = 'revenue' AND is_active = TRUE LIMIT 1; END IF; IF v_ar_account_id IS NULL OR v_revenue_account_id IS NULL THEN RETURN QUERY SELECT FALSE, 'Required accounts not found', NULL::UUID, NULL::UUID; RETURN; END IF; INSERT INTO customer_debit_note_applications (company_id, branch_id, customer_debit_note_id, applied_to_type, applied_to_id, applied_date, amount_applied, notes, application_method, applied_by) VALUES (v_debit_note.company_id, v_debit_note.branch_id, p_debit_note_id, p_applied_to_type, p_applied_to_id, CURRENT_DATE, p_amount_to_apply, p_notes, 'manual', p_applied_by) RETURNING id INTO v_application_id; INSERT INTO journal_entries (company_id, branch_id, cost_center_id, reference_type, reference_id, entry_date, description, status, created_by) VALUES (v_debit_note.company_id, v_debit_note.branch_id, v_debit_note.cost_center_id, 'customer_debit_application', v_application_id, CURRENT_DATE, 'Customer Debit Note Applied - ' || v_debit_note.debit_note_number, 'posted', p_applied_by) RETURNING id INTO v_journal_id; INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES (v_journal_id, v_ar_account_id, p_amount_to_apply, 0, 'AR - Customer Debit Note Applied'); INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES (v_journal_id, v_revenue_account_id, 0, p_amount_to_apply, 'Revenue - Customer Debit Note Applied'); UPDATE customer_debit_note_applications SET journal_entry_id = v_journal_id WHERE id = v_application_id; UPDATE customer_debit_notes SET applied_amount = applied_amount + p_amount_to_apply, status = CASE WHEN (applied_amount + p_amount_to_apply) >= total_amount THEN 'applied' ELSE 'partially_applied' END WHERE id = p_debit_note_id; IF p_applied_to_type = 'invoice' THEN UPDATE invoices SET total_amount = total_amount + p_amount_to_apply, balance_due = balance_due + p_amount_to_apply WHERE id = p_applied_to_id; END IF; RETURN QUERY SELECT TRUE, 'Debit note applied successfully - journal entry created', v_application_id, v_journal_id; END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -1596,7 +1596,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.approve_customer_debit_note(p_debit_note_id uuid, p_approved_by uuid, p_notes text DEFAULT NULL::text)
  RETURNS TABLE(success boolean, message text, debit_note_id uuid)
  LANGUAGE plpgsql
-AS $function$ DECLARE v_debit_note RECORD; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status = 'approved' THEN RETURN QUERY SELECT FALSE, 'Debit note is already approved', NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status = 'rejected' THEN RETURN QUERY SELECT FALSE, 'Cannot approve rejected debit note', NULL::UUID; RETURN; END IF; IF v_debit_note.created_by = p_approved_by THEN RETURN QUERY SELECT FALSE, 'Creator cannot approve their own debit note (separation of duties)', NULL::UUID; RETURN; END IF; UPDATE customer_debit_notes SET approval_status = 'approved', approved_by = p_approved_by, approved_at = NOW(), notes = CASE WHEN p_notes IS NOT NULL THEN COALESCE(notes, '') || E'\n[APPROVAL] ' || p_notes ELSE notes END, updated_at = NOW() WHERE id = p_debit_note_id; RETURN QUERY SELECT TRUE, 'Debit note approved successfully', p_debit_note_id; END; $function$
+AS $function$ DECLARE v_debit_note RECORD; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status = 'approved' THEN RETURN QUERY SELECT FALSE, 'Debit note is already approved', NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status = 'rejected' THEN RETURN QUERY SELECT FALSE, 'Cannot approve rejected debit note', NULL::UUID; RETURN; END IF; IF v_debit_note.created_by = p_approved_by AND public.erp_company_senior_count(v_debit_note.company_id) > 1 THEN RETURN QUERY SELECT FALSE, 'Creator cannot approve their own debit note (separation of duties)', NULL::UUID; RETURN; END IF; UPDATE customer_debit_notes SET approval_status = 'approved', approved_by = p_approved_by, approved_at = NOW(), notes = CASE WHEN p_notes IS NOT NULL THEN COALESCE(notes, '') || E'\n[APPROVAL] ' || p_notes ELSE notes END, updated_at = NOW() WHERE id = p_debit_note_id; RETURN QUERY SELECT TRUE, 'Debit note approved successfully', p_debit_note_id; END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -2319,8 +2319,10 @@ BEGIN
     RAISE EXCEPTION 'UNAUTHORIZED: Only owner/admin/general_manager can approve payments';
   END IF;
 
-  -- 3. Prevent self-approval
-  IF v_payment.created_by = p_approver_id THEN
+  -- 3. Prevent self-approval — EXCEPT when the approver is the company's sole senior
+  --    (v3.74.641: single-owner exemption — SoD needs 2+ seniors to be meaningful).
+  IF v_payment.created_by = p_approver_id
+     AND public.erp_company_senior_count(v_payment.company_id) > 1 THEN
     RAISE EXCEPTION 'SELF_APPROVAL_BLOCKED: Cannot approve your own payment request';
   END IF;
 
@@ -5765,19 +5767,19 @@ CREATE OR REPLACE FUNCTION public.bank_voucher_sod_guard()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  -- reviewer must not be the creator
-  IF NEW.reviewed_by IS NOT NULL
-     AND NEW.created_by IS NOT NULL
-     AND NEW.reviewed_by = NEW.created_by THEN
-    RAISE EXCEPTION 'SoD violation: مُعتَمِد السَّنَد لا يَجوز أَن يَكون هو نَفسه مُنشِئ السَّنَد.'
-      USING ERRCODE = 'check_violation';
-  END IF;
-  -- poster must not be the reviewer
-  IF NEW.posted_by IS NOT NULL
-     AND NEW.reviewed_by IS NOT NULL
-     AND NEW.posted_by = NEW.reviewed_by THEN
-    RAISE EXCEPTION 'SoD violation: مُنَفِّذ السَّنَد لا يَجوز أَن يَكون هو نَفسه مُعتَمِد السَّنَد.'
-      USING ERRCODE = 'check_violation';
+  IF public.erp_company_senior_count(NEW.company_id) > 1 THEN
+    IF NEW.reviewed_by IS NOT NULL
+       AND NEW.created_by IS NOT NULL
+       AND NEW.reviewed_by = NEW.created_by THEN
+      RAISE EXCEPTION 'SoD violation: مُعتَمِد السَّنَد لا يَجوز أَن يَكون هو نَفسه مُنشِئ السَّنَد.'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.posted_by IS NOT NULL
+       AND NEW.reviewed_by IS NOT NULL
+       AND NEW.posted_by = NEW.reviewed_by THEN
+      RAISE EXCEPTION 'SoD violation: مُنَفِّذ السَّنَد لا يَجوز أَن يَكون هو نَفسه مُعتَمِد السَّنَد.'
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -17719,6 +17721,46 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_company_senior_count(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_company_senior_count(p_company_id uuid)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT count(*)::int FROM (
+    SELECT user_id FROM company_members
+      WHERE company_id = p_company_id
+        AND user_id IS NOT NULL
+        AND lower(role) IN ('owner','admin','general_manager')
+    UNION
+    SELECT user_id FROM companies
+      WHERE id = p_company_id AND user_id IS NOT NULL
+  ) s;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_is_sole_senior(p_company_id uuid, p_user_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT public.erp_company_senior_count(p_company_id) <= 1
+     AND (
+       EXISTS (SELECT 1 FROM company_members
+                 WHERE company_id = p_company_id AND user_id = p_user_id
+                   AND lower(role) IN ('owner','admin','general_manager'))
+       OR EXISTS (SELECT 1 FROM companies WHERE id = p_company_id AND user_id = p_user_id)
+     );
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- execute_customer_refund(p_refund_request_id uuid, p_account_id uuid, p_executed_by uuid, p_execution_date date, p_notes text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.execute_customer_refund(p_refund_request_id uuid, p_account_id uuid, p_executed_by uuid, p_execution_date date DEFAULT CURRENT_DATE, p_notes text DEFAULT NULL::text)
@@ -18902,15 +18944,19 @@ CREATE OR REPLACE FUNCTION public.expense_sod_guard()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  IF NEW.approved_by IS NOT NULL AND NEW.created_by IS NOT NULL
-     AND NEW.approved_by = NEW.created_by THEN
-    RAISE EXCEPTION 'SoD violation: مُعتَمِد المَصروف لا يَجوز أَن يَكون هو نَفسه مُنشِئ المَصروف.'
-      USING ERRCODE = 'check_violation';
-  END IF;
-  IF NEW.paid_by IS NOT NULL AND NEW.approved_by IS NOT NULL
-     AND NEW.paid_by = NEW.approved_by THEN
-    RAISE EXCEPTION 'SoD violation: مُنَفِّذ الصَّرف لا يَجوز أَن يَكون هو نَفسه مُعتَمِد المَصروف.'
-      USING ERRCODE = 'check_violation';
+  -- Segregation of duties only applies when 2+ seniors exist. For a sole-owner
+  -- company, self-approval/self-pay is unavoidable and must be allowed.
+  IF public.erp_company_senior_count(NEW.company_id) > 1 THEN
+    IF NEW.approved_by IS NOT NULL AND NEW.created_by IS NOT NULL
+       AND NEW.approved_by = NEW.created_by THEN
+      RAISE EXCEPTION 'SoD violation: مُعتَمِد المَصروف لا يَجوز أَن يَكون هو نَفسه مُنشِئ المَصروف.'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.paid_by IS NOT NULL AND NEW.approved_by IS NOT NULL
+       AND NEW.paid_by = NEW.approved_by THEN
+      RAISE EXCEPTION 'SoD violation: مُنَفِّذ الصَّرف لا يَجوز أَن يَكون هو نَفسه مُعتَمِد المَصروف.'
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -30255,10 +30301,12 @@ CREATE OR REPLACE FUNCTION public.mmia_sod_guard()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  IF NEW.approved_by IS NOT NULL AND NEW.requested_by IS NOT NULL
-     AND NEW.approved_by = NEW.requested_by THEN
-    RAISE EXCEPTION 'SoD violation: مُعتَمِد طَلَب صَرف المَواد لا يَجوز أَن يَكون هو نَفسه مُقَدِّم الطَّلَب.'
-      USING ERRCODE = 'check_violation';
+  IF public.erp_company_senior_count(NEW.company_id) > 1 THEN
+    IF NEW.approved_by IS NOT NULL AND NEW.requested_by IS NOT NULL
+       AND NEW.approved_by = NEW.requested_by THEN
+      RAISE EXCEPTION 'SoD violation: مُعتَمِد طَلَب صَرف المَواد لا يَجوز أَن يَكون هو نَفسه مُقَدِّم الطَّلَب.'
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;
