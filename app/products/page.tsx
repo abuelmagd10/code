@@ -129,6 +129,8 @@ export default function ProductsPage() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // v3.74.645 — هل عدّل المستخدم رمز الصنف يدوياً؟ (لإيقاف الاقتراح التلقائي)
+  const [skuTouched, setSkuTouched] = useState(false)
   const [formData, setFormData] = useState({
     sku: "",
     name: "",
@@ -185,6 +187,28 @@ export default function ProductsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.item_type, formData.product_type, accounts, editingId])
+
+  // v3.74.645 — اقتراح رمز الصنف التالي تلقائياً حسب (الفرع + النوع): <BRANCH>-<PREFIX>-NNNN
+  // يظهر عند فتح النموذج أو تغيير النوع/الفرع، ويتوقف فور كتابة المستخدم رمزاً خاصاً.
+  useEffect(() => {
+    if (editingId || !isDialogOpen || skuTouched) return
+    let cancelled = false
+    ;(async () => {
+      const cid = await ensureCompanyId(supabase)
+      if (!cid || cancelled) return
+      const { data, error } = await supabase.rpc('preview_next_product_sku', {
+        p_company_id: cid,
+        p_branch_id: formData.branch_id || null,
+        p_item_type: formData.item_type,
+        p_product_type: formData.product_type,
+      })
+      if (!cancelled && !error && data) {
+        setFormData(prev => ({ ...prev, sku: String(data) }))
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDialogOpen, editingId, skuTouched, formData.branch_id, formData.item_type, formData.product_type])
 
   // 🏢 بيانات الفروع والمستودعات ومراكز التكلفة
   const [branches, setBranches] = useState<Branch[]>([])
@@ -503,7 +527,8 @@ export default function ProductsPage() {
       }
 
       // التحقق من الحقول المطلوبة
-      if (!formData.sku.trim()) {
+      // v3.74.645 — الرمز يُولّد تلقائياً للأصناف الجديدة إن تُرك فارغاً؛ نطلبه فقط عند التعديل.
+      if (editingId && !formData.sku.trim()) {
         toastActionError(toast, appLang === 'en' ? 'SKU code is required' : 'الرمز (SKU) مطلوب')
         return
       }
@@ -584,6 +609,9 @@ export default function ProductsPage() {
       // Prepare data based on item type
       const saveData = {
         ...formData,
+        // v3.74.645 — للأصناف الجديدة غير المُعدَّلة يدوياً: أرسل رمزاً فارغاً ليولّده
+        // حارس قاعدة البيانات بشكل موثوق (يتفادى أي تعارض/سباق مع اقتراح الواجهة).
+        sku: (!editingId && !skuTouched) ? "" : formData.sku,
         // For services, set inventory fields to 0/null
         reorder_level: formData.item_type === 'service' ? 0 : formData.reorder_level,
         unit: formData.item_type === 'service' ? 'service' : formData.unit,
@@ -723,6 +751,8 @@ export default function ProductsPage() {
   }
 
   const handleEdit = (product: Product) => {
+    // v3.74.645 — عند التعديل نحافظ على الرمز الحالي ولا نقترح رمزاً جديداً
+    setSkuTouched(true)
     // 🔐 Enterprise Logic: عند التعديل، للأدوار العادية نفرض القيم من بيانات المستخدم
     const editData: any = {
       ...product,
@@ -1190,7 +1220,7 @@ export default function ProductsPage() {
                 </div>
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto" onClick={() => { setEditingId(null); resetFormData() }}>
+                    <Button className="h-10 sm:h-11 text-sm sm:text-base px-3 sm:px-4 self-start sm:self-auto" onClick={() => { setEditingId(null); resetFormData(); setSkuTouched(false) }}>
                       <Plus className="w-4 h-4 ml-1 sm:ml-2" />
                       {appLang === 'en' ? 'New' : 'جديد'}
                     </Button>
@@ -1352,12 +1382,17 @@ export default function ProductsPage() {
                       {/* Basic Info */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
-                          <Label htmlFor="sku">{appLang === 'en' ? 'Code (SKU)' : 'الرمز (SKU)'}</Label>
+                          <Label htmlFor="sku">
+                            {appLang === 'en' ? 'Code (SKU)' : 'الرمز (SKU)'}
+                            <span className="mr-1 text-xs text-muted-foreground font-normal">
+                              {appLang === 'en' ? '(auto if left empty)' : '(يُولّد تلقائياً إن تُرك فارغاً)'}
+                            </span>
+                          </Label>
                           <Input
                             id="sku"
                             value={formData.sku}
-                            onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                            required
+                            onChange={(e) => { setSkuTouched(true); setFormData({ ...formData, sku: e.target.value }) }}
+                            placeholder={appLang === 'en' ? 'e.g. MAIN-PRD-0001' : 'مثال: MAIN-PRD-0001'}
                           />
                         </div>
                         <div className="space-y-2">

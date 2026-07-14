@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-14T14:03:15.353Z
--- Routines: 1173
+-- Generated: 2026-07-14T15:27:11.945Z
+-- Routines: 1177
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -5053,6 +5053,36 @@ CREATE OR REPLACE FUNCTION public.auto_generate_po_number()
  RETURNS trigger
  LANGUAGE plpgsql
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.po_number IS NULL OR NEW.po_number = '' THEN v_lock_key := hashtext('po_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(po_number FROM 'PO-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM purchase_orders WHERE company_id = NEW.company_id AND po_number ~ '^PO-[0-9]+$'; v_number := 'PO-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.po_number := v_number; END IF; RETURN NEW; END; $function$
+;
+
+-- ---------------------------------------------------------------
+-- auto_generate_product_sku()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.auto_generate_product_sku()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE v_prefix text; v_branch text; v_pat text; v_max integer; v_lock bigint;
+BEGIN
+  IF NEW.sku IS NOT NULL AND btrim(NEW.sku) <> '' THEN
+    RETURN NEW;
+  END IF;
+  v_prefix := public.erp_product_sku_prefix(NEW.item_type, NEW.product_type);
+  v_branch := coalesce(public.erp_branch_sku_code(NEW.branch_id), 'HO');
+
+  v_lock := hashtext(NEW.company_id::text || '|' || coalesce(NEW.branch_id::text,'') || '|' || v_prefix);
+  PERFORM pg_advisory_xact_lock(v_lock);
+
+  v_pat := '^' || v_branch || '-' || v_prefix || '-([0-9]+)$';
+  SELECT COALESCE(MAX(CAST(SUBSTRING(sku FROM v_pat) AS integer)), 0) INTO v_max
+  FROM products
+  WHERE company_id = NEW.company_id
+    AND coalesce(branch_id::text,'') = coalesce(NEW.branch_id::text,'')
+    AND sku ~ v_pat;
+
+  NEW.sku := v_branch || '-' || v_prefix || '-' || LPAD((v_max + 1)::text, 4, '0');
+  RETURN NEW;
+END $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -17721,6 +17751,19 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_branch_sku_code(p_branch_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_branch_sku_code(p_branch_id uuid)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT upper(coalesce(nullif(btrim(b.branch_code),''), nullif(btrim(b.code),''), 'HO'))
+  FROM branches b WHERE b.id = p_branch_id;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_company_senior_count(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_company_senior_count(p_company_id uuid)
@@ -17757,6 +17800,23 @@ AS $function$
                    AND lower(role) IN ('owner','admin','general_manager'))
        OR EXISTS (SELECT 1 FROM companies WHERE id = p_company_id AND user_id = p_user_id)
      );
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_product_sku_prefix(p_item_type text, p_product_type text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT CASE
+    WHEN lower(coalesce(p_item_type,'')) = 'service' OR lower(coalesce(p_product_type,'')) = 'service' THEN 'SRV'
+    WHEN lower(coalesce(p_product_type,'')) = 'raw_material' THEN 'RAW'
+    WHEN lower(coalesce(p_product_type,'')) = 'manufactured' THEN 'MFG'
+    ELSE 'PRD'
+  END;
 $function$
 ;
 
@@ -39447,6 +39507,29 @@ BEGIN
   RETURN OLD;
 END;
 $function$
+;
+
+-- ---------------------------------------------------------------
+-- preview_next_product_sku(p_company_id uuid, p_branch_id uuid, p_item_type text, p_product_type text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.preview_next_product_sku(p_company_id uuid, p_branch_id uuid, p_item_type text, p_product_type text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_prefix text; v_branch text; v_pat text; v_max integer;
+BEGIN
+  v_prefix := public.erp_product_sku_prefix(p_item_type, p_product_type);
+  v_branch := coalesce(public.erp_branch_sku_code(p_branch_id), 'HO');
+  v_pat := '^' || v_branch || '-' || v_prefix || '-([0-9]+)$';
+  SELECT COALESCE(MAX(CAST(SUBSTRING(sku FROM v_pat) AS integer)), 0) INTO v_max
+  FROM products
+  WHERE company_id = p_company_id
+    AND coalesce(branch_id::text,'') = coalesce(p_branch_id::text,'')
+    AND sku ~ v_pat;
+  RETURN v_branch || '-' || v_prefix || '-' || LPAD((v_max + 1)::text, 4, '0');
+END $function$
 ;
 
 -- ---------------------------------------------------------------
