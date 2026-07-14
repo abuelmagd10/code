@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-14T13:17:03.273Z
--- Routines: 1172
+-- Generated: 2026-07-14T14:03:15.353Z
+-- Routines: 1173
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -18932,6 +18932,38 @@ BEGIN
     'new_journal_entry_id', v_new_journal_post_id,
     'original_had_journal', v_has_orig_journal
   );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- expense_account_type_guard()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.expense_account_type_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE v_bad boolean;
+BEGIN
+  IF NEW.expense_account_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' AND NEW.expense_account_id IS NOT DISTINCT FROM OLD.expense_account_id THEN
+    RETURN NEW;  -- account unchanged: don't re-validate historical rows
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM public.chart_of_accounts ca
+    WHERE ca.id = NEW.expense_account_id
+      AND (
+        lower(coalesce(ca.sub_type,'')) IN ('cogs','cost_of_goods_sold','purchases','purchase_returns','purchase_discounts')
+        OR ca.account_code IN ('5100','5110','5120','5130')
+      )
+  ) INTO v_bad;
+  IF v_bad THEN
+    RAISE EXCEPTION 'لا يَصِح رَبط المَصروف بحساب تكلفة مبيعات/مشتريات. اختَر حساب مصروف تشغيلي.'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
 END;
 $function$
 ;

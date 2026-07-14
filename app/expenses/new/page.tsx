@@ -179,13 +179,22 @@ export default function NewExpensePage() {
       // Load expense accounts (type = 'expense')
       const { data: expAccounts } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name")
+        .select("id, account_code, account_name, sub_type")
         .eq("company_id", cid)
         .eq("account_type", "expense")
         .eq("is_active", true)
         .order("account_code")
 
-      setExpenseAccounts(expAccounts || [])
+      // v3.74.644 — استبعاد حسابات تكلفة المبيعات (COGS) والمشتريات من قائمة "حساب المصروف":
+      // المصروف التشغيلي لا يُرحَّل على تكلفة البضاعة المباعة. يمنع خطأً شائعاً في الإدخال
+      // (يشوّه مجمل الربح). حارس قاعدة البيانات يمنعه أيضاً كشبكة أمان.
+      const BLOCKED_EXPENSE_SUBTYPES = new Set(["cogs", "cost_of_goods_sold", "purchases", "purchase_returns", "purchase_discounts"])
+      const BLOCKED_EXPENSE_CODES = new Set(["5100", "5110", "5120", "5130"])
+      const filteredExpAccounts = (expAccounts || []).filter((a: any) =>
+        !BLOCKED_EXPENSE_SUBTYPES.has(String(a.sub_type || "").toLowerCase()) &&
+        !BLOCKED_EXPENSE_CODES.has(String(a.account_code || ""))
+      )
+      setExpenseAccounts(filteredExpAccounts)
 
       // Load category → account mappings (with branch/cost_center priority)
       const { data: mappings } = await supabase
