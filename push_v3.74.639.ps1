@@ -3,17 +3,17 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.637.ps1") { Remove-Item -LiteralPath "push_v3.74.637.ps1" -Force }
+if (Test-Path "push_v3.74.638.ps1") { Remove-Item -LiteralPath "push_v3.74.638.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.638"') {
-    Write-Host "+ 3.74.638" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.639"') {
+    Write-Host "+ 3.74.639" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-$ca = Get-Content -LiteralPath "lib/company-authorization.ts" -Raw
-if ($ca -notmatch 'UPPER_ROLES = \["owner", "admin", "general_manager"\]') { Write-Host "X UPPER_ROLES not corrected" -ForegroundColor Red; exit 1 }
-if ($ca -match 'UPPER_ROLES = \["owner", "admin", "manager"\]') { Write-Host "X old UPPER_ROLES still present" -ForegroundColor Red; exit 1 }
-Write-Host "+ UPPER_ROLES = owner/admin/general_manager (manager is branch-scoped)" -ForegroundColor Green
+$pg = Get-Content -LiteralPath "app/products/page.tsx" -Raw
+if ($pg -notmatch 'const acctDefaults = accounts\.length > 0') { Write-Host "X account auto-fill fix missing in resetFormData" -ForegroundColor Red; exit 1 }
+if ($pg -notmatch 'income_account_id: acctDefaults\.incomeId') { Write-Host "X income_account_id not wired to acctDefaults" -ForegroundColor Red; exit 1 }
+Write-Host "+ resetFormData now pre-fills accounting accounts (no more 'None')" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
     Write-Host "Installing exceljs..." -ForegroundColor Cyan
@@ -38,25 +38,25 @@ if ($tscErr -eq 0) {
 
 git add -- `
     "lib/version.ts" `
-    "lib/company-authorization.ts" `
+    "app/products/page.tsx" `
     "supabase/schema/functions.sql" `
-    "push_v3.74.638.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.637.ps1" 2>$null
+    "push_v3.74.639.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.638.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_638.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_639.txt"
     $msgLines = @(
-        'fix(authz): v3.74.638 - branch manager is branch-scoped; general_manager is company-wide',
+        'fix(products): v3.74.639 - accounting linkage now actually pre-fills on a fresh form',
         '',
-        '- UPPER_ROLES corrected to owner/admin/general_manager (was owner/admin/manager).',
-        '- Effect on the product form: branch manager (and below) now gets the',
-        '  locked "assigned to your branch" location and auto/locked accounting',
-        '  linkage; owner, admin, general_manager keep free choice.',
-        '- Company selection is unaffected (members resolve via membership; the',
-        '  upper-role path is only an ownership fallback).'
+        '- resetFormData computes default income/expense accounts from the loaded',
+        '  chart of accounts and sets them directly, instead of relying on a',
+        '  useEffect that did not re-run when opening a new form with the default',
+        '  item/product type unchanged.',
+        '- Fixes the mismatch where the notice said "accounts selected automatically"',
+        '  but the dropdowns showed "None".'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -65,5 +65,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.638 pushed - manager branch-scoped, GM company-wide" -ForegroundColor Green
+    Write-Host "`n+ v3.74.639 pushed - accounting accounts pre-fill correctly" -ForegroundColor Green
 }

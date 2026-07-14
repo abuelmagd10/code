@@ -675,6 +675,14 @@ export default function ProductsPage() {
     const autoCostCenterId = userCostCenterId || costCenters.find(cc => cc.branch_id === userBranchId)?.id || ""
     const autoWarehouseId = userWarehouseId || warehouses.find(w => w.branch_id === userBranchId)?.id || ""
 
+    // v3.74.639 — املأ الربط المحاسبي افتراضياً مباشرةً عند فتح نموذج جديد.
+    // سابقاً كان التحديد التلقائي يعتمد على useEffect لا يُعاد تشغيله عند فتح
+    // "إضافة جديد" إذا لم يتغيّر نوع الصنف، فتظهر الحسابات "بدون" رغم رسالة
+    // "تم التحديد تلقائياً". هذا يضمن ملء الحسابات ما دام دليل الحسابات محمّلاً.
+    const acctDefaults = accounts.length > 0
+      ? getDefaultProductAccountingAccounts("purchased" as ProductType, accounts, "product")
+      : { incomeId: "", expenseId: "" }
+
     setFormData({
       sku: "",
       name: "",
@@ -688,8 +696,8 @@ export default function ProductsPage() {
       units_per_carton: 0,
       item_type: "product",
       product_type: "purchased",
-      income_account_id: "",
-      expense_account_id: "",
+      income_account_id: acctDefaults.incomeId,
+      expense_account_id: acctDefaults.expenseId,
       cost_center: "",
       // للأدوار العادية: نفرض القيمة من الحساب أو نضع أول مركز للفرع | للأدوار العليا: prefill فقط
       cost_center_id: isNormalRole ? autoCostCenterId : (userCostCenterId || ""),
