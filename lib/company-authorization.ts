@@ -36,9 +36,12 @@ export interface AuthorizationResult {
 }
 
 /**
- * الأدوار العليا (يمكنها الوصول إلى companies table)
+ * الأدوار العليا (غير مقيّدة بالفرع/الربط المحاسبي).
+ * v3.74.638 — صُحّح ليطابق نموذج الصلاحيات: المالك، الأدمن، المدير العام فقط.
+ * "مدير الفرع" (manager) دور عادي مقيَّد بفرعه (كان مُدرجاً هنا خطأً)،
+ * و"المدير العام" (general_manager) بصلاحيات المالك (كان مُستبعَداً خطأً).
  */
-export const UPPER_ROLES = ["owner", "admin", "manager"] as const
+export const UPPER_ROLES = ["owner", "admin", "general_manager"] as const
 
 /**
  * الأدوار العادية (مقيدة بالفرع ومركز التكلفة والمستودع)

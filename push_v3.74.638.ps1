@@ -3,19 +3,17 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.636.ps1") { Remove-Item -LiteralPath "push_v3.74.636.ps1" -Force }
+if (Test-Path "push_v3.74.637.ps1") { Remove-Item -LiteralPath "push_v3.74.637.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.637"') {
-    Write-Host "+ 3.74.637" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.638"') {
+    Write-Host "+ 3.74.638" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
-$api = Get-Content -LiteralPath "app/api/products-list/route.ts" -Raw
-if ($api -notmatch 'general_manager' -or $api -match '"owner", "admin", "manager"') { Write-Host "X products-list scope not fixed" -ForegroundColor Red; exit 1 }
-if ($api -notmatch 'branch:branch_id') { Write-Host "X products-list branch join missing" -ForegroundColor Red; exit 1 }
-$pp = Get-Content -LiteralPath "app/products/page.tsx" -Raw
-if ($pp -notmatch 'row.branch_name \|\|') { Write-Host "X products page branch-name preference missing" -ForegroundColor Red; exit 1 }
-Write-Host "+ branch scope + branch name fixes present" -ForegroundColor Green
+$ca = Get-Content -LiteralPath "lib/company-authorization.ts" -Raw
+if ($ca -notmatch 'UPPER_ROLES = \["owner", "admin", "general_manager"\]') { Write-Host "X UPPER_ROLES not corrected" -ForegroundColor Red; exit 1 }
+if ($ca -match 'UPPER_ROLES = \["owner", "admin", "manager"\]') { Write-Host "X old UPPER_ROLES still present" -ForegroundColor Red; exit 1 }
+Write-Host "+ UPPER_ROLES = owner/admin/general_manager (manager is branch-scoped)" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
     Write-Host "Installing exceljs..." -ForegroundColor Cyan
@@ -40,25 +38,25 @@ if ($tscErr -eq 0) {
 
 git add -- `
     "lib/version.ts" `
-    "app/api/products-list/route.ts" `
-    "app/products/page.tsx" `
+    "lib/company-authorization.ts" `
     "supabase/schema/functions.sql" `
-    "push_v3.74.637.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.636.ps1" 2>$null
+    "push_v3.74.638.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.637.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_637.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_638.txt"
     $msgLines = @(
-        'fix(products): v3.74.637 - branch manager sees own-branch products + branch name resolves',
+        'fix(authz): v3.74.638 - branch manager is branch-scoped; general_manager is company-wide',
         '',
-        '- products-list API: branch manager is no longer treated as company-wide;',
-        '  only owner/admin/general_manager see all products, everyone else is',
-        '  scoped to their branch.',
-        '- API also returns each product''s branch_name (joined), so the list shows',
-        '  the correct branch for every role instead of "Unknown".'
+        '- UPPER_ROLES corrected to owner/admin/general_manager (was owner/admin/manager).',
+        '- Effect on the product form: branch manager (and below) now gets the',
+        '  locked "assigned to your branch" location and auto/locked accounting',
+        '  linkage; owner, admin, general_manager keep free choice.',
+        '- Company selection is unaffected (members resolve via membership; the',
+        '  upper-role path is only an ownership fallback).'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -67,5 +65,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.637 pushed - branch scope + branch name" -ForegroundColor Green
+    Write-Host "`n+ v3.74.638 pushed - manager branch-scoped, GM company-wide" -ForegroundColor Green
 }
