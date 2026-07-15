@@ -91,6 +91,11 @@ export function BookingForm({
   const t    = (ar: string, en: string) => (isAr ? ar : en)
   // v3.74.656 — inline "New customer" dialog (reuses the shared CustomerFormDialog)
   const [custDialogOpen, setCustDialogOpen] = useState(false)
+  // v3.74.659 — discount can be entered as a fixed amount OR a percentage.
+  // Percentage is a UI convenience: we compute the amount and submit it as
+  // discount_amount, so the server discount-approval trigger still fires.
+  const [discountMode, setDiscountMode] = useState<"amount" | "percent">("amount")
+  const [discountPercent, setDiscountPercent] = useState<number>(0)
 
   // Format "HH:MM[:SS]" → 12-hour with localized AM/PM (ص/م in Arabic)
   const formatTime12 = (time: string): string => {
@@ -246,6 +251,18 @@ export function BookingForm({
   const taxableAmt   = subtotal - discountAmt
   const taxAmt       = taxableAmt * (taxRate / 100)
   const totalAmount  = taxableAmt + taxAmt
+
+  // v3.74.659 — in percentage mode, keep discount_amount in sync with the
+  // percentage and the current subtotal (so it also updates when qty/service
+  // changes). The submitted value is always discount_amount.
+  useEffect(() => {
+    if (discountMode !== "percent") return
+    const pct = Math.max(0, Math.min(100, Number(discountPercent) || 0))
+    const computed = Math.round(subtotal * pct) / 100
+    form.setValue("discount_amount", computed)
+    form.clearErrors("discount_amount")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discountMode, discountPercent, subtotal])
 
   const handleSlotSelect = (slot: AvailableSlot) => {
     setSelectedSlot(slot)
@@ -639,28 +656,62 @@ export function BookingForm({
                 )}
               />
 
-              {/* Discount — v3.74.600: amount-only (the DB trigger stamps
-                  discount_type='amount'); any value routes through the
-                  owner/GM discount approval before activation. */}
+              {/* Discount — value OR percentage (v3.74.659). Both are submitted as
+                  discount_amount, so the server discount-approval trigger fires for
+                  any discount > 0 (approval stays mandatory). */}
               <FormField
                 control={form.control}
                 name="discount_amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t("الخصم (قيمة)", "Discount (amount)")}</FormLabel>
+                    <div className="flex items-center justify-between gap-2">
+                      <FormLabel>{t("الخصم", "Discount")}</FormLabel>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button" size="sm"
+                          variant={discountMode === "amount" ? "default" : "outline"}
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setDiscountMode("amount")}
+                        >
+                          {t("قيمة", "Amount")}
+                        </Button>
+                        <Button
+                          type="button" size="sm"
+                          variant={discountMode === "percent" ? "default" : "outline"}
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setDiscountMode("percent")}
+                        >
+                          {t("نسبة %", "%")}
+                        </Button>
+                      </div>
+                    </div>
                     <FormControl>
-                      <Input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        {...field}
-                        value={field.value ?? 0}
-                        onChange={(e) => {
-                          form.clearErrors("discount_amount")
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }}
-                      />
+                      {discountMode === "amount" ? (
+                        <Input
+                          type="number" min={0} step={0.01}
+                          {...field}
+                          value={field.value ?? 0}
+                          onChange={(e) => {
+                            form.clearErrors("discount_amount")
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }}
+                        />
+                      ) : (
+                        <Input
+                          type="number" min={0} max={100} step={0.01}
+                          value={discountPercent}
+                          placeholder="%"
+                          onChange={(e) =>
+                            setDiscountPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))
+                          }
+                        />
+                      )}
                     </FormControl>
+                    {discountMode === "percent" && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("قيمة الخصم المحسوبة", "Computed discount")}: {discountAmt.toFixed(2)} ({discountPercent || 0}%)
+                      </p>
+                    )}
                     <FormDescription className="text-xs text-amber-700 dark:text-amber-400">
                       {t(
                         "أى خصم يتطلب اعتماد المالك/المدير العام قبل تفعيل الحجز",
