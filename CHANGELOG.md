@@ -4,6 +4,21 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.665] - 2026-07-15 — Owner is ALWAYS exempt from self-approval / SoD (not only when sole senior)
+
+### Context
+قاعِدة المالِك: **المالِك** (`companies.user_id`) لا يَعلوه مُعتَمِد، فَهو مُعفى من كُلّ الاعتِمادات على إنشاءاتِه **دائماً** — مَهما كانَ عَدَد كِبار المُستَخدِمين. المُدير العام والأَدمِن **ليسوا** مُعفَيين: يَخضَعون لِفَصل المَهام المُعتاد (مَنع اعتِماد الذّات عِندَ وُجود مُعتَمِدَين+). قَبلَ هذا (v3.74.641) كانَ الإعفاء "المالِك الوَحيد فَقَط" (عِندَ `senior_count <= 1`)، فَمالِك لَدَيه مُدير عام (٢ كِبار) كانَ يُمنَع من اعتِماد مَصروفِه — يُناقِض "لا أَحَد فَوقَ المالِك".
+
+### Change
+- دالة مُساعِدة `erp_is_company_owner(company_id, user_id)`.
+- إضافة تَجاوُز المالِك إلى كُلّ حُرّاس اعتِماد الذّات / فَصل المَهام: `approve_supplier_payment`، `approve_customer_debit_note`، `apply_customer_debit_note`، `bank_voucher_sod_guard` (شَرطان)، `expense_sod_guard` (شَرطان)، `mmia_sod_guard`. الشَّرط أصبَحَ: يُمنَع اعتِماد الذّات عِندَ `senior_count>1` **وليسَ** المالِك.
+- التَّطبيق تَمَّ عَبر جَلب التَّعريف الحَىّ وحَقن جُملة التَّجاوُز فى الشَّرط بِالضَّبط (بلا إعادة كِتابة يَدَوِيّة لِلأجسام الكَبيرة)، مَع تَحَقُّق مُطابَقة المِرساة ولا-تَكرار لِكُلّ استِبدال.
+
+### Verification
+البيانات الحَيّة: `erp_is_company_owner` → المالِك=true، غَير المالِك=false، NULL=false. الحُرّاس ذات الشَّرطَين تَحمِل تَجاوُزَين. كُلّ الدَّوال السِّتّ تَحمِل التَّجاوُز.
+
+---
+
 ## [3.74.664] - 2026-07-15 — Auto-approve stock movements when the branch has no warehouse manager
 
 ### Context
