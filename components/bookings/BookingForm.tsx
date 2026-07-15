@@ -76,6 +76,9 @@ interface BookingFormProps {
   lang?:       string
   /** v3.74.656 — refresh the customers list after adding one inline; returns the new list */
   reloadCustomers?: () => Promise<SimpleCustomer[]>
+  /** v3.74.662 — discount governance: only management or the assigned executor may set a discount */
+  currentUserId?: string
+  isUpperRole?:   boolean
 }
 
 export function BookingForm({
@@ -86,6 +89,8 @@ export function BookingForm({
   isSubmitting = false,
   lang = "ar",
   reloadCustomers,
+  currentUserId,
+  isUpperRole = false,
 }: BookingFormProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
@@ -251,6 +256,25 @@ export function BookingForm({
   const taxableAmt   = subtotal - discountAmt
   const taxAmt       = taxableAmt * (taxRate / 100)
   const totalAmount  = taxableAmt + taxAmt
+
+  // v3.74.662 — discount governance: a discount is the assigned EXECUTOR's call,
+  // not the booking officer's. Only management (owner/admin/GM) or a user who is
+  // among the booking's assigned staff may set it. Others create the booking
+  // without a discount; the executor adds it later (edit page).
+  const watchedStaffIds = (form.watch("staff_user_ids") as string[] | null) ?? []
+  const watchedSingleStaff = form.watch("staff_user_id") as string | null
+  const canDiscount = !!isUpperRole || (
+    !!currentUserId && (watchedStaffIds.includes(currentUserId) || watchedSingleStaff === currentUserId)
+  )
+
+  // Reset any discount if the current user is not allowed to set one.
+  useEffect(() => {
+    if (canDiscount) return
+    if (Number(form.getValues("discount_amount") ?? 0) !== 0) form.setValue("discount_amount", 0)
+    setDiscountMode("amount")
+    setDiscountPercent(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canDiscount])
 
   // v3.74.659 — in percentage mode, keep discount_amount in sync with the
   // percentage and the current subtotal (so it also updates when qty/service
@@ -656,9 +680,11 @@ export function BookingForm({
                 )}
               />
 
-              {/* Discount — value OR percentage (v3.74.659). Both are submitted as
+              {/* Discount — value OR percentage (v3.74.659). Submitted as
                   discount_amount, so the server discount-approval trigger fires for
-                  any discount > 0 (approval stays mandatory). */}
+                  any discount > 0 (approval stays mandatory).
+                  v3.74.662 — only management or the assigned executor may set it. */}
+              {canDiscount ? (
               <FormField
                 control={form.control}
                 name="discount_amount"
@@ -722,6 +748,14 @@ export function BookingForm({
                   </FormItem>
                 )}
               />
+              ) : (
+                <div className="text-xs text-muted-foreground rounded-md border border-dashed p-3 flex items-center">
+                  {t(
+                    "الخصم يُضاف من الموظف المنوط بتنفيذ الحجز (أو الإدارة)، وليس من مسؤول الحجز.",
+                    "A discount is added by the assigned executor (or management), not the booking officer.",
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Total Summary */}

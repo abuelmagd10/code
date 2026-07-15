@@ -131,6 +131,19 @@ export async function POST(req: NextRequest) {
       ? staffIds
       : (body.staff_user_id ? [body.staff_user_id] : null)
 
+    // v3.74.662 — discount governance: a discount is the assigned executor's call
+    // (or management), NOT the booking officer's. Enforce on the server so it
+    // cannot be bypassed via the API even if the UI hid the field.
+    const bkgDiscount = Number((body as any).discount_amount) || 0
+    if (bkgDiscount > 0) {
+      const memberRole = String((member as any)?.role ?? '')
+      const isUpper = ['owner', 'admin', 'general_manager'].includes(memberRole)
+      const isExecutor = !!(effectiveIds && effectiveIds.includes(user.id))
+      if (!isUpper && !isExecutor) {
+        throw new BookingApiError(403, 'الخصم من اختصاص الموظف المنوط بتنفيذ الحجز أو الإدارة، وليس مسؤول الحجز.')
+      }
+    }
+
     const { data: result, error } = await supabase.rpc('create_booking_atomic', {
       p_company_id:          companyId,
       p_branch_id:           resolvedBranchId,

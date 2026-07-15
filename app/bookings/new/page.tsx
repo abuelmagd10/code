@@ -42,6 +42,9 @@ export default function NewBookingPage() {
   const [staff, setStaff]           = useState<SimpleStaff[]>([])
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [isSubmitting, setIsSubmitting]   = useState(false)
+  // v3.74.662 — who is creating: to gate the discount (executor/management only)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isUpperRole, setIsUpperRole]     = useState<boolean>(false)
 
   // ── Customers: role-based governance (mirrors invoices/new/page.tsx). ───────
   // Extracted so the "New customer" dialog in the form can refresh the list.
@@ -68,6 +71,9 @@ export default function NewBookingPage() {
 
     const isOwner = companyData?.user_id === user.id
     const role    = isOwner ? "owner" : (memberData?.role || "viewer")
+    // v3.74.662 — expose creator identity/role for the discount gate
+    setCurrentUserId(user.id)
+    setIsUpperRole(["owner", "admin", "general_manager"].includes(role))
     const branchId      = isOwner ? null : (memberData?.branch_id      ?? null)
     const costCenterId  = isOwner ? null : (memberData?.cost_center_id  ?? null)
 
@@ -174,6 +180,8 @@ export default function NewBookingPage() {
               isSubmitting={isSubmitting}
               lang={appLang}
               reloadCustomers={reloadCustomers}
+              currentUserId={currentUserId ?? undefined}
+              isUpperRole={isUpperRole}
             />
           )}
         </div>
