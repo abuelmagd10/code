@@ -19,6 +19,10 @@ export type SalesInvoiceWarehouseCommand = {
   invoiceId: string
   notes?: string | null
   idempotencyKey?: string | null
+  // v3.74.664 — when true, this dispatch approval ran automatically because the
+  // invoice branch has no assigned warehouse manager (no custodian to approve).
+  // Only affects notification/audit wording; the posting is identical.
+  auto?: boolean
 }
 
 export type SalesInvoiceWarehouseResult = {
@@ -321,13 +325,16 @@ export class SalesInvoiceWarehouseCommandService {
 
   private async notifyWarehouseApproved(actor: SalesInvoiceWarehouseActor, command: SalesInvoiceWarehouseCommand, invoice: any, invoiceSenderId: string | null) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
+    // v3.74.664 — accurate wording: an auto dispatch (no branch warehouse
+    // manager) must not claim it was approved "by the warehouse manager".
+    const by = command.auto ? "تلقائياً (لا يوجد مسؤول مخزن لفرع الفاتورة)" : "من قِبل مسؤول المخزن"
     await this.dispatchWorkflowNotification(
       actor,
       { ...invoice, id: command.invoiceId },
       resolver.resolveBranchAccountantRecipients(invoice?.branch_id || null, invoice?.cost_center_id || null),
       {
         title: "تم إخراج البضاعة",
-        message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice?.invoice_number}) من قِبل مسؤول المخزن`,
+        message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice?.invoice_number}) ${by}`,
         priority: "normal",
         severity: "info",
         category: "inventory",
@@ -343,7 +350,7 @@ export class SalesInvoiceWarehouseCommandService {
         resolver.resolveInvoiceOriginatorRecipient(invoiceSenderId, invoice?.branch_id || null, invoice?.cost_center_id || null),
         {
           title: "تم اعتماد إخراج بضاعة فاتورتك",
-          message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن، وأصبحت جاهزة للمتابعة والتحصيل.`,
+          message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) ${by}، وأصبحت جاهزة للمتابعة والتحصيل.`,
           priority: "normal",
           severity: "info",
           category: "inventory",
@@ -364,7 +371,9 @@ export class SalesInvoiceWarehouseCommandService {
       resolver.resolveLevel1ApproverRecipients(invoice.branch_id || null, invoice.warehouse_id || null, null),
       {
         title: "تم اعتماد إخراج فاتورة بيع",
-        message: `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن لفرع الفاتورة.`,
+        message: command.auto
+          ? `تم إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) تلقائياً لعدم وجود مسؤول مخزن لفرع الفاتورة.`
+          : `تم اعتماد إخراج البضاعة للفاتورة رقم (${invoice.invoice_number}) من قِبل مسؤول المخزن لفرع الفاتورة.`,
         priority: "normal",
         severity: "info",
         category: "inventory",

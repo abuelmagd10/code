@@ -1,5 +1,9 @@
 import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
+import { AccountingTransactionService } from "@/lib/accounting-transaction-service"
+import { getAccrualAccountMapping } from "@/lib/accrual-accounting-engine"
+import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { branchHasWarehouseManager, WAREHOUSE_AUTO_APPROVE_NOTE } from "@/lib/services/warehouse-manager-presence"
 
 type SupabaseLike = any
 
@@ -491,7 +495,23 @@ export class BillReceiptWorkflowService {
 
     await this.linkTrace(traceId, "bill", billId, "bill", BILL_RECEIPT_SUBMISSION_EVENT)
     await this.insertAuditLog(actor.companyId, actor.actorId, "bill_receipt_submitted", refreshedBill)
-    if (!alreadyPending) {
+
+    // v3.74.664 — warehouse-custody governance for product RECEIPT (استلام).
+    // The branch warehouse manager is the custodian of incoming goods. When the
+    // bill branch HAS an assigned warehouse manager → leave receipt pending and
+    // notify them (existing behavior). When the branch has NO warehouse manager
+    // → there is no custodian to confirm, so we auto-confirm the receipt by
+    // running the SAME posting (stock-in + Dr Inventory / Cr AP journal) that
+    // confirm-receipt would run. Applies to WHOEVER submits, not just the owner.
+    const branchHasManager = await branchHasWarehouseManager(
+      this.adminSupabase,
+      actor.companyId,
+      refreshedBill.branch_id
+    )
+
+    if (!branchHasManager) {
+      await this.autoConfirmReceiptNoManager(actor, refreshedBill, traceId)
+    } else if (!alreadyPending) {
       await this.notifications().notifySubmittedForReceipt(
         { companyId: actor.companyId, actorId: actor.actorId },
         refreshedBill,
@@ -500,6 +520,98 @@ export class BillReceiptWorkflowService {
     }
 
     return await this.buildResult(billId, BILL_RECEIPT_SUBMISSION_EVENT, traceId, alreadyPending)
+  }
+
+  /**
+   * v3.74.664 — Auto-confirm a purchase-bill goods receipt when the bill branch
+   * has no assigned warehouse manager. Runs the full receipt posting (stock-in
+   * + Dr Inventory / Cr AP journal) via postBillAtomic — never a bare status
+   * flip, which would leave the accounting journal missing. Idempotent: skips
+   * if the bill is already received/paid. On any failure (closed period,
+   * mapping missing) it does NOT throw — the bill stays pending so an owner /
+   * admin / general_manager (all in RECEIPT_ROLES) can confirm it manually, and
+   * management is alerted.
+   */
+  private async autoConfirmReceiptNoManager(actor: ActorContext, bill: BillRecord, submissionTraceId: string | null) {
+    if (bill.status === "received" || bill.status === "paid" || bill.receipt_status === "received") {
+      return
+    }
+
+    try {
+      const { data: amounts } = await this.adminSupabase
+        .from("bills")
+        .select("subtotal, tax_amount, total_amount, shipping, adjustment")
+        .eq("company_id", actor.companyId)
+        .eq("id", bill.id)
+        .maybeSingle()
+
+      const receivedAtIso = new Date().toISOString()
+      const effectiveReceiptDate = receivedAtIso.slice(0, 10)
+      await requireOpenFinancialPeriod(actor.companyId, effectiveReceiptDate)
+
+      const accountMapping = await getAccrualAccountMapping(this.adminSupabase, actor.companyId)
+      const accountingService = new AccountingTransactionService(this.adminSupabase as any)
+      const postingResult = await accountingService.postBillAtomic(
+        {
+          billId: bill.id,
+          billNumber: bill.bill_number || "",
+          billDate: effectiveReceiptDate,
+          companyId: actor.companyId,
+          branchId: bill.branch_id,
+          warehouseId: bill.warehouse_id,
+          costCenterId: bill.cost_center_id,
+          subtotal: Number(amounts?.subtotal || 0),
+          taxAmount: Number(amounts?.tax_amount || 0),
+          totalAmount: Number(amounts?.total_amount || 0),
+          shipping: Number(amounts?.shipping || 0),
+          adjustment: Number(amounts?.adjustment || 0),
+          status: "received",
+          receiptStatus: "received",
+          receivedBy: actor.actorId,
+          receivedAt: receivedAtIso,
+        },
+        {
+          companyId: actor.companyId,
+          ap: accountMapping.accounts_payable,
+          inventory: accountMapping.inventory,
+          vatInput: accountMapping.vat_input || undefined,
+        }
+      )
+
+      if (!postingResult.success) {
+        throw new Error(postingResult.error || "Auto receipt posting failed")
+      }
+
+      await this.insertAuditLog(
+        actor.companyId,
+        actor.actorId,
+        "bill_receipt_auto_confirmed",
+        { ...bill, status: "received", receipt_status: "received" },
+        { auto_no_warehouse_manager: true, note: WAREHOUSE_AUTO_APPROVE_NOTE, submission_trace_id: submissionTraceId }
+      )
+
+      await this.notifications().notifyReceiptConfirmed(
+        { companyId: actor.companyId, actorId: actor.actorId },
+        bill,
+        submissionTraceId
+      )
+    } catch (autoError: any) {
+      console.warn(
+        "[BILL_RECEIPT_WORKFLOW] Auto-confirm (no warehouse manager) failed — receipt left pending:",
+        autoError?.message || autoError
+      )
+      // Fail-safe: leave the bill pending. Owner / admin / general_manager can
+      // confirm it manually. Alert management so it is not silently stuck.
+      try {
+        await this.notifications().notifySubmittedForReceipt(
+          { companyId: actor.companyId, actorId: actor.actorId },
+          bill,
+          submissionTraceId
+        )
+      } catch (notifyError: any) {
+        console.warn("[BILL_RECEIPT_WORKFLOW] Fallback notify failed:", notifyError?.message || notifyError)
+      }
+    }
   }
 
   async rejectReceipt(

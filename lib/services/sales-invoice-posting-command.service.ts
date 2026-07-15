@@ -6,6 +6,8 @@ import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
 import { NotificationRecipientResolverService } from "@/lib/services/notification-recipient-resolver.service"
+import { SalesInvoiceWarehouseCommandService } from "@/lib/services/sales-invoice-warehouse-command.service"
+import { branchHasWarehouseManager, WAREHOUSE_AUTO_APPROVE_NOTE } from "@/lib/services/warehouse-manager-presence"
 
 type SupabaseLike = any
 
@@ -189,16 +191,102 @@ export class SalesInvoicePostingCommandService {
       })
     }
 
-    await this.notifyWarehouseManagers({
-      actor,
-      invoice,
-      invoiceId: command.invoiceId,
-    })
+    // v3.74.664 — warehouse-custody governance. Stock issue (إخراج) is the
+    // branch warehouse manager's custody. When the invoice branch HAS an
+    // assigned warehouse manager → keep it pending and notify them (existing
+    // behavior). When the branch has NO warehouse manager → there is no
+    // custodian to approve, so the dispatch is auto-approved: we run the SAME
+    // full delivery posting (FIFO consumption + COGS + stock-out) a manager
+    // would trigger — never a bare status flip, which would leave inventory
+    // un-decremented. Applies to WHOEVER posts the invoice, not just the owner.
+    const branchHasManager = await branchHasWarehouseManager(
+      this.supabase,
+      actor.companyId,
+      invoice?.branch_id || null
+    )
+
+    if (branchHasManager) {
+      await this.notifyWarehouseManagers({ actor, invoice, invoiceId: command.invoiceId })
+    } else {
+      await this.autoApproveDispatchNoManager({ actor, invoice, invoiceId: command.invoiceId })
+    }
 
     return {
       success: true,
       transactionId: postingResult?.transactionId || null,
       eventType: postingResult?.eventType || "invoice_posting",
+    }
+  }
+
+  /**
+   * v3.74.664 — Auto-approve the warehouse dispatch when the invoice branch has
+   * no assigned warehouse manager. Only fires when there is real stock to move
+   * (warehouse_status still 'pending' after posting; service-only invoices are
+   * already auto-approved to 'approved' by the DB trigger and have nothing to
+   * dispatch). On an inventory shortage (or any posting failure) we do NOT
+   * crash the already-successful invoice posting: we leave the dispatch pending
+   * and alert management so a human can resolve it.
+   */
+  private async autoApproveDispatchNoManager(params: { actor: SalesInvoicePostingActor; invoice: any; invoiceId: string }) {
+    const { actor, invoice, invoiceId } = params
+    try {
+      const { data: fresh } = await this.supabase
+        .from("invoices")
+        .select("warehouse_status")
+        .eq("id", invoiceId)
+        .eq("company_id", actor.companyId)
+        .maybeSingle()
+
+      // Nothing to dispatch (service-only already 'approved', or 'rejected').
+      if (!fresh || fresh.warehouse_status !== "pending") return
+
+      const warehouseService = new SalesInvoiceWarehouseCommandService(this.supabase)
+      await warehouseService.approveDelivery(
+        { companyId: actor.companyId, userId: actor.userId },
+        { invoiceId, notes: WAREHOUSE_AUTO_APPROVE_NOTE, auto: true }
+      )
+    } catch (autoError: any) {
+      console.warn(
+        "⚠️ [INVOICE_POST] Auto-dispatch (no warehouse manager) failed — dispatch left pending:",
+        autoError?.message || autoError
+      )
+      // Surface to management so the stuck dispatch is visible (e.g. shortage).
+      try {
+        const resolver = new NotificationRecipientResolverService(this.supabase)
+        const recipients = resolver.resolveLevel1ApproverRecipients(
+          invoice?.branch_id || null,
+          invoice?.warehouse_id || null,
+          null
+        )
+        for (const recipient of recipients) {
+          await this.supabase.rpc("create_notification", {
+            p_company_id: actor.companyId,
+            p_reference_type: "invoice",
+            p_reference_id: invoiceId,
+            p_title: "تعذّر الإخراج التلقائي للبضاعة",
+            p_message: `الفاتورة رقم (${invoice?.invoice_number || invoiceId}) لا يوجد لفرعها مسؤول مخزن، وتعذّر إخراج البضاعة تلقائياً (قد يكون المخزون غير كافٍ). يلزم تدخل الإدارة.`,
+            p_created_by: actor.userId,
+            p_branch_id: recipient.branchId ?? invoice?.branch_id ?? null,
+            p_cost_center_id: recipient.costCenterId ?? invoice?.cost_center_id ?? null,
+            p_warehouse_id: recipient.warehouseId ?? null,
+            p_assigned_to_role: recipient.kind === "role" ? recipient.role : null,
+            p_assigned_to_user: recipient.kind === "user" ? recipient.userId : null,
+            p_priority: "high",
+            p_event_key: buildNotificationEventKey(
+              "sales",
+              "invoice",
+              invoiceId,
+              "warehouse_auto_dispatch_failed",
+              ...resolver.buildRecipientScopeSegments(recipient)
+            ),
+            p_severity: normalizeNotificationSeverity("error"),
+            p_category: "inventory",
+            p_kind: "action",
+          })
+        }
+      } catch (notifyError: any) {
+        console.warn("⚠️ [INVOICE_POST] Auto-dispatch failure notification failed:", notifyError?.message || notifyError)
+      }
     }
   }
 
