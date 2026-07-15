@@ -69,10 +69,15 @@ export function AvailabilityChecker({
       setError(null)
       setReason(null)
       try {
+        // v3.74.660 — send the browser's IANA timezone so the server filters
+        // past slots against the LOCAL wall-clock (the app is global, not Egypt).
+        let browserTz = "UTC"
+        try { browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" } catch { /* keep UTC */ }
         const params = new URLSearchParams({
           service_id: serviceId,
           date,
           branch_id: branchId,
+          tz: browserTz,
           ...(staffUserId ? { staff_user_id: staffUserId } : {}),
         })
         const res  = await fetch(`/api/bookings/availability?${params.toString()}`)

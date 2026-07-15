@@ -103,7 +103,19 @@ export async function GET(req: NextRequest) {
     const capacity     = (service.capacity as number) ?? 1
     const slotStep     = durationMin + bufferMin     // minutes between slot starts
     const minAdvanceMs = ((service.min_advance_hours as number) ?? 0) * 60 * 60 * 1000
-    const now          = new Date()
+    // v3.74.660 — compare against the LOCAL wall-clock of the *user's* timezone,
+    // not the server clock. The app is global; Vercel runs in UTC, so a plain
+    // `new Date()` made past slots (e.g. 5:40 PM at 7:29 PM local) still look
+    // "future" because slot times are parsed in the server-local frame too.
+    // The client sends its IANA timezone (?tz=); express `now` as that zone's
+    // wall-clock in the same frame so the past/advance check is correct anywhere.
+    const tzParam = req.nextUrl.searchParams.get('tz') || 'UTC'
+    let now: Date
+    try {
+      now = new Date(new Date().toLocaleString('en-US', { timeZone: tzParam }))
+    } catch {
+      now = new Date() // invalid/unknown timezone → fall back to server clock
+    }
 
     // 3. Generate all possible slots across all schedule windows
     const allSlots: Array<{ start: string; end: string }> = []
