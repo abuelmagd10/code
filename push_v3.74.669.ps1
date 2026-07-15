@@ -3,17 +3,17 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.667.ps1") { Remove-Item -LiteralPath "push_v3.74.667.ps1" -Force }
+if (Test-Path "push_v3.74.668.ps1") { Remove-Item -LiteralPath "push_v3.74.668.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.668"') {
-    Write-Host "+ 3.74.668" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.669"') {
+    Write-Host "+ 3.74.669" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.668]")) { Write-Host "X CHANGELOG missing [3.74.668]" -ForegroundColor Red; exit 1 }
+if ($cl -notmatch [regex]::Escape("[3.74.669]")) { Write-Host "X CHANGELOG missing [3.74.669]" -ForegroundColor Red; exit 1 }
 Write-Host "+ CHANGELOG documents this release" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
@@ -21,7 +21,6 @@ if (-not (Test-Path "node_modules/exceljs/package.json")) {
     & npm install exceljs --no-audit --no-fund 2>&1 | ForEach-Object { Write-Host $_ }
 }
 
-# Backend/TS-only release (no DB change). tsc gate on the real Windows files.
 Write-Host "Running tsc..." -ForegroundColor Cyan
 $tsc = & npx tsc --noEmit -p tsconfig.json 2>&1
 $tscErr = ($tsc | Select-String -Pattern "error TS").Count
@@ -37,25 +36,24 @@ git add -- `
     "lib/version.ts" `
     "CHANGELOG.md" `
     "lib/services/booking-notification.service.ts" `
-    "push_v3.74.668.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.667.ps1" 2>$null
+    "push_v3.74.669.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.668.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_668.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_669.txt"
     $msgLines = @(
-        'fix(bookings): v3.74.668 - notify assigned staff on creation + service-role recipient resolution',
+        'fix(bookings): v3.74.669 - cancellation notifies creator + branch manager + GM + owner',
         '',
-        '- notifyBookingCreated now also notifies the assigned staff (booking',
-        '  order = the staff member''s task), not only the branch manager.',
-        '- BookingNotificationService runs with a service-role client so',
-        '  recipient resolution (company_members) and context (v_bookings_full)',
-        '  are not limited by the triggering actor''s RLS. An unassigned booking',
-        '  officer / online booking previously produced ZERO notifications',
-        '  because the manager could not be resolved. create_notification is',
-        '  already SECURITY DEFINER; this only widens READ visibility.'
+        '- notifyBookingCancelled now targets resolveLevel1ApproverRecipients',
+        '  (owner + admin + general_manager company-wide + branch manager) plus',
+        '  the booking creator (created_by) and the assigned staff, instead of',
+        '  the branch manager alone.',
+        '- Added created_by to BookingContext + loadContext.',
+        '- Relies on the v3.74.668 service-role resolution so recipients are not',
+        '  limited by the cancelling actor''s RLS.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -64,5 +62,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.668 pushed - booking notifications reach staff + manager" -ForegroundColor Green
+    Write-Host "`n+ v3.74.669 pushed - cancellation notifies creator + management" -ForegroundColor Green
 }

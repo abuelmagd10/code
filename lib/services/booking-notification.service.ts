@@ -37,6 +37,8 @@ interface BookingContext {
   staff_user_id: string | null
   // v3.74.590 — التعيين المتعدد: كل الموظفين المرتبطين بالحجز
   assigned_staff_user_ids: string[] | null
+  // v3.74.669 — منشئ الحجز (مسؤول الحجز) — يُخطَر عند الإلغاء وغيره
+  created_by: string | null
   total_amount:  number
   paid_amount:   number
   invoice_id:    string | null
@@ -113,7 +115,7 @@ export class BookingNotificationService {
       .select([
         "booking_no", "customer_name", "service_name", "service_type",
         "booking_date", "start_time", "branch_id", "branch_name",
-        "staff_user_id", "assigned_staff_user_ids", "total_amount", "paid_amount",
+        "staff_user_id", "assigned_staff_user_ids", "created_by", "total_amount", "paid_amount",
         "invoice_id", "cancellation_reason",
       ].join(","))
       .eq("id", bookingId)
@@ -139,6 +141,7 @@ export class BookingNotificationService {
       branch_name:         null,
       staff_user_id:       null,
       assigned_staff_user_ids: null,
+      created_by:          null,
       total_amount:        0,
       paid_amount:         0,
       invoice_id:          null,
@@ -362,9 +365,18 @@ export class BookingNotificationService {
       eventAction:   "cancelled",
     }
 
+    // v3.74.669 — الإلغاء (وخاصة إلغاء الموظف) يجب أن يصل للعِلم إلى الإدارة
+    // ومنشئ الحجز، لا مدير الفرع وحده. resolveLevel1ApproverRecipients يشمل
+    // المالك + الأدمن + المدير العام (على مستوى الشركة) + مدير الفرع (مقيّد
+    // بفرع الحجز). نضيف مسؤول الحجز (المنشئ) والموظفين المعينين.
     const recipients: ResolvedNotificationRecipient[] = [
-      ...resolver.resolveRoleRecipients(["manager"], ctx.branch_id, null, null),
+      ...resolver.resolveLevel1ApproverRecipients(ctx.branch_id, null, null),
     ]
+
+    // مُنشئ الحجز (مسؤول الحجز) — للعِلم بأن حجزه أُلغِي
+    if (ctx.created_by) {
+      recipients.push(resolver.resolveUserRecipient(ctx.created_by, null, ctx.branch_id))
+    }
 
     // Notify staff members personally — v3.74.590: كل المعينين
     recipients.push(...this.staffRecipients(ctx, resolver))

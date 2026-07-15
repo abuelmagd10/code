@@ -4,6 +4,21 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.669] - 2026-07-15 — Booking cancellation notifies creator + branch manager + GM + owner
+
+### Context
+عِندَ إلغاء الموظف المُسنَد لِحَجزٍ، **لم يَصِل إشعار للعِلم** إلى: مسؤول الحجز (المُنشئ)، مدير الفرع، المدير العام، المالك. كانَ `notifyBookingCancelled` يَستَهدِف **مدير الفرع + الموظفين المُسنَدين فَقَط** — بلا المُنشئ ولا الإدارة العليا. (وبِدون إصلاح v3.74.668 لم يَكُن يُحَلّ حتى مدير الفرع، لأن الخِدمة كانَت تَعمَل بِجَلسة الموظف المُلغِي.)
+
+### Change
+- `notifyBookingCancelled` يَستَخدِم الآن `resolveLevel1ApproverRecipients` (المالك + الأدمن + المدير العام على مستوى الشركة + مدير الفرع مُقيَّداً بفرع الحجز) بَدَل مدير الفرع وحده.
+- يُضاف **مُنشئ الحجز** (`created_by` من `v_bookings_full`) إلى المُستَلِمين للعِلم بأن حجزه أُلغِي، إضافةً للموظفين المُسنَدين.
+- أُضيف `created_by` إلى سياق الحجز (`BookingContext` + `loadContext`).
+
+### Verification
+يَعتَمِد على service-role (v3.74.668) لِحَلّ المُستَلِمين بلا قيد RLS. تَكرار المُستَلِم آمِن (create_notification مُتَوافِق عَبر event_key). بَوّابة `tsc` فى سكربت النَّشر تُؤَكِّد البِناء.
+
+---
+
 ## [3.74.668] - 2026-07-15 — Booking notifications reach assigned staff + branch manager reliably
 
 ### Context
