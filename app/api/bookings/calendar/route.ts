@@ -45,18 +45,26 @@ export async function GET(req: NextRequest) {
         'id,booking_no,status,booking_date,start_time,end_time,duration_minutes,' +
         'service_id,service_name,service_color,' +
         'customer_id,customer_name,customer_phone,' +
-        'staff_user_id,staff_email,' +
+        'staff_user_id,staff_email,staff_name,' +
+        'branch_id,branch_name,' +
         'total_amount,payment_status,paid_amount'
       )
       .eq('company_id', companyId)
       .gte('booking_date', dateFrom)
       .lte('booking_date', dateTo)
-      .not('status', 'in', '("cancelled","no_show")')
+      // v3.74.651 — show every status (incl. cancelled/no_show) so the calendar
+      // matches the table; the event card colour-codes the status.
       .order('booking_date')
       .order('start_time')
 
-    // Branch-scoped members
-    if (member?.branch_id) {
+    // v3.74.651 — role-aware branch scoping (mirror /api/bookings): company-wide
+    // roles (owner/admin/general_manager) see every branch; only a non-company-wide
+    // member WITH a branch_id is locked to their branch. Fixes the calendar being
+    // empty for an owner whose membership carries a branch_id.
+    const memberRole = String((member as any)?.role ?? '')
+    const isCompanyWide = ['owner', 'admin', 'general_manager'].includes(memberRole)
+    const isBranchScoped = !isCompanyWide && !!member?.branch_id
+    if (isBranchScoped) {
       query = query.eq('branch_id', member.branch_id)
     } else {
       const branchId = sp.get('branch_id')

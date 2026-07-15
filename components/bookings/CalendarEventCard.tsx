@@ -49,7 +49,11 @@ export function CalendarEventCard({
   const timeRange   = `${fmtTime(booking.start_time)}${booking.end_time ? "–" + fmtTime(booking.end_time) : ""}`
   const nf          = (n: number) => Number(n || 0).toLocaleString(isAr ? "ar-EG" : "en-US")
   const money       = `${nf(booking.total_amount)} ${booking.currency_code || ""}`.trim()
-  const outstanding = Number(booking.outstanding_amount || 0)
+  // v3.74.651 — prefer the HR staff name (fallback to email local-part), and
+  // derive outstanding from total − paid so it works for both the table and the
+  // calendar data sources.
+  const staff       = (booking as any).staff_name || (booking.staff_email ? booking.staff_email.split("@")[0] : null)
+  const outstanding = Math.max(0, Number(booking.total_amount || 0) - Number(booking.paid_amount || 0))
 
   const tip = [
     booking.booking_no ? `#${booking.booking_no}` : null,
@@ -61,7 +65,7 @@ export function CalendarEventCard({
     payLabel ? `${isAr ? "الدفع" : "Payment"}: ${payLabel}` : null,
     `${isAr ? "الإجمالي" : "Total"}: ${money}`,
     outstanding > 0 ? `${isAr ? "المتبقي" : "Outstanding"}: ${nf(outstanding)}` : null,
-    booking.staff_email ? `${isAr ? "الموظف" : "Staff"}: ${booking.staff_email}` : null,
+    staff ? `${isAr ? "الموظف" : "Staff"}: ${staff}` : null,
     booking.branch_name ? `${isAr ? "الفرع" : "Branch"}: ${booking.branch_name}` : null,
   ].filter(Boolean).join("\n")
 

@@ -4,6 +4,23 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.651] - 2026-07-15 — Fix: calendar showed no bookings for company-wide owners
+
+### Symptom
+تَبويب "التَّقويم" فى الحُجوزات كانَ يَظهَر فارِغاً بَينَما "الجَدول" يُظهِر الحُجوزات — رَغم وُجودِها.
+
+### Root cause
+مَسار `/api/bookings/calendar` كانَ يُقَيِّد بِـ `if (member?.branch_id)` (نَفس العَيب الّذى صُحِّح فى الجَدول): المالِك المُسَجَّل عَلى "الفَرع الرَّئيسى" كانَت حُجوزاتُه فى "مدينة نصر" تُخفى. كما كانَ التَّقويم لا يُرجِع `staff_name`/`branch_name` ويُستَبعِد الحُجوزات الملغاة.
+
+### Fix
+- `app/api/bookings/calendar/route.ts` — تَقييد واعٍ لِلدَّور: `isBranchScoped = (ليسَ على مُستَوى الشَّرِكة) و(لَدَيه branch_id)`؛ الأَدوار على مُستَوى الشَّرِكة تَرى كُلّ الفُروع. + إضافة `staff_name,branch_name` لِلحَقول، + إظهار كُلّ الحالات (بِما فيها الملغاة) لِتُطابِق الجَدول.
+- `components/bookings/CalendarEventCard.tsx` — عَرض اسم المُوَظَّف (staff_name ← بَديلاً بريده)، واشتِقاق المُتَبَقّى من (الإجمالى − المَدفوع).
+
+### Verification
+شَرِكة تَست: المالِك على "الفَرع الرَّئيسى" والحَجزان فى "مدينة نصر" — بَعدَ الإصلاح يَظهَران فى التَّقويم كما فى الجَدول.
+
+---
+
 ## [3.74.650] - 2026-07-15 — Richer booking cards in the calendar view
 
 ### Symptom
