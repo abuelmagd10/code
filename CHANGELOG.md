@@ -4,6 +4,23 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.661] - 2026-07-15 — Notify approvers when a discount approval is requested
+
+### Symptom
+حَجز BKG-2026-00003 بِخَصم فَتَحَ طَلَب اعتِماد ظاهِر فى صَندوق المُوافَقات، لَكِن **لَم يَصِل إشعار** لِلمالِك/المُدير العام.
+
+### Root cause
+لا يوجَد إشعار عِندَ **إنشاء** طَلَب اعتِماد الخَصم؛ الإشعارات كانَت فَقَط عِندَ **القَرار** (`notify_discount_decision_trg`). لا يوجَد trigger عِندَ INSERT عَلى `discount_approvals`.
+
+### Fix
+- `notify_discount_request_trg()` + trigger `discount_approval_notify_request` (AFTER INSERT) — يُشعِر كُلّ مُعتَمِد (owner/admin/general_manager + مالِك الشَّرِكة، عَدا مُقَدِّم الطَّلَب) لِأَىّ نَوع مُستَند (حجز/فاتورة/فاتورة مشتريات/أمر شراء/أمر بيع).
+- تَعبِئة رَجعية: أُنشِئَت الإشعارات لِطَلَبات الاعتِماد المُعَلَّقة القائِمة (مِنها BKG-2026-00003) فَوَصَلَت لِلمالِك.
+
+### Verification
+BKG-2026-00003: أُنشِئ إشعار "خصم بانتظار الاعتماد" لِمالِك شَرِكة تَست.
+
+---
+
 ## [3.74.660] - 2026-07-15 — Fix: past time slots shown as available (UTC vs local) — global
 
 ### Symptom
