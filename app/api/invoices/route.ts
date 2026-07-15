@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { getRoleAccessLevel } from "@/lib/validation"
 import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
+import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -97,6 +98,13 @@ export async function POST(req: NextRequest) {
     const { user, companyId, member } = context!
     const body = await req.json()
     const supabase = await createClient()
+
+    // v3.74.655 — multi-company safety: the customer must belong to this company
+    // (a user in several companies could submit another company's customer id).
+    const invForeign = await findForeignCompanyIds(supabase, companyId, { customers: [body.customer_id] })
+    if (invForeign.length) {
+      return ErrorHandler.handle(ErrorHandler.validation('العميل المُختار لا يخص الشركة الحالية. حدّث الاختيار ثم أعد المحاولة.'))
+    }
 
     // 1️⃣ Permissions Scope Evaluation
     const isCompanyLevelAdmin = ["owner", "admin", "manager"].includes(member.role)

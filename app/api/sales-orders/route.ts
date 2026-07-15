@@ -12,6 +12,7 @@ import {
   applyGovernanceFilters,
 } from "@/lib/governance-middleware"
 import { SalesOrderNotificationService } from "@/lib/services/sales-order-notification.service"
+import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -133,6 +134,15 @@ export async function POST(request: NextRequest) {
     // 4️⃣ التأكد من أن company_id موجود
     if (!finalData.company_id && governance.companyId) {
       finalData.company_id = governance.companyId
+    }
+
+    // v3.74.655 — multi-company safety: the customer must belong to this company
+    const soScopeCompanyId = finalData.company_id || governance.companyId
+    if (soScopeCompanyId) {
+      const soForeign = await findForeignCompanyIds(supabase, soScopeCompanyId, { customers: [finalData.customer_id] })
+      if (soForeign.length) {
+        return NextResponse.json({ error: 'العميل المُختار لا يخص الشركة الحالية. حدّث الاختيار ثم أعد المحاولة.' }, { status: 400 })
+      }
     }
 
     // 5️⃣ التحقق من صحة البيانات قبل الإدخال

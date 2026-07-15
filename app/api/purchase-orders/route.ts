@@ -14,6 +14,7 @@ import {
   addGovernanceData
 } from "@/lib/governance-middleware"
 import { PurchaseOrderNotificationService } from "@/lib/services/purchase-order-notification.service"
+import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 
 const PURCHASE_PRIVILEGED_ROLES = new Set([
   "super_admin",
@@ -364,6 +365,23 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient()
+
+    // v3.74.655 — multi-company safety: supplier / products / tax codes must
+    // belong to this company (a multi-company user could submit foreign ids).
+    if (governance.companyId) {
+      const poForeign = await findForeignCompanyIds(supabase, governance.companyId, {
+        suppliers: [body.supplier_id],
+        products:  commandItems.map((it: any) => it?.product_id),
+        tax_codes: commandItems.map((it: any) => it?.tax_code_id),
+      })
+      if (poForeign.length) {
+        return NextResponse.json({
+          success: false,
+          error: 'A selected supplier / product / tax code does not belong to the current company.',
+          error_ar: 'المورد أو المنتج أو كود الضريبة المُختار لا يخص الشركة الحالية. حدّث الاختيار ثم أعد المحاولة.',
+        }, { status: 400 })
+      }
+    }
 
     // 2️⃣ إضافة بيانات الحوكمة تلقائياً ثم تثبيت سياق الفرع
     let dataWithGovernance = addGovernanceData(purchaseOrderPayload, governance)

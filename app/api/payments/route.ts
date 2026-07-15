@@ -11,6 +11,7 @@ import {
   addGovernanceData
 } from "@/lib/governance-middleware"
 import { checkPeriodLock } from "@/lib/accounting-period-lock"
+import { assertIdsBelongToCompany, CrossCompanyRefError } from "@/lib/company-scope-guard"
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,6 +64,21 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
+
+    // v3.74.655 — multi-company safety: reject any account/customer/invoice id
+    // that belongs to another of the user's companies (this posts to the GL).
+    if (governance.companyId) {
+      try {
+        await assertIdsBelongToCompany(supabase, governance.companyId, {
+          chart_of_accounts: [dataWithGovernance.account_id],
+          customers:         [dataWithGovernance.customer_id],
+          invoices:          [dataWithGovernance.invoice_id],
+        })
+      } catch (e) {
+        if (e instanceof CrossCompanyRefError) return NextResponse.json({ error: e.message }, { status: 400 })
+        throw e
+      }
+    }
 
     // Phase 2: Period Lock Check
     const paymentDate = dataWithGovernance.payment_date || new Date().toISOString().slice(0, 10)

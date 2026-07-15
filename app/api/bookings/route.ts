@@ -9,6 +9,7 @@ import {
   BookingApiError,
 } from '@/lib/services/booking-api'
 import { BookingNotificationService } from '@/lib/services/booking-notification.service'
+import { findForeignCompanyIds } from '@/lib/company-scope-guard'
 
 /**
  * GET /api/bookings
@@ -109,6 +110,15 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await createClient()
+
+    // v3.74.655 — multi-company safety: service/customer must belong to this company
+    const foreignRefs = await findForeignCompanyIds(supabase, companyId, {
+      services:  [body.service_id],
+      customers: [body.customer_id],
+    })
+    if (foreignRefs.length) {
+      throw new BookingApiError(400, 'الخدمة أو العميل المُختار لا يخص الشركة الحالية. حدّث الاختيار ثم أعد المحاولة.')
+    }
 
     // v3.74.361 — multi-staff: prefer staff_user_ids[] when provided.
     // Falls back to the legacy single staff_user_id so older clients

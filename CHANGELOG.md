@@ -4,6 +4,26 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.655] - 2026-07-15 — Central cross-company reference guard on the high-risk write endpoints
+
+### Context
+بَعدَ إصلاح المُنتَجات (v3.74.654)، عَمَّمنا الحِماية: مُستَخدِم عُضو فى أَكثَر من شَرِكة قَد يُرسِل مُعَرِّف كِيان (حِساب/عَميل/مُورِّد/خِدمة/كود ضَريبة) يَخُصّ شَرِكة أُخرى؛ الخادِم المُقَيَّد بِالشَّرِكة النَّشِطة يَجِب أَن يَرفُضه (وإلّا خَطأ مُربِك أَو رَبط صامِت لِبيانات شَرِكة خاطِئة).
+
+### Change
+- `lib/company-scope-guard.ts` (جَديد) — `findForeignCompanyIds` / `assertIdsBelongToCompany`: يَتَحَقَّق أَنَّ المُعَرِّفات ضِمن جَداوِل الشَّرِكة النَّشِطة (`.eq('company_id',…).in('id',…)`)، fail-closed، بِرِسالة عَربية واضِحة.
+- طُبِّق عَلى أَخطَر مَسارات الكِتابة:
+  - `POST /api/payments` — `account_id` + `customer_id` + `invoice_id` (الأَعلى خُطورة: تَرحيل مُباشِر لِلدَّفتَر).
+  - `POST /api/invoices` — `customer_id`.
+  - `POST /api/sales-orders` — `customer_id`.
+  - `POST /api/bookings` — `service_id` + `customer_id`.
+  - `POST /api/purchase-orders` — `supplier_id` + بُنود `product_id`/`tax_code_id`.
+  - (`POST/PUT /api/products` — مُؤَمَّن مُسبَقاً فى v3.74.654.)
+
+### Note
+لَيسَت ثَغرة اختِراق خارِجى؛ المُستَخدِم لا يَصِل شَرِكة لَيسَ عُضواً فيها. هذه حِماية سَلامة بيانات لِمُستَخدِمى الشَّرِكات المُتَعَدِّدة. طَبَقة قاعِدة البيانات (مَفاتيح مُرَكَّبة) مُؤَجَّلة كَمَرحَلة ثانية.
+
+---
+
 ## [3.74.654] - 2026-07-15 — Fix: "income account required" when a multi-company user adds a product
 
 ### Symptom
