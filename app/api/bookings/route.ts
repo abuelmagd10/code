@@ -59,7 +59,10 @@ export async function GET(req: NextRequest) {
     const dateTo        = sp.get('date_to')
     const search        = sp.get('search')
 
-    if (branchId && !member?.branch_id)  query = query.eq('branch_id', branchId)
+    // v3.74.646 — company-wide roles can filter by any branch (even if their own
+    // membership row carries a branch_id). Branch-scoped users are already locked
+    // to their branch above, so the param is ignored for them.
+    if (branchId && isCompanyWide)  query = query.eq('branch_id', branchId)
     if (serviceId)    query = query.eq('service_id', serviceId)
     if (customerId)   query = query.eq('customer_id', customerId)
     if (staffUserId)  query = query.eq('staff_user_id', staffUserId)

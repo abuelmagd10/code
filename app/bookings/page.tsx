@@ -44,6 +44,8 @@ export default function BookingsPage() {
   const [viewMode, setViewMode] = useState<BookingViewMode>("table")
   const [page, setPage]         = useState(1)
   const [filters, setFilters]   = useState<BookingFiltersState>(DEFAULT_BOOKING_FILTERS)
+  // v3.74.646 — branches for the branch filter (loaded only for company-wide roles)
+  const [branches, setBranches] = useState<{ id: string; branch_name: string }[]>([])
 
   // Debounce search
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -51,6 +53,38 @@ export default function BookingsPage() {
   // ── Permissions ─────────────────────────────────────────────────────────────
   useEffect(() => {
     canAction(supabase, "bookings", "write").then(setCanCreate)
+  }, [supabase])
+
+  // ── Branches for the branch filter (v3.74.646) ───────────────────────────────
+  // Only company-wide roles (owner/admin/general_manager) can browse across
+  // branches; branch-scoped users are already locked to their branch by the API,
+  // so we skip loading branches for them (the filter stays hidden).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { getActiveCompanyId } = await import("@/lib/company")
+        const cid = await getActiveCompanyId(supabase)
+        if (!cid) return
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: mem } = await supabase
+          .from("company_members")
+          .select("role")
+          .eq("company_id", cid)
+          .eq("user_id", user.id)
+          .maybeSingle()
+        const role = String((mem as any)?.role ?? "")
+        if (!["owner", "admin", "general_manager"].includes(role)) return
+        const { data: brs } = await supabase
+          .from("branches")
+          .select("id, branch_name")
+          .eq("company_id", cid)
+          .order("branch_name")
+        if (!cancelled && brs) setBranches(brs as any)
+      } catch { /* non-blocking */ }
+    })()
+    return () => { cancelled = true }
   }, [supabase])
 
   // ── Load bookings ────────────────────────────────────────────────────────────
@@ -66,6 +100,7 @@ export default function BookingsPage() {
       if (filters.paymentStatus !== "all") params.set("payment_status", filters.paymentStatus)
       if (filters.serviceId !== "all") params.set("service_id",     filters.serviceId)
       if (filters.staffUserId !== "all") params.set("staff_user_id", filters.staffUserId)
+      if (filters.branchId !== "all")  params.set("branch_id",      filters.branchId)
       if (filters.dateFrom)            params.set("date_from",      filters.dateFrom)
       if (filters.dateTo)              params.set("date_to",        filters.dateTo)
       params.set("page",  String(page))
@@ -139,6 +174,7 @@ export default function BookingsPage() {
             onChange={handleFilterChange}
             onClear={clearFilters}
             activeCount={activeCount}
+            branches={branches}
             lang={appLang}
           />
         </div>

@@ -21,6 +21,7 @@ export interface BookingFiltersState {
   dateTo:        string
   serviceId:     string   // "all" | uuid
   staffUserId:   string   // "all" | uuid
+  branchId:      string   // "all" | uuid — v3.74.646
 }
 
 export const DEFAULT_BOOKING_FILTERS: BookingFiltersState = {
@@ -31,6 +32,7 @@ export const DEFAULT_BOOKING_FILTERS: BookingFiltersState = {
   dateTo:        "",
   serviceId:     "all",
   staffUserId:   "all",
+  branchId:      "all",
 }
 
 const PAYMENT_STATUS_OPTIONS: { value: string; ar: string; en: string }[] = [
@@ -52,6 +54,11 @@ interface StaffMember {
   email?: string
 }
 
+interface BranchOption {
+  id: string
+  branch_name: string
+}
+
 interface BookingsFiltersProps {
   filters:         BookingFiltersState
   onChange:        (patch: Partial<BookingFiltersState>) => void
@@ -59,6 +66,7 @@ interface BookingsFiltersProps {
   activeCount:     number
   services?:       Service[]
   staffMembers?:   StaffMember[]
+  branches?:       BranchOption[]
   lang?:           string
 }
 
@@ -69,6 +77,7 @@ export function BookingsFilters({
   activeCount,
   services    = [],
   staffMembers = [],
+  branches     = [],
   lang        = "ar",
 }: BookingsFiltersProps) {
   const isAr = lang !== "en"
@@ -128,6 +137,26 @@ export function BookingsFilters({
             ))}
           </SelectContent>
         </Select>
+
+        {/* Branch — shown only when the user can see more than one branch (v3.74.646) */}
+        {branches.length > 1 && (
+          <Select
+            value={filters.branchId}
+            onValueChange={(v) => onChange({ branchId: v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("الفرع", "Branch")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("جميع الفروع", "All Branches")}</SelectItem>
+              {branches.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.branch_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         {/* Service */}
         {services.length > 0 && (
@@ -204,6 +233,7 @@ export function countActiveFilters(f: BookingFiltersState): number {
     (f.dateFrom      ? 1 : 0) +
     (f.dateTo        ? 1 : 0) +
     (f.serviceId     !== "all" ? 1 : 0) +
-    (f.staffUserId   !== "all" ? 1 : 0)
+    (f.staffUserId   !== "all" ? 1 : 0) +
+    (f.branchId      !== "all" ? 1 : 0)
   )
 }
