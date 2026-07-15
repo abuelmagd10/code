@@ -4,6 +4,16 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.658] - 2026-07-15 — Docs: fix the misleading CustomerFormDialog README
+
+### Context
+README الخاص بِـ`CustomerFormDialog` كانَ يُوَثِّق خَصائِص غَير مَوجودة (`customer`, `onSave`, `accounts`) ولا يَذكُر أَنَّ المُكَوِّن يَرسِم زِرَّه الافتِراضى — وهو ما ساهَمَ فى خَطأ الزِّرَّين (v3.74.656).
+
+### Change
+`components/customers/README.md` — صُحِّحَت الخَصائِص لِتُطابِق المُكَوِّن (`open`, `onOpenChange`, `editingCustomer?`, `onSaveComplete`, `trigger?`)، وأُضيفَ تَحذير بارِز أَنَّ المُكَوِّن يَرسِم زِرّاً افتِراضيّاً (مَرِّر زِرَّك عَبر `trigger` ولا تُضِف زِرّاً ثانياً)، مَع مِثالَى استِخدام (الزِّرّ المَدمَج / زِرّك الخاصّ). تَوثيق فَقَط.
+
+---
+
 ## [3.74.657] - 2026-07-15 — Fix duplicate "New customer" button + transient UUID flash
 
 ### Symptom

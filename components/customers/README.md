@@ -6,14 +6,20 @@ The customers module provides a comprehensive customer management system with bi
 ## Components
 
 ### CustomerFormDialog
-A reusable dialog component for creating and editing customer records.
+A reusable dialog for creating and editing customer records.
 
-**Props:**
-- `open`: Boolean to control dialog visibility
-- `onOpenChange`: Function to handle dialog open/close state
-- `customer`: Optional customer object for editing mode
-- `onSave`: Callback function after successful save
-- `accounts`: Array of account objects for dropdown selection
+> ⚠️ **This dialog renders its OWN trigger button.** If you do NOT pass `trigger`,
+> it shows a default permission-gated "+ جديد / New" button. When embedding it
+> where you already have an "add" button, pass that button via `trigger` — do
+> **not** render a second button next to it, or two buttons appear.
+> (This was the v3.74.656 → v3.74.657 duplicate-button bug.)
+
+**Props (actual — verify against the component, not older docs):**
+- `open`: boolean — controls visibility (controlled dialog)
+- `onOpenChange(open: boolean)`: open/close handler — **required**; the dialog calls it to close itself after a successful save
+- `editingCustomer?`: Customer | null — pass a customer to open in edit mode; omit / null to create
+- `onSaveComplete()`: called after a successful create/update — **no arguments** (reload your own list; it does not return the created record)
+- `trigger?`: React.ReactNode — your own trigger element; **passing it suppresses the default button**
 
 **Features:**
 - Bilingual form labels and validation messages
@@ -24,14 +30,23 @@ A reusable dialog component for creating and editing customer records.
 - Address management with multiple addresses support
 - Form validation with real-time feedback
 
-**Usage:**
+**Usage — with the built-in button (customers page style):**
 ```tsx
 <CustomerFormDialog
   open={isFormOpen}
   onOpenChange={setIsFormOpen}
-  customer={selectedCustomer}
-  onSave={handleCustomerSave}
-  accounts={accounts}
+  editingCustomer={selectedCustomer}
+  onSaveComplete={loadCustomers}
+/>
+```
+
+**Usage — embedding with your OWN button (e.g. inside another form). Pass `trigger`; do NOT add a separate button:**
+```tsx
+<CustomerFormDialog
+  open={open}
+  onOpenChange={setOpen}
+  onSaveComplete={handleCustomerCreated}
+  trigger={<Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-2" /> New customer</Button>}
 />
 ```
 
