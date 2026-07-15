@@ -417,6 +417,18 @@ export default function ProductsPage() {
   )
   const isStockAccountingProduct = isStockProductType(formData.product_type as ProductType, formData.item_type)
 
+  // v3.74.667 — Read-only display of the system-assigned accounting link for
+  // normal roles. A disabled Radix <Select> never opens, so it cannot render
+  // its selected value's label (the SelectItems mount lazily on open) and the
+  // field appeared blank even though the account was correctly stored. Normal
+  // roles keep the SAME governance (they cannot change the account); we simply
+  // show it as read-only text resolved from the loaded chart of accounts.
+  const accountDisplayLabel = (id?: string | null) => {
+    if (!id) return appLang === 'en' ? 'None' : 'بدون'
+    const a = accounts.find((x) => x.id === id)
+    return a ? `${a.account_code} - ${a.account_name}` : (appLang === 'en' ? 'Assigned by system' : 'مُعيَّن بواسطة النظام')
+  }
+
   // v3.74.56 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadProducts() , skipIfHidden: true })
 
@@ -1703,9 +1715,13 @@ export default function ProductsPage() {
                                 <Sparkles className="w-3 h-3 text-purple-500" />
                               )}
                             </div>
+                            {isNormalRole ? (
+                              <div className="flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground">
+                                {accountDisplayLabel(formData.income_account_id)}
+                              </div>
+                            ) : (
                             <Select
                               value={formData.income_account_id || "none"}
-                              disabled={isNormalRole}
                               onValueChange={(v) => {
                                 const val = v === "none" ? "" : v
                                 setFormData({ ...formData, income_account_id: val })
@@ -1725,6 +1741,7 @@ export default function ProductsPage() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            )}
                             {formErrors.income_account_id && (
                               <p className="text-xs text-red-500">{formErrors.income_account_id}</p>
                             )}
@@ -1736,9 +1753,13 @@ export default function ProductsPage() {
                                 <Sparkles className="w-3 h-3 text-purple-500" />
                               )}
                             </div>
+                            {isNormalRole ? (
+                              <div className="flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground">
+                                {accountDisplayLabel(formData.expense_account_id)}
+                              </div>
+                            ) : (
                             <Select
                               value={formData.expense_account_id || "none"}
-                              disabled={isNormalRole}
                               onValueChange={(v) => {
                                 const val = v === "none" ? "" : v
                                 setFormData({ ...formData, expense_account_id: val })
@@ -1758,6 +1779,7 @@ export default function ProductsPage() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            )}
                             {formErrors.expense_account_id && (
                               <p className="text-xs text-red-500">{formErrors.expense_account_id}</p>
                             )}
