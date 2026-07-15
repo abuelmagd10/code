@@ -29,7 +29,13 @@ interface BookingsCalendarProps {
 }
 
 function toYMD(d: Date) {
-  return d.toISOString().split("T")[0]!
+  // v3.74.653 — format LOCAL date parts, NOT UTC. Using toISOString() shifted the
+  // key back a day for UTC+ timezones (e.g. Egypt), so bookings rendered one cell
+  // late (a 2026-07-08 booking appeared on the 9th). Local parts fix the mapping.
+  const y   = d.getFullYear()
+  const m   = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
 }
 
 function addDays(d: Date, n: number): Date {

@@ -4,6 +4,22 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.653] - 2026-07-15 — Fix: calendar placed bookings one day late (UTC off-by-one)
+
+### Symptom
+حَجز بِتاريخ 8 يوليو كانَ يَظهَر فى خانة يَوم 9 بِالتَّقويم (والجَدول يُظهِرُه صَحيحاً فى 8) — إزاحة يَوم واحِد لِكُلّ الحُجوزات.
+
+### Root cause
+`toYMD` فى `BookingsCalendar.tsx` كانَت تَستخدِم `Date.toISOString()` (بِتَوقيت UTC). خَلايا التَّقويم مَبنيّة بِتَوقيت مَحَلّى (مُنتَصَف اللَّيل المَحَلّى)، فَفى مِنطَقة UTC+ (مِصر +2/+3) يَنزَلِق المِفتاح يَوماً لِلوَراء، فَتُطابِق الحُجوزات الخانة التّالية.
+
+### Fix
+`toYMD` تُنسِّق أَجزاء التاريخ **المَحَلّية** (`getFullYear/Month/Date`) بَدَل `toISOString()`. يُطابِق `booking_date` القادِم من قاعدة البيانات خانة اليَوم الصَّحيحة.
+
+### Verification
+على 7esab.com/تست: بَعدَ الإصلاح BKG-00001 (8 يوليو) يَظهَر فى خانة 8، و BKG-00002 (14 يوليو) فى خانة 14.
+
+---
+
 ## [3.74.652] - 2026-07-15 — Bookings calendar honors the page's branch (and service/staff) filter
 
 ### Context
