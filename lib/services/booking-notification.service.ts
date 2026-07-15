@@ -20,6 +20,7 @@ import {
   NotificationRecipientResolverService,
   type ResolvedNotificationRecipient,
 } from "@/lib/services/notification-recipient-resolver.service"
+import { createServiceClient } from "@/lib/supabase/server"
 
 type SupabaseLike = any
 
@@ -89,7 +90,21 @@ export interface BookingReminderParams extends BookingEventParams {
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 export class BookingNotificationService {
-  constructor(private readonly supabase: SupabaseLike) {}
+  private readonly supabase: SupabaseLike
+
+  // v3.74.668 — Recipient resolution (company_members) and context loading
+  // (v_bookings_full) must NOT be limited by the triggering actor's RLS. An
+  // unassigned booking_officer — or an online booking — could not "see" the
+  // branch manager in company_members under their own session, so the resolver
+  // returned no recipients and ZERO notifications were sent (silently, since
+  // dispatch is wrapped in try/catch at the call sites). We therefore run the
+  // whole service with a service-role client. create_notification is already
+  // SECURITY DEFINER, so this only widens READ visibility for resolution.
+  constructor(supabase: SupabaseLike) {
+    let admin: SupabaseLike = supabase
+    try { admin = createServiceClient() } catch { admin = supabase }
+    this.supabase = admin
+  }
 
   // ── Context loader ──────────────────────────────────────────────────────────
   private async loadContext(bookingId: string, companyId: string): Promise<BookingContext | null> {
@@ -169,7 +184,7 @@ export class BookingNotificationService {
     const label  = this.formatBookingLabel(ctx)
     const resolver = new NotificationRecipientResolverService(this.supabase)
 
-    const payload: NotificationPayload = {
+    const managerPayload: NotificationPayload = {
       referenceType: "booking",
       referenceId:   p.bookingId,
       title:         "حجز جديد تم إنشاؤه",
@@ -180,11 +195,34 @@ export class BookingNotificationService {
       eventAction:   "created",
     }
 
-    const recipients: ResolvedNotificationRecipient[] = [
-      ...resolver.resolveRoleRecipients(["manager"], ctx.branch_id, null, null),
-    ]
+    await this.dispatch(
+      p, ctx,
+      resolver.resolveRoleRecipients(["manager"], ctx.branch_id, null, null),
+      managerPayload,
+      "⚠️ [BookingNotification] notifyBookingCreated failed:"
+    )
 
-    await this.dispatch(p, ctx, recipients, payload, "⚠️ [BookingNotification] notifyBookingCreated failed:")
+    // v3.74.668 — إخطار الموظفين المُسنَد إليهم تنفيذ الحجز فور إنشاء أمر الحجز.
+    // سابقاً كان إشعار الموظف يصل عند التأكيد فقط (notifyBookingConfirmed)، فإن
+    // بقي الحجز مسودة لا يعلم الموظف بالأمر المُسنَد إليه إطلاقاً. أمر الحجز هو
+    // مهمة الموظف، فيجب أن يصله بمجرد إنشائه وإسناده إليه.
+    const staffRecipients = this.staffRecipients(ctx, resolver)
+    if (staffRecipients.length > 0) {
+      const staffPayload: NotificationPayload = {
+        referenceType: "booking",
+        referenceId:   p.bookingId,
+        title:         "تم إسناد حجز إليك",
+        message:       `تم إسنادك لتنفيذ حجز جديد — ${label}`,
+        priority:      "normal",
+        severity:      "info",
+        category:      "sales",
+        eventAction:   "created_staff",
+      }
+      await this.dispatch(
+        p, ctx, staffRecipients, staffPayload,
+        "⚠️ [BookingNotification] notifyBookingCreated (staff) failed:"
+      )
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
