@@ -4,6 +4,36 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.649] - 2026-07-15 — Enforce CHANGELOG on every push (pre-push hook)
+
+### Context
+طَلَب المالِك أَن يُضاف مَدخَل CHANGELOG مَعَ كُلّ رَفع إلى GitHub بِشَكل دائِم.
+
+### Change
+- `.githooks/pre-push` — يَمنَع الرَّفع إذا لَم يَكُن إصدار `lib/version.ts` مُوَثَّقاً بِقِسم `## [<version>]` فى `CHANGELOG.md`.
+- سكربتات الإصدار تُفَعِّل الـhook تِلقائيّاً (`git config core.hooksPath .githooks`) وتَتَحَقَّق من وُجود مَدخَل الإصدار قَبلَ الرَّفع.
+- التزام دائِم: كُلّ إصدار جَديد يَحصُل عَلى مَدخَل CHANGELOG مُطابِق.
+
+---
+
+## [3.74.648] - 2026-07-15 — Bookings branch filter keys off branch-linkage, not role
+
+### Symptom
+مَسؤول الحُجز غَير المَربوط بِفَرع لَم يَكُن يَرى فِلتَر الفَرع (كانَ الظُّهور مَربوطاً بِالدَّور فَقَط).
+
+### Fix
+- `isBranchScoped = (ليسَ عَلى مُستَوى الشَّرِكة) و(لَدَيه branch_id)` فى كُلٍّ من `app/api/bookings/route.ts` و`app/bookings/page.tsx`.
+- المُستَخدِم غَير المَربوط بِفَرع (مِثل مَسؤول حُجز بِلا فَرع) يَرى الفِلتَر ويَتَصَفَّح كُلّ الفُروع؛ المَربوط بِفَرع يَبقى مَحصوراً بِفَرعِه بِلا فِلتَر.
+
+---
+
+## [3.74.647] - 2026-07-15 — Record v3.74.638..646 in CHANGELOG (docs)
+
+### Change
+إضافة مَداخِل CHANGELOG المَقروءة (العَرض/الإصلاح/التَّحَقُّق) لِلإصدارات التِّسعة الّتى نُفِّذَت فى الجَلسة (638→646). تَوثيق فَقَط دونَ تَغيير كود أَو مُخَطَّط.
+
+---
+
 ## [3.74.646] - 2026-07-15 — Bookings: branch filter
 
 ### Context

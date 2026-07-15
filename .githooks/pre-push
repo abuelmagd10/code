@@ -1,0 +1,28 @@
+#!/bin/sh
+# ------------------------------------------------------------------
+# v3.74.649 — Enforce "every push documents its version in CHANGELOG".
+# Blocks the push if lib/version.ts's APP_VERSION has no matching
+# "## [<version>]" section in CHANGELOG.md.
+#
+# Enabled once per clone with:   git config core.hooksPath .githooks
+# (the release scripts set this automatically).
+# ------------------------------------------------------------------
+
+ver=$(grep -oE 'APP_VERSION = "[0-9]+\.[0-9]+\.[0-9]+[a-z]*"' lib/version.ts 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[a-z]*')
+
+if [ -z "$ver" ]; then
+  # Could not determine version — do not block.
+  exit 0
+fi
+
+if grep -q "\[$ver\]" CHANGELOG.md 2>/dev/null; then
+  exit 0
+fi
+
+echo "-------------------------------------------------------------------"
+echo "PUSH BLOCKED: CHANGELOG.md has no entry for version $ver."
+echo ""
+echo "Add a section like:   ## [$ver] - YYYY-MM-DD - <title>"
+echo "to CHANGELOG.md, commit it, then push again."
+echo "-------------------------------------------------------------------"
+exit 1
