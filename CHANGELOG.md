@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.656] - 2026-07-15 — Add a customer inline from the New Booking page
+
+### Context
+طَلَب إضافة "عميل جديد" مِن صَفحَة حَجز جَديد، مَع الالتِزام بِطَريقة إضافة العَميل المَوجودة فى المَشروع.
+
+### Change
+- `components/bookings/BookingForm.tsx` — زِرّ "عميل جديد" بِجانِب مُنتَقى العَميل، يَفتَح **نَفس** المُكَوِّن المُشتَرَك `CustomerFormDialog` (المُستَخدَم فى صَفحَة العُملاء). بَعدَ الحِفظ يُحَدَّث العُملاء ويُختار العَميل الجَديد تِلقائيّاً.
+- `app/bookings/new/page.tsx` — استُخرِج تَحميل العُملاء إلى `reloadCustomers()` (يَحتَرِم حَوكَمة الأَدوار كَما فى الفَواتير) ومُرِّر لِلنَّموذَج لِتَحديث القائِمة بَعدَ الإضافة.
+
+### Note
+لا تَكرار لِمَنطِق إضافة العَميل — يُعاد استِخدام `CustomerFormDialog` المُشتَرَك، فَيَبقى سُلوك الإضافة (الحُقول/التَّحَقُّق/الصَّلاحيات) مُوَحَّداً عَبرَ المَشروع.
+
+---
+
 ## [3.74.655] - 2026-07-15 — Central cross-company reference guard on the high-risk write endpoints
 
 ### Context

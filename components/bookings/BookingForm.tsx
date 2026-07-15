@@ -21,10 +21,11 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Save, MapPin } from "lucide-react"
+import { Loader2, Save, MapPin, Plus } from "lucide-react"
 import { createBookingSchema, BOOKING_SOURCE_VALUES } from "@/lib/services/booking-api"
 import { AvailabilityChecker } from "@/components/bookings/AvailabilityChecker"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
+import { CustomerFormDialog } from "@/components/customers/customer-form-dialog"
 import type { AvailableSlot } from "@/types/bookings"
 // v3.74.337 — for the floating booking_officer flow (pick branch first)
 import { useAccess } from "@/lib/access-context"
@@ -73,6 +74,8 @@ interface BookingFormProps {
   onSubmit:    (data: BookingFormValues) => Promise<void>
   isSubmitting?: boolean
   lang?:       string
+  /** v3.74.656 — refresh the customers list after adding one inline; returns the new list */
+  reloadCustomers?: () => Promise<SimpleCustomer[]>
 }
 
 export function BookingForm({
@@ -82,9 +85,12 @@ export function BookingForm({
   onSubmit,
   isSubmitting = false,
   lang = "ar",
+  reloadCustomers,
 }: BookingFormProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
+  // v3.74.656 — inline "New customer" dialog (reuses the shared CustomerFormDialog)
+  const [custDialogOpen, setCustDialogOpen] = useState(false)
 
   // Format "HH:MM[:SS]" → 12-hour with localized AM/PM (ص/م in Arabic)
   const formatTime12 = (time: string): string => {
@@ -125,6 +131,17 @@ export function BookingForm({
       skip_schedule_check: false,
     } as any,
   })
+
+  // v3.74.656 — after the shared dialog creates a customer, refresh the list and
+  // auto-select the new one (the dialog reports success, not the created record).
+  const handleCustomerCreated = async () => {
+    setCustDialogOpen(false)
+    if (!reloadCustomers) return
+    const before = new Set(customers.map((c) => c.id))
+    const fresh = await reloadCustomers()
+    const created = fresh.find((c) => !before.has(c.id))
+    if (created) form.setValue("customer_id", created.id, { shouldValidate: true })
+  }
 
   const watchedServiceId   = form.watch("service_id")
   const watchedDate        = form.watch("booking_date")
@@ -379,9 +396,26 @@ export function BookingForm({
                         searchPlaceholder={t("ابحث بالاسم أو الهاتف...", "Search by name or phone...")}
                       />
                     </FormControl>
+                    {/* v3.74.656 — inline add-customer (shared CustomerFormDialog) */}
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCustDialogOpen(true)}
+                      >
+                        <Plus className="w-4 h-4 mr-2" /> {t("عميل جديد", "New customer")}
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+
+              <CustomerFormDialog
+                open={custDialogOpen}
+                onOpenChange={setCustDialogOpen}
+                onSaveComplete={handleCustomerCreated}
               />
 
               {/* v3.74.362 — Staff picker is now a multi-select.
