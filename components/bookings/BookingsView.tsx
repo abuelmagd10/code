@@ -23,6 +23,10 @@ interface BookingsViewProps {
   onNewBooking?:  () => void
   /** Re-fetch callback for Kanban status changes */
   onRefresh?:     () => void
+  /** v3.74.652 — active filters forwarded to the calendar (own data source) */
+  branchId?:      string
+  serviceId?:     string
+  staffUserId?:   string
 }
 
 export function BookingsView({
@@ -35,6 +39,9 @@ export function BookingsView({
   canCreate     = false,
   onNewBooking,
   onRefresh,
+  branchId,
+  serviceId,
+  staffUserId,
 }: BookingsViewProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
@@ -72,7 +79,13 @@ export function BookingsView({
         isLoading ? (
           <LoadingState message={t("جاري تحميل الحجوزات...", "Loading bookings...")} />
         ) : (
-          <BookingsCalendar lang={lang} queryLang={queryLang} />
+          <BookingsCalendar
+            lang={lang}
+            queryLang={queryLang}
+            branchId={branchId}
+            serviceId={serviceId}
+            staffUserId={staffUserId}
+          />
         )
       ) : (
         <Card>

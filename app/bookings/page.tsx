@@ -194,6 +194,9 @@ export default function BookingsPage() {
           canCreate={canCreate}
           onNewBooking={() => router.push(`/bookings/new${q}`)}
           onRefresh={loadBookings}
+          branchId={filters.branchId !== "all" ? filters.branchId : undefined}
+          serviceId={filters.serviceId !== "all" ? filters.serviceId : undefined}
+          staffUserId={filters.staffUserId !== "all" ? filters.staffUserId : undefined}
         />
 
         {/* Pagination */}

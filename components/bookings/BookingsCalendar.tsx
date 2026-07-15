@@ -23,6 +23,7 @@ type CalendarMode = "month" | "week"
 interface BookingsCalendarProps {
   lang?:      string
   queryLang?: string
+  branchId?:  string
   serviceId?: string
   staffUserId?: string
 }
@@ -52,6 +53,7 @@ const MONTH_LABELS_EN = ["January","February","March","April","May","June","July
 export function BookingsCalendar({
   lang       = "ar",
   queryLang,
+  branchId,
   serviceId,
   staffUserId,
 }: BookingsCalendarProps) {
@@ -87,7 +89,8 @@ export function BookingsCalendar({
       const params = new URLSearchParams({
         date_from: dateFrom,
         date_to:   dateTo,
-        ...(serviceId  ? { service_id:    serviceId }  : {}),
+        ...(branchId    ? { branch_id:     branchId }    : {}),
+        ...(serviceId   ? { service_id:    serviceId }   : {}),
         ...(staffUserId ? { staff_user_id: staffUserId } : {}),
       })
       const res  = await fetch(`/api/bookings/calendar?${params.toString()}`)
@@ -100,7 +103,7 @@ export function BookingsCalendar({
     } finally {
       setIsLoading(false)
     }
-  }, [dateFrom, dateTo, serviceId, staffUserId, toast])
+  }, [dateFrom, dateTo, branchId, serviceId, staffUserId, toast])
 
   useEffect(() => { load() }, [load])
 

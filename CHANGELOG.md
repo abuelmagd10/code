@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.652] - 2026-07-15 — Bookings calendar honors the page's branch (and service/staff) filter
+
+### Context
+فِلتَر الفَرع أَعلى صَفحَة الحُجوزات كانَ يُصَفّى الجَدول/كانبان فَقَط، ولا يُصَفّى التَّقويم (التَّقويم يَسحَب بِمَسار مُستَقِلّ لَم يَكُن يَستَقبِل الفَرع المُختار).
+
+### Fix
+- `components/bookings/BookingsCalendar.tsx` — يَستَقبِل `branchId` (و`serviceId`/`staffUserId`) ويُمَرِّرها إلى `/api/bookings/calendar`، مَع إعادة الجَلب عِندَ تَغييرها.
+- `components/bookings/BookingsView.tsx` — يُمَرِّر الفَلاتِر النَّشِطة إلى التَّقويم.
+- `app/bookings/page.tsx` — يُمَرِّر `filters.branchId/serviceId/staffUserId` (عِندَ اختيار قيمة) إلى `BookingsView`.
+
+النَّتيجة: اختِيار فَرع مُعَيَّن يُصَفّى التَّقويم أيضاً (لِلأَدوار على مُستَوى الشَّرِكة). المُستَخدِم المُقَيَّد بِفَرعِه يَبقى مَحصوراً بِفَرعِه فى كُلّ العُروض.
+
+---
+
 ## [3.74.651] - 2026-07-15 — Fix: calendar showed no bookings for company-wide owners
 
 ### Symptom
