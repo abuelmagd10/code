@@ -140,7 +140,10 @@ export function BookingForm({
     const before = new Set(customers.map((c) => c.id))
     const fresh = await reloadCustomers()
     const created = fresh.find((c) => !before.has(c.id))
-    if (created) form.setValue("customer_id", created.id, { shouldValidate: true })
+    if (created) {
+      form.setValue("customer_id", created.id, { shouldValidate: true })
+      form.clearErrors("customer_id") // avoid any transient "Invalid UUID" flash
+    }
   }
 
   const watchedServiceId   = form.watch("service_id")
@@ -396,26 +399,25 @@ export function BookingForm({
                         searchPlaceholder={t("ابحث بالاسم أو الهاتف...", "Search by name or phone...")}
                       />
                     </FormControl>
-                    {/* v3.74.656 — inline add-customer (shared CustomerFormDialog) */}
+                    {/* v3.74.657 — a SINGLE "New customer" button, right under the
+                        customer picker. It is the shared dialog's own trigger; passing
+                        our button as `trigger` suppresses the dialog's default button
+                        (which caused the duplicate "+ جديد" button in v3.74.656). */}
                     <div className="mt-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCustDialogOpen(true)}
-                      >
-                        <Plus className="w-4 h-4 mr-2" /> {t("عميل جديد", "New customer")}
-                      </Button>
+                      <CustomerFormDialog
+                        open={custDialogOpen}
+                        onOpenChange={setCustDialogOpen}
+                        onSaveComplete={handleCustomerCreated}
+                        trigger={
+                          <Button type="button" variant="outline" size="sm">
+                            <Plus className="w-4 h-4 mr-2" /> {t("عميل جديد", "New customer")}
+                          </Button>
+                        }
+                      />
                     </div>
                     <FormMessage />
                   </FormItem>
                 )}
-              />
-
-              <CustomerFormDialog
-                open={custDialogOpen}
-                onOpenChange={setCustDialogOpen}
-                onSaveComplete={handleCustomerCreated}
               />
 
               {/* v3.74.362 — Staff picker is now a multi-select.

@@ -4,6 +4,19 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.657] - 2026-07-15 — Fix duplicate "New customer" button + transient UUID flash
+
+### Symptom
+ظَهَرَ زِرّان لإضافة عَميل جَديد فى صَفحَة حَجز جَديد (زِرّى "عميل جديد" + زِرّ "جديد" الكَبير)، وأَحياناً وَميض "Invalid UUID format" أَسفَل الزِّر.
+
+### Root cause
+`CustomerFormDialog` يَرسِم **زِرّاً افتِراضيّاً** خاصّاً بِه عِندَ عَدَم تَمرير `trigger`؛ وكُنّا نُضيف زِرّاً مُنفَصِلاً أَيضاً (v3.74.656) → زِرّان.
+
+### Fix
+`components/bookings/BookingForm.tsx` — نُمَرِّر زِرَّنا كـ`trigger` لِلمُكَوِّن (فَيَختَفى الزِّرّ الافتِراضى)، ويَبقى زِرّ واحِد أَسفَل مُنتَقى العَميل مُباشَرَةً. + `form.clearErrors("customer_id")` بَعدَ اختيار العَميل الجَديد لِمَنع أَىّ وَميض تَحَقُّق مُؤَقَّت.
+
+---
+
 ## [3.74.656] - 2026-07-15 — Add a customer inline from the New Booking page
 
 ### Context
