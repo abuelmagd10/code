@@ -111,8 +111,19 @@ export async function POST(req: Request) {
       accountingAccounts || [],
       classification.itemType
     )
-    const finalIncomeAccountId = body.income_account_id || accountingDefaults.incomeId || null
-    const finalExpenseAccountId = body.expense_account_id || accountingDefaults.expenseId || null
+    // v3.74.654 — multi-company safety + normal-role authority.
+    // A user who belongs to several companies (same email) may have a client-side
+    // accounts list from another company, so body.income_account_id can be an id
+    // that doesn't exist in THIS company's chart of accounts → "income required".
+    // Fix: only trust a client account id when it actually belongs to this
+    // company's active accounts; otherwise the server resolves the correct default.
+    // Normal (branch-scoped) roles always get the server-resolved accounts
+    // (accounting linkage is auto-assigned and unchangeable for them).
+    const validAccountIds = new Set((accountingAccounts || []).map((a: any) => a.id))
+    const trustedIncomeId  = (!isNormalRole && body.income_account_id  && validAccountIds.has(body.income_account_id))  ? body.income_account_id  : null
+    const trustedExpenseId = (!isNormalRole && body.expense_account_id && validAccountIds.has(body.expense_account_id)) ? body.expense_account_id : null
+    const finalIncomeAccountId = trustedIncomeId || accountingDefaults.incomeId || null
+    const finalExpenseAccountId = trustedExpenseId || accountingDefaults.expenseId || null
     const accountingValidation = validateProductAccountingSelection({
       itemType: classification.itemType,
       productType: classification.productType,

@@ -101,10 +101,17 @@ export async function PUT(
       accountingAccounts || [],
       classification.itemType
     )
-    const requestedIncomeAccountId =
+    // v3.74.654 — multi-company safety + normal-role authority (see POST route).
+    // Only trust an account id that belongs to THIS company's active accounts; a
+    // multi-company user may submit an id from another company. Normal roles always
+    // get the server-resolved default (auto accounting, unchangeable).
+    const validAccountIds = new Set((accountingAccounts || []).map((a: any) => a.id))
+    const requestedIncomeRaw =
       body.income_account_id !== undefined ? (body.income_account_id || null) : (existingProduct.income_account_id || null)
-    const requestedExpenseAccountId =
+    const requestedExpenseRaw =
       body.expense_account_id !== undefined ? (body.expense_account_id || null) : (existingProduct.expense_account_id || null)
+    const requestedIncomeAccountId  = (!isNormalRole && requestedIncomeRaw  && validAccountIds.has(requestedIncomeRaw))  ? requestedIncomeRaw  : null
+    const requestedExpenseAccountId = (!isNormalRole && requestedExpenseRaw && validAccountIds.has(requestedExpenseRaw)) ? requestedExpenseRaw : null
     const finalIncomeAccountId = requestedIncomeAccountId || accountingDefaults.incomeId || null
     const finalExpenseAccountId = requestedExpenseAccountId || accountingDefaults.expenseId || null
     const accountingValidation = validateProductAccountingSelection({
