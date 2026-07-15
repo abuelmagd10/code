@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-15T18:01:29.952Z
--- Routines: 1178
+-- Generated: 2026-07-15T18:15:26.471Z
+-- Routines: 1179
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -16599,6 +16599,30 @@ CREATE OR REPLACE FUNCTION public.discount_approvals_touch_updated_at()
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- discount_owner_auto_approve_trg()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.discount_owner_auto_approve_trg()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF NEW.status = 'pending'
+     AND NEW.requested_by IS NOT NULL
+     AND NEW.requested_by = (SELECT user_id FROM public.companies WHERE id = NEW.company_id)
+  THEN
+    NEW.status        := 'approved';
+    NEW.decided_by    := NEW.requested_by;
+    NEW.decided_at    := NOW();
+    NEW.decision_note := COALESCE(NEW.decision_note, 'اعتماد تلقائي — المالك (لا يعلوه معتمِد).');
+  END IF;
   RETURN NEW;
 END;
 $function$
