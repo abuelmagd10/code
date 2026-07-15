@@ -55,10 +55,11 @@ export default function BookingsPage() {
     canAction(supabase, "bookings", "write").then(setCanCreate)
   }, [supabase])
 
-  // ── Branches for the branch filter (v3.74.646) ───────────────────────────────
-  // Only company-wide roles (owner/admin/general_manager) can browse across
-  // branches; branch-scoped users are already locked to their branch by the API,
-  // so we skip loading branches for them (the filter stays hidden).
+  // ── Branches for the branch filter (v3.74.646 / v3.74.648) ───────────────────
+  // The filter is for users who can browse ACROSS branches: company-wide roles
+  // (owner/admin/general_manager) OR any user not tied to a branch (e.g. a
+  // booking officer with no branch_id). A user locked to a branch (normal role
+  // WITH a branch_id) is scoped by the API and doesn't get the filter.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -70,12 +71,15 @@ export default function BookingsPage() {
         if (!user) return
         const { data: mem } = await supabase
           .from("company_members")
-          .select("role")
+          .select("role, branch_id")
           .eq("company_id", cid)
           .eq("user_id", user.id)
           .maybeSingle()
         const role = String((mem as any)?.role ?? "")
-        if (!["owner", "admin", "general_manager"].includes(role)) return
+        const memberBranchId = (mem as any)?.branch_id ?? null
+        const isCompanyWide = ["owner", "admin", "general_manager"].includes(role)
+        const isBranchScoped = !isCompanyWide && !!memberBranchId
+        if (isBranchScoped) return  // locked to own branch → no filter
         const { data: brs } = await supabase
           .from("branches")
           .select("id, branch_name")

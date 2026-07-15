@@ -45,7 +45,11 @@ export async function GET(req: NextRequest) {
     // a branch the owner doesn't sit in.
     const memberRole = String((member as any)?.role ?? '')
     const isCompanyWide = ['owner', 'admin', 'general_manager'].includes(memberRole)
-    if (!isCompanyWide && member?.branch_id) {
+    // v3.74.648 — a user is locked to a single branch only when NOT company-wide
+    // AND their membership carries a branch_id. An unassigned booking officer
+    // (no branch_id) can browse/filter across every branch.
+    const isBranchScoped = !isCompanyWide && !!member?.branch_id
+    if (isBranchScoped) {
       query = query.eq('branch_id', member.branch_id)
     }
 
@@ -59,10 +63,10 @@ export async function GET(req: NextRequest) {
     const dateTo        = sp.get('date_to')
     const search        = sp.get('search')
 
-    // v3.74.646 — company-wide roles can filter by any branch (even if their own
-    // membership row carries a branch_id). Branch-scoped users are already locked
-    // to their branch above, so the param is ignored for them.
-    if (branchId && isCompanyWide)  query = query.eq('branch_id', branchId)
+    // v3.74.648 — honor the branch filter for anyone NOT locked to a branch
+    // (company-wide roles, or an unassigned booking officer). Branch-scoped
+    // users are already restricted to their own branch above.
+    if (branchId && !isBranchScoped)  query = query.eq('branch_id', branchId)
     if (serviceId)    query = query.eq('service_id', serviceId)
     if (customerId)   query = query.eq('customer_id', customerId)
     if (staffUserId)  query = query.eq('staff_user_id', staffUserId)
