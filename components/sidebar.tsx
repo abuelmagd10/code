@@ -239,7 +239,7 @@ export function Sidebar() {
       }
     }
   }, [accessReady, profile])
-  const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string } | null>(null)
+  const [userProfile, setUserProfile] = useState<{ username?: string; display_name?: string; job_title?: string | null } | null>(null)
   const [userBranch, setUserBranch] = useState<{ id: string; name: string } | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
@@ -1328,7 +1328,12 @@ export function Sidebar() {
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {myRole && (
                         <span className="text-xs text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded">
-                          {myRole === 'owner' ? 'مالك' :
+                          {/* v3.74.678 — show the custom job title (e.g. "دكتور")
+                              when set; otherwise the default role label. Display
+                              only — permissions still key off the role. */}
+                          {(userProfile?.job_title && String(userProfile.job_title).trim())
+                            ? String(userProfile.job_title).trim()
+                            : myRole === 'owner' ? 'مالك' :
                             myRole === 'admin' ? 'مدير عام' :
                               myRole === 'manager' ? 'مدير' :
                                 myRole === 'accountant' ? 'محاسب' :

@@ -3,8 +3,35 @@
 // =============================================
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, unauthorizedError, badRequestError } from "@/lib/api-error-handler"
+
+// v3.74.678 — resolve the current user's custom job title (employees.job_title)
+// for the active company, DISPLAY-ONLY. Falls back to null so the UI shows the
+// default role label. Never touches permissions (role stays the source of RBAC).
+async function resolveJobTitle(supabase: any, userId: string): Promise<string | null> {
+  try {
+    const activeCompanyId = (await cookies()).get("active_company_id")?.value || null
+    let q = supabase
+      .from("company_members")
+      .select("employee_id")
+      .eq("user_id", userId)
+      .not("employee_id", "is", null)
+    if (activeCompanyId) q = q.eq("company_id", activeCompanyId)
+    const { data: mem } = await q.limit(1).maybeSingle()
+    if (!mem?.employee_id) return null
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("job_title")
+      .eq("id", mem.employee_id)
+      .maybeSingle()
+    const jt = String(emp?.job_title || "").trim()
+    return jt || null
+  } catch {
+    return null
+  }
+}
 
 // GET: جلب ملف المستخدم الحالي
 export async function GET() {
@@ -54,7 +81,8 @@ export async function GET() {
       return apiSuccess({ profile: newProfile, email: user.email })
     }
 
-    return apiSuccess({ profile, email: user.email })
+    const job_title = await resolveJobTitle(supabase, user.id)
+    return apiSuccess({ profile: { ...profile, job_title }, email: user.email })
   } catch (err: any) {
     console.error("Error:", err)
     return internalError("حدث خطأ أثناء جلب ملف المستخدم", err?.message || "unknown_error")

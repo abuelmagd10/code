@@ -1800,6 +1800,14 @@ export default function UsersSettingsPage() {
                           <Badge className={`text-[10px] ${roleLabels[m.role]?.color || roleLabels.viewer.color}`}>
                             {roleName(m.role)}
                           </Badge>
+                          {/* v3.74.678 — custom job title shown ALONGSIDE the
+                              technical role (this is the security screen, so the
+                              role stays visible for correct permission context). */}
+                          {m.employee_job_title && String(m.employee_job_title).trim() && (
+                            <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800">
+                              {String(m.employee_job_title).trim()}
+                            </Badge>
+                          )}
                           {/* 🏢 عرض الفروع المرتبطة */}
                           <Badge variant="outline" className="text-[10px] gap-1 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800">
                             <MapPin className="w-2.5 h-2.5" />
