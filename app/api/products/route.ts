@@ -76,8 +76,23 @@ export async function POST(req: Request) {
       return ErrorHandler.handle(ErrorHandler.validation(error?.message || "تصنيف المنتج غير صالح"))
     }
 
+    // v3.74.675 — creation allowlist. Products (any type) may be created by
+    // upper management (owner / admin / general_manager), the branch manager,
+    // and the purchasing officer (who registers what he procures). Everyone
+    // else is blocked — notably the store/warehouse manager (his job is
+    // receive/issue only), the accountant, the booking officer and staff.
+    const PRODUCT_CREATE_ROLES = ["owner", "admin", "general_manager", "manager", "purchasing_officer"]
+    if (!PRODUCT_CREATE_ROLES.includes(String(member.role || ""))) {
+      return ErrorHandler.handle(
+        ErrorHandler.forbidden("ليس لديك صلاحية إضافة منتجات — الصلاحية للإدارة أو مدير الفرع أو مسؤول المشتريات فقط."),
+      )
+    }
+
     // 1️⃣ Permissions Scope Evaluation
-    const isCompanyLevelAdmin = ["owner", "admin", "manager"].includes(member.role)
+    // Company-wide (may pick any branch + trust submitted accounts): owner /
+    // admin / general_manager. Branch-scoped (forced to their own branch +
+    // server-resolved accounts): manager, purchasing_officer.
+    const isCompanyLevelAdmin = ["owner", "admin", "general_manager"].includes(member.role)
     const isNormalRole = !isCompanyLevelAdmin
 
     // 2️⃣ Enforce role constraints

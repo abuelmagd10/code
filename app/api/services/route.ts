@@ -77,6 +77,18 @@ export async function POST(req: NextRequest) {
 
     const { user, companyId, member } = context!
 
+    // v3.74.675 — creation allowlist. Services (and, downstream, their consumed
+    // products) are a management/pricing decision: owner / admin /
+    // general_manager + the branch manager only. The purchasing officer and
+    // store manager may create products but NOT services.
+    const SERVICE_WRITE_ROLES = ["owner", "admin", "general_manager", "manager"]
+    if (!SERVICE_WRITE_ROLES.includes(String(member.role || ""))) {
+      return NextResponse.json(
+        { success: false, error: "ليس لديك صلاحية إنشاء خدمات — الصلاحية للإدارة أو مدير الفرع فقط." },
+        { status: 403 },
+      )
+    }
+
     const body = await parseJsonBody(req, createServiceSchema)
 
     // v3.74.323 — every service must belong to one branch (the shared-
