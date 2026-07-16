@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-15T19:33:32.768Z
--- Routines: 1184
+-- Generated: 2026-07-16T08:30:38.125Z
+-- Routines: 1183
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -14458,94 +14458,6 @@ BEGIN
   ) RETURNING id INTO v_period_id;
 
   RETURN v_period_id;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- create_notification(p_company_id uuid, p_reference_type character varying, p_reference_id uuid, p_title character varying, p_message text, p_created_by uuid, p_branch_id uuid, p_cost_center_id uuid, p_warehouse_id uuid, p_assigned_to_role character varying, p_assigned_to_user uuid, p_priority character varying, p_event_key text, p_severity text, p_category text)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.create_notification(p_company_id uuid, p_reference_type character varying, p_reference_id uuid, p_title character varying, p_message text, p_created_by uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_warehouse_id uuid DEFAULT NULL::uuid, p_assigned_to_role character varying DEFAULT NULL::character varying, p_assigned_to_user uuid DEFAULT NULL::uuid, p_priority character varying DEFAULT 'normal'::character varying, p_event_key text DEFAULT NULL::text, p_severity text DEFAULT 'info'::text, p_category text DEFAULT 'system'::text)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_notification_id  uuid;
-  v_existing_id      uuid;
-  v_existing_status  text;
-  v_existing_created timestamptz;
-  c_race_window CONSTANT INTERVAL := '30 seconds';
-BEGIN
-  IF p_event_key IS NOT NULL THEN
-    SELECT id, status, created_at
-      INTO v_existing_id, v_existing_status, v_existing_created
-    FROM notifications
-    WHERE company_id = p_company_id
-      AND event_key  = p_event_key
-    ORDER BY created_at DESC
-    LIMIT 1;
-
-    IF v_existing_id IS NOT NULL THEN
-      ----------------------------------------------------------
-      -- Approvals: time-window safety net (covers workflows
-      -- that forget to call archive_approval_notifications_…)
-      ----------------------------------------------------------
-      IF p_category = 'approvals' THEN
-        IF v_existing_status = 'unread'
-           AND v_existing_created > NOW() - c_race_window
-        THEN
-          RETURN v_existing_id;  -- race protection
-        END IF;
-        -- Stale predecessor: archive then insert fresh.
-        UPDATE notifications
-           SET status = 'archived'
-         WHERE company_id = p_company_id
-           AND event_key  = p_event_key
-           AND status IN ('unread', 'read', 'actioned');
-
-      ----------------------------------------------------------
-      -- Non-approvals: original v3.74.16 behavior. Dedup
-      -- against any non-archived row. NO auto-archive.
-      ----------------------------------------------------------
-      ELSE
-        IF v_existing_status <> 'archived' THEN
-          RETURN v_existing_id;
-        END IF;
-      END IF;
-    END IF;
-  END IF;
-
-  INSERT INTO notifications (
-    company_id, branch_id, cost_center_id, warehouse_id,
-    reference_type, reference_id, created_by,
-    assigned_to_role, assigned_to_user,
-    title, message, priority, status, event_key, severity, category
-  )
-  VALUES (
-    p_company_id, p_branch_id, p_cost_center_id, p_warehouse_id,
-    p_reference_type, p_reference_id, p_created_by,
-    p_assigned_to_role, p_assigned_to_user,
-    p_title, p_message, p_priority, 'unread', p_event_key, p_severity, p_category
-  )
-  RETURNING id INTO v_notification_id;
-
-  RETURN v_notification_id;
-
-EXCEPTION
-  WHEN unique_violation THEN
-    SELECT id INTO v_existing_id
-    FROM notifications
-    WHERE company_id = p_company_id
-      AND event_key  = p_event_key
-      AND status     = 'unread'
-    LIMIT 1;
-
-    IF v_existing_id IS NOT NULL THEN
-      RETURN v_existing_id;
-    END IF;
-    RAISE;
 END;
 $function$
 ;
