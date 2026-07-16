@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.676] - 2026-07-16 — Service consumed-products: read-only for roles without edit permission
+
+### Context
+قِسم «المنتجات المستهلكة فى الخدمة» كانَ يَعرِض أدوات التَّعديل (إضافة/حفظ/حذف/تبديل) لِكُلّ من يَفتَح الصَّفحة، بَينَما الحِفظ مَحصور بِـ owner/admin/general_manager/manager فَيَفشَل بِـ 403 لِغَيرِهم — تَجرِبة مُربِكة.
+
+### Change
+- `GET /api/services/[id]/products` يُرجِع الآن `can_edit` (هل دَور المُستَخدِم ضِمن WRITE_ROLES).
+- `ServiceProductsEditor`: إن لم يَكُن `can_edit` → عَرض **للاطلاع فقط** (قائِمة المنتجات بِالكَمية وإلزامى/اختيارى كَنَصّ، بِلا أزرار إضافة/حفظ/حذف/تبديل + ملاحظة «للاطلاع فقط»). أصحاب الصَّلاحية يَرَون المُحَرِّر كَما هو.
+
+### Verification
+`tsc` = 0 أخطاء. الصَّلاحية تُقَرَّر فى الخادِم (مَصدَر واحِد)، والحِفظ يَبقى مَحمِيّاً بِـ 403 دِفاعاً فى العُمق.
+
+---
+
 ## [3.74.675] - 2026-07-16 — Creation permissions: products vs services (branch-scoped)
 
 ### Context

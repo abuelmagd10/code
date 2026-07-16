@@ -72,6 +72,9 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
   // v3.74.673 — true when the service has no catalog product, so no bundle
   // (consumed products) can be attached until it is linked to a catalog item.
   const [noCatalog, setNoCatalog]   = useState(false)
+  // v3.74.676 — server-decided edit permission. Roles without it see the list
+  // read-only (view only) instead of controls that 403 on save.
+  const [canEdit, setCanEdit]       = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -108,6 +111,7 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
       }
       const sJson = await sRes.json()
       setNoCatalog(!!sJson?.no_catalog)
+      setCanEdit(!!sJson?.can_edit)
       const initialRows: BomRow[] = (sJson?.items || []).map((it: any) => ({
         rowId: makeRowId(),
         product_id: it.product_id,
@@ -238,6 +242,39 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
               "This service isn't linked to a catalog item, so consumed products can't be attached. Link the service to a catalog item first from the service settings.",
             )}
           </div>
+        ) : !canEdit ? (
+          // v3.74.676 — read-only view for users without edit permission.
+          <>
+            <div className="text-[11px] text-gray-500 mb-2 flex items-center gap-1">
+              <Info className="w-3 h-3" />
+              {t("للاطلاع فقط — ليس لديك صلاحية تعديل منتجات الخدمة.", "View only — you don't have permission to edit the service's products.")}
+            </div>
+            {rows.length === 0 ? (
+              <div className="py-6 text-center text-sm text-gray-500 border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-lg">
+                {t("لا توجد منتجات مستهلكة مرتبطة بالخدمة.", "No consumed products linked to this service.")}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {rows.map((row) => (
+                  <div key={row.rowId} className="flex items-center justify-between text-sm border rounded-md px-3 py-2 bg-muted/30">
+                    <span className="flex items-center gap-2">
+                      <Package className="w-3.5 h-3.5 text-blue-400" />
+                      <span>{row.product_name || row.product_id}</span>
+                      {row.track_inventory === false && (
+                        <span className="text-[10px] text-amber-600">({t("بدون مخزون", "no inventory")})</span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+                      <span>{t("الكمية", "Qty")}: {row.quantity_per_service}</span>
+                      <span className={row.is_optional ? "text-gray-500" : "text-blue-600 dark:text-blue-400 font-medium"}>
+                        {row.is_optional ? t("اختيارى", "Optional") : t("إلزامى", "Mandatory")}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
           <>
             {rows.length === 0 ? (

@@ -61,6 +61,16 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ success: false, error: "Service not found" }, { status: 404 })
     }
 
+    // v3.74.676 — tell the UI whether THIS user may edit, so roles without
+    // permission see the list read-only instead of a save that 403s.
+    const { data: member } = await supabase
+      .from("company_members")
+      .select("role")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+    const canEdit = !!member && WRITE_ROLES.includes(String(member.role || ""))
+
     // No catalog product → no bundle can exist. Tell the UI so it can explain.
     if (!svc.product_catalog_id) {
       return NextResponse.json({
@@ -69,6 +79,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         service_name: svc.service_name,
         catalog_product_id: null,
         no_catalog: true,
+        can_edit: canEdit,
         items: [],
       })
     }
@@ -104,6 +115,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       service_id: serviceId,
       service_name: svc.service_name,
       catalog_product_id: svc.product_catalog_id,
+      can_edit: canEdit,
       items,
     })
   } catch (e: any) {

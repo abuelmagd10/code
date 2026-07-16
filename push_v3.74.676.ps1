@@ -3,18 +3,18 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.674.ps1") { Remove-Item -LiteralPath "push_v3.74.674.ps1" -Force }
-if (Test-Path "tsc675.log") { Remove-Item -LiteralPath "tsc675.log" -Force -ErrorAction SilentlyContinue }
+if (Test-Path "push_v3.74.675.ps1") { Remove-Item -LiteralPath "push_v3.74.675.ps1" -Force }
+foreach ($f in @("tsc675.log","tsc676.log")) { if (Test-Path $f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.675"') {
-    Write-Host "+ 3.74.675" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.676"') {
+    Write-Host "+ 3.74.676" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.675]")) { Write-Host "X CHANGELOG missing [3.74.675]" -ForegroundColor Red; exit 1 }
+if ($cl -notmatch [regex]::Escape("[3.74.676]")) { Write-Host "X CHANGELOG missing [3.74.676]" -ForegroundColor Red; exit 1 }
 Write-Host "+ CHANGELOG documents this release" -ForegroundColor Green
 
 if (-not (Test-Path "node_modules/exceljs/package.json")) {
@@ -37,25 +37,24 @@ if ($tscErr -eq 0) {
 git add -- `
     "lib/version.ts" `
     "CHANGELOG.md" `
-    "app/api/products/route.ts" `
-    "app/api/services/route.ts" `
-    "push_v3.74.675.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.674.ps1" 2>$null
+    "app/api/services/[id]/products/route.ts" `
+    "components/services/ServiceProductsEditor.tsx" `
+    "push_v3.74.676.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.675.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_675.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_676.txt"
     $msgLines = @(
-        'feat(rbac): v3.74.675 - branch-scoped creation permissions for products & services',
+        'feat(services): v3.74.676 - consumed-products read-only for roles without edit permission',
         '',
-        '- POST /api/products: allowlist owner/admin/general_manager + branch',
-        '  manager + purchasing_officer (403 otherwise; store manager, accountant,',
-        '  booking officer, staff blocked). general_manager is now company-wide;',
-        '  branch manager + purchasing_officer are branch-scoped with forced accounts.',
-        '- POST /api/services: allowlist owner/admin/general_manager + branch manager.',
-        '- BOM link endpoint already restricted to those roles (store manager excluded).'
+        '- GET /api/services/[id]/products returns can_edit (member role in',
+        '  WRITE_ROLES).',
+        '- ServiceProductsEditor renders a read-only list (qty + mandatory/optional',
+        '  as text, no add/save/remove/toggle) when can_edit is false. Save stays',
+        '  403-protected server-side.'
     )
     Set-Content -LiteralPath $msgPath -Value $msgLines -Encoding UTF8
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -64,5 +63,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.675 pushed - branch-scoped creation permissions" -ForegroundColor Green
+    Write-Host "`n+ v3.74.676 pushed - service consumed-products read-only without permission" -ForegroundColor Green
 }
