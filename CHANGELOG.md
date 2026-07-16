@@ -4,6 +4,23 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.679] - 2026-07-16 — Booking stock-withdrawal notification opens the booking (was "cannot navigate")
+
+### Context
+إشعار مسؤول المخزن «طلب سحب منتج من المخزن» (`reference_type='booking_stock_withdrawal'`) لم يَكُن لَه مَسار، فَيَظهَر «لا يمكن التنقل إلى هذا الإشعار» عِندَ «فتح المرجع». الاعتِماد يَتِمّ من لوحة إضافات الحجز داخِل صفحة الحجز، فَيَجِب أن يَفتَح الإشعار **صفحة الحجز**.
+
+### Change
+- `reference_id` لِلإشعار هو مُعَرِّف السَّحب لا الحجز، والمُوَجِّه دالة عميل مُتزامِنة. لِذا ضُمِّنَ **مُعَرِّف الحجز فى `event_key`** (نَفس نَمَط إشعارات صرف المواد):
+  - `booking_withdrawal_request:{withdrawalId}:{bookingId}`
+  - `booking_withdrawal_decided:{withdrawalId}:{status}:{bookingId}`
+- `lib/notification-routing.ts`: أُضيفَ `booking_stock_withdrawal` — يَستَخرِج مُعَرِّف الحجز من `event_key` ويُوَجِّه إلى `/bookings/{bookingId}?highlight=withdrawal-{withdrawalId}` (رجوع إلى `/bookings` لِلإشعارات القديمة).
+- تَعديل دالتَى `request_/decide_booking_stock_withdrawal` لِإضافة مُعَرِّف الحجز، وتَعبِئة رَجعِيّة (backfill) لِلإشعارات القائِمة.
+
+### Verification
+البيانات الحَيّة: إشعار الطَّلَب أصبَحَ `event_key = booking_withdrawal_request:{wd}:{booking}`، فَيُوَجِّه لِصفحة الحجز. الدالتان مُعَدَّلتان. `tsc` = 0 أخطاء.
+
+---
+
 ## [3.74.678] - 2026-07-16 — Show employee custom job title instead of the role label (display-only)
 
 ### Context

@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-16T09:04:06.326Z
+-- Generated: 2026-07-16T14:00:24.845Z
 -- Routines: 1183
 -- =====================================================================
 
@@ -16112,7 +16112,7 @@ BEGIN
       END,
       auth.uid(), v_w.branch_id, NULL, v_w.warehouse_id,
       NULL, v_w.requested_by, 'high',
-      'booking_withdrawal_decided:' || v_w.id::text || ':' || v_new,
+      'booking_withdrawal_decided:' || v_w.id::text || ':' || v_new || ':' || v_w.booking_id::text,
       CASE WHEN p_approve THEN 'info' ELSE 'error' END, 'inventory');
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
@@ -43996,7 +43996,7 @@ BEGIN
       'طلب الموظف سحب منتج من مخزن الفرع لاستخدامه في الحجز ' || v_booking.booking_no || ' — يحتاج اعتمادك.',
       auth.uid(), v_booking.branch_id, NULL, v_wh,
       'store_manager', NULL, 'high',
-      'booking_withdrawal_request:' || v_id::text,
+      'booking_withdrawal_request:' || v_id::text || ':' || p_booking_id::text,
       'warning', 'inventory');
   EXCEPTION WHEN OTHERS THEN NULL; END;
 

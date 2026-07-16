@@ -33,6 +33,7 @@ export type ReferenceType =
   | 'manufacturing_product_receive_approval'
   | 'manufacturing_production_order'
   | 'booking'
+  | 'booking_stock_withdrawal'
   | 'subscription'
 
 /**
@@ -147,6 +148,9 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
 
   // الحجوزات
   'booking': (id) => `/bookings/${id}`,
+  // v3.74.680 — طلب/قرار سحب منتج من المخزن للحجز يُعتمد الآن من صندوق
+  // الموافقات فى تبويب مستقل "سحب مخزون الحجوزات" (bwd). نوجّه الإشعار إليه.
+  'booking_stock_withdrawal': () => `/approvals?tab=bwd`,
 
   // التصنيع
   // v3.74.493 — material issue notifications (Stage 1 or Stage 2) all
