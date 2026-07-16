@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.677] - 2026-07-16 — Move service "Save changes" below the consumed-products section
+
+### Context
+زِرّ «حفظ التعديلات» فى صفحة تعديل الخدمة كانَ فَوقَ قِسم «المنتجات المستهلكة»، فَعِندَ فَتح قائِمة اختيار المنتج تَتَزاحَم/تَتَداخَل مَعَه. المَطلوب نَقلُه أسفَل القِسم لِيُعطى مِساحة.
+
+### Change
+- `ServiceForm`: خِياران `formId` و`hideSubmit` — يُخفى زِرّ الحِفظ الداخِلى ويُعطى النَّموذج `id`.
+- صفحة تعديل الخدمة تَعرِض زِرّ «حفظ التعديلات» **أسفَل** `ServiceProductsEditor` عَبر خاصية HTML `form="service-edit-form"` (زِرّ خارِج النَّموذج يُرسِلُه). نَفس حالة التَّحميل (`isSubmitting`). صفحة إنشاء الخدمة بلا تَغيير.
+
+### Verification
+`tsc` = 0 أخطاء.
+
+---
+
 ## [3.74.676] - 2026-07-16 — Service consumed-products: read-only for roles without edit permission
 
 ### Context

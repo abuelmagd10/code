@@ -52,6 +52,10 @@ interface ServiceFormProps {
   onSubmit: (data: ServiceFormValues, schedules: ScheduleRow[]) => Promise<void>
   isSubmitting?: boolean
   lang?: string
+  // v3.74.677 — let the page relocate the submit button (via the HTML `form`
+  // attribute) below the consumed-products section.
+  formId?: string
+  hideSubmit?: boolean
 }
 
 export function ServiceForm({
@@ -61,6 +65,8 @@ export function ServiceForm({
   onSubmit,
   isSubmitting = false,
   lang = "ar",
+  formId,
+  hideSubmit = false,
 }: ServiceFormProps) {
   const isAr = lang !== "en"
   const t = (ar: string, en: string) => (isAr ? ar : en)
@@ -274,7 +280,7 @@ export function ServiceForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6" dir={isAr ? "rtl" : "ltr"}>
+      <form id={formId} onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6" dir={isAr ? "rtl" : "ltr"}>
         <Tabs defaultValue="basic" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="basic">{t("المعلومات الأساسية", "Basic Info")}</TabsTrigger>
@@ -840,25 +846,27 @@ export function ServiceForm({
           </TabsContent>
         </Tabs>
 
-        {/* Submit */}
-        <div className="flex justify-end gap-3 pt-2">
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            className="bg-orange-600 hover:bg-orange-700 text-white gap-2 min-w-[140px]"
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            {isSubmitting
-              ? t("جاري الحفظ...", "Saving...")
-              : mode === "create"
-              ? t("إنشاء الخدمة", "Create Service")
-              : t("حفظ التعديلات", "Save Changes")}
-          </Button>
-        </div>
+        {/* Submit — hidden when the page relocates it below other sections. */}
+        {!hideSubmit && (
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-orange-600 hover:bg-orange-700 text-white gap-2 min-w-[140px]"
+            >
+              {isSubmitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {isSubmitting
+                ? t("جاري الحفظ...", "Saving...")
+                : mode === "create"
+                ? t("إنشاء الخدمة", "Create Service")
+                : t("حفظ التعديلات", "Save Changes")}
+            </Button>
+          </div>
+        )}
       </form>
     </Form>
   )

@@ -7,6 +7,8 @@ import { ServiceForm } from "@/components/services/ServiceForm"
 // v3.74.386 — consumable BOM editor for the service.
 import { ServiceProductsEditor } from "@/components/services/ServiceProductsEditor"
 import { LoadingState } from "@/components/ui/loading-state"
+import { Button } from "@/components/ui/button"
+import { Loader2, Save } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import {
@@ -143,6 +145,8 @@ export default function EditServicePage() {
             onSubmit={handleSubmit}
             isSubmitting={isSubmitting}
             lang={appLang}
+            formId="service-edit-form"
+            hideSubmit
           />
 
           {/* v3.74.386 — consumable BOM. Independent save button so
@@ -150,6 +154,21 @@ export default function EditServicePage() {
               service form. Stage C reads this list at booking
               execution time to gate / deduct inventory. */}
           <ServiceProductsEditor serviceId={id} lang={appLang} />
+
+          {/* v3.74.677 — the service "Save changes" button is relocated below
+              the consumed-products section (via the HTML form attribute) so the
+              product dropdown has room to open without overlapping it. */}
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              type="submit"
+              form="service-edit-form"
+              disabled={isSubmitting}
+              className="bg-orange-600 hover:bg-orange-700 text-white gap-2 min-w-[140px]"
+            >
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSubmitting ? t("جاري الحفظ...", "Saving...") : t("حفظ التعديلات", "Save Changes")}
+            </Button>
+          </div>
         </div>
       </main>
     </div>
