@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-16T08:30:38.125Z
+-- Generated: 2026-07-16T09:04:06.326Z
 -- Routines: 1183
 -- =====================================================================
 
@@ -317,6 +317,14 @@ BEGIN
       RAISE EXCEPTION 'الخصم بقيمة % منتظر اعتماد الإدارة (الحالة الحالية: %). لا يمكن تنفيذ الحجز قبل الاعتماد.',
         v_discount_amt, v_approval_state USING ERRCODE = 'P0001';
     END IF;
+  END IF;
+
+  -- v3.74.672 withdrawal-approval gate (parity with the /complete route):
+  -- block execution while a selected attached item whose product requires
+  -- withdrawal approval has no APPROVED withdrawal from the branch store manager.
+  IF public.booking_blocking_withdrawals_exist(p_company_id, p_booking_id) THEN
+    RAISE EXCEPTION 'يوجد صنف مرفق يتطلب اعتماد سحب من المخزن قبل تنفيذ الحجز. اطلب الاعتماد من مسؤول المخزن، أو ألغِ تحديد الصنف وأكمل بدونه.'
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- v3.74.387 inventory gate

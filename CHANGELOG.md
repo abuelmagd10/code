@@ -4,6 +4,19 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.672] - 2026-07-16 — Enforce stock-withdrawal approval on the Execute-Service path
+
+### Context
+زِرّ «تنفيذ الخدمة» يَستَدعى `/activate` → `activate_booking_atomic`، الذى كانَ يُطَبِّق بَوّابة الخَصم وبَوّابة توفُّر المَخزون، لَكِن **لا** بَوّابة اعتِماد السَّحب (كانَت فى مسار `/complete` المُنفَصِل فَقَط). فَصِنف مَرفق مُعَلَّم «يَتَطَلَّب اعتِماد سحب» كانَ يُمكِن تَنفيذُه (فاتورة + خَصم مخزون) **دون** اعتِماد مسؤول مخزن الفرع مَتى تَوَفَّرَت الكَمية.
+
+### Change
+إضافة نَفس البَوّابة (`booking_blocking_withdrawals_exist`) إلى `activate_booking_atomic` قَبلَ بَوّابة المَخزون مُباشَرةً. لا تَحجُب إلا الأصناف ذات `requires_withdrawal_approval = true` بِلا سحب مُعتَمَد بَعد؛ الأصناف «بِدون اعتِماد» لا تَتَأَثَّر. (لا تَعارُض مَع إعداد الصِّنف — البَوّابة تَقرأ نَفس العَلَم.)
+
+### Verification
+اختِبار حَىّ مُتَراجَع على BKG-2026-00004 (صِنفه MAIN-PRD-0001 `requires_withdrawal_approval=true` بلا سحب مُعتَمَد): `activate` رَفَعَ الخَطأ «يوجد صنف مرفق يتطلب اعتماد سحب من المخزن قبل تنفيذ الحجز». البَوّابة قَبلَ بَوّابة المَخزون. لا أثَر مُتَبَقٍّ.
+
+---
+
 ## [3.74.671] - 2026-07-16 — Percentage discount option in the booking EDIT form
 
 ### Context
