@@ -4,6 +4,23 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.680] - 2026-07-16 — Booking stock withdrawals in the approvals inbox (own tab + history + roles)
+
+### Context
+سُحوبات مخزون الحجز و«موافقات الإرسال» كِلاهُما «إخراج منتج من المخزن» يعتمده مسؤول المخزن. طَلَب المالِك جَمعُهما فى صندوق الموافقات — **بتبويب مستقل واضح** (لا خَلط المسارَين).
+
+### Change
+- تبويب جديد **«سحب مخزون الحجوزات» (bwd)** فى `app/approvals`: قائِمة السحوبات المُعَلَّقة (بطاقة: الحجز/المنتج/الكمية/الفرع/المخزن/السبب) + عَدّاد + اعتماد/رفض.
+- **الصلاحيات:** يظهر لِـ مسؤول المخزن ومسؤول المستودع (مُقيَّد بفرعهم عبر RLS + مِصفاة فرع) والإدارة (owner/admin/general_manager) ومدير الفرع (اطلاع). القرار مَحصور بِـ management + store/warehouse manager.
+- **سجل:** السحوبات المُقرَّرة (معتمَد/مرفوض) تظهر فى تبويب السجل تحت فئتها.
+- قرار الاعتماد/الرفض عبر مسار جديد `POST /api/booking-stock-withdrawals/[id]/decide` (غِلاف رفيع فوق `decide_booking_stock_withdrawal`).
+- توجيه إشعار `booking_stock_withdrawal` أصبح `/approvals?tab=bwd`.
+
+### Verification
+البيانات الحَيّة: السحب المُعَلَّق (BKG-2026-00006) تُحَلّ روابطه (منتج/فرع/مخزن)، وRLS يسمح لأعضاء الشركة بقراءته. `tsc` = 0 أخطاء. لا تغيير فى قاعدة البيانات (الدالة والجداول موجودة).
+
+---
+
 ## [3.74.679] - 2026-07-16 — Booking stock-withdrawal notification opens the booking (was "cannot navigate")
 
 ### Context

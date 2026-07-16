@@ -258,6 +258,21 @@ interface PendingDispatch {
   type: "dispatch"
 }
 
+// v3.74.680 — booking stock withdrawal awaiting the branch store manager's
+// approval (same "issue from warehouse" family as dispatch, its own tab).
+interface PendingBookingWithdrawal {
+  id: string
+  booking_id: string
+  booking_no: string | null
+  product_name: string | null
+  quantity: number
+  branch_name: string | null
+  warehouse_name: string | null
+  reason: string | null
+  requested_at: string
+  type: "booking_stock_withdrawal"
+}
+
 // v3.74.476 — vendor payment correction request. Same two-phase
 // pattern as customer refund.
 // v3.74.528 — enrichment: vendor_payment_correction_requests itself
@@ -799,7 +814,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "misc"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "misc"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -1055,18 +1070,21 @@ function ApprovalsContent() {
   }, [supabase])
   // The four canonical "receipt approvers" per owner spec:
   const canApproveReceipt = myRole !== null && ["owner","admin","general_manager","store_manager"].includes(myRole)
+  // v3.74.680 — who may decide a booking stock withdrawal (mirrors the RPC
+  // decide_booking_stock_withdrawal: management + branch store/warehouse manager).
+  const canDecideWithdrawal = myRole !== null && ["owner","admin","general_manager","store_manager","warehouse_manager"].includes(myRole)
 
   // v3.74.486 — Role-scoped tab visibility. Each role only sees the
   // tabs relevant to the workflows they participate in. Owner / admin /
   // general_manager see everything.
-  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"misc"
+  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"misc"
   const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
     // Warehouse: dispatch, receipt, write-offs, transfers, sales-return
     // warehouse stage, AND pending mfg product receive (v3.74.488).
     // v3.74.513 — "pret" مضافة: مرحلة إخراج مرتجعات المشتريات من المخزن
     // منوطة بمسؤول المخزن (تأكيد الإخراج) + يرى سجلها
-    store_manager:      ["recv","disp","wo","tr","sret","pr","pret"],
-    warehouse_manager:  ["recv","disp","wo","tr","sret","pr","pret"],
+    store_manager:      ["recv","disp","bwd","wo","tr","sret","pr","pret"],
+    warehouse_manager:  ["recv","disp","bwd","wo","tr","sret","pr","pret"],
     // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
     accountant:         ["pay","pret","disc","sret","cref","vcor","misc"],
     // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
@@ -1074,7 +1092,7 @@ function ApprovalsContent() {
     // Manufacturing officer: BOM/routing/production/material issue/product receive
     manufacturing_officer: ["bom","routing","po","mi","pr"],
     // Branch manager: broad view but read-only most places (visibility only)
-    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc","pr"],
+    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","bwd","wo","tr","misc","pr"],
     // Sales staff & bookings: no approvals to act on today
     staff:              [],
     booking_officer:    [],
@@ -1085,7 +1103,7 @@ function ApprovalsContent() {
   const isOwnerOrGm = !!myRole && ["owner","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
-      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc"] as const)
+      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","wo","tr","misc"] as const)
       : (roleTabs[myRole] ?? [])
   const canShow = (t: TabKey) => visibleTabs.includes(t)
   // v3.74.487 — Mirror the tab visibility onto the history filter row.
@@ -1107,6 +1125,7 @@ function ApprovalsContent() {
     goods_receipt: "recv",
     write_off: "wo",
     inventory_transfer: "tr",
+    booking_stock_withdrawal: "bwd",
     misc: "misc",
   }
   const canShowHistory = (c: HistoryCategory) => {
@@ -1122,8 +1141,10 @@ function ApprovalsContent() {
   const [inventoryTransfers, setInventoryTransfers] = useState<PendingInventoryTransfer[]>([])
   const [miscApprovals, setMiscApprovals] = useState<PendingMiscApproval[]>([])
   const [productReceivePending, setProductReceivePending] = useState<PendingProductReceive[]>([])
+  // v3.74.680 — pending booking stock withdrawals (bwd tab).
+  const [bookingWithdrawals, setBookingWithdrawals] = useState<PendingBookingWithdrawal[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "misc" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "misc" | "history">("all")
   // v3.74.484 — honor ?tab=... from notification routing so warehouse
   // manager clicking a dispatch/receipt notification lands on the
   // matching tab.
@@ -1131,7 +1152,7 @@ function ApprovalsContent() {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
     const initialTab = params.get("tab")
-    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","wo","tr","misc","history"] as const
+    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","wo","tr","misc","history"] as const
     if (initialTab && (valid as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as any)
     }
@@ -1141,7 +1162,7 @@ function ApprovalsContent() {
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "product_receive" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "product_receive" | "booking_stock_withdrawal" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -1858,6 +1879,42 @@ function ApprovalsContent() {
         }))
       } catch {
         setDispatches([])
+      }
+
+      // v3.74.680 — booking stock withdrawals awaiting the branch store
+      // manager (same "issue from warehouse" family as dispatch, own tab).
+      // Scope to the user's branch for non-management; management sees all.
+      try {
+        let wq = supabase
+          .from("booking_stock_withdrawals")
+          .select(`
+            id, booking_id, product_id, quantity, reason, requested_at,
+            branch_id, warehouse_id, status,
+            bookings(booking_no),
+            products(name),
+            branches(name),
+            warehouses(name)
+          `)
+          .eq("company_id", cid)
+          .eq("status", "pending")
+          .order("requested_at", { ascending: true })
+          .limit(100)
+        if (!isAdminLike && myBranchId) wq = wq.eq("branch_id", myBranchId)
+        const { data: wds } = await wq
+        setBookingWithdrawals((wds || []).map((w: any) => ({
+          id: w.id,
+          booking_id: w.booking_id,
+          booking_no: w.bookings?.booking_no ?? null,
+          product_name: w.products?.name ?? null,
+          quantity: Number(w.quantity || 0),
+          branch_name: w.branches?.name ?? null,
+          warehouse_name: w.warehouses?.name ?? null,
+          reason: w.reason ?? null,
+          requested_at: w.requested_at,
+          type: "booking_stock_withdrawal" as const,
+        })))
+      } catch {
+        setBookingWithdrawals([])
       }
 
       // v3.74.478+v3.74.483 — goods receipt approvals (bills awaiting
@@ -2685,6 +2742,40 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // v3.74.680 — booking stock withdrawal history (approved / rejected).
+      try {
+        const { data: wds } = await supabase
+          .from("booking_stock_withdrawals")
+          .select(`id, booking_id, product_id, quantity, status, requested_at,
+                   requested_by, decided_by, decided_at, decision_notes,
+                   branch_id, warehouse_id,
+                   bookings(booking_no), products(name)`)
+          .eq("company_id", cid)
+          .in("status", ["approved", "rejected"])
+          .order("decided_at", { ascending: false })
+          .limit(50)
+        for (const r of (wds || []) as any[]) {
+          merged.push({
+            id: `bwd-${r.id}`,
+            category: "booking_stock_withdrawal",
+            doc_label: `سحب مخزون · ${r.bookings?.booking_no ?? (r.booking_id ? String(r.booking_id).slice(0, 8) : r.id.slice(0, 8))}`,
+            doc_href: r.booking_id ? `/bookings/${r.booking_id}` : null,
+            party_label: r.products?.name ?? null,
+            value_label: `${Number(r.quantity || 0)} ${appLang === "en" ? "unit" : "وحدة"}`,
+            status: (r.status === "rejected" ? "rejected" : "approved") as any,
+            requested_by_email: null,
+            requested_by_id: r.requested_by ?? null,
+            requested_at: r.requested_at,
+            decided_by_email: null,
+            decided_by_id: r.decided_by ?? null,
+            decided_at: r.decided_at ?? null,
+            decision_note: r.decision_notes ?? null,
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
       // v3.74.481 — goods receipt history (bills with receipt_status
       // = approved / rejected).
       try {
@@ -3084,7 +3175,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -3538,6 +3629,11 @@ function ApprovalsContent() {
             {canShow("disp") && (
               <Button size="sm" variant={activeTab === "disp" ? "default" : "outline"} onClick={() => setActiveTab("disp")} className="gap-1">
                 <Package className="w-3.5 h-3.5" />{t("موافقات الإرسال", "Dispatch")} ({dispatches.length})
+              </Button>
+            )}
+            {canShow("bwd") && (
+              <Button size="sm" variant={activeTab === "bwd" ? "default" : "outline"} onClick={() => setActiveTab("bwd")} className="gap-1">
+                <Package className="w-3.5 h-3.5" />{t("سحب مخزون الحجوزات", "Booking Withdrawals")} ({bookingWithdrawals.length})
               </Button>
             )}
             {canShow("recv") && (
@@ -4712,6 +4808,127 @@ function ApprovalsContent() {
                                       method: "POST",
                                       headers: { "Content-Type": "application/json" },
                                       body: JSON.stringify({ reason: rejectReason, rejection_reason: rejectReason }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                    toast({ title: t("تم الرفض", "Rejected") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* v3.74.680 — Booking stock withdrawals (issue from warehouse for a service booking). */}
+              {(activeTab === "all" || activeTab === "bwd") && bookingWithdrawals.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Package className="w-4 h-4" />{t("سحب مخزون الحجوزات", "Booking Stock Withdrawals")}
+                  </h2>
+                  {bookingWithdrawals.map(w => (
+                    <Card key={w.id} className="border-l-4 border-l-indigo-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg shrink-0">
+                              <Package className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("سحب منتج لحجز", "Withdrawal for booking")} · {w.booking_no ?? w.booking_id.slice(0, 6)}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                📦 {w.product_name ?? "—"} · {t("الكمية", "Qty")}: {w.quantity}
+                              </p>
+                              {w.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {w.branch_name}{w.warehouse_name && <> · 🏬 {w.warehouse_name}</>}
+                                </p>
+                              )}
+                              {w.reason && <p className="text-xs text-muted-foreground mt-1">📝 {w.reason}</p>}
+                              <p className="text-xs text-muted-foreground mt-1">📅 {fmtDate(w.requested_at)}</p>
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند الاعتماد: يُسمح بسحب المنتج من المخزن لتنفيذ الخدمة",
+                                      "On approval: the product may be withdrawn from the warehouse to perform the service")}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد المخزن", "Awaiting store approval")}
+                            </Badge>
+                            <Link href={`/bookings/${w.booking_id}`} className="text-xs text-indigo-600 hover:underline">
+                              {t("عرض الحجز", "View booking")}
+                            </Link>
+                          </div>
+                        </div>
+                        {canDecideWithdrawal && (
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === w.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(w.id)
+                                const res = await fetch(`/api/booking-stock-withdrawals/${encodeURIComponent(w.id)}/decide`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ approve: true }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Approve failed' : 'تعذر الاعتماد'))
+                                toast({ title: t("تم اعتماد السحب", "Withdrawal approved") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد السحب", "Approve Withdrawal")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === w.id}
+                            onClick={() => { setRejectId(w.id); setRejectType("booking_stock_withdrawal"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                          </Button>
+                        </div>
+                        )}
+                        {canDecideWithdrawal && rejectId === w.id && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب الرفض...", "Rejection reason...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === w.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(w.id)
+                                    const res = await fetch(`/api/booking-stock-withdrawals/${encodeURIComponent(w.id)}/decide`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ approve: false, notes: rejectReason }),
                                     })
                                     const j = await res.json().catch(() => ({}))
                                     if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
