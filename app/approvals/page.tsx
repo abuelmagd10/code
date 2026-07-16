@@ -1885,30 +1885,38 @@ function ApprovalsContent() {
       // manager (same "issue from warehouse" family as dispatch, own tab).
       // Scope to the user's branch for non-management; management sees all.
       try {
+        // NOTE: booking_stock_withdrawals only has FK to bookings + companies,
+        // so PostgREST can embed bookings(...) but NOT products/branches/
+        // warehouses. Resolve those names in separate id lookups.
         let wq = supabase
           .from("booking_stock_withdrawals")
-          .select(`
-            id, booking_id, product_id, quantity, reason, requested_at,
-            branch_id, warehouse_id, status,
-            bookings(booking_no),
-            products(name),
-            branches(name),
-            warehouses(name)
-          `)
+          .select(`id, booking_id, product_id, quantity, reason, requested_at, branch_id, warehouse_id, status, bookings(booking_no)`)
           .eq("company_id", cid)
           .eq("status", "pending")
           .order("requested_at", { ascending: true })
           .limit(100)
         if (!isAdminLike && myBranchId) wq = wq.eq("branch_id", myBranchId)
         const { data: wds } = await wq
-        setBookingWithdrawals((wds || []).map((w: any) => ({
+        const rows = (wds || []) as any[]
+        const nameMap = async (table: string, ids: any[]) => {
+          const uniq = Array.from(new Set(ids.filter(Boolean)))
+          if (!uniq.length) return {} as Record<string, string>
+          const { data } = await supabase.from(table).select("id, name").in("id", uniq as string[])
+          return Object.fromEntries((data || []).map((r: any) => [r.id, r.name])) as Record<string, string>
+        }
+        const [prodNames, brNames, whNames] = await Promise.all([
+          nameMap("products", rows.map(r => r.product_id)),
+          nameMap("branches", rows.map(r => r.branch_id)),
+          nameMap("warehouses", rows.map(r => r.warehouse_id)),
+        ])
+        setBookingWithdrawals(rows.map((w) => ({
           id: w.id,
           booking_id: w.booking_id,
           booking_no: w.bookings?.booking_no ?? null,
-          product_name: w.products?.name ?? null,
+          product_name: prodNames[w.product_id] ?? null,
           quantity: Number(w.quantity || 0),
-          branch_name: w.branches?.name ?? null,
-          warehouse_name: w.warehouses?.name ?? null,
+          branch_name: brNames[w.branch_id] ?? null,
+          warehouse_name: whNames[w.warehouse_id] ?? null,
           reason: w.reason ?? null,
           requested_at: w.requested_at,
           type: "booking_stock_withdrawal" as const,
@@ -2749,18 +2757,26 @@ function ApprovalsContent() {
           .select(`id, booking_id, product_id, quantity, status, requested_at,
                    requested_by, decided_by, decided_at, decision_notes,
                    branch_id, warehouse_id,
-                   bookings(booking_no), products(name)`)
+                   bookings(booking_no)`)
           .eq("company_id", cid)
           .in("status", ["approved", "rejected"])
           .order("decided_at", { ascending: false })
           .limit(50)
-        for (const r of (wds || []) as any[]) {
+        const wRows = (wds || []) as any[]
+        // products has no FK embed here — resolve names by id.
+        const wpIds = Array.from(new Set(wRows.map(r => r.product_id).filter(Boolean)))
+        let wProdNames: Record<string, string> = {}
+        if (wpIds.length) {
+          const { data: wp } = await supabase.from("products").select("id, name").in("id", wpIds as string[])
+          wProdNames = Object.fromEntries((wp || []).map((p: any) => [p.id, p.name]))
+        }
+        for (const r of wRows) {
           merged.push({
             id: `bwd-${r.id}`,
             category: "booking_stock_withdrawal",
             doc_label: `سحب مخزون · ${r.bookings?.booking_no ?? (r.booking_id ? String(r.booking_id).slice(0, 8) : r.id.slice(0, 8))}`,
             doc_href: r.booking_id ? `/bookings/${r.booking_id}` : null,
-            party_label: r.products?.name ?? null,
+            party_label: wProdNames[r.product_id] ?? null,
             value_label: `${Number(r.quantity || 0)} ${appLang === "en" ? "unit" : "وحدة"}`,
             status: (r.status === "rejected" ? "rejected" : "approved") as any,
             requested_by_email: null,

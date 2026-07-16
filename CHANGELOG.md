@@ -4,6 +4,19 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.681] - 2026-07-16 — Fix: booking-withdrawals tab was empty (bad PostgREST embeds)
+
+### Context
+تبويب «سحب مخزون الحجوزات» ظَهَرَ **(0)** رَغمَ وُجود طَلَب مُعَلَّق. السَّبَب: `booking_stock_withdrawals` لا يَملِك مَفاتيح أجنبية (FK) إلى `products`/`branches`/`warehouses` — فَقَط إلى `bookings`/`companies`. فَكانَ embed المُدمَج (`products(name)` وغيره) يُفشِل **كامِل الاستِعلام** فى PostgREST → قائِمة فارِغة.
+
+### Change
+- استِعلام القائِمة والسِّجِلّ يُدمِج `bookings(booking_no)` فَقَط (لَه FK)، ويَحُلّ أسماء المنتج/الفرع/المخزن عَبر بَحث مُنفَصِل بالـ id (`.in("id", ...)`).
+
+### Verification
+البيانات الحَيّة: فرع مسؤول المخزن (1336c628) يُطابِق فرع السحب، وRLS يَسمَح، وروابط FK = bookings+companies فَقَط (سَبَب الخَلَل). `tsc` = 0 أخطاء. الآن يَظهَر الطَّلَب فى التبويب.
+
+---
+
 ## [3.74.680] - 2026-07-16 — Booking stock withdrawals in the approvals inbox (own tab + history + roles)
 
 ### Context
