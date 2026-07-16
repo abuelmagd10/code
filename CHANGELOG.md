@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.674] - 2026-07-16 — Consumed-products picker lists products only (exclude services)
+
+### Context
+قائِمة اختيار المنتج فى قِسم «المنتجات المستهلكة فى الخدمة» كانَت تَعرِض **الخدمات أيضاً** (item_type='service')، بَينَما المُستَهلَك يَجِب أن يَكون **منتجاً** (مشترى/مصنّع/مادة خام) لِيُخصَم من المخزون.
+
+### Change
+- الواجهة تَطلُب `/api/products?item_type=product` (استِبعاد الخدمات من المصدر) + مِصفاة أمان فى العميل تَستَبعِد أى `item_type/product_type = service`.
+- الخادِم (`POST /api/services/[id]/products`) يَرفُض إضافة خدمة كمنتج مستهلك (تَحَقُّق `item_type <> 'service'`) دِفاعاً فى العُمق.
+
+### Verification
+`tsc` = 0 أخطاء. القائمة الآن تَعرِض المنتجات فَقَط.
+
+---
+
 ## [3.74.673] - 2026-07-16 — Unify service consumed-products with the catalog bundle (single source)
 
 ### Context

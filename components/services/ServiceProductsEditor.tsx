@@ -79,27 +79,27 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
     try {
       const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
       const [pRes, sRes] = await Promise.all([
-        // Products list — paginated but we ask for a generous slice
-        fetch(`/api/products?limit=500&company_id=${encodeURIComponent(cid)}`, { cache: "no-store" }),
+        // v3.74.674 — consumed items are PRODUCTS only (purchased / manufactured
+        // / raw materials). Exclude services (item_type='service') server-side.
+        fetch(`/api/products?limit=500&item_type=product&company_id=${encodeURIComponent(cid)}`, { cache: "no-store" }),
         fetch(`/api/services/${serviceId}/products`, { cache: "no-store" }),
       ])
 
       const pJson = await pRes.json().catch(() => ({}))
-      const productsList: ProductOption[] = Array.isArray(pJson?.products)
-        ? pJson.products.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            product_type: p.product_type ?? null,
-            track_inventory: !!p.track_inventory,
-          }))
+      const rawProducts: any[] = Array.isArray(pJson?.products)
+        ? pJson.products
         : Array.isArray(pJson?.data)
-          ? pJson.data.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              product_type: p.product_type ?? null,
-              track_inventory: !!p.track_inventory,
-            }))
+          ? pJson.data
           : []
+      // Client-side safety net: never offer a service as a consumed product.
+      const productsList: ProductOption[] = rawProducts
+        .filter((p: any) => String(p?.item_type || "") !== "service" && String(p?.product_type || "") !== "service")
+        .map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          product_type: p.product_type ?? null,
+          track_inventory: !!p.track_inventory,
+        }))
       setProducts(productsList)
 
       if (!sRes.ok) {

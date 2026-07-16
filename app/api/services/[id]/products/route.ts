@@ -191,7 +191,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       const productIds = cleaned.map((c) => c.product_id)
       const { data: existingProducts } = await supabase
         .from("products")
-        .select("id")
+        .select("id, item_type")
         .eq("company_id", companyId)
         .in("id", productIds)
       const existingIds = new Set((existingProducts || []).map((p) => p.id))
@@ -199,6 +199,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       if (invalid.length > 0) {
         return NextResponse.json(
           { success: false, error: "منتج أو أكثر لا ينتمى للشركة الحالية" },
+          { status: 400 },
+        )
+      }
+      // v3.74.674 — consumed items must be PRODUCTS, never services.
+      const serviceHits = (existingProducts || []).filter((p: any) => String(p.item_type || "") === "service")
+      if (serviceHits.length > 0) {
+        return NextResponse.json(
+          { success: false, error: "لا يمكن إضافة خدمة كمنتج مستهلك — اختر منتجات فقط (مشتراة/مصنعة/مواد خام)" },
           { status: 400 },
         )
       }
