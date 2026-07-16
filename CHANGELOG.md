@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.671] - 2026-07-16 — Percentage discount option in the booking EDIT form
+
+### Context
+أضَفنا الخَصم بِالنِّسبة المِئَوية فى نموذج الحَجز **الجَديد** (v3.74.659)، لَكِن نموذج **تَعديل** أمر الحَجز (`app/bookings/[id]/edit`) بَقِيَ يَدعَم الخَصم **بِالقيمة فَقَط**. المَطلوب أن يَدعَم القيمة **والنِّسبة** مِثل نموذج الإنشاء.
+
+### Change
+- إضافة مِفتاح تَبديل «قيمة / نسبة %» فى نموذج تَعديل الحَجز. فى وَضع النِّسبة، يُحسَب الخَصم = الإجمالى قَبل الخَصم (`unit_price × quantity`) × النِّسبة ÷ ١٠٠، مَع عَرض القيمة المَحسوبة.
+- القيمة المُرسَلة لِلخادِم تَبقى `discount_amount` دائماً — فَيَظَل مُحَفِّز طَلَب الاعتِماد (`bkg_request_discount_approval_trg`) وحَوكمة «الخَصم مِن اختِصاص الموظف المُنوط» (خادِم PATCH v3.74.630) تَعمَلان بلا تَغيير.
+
+### Verification
+نَفس نَمَط `BookingForm` المُثبَت (تَبديل + مُزامَنة `discount_amount`). النافِذة القابِلة لِلتَّعديل كَما هى (draft/confirmed + بلا فاتورة). بَوّابة `tsc` فى سكربت النَّشر تُؤَكِّد البِناء.
+
+---
+
 ## [3.74.670] - 2026-07-16 — CRITICAL: restore ALL notifications (create_notification overload ambiguity)
 
 ### Context

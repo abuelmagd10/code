@@ -81,6 +81,10 @@ export default function EditBookingPage() {
   const [staffUserIds, setStaffUserIds]     = useState<string[]>([])
   const [quantity, setQuantity]             = useState<number>(1)
   const [discountAmount, setDiscountAmount] = useState<number>(0)
+  // v3.74.671 — نفس نموذج الحجز الجديد: خصم بالقيمة أو بالنسبة المئوية.
+  // القيمة المُرسَلة للخادم تبقى discount_amount دائماً (يظل مُحفِّز الاعتماد يعمل).
+  const [discountMode, setDiscountMode]       = useState<"amount" | "percent">("amount")
+  const [discountPercent, setDiscountPercent] = useState<number>(0)
   const [notes, setNotes]                   = useState<string>("")
 
   useEffect(() => {
@@ -132,6 +136,15 @@ export default function EditBookingPage() {
     !!booking &&
     (booking.status === "draft" || booking.status === "confirmed") &&
     !booking.invoice_id
+
+  // v3.74.671 — pre-discount total; in percent mode the submitted
+  // discount_amount is kept in sync with (gross × percent / 100).
+  const grossTotal = Number(booking?.unit_price || 0) * (Number(quantity) || 1)
+  useEffect(() => {
+    if (discountMode !== "percent") return
+    const pct = Math.max(0, Math.min(100, Number(discountPercent) || 0))
+    setDiscountAmount(Math.round(grossTotal * pct) / 100)
+  }, [discountMode, discountPercent, grossTotal])
 
   const branchStaff = useMemo(() => {
     if (!booking?.branch_id) return staff
@@ -352,18 +365,58 @@ export default function EditBookingPage() {
                     />
                   </div>
                   <div>
-                    {/* v3.74.600 — amount-only discount, editable while
-                        draft/confirmed + no invoice (the trigger's window). */}
-                    <Label>{t("الخصم (قيمة)", "Discount (amount)")}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={discountAmount}
-                      onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
-                      disabled={!discountEditable}
-                      dir="ltr"
-                    />
+                    {/* v3.74.671 — discount by amount OR percentage (mirrors the
+                        new-booking form), editable while draft/confirmed + no
+                        invoice (the trigger's window). The value sent to the
+                        server is always discount_amount. */}
+                    <Label>{t("الخصم", "Discount")}</Label>
+                    <div className="flex gap-2 mb-2 mt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={discountMode === "amount" ? "default" : "outline"}
+                        onClick={() => setDiscountMode("amount")}
+                        disabled={!discountEditable}
+                      >
+                        {t("قيمة", "Amount")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={discountMode === "percent" ? "default" : "outline"}
+                        onClick={() => setDiscountMode("percent")}
+                        disabled={!discountEditable}
+                      >
+                        {t("نسبة %", "Percent %")}
+                      </Button>
+                    </div>
+                    {discountMode === "amount" ? (
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={discountAmount}
+                        onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
+                        disabled={!discountEditable}
+                        dir="ltr"
+                      />
+                    ) : (
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={discountPercent}
+                        onChange={(e) => setDiscountPercent(Number(e.target.value) || 0)}
+                        disabled={!discountEditable}
+                        dir="ltr"
+                      />
+                    )}
+                    {discountMode === "percent" && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t("قيمة الخصم المحسوبة", "Computed discount")}: {discountAmount.toFixed(2)} ({discountPercent || 0}%)
+                      </p>
+                    )}
                     {discountEditable ? (
                       <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
                         {t(
