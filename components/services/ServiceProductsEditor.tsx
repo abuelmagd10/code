@@ -47,10 +47,12 @@ interface BomRow {
   // Empty string when the row is fresh and no product picked yet
   product_id: string
   quantity_per_service: string  // string so the input stays controllable
+  // v3.74.673 — mandatory (false) vs optional (true). Maps to the bundle's
+  // is_optional. Optional items are chosen per booking; mandatory always consume.
+  is_optional: boolean
   // Resolved on save / load — denormalized for display only
   product_name?: string | null
   track_inventory?: boolean
-  notes?: string | null
 }
 
 function makeRowId(): string {
@@ -67,6 +69,9 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState<string | null>(null)
+  // v3.74.673 — true when the service has no catalog product, so no bundle
+  // (consumed products) can be attached until it is linked to a catalog item.
+  const [noCatalog, setNoCatalog]   = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -102,13 +107,14 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
         throw new Error(j?.error || `Failed to load BOM (${sRes.status})`)
       }
       const sJson = await sRes.json()
+      setNoCatalog(!!sJson?.no_catalog)
       const initialRows: BomRow[] = (sJson?.items || []).map((it: any) => ({
         rowId: makeRowId(),
         product_id: it.product_id,
         quantity_per_service: String(it.quantity_per_service),
+        is_optional: !!it.is_optional,
         product_name: it.product_name,
         track_inventory: !!it.track_inventory,
-        notes: it.notes,
       }))
       setRows(initialRows)
     } catch (e: any) {
@@ -126,6 +132,7 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
       rowId: makeRowId(),
       product_id: "",
       quantity_per_service: "1",
+      is_optional: false,
     }])
   }
 
@@ -178,7 +185,7 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
           items: rows.map((r) => ({
             product_id: r.product_id,
             quantity_per_service: Number(r.quantity_per_service),
-            notes: r.notes || null,
+            is_optional: !!r.is_optional,
           })),
         }),
       })
@@ -207,8 +214,8 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
         </CardTitle>
         <p className="text-xs text-gray-500 mt-1">
           {t(
-            "اربط المنتجات اللى تستهلك عند تنفيذ الخدمة. الكمية المحددة هنا تتم خصمها من مخزون فرع الفاتورة عند تنفيذ كل حجز.",
-            "Link the products consumed when the service is performed. The quantity here will be deducted from the invoice branch warehouse on each booking execution.",
+            "اربط المنتجات اللى تستهلك عند تنفيذ الخدمة. الكمية المحددة هنا تتم خصمها من مخزون فرع الفاتورة عند تنفيذ كل حجز. هذه القائمة موحّدة مع حزمة صنف الخدمة فى صفحة المنتجات — أى تعديل هنا يظهر هناك والعكس. «إلزامى» يُستهلك دائماً، و«اختيارى» يختاره المنفّذ لكل حجز.",
+            "Link the products consumed when the service is performed. The quantity here is deducted from the invoice branch warehouse on each booking execution. This list is unified with the service item's bundle on the products page — edits here appear there and vice-versa. 'Mandatory' is always consumed; 'Optional' is chosen per booking by the executor.",
           )}
         </p>
       </CardHeader>
@@ -223,6 +230,14 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             {error}
           </div>
+        ) : noCatalog ? (
+          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-md text-sm flex items-center gap-2">
+            <Info className="w-4 h-4 flex-shrink-0" />
+            {t(
+              "هذه الخدمة غير مرتبطة بصنف كتالوج، فلا يمكن ربط منتجات مستهلكة بها. اربط الخدمة بصنف أولاً من إعدادات الخدمة.",
+              "This service isn't linked to a catalog item, so consumed products can't be attached. Link the service to a catalog item first from the service settings.",
+            )}
+          </div>
         ) : (
           <>
             {rows.length === 0 ? (
@@ -233,7 +248,7 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
               <div className="space-y-2">
                 {rows.map((row) => (
                   <div key={row.rowId} className="grid grid-cols-12 gap-2 items-start">
-                    <div className="col-span-7">
+                    <div className="col-span-5">
                       <Select
                         value={row.product_id || undefined}
                         onValueChange={(v) => onPickProduct(row.rowId, v)}
@@ -266,15 +281,29 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
                         </p>
                       )}
                     </div>
-                    <div className="col-span-3">
+                    <div className="col-span-2">
                       <Input
                         type="number"
                         min={0}
                         step="0.0001"
                         value={row.quantity_per_service}
                         onChange={(e) => updateRow(row.rowId, { quantity_per_service: e.target.value })}
-                        placeholder={t("الكمية لكل تنفيذ", "Qty per execution")}
+                        placeholder={t("الكمية", "Qty")}
                       />
+                    </div>
+                    <div className="col-span-3">
+                      <Select
+                        value={row.is_optional ? "optional" : "mandatory"}
+                        onValueChange={(v) => updateRow(row.rowId, { is_optional: v === "optional" })}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mandatory">{t("إلزامى", "Mandatory")}</SelectItem>
+                          <SelectItem value="optional">{t("اختيارى", "Optional")}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="col-span-2">
                       <Button
@@ -283,8 +312,7 @@ export function ServiceProductsEditor({ serviceId, lang = "ar" }: Props) {
                         className="text-red-600 border-red-300 hover:bg-red-50 w-full"
                         onClick={() => removeRow(row.rowId)}
                       >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        {t("حذف", "Remove")}
+                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>

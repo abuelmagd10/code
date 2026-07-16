@@ -4,6 +4,23 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.673] - 2026-07-16 — Unify service consumed-products with the catalog bundle (single source)
+
+### Context
+كانَ لِلمنتجات المُستَهلَكة فى الخدمة **مَخزَنان مُتَوازِيان**: قِسم «المنتجات المستهلكة» فى صفحة الخدمة (جَدوَل `service_products`)، وحُزمة صنف كتالوج الخدمة (`product_bundle_items`) فى صفحة المنتجات. مُحَرِّك التنفيذ (`get_booking_line_additions`) يَقرأ **الحُزمة فَقَط** ويَتَجاهَل `service_products` تَماماً — فَأى منتج يُضاف من قِسم صفحة الخدمة **لم يَكُن يُخصَم إطلاقاً** (فَخّ صامِت)، وكانَ القِسم يَظهَر «لا توجد منتجات» رَغمَ وُجود مُكوّنات فى الحُزمة.
+
+### Change
+توحيد المَصدَر على **الحُزمة**. `/api/services/[id]/products` (GET/POST) يَقرأ ويَكتُب الآن `product_bundle_items` على `services.product_catalog_id` بَدَل `service_products`:
+- يَعرِض القِسم المنتجات المُرتَبِطة فِعلاً (والمُحَرَّرة أيضاً من صفحة المنتجات) — مَصدَر واحِد، مُتزامِن من المكانَين.
+- أى إضافة من صفحة الخدمة **تُخصَم فِعلاً** عِندَ التنفيذ.
+- إضافة اختيار **إلزامى/اختيارى** لِكُلّ منتج (`is_optional`): الإلزامى يُستَهلَك دائماً، والاختيارى يَختارُه المُنَفِّذ لِكُلّ حجز.
+- المنتجات المُستَهلَكة تُكتَب بِـ `auto_deduct_inventory=true` و`price_handling='included'` (مُستَوعَبة فى سِعر الخدمة). نَفس الصَّلاحيات (owner/admin/general_manager/manager) وعَزل الشَّرِكة. رِسالة واضِحة إن لم تَكُن الخدمة مَربوطة بِصنف كتالوج.
+
+### Verification
+لا تَغيير فى قاعِدة البيانات — الحُزمة ومُحَرِّكها مَوجودان. البيانات الحَيّة: صنف الخدمة MAIN-SRV-0001 حُزمَتُه تَحوى MAIN-PRD-0001 (`is_optional=false, auto_deduct=true, price_handling='included'`) وهو ما يُخصَم فِعلاً. `tsc` = 0 أخطاء.
+
+---
+
 ## [3.74.672] - 2026-07-16 — Enforce stock-withdrawal approval on the Execute-Service path
 
 ### Context
