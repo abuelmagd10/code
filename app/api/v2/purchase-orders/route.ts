@@ -103,9 +103,14 @@ export async function GET(request: NextRequest) {
     if (isPrivileged && branchId) {
       // المدير العام اختار فرعاً معيناً من الـ dropdown
       query = query.eq('branch_id', branchId)
-    } else if (!isPrivileged && governance.branchIds.length > 0) {
-      // الأدوار العادية → فرعهم فقط
-      query = query.in('branch_id', governance.branchIds)
+    } else if (!isPrivileged) {
+      // الأدوار العادية → فروعهم المصرّح بها فقط. v3.74.689 — fail closed:
+      // لو لا يوجد نطاق فروع لا يرى شيئاً (بدلاً من رؤية كل الفروع).
+      if (governance.branchIds.length > 0) {
+        query = query.in('branch_id', governance.branchIds)
+      } else {
+        query = query.eq('branch_id', '00000000-0000-0000-0000-000000000000')
+      }
     }
     // المدير العام بدون اختيار فرع → يرى كل الفروع (لا فلتر)
 

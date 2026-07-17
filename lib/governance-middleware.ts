@@ -132,7 +132,10 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
   // through and the role-specific case below scopes them to the whole
   // company's branches.
   const _roleNorm = String(member.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
-  const _branchOptionalRoles = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin', 'generalmanager', 'booking_officer']
+  // v3.74.689 — purchasing_officer may be central (no branch = sees all) OR
+  // branch-scoped (assigned a branch = that branch only). Allow a missing
+  // branch here; the dedicated case below decides the scope.
+  const _branchOptionalRoles = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin', 'generalmanager', 'booking_officer', 'purchasing_officer']
   if (!member.branch_id && !_branchOptionalRoles.includes(_roleNorm)) {
     throw new Error('Governance Error: User has no branch assigned')
   }
@@ -208,7 +211,6 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
     case 'general_manager':
     case 'generalmanager':
     case 'superadmin':
-    case 'purchasing_officer': // رؤية عبر الفروع للمشتريات (R7)
       const { data: allBranches } = await supabase
         .from('branches')
         .select('id')
@@ -255,6 +257,27 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
           .select('id')
           .eq('company_id', context.companyId)
         context.branchIds = allBranches?.map((b: any) => b.id) || []
+      }
+      break
+    }
+
+    // v3.74.689 — purchasing officer: branch-scoped when assigned a branch
+    // (sees only that branch, like a manager/accountant); central purchasing
+    // (no branch) keeps company-wide visibility. Previously grouped with
+    // admin (cross-branch always) which leaked other branches' documents.
+    case 'purchasing_officer': {
+      if (member.branch_id) {
+        context.branchIds = [member.branch_id]
+        const defaults = await getBranchDefaults(member.branch_id)
+        if (defaults.defaultWarehouseId) context.warehouseIds = [defaults.defaultWarehouseId]
+        if (defaults.defaultCostCenterId) context.costCenterIds = [defaults.defaultCostCenterId]
+      } else {
+        const { data: pAllBranches } = await supabase.from('branches').select('id').eq('company_id', context.companyId)
+        context.branchIds = pAllBranches?.map((b: any) => b.id) || []
+        const { data: pAllWarehouses } = await supabase.from('warehouses').select('id').eq('company_id', context.companyId)
+        context.warehouseIds = pAllWarehouses?.map((w: any) => w.id) || []
+        const { data: pAllCostCenters } = await supabase.from('cost_centers').select('id').eq('company_id', context.companyId)
+        context.costCenterIds = pAllCostCenters?.map((c: any) => c.id) || []
       }
       break
     }

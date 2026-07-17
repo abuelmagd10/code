@@ -402,6 +402,17 @@ export default function PurchaseOrdersPage() {
         .single();
 
       if (fullOrder) {
+        // v3.74.689 — realtime must respect branch isolation. Without this, a
+        // newly-created PO for ANY branch was pushed into every user's list
+        // (RLS is company-scoped), leaking other branches' orders to
+        // branch-restricted users. Privileged roles and central purchasing
+        // (no branch) see all; everyone else only their own branch.
+        const _r = String(userContext?.role || '').toLowerCase().replace(/\s+/g, '_')
+        const _privileged = ['owner','admin','general_manager','gm','superadmin','super_admin','generalmanager'].includes(_r)
+        const _centralPurchasing = _r === 'purchasing_officer' && !userContext?.branch_id
+        if (!_privileged && !_centralPurchasing) {
+          if (!userContext?.branch_id || (fullOrder as any).branch_id !== userContext.branch_id) return
+        }
         setOrders(prev => {
           // Prevent duplicates one more time just in case
           if (prev.some(o => o.id === fullOrder.id)) return prev;
