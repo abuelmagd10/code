@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-17T09:08:14.276Z
+-- Generated: 2026-07-17T09:42:19.907Z
 -- Routines: 1183
 -- =====================================================================
 
@@ -16075,6 +16075,8 @@ DECLARE
   v_is_optional boolean;
   v_msg text;
   v_mgr uuid;
+  v_tracked boolean;
+  v_available numeric;
 BEGIN
   SELECT * INTO v_w FROM public.booking_stock_withdrawals WHERE id = p_withdrawal_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'WITHDRAWAL_NOT_FOUND'; END IF;
@@ -16094,6 +16096,27 @@ BEGIN
 
   IF v_w.status <> 'pending' THEN
     RAISE EXCEPTION 'WITHDRAWAL_ALREADY_DECIDED: تم البت في هذا الطلب مسبقاً (%).', v_w.status;
+  END IF;
+
+  -- v3.74.684 — on APPROVE, block if the branch warehouse does not actually hold
+  -- enough of the (inventory-tracked) product. Approving what cannot be
+  -- fulfilled only defers the failure to the execution inventory gate and
+  -- confuses the store manager.
+  IF p_approve THEN
+    SELECT COALESCE(track_inventory, false) INTO v_tracked FROM public.products WHERE id = v_w.product_id;
+    IF COALESCE(v_tracked, false) THEN
+      SELECT COALESCE(SUM(quantity_change), 0) INTO v_available
+        FROM public.inventory_transactions
+       WHERE company_id = v_w.company_id
+         AND product_id = v_w.product_id
+         AND branch_id  = v_w.branch_id
+         AND COALESCE(warehouse_id::text, '') = COALESCE(v_w.warehouse_id::text, '')
+         AND COALESCE(is_deleted, false) = false;
+      IF v_available < v_w.quantity THEN
+        RAISE EXCEPTION 'WITHDRAWAL_INSUFFICIENT_STOCK: الرصيد المتاح (%) أقل من المطلوب (%) لهذا المنتج فى مخزن الفرع. وفّر الرصيد ثم اعتمد، أو ارفض الطلب.',
+          v_available, v_w.quantity USING ERRCODE = 'P0001';
+      END IF;
+    END IF;
   END IF;
 
   v_new := CASE WHEN p_approve THEN 'approved' ELSE 'rejected' END;
@@ -16126,8 +16149,6 @@ BEGIN
       CASE WHEN p_approve THEN 'info' ELSE 'error' END, 'inventory');
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
-  -- v3.74.683 — a REJECTED MANDATORY item deadlocks execution (can't be
-  -- deselected); escalate to management to provide stock or cancel.
   IF NOT p_approve AND NOT v_is_optional THEN
     FOR v_mgr IN
       SELECT DISTINCT u FROM (

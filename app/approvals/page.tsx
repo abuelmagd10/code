@@ -270,6 +270,7 @@ interface PendingBookingWithdrawal {
   warehouse_name: string | null
   reason: string | null
   requested_at: string
+  available: number | null // v3.74.684 — current stock in the branch warehouse (null = untracked)
   type: "booking_stock_withdrawal"
 }
 
@@ -1909,6 +1910,32 @@ function ApprovalsContent() {
           nameMap("branches", rows.map(r => r.branch_id)),
           nameMap("warehouses", rows.map(r => r.warehouse_id)),
         ])
+        // v3.74.684 — current available stock per (product, branch, warehouse),
+        // mirroring decide_booking_stock_withdrawal's guard: sum quantity_change
+        // of non-deleted inventory_transactions. Only for inventory-tracked
+        // products (untracked => available stays null, no gate on approval).
+        const availByKey: Record<string, number> = {}
+        const trackedSet = new Set<string>()
+        try {
+          const pIds = Array.from(new Set(rows.map(r => r.product_id).filter(Boolean)))
+          if (pIds.length) {
+            const { data: prodRows } = await supabase
+              .from("products").select("id, track_inventory").in("id", pIds as string[])
+            for (const p of (prodRows || []) as any[]) {
+              if (p.track_inventory) trackedSet.add(p.id)
+            }
+            const { data: txs } = await supabase
+              .from("inventory_transactions")
+              .select("product_id, branch_id, warehouse_id, quantity_change")
+              .eq("company_id", cid)
+              .eq("is_deleted", false)
+              .in("product_id", pIds as string[])
+            for (const tx of (txs || []) as any[]) {
+              const key = `${tx.product_id}|${tx.branch_id}|${tx.warehouse_id ?? ""}`
+              availByKey[key] = (availByKey[key] || 0) + Number(tx.quantity_change || 0)
+            }
+          }
+        } catch { /* availability is advisory; leave null on failure */ }
         setBookingWithdrawals(rows.map((w) => ({
           id: w.id,
           booking_id: w.booking_id,
@@ -1919,6 +1946,9 @@ function ApprovalsContent() {
           warehouse_name: whNames[w.warehouse_id] ?? null,
           reason: w.reason ?? null,
           requested_at: w.requested_at,
+          available: trackedSet.has(w.product_id)
+            ? (availByKey[`${w.product_id}|${w.branch_id}|${w.warehouse_id ?? ""}`] || 0)
+            : null,
           type: "booking_stock_withdrawal" as const,
         })))
       } catch {
@@ -4868,6 +4898,12 @@ function ApprovalsContent() {
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 📦 {w.product_name ?? "—"} · {t("الكمية", "Qty")}: {w.quantity}
                               </p>
+                              {w.available !== null && (
+                                <p className={`text-xs mt-0.5 font-medium ${w.available < w.quantity ? "text-red-600" : "text-green-700 dark:text-green-400"}`}>
+                                  {w.available < w.quantity ? "⚠️" : "✅"} {t("الرصيد المتاح بالمخزن", "Available in warehouse")}: {w.available}
+                                  {w.available < w.quantity && <> — {t("أقل من المطلوب، لا يمكن الاعتماد", "less than requested — cannot approve")}</>}
+                                </p>
+                              )}
                               {w.branch_name && (
                                 <p className="text-xs text-muted-foreground mt-1">
                                   🏢 {w.branch_name}{w.warehouse_name && <> · 🏬 {w.warehouse_name}</>}
@@ -4894,7 +4930,8 @@ function ApprovalsContent() {
                         <div className="flex gap-2 mt-3">
                           <Button
                             size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
-                            disabled={runningId === w.id}
+                            disabled={runningId === w.id || (w.available !== null && w.available < w.quantity)}
+                            title={w.available !== null && w.available < w.quantity ? t("الرصيد المتاح أقل من المطلوب", "Available stock is less than requested") : undefined}
                             onClick={async () => {
                               try {
                                 setRunningId(w.id)

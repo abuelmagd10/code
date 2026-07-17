@@ -32,8 +32,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     if (error) {
-      const msg = String(error.message || "")
-      const status = msg.includes("FORBIDDEN") ? 403 : msg.includes("ALREADY_DECIDED") ? 409 : 400
+      const raw = String(error.message || "")
+      const status = raw.includes("FORBIDDEN") ? 403
+        : raw.includes("ALREADY_DECIDED") ? 409
+        : raw.includes("INSUFFICIENT_STOCK") ? 409
+        : 400
+      // Strip the internal WITHDRAWAL_* code prefix so the user sees only the
+      // human message (v3.74.684 — e.g. the insufficient-stock explanation).
+      const msg = raw.replace(/^WITHDRAWAL_[A-Z_]+:\s*/, "")
       return NextResponse.json({ success: false, error: msg || "تعذر تنفيذ القرار" }, { status })
     }
 
