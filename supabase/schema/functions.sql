@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-17T11:04:00.167Z
--- Routines: 1185
+-- Generated: 2026-07-17T11:18:41.487Z
+-- Routines: 1187
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8260,7 +8260,7 @@ BEGIN
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Booking not found. booking_id=%', p_booking_id USING ERRCODE='P0001'; END IF;
   IF public.bkg_is_terminal_status(v_booking.status) THEN RAISE EXCEPTION 'Cannot cancel a % booking. booking_id=%', v_booking.status, p_booking_id USING ERRCODE='P0001'; END IF;
-  PERFORM public.fn_post_booking_custody_return(id, 'إرجاع عند إلغاء الحجز')
+  PERFORM public.fn_request_booking_custody_return(id, 'إلغاء الحجز')
     FROM public.booking_stock_withdrawals
    WHERE booking_id = p_booking_id AND custody_status = 'out';
   UPDATE public.bookings SET status='cancelled', cancellation_reason=p_cancellation_reason, cancelled_by=p_cancelled_by, cancelled_at=NOW(), updated_by=p_cancelled_by WHERE id=p_booking_id;
@@ -16066,6 +16066,76 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- decide_booking_custody_return(p_withdrawal_id uuid, p_approve boolean, p_notes text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.decide_booking_custody_return(p_withdrawal_id uuid, p_approve boolean, p_notes text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  w public.booking_stock_withdrawals;
+  v_role text; v_mbranch uuid; v_booking public.bookings; v_mgr uuid;
+BEGIN
+  SELECT * INTO w FROM public.booking_stock_withdrawals WHERE id = p_withdrawal_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RETURN_NOT_FOUND'; END IF;
+  IF COALESCE(w.custody_status,'none') <> 'return_pending' THEN
+    RAISE EXCEPTION 'RETURN_ALREADY_DECIDED: الحالة الحالية (%).', COALESCE(w.custody_status,'none');
+  END IF;
+
+  SELECT cm.role, cm.branch_id INTO v_role, v_mbranch
+    FROM public.company_members cm
+   WHERE cm.company_id = w.company_id AND cm.user_id = auth.uid() LIMIT 1;
+  IF v_role IS NULL THEN RAISE EXCEPTION 'RETURN_FORBIDDEN: لست عضواً فى هذه الشركة'; END IF;
+  IF NOT (
+    v_role IN ('owner','admin','general_manager')
+    OR (v_role IN ('store_manager','warehouse_manager') AND (v_mbranch IS NULL OR v_mbranch = w.branch_id))
+  ) THEN
+    RAISE EXCEPTION 'RETURN_FORBIDDEN: اعتماد استلام المرتجع من اختصاص مسؤول مخزن الفرع (أو الإدارة)';
+  END IF;
+
+  SELECT * INTO v_booking FROM public.bookings WHERE id = w.booking_id;
+
+  IF p_approve THEN
+    PERFORM public.fn_post_booking_custody_return(p_withdrawal_id, COALESCE(p_notes,'اعتماد استلام المرتجع'));
+    BEGIN
+      PERFORM public.create_notification(
+        w.company_id, 'booking_custody_return', w.id,
+        'تم استلام المواد المرتجعة',
+        'اعتمد مسؤول المخزن استلام مواد العهدة للحجز الملغى ' || COALESCE(v_booking.booking_no,'') || ' وأُعيدت للمخزن.',
+        auth.uid(), w.branch_id, NULL, w.warehouse_id,
+        NULL, w.requested_by, 'high',
+        'booking_custody_return_decided:' || w.id::text || ':approved',
+        'info', 'inventory');
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    RETURN jsonb_build_object('success', true, 'withdrawal_id', w.id, 'status', 'returned');
+  ELSE
+    UPDATE public.booking_stock_withdrawals SET custody_status='return_rejected' WHERE id = p_withdrawal_id;
+    FOR v_mgr IN
+      SELECT DISTINCT u FROM (
+        SELECT user_id AS u FROM public.companies WHERE id = w.company_id
+        UNION SELECT user_id FROM public.company_members WHERE company_id = w.company_id AND role IN ('owner','admin','general_manager')
+        UNION SELECT user_id FROM public.company_members WHERE company_id = w.company_id AND role = 'manager' AND branch_id = w.branch_id
+      ) x WHERE u IS NOT NULL AND u <> COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid)
+    LOOP
+      BEGIN
+        PERFORM public.create_notification(
+          w.company_id, 'booking_custody_return', w.id,
+          'لم تُستلَم مواد العهدة المرتجعة — يلزم تسوية',
+          'أفاد مسؤول المخزن بعدم استلام مواد العهدة للحجز الملغى ' || COALESCE(v_booking.booking_no,'') || COALESCE(' — السبب: ' || p_notes,'') || '. المواد ما زالت خارج المخزن — يلزم تسوية (هالك/مساءلة).',
+          auth.uid(), w.branch_id, NULL, w.warehouse_id,
+          NULL, v_mgr, 'high',
+          'booking_custody_return_rejected:' || w.id::text || ':' || v_mgr::text,
+          'error', 'inventory');
+      EXCEPTION WHEN OTHERS THEN NULL; END;
+    END LOOP;
+    RETURN jsonb_build_object('success', true, 'withdrawal_id', w.id, 'status', 'return_rejected');
+  END IF;
+END; $function$
+;
+
+-- ---------------------------------------------------------------
 -- decide_booking_stock_withdrawal(p_withdrawal_id uuid, p_approve boolean, p_notes text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.decide_booking_stock_withdrawal(p_withdrawal_id uuid, p_approve boolean, p_notes text DEFAULT NULL::text)
@@ -20344,6 +20414,62 @@ BEGIN
   WHERE id = p_invoice_id;
 END;
 $function$
+;
+
+-- ---------------------------------------------------------------
+-- fn_request_booking_custody_return(p_withdrawal_id uuid, p_reason text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_request_booking_custody_return(p_withdrawal_id uuid, p_reason text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  w public.booking_stock_withdrawals;
+  v_booking public.bookings;
+  v_has_mgr boolean;
+BEGIN
+  SELECT * INTO w FROM public.booking_stock_withdrawals WHERE id = p_withdrawal_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','not_found'); END IF;
+  IF COALESCE(w.custody_status,'none') <> 'out' THEN RETURN jsonb_build_object('ok',true,'reason','nothing_out'); END IF;
+
+  SELECT * INTO v_booking FROM public.bookings WHERE id = w.booking_id;
+
+  SELECT EXISTS(
+    SELECT 1 FROM public.company_members cm
+     WHERE cm.company_id = w.company_id AND cm.branch_id = w.branch_id
+       AND cm.user_id IS NOT NULL AND lower(cm.role) IN ('store_manager','warehouse_manager')
+  ) INTO v_has_mgr;
+
+  IF v_has_mgr THEN
+    UPDATE public.booking_stock_withdrawals SET custody_status='return_pending' WHERE id = p_withdrawal_id;
+    BEGIN
+      PERFORM public.create_notification(
+        w.company_id, 'booking_custody_return', w.id,
+        'مطلوب اعتماد استلام مواد مرتجعة',
+        'أُلغِيَ الحجز ' || COALESCE(v_booking.booking_no,'') || ' — يلزم اعتماد استلام مواد العهدة المرتجعة للمخزن.',
+        auth.uid(), w.branch_id, NULL, w.warehouse_id,
+        'store_manager', NULL, 'high',
+        'booking_custody_return_request:' || w.id::text,
+        'warning', 'inventory');
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    RETURN jsonb_build_object('ok',true,'status','return_pending');
+  ELSE
+    PERFORM public.fn_post_booking_custody_return(p_withdrawal_id, 'إرجاع تلقائي — لا يوجد مسؤول مخزن للفرع');
+    BEGIN
+      PERFORM public.create_notification(
+        w.company_id, 'booking_custody_return', w.id,
+        'تم إرجاع مواد العهدة للمخزن',
+        'أُلغِيَ الحجز ' || COALESCE(v_booking.booking_no,'') || ' — أُعيدت مواد العهدة للمخزن تلقائيًا (لا يوجد مسؤول مخزن للفرع).',
+        auth.uid(), w.branch_id, NULL, w.warehouse_id,
+        NULL, w.requested_by, 'high',
+        'booking_custody_return_auto:' || w.id::text,
+        'info', 'inventory');
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+    RETURN jsonb_build_object('ok',true,'status','returned_auto');
+  END IF;
+END; $function$
 ;
 
 -- ---------------------------------------------------------------

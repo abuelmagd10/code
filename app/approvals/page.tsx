@@ -274,6 +274,22 @@ interface PendingBookingWithdrawal {
   type: "booking_stock_withdrawal"
 }
 
+// v3.74.686 — a booking custody return awaiting store-manager receipt approval.
+// The booking was cancelled while its materials were in the technician's custody;
+// approving confirms the materials came back and posts the return to the warehouse.
+interface PendingCustodyReturn {
+  id: string
+  booking_id: string
+  booking_no: string | null
+  product_name: string | null
+  quantity: number
+  branch_name: string | null
+  warehouse_name: string | null
+  custody_value: number | null
+  custody_out_at: string | null
+  type: "booking_custody_return"
+}
+
 // v3.74.476 — vendor payment correction request. Same two-phase
 // pattern as customer refund.
 // v3.74.528 — enrichment: vendor_payment_correction_requests itself
@@ -815,7 +831,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "misc"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "booking_custody_return" | "misc"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -1078,14 +1094,14 @@ function ApprovalsContent() {
   // v3.74.486 — Role-scoped tab visibility. Each role only sees the
   // tabs relevant to the workflows they participate in. Owner / admin /
   // general_manager see everything.
-  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"misc"
+  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"bcr"|"misc"
   const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
     // Warehouse: dispatch, receipt, write-offs, transfers, sales-return
     // warehouse stage, AND pending mfg product receive (v3.74.488).
     // v3.74.513 — "pret" مضافة: مرحلة إخراج مرتجعات المشتريات من المخزن
     // منوطة بمسؤول المخزن (تأكيد الإخراج) + يرى سجلها
-    store_manager:      ["recv","disp","bwd","wo","tr","sret","pr","pret"],
-    warehouse_manager:  ["recv","disp","bwd","wo","tr","sret","pr","pret"],
+    store_manager:      ["recv","disp","bwd","bcr","wo","tr","sret","pr","pret"],
+    warehouse_manager:  ["recv","disp","bwd","bcr","wo","tr","sret","pr","pret"],
     // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
     accountant:         ["pay","pret","disc","sret","cref","vcor","misc"],
     // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
@@ -1093,7 +1109,7 @@ function ApprovalsContent() {
     // Manufacturing officer: BOM/routing/production/material issue/product receive
     manufacturing_officer: ["bom","routing","po","mi","pr"],
     // Branch manager: broad view but read-only most places (visibility only)
-    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","bwd","wo","tr","misc","pr"],
+    manager:            ["disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","pr"],
     // Sales staff & bookings: no approvals to act on today
     staff:              [],
     booking_officer:    [],
@@ -1104,7 +1120,7 @@ function ApprovalsContent() {
   const isOwnerOrGm = !!myRole && ["owner","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
-      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","wo","tr","misc"] as const)
+      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc"] as const)
       : (roleTabs[myRole] ?? [])
   const canShow = (t: TabKey) => visibleTabs.includes(t)
   // v3.74.487 — Mirror the tab visibility onto the history filter row.
@@ -1127,6 +1143,7 @@ function ApprovalsContent() {
     write_off: "wo",
     inventory_transfer: "tr",
     booking_stock_withdrawal: "bwd",
+    booking_custody_return: "bcr",
     misc: "misc",
   }
   const canShowHistory = (c: HistoryCategory) => {
@@ -1144,8 +1161,10 @@ function ApprovalsContent() {
   const [productReceivePending, setProductReceivePending] = useState<PendingProductReceive[]>([])
   // v3.74.680 — pending booking stock withdrawals (bwd tab).
   const [bookingWithdrawals, setBookingWithdrawals] = useState<PendingBookingWithdrawal[]>([])
+  // v3.74.686 — pending booking custody returns awaiting receipt approval (bcr tab).
+  const [bookingCustodyReturns, setBookingCustodyReturns] = useState<PendingCustodyReturn[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "misc" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "bcr" | "misc" | "history">("all")
   // v3.74.484 — honor ?tab=... from notification routing so warehouse
   // manager clicking a dispatch/receipt notification lands on the
   // matching tab.
@@ -1153,7 +1172,7 @@ function ApprovalsContent() {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
     const initialTab = params.get("tab")
-    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","wo","tr","misc","history"] as const
+    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","history"] as const
     if (initialTab && (valid as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as any)
     }
@@ -1163,7 +1182,7 @@ function ApprovalsContent() {
   const [historyFilter, setHistoryFilter] = useState<HistoryCategory | "all">("all")
   const [runningId, setRunningId] = useState<string | null>(null)
   const [rejectId, setRejectId] = useState<string | null>(null)
-  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "product_receive" | "booking_stock_withdrawal" | null>(null)
+  const [rejectType, setRejectType] = useState<"bom_version" | "routing_version" | "production_order" | "material_issue" | "discount_approval" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "product_receive" | "booking_stock_withdrawal" | "booking_custody_return" | null>(null)
   const [rejectReason, setRejectReason] = useState("")
 
   const t = (ar: string, en: string) => appLang === "ar" ? ar : en
@@ -1953,6 +1972,48 @@ function ApprovalsContent() {
         })))
       } catch {
         setBookingWithdrawals([])
+      }
+
+      // v3.74.686 — booking custody returns awaiting receipt approval (bcr tab).
+      // Withdrawals whose material is out on custody and whose booking was
+      // cancelled: custody_status='return_pending'. Same FK-embed limitation as
+      // bwd, so embed bookings only and resolve other names by id.
+      try {
+        let cq = supabase
+          .from("booking_stock_withdrawals")
+          .select(`id, booking_id, product_id, quantity, branch_id, warehouse_id, custody_status, custody_value, custody_out_at, bookings(booking_no)`)
+          .eq("company_id", cid)
+          .eq("custody_status", "return_pending")
+          .order("custody_out_at", { ascending: true })
+          .limit(100)
+        if (!isAdminLike && myBranchId) cq = cq.eq("branch_id", myBranchId)
+        const { data: crs } = await cq
+        const rows = (crs || []) as any[]
+        const nameMap = async (table: string, ids: any[]) => {
+          const uniq = Array.from(new Set(ids.filter(Boolean)))
+          if (!uniq.length) return {} as Record<string, string>
+          const { data } = await supabase.from(table).select("id, name").in("id", uniq as string[])
+          return Object.fromEntries((data || []).map((r: any) => [r.id, r.name])) as Record<string, string>
+        }
+        const [prodNames, brNames, whNames] = await Promise.all([
+          nameMap("products", rows.map(r => r.product_id)),
+          nameMap("branches", rows.map(r => r.branch_id)),
+          nameMap("warehouses", rows.map(r => r.warehouse_id)),
+        ])
+        setBookingCustodyReturns(rows.map((w) => ({
+          id: w.id,
+          booking_id: w.booking_id,
+          booking_no: w.bookings?.booking_no ?? null,
+          product_name: prodNames[w.product_id] ?? null,
+          quantity: Number(w.quantity || 0),
+          branch_name: brNames[w.branch_id] ?? null,
+          warehouse_name: whNames[w.warehouse_id] ?? null,
+          custody_value: w.custody_value != null ? Number(w.custody_value) : null,
+          custody_out_at: w.custody_out_at ?? null,
+          type: "booking_custody_return" as const,
+        })))
+      } catch {
+        setBookingCustodyReturns([])
       }
 
       // v3.74.478+v3.74.483 — goods receipt approvals (bills awaiting
@@ -2822,6 +2883,47 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // v3.74.686 — booking custody return history (returned / rejected receipts
+      // for CANCELLED bookings — the receipt-approval flow).
+      try {
+        const { data: crs } = await supabase
+          .from("booking_stock_withdrawals")
+          .select(`id, booking_id, product_id, quantity, custody_status, custody_value,
+                   custody_returned_at, requested_by, branch_id, warehouse_id,
+                   bookings(booking_no, status)`)
+          .eq("company_id", cid)
+          .in("custody_status", ["returned", "return_rejected"])
+          .order("custody_returned_at", { ascending: false })
+          .limit(50)
+        const cRows = ((crs || []) as any[]).filter(r => r.bookings?.status === "cancelled")
+        const cpIds = Array.from(new Set(cRows.map(r => r.product_id).filter(Boolean)))
+        let cProdNames: Record<string, string> = {}
+        if (cpIds.length) {
+          const { data: cp } = await supabase.from("products").select("id, name").in("id", cpIds as string[])
+          cProdNames = Object.fromEntries((cp || []).map((p: any) => [p.id, p.name]))
+        }
+        for (const r of cRows) {
+          merged.push({
+            id: `bcr-${r.id}`,
+            category: "booking_custody_return",
+            doc_label: `مرتجع عهدة · ${r.bookings?.booking_no ?? (r.booking_id ? String(r.booking_id).slice(0, 8) : r.id.slice(0, 8))}`,
+            doc_href: r.booking_id ? `/bookings/${r.booking_id}` : null,
+            party_label: cProdNames[r.product_id] ?? null,
+            value_label: `${Number(r.quantity || 0)} ${appLang === "en" ? "unit" : "وحدة"}`,
+            status: (r.custody_status === "return_rejected" ? "rejected" : "approved") as any,
+            requested_by_email: null,
+            requested_by_id: r.requested_by ?? null,
+            requested_at: r.custody_returned_at,
+            decided_by_email: null,
+            decided_by_id: null,
+            decided_at: r.custody_returned_at ?? null,
+            decision_note: null,
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
       // v3.74.481 — goods receipt history (bills with receipt_status
       // = approved / rejected).
       try {
@@ -3221,7 +3323,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length + bookingCustodyReturns.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -3680,6 +3782,11 @@ function ApprovalsContent() {
             {canShow("bwd") && (
               <Button size="sm" variant={activeTab === "bwd" ? "default" : "outline"} onClick={() => setActiveTab("bwd")} className="gap-1">
                 <Package className="w-3.5 h-3.5" />{t("سحب مخزون الحجوزات", "Booking Withdrawals")} ({bookingWithdrawals.length})
+              </Button>
+            )}
+            {canShow("bcr") && (
+              <Button size="sm" variant={activeTab === "bcr" ? "default" : "outline"} onClick={() => setActiveTab("bcr")} className="gap-1">
+                <Package className="w-3.5 h-3.5" />{t("استلام مرتجعات العهدة", "Custody Returns")} ({bookingCustodyReturns.length})
               </Button>
             )}
             {canShow("recv") && (
@@ -4995,6 +5102,126 @@ function ApprovalsContent() {
                                   }
                                 }}
                               >{t("تأكيد الرفض", "Confirm Reject")}</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* v3.74.686 — Booking custody returns (confirm receipt of materials back to warehouse). */}
+              {(activeTab === "all" || activeTab === "bcr") && bookingCustodyReturns.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Package className="w-4 h-4" />{t("استلام مرتجعات العهدة", "Custody Return Receipts")}
+                  </h2>
+                  {bookingCustodyReturns.map(w => (
+                    <Card key={w.id} className="border-l-4 border-l-amber-500">
+                      <CardContent className="py-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg shrink-0">
+                              <Package className="w-4 h-4 text-amber-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">
+                                {t("مرتجع عهدة — حجز ملغى", "Custody return — cancelled booking")} · {w.booking_no ?? w.booking_id.slice(0, 6)}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                📦 {w.product_name ?? "—"} · {t("الكمية", "Qty")}: {w.quantity}
+                              </p>
+                              {w.branch_name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  🏢 {w.branch_name}{w.warehouse_name && <> · 🏬 {w.warehouse_name}</>}
+                                </p>
+                              )}
+                              {w.custody_out_at && <p className="text-xs text-muted-foreground mt-1">📅 {t("خرجت للعهدة", "Out since")}: {fmtDate(w.custody_out_at)}</p>}
+                              <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                ℹ️ {t("عند اعتماد الاستلام: تعود المواد إلى رصيد المخزن",
+                                      "On receipt approval: the materials return to warehouse stock")}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                              <Clock className="w-3 h-3 me-1" />{t("انتظار استلام المخزن", "Awaiting receipt")}
+                            </Badge>
+                            <Link href={`/bookings/${w.booking_id}`} className="text-xs text-amber-600 hover:underline">
+                              {t("عرض الحجز", "View booking")}
+                            </Link>
+                          </div>
+                        </div>
+                        {canDecideWithdrawal && (
+                        <div className="flex gap-2 mt-3">
+                          <Button
+                            size="sm" className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                            disabled={runningId === w.id}
+                            onClick={async () => {
+                              try {
+                                setRunningId(w.id)
+                                const res = await fetch(`/api/booking-custody-returns/${encodeURIComponent(w.id)}/decide`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ approve: true }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Approve failed' : 'تعذر الاعتماد'))
+                                toast({ title: t("تم اعتماد الاستلام", "Receipt approved") })
+                                await load()
+                              } catch (e: any) {
+                                toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                              } finally {
+                                setRunningId(null)
+                              }
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد الاستلام", "Confirm Receipt")}
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                            disabled={runningId === w.id}
+                            onClick={() => { setRejectId(w.id); setRejectType("booking_custody_return"); setRejectReason("") }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />{t("لم تُستلَم", "Not received")}
+                          </Button>
+                        </div>
+                        )}
+                        {canDecideWithdrawal && rejectId === w.id && rejectType === "booking_custody_return" && (
+                          <div className="mt-3 space-y-2">
+                            <textarea
+                              value={rejectReason}
+                              onChange={e => setRejectReason(e.target.value)}
+                              placeholder={t("سبب عدم الاستلام (المواد لم تعد للمخزن)...", "Why not received (materials did not return)...")}
+                              rows={2}
+                              className="w-full text-sm p-2 border rounded"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm" variant="destructive"
+                                disabled={!rejectReason.trim() || runningId === w.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(w.id)
+                                    const res = await fetch(`/api/booking-custody-returns/${encodeURIComponent(w.id)}/decide`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ approve: false, notes: rejectReason }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    if (!res.ok) throw new Error(j.error || (appLang === 'en' ? 'Reject failed' : 'تعذر الرفض'))
+                                    toast({ title: t("سُجّل عدم الاستلام", "Recorded as not received") })
+                                    setRejectId(null); setRejectReason("")
+                                    await load()
+                                  } catch (e: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(e?.message ?? e) })
+                                  } finally {
+                                    setRunningId(null)
+                                  }
+                                }}
+                              >{t("تأكيد", "Confirm")}</Button>
                               <Button size="sm" variant="outline" onClick={() => { setRejectId(null); setRejectReason("") }}>{t("إلغاء", "Cancel")}</Button>
                             </div>
                           </div>

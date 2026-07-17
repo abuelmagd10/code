@@ -34,6 +34,7 @@ export type ReferenceType =
   | 'manufacturing_production_order'
   | 'booking'
   | 'booking_stock_withdrawal'
+  | 'booking_custody_return'
   | 'subscription'
 
 /**
@@ -151,6 +152,9 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   // v3.74.680 — طلب/قرار سحب منتج من المخزن للحجز يُعتمد الآن من صندوق
   // الموافقات فى تبويب مستقل "سحب مخزون الحجوزات" (bwd). نوجّه الإشعار إليه.
   'booking_stock_withdrawal': () => `/approvals?tab=bwd`,
+  // v3.74.686 — receipt approval of materials returned from technician custody
+  // after a booking cancellation lands on its own inbox tab (bcr).
+  'booking_custody_return': () => `/approvals?tab=bcr`,
 
   // التصنيع
   // v3.74.493 — material issue notifications (Stage 1 or Stage 2) all
