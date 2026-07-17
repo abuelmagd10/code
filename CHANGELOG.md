@@ -4,6 +4,19 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.682] - 2026-07-16 — Auto-approve booking withdrawal when the branch has no store manager (gap #2)
+
+### Context
+مِن مُراجَعة سيناريوهات التنفيذ: لو فَرع الحجز **بلا مسؤول مخزن**، فَطَلَب السحب يَبقى مُعَلَّقاً للأبد (لا مُعتَمِد) → يُحجَب تنفيذ الحجز نِهائيّاً عَبر بَوّابة السحب (v3.74.672). مُخالِف لِفلسفة «لا مسؤول مخزن → اعتماد تلقائي» المُطَبَّقة على الفواتير (v3.74.664).
+
+### Change
+`request_booking_stock_withdrawal`: إن لم يَكُن لِفَرع الحجز عُضو بِدور `store_manager`/`warehouse_manager` → يُعتَمَد السحب **تلقائيّاً** عِندَ الطَّلَب (`status='approved'` + ملاحظة «لا يوجد مسؤول مخزن») ويُتَخَطّى إشعار المخزن. وُجود مسؤول → السلوك كَما هو (معلّق + إشعار).
+
+### Verification
+البيانات الحَيّة: الفرع الرئيسى (به مسؤول) → معلّق؛ فرع مدينة نصر (بلا مسؤول) → تلقائى. الدالة مُعَدَّلة.
+
+---
+
 ## [3.74.681] - 2026-07-16 — Fix: booking-withdrawals tab was empty (bad PostgREST embeds)
 
 ### Context

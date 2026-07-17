@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-16T14:00:24.845Z
+-- Generated: 2026-07-17T08:57:10.778Z
 -- Routines: 1183
 -- =====================================================================
 
@@ -43962,8 +43962,8 @@ DECLARE
   v_wh      uuid;
   v_qty     numeric;
   v_id      uuid;
+  v_has_mgr boolean;
 BEGIN
-  -- Only the assigned executor (or management) may request — reuse the guard.
   PERFORM public.assert_booking_addons_permission(p_company_id, p_booking_id);
 
   SELECT * INTO v_booking FROM public.bookings
@@ -43977,30 +43977,52 @@ BEGIN
   SELECT default_warehouse_id INTO v_wh FROM public.branches WHERE id = v_booking.branch_id;
   v_qty := COALESCE(v_pbi.quantity, 1) * COALESCE(v_booking.quantity, 1);
 
+  -- v3.74.682 — no store/warehouse manager for the booking branch => no
+  -- custodian to approve => auto-approve so the booking is never permanently
+  -- blocked (mirrors v3.74.664 for invoice dispatch / bill receipt).
+  SELECT EXISTS(
+    SELECT 1 FROM public.company_members cm
+     WHERE cm.company_id = p_company_id
+       AND cm.branch_id  = v_booking.branch_id
+       AND cm.user_id IS NOT NULL
+       AND lower(cm.role) IN ('store_manager','warehouse_manager')
+  ) INTO v_has_mgr;
+
   INSERT INTO public.booking_stock_withdrawals
     (company_id, booking_id, branch_id, warehouse_id, bundle_item_id, product_id, quantity,
-     status, reason, requested_by, requested_at)
+     status, reason, requested_by, requested_at, decided_by, decided_at, decision_notes)
   VALUES
     (p_company_id, p_booking_id, v_booking.branch_id, v_wh, p_bundle_item_id, v_pbi.child_product_id, v_qty,
-     'pending', p_reason, auth.uid(), now())
+     CASE WHEN v_has_mgr THEN 'pending' ELSE 'approved' END,
+     p_reason, auth.uid(), now(),
+     CASE WHEN v_has_mgr THEN NULL ELSE auth.uid() END,
+     CASE WHEN v_has_mgr THEN NULL ELSE now() END,
+     CASE WHEN v_has_mgr THEN NULL ELSE 'اعتماد تلقائي — لا يوجد مسؤول مخزن لفرع الحجز.' END)
   ON CONFLICT (booking_id, bundle_item_id) DO UPDATE
-    SET status = 'pending', reason = EXCLUDED.reason, requested_by = auth.uid(),
-        requested_at = now(), decided_by = NULL, decided_at = NULL, decision_notes = NULL
+    SET status = CASE WHEN v_has_mgr THEN 'pending' ELSE 'approved' END,
+        reason = EXCLUDED.reason, requested_by = auth.uid(), requested_at = now(),
+        decided_by = CASE WHEN v_has_mgr THEN NULL ELSE auth.uid() END,
+        decided_at = CASE WHEN v_has_mgr THEN NULL ELSE now() END,
+        decision_notes = CASE WHEN v_has_mgr THEN NULL ELSE 'اعتماد تلقائي — لا يوجد مسؤول مخزن لفرع الحجز.' END
   RETURNING id INTO v_id;
 
-  -- Notify the branch store manager.
-  BEGIN
-    PERFORM public.create_notification(
-      p_company_id, 'booking_stock_withdrawal', v_id,
-      'طلب سحب منتج من المخزن',
-      'طلب الموظف سحب منتج من مخزن الفرع لاستخدامه في الحجز ' || v_booking.booking_no || ' — يحتاج اعتمادك.',
-      auth.uid(), v_booking.branch_id, NULL, v_wh,
-      'store_manager', NULL, 'high',
-      'booking_withdrawal_request:' || v_id::text || ':' || p_booking_id::text,
-      'warning', 'inventory');
-  EXCEPTION WHEN OTHERS THEN NULL; END;
+  -- Notify the branch store manager only when one exists.
+  IF v_has_mgr THEN
+    BEGIN
+      PERFORM public.create_notification(
+        p_company_id, 'booking_stock_withdrawal', v_id,
+        'طلب سحب منتج من المخزن',
+        'طلب الموظف سحب منتج من مخزن الفرع لاستخدامه في الحجز ' || v_booking.booking_no || ' — يحتاج اعتمادك.',
+        auth.uid(), v_booking.branch_id, NULL, v_wh,
+        'store_manager', NULL, 'high',
+        'booking_withdrawal_request:' || v_id::text || ':' || p_booking_id::text,
+        'warning', 'inventory');
+    EXCEPTION WHEN OTHERS THEN NULL; END;
+  END IF;
 
-  RETURN jsonb_build_object('success', true, 'withdrawal_id', v_id, 'status', 'pending');
+  RETURN jsonb_build_object('success', true, 'withdrawal_id', v_id,
+    'status', CASE WHEN v_has_mgr THEN 'pending' ELSE 'approved' END,
+    'auto_approved', NOT v_has_mgr);
 END;
 $function$
 ;
