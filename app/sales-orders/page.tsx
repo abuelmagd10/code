@@ -1174,7 +1174,16 @@ function SalesOrdersContent() {
       if (!record || !userContext?.company_id) {
         return false;
       }
-      return record.company_id === userContext.company_id;
+      if (record.company_id !== userContext.company_id) return false;
+      // v3.74.690 — branch isolation for realtime (RLS is company-scoped).
+      // Privileged roles and central purchasing (no branch) see all; everyone
+      // else only their own branch.
+      const _r = String(userContext?.role || '').toLowerCase().replace(/\s+/g, '_');
+      const _privileged = ['owner','admin','general_manager','gm','superadmin','super_admin','generalmanager'].includes(_r);
+      const _centralPurchasing = _r === 'purchasing_officer' && !userContext?.branch_id;
+      if (_privileged || _centralPurchasing) return true;
+      if (!userContext?.branch_id) return false;
+      return (record as any).branch_id === userContext.branch_id;
     }
   });
 

@@ -453,8 +453,18 @@ export default function InvoicesPage() {
       if (!record || !userContext?.company_id) {
         return false;
       }
-      const invoiceRecord = record as Invoice & { company_id?: string };
-      return invoiceRecord.company_id === userContext.company_id;
+      const invoiceRecord = record as Invoice & { company_id?: string; branch_id?: string };
+      if (invoiceRecord.company_id !== userContext.company_id) return false;
+      // v3.74.690 — branch isolation for realtime: RLS is company-scoped, so
+      // without this a branch-restricted user would receive (and inject) other
+      // branches' invoices. Privileged roles and central purchasing (no branch)
+      // see all; everyone else only their own branch.
+      const _r = String(userContext?.role || '').toLowerCase().replace(/\s+/g, '_');
+      const _privileged = ['owner','admin','general_manager','gm','superadmin','super_admin','generalmanager'].includes(_r);
+      const _centralPurchasing = _r === 'purchasing_officer' && !userContext?.branch_id;
+      if (_privileged || _centralPurchasing) return true;
+      if (!userContext?.branch_id) return false;
+      return invoiceRecord.branch_id === userContext.branch_id;
     }
   });
 
