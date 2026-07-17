@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-17T11:18:41.487Z
+-- Generated: 2026-07-17T11:52:14.841Z
 -- Routines: 1187
 -- =====================================================================
 
@@ -16238,6 +16238,9 @@ BEGIN
         UNION
         SELECT user_id FROM public.company_members
          WHERE company_id = v_w.company_id AND role = 'manager' AND branch_id = v_w.branch_id
+        UNION
+        SELECT user_id FROM public.company_members
+         WHERE company_id = v_w.company_id AND role = 'purchasing_officer' AND (branch_id = v_w.branch_id OR branch_id IS NULL)
       ) x WHERE u IS NOT NULL AND u <> COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid)
     LOOP
       BEGIN

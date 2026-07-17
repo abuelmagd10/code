@@ -4,6 +4,20 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.688] - 2026-07-17 — إشعار مسؤول مشتريات الفرع عند رفض سحب صنف إلزامي
+
+### Context
+إشعار «رفض سحب صنف إلزامي — يلزم تدخّل» كان يصل للإدارة ومدير الفرع فقط. بما أن الحل هو «وفّروا الصنف»، وهو مهمة المشتريات، وجب إشعار مسؤول مشتريات الفرع ليبادر بالتوريد.
+
+### Change
+`decide_booking_stock_withdrawal`: تُضاف `purchasing_officer` لنفس فرع الحجز (والمركزيون بلا فرع) إلى مستلمي تصعيد رفض الصنف الإلزامي.
+
+### Files
+- `supabase/migrations/20260717000688_v3_74_688_notify_purchasing_on_mandatory_withdrawal_reject.sql`
+- `supabase/schema/functions.sql` (لقطة الدوال)
+
+---
+
 ## [3.74.687] - 2026-07-17 — مواءمة سجل الموافقات مع صلاحيات ظهور الكروت
 
 ### Context
