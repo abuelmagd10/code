@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-17T08:57:10.778Z
+-- Generated: 2026-07-17T09:08:14.276Z
 -- Routines: 1183
 -- =====================================================================
 
@@ -16072,6 +16072,9 @@ DECLARE
   v_mbranch uuid;
   v_booking public.bookings;
   v_new  text;
+  v_is_optional boolean;
+  v_msg text;
+  v_mgr uuid;
 BEGIN
   SELECT * INTO v_w FROM public.booking_stock_withdrawals WHERE id = p_withdrawal_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'WITHDRAWAL_NOT_FOUND'; END IF;
@@ -16082,7 +16085,6 @@ BEGIN
    LIMIT 1;
   IF v_role IS NULL THEN RAISE EXCEPTION 'WITHDRAWAL_FORBIDDEN: لست عضواً فى هذه الشركة'; END IF;
 
-  -- Management anywhere, or the store manager of the same branch.
   IF NOT (
     v_role IN ('owner','admin','general_manager')
     OR (v_role = 'store_manager' AND (v_mbranch IS NULL OR v_mbranch = v_w.branch_id))
@@ -16102,21 +16104,56 @@ BEGIN
 
   SELECT * INTO v_booking FROM public.bookings WHERE id = v_w.booking_id;
 
+  SELECT COALESCE(is_optional, false) INTO v_is_optional
+    FROM public.product_bundle_items WHERE id = v_w.bundle_item_id;
+
+  IF p_approve THEN
+    v_msg := 'اعتمد مسؤول المخزن سحب المنتج للحجز ' || COALESCE(v_booking.booking_no,'') || ' — يمكنك استخدامه.';
+  ELSIF v_is_optional THEN
+    v_msg := 'رفض مسؤول المخزن سحب المنتج للحجز ' || COALESCE(v_booking.booking_no,'') || COALESCE(' — السبب: ' || p_notes, '') || '. ألغِ تحديد الصنف وأكمل بدونه.';
+  ELSE
+    v_msg := 'رفض مسؤول المخزن سحب صنف إلزامي للحجز ' || COALESCE(v_booking.booking_no,'') || COALESCE(' — السبب: ' || p_notes, '') || '. لا يمكن تنفيذ الحجز بدونه — يلزم توفير الصنف أو إلغاء الحجز.';
+  END IF;
+
   BEGIN
     PERFORM public.create_notification(
       v_w.company_id, 'booking_stock_withdrawal', v_w.id,
       CASE WHEN p_approve THEN 'تم اعتماد سحب المنتج' ELSE 'تم رفض سحب المنتج' END,
-      CASE WHEN p_approve
-        THEN 'اعتمد مسؤول المخزن سحب المنتج للحجز ' || COALESCE(v_booking.booking_no,'') || ' — يمكنك استخدامه.'
-        ELSE 'رفض مسؤول المخزن سحب المنتج للحجز ' || COALESCE(v_booking.booking_no,'') || COALESCE(' — السبب: ' || p_notes, '') || '. ألغِ تحديد الصنف وأكمل بدونه.'
-      END,
+      v_msg,
       auth.uid(), v_w.branch_id, NULL, v_w.warehouse_id,
       NULL, v_w.requested_by, 'high',
       'booking_withdrawal_decided:' || v_w.id::text || ':' || v_new || ':' || v_w.booking_id::text,
       CASE WHEN p_approve THEN 'info' ELSE 'error' END, 'inventory');
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
-  RETURN jsonb_build_object('success', true, 'withdrawal_id', v_w.id, 'status', v_new);
+  -- v3.74.683 — a REJECTED MANDATORY item deadlocks execution (can't be
+  -- deselected); escalate to management to provide stock or cancel.
+  IF NOT p_approve AND NOT v_is_optional THEN
+    FOR v_mgr IN
+      SELECT DISTINCT u FROM (
+        SELECT user_id AS u FROM public.companies WHERE id = v_w.company_id
+        UNION
+        SELECT user_id FROM public.company_members
+         WHERE company_id = v_w.company_id AND role IN ('owner','admin','general_manager')
+        UNION
+        SELECT user_id FROM public.company_members
+         WHERE company_id = v_w.company_id AND role = 'manager' AND branch_id = v_w.branch_id
+      ) x WHERE u IS NOT NULL AND u <> COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid)
+    LOOP
+      BEGIN
+        PERFORM public.create_notification(
+          v_w.company_id, 'booking_stock_withdrawal', v_w.id,
+          'رفض سحب صنف إلزامي — يلزم تدخّل',
+          'رُفض سحب صنف إلزامي للحجز ' || COALESCE(v_booking.booking_no,'') || COALESCE(' — السبب: ' || p_notes, '') || '. لا يمكن تنفيذ الحجز بدونه — وفّروا الصنف أو ألغوا الحجز.',
+          auth.uid(), v_w.branch_id, NULL, v_w.warehouse_id,
+          NULL, v_mgr, 'high',
+          'booking_withdrawal_mandatory_reject:' || v_w.id::text || ':' || v_mgr::text,
+          'error', 'inventory');
+      EXCEPTION WHEN OTHERS THEN NULL; END;
+    END LOOP;
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'withdrawal_id', v_w.id, 'status', v_new, 'mandatory', NOT v_is_optional);
 END;
 $function$
 ;

@@ -4,6 +4,21 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 
 ---
 
+## [3.74.683] - 2026-07-16 — Clear path + escalation when a MANDATORY withdrawal is rejected (gap #1)
+
+### Context
+عِندَ رفض سحب صنف، كانَت الرِّسالة دائماً «ألغِ تحديد الصنف وأكمل بدونه». لَكِن الصنف **الإلزامى لا يُمكِن إلغاء تحديده**، فَالنَّصيحة خاطِئة والحجز يَنسَدّ.
+
+### Change
+`decide_booking_stock_withdrawal` يَفحَص الآن هل الصنف إلزامى (`product_bundle_items.is_optional`). عِندَ الرَّفض:
+- **اختيارى:** الرِّسالة كَما هى («ألغِ تحديد الصنف وأكمل بدونه»).
+- **إلزامى:** رِسالة صَريحة «لا يمكن تنفيذ الحجز بدونه — وفّر الصنف أو ألغِ الحجز»، مَع **تصعيد لِلإدارة** (المالك/الأدمن/المدير العام + مدير الفرع) لِلتَّدَخُّل.
+
+### Verification
+الدالة مُعَدَّلة (`mandatory_reject` مَوجود). لا تَعارُض مَع مسار الاعتماد.
+
+---
+
 ## [3.74.682] - 2026-07-16 — Auto-approve booking withdrawal when the branch has no store manager (gap #2)
 
 ### Context
