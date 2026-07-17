@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-17T09:42:19.907Z
--- Routines: 1183
+-- Generated: 2026-07-17T11:04:00.167Z
+-- Routines: 1185
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8260,6 +8260,9 @@ BEGIN
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Booking not found. booking_id=%', p_booking_id USING ERRCODE='P0001'; END IF;
   IF public.bkg_is_terminal_status(v_booking.status) THEN RAISE EXCEPTION 'Cannot cancel a % booking. booking_id=%', v_booking.status, p_booking_id USING ERRCODE='P0001'; END IF;
+  PERFORM public.fn_post_booking_custody_return(id, 'إرجاع عند إلغاء الحجز')
+    FROM public.booking_stock_withdrawals
+   WHERE booking_id = p_booking_id AND custody_status = 'out';
   UPDATE public.bookings SET status='cancelled', cancellation_reason=p_cancellation_reason, cancelled_by=p_cancelled_by, cancelled_at=NOW(), updated_by=p_cancelled_by WHERE id=p_booking_id;
   RETURN jsonb_build_object('success',true,'booking_id',p_booking_id,'status','cancelled');
 END; $function$
@@ -10902,6 +10905,11 @@ BEGIN
 
   SELECT * INTO v_service FROM public.services WHERE id = v_booking.service_id;
   SELECT * INTO v_branch  FROM public.branches WHERE id = v_booking.branch_id;
+  -- v3.74.685 custody: return technician-custody stock to warehouse so the
+  -- existing consumption logic below deducts exactly once, as before.
+  PERFORM public.fn_post_booking_custody_return(id, 'إرجاع تلقائي عند التنفيذ')
+    FROM public.booking_stock_withdrawals
+   WHERE booking_id = p_booking_id AND custody_status = 'out';
 
   v_warehouse_id := v_branch.default_warehouse_id;
   IF v_warehouse_id IS NULL THEN
@@ -16126,6 +16134,7 @@ BEGIN
    WHERE id = p_withdrawal_id;
 
   SELECT * INTO v_booking FROM public.bookings WHERE id = v_w.booking_id;
+  IF p_approve THEN PERFORM public.fn_post_booking_custody_out(p_withdrawal_id); END IF;
 
   SELECT COALESCE(is_optional, false) INTO v_is_optional
     FROM public.product_bundle_items WHERE id = v_w.bundle_item_id;
@@ -20027,6 +20036,152 @@ BEGIN
   RETURN NEW;
 END;
 $function$
+;
+
+-- ---------------------------------------------------------------
+-- fn_post_booking_custody_out(p_withdrawal_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_post_booking_custody_out(p_withdrawal_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  w public.booking_stock_withdrawals;
+  v_booking public.bookings;
+  v_service public.services;
+  v_branch public.branches;
+  v_tracked boolean; v_cost numeric; v_qty int; v_value numeric;
+  v_custody_acct uuid; v_inv_acct uuid; v_cc uuid; v_je jsonb;
+BEGIN
+  SELECT * INTO w FROM public.booking_stock_withdrawals WHERE id = p_withdrawal_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','not_found'); END IF;
+  IF w.status <> 'approved' THEN RETURN jsonb_build_object('ok',false,'reason','not_approved'); END IF;
+  IF COALESCE(w.custody_status,'none') = 'out' THEN RETURN jsonb_build_object('ok',true,'reason','already_out'); END IF;
+
+  SELECT COALESCE(track_inventory,false), COALESCE(cost_price,0)
+    INTO v_tracked, v_cost FROM public.products WHERE id = w.product_id;
+  v_qty := CEIL(COALESCE(w.quantity,0))::int;
+  v_value := v_qty * v_cost;
+  IF NOT COALESCE(v_tracked,false) OR v_qty <= 0 OR v_value <= 0 THEN
+    UPDATE public.booking_stock_withdrawals SET custody_status='none' WHERE id = p_withdrawal_id;
+    RETURN jsonb_build_object('ok',true,'reason','not_tracked_or_zero');
+  END IF;
+
+  SELECT * INTO v_booking FROM public.bookings WHERE id = w.booking_id;
+  SELECT * INTO v_service FROM public.services WHERE id = v_booking.service_id;
+  SELECT * INTO v_branch  FROM public.branches WHERE id = w.branch_id;
+
+  SELECT id INTO v_custody_acct FROM public.chart_of_accounts
+    WHERE company_id = w.company_id AND is_active
+      AND (account_code = '1145' OR sub_type IN ('inventory_in_custody','work_in_process'))
+    ORDER BY CASE WHEN account_code='1145' THEN 0 ELSE 1 END LIMIT 1;
+  SELECT id INTO v_inv_acct FROM public.chart_of_accounts
+    WHERE company_id = w.company_id AND is_active AND sub_type = 'inventory' LIMIT 1;
+  IF v_custody_acct IS NULL OR v_inv_acct IS NULL THEN
+    UPDATE public.booking_stock_withdrawals SET custody_status='skipped_no_account' WHERE id = p_withdrawal_id;
+    RETURN jsonb_build_object('ok',true,'reason','no_account');
+  END IF;
+
+  v_cc := COALESCE(v_booking.cost_center_id, v_service.cost_center_id, v_branch.default_cost_center_id);
+  IF v_cc IS NULL THEN SELECT id INTO v_cc FROM public.cost_centers WHERE company_id = w.company_id LIMIT 1; END IF;
+
+  INSERT INTO public.inventory_transactions (
+    company_id, branch_id, warehouse_id, cost_center_id, product_id,
+    transaction_type, quantity_change, reference_type, reference_id, notes
+  ) VALUES (
+    w.company_id, w.branch_id, w.warehouse_id, v_cc, w.product_id,
+    'booking_custody_out', -v_qty, 'booking_stock_withdrawal', w.id,
+    'خروج عهدة للفنّي — حجز ' || COALESCE(v_booking.booking_no,'')
+  );
+
+  v_je := public.create_journal_entry_atomic(
+    w.company_id, 'booking_custody_out', w.id, CURRENT_DATE,
+    'خروج مواد لعهدة الفنّي — حجز ' || COALESCE(v_booking.booking_no,''),
+    w.branch_id, v_cc, w.warehouse_id,
+    jsonb_build_array(
+      jsonb_build_object('account_id', v_custody_acct, 'debit_amount', v_value, 'credit_amount', 0, 'description','مواد في عهدة الفنّي'),
+      jsonb_build_object('account_id', v_inv_acct, 'debit_amount', 0, 'credit_amount', v_value, 'description','تخفيض المخزون - عهدة')
+    )
+  );
+  IF NOT COALESCE((v_je->>'success')::boolean, false) THEN
+    RAISE EXCEPTION 'CUSTODY_OUT_JE_FAILED: %', COALESCE(v_je->>'error','unknown');
+  END IF;
+
+  UPDATE public.booking_stock_withdrawals
+     SET custody_status='out', custody_value=v_value, custody_out_at=now()
+   WHERE id = p_withdrawal_id;
+  RETURN jsonb_build_object('ok',true,'value',v_value,'qty',v_qty);
+END; $function$
+;
+
+-- ---------------------------------------------------------------
+-- fn_post_booking_custody_return(p_withdrawal_id uuid, p_note text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_post_booking_custody_return(p_withdrawal_id uuid, p_note text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  w public.booking_stock_withdrawals;
+  v_booking public.bookings; v_service public.services; v_branch public.branches;
+  v_qty int; v_value numeric; v_custody_acct uuid; v_inv_acct uuid; v_cc uuid; v_je jsonb;
+BEGIN
+  SELECT * INTO w FROM public.booking_stock_withdrawals WHERE id = p_withdrawal_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','not_found'); END IF;
+  IF COALESCE(w.custody_status,'none') <> 'out' THEN RETURN jsonb_build_object('ok',true,'reason','nothing_out'); END IF;
+
+  v_qty := CEIL(COALESCE(w.quantity,0))::int;
+  v_value := COALESCE(w.custody_value, 0);
+
+  SELECT * INTO v_booking FROM public.bookings WHERE id = w.booking_id;
+  SELECT * INTO v_service FROM public.services WHERE id = v_booking.service_id;
+  SELECT * INTO v_branch  FROM public.branches WHERE id = w.branch_id;
+
+  SELECT id INTO v_custody_acct FROM public.chart_of_accounts
+    WHERE company_id = w.company_id AND is_active
+      AND (account_code = '1145' OR sub_type IN ('inventory_in_custody','work_in_process'))
+    ORDER BY CASE WHEN account_code='1145' THEN 0 ELSE 1 END LIMIT 1;
+  SELECT id INTO v_inv_acct FROM public.chart_of_accounts
+    WHERE company_id = w.company_id AND is_active AND sub_type = 'inventory' LIMIT 1;
+
+  v_cc := COALESCE(v_booking.cost_center_id, v_service.cost_center_id, v_branch.default_cost_center_id);
+  IF v_cc IS NULL THEN SELECT id INTO v_cc FROM public.cost_centers WHERE company_id = w.company_id LIMIT 1; END IF;
+
+  IF v_qty > 0 THEN
+    INSERT INTO public.inventory_transactions (
+      company_id, branch_id, warehouse_id, cost_center_id, product_id,
+      transaction_type, quantity_change, reference_type, reference_id, notes
+    ) VALUES (
+      w.company_id, w.branch_id, w.warehouse_id, v_cc, w.product_id,
+      'booking_custody_return', v_qty, 'booking_stock_withdrawal', w.id,
+      'إرجاع عهدة للمخزن — حجز ' || COALESCE(v_booking.booking_no,'') || COALESCE(' — ' || p_note,'')
+    );
+  END IF;
+
+  IF v_value > 0 AND v_custody_acct IS NOT NULL AND v_inv_acct IS NOT NULL THEN
+    v_je := public.create_journal_entry_atomic(
+      w.company_id, 'booking_custody_return', w.id, CURRENT_DATE,
+      'إرجاع مواد من عهدة الفنّي للمخزن — حجز ' || COALESCE(v_booking.booking_no,''),
+      w.branch_id, v_cc, w.warehouse_id,
+      jsonb_build_array(
+        jsonb_build_object('account_id', v_inv_acct, 'debit_amount', v_value, 'credit_amount', 0, 'description','عودة المخزون من العهدة'),
+        jsonb_build_object('account_id', v_custody_acct, 'debit_amount', 0, 'credit_amount', v_value, 'description','تصفية عهدة الفنّي')
+      )
+    );
+    IF NOT COALESCE((v_je->>'success')::boolean, false) THEN
+      RAISE EXCEPTION 'CUSTODY_RETURN_JE_FAILED: %', COALESCE(v_je->>'error','unknown');
+    END IF;
+  END IF;
+
+  UPDATE public.booking_stock_withdrawals
+     SET custody_status='returned', custody_returned_at=now()
+   WHERE id = p_withdrawal_id;
+  RETURN jsonb_build_object('ok',true,'value',v_value,'qty',v_qty);
+END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -44078,6 +44233,7 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN NULL; END;
   END IF;
 
+  IF NOT v_has_mgr THEN PERFORM public.fn_post_booking_custody_out(v_id); END IF;
   RETURN jsonb_build_object('success', true, 'withdrawal_id', v_id,
     'status', CASE WHEN v_has_mgr THEN 'pending' ELSE 'approved' END,
     'auto_approved', NOT v_has_mgr);
