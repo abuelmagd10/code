@@ -3963,6 +3963,16 @@ function ApprovalsContent() {
                     <GitMerge className="w-3 h-3" />{t("تحويلات المخزون", "Transfers")} ({history.filter(h => h.category === "inventory_transfer").length})
                   </Button>
                 )}
+                {canShowHistory("booking_stock_withdrawal") && (
+                  <Button size="sm" variant={historyFilter === "booking_stock_withdrawal" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("booking_stock_withdrawal")}>
+                    <Package className="w-3 h-3" />{t("سحب مخزون الحجوزات", "Booking Withdrawals")} ({history.filter(h => h.category === "booking_stock_withdrawal").length})
+                  </Button>
+                )}
+                {canShowHistory("booking_custody_return") && (
+                  <Button size="sm" variant={historyFilter === "booking_custody_return" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("booking_custody_return")}>
+                    <Package className="w-3 h-3" />{t("استلام مرتجعات العهدة", "Custody Returns")} ({history.filter(h => h.category === "booking_custody_return").length})
+                  </Button>
+                )}
                 {canShowHistory("misc") && (
                   <Button size="sm" variant={historyFilter === "misc" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("misc")}>
                     <AlertCircle className="w-3 h-3" />{t("طلبات متنوعة", "Other")} ({history.filter(h => h.category === "misc").length})
