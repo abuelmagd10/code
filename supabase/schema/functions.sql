@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-17T11:52:14.841Z
+-- Generated: 2026-07-18T10:38:51.194Z
 -- Routines: 1187
 -- =====================================================================
 
@@ -35623,6 +35623,13 @@ DECLARE
 BEGIN
   IF NEW.status <> 'pending' THEN RETURN NEW; END IF;
 
+  -- v3.74.691 — purchase_order / sales_order already receive a dedicated
+  -- discount-approval notification (from po_/so_evaluate_discount_approval)
+  -- that opens the approvals inbox, plus their own document-approval
+  -- notification. Emitting this one too produced a third, confusing message
+  -- worded as a discount but linking to the document.
+  IF NEW.document_type::text IN ('purchase_order','sales_order') THEN RETURN NEW; END IF;
+
   v_doc_label := CASE NEW.document_type::text
     WHEN 'purchase_order'   THEN 'أمر الشراء '
     WHEN 'sales_order'      THEN 'طلب المبيعات '
@@ -36502,10 +36509,8 @@ DECLARE
 BEGIN
   SELECT * INTO v_po FROM public.purchase_orders WHERE id = p_po_id;
   IF NOT FOUND THEN RETURN; END IF;
-  -- Only act while the PO is editable / awaiting approval.
   IF v_po.status NOT IN ('draft', 'pending_approval') THEN RETURN; END IF;
 
-  -- Pull subtotal and line-discount total from items.
   SELECT
     COALESCE(SUM(quantity * unit_price), 0),
     COALESCE(SUM(quantity * unit_price * COALESCE(discount_percent, 0) / 100.0), 0)
@@ -36513,10 +36518,8 @@ BEGIN
   FROM public.purchase_order_items
   WHERE purchase_order_id = p_po_id;
 
-  -- Document-level discount in amount terms.
   IF COALESCE(v_po.discount_value, 0) > 0 THEN
     IF COALESCE(v_po.discount_type, 'amount') = 'percent' THEN
-      -- Percent applies to the subtotal AFTER line discounts.
       v_doc_discount_amt := GREATEST(v_subtotal - v_line_discount_amt, 0) * v_po.discount_value / 100.0;
     ELSE
       v_doc_discount_amt := v_po.discount_value;
@@ -36525,14 +36528,12 @@ BEGIN
 
   v_total_discount_amt := ROUND(v_line_discount_amt + v_doc_discount_amt, 2);
 
-  -- What's the latest approval row for this PO?
   SELECT id, status, discount_value
     INTO v_last_id, v_last_status, v_last_value
     FROM public.discount_approvals
    WHERE document_type = 'purchase_order' AND document_id = p_po_id
    ORDER BY requested_at DESC LIMIT 1;
 
-  -- (1) No effective discount → cancel any pending request.
   IF v_total_discount_amt <= 0 THEN
     IF FOUND AND v_last_status = 'pending' THEN
       UPDATE public.discount_approvals
@@ -36544,14 +36545,11 @@ BEGIN
     RETURN;
   END IF;
 
-  -- (2) Same effective discount already pending/approved → nothing to do.
   IF FOUND AND v_last_status IN ('pending', 'approved')
      AND v_last_value = v_total_discount_amt THEN
     RETURN;
   END IF;
 
-  -- (3) Different discount or fresh: cancel any existing pending, then
-  --     open a new pending row.
   IF FOUND AND v_last_status = 'pending' THEN
     UPDATE public.discount_approvals
        SET status = 'cancelled',
@@ -36565,8 +36563,6 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN v_party_name := NULL; END;
 
   v_requester := v_po.created_by_user_id;
-  -- If no requester recorded, we silently skip. Approve gate will block
-  -- the PO anyway (no approved row = no approval).
   IF v_requester IS NULL THEN RETURN; END IF;
 
   v_currency := COALESCE(v_po.currency, 'EGP');
