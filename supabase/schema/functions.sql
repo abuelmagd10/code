@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T16:39:33.744Z
+-- Generated: 2026-07-18T18:09:04.154Z
 -- Routines: 1187
 -- =====================================================================
 
@@ -7409,7 +7409,18 @@ AS $function$
        AND w.bundle_item_id = gla.bundle_item_id
        AND w.status = 'approved'
      WHERE gla.kind <> 'extra'
-       AND COALESCE(p.requires_withdrawal_approval, false) = true
+       -- v3.74.700 — ANY service-linked item that will actually leave the
+       -- warehouse requires the store manager's approval, whether it is
+       -- mandatory or a SELECTED optional one. get_booking_line_additions only
+       -- returns optional items the executor actually selected, so selection is
+       -- honoured automatically. Previously this relied solely on the
+       -- per-product requires_withdrawal_approval flag, so an item with stock
+       -- deduction enabled but that flag off (e.g. "booto") was consumed with
+       -- no approval and no notification at all.
+       AND (
+         COALESCE(gla.auto_deduct_inventory, false) = true
+         OR COALESCE(p.requires_withdrawal_approval, false) = true
+       )
        AND w.id IS NULL
   );
 $function$

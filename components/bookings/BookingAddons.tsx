@@ -597,7 +597,13 @@ export function BookingAddons({
                     })()}
 
                     {/* v3.74.634 — warehouse-withdrawal approval for consumed items */}
-                    {bi.requires_withdrawal_approval && (bi.selected || !bi.is_optional) && (() => {
+                    {/* v3.74.700 — an OPTIONAL item, once the executor selects it,
+                        is treated exactly like a mandatory one: anything that will
+                        actually leave the warehouse (auto_deduct_inventory) needs the
+                        store manager's approval, regardless of the per-product
+                        requires_withdrawal_approval flag. Previously an item with
+                        stock deduction ON but that flag OFF was consumed silently. */}
+                    {(bi.requires_withdrawal_approval || bi.auto_deduct_inventory) && (bi.selected || !bi.is_optional) && (() => {
                       const w = withdrawals[bi.id]
                       const status = w?.status
                       return (
