@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T12:36:30.140Z
+-- Generated: 2026-07-18T12:52:35.922Z
 -- Routines: 1187
 -- =====================================================================
 
@@ -35395,20 +35395,6 @@ BEGIN
        AND assigned_to_user = NEW.assigned_to_user
        AND status         = 'unread'
        AND created_at     < NEW.created_at;
-
-    -- When a targeted accountant_action arrives, the generic approvals
-    -- broadcast about the same document becomes noise — archive it.
-    IF NEW.category = 'accountant_action' THEN
-      UPDATE public.notifications
-         SET status  = 'archived',
-             read_at = COALESCE(read_at, NOW())
-       WHERE company_id     = NEW.company_id
-         AND category       = 'approvals'
-         AND reference_type = NEW.reference_type
-         AND reference_id   = NEW.reference_id
-         AND assigned_to_user IS NULL
-         AND status         = 'unread';
-    END IF;
   ELSE
     UPDATE public.notifications
        SET status  = 'archived',
@@ -35420,12 +35406,38 @@ BEGIN
        AND reference_id   = NEW.reference_id
        AND assigned_to_user IS NULL
        -- v3.74.695 — only supersede a notification aimed at the SAME role.
-       -- Without this, notifying several roles about one document made the
-       -- last insert archive the earlier roles' copies (e.g. the manager's
-       -- notification silently archived the OWNER's approval request).
        AND assigned_to_role IS NOT DISTINCT FROM NEW.assigned_to_role
        AND status         = 'unread'
        AND created_at     < NEW.created_at;
+  END IF;
+
+  -- v3.74.697 — exactly ONE notification per document for the accountant.
+  -- Keep the approvals request ("تنتظر اعتمادك": role-targeted, branch-scoped,
+  -- carries an event_key); the generic accountant_action copy is redundant.
+  -- Enforced in BOTH insert orders, because the accountant_action is emitted
+  -- ~1.4s BEFORE the approvals request — which is why both used to arrive.
+  -- IMPORTANT: an accountant_action with NO approvals counterpart (e.g. sales
+  -- invoices) is untouched and still delivered.
+  IF NEW.category = 'approvals' THEN
+    UPDATE public.notifications
+       SET status  = 'archived',
+           read_at = COALESCE(read_at, NOW())
+     WHERE company_id     = NEW.company_id
+       AND category       = 'accountant_action'
+       AND reference_type = NEW.reference_type
+       AND reference_id   = NEW.reference_id
+       AND status         = 'unread';
+  ELSIF NEW.category = 'accountant_action' AND EXISTS (
+    SELECT 1 FROM public.notifications x
+     WHERE x.company_id     = NEW.company_id
+       AND x.category       = 'approvals'
+       AND x.reference_type = NEW.reference_type
+       AND x.reference_id   = NEW.reference_id
+  ) THEN
+    UPDATE public.notifications
+       SET status  = 'archived',
+           read_at = COALESCE(read_at, NOW())
+     WHERE id = NEW.id;
   END IF;
 
   RETURN NEW;
