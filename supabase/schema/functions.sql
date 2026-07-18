@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T18:09:04.154Z
--- Routines: 1187
+-- Generated: 2026-07-18T21:52:16.479Z
+-- Routines: 1194
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4449,6 +4449,7 @@ DECLARE
   v_company_id UUID;
   v_product_cost NUMERIC;
   v_cogs_amount NUMERIC;
+  v_fifo_cogs NUMERIC;
   v_inventory_account_id UUID;
   v_cogs_account_id UUID;
   v_journal_entry_id UUID;
@@ -4461,18 +4462,37 @@ BEGIN
   SELECT item_type INTO v_product_item_type FROM products WHERE id = NEW.product_id;
   IF v_product_item_type = 'service' THEN RETURN NEW; END IF;
 
-  SELECT company_id INTO v_company_id FROM products WHERE id = NEW.product_id;
-  SELECT cost_price INTO v_product_cost FROM products WHERE id = NEW.product_id;
-  
-  v_cogs_amount := ABS(NEW.quantity_change) * COALESCE(v_product_cost, 0);
+  SELECT company_id, cost_price INTO v_company_id, v_product_cost
+  FROM products WHERE id = NEW.product_id;
+
+  -- v3.74.702 — COGS now comes from the FIFO lots, which hold what was ACTUALLY
+  -- paid for each purchase batch, instead of products.cost_price (a single
+  -- editable snapshot that silently diverged from the real purchase price and
+  -- inflated profit — e.g. a product bought at 20.00 whose card still said 0).
+  -- consume_fifo_lots also records the consumption and depletes the batch, so
+  -- the next sale correctly draws from the following batch.
+  v_fifo_cogs := public.consume_fifo_lots(
+    v_company_id, NEW.product_id, ABS(NEW.quantity_change),
+    'sale', 'invoice', NEW.reference_id,
+    COALESCE(NEW.created_at::date, CURRENT_DATE)
+  );
+
+  IF COALESCE(v_fifo_cogs, 0) > 0 THEN
+    v_cogs_amount := v_fifo_cogs;
+  ELSE
+    -- Fallback: legacy stock with no FIFO lot yet. Keeps the old behaviour so
+    -- COGS is never silently zeroed.
+    v_cogs_amount := ABS(NEW.quantity_change) * COALESCE(v_product_cost, 0);
+  END IF;
+
   IF v_cogs_amount = 0 THEN RETURN NEW; END IF;
 
   SELECT coa.id INTO v_inventory_account_id FROM chart_of_accounts coa
-  WHERE coa.company_id = v_company_id AND coa.sub_type = 'inventory' 
+  WHERE coa.company_id = v_company_id AND coa.sub_type = 'inventory'
   AND (coa.parent_id IS NOT NULL OR coa.level > 1) LIMIT 1;
 
   SELECT coa.id INTO v_cogs_account_id FROM chart_of_accounts coa
-  WHERE coa.company_id = v_company_id 
+  WHERE coa.company_id = v_company_id
   AND (coa.sub_type = 'cost_of_goods_sold' OR coa.sub_type = 'cogs' OR coa.account_code = '5000')
   AND (coa.parent_id IS NOT NULL OR coa.level > 1) LIMIT 1;
 
@@ -4481,12 +4501,12 @@ BEGIN
   SELECT invoice_number, invoice_date INTO v_invoice_number, v_invoice_date
   FROM invoices WHERE id = NEW.reference_id;
 
-  INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, branch_id, cost_center_id) 
+  INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, branch_id, cost_center_id)
   VALUES (v_company_id, 'invoice_cogs', NEW.reference_id, COALESCE(v_invoice_date, CURRENT_DATE),
-  'COGS - ' || COALESCE(v_invoice_number, 'Invoice'), NEW.branch_id, NEW.cost_center_id) 
+  'COGS - ' || COALESCE(v_invoice_number, 'Invoice'), NEW.branch_id, NEW.cost_center_id)
   RETURNING id INTO v_journal_entry_id;
 
-  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES 
+  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES
   (v_journal_entry_id, v_cogs_account_id, v_cogs_amount, 0, 'COGS'),
   (v_journal_entry_id, v_inventory_account_id, 0, v_cogs_amount, 'Inventory');
 
@@ -5439,26 +5459,23 @@ DECLARE
   v_company_id           UUID;
   v_product_cost         NUMERIC;
   v_cogs_reversal_amount NUMERIC;
+  v_fifo_restored        NUMERIC;
   v_inventory_account_id UUID;
   v_cogs_account_id      UUID;
   v_journal_entry_id     UUID;
   v_product_item_type    TEXT;
-  v_existing_reversal    UUID;
   v_branch_id            UUID;
 BEGIN
-  -- Only for sale_return transactions
   IF NEW.transaction_type != 'sale_return' THEN
     RETURN NEW;
   END IF;
 
-  -- Skip services
   SELECT item_type INTO v_product_item_type
   FROM products WHERE id = NEW.product_id;
   IF v_product_item_type = 'service' THEN
     RETURN NEW;
   END IF;
 
-  -- Get company and cost
   SELECT it.company_id, p.cost_price
   INTO v_company_id, v_product_cost
   FROM inventory_transactions it
@@ -5466,7 +5483,6 @@ BEGIN
   WHERE it.id = NEW.id
   LIMIT 1;
 
-  -- Fallback: get company from warehouse
   IF v_company_id IS NULL THEN
     SELECT w.company_id INTO v_company_id
     FROM warehouses w WHERE w.id = NEW.warehouse_id LIMIT 1;
@@ -5476,21 +5492,14 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Skip if reversal already exists for this reference
-  IF NEW.reference_id IS NOT NULL THEN
-    SELECT id INTO v_existing_reversal
-    FROM journal_entries
-    WHERE company_id = v_company_id
-      AND reference_type = 'cogs_return'
-      AND reference_id = NEW.reference_id
-      AND (is_deleted IS NULL OR is_deleted = false)
-    LIMIT 1;
-    IF v_existing_reversal IS NOT NULL THEN
-      RETURN NEW;
-    END IF;
+  -- v3.74.702 — the old guard skipped the reversal whenever ANY cogs_return
+  -- journal existed for the invoice, so a SECOND partial return silently posted
+  -- no reversal at all. Each return movement now carries its own journal, and
+  -- the guard is this row's own link (which also stops re-firing on UPDATE).
+  IF NEW.journal_entry_id IS NOT NULL THEN
+    RETURN NEW;
   END IF;
 
-  -- Get accounts
   SELECT id INTO v_inventory_account_id FROM chart_of_accounts
   WHERE company_id = v_company_id AND is_active = true
     AND sub_type = 'inventory' LIMIT 1;
@@ -5503,14 +5512,24 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Calculate COGS reversal amount
-  v_cogs_reversal_amount := ABS(COALESCE(NEW.quantity_change, 0)) * COALESCE(v_product_cost, 0);
+  -- v3.74.702 — put the returned units back into the exact FIFO batches they
+  -- were taken from and reverse COGS by that same original cost. Works for a
+  -- partial return as well as a full one. Falls back to the product card only
+  -- when no FIFO consumption was recorded (legacy stock).
+  v_fifo_restored := public.restore_fifo_lots_on_return(
+    'invoice', NEW.reference_id, NEW.product_id, ABS(COALESCE(NEW.quantity_change, 0))
+  );
+
+  IF COALESCE(v_fifo_restored, 0) > 0 THEN
+    v_cogs_reversal_amount := v_fifo_restored;
+  ELSE
+    v_cogs_reversal_amount := ABS(COALESCE(NEW.quantity_change, 0)) * COALESCE(v_product_cost, 0);
+  END IF;
 
   IF v_cogs_reversal_amount <= 0 THEN
     RETURN NEW;
   END IF;
 
-  -- Resolve branch
   v_branch_id := COALESCE(NEW.branch_id, NULL);
   IF v_branch_id IS NULL THEN
     SELECT id INTO v_branch_id FROM branches
@@ -5521,7 +5540,6 @@ BEGIN
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
   BEGIN
-    -- ✅ FIX: Create JE as DRAFT first
     INSERT INTO journal_entries (
       company_id, branch_id, reference_type, reference_id,
       entry_date, description, status
@@ -5531,11 +5549,9 @@ BEGIN
       COALESCE(NEW.reference_id, NEW.id),
       COALESCE(NEW.transaction_date, CURRENT_DATE),
       'عكس تكلفة مرتجع مبيعات',
-      'draft'   -- ← DRAFT first
+      'draft'
     ) RETURNING id INTO v_journal_entry_id;
 
-    -- Add reversal lines:
-    -- Line 1: DR Inventory (reversed: inventory comes back)
     INSERT INTO journal_entry_lines (
       journal_entry_id, account_id, debit_amount, credit_amount, description
     ) VALUES (
@@ -5544,7 +5560,6 @@ BEGIN
       'عكس المخزون - مرتجع'
     );
 
-    -- Line 2: CR COGS (balanced at count=2)
     INSERT INTO journal_entry_lines (
       journal_entry_id, account_id, debit_amount, credit_amount, description
     ) VALUES (
@@ -5553,12 +5568,11 @@ BEGIN
       'عكس تكلفة البضاعة'
     );
 
-    -- ✅ Post the JE
     UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_entry_id;
+    NEW.journal_entry_id := v_journal_entry_id;
   EXCEPTION WHEN OTHERS THEN
     PERFORM set_config('app.allow_direct_post', 'false', true);
     RAISE WARNING 'COGS reversal JE failed: %', SQLERRM;
-    -- Don't block the inventory transaction
   END;
 
   PERFORM set_config('app.allow_direct_post', 'false', true);
@@ -20108,6 +20122,46 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- fn_fifo_on_purchase_return()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_fifo_on_purchase_return()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.702 — hangs off the inventory movement itself rather than off any one
+-- procedure, so it covers every purchase-return path (atomic / multi-warehouse
+-- / delivery confirmation) including any added later.
+DECLARE
+  v_company_id UUID;
+  v_bill_id    UUID;
+BEGIN
+  IF NEW.transaction_type <> 'purchase_return' THEN RETURN NEW; END IF;
+  IF COALESCE(NEW.is_deleted, false) THEN RETURN NEW; END IF;
+  IF EXISTS (SELECT 1 FROM products WHERE id = NEW.product_id AND item_type = 'service') THEN
+    RETURN NEW;
+  END IF;
+
+  v_company_id := NEW.company_id;
+  IF v_company_id IS NULL THEN
+    SELECT company_id INTO v_company_id FROM warehouses WHERE id = NEW.warehouse_id LIMIT 1;
+  END IF;
+  IF v_company_id IS NULL THEN RETURN NEW; END IF;
+
+  SELECT bill_id INTO v_bill_id FROM purchase_returns WHERE id = NEW.reference_id;
+
+  PERFORM public.reduce_fifo_lots_on_purchase_return(
+    v_company_id, NEW.product_id, ABS(COALESCE(NEW.quantity_change, 0)),
+    v_bill_id, NEW.reference_id
+  );
+
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- fn_post_booking_custody_out(p_withdrawal_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_post_booking_custody_out(p_withdrawal_id uuid)
@@ -25795,7 +25849,9 @@ BEGIN
 
   SELECT COALESCE(SUM(jel.credit_amount - jel.debit_amount),0) INTO v_acct_net
   FROM journal_entry_lines jel
+  -- v3.74.702 — soft-deleted journals must not count toward the AP ledger.
   JOIN journal_entries je ON je.id=jel.journal_entry_id AND je.status='posted'
+                         AND COALESCE(je.is_deleted, false) = false
   JOIN chart_of_accounts coa ON coa.id=jel.account_id
   WHERE coa.company_id=p_company_id AND coa.account_code='2110'
     AND COALESCE(je.reference_type,'') NOT IN
@@ -26391,6 +26447,10 @@ BEGIN
     FROM journal_entries je
     WHERE company_id = p_company_id
       AND status = 'posted'
+      -- v3.74.702 — ignore soft-deleted journals; a reverted/voided document
+      -- keeps its old journal row flagged is_deleted, and counting it made the
+      -- replacement journal look like a double-booking.
+      AND COALESCE(is_deleted, false) = false
       AND reference_type IS NOT NULL
       AND reference_id IS NOT NULL
     GROUP BY reference_type, reference_id
@@ -26658,7 +26718,9 @@ BEGIN
   SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)
   INTO v_gl_inventory
   FROM journal_entry_lines jel
+  -- v3.74.702 — exclude soft-deleted journals.
   JOIN journal_entries je ON je.id = jel.journal_entry_id AND je.status='posted'
+                         AND COALESCE(je.is_deleted, false) = false
   JOIN chart_of_accounts coa ON coa.id = jel.account_id
   WHERE coa.company_id = p_company_id
     AND (coa.account_code = '1140' OR coa.sub_type = 'inventory');
@@ -26699,7 +26761,9 @@ BEGIN
   -- Inventory GL account net
   SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) INTO v_acct_net
   FROM journal_entry_lines jel
+  -- v3.74.702 — exclude soft-deleted journals.
   JOIN journal_entries je ON je.id=jel.journal_entry_id AND je.status='posted'
+                         AND COALESCE(je.is_deleted, false) = false
   JOIN chart_of_accounts coa ON coa.id=jel.account_id
   WHERE coa.company_id=p_company_id
     AND (coa.account_code='1140' OR coa.sub_type='inventory');
@@ -26713,6 +26777,7 @@ BEGIN
     FROM inventory_transactions it
     LEFT JOIN products p ON p.id = it.product_id
     WHERE it.company_id = p_company_id
+      AND COALESCE(it.is_deleted, false) = false
       AND COALESCE(p.item_type,'goods') <> 'service'
     GROUP BY it.product_id, p.cost_price
   ) sub;
@@ -43249,6 +43314,77 @@ END; $function$
 ;
 
 -- ---------------------------------------------------------------
+-- reduce_fifo_lots_on_purchase_return(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_bill_id uuid, p_reference_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.reduce_fifo_lots_on_purchase_return(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_bill_id uuid DEFAULT NULL::uuid, p_reference_id uuid DEFAULT NULL::uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.702 — goods sent BACK to the supplier must leave the FIFO batches too.
+-- Nothing did this before, so a purchase return kept phantom batch quantity and
+-- the next sale would have drawn cost from stock that no longer exists.
+-- Preference order: the batch created by the very bill being returned, then the
+-- newest batches (a return is always the most recent receipt in practice).
+-- Only remaining_quantity is touched — units already sold cannot be un-received.
+-- Every reduction is written to fifo_lot_consumptions as consumption_type
+-- 'purchase_return'. That is not decoration: ic_fifo_lot_integrity asserts
+-- remaining = original - SUM(consumed), so silently lowering remaining would
+-- raise a false HIGH drift alert on the dashboard.
+DECLARE
+  v_lot       RECORD;
+  v_remaining NUMERIC := ABS(COALESCE(p_quantity, 0));
+  v_take      NUMERIC;
+  v_cost      NUMERIC := 0;
+BEGIN
+  IF v_remaining <= 0 THEN RETURN 0; END IF;
+
+  FOR v_lot IN
+    SELECT id, remaining_quantity, unit_cost
+    FROM fifo_cost_lots
+    WHERE company_id = p_company_id
+      AND product_id = p_product_id
+      AND remaining_quantity > 0
+    ORDER BY
+      CASE WHEN p_bill_id IS NOT NULL AND reference_id = p_bill_id THEN 0 ELSE 1 END,
+      lot_date DESC, created_at DESC
+    FOR UPDATE
+  LOOP
+    EXIT WHEN v_remaining <= 0;
+    v_take := LEAST(v_lot.remaining_quantity, v_remaining);
+
+    UPDATE fifo_cost_lots
+       SET remaining_quantity = remaining_quantity - v_take,
+           updated_at = CURRENT_TIMESTAMP
+     WHERE id = v_lot.id;
+
+    INSERT INTO fifo_lot_consumptions (
+      company_id, lot_id, product_id, consumption_type,
+      reference_type, reference_id, quantity_consumed,
+      unit_cost, total_cost, consumption_date, notes
+    ) VALUES (
+      p_company_id, v_lot.id, p_product_id, 'purchase_return',
+      'purchase_return', p_reference_id, v_take,
+      v_lot.unit_cost, ROUND(v_take * v_lot.unit_cost, 4), CURRENT_DATE,
+      'مرتجع مشتريات - خصم من الدفعة'
+    );
+
+    v_cost      := v_cost + (v_take * v_lot.unit_cost);
+    v_remaining := v_remaining - v_take;
+  END LOOP;
+
+  IF v_remaining > 0 THEN
+    RAISE WARNING 'Purchase return exceeds available FIFO batch quantity for product % (% units unmatched)',
+      p_product_id, v_remaining;
+  END IF;
+
+  RETURN v_cost;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- refresh_dashboard_gl_monthly_summary()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.refresh_dashboard_gl_monthly_summary()
@@ -44900,6 +45036,74 @@ BEGIN
   END;
 
   RETURN v_report;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- restore_fifo_lots_on_return(p_reference_type text, p_reference_id uuid, p_product_id uuid, p_quantity numeric)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.restore_fifo_lots_on_return(p_reference_type text, p_reference_id uuid, p_product_id uuid, p_quantity numeric)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.702 — partial-safe FIFO restore for SALE returns.
+-- reverse_fifo_consumption() wipes EVERY consumption row for a reference, so it
+-- can only serve a 100% return. This walks the recorded consumptions and gives
+-- back exactly p_quantity units, at the very cost each batch was taken at, then
+-- returns that cost so the caller can reverse COGS by the same amount.
+-- Order is the mirror image of FIFO: the LAST batch consumed is the FIRST put
+-- back. It must be keyed on the batch date, not on the consumption row's
+-- created_at — rows written inside one statement share an identical timestamp
+-- and would otherwise unwind in arbitrary order.
+DECLARE
+  v_c         RECORD;
+  v_remaining NUMERIC := ABS(COALESCE(p_quantity, 0));
+  v_take      NUMERIC;
+  v_cost      NUMERIC := 0;
+BEGIN
+  IF v_remaining <= 0 THEN RETURN 0; END IF;
+
+  FOR v_c IN
+    SELECT c.id, c.lot_id, c.quantity_consumed, c.unit_cost
+    FROM fifo_lot_consumptions c
+    JOIN fifo_cost_lots l ON l.id = c.lot_id
+    WHERE c.reference_type = p_reference_type
+      AND c.reference_id   = p_reference_id
+      AND c.product_id     = p_product_id
+      AND c.quantity_consumed > 0
+    ORDER BY l.lot_date DESC, l.created_at DESC, c.created_at DESC
+    FOR UPDATE OF c
+  LOOP
+    EXIT WHEN v_remaining <= 0;
+    v_take := LEAST(v_c.quantity_consumed, v_remaining);
+
+    UPDATE fifo_cost_lots
+       SET remaining_quantity = remaining_quantity + v_take,
+           updated_at = CURRENT_TIMESTAMP
+     WHERE id = v_c.lot_id;
+
+    IF v_take >= v_c.quantity_consumed THEN
+      DELETE FROM fifo_lot_consumptions WHERE id = v_c.id;
+    ELSE
+      UPDATE fifo_lot_consumptions
+         SET quantity_consumed = quantity_consumed - v_take,
+             total_cost        = ROUND((quantity_consumed - v_take) * unit_cost, 4)
+       WHERE id = v_c.id;
+    END IF;
+
+    v_cost      := v_cost + (v_take * v_c.unit_cost);
+    v_remaining := v_remaining - v_take;
+  END LOOP;
+
+  IF v_remaining > 0 THEN
+    RAISE WARNING 'Sale return exceeds recorded FIFO consumption for product % (% units unmatched)',
+      p_product_id, v_remaining;
+  END IF;
+
+  RETURN v_cost;
 END;
 $function$
 ;
