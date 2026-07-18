@@ -2776,16 +2776,33 @@ function ApprovalsContent() {
       try {
         const { data: vpc } = await supabase
           .from("vendor_payment_correction_requests")
-          .select(`id, status, amount, created_at, executed_at, approved_at, rejection_reason, notes, requested_by, approved_by, executed_by, supplier_id, suppliers(name)`)
+          .select(`id, status, amount, created_at, executed_at, approved_at, rejection_reason, notes, requested_by, approved_by, executed_by, supplier_id, original_payment_id, suppliers(name)`)
           .eq("company_id", cid)
           .in("status", ["executed", "rejected", "cancelled"])
           .order("created_at", { ascending: false })
           .limit(100)
+        // v3.74.694 — the correction row itself has no branch; its scope is the
+        // branch of the ORIGINAL payment. Resolve it so branch filtering (and a
+        // branch manager's locked scope) can place these rows correctly instead
+        // of showing every branch's corrections to everyone.
+        const vpcOrigPayIds = Array.from(new Set(((vpc || []) as any[]).map(r => r.original_payment_id).filter(Boolean)))
+        const vpcScope = new Map<string, { branch_id: string | null; warehouse_id: string | null }>()
+        if (vpcOrigPayIds.length) {
+          const { data: vpcPays } = await supabase
+            .from("payments")
+            .select("id, branch_id, warehouse_id")
+            .in("id", vpcOrigPayIds as string[])
+          for (const p of (vpcPays || []) as any[]) {
+            vpcScope.set(p.id, { branch_id: p.branch_id ?? null, warehouse_id: p.warehouse_id ?? null })
+          }
+        }
         for (const r of (vpc || []) as any[]) {
           const status = r.status === "rejected" ? "rejected" : (r.status === "cancelled" ? "cancelled" : "approved")
           merged.push({
             id: `vcor-${r.id}`,
             category: "vendor_payment_correction",
+            branch_id: vpcScope.get(r.original_payment_id)?.branch_id ?? null,
+            warehouse_id: vpcScope.get(r.original_payment_id)?.warehouse_id ?? null,
             doc_label: `تصحيح دفعة مورد · ${r.id.slice(0, 8)}`,
             doc_href: "/vendor-payment-correction-requests",
             party_label: r.suppliers?.name ?? null,
