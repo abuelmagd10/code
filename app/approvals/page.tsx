@@ -1190,10 +1190,18 @@ function ApprovalsContent() {
       .filter(h => canShowHistory(h.category))
       .filter(h => {
         if (isAdminLike) {
-          if (historyBranchFilter !== "all" && h.branch_id && h.branch_id !== historyBranchFilter) return false
-          if (historyWarehouseFilter !== "all" && h.warehouse_id && h.warehouse_id !== historyWarehouseFilter) return false
+          // v3.74.693 — STRICT match when a specific branch/warehouse is picked.
+          // Previously the `h.branch_id &&` guard let rows that carry no branch
+          // slip through every filter, so e.g. Nasr-City supplier payments kept
+          // showing while "الفرع الرئيسي" was selected. A row must now actually
+          // belong to the chosen scope; company-level rows (no branch at all)
+          // appear under "كل الفروع".
+          if (historyBranchFilter !== "all" && h.branch_id !== historyBranchFilter) return false
+          if (historyWarehouseFilter !== "all" && h.warehouse_id !== historyWarehouseFilter) return false
           return true
         }
+        // Non-admin scope stays lenient: their feed is already RLS-scoped, and
+        // company-level rows (no branch) should not vanish from their log.
         if (myBranchId && h.branch_id && h.branch_id !== myBranchId) return false
         if (myWarehouseId && h.warehouse_id && h.warehouse_id !== myWarehouseId) return false
         return true
@@ -2533,6 +2541,7 @@ function ApprovalsContent() {
           .select(`
             id, status, requested_by, requested_at, proposed_quantity,
             approved_by, approved_at, rejected_by, rejected_at, rejection_reason,
+            branch_id, warehouse_id,
             manufacturing_production_orders!inner(order_no, products!inner(name))
           `)
           .eq("company_id", cid)
@@ -2544,6 +2553,8 @@ function ApprovalsContent() {
           merged.push({
             id: `pr-${r.id}`,
             category: "product_receive",
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
             doc_label: `استلام إنتاج · أمر ${r.manufacturing_production_orders?.order_no ?? "—"}`,
             doc_href: null,
             party_label: r.manufacturing_production_orders?.products?.name ?? "—",
@@ -2564,7 +2575,8 @@ function ApprovalsContent() {
           .from("manufacturing_material_issue_approvals")
           .select(`
             id, status, requested_by, requested_at, approved_by, approved_at,
-            rejected_by, rejected_at, rejection_reason
+            rejected_by, rejected_at, rejection_reason,
+            branch_id, warehouse_id
           `)
           .eq("company_id", cid)
           .in("status", ["approved", "rejected"])
@@ -2575,6 +2587,8 @@ function ApprovalsContent() {
           merged.push({
             id: `mi-${m.id}`,
             category: "material_issue",
+            branch_id: m.branch_id ?? null,
+            warehouse_id: m.warehouse_id ?? null,
             doc_label: `طلب صرف #${m.id.slice(0, 8)}`,
             doc_href: null,
             party_label: null,
@@ -2674,6 +2688,8 @@ function ApprovalsContent() {
           merged.push({
             id: `pay-${p.id}`,
             category: "supplier_payment",
+            branch_id: p.branch_id ?? null,
+            warehouse_id: p.warehouse_id ?? null,
             doc_label: `دفعة مورد · ${p.reference_number ?? p.id.slice(0, 8)}`,
             doc_href: null,
             party_label: histSupMap.get(p.supplier_id) ?? null,
@@ -2703,7 +2719,7 @@ function ApprovalsContent() {
           .select(`
             id, status, amount, currency, created_at, executed_at, approved_at,
             notes, rejection_reason, refund_method, refund_account_id,
-            requested_by, approved_by, executed_by, rejected_by,
+            requested_by, approved_by, executed_by, rejected_by, branch_id,
             customer_id, customers(name), invoice_id, invoices(invoice_number)
           `)
           .eq("company_id", cid)
@@ -2738,6 +2754,7 @@ function ApprovalsContent() {
           merged.push({
             id: `cref-${r.id}`,
             category: "customer_refund",
+            branch_id: r.branch_id ?? null,
             doc_label: `استرداد عميل · ${r.id.slice(0, 8)}`,
             doc_href: "/customer-refund-requests",
             party_label: r.customers?.name ?? null,
@@ -2794,7 +2811,7 @@ function ApprovalsContent() {
             id, status, total_return_amount, created_at,
             level_1_reviewed_at, warehouse_reviewed_at,
             level_1_rejection_reason, warehouse_rejection_reason,
-            executed_at, rejection_reason,
+            executed_at, rejection_reason, branch_id, warehouse_id,
             customer_id, customers(name), invoice_id, invoices(invoice_number)
           `)
           .eq("company_id", cid)
@@ -2808,6 +2825,8 @@ function ApprovalsContent() {
           merged.push({
             id: `sret-${r.id}`,
             category: "sales_return_request",
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
             doc_label: `مرتجع مبيعات · ${r.id.slice(0, 8)}`,
             doc_href: `/sales-return-requests/${r.id}`,
             party_label: r.customers?.name ?? null,
@@ -2989,7 +3008,7 @@ function ApprovalsContent() {
         const { data: wos } = await supabase
           .from("inventory_write_offs")
           .select(`id, write_off_number, total_cost, status, reason,
-                   created_by, approved_by, rejected_by,
+                   created_by, approved_by, rejected_by, branch_id, warehouse_id,
                    created_at, approved_at, rejected_at, rejection_reason`)
           .eq("company_id", cid)
           .in("status", ["approved", "rejected", "posted"])
@@ -3000,6 +3019,8 @@ function ApprovalsContent() {
           merged.push({
             id: `wo-${r.id}`,
             category: "write_off",
+            branch_id: r.branch_id ?? null,
+            warehouse_id: r.warehouse_id ?? null,
             doc_label: `إهلاك · ${r.write_off_number ?? r.id.slice(0, 8)}`,
             doc_href: `/inventory/write-offs`,
             party_label: null,
