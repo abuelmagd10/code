@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T10:38:51.194Z
+-- Generated: 2026-07-18T12:36:30.140Z
 -- Routines: 1187
 -- =====================================================================
 
@@ -35419,6 +35419,11 @@ BEGIN
        AND reference_type = NEW.reference_type
        AND reference_id   = NEW.reference_id
        AND assigned_to_user IS NULL
+       -- v3.74.695 — only supersede a notification aimed at the SAME role.
+       -- Without this, notifying several roles about one document made the
+       -- last insert archive the earlier roles' copies (e.g. the manager's
+       -- notification silently archived the OWNER's approval request).
+       AND assigned_to_role IS NOT DISTINCT FROM NEW.assigned_to_role
        AND status         = 'unread'
        AND created_at     < NEW.created_at;
   END IF;
