@@ -3869,7 +3869,10 @@ function ApprovalsContent() {
             )}
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
-              <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${history.length})` : ""}
+              {/* v3.74.696 — count the SCOPED feed (role + branch/warehouse),
+                  matching the chips and the list. The raw history.length made
+                  the tab advertise e.g. 14 while a branch manager's log had 1. */}
+              <Clock className="w-3.5 h-3.5" />{t("السجل", "History")}{historyLoaded ? ` (${historyScoped.length})` : ""}
             </Button>
           </div>
 
