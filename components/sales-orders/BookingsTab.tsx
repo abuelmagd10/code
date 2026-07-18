@@ -53,6 +53,13 @@ type BookingRow = {
 
 interface BookingsTabProps {
   lang?: string
+  /**
+   * v3.74.699 — reports how many booking orders are still drafts, so the tab
+   * label can show the number. It is derived from the SAME rows this tab
+   * renders (permission-scoped by /api/bookings, and limited to confirmed
+   * bookings), so the badge can never advertise rows the list doesn't show.
+   */
+  onDraftCountChange?: (count: number) => void
 }
 
 // v3.74.358 — labels match the new workflow wording. "completed" =
@@ -66,7 +73,7 @@ const STATUS_LABEL: Record<string, { ar: string; en: string; cls: string }> = {
   no_show:      { ar: "لم يحضر",       en: "No-show",       cls: "bg-orange-100 text-orange-700" },
 }
 
-export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
+export function BookingsTab({ lang = "ar", onDraftCountChange }: BookingsTabProps) {
   const isAr = lang !== "en"
   const t    = (ar: string, en: string) => (isAr ? ar : en)
 
@@ -142,6 +149,20 @@ export function BookingsTab({ lang = "ar" }: BookingsTabProps) {
   }
 
   useEffect(() => { load() /* eslint-disable-next-line */ }, [dateFrom, dateTo])
+
+  // v3.74.699 — publish the draft count to the parent tab label. Derived from
+  // the same `rows` this tab renders and with the same "confirmed bookings
+  // only" rule used by `filtered` below, so the badge always matches what the
+  // user finds after clicking. Deliberately NOT affected by the search/status
+  // filters — the badge answers "how many of my booking orders are still
+  // drafts", not "how many match my current filter".
+  const draftCount = useMemo(
+    () => rows.filter((r) => (r as any).confirmed_at && r.status === "draft").length,
+    [rows]
+  )
+  useEffect(() => {
+    onDraftCountChange?.(draftCount)
+  }, [draftCount, onDraftCountChange])
 
   // v3.74.364 — load the dropdown options once.
   useEffect(() => {

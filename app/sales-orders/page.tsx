@@ -125,6 +125,16 @@ function SalesOrdersContent() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   // v3.74.325 — current tab: "sales" = موجود (أوامر البيع), "bookings" = أوامر الحجز
   const [activeTab, setActiveTab] = useState<"sales" | "bookings">("sales");
+  // v3.74.699 — draft counters on the two tab cards. Each is derived from the
+  // SAME permission-scoped list its tab renders (`orders` comes from the
+  // governed /api/sales-orders; the bookings count is published by BookingsTab
+  // from its own rows), so a badge can never advertise orders the user cannot
+  // see — same rule we applied to the approvals inbox counters.
+  const [bookingDraftCount, setBookingDraftCount] = useState(0);
+  const salesDraftCount = useMemo(
+    () => orders.filter((o) => String((o as any).status || "").toLowerCase() === "draft").length,
+    [orders]
+  );
   const [orderItems, setOrderItems] = useState<SOItemWithProduct[]>([]);
   const [returnedQuantities, setReturnedQuantities] = useState<ReturnedQuantity[]>([]);
   const [filterProducts, setFilterProducts] = useState<string[]>([]);
@@ -1675,16 +1685,33 @@ function SalesOrdersContent() {
             <TabsTrigger value="sales">
               <ShoppingCart className="w-4 h-4 me-2" />
               {appLang === 'en' ? 'Sales Orders' : 'أوامر البيع'}
+              {salesDraftCount > 0 && (
+                <span className="ms-2 inline-flex items-center justify-center rounded-full bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100 text-[11px] font-semibold px-1.5 min-w-[1.25rem] h-5"
+                      title={appLang === 'en' ? 'Still in draft' : 'ما زالت مسودة'}>
+                  {salesDraftCount}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="bookings">
               <CalendarIcon className="w-4 h-4 me-2" />
               {appLang === 'en' ? 'Booking Orders' : 'أوامر الحجز'}
+              {bookingDraftCount > 0 && (
+                <span className="ms-2 inline-flex items-center justify-center rounded-full bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100 text-[11px] font-semibold px-1.5 min-w-[1.25rem] h-5"
+                      title={appLang === 'en' ? 'Still in draft' : 'ما زالت مسودة'}>
+                  {bookingDraftCount}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
-        {/* v3.74.325 — "أوامر الحجز" content (reads from bookings table) */}
-        {activeTab === 'bookings' && <BookingsTab lang={appLang} />}
+        {/* v3.74.325 — "أوامر الحجز" content (reads from bookings table)
+            v3.74.699 — kept mounted (hidden when inactive) so its draft counter
+            is available on the tab card without opening the tab first, mirroring
+            how the sales content below is always mounted. */}
+        <div className={activeTab === 'bookings' ? '' : 'hidden'}>
+          <BookingsTab lang={appLang} onDraftCountChange={setBookingDraftCount} />
+        </div>
 
         {/* v3.74.325 — original sales-orders content, hidden when on bookings tab */}
         <div className={activeTab === 'bookings' ? 'hidden' : ''}>
