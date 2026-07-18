@@ -257,13 +257,26 @@ export function BookingAddons({
 
       // Product catalog for the walk-in picker
       // v3.74.591 — نجلب الصور والمخزون لعرضها فى مكوّن البحث (نمط فاتورة البيع)
-      const { data: prods } = await supabase
+      // v3.74.701 — GOVERNANCE: the picker used to list EVERY product in the
+      // company, so an executor could add a product belonging to another branch
+      // as a sale item. Nothing stopped it until execution, where the database
+      // guard validate_product_branch_isolation aborted the whole activation
+      // with "Branch Isolation Violation" — after the user had already gone
+      // through every approval step. Selling another branch's product on this
+      // branch's invoice would corrupt both branches' stock and books.
+      // The picker is now scoped to the booking's branch (plus company-wide
+      // products that carry no branch at all).
+      let prodQuery = supabase
         .from("products")
-        .select("id, name, sku, unit_price, item_type, quantity_on_hand, image_urls")
+        .select("id, name, sku, unit_price, item_type, quantity_on_hand, image_urls, branch_id")
         .eq("company_id", companyId)
         .in("item_type", ["product", "raw_material", "manufactured"])
         .order("name", { ascending: true })
         .limit(500)
+      if (bookingBranchId) {
+        prodQuery = prodQuery.or(`branch_id.eq.${bookingBranchId},branch_id.is.null`)
+      }
+      const { data: prods } = await prodQuery
       setProducts(
         (prods || []).map((p: any) => ({
           id: p.id,
