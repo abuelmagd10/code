@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T22:22:12.520Z
--- Routines: 1195
+-- Generated: 2026-07-18T22:29:44.075Z
+-- Routines: 1197
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -13203,67 +13203,61 @@ DECLARE
   v_unit_cost NUMERIC;
   v_bill_date DATE;
 BEGIN
-  -- فقط لحركات الشراء
   IF NEW.transaction_type NOT IN ('purchase', 'adjustment_in') THEN
     RETURN NEW;
   END IF;
-  
-  -- تجاهل الخدمات
+
   IF EXISTS (SELECT 1 FROM products WHERE id = NEW.product_id AND item_type = 'service') THEN
     RETURN NEW;
   END IF;
-  
-  -- الحصول على تكلفة الوحدة من الفاتورة
+
   IF NEW.transaction_type = 'purchase' AND NEW.reference_id IS NOT NULL THEN
-    -- من bill_items
-    SELECT bi.unit_price, b.bill_date
-    INTO v_unit_cost, v_bill_date
-    FROM bill_items bi
-    JOIN bills b ON bi.bill_id = b.id
-    WHERE bi.bill_id = NEW.reference_id 
-      AND bi.product_id = NEW.product_id
+    -- v3.74.704 — the LANDED cost, not the list price. The lot used to be created
+    -- at bill_items.unit_price while the ledger debited inventory with the amount
+    -- actually payable, so every purchase discount and every freight charge drove
+    -- FIFO and the GL apart — and since FIFO now drives COGS, cost of sales was
+    -- overstated and profit understated.
+    SELECT public.fn_bill_item_landed_unit_cost(NEW.reference_id, NEW.product_id),
+           b.bill_date
+      INTO v_unit_cost, v_bill_date
+    FROM bills b
+    WHERE b.id = NEW.reference_id
     LIMIT 1;
+
+    -- Fallback to the list price if the bill cannot be valued, so a lot is never
+    -- created at zero cost.
+    IF COALESCE(v_unit_cost, 0) <= 0 THEN
+      SELECT bi.unit_price, b.bill_date
+        INTO v_unit_cost, v_bill_date
+      FROM bill_items bi
+      JOIN bills b ON bi.bill_id = b.id
+      WHERE bi.bill_id = NEW.reference_id
+        AND bi.product_id = NEW.product_id
+      LIMIT 1;
+    END IF;
   ELSE
-    -- من products.cost_price (للتعديلات)
     SELECT cost_price INTO v_unit_cost FROM products WHERE id = NEW.product_id;
     v_bill_date := CURRENT_DATE;
   END IF;
-  
-  -- إنشاء دفعة جديدة
+
   INSERT INTO fifo_cost_lots (
-    company_id,
-    product_id,
-    lot_date,
-    lot_type,
-    reference_type,
-    reference_id,
-    original_quantity,
-    remaining_quantity,
-    unit_cost,
-    notes,
-    branch_id,
-    warehouse_id
+    company_id, product_id, lot_date, lot_type, reference_type, reference_id,
+    original_quantity, remaining_quantity, unit_cost, notes, branch_id, warehouse_id
   ) VALUES (
     NEW.company_id,
     NEW.product_id,
-    v_bill_date,
-    CASE 
-      WHEN NEW.transaction_type = 'purchase' THEN 'purchase'
-      ELSE 'adjustment'
-    END,
-    CASE 
-      WHEN NEW.transaction_type = 'purchase' THEN 'bill'
-      ELSE 'adjustment'
-    END,
+    COALESCE(v_bill_date, CURRENT_DATE),
+    CASE WHEN NEW.transaction_type = 'purchase' THEN 'purchase' ELSE 'adjustment' END,
+    CASE WHEN NEW.transaction_type = 'purchase' THEN 'bill' ELSE 'adjustment' END,
     NEW.reference_id,
     NEW.quantity_change,
     NEW.quantity_change,
     COALESCE(v_unit_cost, 0),
     NEW.notes,
     NEW.branch_id,
-    NULL -- warehouse_id will be added later if needed
+    NULL
   );
-  
+
   RETURN NEW;
 END;
 $function$
@@ -20086,6 +20080,72 @@ CREATE OR REPLACE FUNCTION public.fix_wrong_return_account_entries(p_company_id 
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$ DECLARE v_fixed_count INTEGER := 0; v_ar_account_id UUID; BEGIN SELECT id INTO v_ar_account_id FROM chart_of_accounts WHERE company_id = p_company_id AND sub_type = 'accounts_receivable' LIMIT 1; IF v_ar_account_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'AR account not found'); END IF; UPDATE journal_entry_lines jel SET account_id = v_ar_account_id, description = 'إلغاء الذمم المدينة - مرتجع' WHERE jel.journal_entry_id IN ( SELECT je.id FROM journal_entries je JOIN invoices i ON je.reference_id = i.id JOIN journal_entry_lines jel2 ON jel2.journal_entry_id = je.id JOIN chart_of_accounts ca ON jel2.account_id = ca.id WHERE je.company_id = p_company_id AND je.reference_type = 'sales_return' AND i.paid_amount = 0 AND ca.sub_type = 'customer_credit' AND jel2.credit_amount > 0 ) AND jel.credit_amount > 0; GET DIAGNOSTICS v_fixed_count = ROW_COUNT; RETURN jsonb_build_object('success', true, 'fixed_count', v_fixed_count); END; $function$
+;
+
+-- ---------------------------------------------------------------
+-- fn_bill_item_landed_unit_cost(p_bill_id uuid, p_product_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_bill_item_landed_unit_cost(p_bill_id uuid, p_product_id uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.704 — LANDED COST: what a unit actually cost us, not its list price.
+--
+-- FIFO lots were created at bill_items.unit_price, the gross list price, while
+-- the ledger debited inventory with the amount actually payable. Every purchase
+-- discount and every freight charge therefore drove FIFO and the GL apart, and
+-- because FIFO now drives COGS, cost of sales was overstated and reported profit
+-- understated. IAS 2 / ASC 330: the cost of inventory is the purchase price less
+-- trade discounts and rebates, plus transport and handling.
+--
+-- Rather than re-deriving the discount rules (line %, header % or fixed amount,
+-- before/after tax, tax-inclusive pricing), this allocates the bill's OWN
+-- authoritative subtotal plus shipping across the lines in proportion to their
+-- net value. Whatever pricing rules the application applies, the sum of the lot
+-- costs then equals the inventory debit exactly, by construction — so GL and
+-- FIFO cannot drift apart again.
+--
+-- Recoverable tax is excluded, matching the ledger: tax goes to the input-VAT
+-- account, never to inventory.
+DECLARE
+  v_qty         numeric;
+  v_unit_price  numeric;
+  v_disc_pct    numeric;
+  v_line_net    numeric;
+  v_base        numeric;
+  v_allocatable numeric;
+BEGIN
+  SELECT bi.quantity, bi.unit_price, COALESCE(bi.discount_percent, 0)
+    INTO v_qty, v_unit_price, v_disc_pct
+  FROM bill_items bi
+  WHERE bi.bill_id = p_bill_id AND bi.product_id = p_product_id
+  LIMIT 1;
+
+  IF v_qty IS NULL OR v_qty <= 0 THEN RETURN NULL; END IF;
+
+  v_line_net := v_qty * COALESCE(v_unit_price, 0) * (1 - v_disc_pct / 100.0);
+
+  SELECT COALESCE(SUM(bi.quantity * COALESCE(bi.unit_price,0)
+                      * (1 - COALESCE(bi.discount_percent,0) / 100.0)), 0)
+    INTO v_base
+  FROM bill_items bi
+  WHERE bi.bill_id = p_bill_id;
+
+  SELECT COALESCE(b.subtotal, 0) + COALESCE(b.shipping, 0)
+    INTO v_allocatable
+  FROM bills b WHERE b.id = p_bill_id;
+
+  -- No usable basis to allocate against: fall back to the list price rather than
+  -- risk a zero-cost lot (the failure mode that caused the zero-cost COGS bug).
+  IF v_base IS NULL OR v_base <= 0 OR v_allocatable IS NULL OR v_allocatable <= 0 THEN
+    RETURN COALESCE(v_unit_price, 0);
+  END IF;
+
+  RETURN ROUND((v_allocatable * (v_line_net / v_base)) / v_qty, 6);
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
