@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T12:52:35.922Z
+-- Generated: 2026-07-18T16:39:33.744Z
 -- Routines: 1187
 -- =====================================================================
 
@@ -97,10 +97,8 @@ DECLARE
   v_cogs_id UUID;
   v_journal_id UUID;
 BEGIN
-  -- إيقاف تشغيل التريجرز الأخرى مؤقتاً لتجنب التداخل العودي أو قيود التعديل (enforce_je_integrity)
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
-  -- جلب حسابات الشركة من شجرة الحسابات (chart_of_accounts)
   SELECT id INTO v_ar_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND sub_type = 'accounts_receivable' LIMIT 1;
   SELECT id INTO v_ap_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND sub_type = 'accounts_payable' LIMIT 1;
   SELECT id INTO v_sales_id FROM chart_of_accounts WHERE company_id = NEW.company_id AND account_type = 'income' LIMIT 1;
@@ -110,73 +108,63 @@ BEGIN
 
   IF v_ap_id IS NULL OR v_inventory_id IS NULL THEN
     RAISE LOG 'Accounting settings missing for company_id: %', NEW.company_id;
-    -- Instead of crashing or doing nothing, we'll gracefully exit the trigger.
     RETURN NEW;
   END IF;
 
-  ------------------------------------------------------------------------------------------------
-  -- ✅ 1. Soft-Delete Journals when Bill/Invoice is REVERTED (Draft / Cancelled)
-  ------------------------------------------------------------------------------------------------
-
-  -- الفواتير (Bills): إذا تم إرجاع حالة الفاتورة إلى مسودة أو إلغاؤها من حالة نشطة
+  -- Soft-delete journals when a bill/invoice is reverted to draft/cancelled.
   IF TG_TABLE_NAME = 'bills' AND OLD.status IN ('sent', 'received', 'paid', 'partially_paid') AND NEW.status IN ('draft', 'cancelled', 'pending_approval') THEN
-    UPDATE journal_entries 
-       SET is_deleted = TRUE, 
+    UPDATE journal_entries
+       SET is_deleted = TRUE,
            deleted_at = NOW()
-     WHERE reference_type = 'bill' 
-       AND reference_id = NEW.id 
+     WHERE reference_type = 'bill'
+       AND reference_id = NEW.id
        AND (is_deleted IS NULL OR is_deleted = FALSE);
     RETURN NEW;
   END IF;
 
-  -- فواتير المبيعات (Invoices): إذا تم إرجاع حالة الفاتورة أو إلغاؤها
   IF TG_TABLE_NAME = 'invoices' AND OLD.status IN ('sent', 'paid', 'partially_paid') AND NEW.status IN ('draft', 'cancelled', 'pending_approval') THEN
-    UPDATE journal_entries 
-       SET is_deleted = TRUE, 
+    UPDATE journal_entries
+       SET is_deleted = TRUE,
            deleted_at = NOW()
-     WHERE reference_type IN ('invoice', 'invoice_cogs') 
-       AND reference_id = NEW.id 
+     WHERE reference_type IN ('invoice', 'invoice_cogs')
+       AND reference_id = NEW.id
        AND (is_deleted IS NULL OR is_deleted = FALSE);
     RETURN NEW;
   END IF;
 
-  ------------------------------------------------------------------------------------------------
-  -- ✅ 2. Create Journals on Status Activations (Sent / Received)
-  ------------------------------------------------------------------------------------------------
+  -- v3.74.698 — PURCHASE BILLS NO LONGER POST HERE.
+  -- This legacy block posted "Dr Inventory / Cr Accounts Payable" the moment a
+  -- bill became 'sent' (accountant approval) — i.e. BEFORE the warehouse
+  -- received the goods. That put stock on the books that did not physically
+  -- exist, and it also blocked the receipt step: confirm-receipt found a
+  -- journal with no matching inventory movement and refused with 409
+  -- "inconsistent receipt posting state".
+  --
+  -- Owner decision: the inventory entry is posted when the branch STORE MANAGER
+  -- confirms receipt of the goods. That path (post_bill_receipt_atomic via
+  -- postBillAtomic) already posts the complete journal (AP + inventory + VAT +
+  -- shipping) together with the stock movements, so it is now the single owner
+  -- of purchase-bill accounting. Approval by the accountant remains a review
+  -- step with no accounting effect.
 
-  -- فواتير الشراء: الدخول في حالة مرسلة/مستلمة
-  IF TG_TABLE_NAME = 'bills' AND OLD.status NOT IN ('sent', 'received', 'paid', 'partially_paid') AND NEW.status IN ('sent', 'received') THEN
-    INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, status)
-    VALUES (NEW.company_id, 'bill', NEW.id, NEW.bill_date, 'Purchase - ' || NEW.bill_number, 'draft')
-    RETURNING id INTO v_journal_id;
-
-    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES 
-    (v_journal_id, v_inventory_id, NEW.total_amount, 0, 'Inventory'),
-    (v_journal_id, v_ap_id, 0, NEW.total_amount, 'Accounts Payable');
-
-    UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
-  END IF;
-
-  -- فواتير البيع: الدخول في حالة مرسلة
+  -- Sales invoices: unchanged.
   IF TG_TABLE_NAME = 'invoices' AND OLD.status NOT IN ('sent', 'paid', 'partially_paid') AND NEW.status = 'sent' THEN
-    -- A. Revenue Entry
     INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, status)
     VALUES (NEW.company_id, 'invoice', NEW.id, NEW.invoice_date, 'Sales - ' || NEW.invoice_number, 'draft')
     RETURNING id INTO v_journal_id;
 
-    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES 
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES
     (v_journal_id, v_ar_id, NEW.total_amount, 0, 'Accounts Receivable'),
     (v_journal_id, v_sales_id, 0, NEW.total_amount, 'Sales Revenue');
 
     UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
 
-    -- B. COGS Entry (if total_cost > 0)
     IF NEW.total_cost > 0 THEN
       INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, status)
       VALUES (NEW.company_id, 'invoice_cogs', NEW.id, NEW.invoice_date, 'COGS - ' || NEW.invoice_number, 'draft')
       RETURNING id INTO v_journal_id;
 
-      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES 
+      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES
       (v_journal_id, v_cogs_id, NEW.total_cost, 0, 'Cost of Goods Sold'),
       (v_journal_id, v_inventory_id, 0, NEW.total_cost, 'Inventory');
 
@@ -184,18 +172,18 @@ BEGIN
     END IF;
   END IF;
 
-  -- المدفوعات (Payments): الدخول في حالة منتهية
+  -- Payments: unchanged.
   IF TG_TABLE_NAME = 'payments' AND NEW.status = 'completed' AND OLD.status != 'completed' THEN
     INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, status)
     VALUES (NEW.company_id, 'payment', NEW.id, NEW.payment_date, 'Payment - ' || NEW.reference_number, 'draft')
     RETURNING id INTO v_journal_id;
 
     IF NEW.payment_type = 'incoming' THEN
-      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES 
+      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES
       (v_journal_id, v_cash_id, NEW.amount, 0, 'Cash In'),
       (v_journal_id, v_ar_id, 0, NEW.amount, 'Accounts Receivable Reduction');
     ELSIF NEW.payment_type = 'outgoing' THEN
-      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES 
+      INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES
       (v_journal_id, v_ap_id, NEW.amount, 0, 'Accounts Payable Reduction'),
       (v_journal_id, v_cash_id, 0, NEW.amount, 'Cash Out');
     END IF;
@@ -203,9 +191,6 @@ BEGIN
     UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
   END IF;
 
-  ------------------------------------------------------------------------------------------------
-  -- ✅ التأكد من تنظيف السياق للمنعقدين الآخرين
-  ------------------------------------------------------------------------------------------------
   PERFORM set_config('app.allow_direct_post', 'false', true);
 
   RETURN NEW;
