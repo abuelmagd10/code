@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-18T22:51:52.338Z
+-- Generated: 2026-07-19T09:00:29.014Z
 -- Routines: 1199
 -- =====================================================================
 
@@ -18788,6 +18788,19 @@ BEGIN
                SUM(ii.quantity * COALESCE(p.cost_price, 0)) as grouped_cogs_amount
           FROM invoice_items ii JOIN products p ON p.id = ii.product_id
          WHERE ii.invoice_id = p_invoice_id AND p.item_type != 'service'
+           -- v3.74.706 — do not cost a line twice. Materials consumed performing
+           -- a service appear on the invoice as lines, but they are already
+           -- costed by fn_post_service_consumption_cogs from the FIFO batches
+           -- (the true landed cost). This block values lines at
+           -- products.cost_price, so leaving them in booked the cost a second
+           -- time at the wrong basis.
+           AND NOT EXISTS (
+                 SELECT 1 FROM inventory_transactions sc
+                  WHERE sc.reference_id = p_invoice_id
+                    AND sc.product_id = ii.product_id
+                    AND sc.transaction_type = 'service_consumption'
+                    AND COALESCE(sc.is_deleted,false) = false
+               )
          GROUP BY COALESCE(p.expense_account_id, v_default_cogs_id)
          HAVING SUM(ii.quantity * COALESCE(p.cost_price, 0)) > 0
     ) LOOP
