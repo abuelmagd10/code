@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
 import { useToast } from "@/hooks/use-toast";
 import { toastActionError, toastActionSuccess } from "@/lib/notifications";
-import { FileText, UserCheck, X } from "lucide-react";
+import { FileText, UserCheck, X, Trash2 } from "lucide-react";
 import { ERPPageHeader } from "@/components/erp-page-header";
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect";
 import { FilterContainer } from "@/components/ui/filter-container";
@@ -963,7 +963,10 @@ export default function EstimatesPage() {
         </Card>
 
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="max-w-3xl">
+          {/* v3.74.718 — eight columns of line-item inputs did not fit in max-w-3xl.
+              Widened so the row breathes on a normal screen; the table below still
+              scrolls horizontally rather than crushing on a narrow one. */}
+          <DialogContent className="max-w-5xl">
             <DialogHeader>
               <DialogTitle>{editing ? t("Edit Estimate", "تعديل العرض") : t("New Estimate", "عرض سعري جديد")}</DialogTitle>
             </DialogHeader>
@@ -1002,24 +1005,42 @@ export default function EstimatesPage() {
                 <h3 className="text-sm font-medium">{t("Estimate Items", "بنود العرض")}</h3>
                 <Button variant="secondary" onClick={addItem}>{t("Add Item", "إضافة بند")}</Button>
               </div>
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
+              {/* v3.74.718 — the row was unreadable: w-full with no column widths and
+                  no cell padding let the browser squeeze eight columns together, so
+                  "خصم %" and "ضريبة %" ran into one another and the number inputs were
+                  clipped mid-digit. min-w keeps the columns at a usable size and lets
+                  the wrapper scroll instead of compressing. */}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] text-sm border-separate border-spacing-x-2 border-spacing-y-1">
+                  <colgroup>
+                    <col className="w-[22%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[4%]" />
+                  </colgroup>
                   <thead>
-                    <tr className="text-left">
-                      <th>{t("Product", "المنتج")}</th>
-                      <th>{t("Description", "الوصف")}</th>
-                      <th>{t("Quantity", "الكمية")}</th>
-                      <th>{t("Unit Price", "سعر الوحدة")}</th>
-                      <th>{t("Discount %", "خصم %")}</th>
-                      <th>{t("Tax %", "ضريبة %")}</th>
-                      <th>{t("Total", "الإجمالي")}</th>
-                      <th>{t("Delete", "حذف")}</th>
+                    {/* text-start, not text-left — the page is RTL */}
+                    <tr className="text-start">
+                      <th className="px-1 pb-2 text-start font-medium whitespace-nowrap">{t("Product", "المنتج")}</th>
+                      <th className="px-1 pb-2 text-start font-medium whitespace-nowrap">{t("Description", "الوصف")}</th>
+                      <th className="px-1 pb-2 text-start font-medium whitespace-nowrap">{t("Quantity", "الكمية")}</th>
+                      <th className="px-1 pb-2 text-start font-medium whitespace-nowrap">{t("Unit Price", "سعر الوحدة")}</th>
+                      <th className="px-1 pb-2 text-start font-medium whitespace-nowrap">{t("Discount %", "خصم %")}</th>
+                      <th className="px-1 pb-2 text-start font-medium whitespace-nowrap">{t("Tax %", "ضريبة %")}</th>
+                      <th className="px-1 pb-2 text-end font-medium whitespace-nowrap">{t("Total", "الإجمالي")}</th>
+                      <th className="px-1 pb-2 text-center font-medium whitespace-nowrap">
+                        <span className="sr-only">{t("Delete", "حذف")}</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((it, idx) => (
-                      <tr key={idx} className="border-t">
-                        <td>
+                      <tr key={idx} className="border-t align-top">
+                        <td className="px-1 py-1">
                           <Select
                             value={it.product_id || ""}
                             onValueChange={(v) => {
@@ -1039,24 +1060,36 @@ export default function EstimatesPage() {
                             </SelectContent>
                           </Select>
                         </td>
-                        <td>
+                        <td className="px-1 py-1">
                           <Input value={it.description || ""} onChange={(e) => updateItem(idx, { description: e.target.value })} />
                         </td>
-                        <td>
+                        <td className="px-1 py-1">
                           <NumericInput value={it.quantity} onChange={(val) => updateItem(idx, { quantity: Math.round(val) })} />
                         </td>
-                        <td>
+                        <td className="px-1 py-1">
                           <NumericInput value={it.unit_price} onChange={(val) => updateItem(idx, { unit_price: val })} decimalPlaces={2} />
                         </td>
-                        <td>
+                        <td className="px-1 py-1">
                           <NumericInput value={it.discount_percent || 0} onChange={(val) => updateItem(idx, { discount_percent: val })} decimalPlaces={1} />
                         </td>
-                        <td>
+                        <td className="px-1 py-1">
                           <NumericInput value={it.tax_rate || 0} onChange={(val) => updateItem(idx, { tax_rate: val })} decimalPlaces={1} />
                         </td>
-                        <td>{it.line_total.toFixed(2)}</td>
-                        <td>
-                          <Button variant="destructive" onClick={() => removeItem(idx)}>{t("Delete", "حذف")}</Button>
+                        {/* tabular-nums keeps the totals column aligned digit under digit */}
+                        <td className="px-1 py-1 text-end font-medium tabular-nums whitespace-nowrap">{it.line_total.toFixed(2)}</td>
+                        <td className="px-1 py-1 text-center">
+                          {/* icon instead of the word "حذف" — it was consuming a full
+                              column of width on every row for a secondary action */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            onClick={() => removeItem(idx)}
+                            aria-label={t("Delete", "حذف")}
+                            title={t("Delete", "حذف")}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </td>
                       </tr>
                     ))}
