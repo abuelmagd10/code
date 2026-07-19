@@ -70,18 +70,27 @@ describeApiSecurityIntegration('API Security Integration Tests', () => {
     })
   })
 
+  /**
+   * v3.74.741 — these two were `expect(true).toBe(true)` placeholders.
+   *
+   * They are not merely unwritten: the exact property they claim to check is
+   * the one that failed in production. GET /api/bonuses accepted companyId from
+   * the query string with no authentication and returned any company's
+   * compensation records (fixed in v3.74.737). A green tick sat here the whole
+   * time.
+   *
+   * The property IS enforced now, and checked on every build — statically,
+   * across all 112 service-role routes, by scripts/check-service-role-scoping.js,
+   * which carries fixtures pinning this precise shape. So the coverage exists;
+   * it lives in CI rather than here.
+   *
+   * Left as todo rather than deleted: a runtime test against a real endpoint
+   * would still be stronger than a static one, once there is a test database
+   * to run it against (TEST_SUPABASE_URL, see v3.74.740).
+   */
   describe('secureApiRequest - Company ID Protection', () => {
-    it('should not accept companyId from query parameters', async () => {
-      // This test verifies that endpoints don't accept companyId from request
-      // The actual implementation should extract companyId from secureApiRequest only
-      // This is a structural test - actual auth would require session setup
-      expect(true).toBe(true) // Placeholder - requires session token setup
-    })
-
-    it('should extract companyId from authenticated user context only', async () => {
-      // Verify that companyId comes from secureApiRequest, not request params
-      expect(true).toBe(true) // Placeholder - requires session token setup
-    })
+    it.todo('should not accept companyId from query parameters')
+    it.todo('should extract companyId from authenticated user context only')
   })
 
   describe('Error Handling Unification', () => {

@@ -3,50 +3,36 @@
  * =============================================
  * Critical Tests: Journal Entries
  * =============================================
- * هذه الاختبارات تمنع كسر النظام:
- * - منع قيد غير متوازن
- * - منع قيد بدون سطور
- * - منع تعديل قيد مرتبط بمستند
- * =============================================
+ *
+ * v3.74.741 — every case here was `expect(true).toBe(true)` with a TODO. Six
+ * reported PASSED and asserted nothing. Converted to `it.todo` so the count
+ * stops lying; the names are kept because they describe real invariants.
+ *
+ * Worth recording: the balance rule below IS enforced in the database, by the
+ * constraint trigger trg_enforce_journal_balance on journal_entry_lines — one
+ * of the two CONSTRAINT triggers found while building the schema snapshot in
+ * v3.74.734/735. So the invariant holds; what is missing is a test proving it
+ * still holds tomorrow.
+ *
+ * Implementing these needs a dedicated test database (TEST_SUPABASE_URL, see
+ * v3.74.740).
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it } from 'vitest'
 
 describe('Critical Journal Entry Rules', () => {
   describe('منع قيد غير متوازن', () => {
-    it('يجب أن يمنع إنشاء قيد غير متوازن (المدين ≠ الدائن)', async () => {
-      // TODO: تنفيذ الاختبار الفعلي
-      // يجب أن يرفض trigger check_journal_entry_balance
-      expect(true).toBe(true) // Placeholder
-    })
-
-    it('يجب أن يسمح بإنشاء قيد متوازن (المدين = الدائن)', async () => {
-      // TODO: تنفيذ الاختبار الفعلي
-      expect(true).toBe(true) // Placeholder
-    })
-
-    it('يجب أن يكون trigger check_journal_entry_balance موجود', async () => {
-      // TODO: تنفيذ استعلام SQL للتحقق
-      expect(true).toBe(true) // Placeholder
-    })
+    it.todo('يجب أن يمنع إنشاء قيد غير متوازن (المدين ≠ الدائن)')
+    it.todo('يجب أن يسمح بإنشاء قيد متوازن (المدين = الدائن)')
+    it.todo('يجب أن يكون trigger check_journal_entry_balance موجود')
   })
 
   describe('منع قيد بدون سطور', () => {
-    it('يجب أن يمنع إنشاء قيد بدون سطور', async () => {
-      // TODO: تنفيذ الاختبار الفعلي
-      expect(true).toBe(true) // Placeholder
-    })
+    it.todo('يجب أن يمنع إنشاء قيد بدون سطور')
   })
 
   describe('منع تعديل قيد مرتبط بمستند', () => {
-    it('يجب أن يمنع تعديل قيد مرتبط بفاتورة', async () => {
-      // TODO: تنفيذ الاختبار الفعلي
-      expect(true).toBe(true) // Placeholder
-    })
-
-    it('يجب أن يسمح بتعديل قيد غير مرتبط', async () => {
-      // TODO: تنفيذ الاختبار الفعلي
-      expect(true).toBe(true) // Placeholder
-    })
+    it.todo('يجب أن يمنع تعديل قيد مرتبط بفاتورة')
+    it.todo('يجب أن يسمح بتعديل قيد غير مرتبط')
   })
 })
