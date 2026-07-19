@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T16:24:21.679Z
--- Routines: 1206
+-- Generated: 2026-07-19T20:47:41.416Z
+-- Routines: 1209
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -279,6 +279,8 @@ DECLARE
   v_inv_check jsonb; v_shortages jsonb; v_short_msg text;
   v_result jsonb;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT status, discount_amount, invoice_id INTO v_status, v_discount_amt, v_invoice_id
     FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN
@@ -370,6 +372,8 @@ DECLARE
   v_previous_active UUID;
   v_operation_count INTEGER;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_version
     FROM public.manufacturing_routing_versions
@@ -1303,6 +1307,8 @@ DECLARE
   v_consume_from_lot         numeric;
   v_company_base_ccy         text;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   v_available_credit := public.get_customer_credit_balance(p_company_id, p_customer_id);
   IF v_available_credit < 0.01 THEN
     RAISE EXCEPTION 'NO_CREDIT_AVAILABLE: Customer has no available credit balance';
@@ -1604,6 +1610,8 @@ AS $function$
 DECLARE
   v_version RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_version
     FROM public.manufacturing_bom_versions
    WHERE id = p_bom_version_id AND company_id = p_company_id
@@ -2076,6 +2084,8 @@ DECLARE
   v_result JSONB;
   v_decision_at TIMESTAMPTZ := NOW();
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- v3.74.83 — يُسَمِّح للـ trigger enforce_je_integrity بقبول INSERT/UPDATE
   -- على journal_entries بحالَة 'posted' من هذا الـ RPC المَوثوق. مَحَلى
   -- لِلـ transaction فَقَط (التَّعديل الثالث=true).
@@ -2767,6 +2777,8 @@ AS $function$
 DECLARE
   v_count int;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_company_id IS NULL OR p_reference_type IS NULL OR p_reference_id IS NULL THEN
     RETURN 0;
   END IF;
@@ -2797,6 +2809,8 @@ AS $function$
 DECLARE
   v_version RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_version
     FROM public.manufacturing_routing_versions
@@ -2844,6 +2858,8 @@ CREATE OR REPLACE FUNCTION public.archive_service_atomic(p_company_id uuid, p_se
 AS $function$
 DECLARE v_active_booking_count INTEGER;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   PERFORM id FROM public.services WHERE id = p_service_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Service not found. service_id=%', p_service_id USING ERRCODE = 'P0001'; END IF;
   SELECT COUNT(*) INTO v_active_booking_count FROM public.bookings
@@ -3836,6 +3852,75 @@ BEGIN
   END IF;
   IF v_status = 'completed' AND v_inv_status IS DISTINCT FROM 'draft' THEN
     RAISE EXCEPTION 'BOOKING_LOCKED: الفاتورة معتمدة — أى تعديل بعد الاعتماد يتم عبر مرتجع المبيعات';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_company_access(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_company_access(p_company_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+BEGIN
+  -- No end-user identity: server-side call (service_role / cron / internal
+  -- SECURITY DEFINER caller). Authorisation happened in the API layer.
+  IF v_uid IS NULL THEN
+    RETURN;
+  END IF;
+
+  IF p_company_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM company_members
+    WHERE company_id = p_company_id AND user_id = v_uid
+  ) THEN
+    -- 57014 (query_canceled), NOT 42501: see the note above. WHEN OTHERS
+    -- handlers in the calling functions swallow 42501 and continue.
+    RAISE EXCEPTION 'غير مصرح: هذه العملية تخص شركة أخرى'
+      USING ERRCODE = '57014';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_company_access_or_bootstrap(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_company_access_or_bootstrap(p_company_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+BEGIN
+  IF v_uid IS NULL OR p_company_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  -- Genuine bootstrap: the company has no members at all yet, so there is no
+  -- membership to check and this call is part of creating it.
+  IF NOT EXISTS (SELECT 1 FROM company_members WHERE company_id = p_company_id) THEN
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM company_members
+    WHERE company_id = p_company_id AND user_id = v_uid
+  ) THEN
+    -- 57014, not 42501 — see v3.74.730: WHEN OTHERS swallows 42501.
+    RAISE EXCEPTION 'غير مصرح: هذه العملية تخص شركة أخرى'
+      USING ERRCODE = '57014';
   END IF;
 END;
 $function$
@@ -8267,6 +8352,8 @@ CREATE OR REPLACE FUNCTION public.cancel_booking_atomic(p_company_id uuid, p_boo
 AS $function$
 DECLARE v_booking public.bookings;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Booking not found. booking_id=%', p_booking_id USING ERRCODE='P0001'; END IF;
   IF public.bkg_is_terminal_status(v_booking.status) THEN RAISE EXCEPTION 'Cannot cancel a % booking. booking_id=%', v_booking.status, p_booking_id USING ERRCODE='P0001'; END IF;
@@ -8328,6 +8415,8 @@ DECLARE
   v_deleted_operation_count INTEGER := 0;
   v_cancelled_operation_count INTEGER := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_cancellation_reason IS NULL OR BTRIM(p_cancellation_reason) = '' THEN
     RAISE EXCEPTION 'cancellation_reason is required.';
   END IF;
@@ -8674,6 +8763,8 @@ DECLARE
   v_existing RECORD;
   v_new_id   UUID;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT id, status, response_data, created_at, request_hash
   INTO v_existing
   FROM public.idempotency_keys
@@ -10696,6 +10787,8 @@ DECLARE
   v_new_status TEXT;
   v_close_reason TEXT;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF v_mode NOT IN ('auto', 'complete', 'cancel') THEN
     RAISE EXCEPTION 'Unsupported close-reservations mode. mode=%', v_mode;
   END IF;
@@ -10901,6 +10994,8 @@ DECLARE
   v_delivery_provider uuid;
   con RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   PERFORM set_config('app.skip_discount_approval', 'booking', true);
 
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
@@ -11101,6 +11196,8 @@ DECLARE
   v_completed_at TIMESTAMPTZ := COALESCE(p_completed_at, NOW());
   v_blocking_operation_count INTEGER;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_completed_quantity IS NULL OR p_completed_quantity <= 0 THEN
     RAISE EXCEPTION 'completed_quantity must be greater than zero.';
   END IF;
@@ -11163,6 +11260,8 @@ CREATE OR REPLACE FUNCTION public.confirm_booking_atomic(p_company_id uuid, p_bo
 AS $function$
 DECLARE v_booking public.bookings;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_booking
     FROM public.bookings
    WHERE id = p_booking_id
@@ -12007,6 +12106,8 @@ DECLARE
   v_cost_from_lot NUMERIC;
   v_total_cogs NUMERIC := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- الحصول على الدفعات بترتيب FIFO
   FOR v_lot IN
     SELECT id, remaining_quantity, unit_cost
@@ -12344,6 +12445,8 @@ DECLARE
   v_branch_id UUID;
   v_cost_center_id UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- جلب بيانات المستخدم
   IF p_user_id IS NOT NULL THEN
     SELECT email, raw_user_meta_data->>'full_name'
@@ -12735,6 +12838,8 @@ DECLARE
   v_staff_arr     UUID[];
   v_legacy_staff  UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   v_service  := public.svc_assert_service_bookable(p_service_id, p_company_id);
   v_end_time := (p_start_time + (v_service.duration_minutes || ' minutes')::INTERVAL)::TIME;
 
@@ -12822,6 +12927,8 @@ DECLARE
     v_wh_id UUID;
     v_result jsonb;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access_or_bootstrap(p_company_id);
     -- 1. Create Branch
     INSERT INTO branches (
         company_id, name, branch_name, code, branch_code, address, city, phone, email, manager_name, is_active, is_main, is_head_office
@@ -13283,6 +13390,8 @@ AS $function$
 DECLARE
   v_transaction_id UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   INSERT INTO public.financial_operation_traces (
     company_id,
     source_entity,
@@ -13696,6 +13805,8 @@ DECLARE
   v_line            JSONB;
   v_existing_id     UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- 1. Guard: Duplicate check
   SELECT id INTO v_existing_id
   FROM journal_entries
@@ -13824,6 +13935,8 @@ DECLARE
   v_new_version_no INTEGER;
   v_cloned BOOLEAN := false;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_bom
     FROM public.manufacturing_boms
@@ -13980,6 +14093,8 @@ DECLARE
   v_routing_operation RECORD;
   v_operation_count INTEGER := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_planned_quantity IS NULL OR p_planned_quantity <= 0 THEN
     RAISE EXCEPTION 'planned_quantity must be greater than zero.';
   END IF;
@@ -14123,6 +14238,8 @@ DECLARE
   v_new_version_no INTEGER;
   v_cloned BOOLEAN := false;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_routing
     FROM public.manufacturing_routings
@@ -14365,6 +14482,8 @@ DECLARE
   v_total_ar         NUMERIC := 0; v_total_ap         NUMERIC := 0;
   v_critical_fails   INTEGER := 0; v_warning_fails    INTEGER := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT COALESCE(SUM(jel.debit_amount),0), COALESCE(SUM(jel.credit_amount),0)
   INTO v_total_debits, v_total_credits
   FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.journal_entry_id
@@ -14507,6 +14626,8 @@ DECLARE
   v_existing_created timestamptz;
   c_race_window CONSTANT INTERVAL := '30 seconds';
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_event_key IS NOT NULL THEN
     SELECT id, status, created_at
       INTO v_existing_id, v_existing_status, v_existing_created
@@ -14653,6 +14774,8 @@ DECLARE
   v_invoice_id uuid;
   v_inv_number text;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_reason IS NULL OR LENGTH(TRIM(p_reason)) < 5 THEN
     RAISE EXCEPTION 'REASON_REQUIRED: السَّبَب مَطلوب (حَدّ أَدنى ٥ أَحرُف)';
   END IF;
@@ -14739,6 +14862,8 @@ DECLARE
   v_invoice_id uuid;
   v_inv_number text;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_reason IS NULL OR LENGTH(TRIM(p_reason)) < 5 THEN
     RAISE EXCEPTION 'REASON_REQUIRED: السَّبَب مَطلوب (حَدّ أَدنى ٥ أَحرُف)';
   END IF;
@@ -14812,6 +14937,8 @@ DECLARE
     v_final_wh_id UUID := p_warehouse_id;
     v_branch_record RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
     -- 1. Fetch branch defaults if branch_id provided and cc/wh missing
     IF p_branch_id IS NOT NULL AND (p_cost_center_id IS NULL OR (p_item_type = 'product' AND p_warehouse_id IS NULL)) THEN
         SELECT default_cost_center_id, default_warehouse_id
@@ -14875,6 +15002,8 @@ DECLARE
     v_branch_record RECORD;
     v_final_product_type TEXT := NULLIF(BTRIM(COALESCE(p_product_type, '')), '');
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
     IF p_branch_id IS NOT NULL AND (p_cost_center_id IS NULL OR (p_item_type = 'product' AND p_warehouse_id IS NULL)) THEN
         SELECT default_cost_center_id, default_warehouse_id INTO v_branch_record
         FROM branches WHERE id = p_branch_id AND company_id = p_company_id;
@@ -15203,6 +15332,8 @@ DECLARE
   v_new_ids          uuid[] := ARRAY[]::uuid[];
   v_new_id           uuid;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_company_id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'company_id_required');
   END IF;
@@ -15297,6 +15428,8 @@ DECLARE
   v_service_id   UUID;
   v_service_code TEXT;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_product_catalog_id IS NULL THEN
     RAISE EXCEPTION 'product_catalog_id is required when creating a service'
       USING ERRCODE = 'P0001';
@@ -15624,6 +15757,8 @@ DECLARE
   v_bill_id uuid;
   v_bill_number text;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_reason IS NULL OR LENGTH(TRIM(p_reason)) < 5 THEN
     RAISE EXCEPTION 'REASON_REQUIRED: السَّبَب مَطلوب (حَدّ أَدنى ٥ أَحرُف)';
   END IF;
@@ -16042,6 +16177,8 @@ AS $function$
 DECLARE
   v_version RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_version
     FROM public.manufacturing_routing_versions
@@ -16332,6 +16469,8 @@ DECLARE
     v_count INT := 0;
     v_already_deducted INT := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
     SET search_path = public, pg_temp;
 
     v_period_start := make_date(p_period_year, p_period_month, 1);
@@ -16857,6 +16996,8 @@ DECLARE
   v_shareholder JSONB;
   v_available_retained_earnings DECIMAL;
 BEGIN
+  -- v3.74.729 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- 1. Check retained earnings sufficiency
   v_available_retained_earnings := get_retained_earnings_balance(p_company_id);
   
@@ -16935,6 +17076,8 @@ DECLARE
     v_event_id UUID;
     v_event_key VARCHAR;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
     -- unique enough for manual triggers
     v_event_key := p_reference_type || '.' || p_event_type || '.' || p_reference_id::text || '.' || extract(epoch from now())::int::text;
     
@@ -18113,6 +18256,8 @@ DECLARE
   v_currency_changed    boolean;
   v_orig_currency_upper text;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_req FROM customer_refund_requests
   WHERE id = p_request_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'REQUEST_NOT_FOUND'; END IF;
@@ -18880,6 +19025,8 @@ DECLARE
   v_currency_changed    boolean;
   v_orig_currency_upper text;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_req FROM vendor_payment_correction_requests
    WHERE id = p_request_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'REQUEST_NOT_FOUND'; END IF;
@@ -19272,6 +19419,148 @@ AS $function$
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.prokind IN ('f','p');
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- export_public_schema()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.export_public_schema()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_out text := '';
+BEGIN
+  -- ── TABLES ────────────────────────────────────────────────────────────────
+  v_out := v_out || E'\n-- ===================== TABLES =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(stmt, E'\n\n' ORDER BY tbl), '')
+  INTO v_out
+  FROM (
+    SELECT c.relname AS tbl,
+           'CREATE TABLE IF NOT EXISTS public.' || quote_ident(c.relname) || E' (\n' ||
+           string_agg(
+             '  ' || quote_ident(a.attname) || ' ' || format_type(a.atttypid, a.atttypmod)
+             || COALESCE(' DEFAULT ' || pg_get_expr(ad.adbin, ad.adrelid), '')
+             || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END,
+             E',\n' ORDER BY a.attnum)
+           || E'\n);' AS stmt
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    LEFT JOIN pg_attrdef ad ON ad.adrelid = c.oid AND ad.adnum = a.attnum
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+    GROUP BY c.relname
+  ) t;
+
+  -- ── CONSTRAINTS ───────────────────────────────────────────────────────────
+  v_out := v_out || E'\n\n-- ===================== CONSTRAINTS =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(stmt, E'\n' ORDER BY tbl, conname), '')
+  INTO v_out
+  FROM (
+    SELECT c.relname AS tbl, con.conname,
+           'ALTER TABLE public.' || quote_ident(c.relname)
+           || ' ADD CONSTRAINT ' || quote_ident(con.conname) || ' '
+           || pg_get_constraintdef(con.oid) || ';' AS stmt
+    FROM pg_constraint con
+    JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+  ) t;
+
+  -- ── INDEXES (constraint-backing ones excluded; they come with the constraint)
+  v_out := v_out || E'\n\n-- ===================== INDEXES =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(indexdef || ';', E'\n' ORDER BY indexname), '')
+  INTO v_out
+  FROM pg_indexes i
+  WHERE i.schemaname = 'public'
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint con
+      JOIN pg_class ic ON ic.oid = con.conindid
+      WHERE ic.relname = i.indexname
+    );
+
+  -- ── TRIGGERS ──────────────────────────────────────────────────────────────
+  v_out := v_out || E'\n\n-- ===================== TRIGGERS =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(pg_get_triggerdef(t.oid) || ';', E'\n' ORDER BY c.relname, t.tgname), '')
+  INTO v_out
+  FROM pg_trigger t
+  JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND NOT t.tgisinternal;
+
+  -- ── ROW LEVEL SECURITY ────────────────────────────────────────────────────
+  v_out := v_out || E'\n\n-- ===================== RLS =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(
+           'ALTER TABLE public.' || quote_ident(c.relname) || ' ENABLE ROW LEVEL SECURITY;',
+           E'\n' ORDER BY c.relname), '')
+  INTO v_out
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity;
+
+  v_out := v_out || E'\n\n-- ---- policies ----\n';
+  SELECT v_out || COALESCE(string_agg(stmt, E'\n' ORDER BY tablename, policyname), '')
+  INTO v_out
+  FROM (
+    SELECT p.tablename, p.policyname,
+           'CREATE POLICY ' || quote_ident(p.policyname)
+           || ' ON public.' || quote_ident(p.tablename)
+           || ' AS ' || p.permissive
+           || ' FOR ' || p.cmd
+           || ' TO ' || array_to_string(p.roles, ', ')
+           || COALESCE(' USING (' || p.qual || ')', '')
+           || COALESCE(' WITH CHECK (' || p.with_check || ')', '')
+           || ';' AS stmt
+    FROM pg_policies p
+    WHERE p.schemaname = 'public'
+  ) t;
+
+  -- ── GRANTS ────────────────────────────────────────────────────────────────
+  -- The piece functions.sql structurally cannot hold: pg_get_functiondef does
+  -- not emit ACLs, so a rebuild without this section restores every function
+  -- with the default EXECUTE to PUBLIC.
+  v_out := v_out || E'\n\n-- ===================== FUNCTION GRANTS =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(stmt, E'\n' ORDER BY sig), '')
+  INTO v_out
+  FROM (
+    SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS sig,
+           'REVOKE ALL ON FUNCTION public.' || quote_ident(p.proname)
+             || '(' || pg_get_function_identity_arguments(p.oid) || ') FROM PUBLIC;'
+           || COALESCE(
+                E'\n' || string_agg(
+                  'GRANT EXECUTE ON FUNCTION public.' || quote_ident(p.proname)
+                  || '(' || pg_get_function_identity_arguments(p.oid) || ') TO ' || g.grantee || ';',
+                  E'\n' ORDER BY g.grantee), '') AS stmt
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    LEFT JOIN LATERAL (
+      SELECT r.rolname AS grantee
+      FROM pg_roles r
+      WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
+        AND has_function_privilege(r.rolname, p.oid, 'EXECUTE')
+    ) g ON true
+    WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')
+    GROUP BY p.proname, p.oid
+  ) t;
+
+  v_out := v_out || E'\n\n-- ===================== TABLE GRANTS =====================\n\n';
+  SELECT v_out || COALESCE(string_agg(stmt, E'\n' ORDER BY tbl, grantee), '')
+  INTO v_out
+  FROM (
+    SELECT table_name AS tbl, grantee,
+           'GRANT ' || string_agg(privilege_type, ', ' ORDER BY privilege_type)
+           || ' ON public.' || quote_ident(table_name) || ' TO ' || quote_ident(grantee) || ';' AS stmt
+    FROM information_schema.role_table_grants
+    WHERE table_schema = 'public'
+      AND grantee IN ('anon', 'authenticated', 'service_role')
+    GROUP BY table_name, grantee
+  ) t;
+
+  RETURN v_out;
+END;
 $function$
 ;
 
@@ -19788,151 +20077,6 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- fix_historical_cogs(p_company_id uuid)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.fix_historical_cogs(p_company_id uuid)
- RETURNS TABLE(invoice_id uuid, invoice_number text, cogs_amount numeric, journal_entry_id uuid, status text)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_transaction RECORD;
-  v_product_cost NUMERIC;
-  v_cogs_amount NUMERIC;
-  v_inventory_account_id UUID;
-  v_cogs_account_id UUID;
-  v_journal_entry_id UUID;
-  v_invoice_number TEXT;
-  v_invoice_date DATE;
-  v_existing_cogs UUID;
-BEGIN
-  -- الحصول على حسابات المخزون و COGS
-  SELECT id INTO v_inventory_account_id 
-  FROM chart_of_accounts 
-  WHERE company_id = p_company_id 
-    AND sub_type = 'inventory' 
-    AND (parent_id IS NOT NULL OR level > 1)
-  LIMIT 1;
-
-  SELECT id INTO v_cogs_account_id 
-  FROM chart_of_accounts 
-  WHERE company_id = p_company_id 
-    AND (sub_type = 'cost_of_goods_sold' OR sub_type = 'cogs' OR account_code = '5000')
-    AND (parent_id IS NOT NULL OR level > 1)
-  LIMIT 1;
-
-  -- إذا لم نجد الحسابات، نتوقف
-  IF v_inventory_account_id IS NULL OR v_cogs_account_id IS NULL THEN
-    RAISE EXCEPTION 'COGS accounts not found for company %', p_company_id;
-  END IF;
-
-  -- معالجة جميع معاملات البيع التي ليس لها قيد COGS
-  FOR v_transaction IN 
-    SELECT 
-      it.id,
-      it.product_id,
-      it.quantity_change,
-      it.reference_id,
-      it.branch_id,
-      it.cost_center_id,
-      p.cost_price,
-      p.item_type
-    FROM inventory_transactions it
-    JOIN products p ON it.product_id = p.id
-    WHERE it.company_id = p_company_id
-      AND it.transaction_type = 'sale'
-      AND p.item_type != 'service'
-      AND it.journal_entry_id IS NULL -- ليس لها قيد COGS
-    ORDER BY it.created_at
-  LOOP
-    -- حساب قيمة COGS
-    v_cogs_amount := ABS(v_transaction.quantity_change) * COALESCE(v_transaction.cost_price, 0);
-    
-    -- تجاهل إذا كانت التكلفة = 0
-    IF v_cogs_amount = 0 THEN
-      CONTINUE;
-    END IF;
-
-    -- التحقق من عدم وجود قيد COGS سابق
-    SELECT id INTO v_existing_cogs
-    FROM journal_entries
-    WHERE company_id = p_company_id
-      AND reference_type = 'invoice_cogs'
-      AND reference_id = v_transaction.reference_id
-    LIMIT 1;
-
-    IF v_existing_cogs IS NOT NULL THEN
-      -- قيد موجود بالفعل، نتخطى
-      CONTINUE;
-    END IF;
-
-    -- الحصول على معلومات الفاتورة
-    SELECT invoice_number, invoice_date 
-    INTO v_invoice_number, v_invoice_date
-    FROM invoices 
-    WHERE id = v_transaction.reference_id;
-
-    -- إنشاء قيد COGS
-    INSERT INTO journal_entries (
-      company_id,
-      reference_type,
-      reference_id,
-      entry_date,
-      description,
-      branch_id,
-      cost_center_id
-    ) VALUES (
-      p_company_id,
-      'invoice_cogs',
-      v_transaction.reference_id,
-      COALESCE(v_invoice_date, CURRENT_DATE),
-      'تكلفة البضاعة المباعة (تصحيح) - ' || COALESCE(v_invoice_number, 'فاتورة'),
-      v_transaction.branch_id,
-      v_transaction.cost_center_id
-    ) RETURNING id INTO v_journal_entry_id;
-
-    -- سطور القيد
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      account_id,
-      debit_amount,
-      credit_amount,
-      description
-    ) VALUES 
-    (
-      v_journal_entry_id,
-      v_cogs_account_id,
-      v_cogs_amount,
-      0,
-      'تكلفة البضاعة المباعة'
-    ),
-    (
-      v_journal_entry_id,
-      v_inventory_account_id,
-      0,
-      v_cogs_amount,
-      'خصم من المخزون'
-    );
-
-    -- تحديث حركة المخزون لربطها بالقيد
-    UPDATE inventory_transactions
-    SET journal_entry_id = v_journal_entry_id
-    WHERE id = v_transaction.id;
-
-    -- إرجاع النتيجة
-    RETURN QUERY SELECT 
-      v_transaction.reference_id,
-      v_invoice_number,
-      v_cogs_amount,
-      v_journal_entry_id,
-      'created'::TEXT;
-  END LOOP;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
 -- fix_missing_cogs_entries(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fix_missing_cogs_entries(p_company_id uuid)
@@ -20101,7 +20245,10 @@ CREATE OR REPLACE FUNCTION public.fix_wrong_return_account_entries(p_company_id 
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
-AS $function$ DECLARE v_fixed_count INTEGER := 0; v_ar_account_id UUID; BEGIN SELECT id INTO v_ar_account_id FROM chart_of_accounts WHERE company_id = p_company_id AND sub_type = 'accounts_receivable' LIMIT 1; IF v_ar_account_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'AR account not found'); END IF; UPDATE journal_entry_lines jel SET account_id = v_ar_account_id, description = 'إلغاء الذمم المدينة - مرتجع' WHERE jel.journal_entry_id IN ( SELECT je.id FROM journal_entries je JOIN invoices i ON je.reference_id = i.id JOIN journal_entry_lines jel2 ON jel2.journal_entry_id = je.id JOIN chart_of_accounts ca ON jel2.account_id = ca.id WHERE je.company_id = p_company_id AND je.reference_type = 'sales_return' AND i.paid_amount = 0 AND ca.sub_type = 'customer_credit' AND jel2.credit_amount > 0 ) AND jel.credit_amount > 0; GET DIAGNOSTICS v_fixed_count = ROW_COUNT; RETURN jsonb_build_object('success', true, 'fixed_count', v_fixed_count); END; $function$
+AS $function$ DECLARE v_fixed_count INTEGER := 0; v_ar_account_id UUID; BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
+ SELECT id INTO v_ar_account_id FROM chart_of_accounts WHERE company_id = p_company_id AND sub_type = 'accounts_receivable' LIMIT 1; IF v_ar_account_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'AR account not found'); END IF; UPDATE journal_entry_lines jel SET account_id = v_ar_account_id, description = 'إلغاء الذمم المدينة - مرتجع' WHERE jel.journal_entry_id IN ( SELECT je.id FROM journal_entries je JOIN invoices i ON je.reference_id = i.id JOIN journal_entry_lines jel2 ON jel2.journal_entry_id = je.id JOIN chart_of_accounts ca ON jel2.account_id = ca.id WHERE je.company_id = p_company_id AND je.reference_type = 'sales_return' AND i.paid_amount = 0 AND ca.sub_type = 'customer_credit' AND jel2.credit_amount > 0 ) AND jel.credit_amount > 0; GET DIAGNOSTICS v_fixed_count = ROW_COUNT; RETURN jsonb_build_object('success', true, 'fixed_count', v_fixed_count); END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -24755,6 +24902,8 @@ CREATE OR REPLACE FUNCTION public.get_unprocessed_attendance_logs(p_company_id u
  SECURITY DEFINER
 AS $function$
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
     RETURN QUERY
     UPDATE public.attendance_raw_logs
     SET processing_lock_id = p_worker_id,
@@ -26924,6 +27073,69 @@ END $function$
 ;
 
 -- ---------------------------------------------------------------
+-- ic_exposed_definer_functions(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_exposed_definer_functions(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_anon_names      TEXT[];
+  v_unguarded_count INT;
+  v_examples        TEXT[];
+BEGIN
+  WITH risky AS (
+    SELECT p.oid, p.proname
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.prokind = 'f'
+      AND p.prosecdef
+      AND p.prorettype <> 'trigger'::regtype
+      AND p.proname <> 'assert_company_access'
+      AND pg_get_function_identity_arguments(p.oid) ILIKE '%company_id%'
+      AND (p.prosrc ILIKE '%INSERT INTO%'
+        OR p.prosrc ~* '\mUPDATE\s+\w'
+        OR p.prosrc ~* '\mDELETE\s+FROM')
+      AND p.prosrc NOT ILIKE '%company_members%'
+      AND p.prosrc NOT ILIKE '%auth.uid()%'
+      AND p.prosrc NOT ILIKE '%user_has_company_access%'
+      AND p.prosrc NOT ILIKE '%assert_company_access%'
+  )
+  SELECT
+    array_agg(proname ORDER BY proname) FILTER (WHERE has_function_privilege('anon', oid, 'EXECUTE')),
+    count(*) FILTER (WHERE has_function_privilege('authenticated', oid, 'EXECUTE')),
+    (array_agg(proname ORDER BY proname) FILTER (WHERE has_function_privilege('authenticated', oid, 'EXECUTE')))[1:5]
+  INTO v_anon_names, v_unguarded_count, v_examples
+  FROM risky;
+
+  IF COALESCE(array_length(v_anon_names, 1), 0) > 0 THEN
+    severity := 'high';
+    detail := jsonb_build_object(
+      'subject', 'دوال تكتب فى البيانات ويمكن نداؤها بلا تسجيل دخول: '
+                 || array_length(v_anon_names, 1) || ' دالة',
+      'functions', to_jsonb(v_anon_names[1:10]),
+      'hint', 'These run as postgres, so RLS does not apply. They take company_id from the caller and are granted to anon — whose key ships in the browser bundle. Revoke from PUBLIC and anon, then grant to authenticated and service_role only.');
+    RETURN NEXT;
+  END IF;
+
+  IF COALESCE(v_unguarded_count, 0) > 0 THEN
+    severity := 'high';
+    detail := jsonb_build_object(
+      'subject', 'دوال تكتب بمعرّف شركة من المُنادى بلا فحص عضوية: '
+                 || v_unguarded_count || ' دالة — قيد المعالجة (المرحلة الثانية)',
+      'count', v_unguarded_count,
+      'examples', to_jsonb(v_examples),
+      'hint', 'A logged-in user of company A can pass company B''s id and write to B''s data, because SECURITY DEFINER bypasses RLS. Add PERFORM assert_company_access(p_company_id) as the first statement, or revoke authenticated if no app code calls it.');
+    RETURN NEXT;
+  END IF;
+EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;
+END $function$
+;
+
+-- ---------------------------------------------------------------
 -- ic_fifo_lot_integrity(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.ic_fifo_lot_integrity(p_company_id uuid)
@@ -28344,6 +28556,8 @@ AS $function$
 DECLARE
   v_existing_txn_id UUID;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- Idempotency check: has this paymob transaction been processed before?
   SELECT id INTO v_existing_txn_id
   FROM seat_transactions
@@ -28397,6 +28611,8 @@ DECLARE
   v_existing_txn_id UUID;
   v_reactivation json;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- Idempotency check
   SELECT id INTO v_existing_txn_id
   FROM seat_transactions
@@ -28443,15 +28659,21 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.increment_usage_metric(p_company_id uuid, p_metric text, p_period text, p_amount numeric DEFAULT 1)
  RETURNS void
- LANGUAGE sql
+ LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
+BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
+
   INSERT INTO usage_metrics (company_id, metric, period, value, updated_at)
   VALUES (p_company_id, p_metric, p_period, p_amount, now())
   ON CONFLICT (company_id, metric, period)
   DO UPDATE SET
     value = usage_metrics.value + EXCLUDED.value,
     updated_at = now();
+END;
 $function$
 ;
 
@@ -29601,6 +29823,8 @@ DECLARE
   v_total_issued_cost NUMERIC(18,4) := 0;
   v_reservation_status TEXT;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_lines IS NULL OR jsonb_typeof(p_lines) <> 'array' OR jsonb_array_length(p_lines) = 0 THEN
     RAISE EXCEPTION 'Material issue requires a non-empty lines array.';
   END IF;
@@ -30374,6 +30598,8 @@ AS $function$
 DECLARE
   v_status text;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT subscription_status INTO v_status
   FROM companies WHERE id = p_company_id FOR UPDATE;
 
@@ -35660,6 +35886,8 @@ CREATE OR REPLACE FUNCTION public.no_show_booking_atomic(p_company_id uuid, p_bo
 AS $function$
 DECLARE v_booking public.bookings;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Booking not found. booking_id=%', p_booking_id USING ERRCODE='P0001'; END IF;
   IF v_booking.status NOT IN ('confirmed') THEN RAISE EXCEPTION 'Only confirmed bookings can be marked no-show. Current status: %. booking_id=%', v_booking.status, p_booking_id USING ERRCODE='P0001'; END IF;
@@ -36261,6 +36489,8 @@ DECLARE
     v_fiscal_year_id UUID;
     v_lock_key BIGINT;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
     SET search_path = public, pg_temp;
 
     v_lock_key := ('x' || substr(md5(p_company_id::TEXT || p_employee_id::TEXT), 1, 15))::BIT(60)::BIGINT;
@@ -36463,6 +36693,8 @@ DECLARE
   v_new_paid DECIMAL;
   v_new_status TEXT;
 BEGIN
+  -- v3.74.729 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- 1. Validate Period Locking (STRICT)
   PERFORM validate_transaction_period(p_company_id, p_payment_date);
 
@@ -36813,6 +37045,8 @@ DECLARE
   v_account        RECORD;
   v_affected_count INTEGER := 0;
 BEGIN
+  -- v3.74.729 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF EXISTS (
     SELECT 1 FROM public.fiscal_year_closings
      WHERE company_id = p_company_id
@@ -37324,6 +37558,8 @@ DECLARE
   v_current_journal_id UUID;
   v_inserted_id        UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_payments IS NOT NULL AND jsonb_array_length(p_payments) > 0 THEN
     FOR v_pay IN SELECT * FROM jsonb_array_elements(p_payments) LOOP
       -- v3.74.32: column is reference_number, not reference
@@ -37562,6 +37798,8 @@ DECLARE
   v_third_party_ids    UUID[] := ARRAY[]::UUID[];
   v_credit_ledger_ids  UUID[] := ARRAY[]::UUID[];
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   v_effective_date := COALESCE(
     p_effective_date,
     CASE
@@ -37928,6 +38166,8 @@ DECLARE
   v_journal_entry_id UUID;
   v_bill_exists BOOLEAN := FALSE;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
   SELECT EXISTS (
@@ -38389,6 +38629,8 @@ DECLARE
   v_idempotency_result JSONB;
   v_description        TEXT;
 BEGIN
+  -- v3.74.729 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_idempotency_key IS NOT NULL THEN
     v_idempotency_result := public.check_and_claim_idempotency_key(
       p_idempotency_key, p_company_id, 'payroll_pay', NULL, p_created_by);
@@ -38719,6 +38961,8 @@ DECLARE
   inv_tx                JSONB;
   v_bill_exists         BOOLEAN;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- Allow direct journal_entry INSERT as posted (bypass enforce_je_integrity trigger)
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
@@ -40753,6 +40997,8 @@ DECLARE
   v_new_status           TEXT;
   v_net_invoice_amount   NUMERIC;
 BEGIN
+  -- v3.74.729 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- ✅ Lock invoice row to prevent race conditions
   SELECT * INTO v_invoice FROM invoices
   WHERE id = p_invoice_id AND company_id = p_company_id
@@ -40905,6 +41151,8 @@ DECLARE
   v_payment_journal_id  UUID;
   v_result              JSONB;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   PERFORM public.require_open_financial_period_db(p_company_id, p_payment_date);
 
   IF p_idempotency_key IS NOT NULL THEN
@@ -41122,6 +41370,8 @@ DECLARE
   v_pay_orig_amount     NUMERIC;
   v_ref_no              TEXT;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   PERFORM public.require_open_financial_period_db(p_company_id, p_payment_date);
 
   IF p_idempotency_key IS NOT NULL THEN
@@ -41415,6 +41665,8 @@ DECLARE
   v_result          JSONB := '{}';
   v_refund_account_id UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   v_warehouse_id   := NULLIF(p_purchase_return->>'warehouse_id', '')::UUID;
   v_branch_id      := NULLIF(p_purchase_return->>'branch_id', '')::UUID;
   v_cost_center_id := NULLIF(p_purchase_return->>'cost_center_id', '')::UUID;
@@ -41652,6 +41904,8 @@ DECLARE
   v_group_count    INT;
   v_qty_check      RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_bill_id IS NULL THEN
     RAISE EXCEPTION 'Bill ID is required to create a purchase return';
   END IF;
@@ -41843,6 +42097,8 @@ DECLARE
   v_sales_return_id UUID;
   v_journal_entry_id UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   v_result := public.post_accounting_event_v2(
     p_event_type                     => 'return',
     p_company_id                     => p_company_id,
@@ -42447,6 +42703,8 @@ CREATE OR REPLACE FUNCTION public.rate_booking_atomic(p_company_id uuid, p_booki
 AS $function$
 DECLARE v_booking public.bookings;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_rating NOT BETWEEN 1 AND 5 THEN RAISE EXCEPTION 'Rating must be between 1 and 5. Got: %', p_rating USING ERRCODE='P0001'; END IF;
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Booking not found. booking_id=%', p_booking_id USING ERRCODE='P0001'; END IF;
@@ -42530,6 +42788,8 @@ DECLARE
   v_new_period_end timestamptz;
   v_active_seats int;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT subscription_status INTO v_status FROM public.companies WHERE id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN jsonb_build_object('success', false, 'error', 'company_not_found');
@@ -43006,6 +43266,8 @@ DECLARE
   v_receipt_total_cost NUMERIC(18,4);
   v_receipt_unit_cost NUMERIC(18,4);
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF v_received_qty <= 0 THEN
     RAISE EXCEPTION 'received_qty must be greater than zero.';
   END IF;
@@ -43547,6 +43809,8 @@ CREATE OR REPLACE FUNCTION public.record_approval_action(p_company_id uuid, p_re
 AS $function$
 DECLARE v_id uuid;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   INSERT INTO public.approval_history (
     company_id, reference_type, reference_id, cycle_no, action,
     actor_id, actor_role, reason, snapshot_data, branch_id
@@ -43574,6 +43838,8 @@ DECLARE
   v_execution_id UUID;
   v_now TIMESTAMPTZ := NOW();
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_intent
   FROM public.financial_replay_commit_intents
@@ -43723,6 +43989,8 @@ DECLARE
   v_drawing_id UUID;
   v_journal_id UUID;
 BEGIN
+  -- v3.74.729 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- 1. Validate Period Locking (STRICT)
   PERFORM validate_transaction_period(p_company_id, p_drawing_date);
 
@@ -44021,6 +44289,8 @@ DECLARE
   v_routing_operation RECORD;
   v_operation_count INTEGER := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_planned_quantity IS NULL OR p_planned_quantity <= 0 THEN
     RAISE EXCEPTION 'planned_quantity must be greater than zero.';
   END IF;
@@ -44250,6 +44520,8 @@ AS $function$
 DECLARE
   v_version RECORD;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_rejection_reason IS NULL OR BTRIM(p_rejection_reason) = '' THEN
     RAISE EXCEPTION 'Rejection reason is required.';
   END IF;
@@ -44634,6 +44906,8 @@ DECLARE
   v_order RECORD;
   v_released_at TIMESTAMPTZ := COALESCE(p_released_at, NOW());
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_order
     FROM public.manufacturing_production_orders
@@ -44673,6 +44947,8 @@ CREATE OR REPLACE FUNCTION public.release_seat(p_company_id uuid, p_invite_id uu
  SET search_path TO 'public'
 AS $function$
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   UPDATE company_invitations
   SET seat_reserved = FALSE,
       status = 'cancelled',
@@ -44741,7 +45017,10 @@ CREATE OR REPLACE FUNCTION public.remove_cancelled_invoice_sale_transactions(p_c
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
-AS $function$ DECLARE v_deleted_count INTEGER := 0; BEGIN DELETE FROM inventory_transactions it WHERE it.company_id = p_company_id AND it.transaction_type = 'sale' AND (it.is_deleted IS NULL OR it.is_deleted = false) AND EXISTS ( SELECT 1 FROM invoices i WHERE i.id = it.reference_id AND i.status = 'cancelled' AND i.return_status = 'full' ); GET DIAGNOSTICS v_deleted_count = ROW_COUNT; PERFORM sync_all_stock_quantities(p_company_id); RETURN jsonb_build_object('success', true, 'deleted_count', v_deleted_count); END; $function$
+AS $function$ DECLARE v_deleted_count INTEGER := 0; BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
+ DELETE FROM inventory_transactions it WHERE it.company_id = p_company_id AND it.transaction_type = 'sale' AND (it.is_deleted IS NULL OR it.is_deleted = false) AND EXISTS ( SELECT 1 FROM invoices i WHERE i.id = it.reference_id AND i.status = 'cancelled' AND i.return_status = 'full' ); GET DIAGNOSTICS v_deleted_count = ROW_COUNT; PERFORM sync_all_stock_quantities(p_company_id); RETURN jsonb_build_object('success', true, 'deleted_count', v_deleted_count); END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -44765,6 +45044,8 @@ DECLARE
   rec              RECORD;
   v_new_expires    timestamptz;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_company_id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'company_id_required');
   END IF;
@@ -45146,6 +45427,8 @@ DECLARE
   v_available INTEGER;
   v_seat_number INTEGER;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- Lock the company_seats row to prevent race condition
   PERFORM pg_advisory_xact_lock(hashtext(p_company_id::TEXT));
 
@@ -46949,6 +47232,8 @@ DECLARE
   v_msg             TEXT;
   v_diff            NUMERIC;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) INTO v_gl_inventory
   FROM journal_entry_lines jel
   JOIN journal_entries je ON je.id = jel.journal_entry_id
@@ -47784,6 +48069,8 @@ CREATE OR REPLACE FUNCTION public.seed_default_role_permissions(p_company_id uui
  SET search_path TO 'public'
 AS $function$
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access_or_bootstrap(p_company_id);
   DELETE FROM public.company_role_permissions
   WHERE company_id = p_company_id
     AND role IN ('staff', 'accountant', 'purchasing_officer', 'booking_officer',
@@ -48073,6 +48360,8 @@ DECLARE
   v_version RECORD;
   v_previous_default UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_version
     FROM public.manufacturing_bom_versions
@@ -48751,6 +49040,8 @@ CREATE OR REPLACE FUNCTION public.start_booking_atomic(p_company_id uuid, p_book
 AS $function$
 DECLARE v_booking public.bookings;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_booking FROM public.bookings WHERE id = p_booking_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Booking not found. booking_id=%', p_booking_id USING ERRCODE='P0001'; END IF;
   IF v_booking.status <> 'confirmed' THEN RAISE EXCEPTION 'Booking must be confirmed before starting. Current status: %. booking_id=%', v_booking.status, p_booking_id USING ERRCODE='P0001'; END IF;
@@ -48773,6 +49064,8 @@ DECLARE
   v_started_at TIMESTAMPTZ := COALESCE(p_started_at, NOW());
   v_primed_operation_id UUID;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_order
     FROM public.manufacturing_production_orders
@@ -48904,6 +49197,8 @@ DECLARE
   v_version   RECORD;
   v_line_count INTEGER;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_version
     FROM public.manufacturing_bom_versions
    WHERE id = p_bom_version_id AND company_id = p_company_id
@@ -49124,6 +49419,8 @@ AS $function$
 DECLARE
   v_status text;
 BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT subscription_status INTO v_status
   FROM companies WHERE id = p_company_id FOR UPDATE;
 
@@ -49607,7 +49904,10 @@ CREATE OR REPLACE FUNCTION public.sync_all_stock_quantities(p_company_id uuid)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
-AS $function$ DECLARE v_fixed_count INTEGER := 0; BEGIN UPDATE products p SET quantity_on_hand = ( SELECT COALESCE(SUM(it.quantity_change), 0) FROM inventory_transactions it WHERE it.product_id = p.id AND (it.is_deleted IS NULL OR it.is_deleted = false) ) WHERE p.company_id = p_company_id AND p.quantity_on_hand != ( SELECT COALESCE(SUM(it.quantity_change), 0) FROM inventory_transactions it WHERE it.product_id = p.id AND (it.is_deleted IS NULL OR it.is_deleted = false) ); GET DIAGNOSTICS v_fixed_count = ROW_COUNT; RETURN jsonb_build_object('success', true, 'fixed_count', v_fixed_count); END; $function$
+AS $function$ DECLARE v_fixed_count INTEGER := 0; BEGIN
+  -- v3.74.731 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
+ UPDATE products p SET quantity_on_hand = ( SELECT COALESCE(SUM(it.quantity_change), 0) FROM inventory_transactions it WHERE it.product_id = p.id AND (it.is_deleted IS NULL OR it.is_deleted = false) ) WHERE p.company_id = p_company_id AND p.quantity_on_hand != ( SELECT COALESCE(SUM(it.quantity_change), 0) FROM inventory_transactions it WHERE it.product_id = p.id AND (it.is_deleted IS NULL OR it.is_deleted = false) ); GET DIAGNOSTICS v_fixed_count = ROW_COUNT; RETURN jsonb_build_object('success', true, 'fixed_count', v_fixed_count); END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -51966,6 +52266,8 @@ DECLARE
   v_line_count INTEGER := 0;
   v_substitute_count INTEGER := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_lines IS NULL OR jsonb_typeof(p_lines) <> 'array' THEN
     RAISE EXCEPTION 'BOM structure payload must be a JSON array of lines.';
   END IF;
@@ -52099,6 +52401,8 @@ DECLARE
   v_completed_by UUID;
   v_auto_started_order BOOLEAN := false;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT *
     INTO v_operation
     FROM public.manufacturing_production_order_operations
@@ -52224,6 +52528,8 @@ DECLARE
   v_operation JSONB;
   v_operation_count INTEGER := 0;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   IF p_operations IS NULL OR jsonb_typeof(p_operations) <> 'array' THEN
     RAISE EXCEPTION 'Routing operations payload must be a JSON array.';
   END IF;
@@ -52404,6 +52710,8 @@ AS $function$
 DECLARE
   v_service public.services;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT * INTO v_service
     FROM public.services
    WHERE id = p_service_id AND company_id = p_company_id
@@ -53057,6 +53365,8 @@ DECLARE
   v_exception       JSONB;
   v_price_tolerance NUMERIC(12,2) := 0.01;
 BEGIN
+  -- v3.74.730 — reject a caller acting on another company's data.
+  PERFORM public.assert_company_access(p_company_id);
   -- ① Load bill
   SELECT * INTO v_bill FROM bills WHERE id = p_bill_id AND company_id = p_company_id;
   IF NOT FOUND THEN
