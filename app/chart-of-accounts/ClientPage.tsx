@@ -491,10 +491,21 @@ function ChartOfAccountsPage() {
 
   const quickAdd = async (type: "bank" | "cash") => {
     try {
-      const parentCode = type === "bank" ? "A1B" : "A1C"
-      const parentNode = accounts.find((a) => a.account_code === parentCode)
+      // v3.74.709 — THIS is where both misfiled accounts came from.
+      //
+      // The parent was looked up by the alphanumeric codes A1B / A1C, which no
+      // company has, so parentId fell back to "" — no parent at all — and the
+      // code was HARDCODED to 1010 (bank) or 1000 (cash) regardless of what the
+      // chart already contained. The two bad accounts match those defaults
+      // verbatim: "1010 - حساب بنكي - بنك قناة السويس" and
+      // "1001 - خزينة الشركة مدينة نصر" (1000 was taken, so it became 1001).
+      // normalizeCashBankParents was only the cleanup that never ran; this was
+      // the cause.
+      const parentNode = findCashBankGroup(type, accounts)
       const parentId = parentNode?.id ?? ""
       const level = parentNode ? ((parentNode.level ?? 1) + 1) : 1
+      // Derive the code from the resolved parent's range instead of hardcoding.
+      const suggestedCode = parentId ? suggestAccountCode(parentId) : ""
 
       // التأكد من تحميل الفروع ومراكز التكلفة + العملات قبل فتح النموذج
       // v3.24.1: consolidated single try block so companyId is in scope for both calls
@@ -513,8 +524,9 @@ function ChartOfAccountsPage() {
       }
 
       setEditingId(null)
+      setCodeTouched(false)
       setFormData({
-        account_code: type === "bank" ? "1010" : "1000",
+        account_code: suggestedCode,
         account_name: type === "bank" ? "حساب بنكي" : "خزينة الشركة",
         account_type: "asset",
         sub_type: type === "bank" ? "bank" : "cash",
@@ -703,6 +715,30 @@ function ChartOfAccountsPage() {
     onDelete: handleAccountsRealtimeEvent,
   })
 
+  // v3.74.709 — resolve the cash / bank group in EITHER chart scheme.
+  //
+  // Two numbering schemes exist in this codebase: the numeric one every company
+  // actually uses (1110 الصندوق / 1120 البنوك) and an alphanumeric Zoho-style one
+  // (A1C النقد / A1B المصرف) produced by seedZohoDefault and
+  // scripts/011_seed_custom_coa_ar.sql. Verified before touching this: the seeder
+  // has no call site, the script is not a migration, and no company holds a
+  // single A1B/A1C account. Rather than delete the alphanumeric branch — the
+  // scheme is real and may yet be seeded — both are resolved here, with a
+  // sub_type fallback for any future scheme.
+  const findCashBankGroup = useCallback((kind: "bank" | "cash", list: Account[]): Account | undefined => {
+    const knownCodes = kind === "bank" ? ["1120", "A1B"] : ["1110", "A1C"]
+    for (const code of knownCodes) {
+      const hit = list.find((a) => a.account_code === code)
+      if (hit) return hit
+    }
+    // Fallback: the shallowest account of that sub_type that has children, i.e.
+    // a heading rather than a leaf.
+    const hasChild = (id: string) => list.some((a) => a.parent_id === id)
+    return list
+      .filter((a) => (a.sub_type || "").toLowerCase() === kind && hasChild(a.id))
+      .sort((a, b) => (a.level ?? 99) - (b.level ?? 99))[0]
+  }, [])
+
   const normalizeCashBankParents = async (companyId: string, list: Account[]) => {
     try {
       let parentIdExists = false
@@ -716,16 +752,34 @@ function ChartOfAccountsPage() {
         levelExists = false
       }
       if (!parentIdExists || !levelExists) { setHasNormalized(true); return }
-      const bankGroup = list.find((a) => a.account_code === "A1B")
-      const cashGroup = list.find((a) => a.account_code === "A1C")
+      const bankGroup = findCashBankGroup("bank", list)
+      const cashGroup = findCashBankGroup("cash", list)
       if (!bankGroup && !cashGroup) { setHasNormalized(true); return }
 
+      // v3.74.709 — ADOPT ORPHANS ONLY. Never re-file an account that already
+      // has a parent.
+      //
+      // The original premise — "every account with sub_type cash belongs under
+      // the cash group" — is false, and checking the live data before enabling
+      // this proved it: "1185 العهد (عهد الموظفين)" is typed cash and sits under
+      // 1100 in all four companies. It is employee advances, not a cash box.
+      // Switching the routine on with its old logic would have relocated a
+      // template account in every company on page load.
+      //
+      // What genuinely needs adopting is an account with NO parent at all —
+      // exactly what the old quickAdd produced when its A1B/A1C lookup missed.
+      // Those are unambiguous: nobody placed them anywhere on purpose.
+      const hasChildren = (id: string) => list.some((a) => a.parent_id === id)
       const updates: { id: string; parent_id: string; level: number }[] = []
       for (const acc of list) {
-        if ((acc.sub_type || "").toLowerCase() === "cash" && cashGroup && acc.parent_id !== cashGroup.id) {
+        if (acc.id === bankGroup?.id || acc.id === cashGroup?.id) continue
+        if (acc.parent_id) continue
+        if (hasChildren(acc.id)) continue
+        const st = (acc.sub_type || "").toLowerCase()
+        if (st === "cash" && cashGroup) {
           updates.push({ id: acc.id, parent_id: cashGroup.id, level: (cashGroup.level ?? 1) + 1 })
         }
-        if ((acc.sub_type || "").toLowerCase() === "bank" && bankGroup && acc.parent_id !== bankGroup.id) {
+        if (st === "bank" && bankGroup) {
           updates.push({ id: acc.id, parent_id: bankGroup.id, level: (bankGroup.level ?? 1) + 1 })
         }
       }
@@ -1322,11 +1376,16 @@ function ChartOfAccountsPage() {
                       <div className="grid grid-cols-2 gap-4" data-ai-help="chart_of_accounts.subtype">
                         <div className="space-y-2">
                           <Label htmlFor="is_bank">{appLang === 'en' ? 'Bank Account' : 'حساب بنكي'}</Label>
-                          <input id="is_bank" type="checkbox" checked={formData.is_bank} onChange={(e) => setFormData({ ...formData, is_bank: e.target.checked, sub_type: e.target.checked ? "bank" : formData.sub_type === "bank" ? "" : formData.sub_type })} />
+                          {/* v3.74.709 — the two boxes are mutually exclusive. An
+                              account cannot be both a bank and cash in hand, and
+                              when both were ticked the LAST click silently won the
+                              sub_type. That is how a bank account ended up typed as
+                              cash and vanished from every bank-only picker. */}
+                          <input id="is_bank" type="checkbox" checked={formData.is_bank} onChange={(e) => setFormData({ ...formData, is_bank: e.target.checked, is_cash: e.target.checked ? false : formData.is_cash, sub_type: e.target.checked ? "bank" : formData.sub_type === "bank" ? "" : formData.sub_type })} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="is_cash">{appLang === 'en' ? 'Cash in Hand' : 'نقد بالصندوق'}</Label>
-                          <input id="is_cash" type="checkbox" checked={formData.is_cash} onChange={(e) => setFormData({ ...formData, is_cash: e.target.checked, sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type })} />
+                          <input id="is_cash" type="checkbox" checked={formData.is_cash} onChange={(e) => setFormData({ ...formData, is_cash: e.target.checked, is_bank: e.target.checked ? false : formData.is_bank, sub_type: e.target.checked ? "cash" : formData.sub_type === "cash" ? "" : formData.sub_type })} />
                         </div>
                       </div>
                       {/* v3.24.0: Account currency — يظهر لحسابات البنك/الخزينة فقط */}

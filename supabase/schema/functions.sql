@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T10:16:51.609Z
--- Routines: 1201
+-- Generated: 2026-07-19T10:27:11.738Z
+-- Routines: 1200
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26461,16 +26461,9 @@ CREATE OR REPLACE FUNCTION public.ic_chart_of_accounts_structure(p_company_id uu
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
--- v3.74.708 — catch accounts filed outside their parent's numeric range, and
--- bank accounts typed as cash.
---
--- Both already existed in live data: a branch treasury coded 1001 while parented
--- to 1110 (its code lands numerically BEFORE its own parent), and a bank account
--- coded 1010 under 1000 instead of 1120 AND typed 'cash'. The second has a
--- functional cost, not just a tidiness one: screens that list bank accounts only
--- filter on sub_type='bank', so that account is invisible where it is needed.
 DECLARE r record;
 BEGIN
+  -- (1) code at or before its own parent
   FOR r IN
     SELECT c.account_code, c.account_name,
            p.account_code AS parent_code, p.account_name AS parent_name
@@ -26491,6 +26484,7 @@ BEGIN
     RETURN NEXT;
   END LOOP;
 
+  -- (2) named like a bank but typed as cash — invisible in bank-only pickers
   FOR r IN
     SELECT c.account_code, c.account_name, c.sub_type
     FROM chart_of_accounts c
@@ -26505,6 +26499,32 @@ BEGIN
       'account_code', r.account_code, 'account_name', r.account_name,
       'sub_type', r.sub_type,
       'hint', 'Named as a bank but typed as cash. Bank-only pickers filter on sub_type=bank and will not list this account.');
+    RETURN NEXT;
+  END LOOP;
+
+  -- (3) v3.74.709 — a posting account floating with no parent at all.
+  -- The old quickAdd resolved its parent by codes A1B/A1C that no numeric chart
+  -- has, so it silently created top-level orphans. They still post correctly but
+  -- sit outside every subtotal in the tree.
+  FOR r IN
+    SELECT c.account_code, c.account_name, c.sub_type,
+           (SELECT COUNT(*) FROM journal_entry_lines j WHERE j.account_id = c.id) AS lines
+    FROM chart_of_accounts c
+    WHERE c.company_id = p_company_id
+      AND COALESCE(c.is_active, true)
+      AND c.parent_id IS NULL
+      -- v3.74.709 — no level filter. Orphans are created carrying level = 1,
+      -- which makes them look like legitimate roots; that assumption hid four of
+      -- the five real orphans. A genuine root heading always has children, so
+      -- "no parent AND no children" is the reliable test.
+      AND NOT EXISTS (SELECT 1 FROM chart_of_accounts ch WHERE ch.parent_id = c.id)
+    LIMIT 20
+  LOOP
+    severity := 'medium';
+    detail := jsonb_build_object(
+      'account_code', r.account_code, 'account_name', r.account_name,
+      'sub_type', r.sub_type, 'journal_lines', r.lines,
+      'hint', 'Posting account has no parent. It posts correctly but falls outside every subtotal in the chart tree.');
     RETURN NEXT;
   END LOOP;
 EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;
