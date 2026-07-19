@@ -12,10 +12,16 @@ import { useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
+// v3.74.727 — added the 'security' category. Filing a cross-tenant write risk
+// under "accounting" would bury it among rounding differences. The category
+// list lives in integrity_check_definitions' CHECK constraint; these three
+// places must be extended together, which is why they sit next to each other.
+type Category = "accounting" | "inventory" | "operational" | "security"
+
 type Finding = {
   cmp_id: string
   check_code: string
-  category: "accounting" | "inventory" | "operational"
+  category: Category
   name_ar: string
   name_en: string
   severity: "high" | "medium" | "low"
@@ -30,21 +36,22 @@ type ApiResp = {
     high: number
     medium: number
     low: number
-    accounting: number
-    inventory: number
-    operational: number
-  }
+  } & Record<Category, number>
   findings: Finding[]
   checked_at: string
   error?: string
 }
 
-const CAT_LABEL_AR: Record<string, string> = {
+const CATEGORIES: Category[] = ["security", "accounting", "inventory", "operational"]
+
+const CAT_LABEL_AR: Record<Category, string> = {
+  security: "أمنية",
   accounting: "محاسبية",
   inventory: "مَخزَنية",
   operational: "عَمَلياتية",
 }
-const CAT_LABEL_EN: Record<string, string> = {
+const CAT_LABEL_EN: Record<Category, string> = {
+  security: "Security",
   accounting: "Accounting",
   inventory: "Inventory",
   operational: "Operational",
@@ -126,15 +133,17 @@ export default function SystemIntegrityWidget() {
           </div>
 
           <div className="flex gap-3 text-[11px] text-gray-600 dark:text-gray-400 mb-3">
-            {counts.accounting > 0 && (
-              <span>{appLang === "en" ? CAT_LABEL_EN.accounting : CAT_LABEL_AR.accounting}: {counts.accounting}</span>
-            )}
-            {counts.inventory > 0 && (
-              <span>{appLang === "en" ? CAT_LABEL_EN.inventory : CAT_LABEL_AR.inventory}: {counts.inventory}</span>
-            )}
-            {counts.operational > 0 && (
-              <span>{appLang === "en" ? CAT_LABEL_EN.operational : CAT_LABEL_AR.operational}: {counts.operational}</span>
-            )}
+            {/*
+              v3.74.727 — driven off CATEGORIES rather than one hardcoded line
+              per category. The previous version had to be edited every time a
+              category was added, and a forgotten line means findings that
+              exist but are never counted on screen.
+            */}
+            {CATEGORIES.filter(c => (counts[c] ?? 0) > 0).map(c => (
+              <span key={c}>
+                {appLang === "en" ? CAT_LABEL_EN[c] : CAT_LABEL_AR[c]}: {counts[c]}
+              </span>
+            ))}
           </div>
 
           <div className="space-y-2">

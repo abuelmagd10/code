@@ -37,25 +37,35 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
 
+    // v3.74.727 — 'security' joins the category list, for findings about who
+    // can reach the data rather than whether the numbers agree.
+    const CATEGORIES = ["accounting", "inventory", "operational", "security"] as const
+    type Category = (typeof CATEGORIES)[number]
+
     const findings = (data || []) as Array<{
       cmp_id: string
       check_code: string
-      category: "accounting" | "inventory" | "operational"
+      category: Category
       name_ar: string
       name_en: string
       severity: "high" | "medium" | "low"
       detail: Record<string, any>
     }>
 
-    // Aggregate by category for the widget
+    // Aggregate by category for the widget.
+    //
+    // Built by iterating CATEGORIES rather than one hand-written line each. The
+    // previous shape silently returned undefined for any category not listed,
+    // so a new check would have been counted in `total` but shown as nothing —
+    // findings present in the data and invisible on screen.
     const counts = {
       total: findings.length,
       high: findings.filter(f => f.severity === "high").length,
       medium: findings.filter(f => f.severity === "medium").length,
       low: findings.filter(f => f.severity === "low").length,
-      accounting: findings.filter(f => f.category === "accounting").length,
-      inventory: findings.filter(f => f.category === "inventory").length,
-      operational: findings.filter(f => f.category === "operational").length,
+      ...Object.fromEntries(
+        CATEGORIES.map(c => [c, findings.filter(f => f.category === c).length])
+      ) as Record<Category, number>,
     }
 
     return NextResponse.json({
