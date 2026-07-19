@@ -221,18 +221,52 @@ export class PaymentApprovalNotificationService {
     }
 
     const ids = (notifications || []).map((notification: { id: string }) => notification.id)
-    if (ids.length === 0) return
 
-    const { error: updateError } = await this.supabase
+    if (ids.length > 0) {
+      const { error: updateError } = await this.supabase
+        .from("notifications")
+        .update({
+          status: "actioned",
+          actioned_at: new Date().toISOString(),
+        })
+        .in("id", ids)
+
+      if (updateError) {
+        console.error("Error archiving payment approval notifications:", updateError)
+      }
+    }
+
+    // v3.74.717 — clear the copy written by the payment_supplier_notify_approval
+    // database trigger.
+    //
+    // Two layers announce the same approval: this service (role-targeted,
+    // reference_type 'payment_approval', carrying an event_key) and a DB trigger
+    // on payments (user-targeted, reference_type 'approval_request', no
+    // event_key). The owner therefore saw the same payment twice.
+    //
+    // The lingering half was worse than the duplication. The block above only
+    // matches reference_type='payment_approval' with a known event_key, so the
+    // trigger's copy was never cleared: after approving, it stayed unread with
+    // live approve/reject buttons pointing at an already-approved payment.
+    //
+    // The trigger is left in place rather than dropped — it is the only notifier
+    // if a supplier payment ever reaches pending_approval outside this service.
+    // Since the trigger fires on INSERT and this runs afterwards, its copy
+    // already exists by now and is retired here, leaving exactly one live
+    // notification per approval.
+    const { error: legacyError } = await this.supabase
       .from("notifications")
       .update({
         status: "actioned",
         actioned_at: new Date().toISOString(),
       })
-      .in("id", ids)
+      .eq("company_id", params.companyId)
+      .eq("reference_type", "approval_request")
+      .eq("reference_id", params.paymentId)
+      .in("status", ["unread", "read"])
 
-    if (updateError) {
-      console.error("Error archiving payment approval notifications:", updateError)
+    if (legacyError) {
+      console.error("Error archiving legacy payment approval notifications:", legacyError)
     }
   }
 
