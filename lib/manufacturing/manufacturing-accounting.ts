@@ -68,11 +68,16 @@ export async function resolveManufacturingAccounts(
 
   // WIP — STRICT: only sub_type='work_in_process' (code-based fallback removed
   // because 1140 collided with existing inventory account in production data)
+  // v3.74.710 — 1145 REMOVED from this chain. It is "مواد في عهدة الفنّي",
+  // the technician custody account shipped in the default chart since v3.74.685.
+  // Falling back to it meant work-in-process postings landed in the custody
+  // account: one account carrying two unrelated balances, neither meaningful.
+  // WIP has its own code now (1146, sub_type work_in_process).
   const wipAccountId =
     (company?.wip_account_id as string | null) ||
     bySubType("work_in_process") ||
-    byCode("1145") ||  // matches the migration's new WIP code (1145, not 1140)
-    byName(/الإنتاج تحت التشغيل/i)
+    byCode("1146") ||
+    byName(/إنتاج تحت التشغيل/i)
 
   // Raw Materials Inventory (asset)
   const rawMaterialsAccountId =
@@ -104,10 +109,16 @@ export async function resolveManufacturingAccounts(
     )
   }
 
+  // v3.74.710 — 2210 REMOVED. No account in the default chart carries sub_type
+  // 'wages_payable' (accrued salaries ship as 2130 / 'accrued_salaries'), so this
+  // chain always fell through to code 2210 — which in the default chart is
+  // "القروض طويلة الأجل". Manufacturing wages would have been credited to the
+  // long-term loans account. Match the sub_type the chart actually ships.
   const wagesPayableAccountId =
     (company?.wages_payable_account_id as string | null) ||
     bySubType("wages_payable") ||
-    byCode("2210") ||
+    bySubType("accrued_salaries") ||
+    byName(/الرواتب والأجور المستحقة/i) ||
     undefined
 
   const manufacturingOverheadAccountId =

@@ -192,11 +192,15 @@ export default function NewJournalEntryPage() {
 
       const { data: allAcc } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name")
+        .select("id, account_code, account_name, level")
         .eq("company_id", companyId)
 
       const existingNames = new Set((allAcc || []).map((a: any) => String(a.account_name || "")))
       const existingCodes = new Set((allAcc || []).map((a: any) => String(a.account_code || "")))
+      // v3.74.710 — same fix as the shareholders page: attach partner capital
+      // accounts to رأس المال (3100) instead of leaving them parentless outside
+      // every subtotal. Two places create these accounts; both must agree.
+      const capitalParent = (allAcc || []).find((a: any) => String(a.account_code) === "3100")
 
       const toCreate = (sh || [])
         .filter((s: any) => !existingNames.has(`رأس مال - ${s.name}`))
@@ -209,8 +213,8 @@ export default function NewJournalEntryPage() {
           opening_balance: 0,
         }))
 
-      // توليد أكواد ضمن نطاق حقوق الملكية بدون تعارض (بدءًا من 3001)
-      let nextCode = 3001
+      // توليد أكواد داخل نطاق رأس المال (3101+) بدون تعارض
+      let nextCode = capitalParent ? 3101 : 3001
       for (const acc of toCreate) {
         while (existingCodes.has(String(nextCode))) {
           nextCode++
@@ -218,6 +222,10 @@ export default function NewJournalEntryPage() {
         acc.account_code = String(nextCode)
         existingCodes.add(String(nextCode))
         nextCode++
+        if (capitalParent) {
+          ;(acc as any).parent_id = capitalParent.id
+          ;(acc as any).level = ((capitalParent as any).level ?? 2) + 1
+        }
       }
 
       if (toCreate.length === 0) {

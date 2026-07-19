@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T10:27:11.738Z
--- Routines: 1200
+-- Generated: 2026-07-19T10:53:17.343Z
+-- Routines: 1202
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -20303,7 +20303,7 @@ BEGIN
 
   SELECT id INTO v_custody_acct FROM public.chart_of_accounts
     WHERE company_id = w.company_id AND is_active
-      AND (account_code = '1145' OR sub_type IN ('inventory_in_custody','work_in_process'))
+      AND (account_code = '1145' OR sub_type = 'inventory_in_custody')
     ORDER BY CASE WHEN account_code='1145' THEN 0 ELSE 1 END LIMIT 1;
   SELECT id INTO v_inv_acct FROM public.chart_of_accounts
     WHERE company_id = w.company_id AND is_active AND sub_type = 'inventory' LIMIT 1;
@@ -20379,7 +20379,7 @@ BEGIN
 
   SELECT id INTO v_custody_acct FROM public.chart_of_accounts
     WHERE company_id = w.company_id AND is_active
-      AND (account_code = '1145' OR sub_type IN ('inventory_in_custody','work_in_process'))
+      AND (account_code = '1145' OR sub_type = 'inventory_in_custody')
     ORDER BY CASE WHEN account_code='1145' THEN 0 ELSE 1 END LIMIT 1;
   SELECT id INTO v_inv_acct FROM public.chart_of_accounts
     WHERE company_id = w.company_id AND is_active AND sub_type = 'inventory' LIMIT 1;
@@ -27056,7 +27056,7 @@ BEGIN
                          AND COALESCE(je.is_deleted, false) = false
   JOIN chart_of_accounts coa ON coa.id = jel.account_id
   WHERE coa.company_id = p_company_id
-    AND (coa.account_code = '1145' OR coa.sub_type IN ('inventory_in_custody','work_in_process'));
+    AND (coa.account_code = '1145' OR coa.sub_type = 'inventory_in_custody');
 
   -- FIFO remaining value
   SELECT COALESCE(SUM(remaining_quantity * unit_cost), 0)
@@ -27810,6 +27810,71 @@ BEGIN
       'hint','Invoice tax_amount diverges from sum of line tax (qty*price*rate/100).');
     RETURN NEXT;
   END LOOP;
+END $function$
+;
+
+-- ---------------------------------------------------------------
+-- ic_template_accounts_missing(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_template_accounts_missing(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.710 — every company must carry the full default chart, with matching
+-- sub_types.
+--
+-- This exists because two failures of exactly this kind were found by hand:
+--   * 5410 (manufacturing overhead) was created by a May migration for the
+--     companies existing THEN, but never added to the template — so all three
+--     companies created afterwards silently lacked it and manufacturing could
+--     not post at all.
+--   * 1145 shipped as technician custody in the template while an older
+--     migration had stamped it sub_type='work_in_process' in one company, so a
+--     single account served both custody and work-in-process.
+--
+-- The sub_type half matters as much as the presence half: account resolution
+-- across the app is sub_type-first, with numeric codes only as a last resort.
+-- A wrong sub_type therefore sends postings to the wrong account silently.
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT t.account_code, t.account_name, t.sub_type
+    FROM chart_of_accounts_template t
+    WHERE COALESCE(t.is_active, true)
+      AND NOT EXISTS (
+        SELECT 1 FROM chart_of_accounts c
+         WHERE c.company_id = p_company_id AND c.account_code = t.account_code)
+    LIMIT 20
+  LOOP
+    severity := 'high';
+    detail := jsonb_build_object(
+      'account_code', r.account_code, 'account_name', r.account_name,
+      'expected_sub_type', r.sub_type,
+      'hint', 'Account is in the default chart template but missing from this company. Features that resolve it will fail or fall back to the wrong account.');
+    RETURN NEXT;
+  END LOOP;
+
+  FOR r IN
+    SELECT t.account_code, t.account_name,
+           t.sub_type AS expected, c.sub_type AS actual
+    FROM chart_of_accounts_template t
+    JOIN chart_of_accounts c
+      ON c.company_id = p_company_id AND c.account_code = t.account_code
+    WHERE COALESCE(t.is_active, true)
+      AND t.sub_type IS NOT NULL
+      AND COALESCE(c.sub_type,'') <> t.sub_type
+    LIMIT 20
+  LOOP
+    severity := 'high';
+    detail := jsonb_build_object(
+      'account_code', r.account_code, 'account_name', r.account_name,
+      'expected_sub_type', r.expected, 'actual_sub_type', r.actual,
+      'hint', 'Account sub_type differs from the template. Resolution is sub_type-first across the app, so postings may silently land in the wrong account.');
+    RETURN NEXT;
+  END LOOP;
+EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;
 END $function$
 ;
 

@@ -1133,7 +1133,7 @@ export default function ShareholdersPage() {
 
       const { data: eqAcc } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code, account_name, account_type")
+        .select("id, account_code, account_name, account_type, level")
         .eq("company_id", companyId)
         .eq("account_type", "equity")
 
@@ -1154,14 +1154,34 @@ export default function ShareholdersPage() {
         return
       }
 
-      const numericCodes = (eqAcc || [])
-        .map((a: any) => parseInt(String(a.account_code), 10))
-        .filter((n: number) => Number.isFinite(n))
-      let nextCode = numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 3000
+      // v3.74.710 — file these under رأس المال (3100) instead of creating
+      // top-level orphans. A partner capital account is the BREAKDOWN of capital
+      // — the partners' balances sum to it — so it belongs inside that branch.
+      //
+      // The old "max equity code + 1" put the same concept on 3301/3302 in one
+      // company and 3601 in another, each with no parent at all, so they sat
+      // outside every subtotal in the tree.
+      const capitalParent = (eqAcc || []).find((a: any) => String(a.account_code) === "3100")
+      const takenCodes = new Set((eqAcc || []).map((a: any) => String(a.account_code)))
+      let nextCode = 3101
+      if (capitalParent) {
+        while (takenCodes.has(String(nextCode)) && nextCode < 3200) nextCode++
+      } else {
+        const numericCodes = (eqAcc || [])
+          .map((a: any) => parseInt(String(a.account_code), 10))
+          .filter((n: number) => Number.isFinite(n))
+        nextCode = numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 3000
+      }
       toCreate.forEach((acc: any) => {
         acc.account_code = String(nextCode++)
         // إضافة normal_balance: equity accounts دائماً credit
         acc.normal_balance = "credit"
+        // v3.74.710 — attach to رأس المال so the account lands inside the tree
+        // rather than floating outside every subtotal.
+        if (capitalParent) {
+          acc.parent_id = capitalParent.id
+          acc.level = (capitalParent.level ?? 2) + 1
+        }
       })
 
       const { error } = await supabase.from("chart_of_accounts").insert(toCreate)
