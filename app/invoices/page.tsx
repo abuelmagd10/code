@@ -17,6 +17,7 @@ import { Plus, Eye, Trash2, Pencil, FileText, AlertCircle, DollarSign, CreditCar
 import Link from "next/link"
 import { canAction } from "@/lib/authz"
 import { type UserContext, getAccessFilter, getRoleAccessLevel } from "@/lib/validation"
+import { applyCustomerBranchScope } from "@/lib/customer-scope"
 import { canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
@@ -600,12 +601,17 @@ export default function InvoicesPage() {
       let allCustomers: Customer[] = [];
 
       if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        // موظف عادي: يرى فقط العملاء الذين أنشأهم
-        const { data: ownCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name");
+        // موظف عادي: يرى فقط العملاء الذين أنشأهم — وفى فرعه (v3.74.722)
+        const ownQ = applyCustomerBranchScope(
+          supabase.from("customers").select("id, name, phone").eq("company_id", companyId).eq("created_by_user_id", accessFilter.createdByUserId).order("name"),
+          accessFilter, userContext)
+        const { data: ownCust } = await ownQ;
         allCustomers = ownCust || [];
-        // جلب العملاء المشتركين
+        // جلب العملاء المشتركين — بنفس حدّ الفرع، وإلا تسرّبت فروع المانح الأخرى
         if (sharedGrantorUserIds.length > 0) {
-          const { data: sharedCust } = await supabase.from("customers").select("id, name, phone").eq("company_id", companyId).in("created_by_user_id", sharedGrantorUserIds);
+          const { data: sharedCust } = await applyCustomerBranchScope(
+            supabase.from("customers").select("id, name, phone").eq("company_id", companyId).in("created_by_user_id", sharedGrantorUserIds),
+            accessFilter, userContext);
           const existingIds = new Set(allCustomers.map(c => c.id));
           (sharedCust || []).forEach((c: Customer) => { if (!existingIds.has(c.id)) allCustomers.push(c); });
         }

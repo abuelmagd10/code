@@ -145,13 +145,16 @@ export default function NewCustomerDebitNotePage() {
       let customersList: Customer[] = []
 
       if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        // موظف عادي: يرى فقط العملاء الذين أنشأهم
-        const { data: ownCust } = await supabase
-          .from("customers")
-          .select("id, name, phone")
-          .eq("company_id", loadedCompanyId)
-          .eq("created_by_user_id", accessFilter.createdByUserId)
-          .order('name')
+        // موظف عادي: يرى فقط العملاء الذين أنشأهم — وفى فرعه (v3.74.722)
+        const { applyCustomerBranchScope } = await import("@/lib/customer-scope")
+        const { data: ownCust } = await applyCustomerBranchScope(
+          supabase
+            .from("customers")
+            .select("id, name, phone")
+            .eq("company_id", loadedCompanyId)
+            .eq("created_by_user_id", accessFilter.createdByUserId)
+            .order('name'),
+          accessFilter)
         customersList = ownCust || []
 
         // جلب العملاء المشتركين (permission_sharing)
@@ -164,12 +167,15 @@ export default function NewCustomerDebitNotePage() {
 
         if (sharedPerms && sharedPerms.length > 0) {
           const grantorIds = sharedPerms.map((p: any) => p.grantor_user_id)
-          const { data: sharedData } = await supabase
-            .from("customers")
-            .select("id, name, phone")
-            .eq("company_id", loadedCompanyId)
-            .in("created_by_user_id", grantorIds)
-            .order('name')
+          // نفس حدّ الفرع، وإلا تسرّبت فروع المانح الأخرى
+          const { data: sharedData } = await applyCustomerBranchScope(
+            supabase
+              .from("customers")
+              .select("id, name, phone")
+              .eq("company_id", loadedCompanyId)
+              .in("created_by_user_id", grantorIds)
+              .order('name'),
+            accessFilter)
           const existingIds = new Set(customersList.map(c => c.id))
             ; (sharedData || []).forEach((c: Customer) => {
               if (!existingIds.has(c.id)) customersList.push(c)

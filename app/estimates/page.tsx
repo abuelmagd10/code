@@ -394,6 +394,12 @@ export default function EstimatesPage() {
         } else if (isCreatorLevel && ctx?.user_id) {
           // Staff/Sales/Employee: only customers they themselves created
           custQuery = custQuery.eq('created_by_user_id', ctx.user_id);
+          // v3.74.722 — and only within their branch. Creator scope follows the
+          // PERSON: an employee who moves branch otherwise keeps being offered
+          // the customers of the branch he left, and the document is then
+          // refused by validate_customer_branch_isolation after the form is
+          // already filled in.
+          if (ctx?.branch_id) custQuery = custQuery.eq('branch_id', ctx.branch_id);
         }
         // ctx unresolved → defaults to company-only (no role-based filter)
 

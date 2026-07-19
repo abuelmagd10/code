@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getAccessFilter } from "@/lib/authz"
+import { applyCustomerBranchScope } from "@/lib/customer-scope"
 
 interface SimpleService {
   id: string; service_name: string; service_code: string
@@ -95,6 +96,11 @@ export default function NewBookingPage() {
       const sharedIds  = sharedRows?.map((s: any) => s.grantor_user_id) ?? []
       const allUserIds = [accessFilter.createdByUserId, ...sharedIds].filter(Boolean) as string[]
       customersQuery   = customersQuery.in("created_by_user_id", allUserIds)
+      // v3.74.722 — narrow to the branch as well. Creator scope follows the
+      // person, so without this an employee who changed branch is still offered
+      // the customers of the branch he left, and shared grantors leak their
+      // other branches' customers too.
+      customersQuery   = applyCustomerBranchScope(customersQuery, accessFilter)
     } else if (accessFilter.filterByBranch && accessFilter.branchId) {
       const { data: branchUsers } = await supabase
         .from("company_members")

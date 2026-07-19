@@ -31,6 +31,7 @@ import { BranchCostCenterSelector } from "@/components/branch-cost-center-select
 import { countries, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { Textarea } from "@/components/ui/textarea"
 import { canAction, getAccessFilter } from "@/lib/authz"
+import { applyCustomerBranchScope } from "@/lib/customer-scope"
 import { type ShippingProvider } from "@/lib/shipping"
 import { validateEmail, validatePhone, getValidationError, validateField, validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { computeDocumentTotals } from "@/lib/document-totals"
@@ -354,6 +355,8 @@ export default function NewInvoicePage() {
         const allUserIds = [accessFilter.createdByUserId, ...sharedUserIds].filter((id): id is string => !!id)
 
         customersQuery = customersQuery.in("created_by_user_id", allUserIds)
+        // v3.74.722 — and within his branch. See lib/customer-scope.ts.
+        customersQuery = applyCustomerBranchScope(customersQuery, accessFilter, context)
       } else if (accessFilter.filterByBranch && accessFilter.branchId) {
         // مدير فرع - يرى عملاء فرعه
         const { data: branchUsers } = await supabase

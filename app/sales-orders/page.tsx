@@ -26,6 +26,7 @@ import { DataPagination } from "@/components/data-pagination";
 import { OrderActions } from "@/components/OrderActions";
 import { getActiveCompanyId } from "@/lib/company";
 import { type UserContext, getRoleAccessLevel, getAccessFilter, validateRecordModification } from "@/lib/validation";
+import { applyCustomerBranchScope } from "@/lib/customer-scope";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
 import { useBranchFilter } from "@/hooks/use-branch-filter";
 import { BranchFilter } from "@/components/BranchFilter";
@@ -895,21 +896,25 @@ function SalesOrdersContent() {
       let allCustomers: Customer[] = [];
 
       if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
-        // موظف عادي: يرى فقط العملاء الذين أنشأهم
-        const { data: ownCust } = await supabase
-          .from("customers")
-          .select("id, name, phone")
-          .eq("company_id", activeCompanyId)
-          .eq("created_by_user_id", accessFilter.createdByUserId)
-          .order("name");
-        allCustomers = ownCust || [];
-        // جلب العملاء المشتركين
-        if (sharedGrantorUserIds.length > 0) {
-          const { data: sharedCust } = await supabase
+        // موظف عادي: يرى فقط العملاء الذين أنشأهم — وفى فرعه (v3.74.722)
+        const { data: ownCust } = await applyCustomerBranchScope(
+          supabase
             .from("customers")
             .select("id, name, phone")
             .eq("company_id", activeCompanyId)
-            .in("created_by_user_id", sharedGrantorUserIds);
+            .eq("created_by_user_id", accessFilter.createdByUserId)
+            .order("name"),
+          accessFilter, userContext);
+        allCustomers = ownCust || [];
+        // جلب العملاء المشتركين — بنفس حدّ الفرع
+        if (sharedGrantorUserIds.length > 0) {
+          const { data: sharedCust } = await applyCustomerBranchScope(
+            supabase
+              .from("customers")
+              .select("id, name, phone")
+              .eq("company_id", activeCompanyId)
+              .in("created_by_user_id", sharedGrantorUserIds),
+            accessFilter, userContext);
           const existingIds = new Set(allCustomers.map(c => c.id));
           (sharedCust || []).forEach((c: Customer) => {
             if (!existingIds.has(c.id)) allCustomers.push(c);

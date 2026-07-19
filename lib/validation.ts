@@ -1571,11 +1571,23 @@ export function getAccessFilter(
   }
 
   // Staff/Sales/Employee - فقط ما أنشأه
+  //
+  // v3.74.722 — branchId is now REPORTED even though filterByBranch stays false.
+  //
+  // Returning null here was the root of the cross-branch customer leak: every
+  // picker that wanted to narrow a creator-scoped user to his own branch had no
+  // branch to narrow by. "Created by me" follows the PERSON, so an employee who
+  // moves between branches carries the old branch's records with him.
+  //
+  // filterByBranch deliberately stays FALSE: this is not a branch-level role and
+  // must not suddenly see the whole branch. Callers that gate on filterByBranch
+  // are unaffected — only those that deliberately read branchId (see
+  // applyCustomerBranchScope) tighten creator scope into creator AND branch.
   return {
     filterByCreatedBy: true,
     createdByUserId: userId,
     filterByBranch: false,
-    branchId: null,
+    branchId: userBranchId,
     filterByCostCenter: false,
     costCenterId: null
   };
