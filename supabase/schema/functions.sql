@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T09:00:29.014Z
--- Routines: 1199
+-- Generated: 2026-07-19T10:16:51.609Z
+-- Routines: 1201
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26446,6 +26446,65 @@ BEGIN
     severity := 'low';
     detail := jsonb_build_object('branch_id', r.id, 'branch_name', r.name,
       'hint','Active branch without any active warehouse. Branch cannot fulfill sales.');
+    RETURN NEXT;
+  END LOOP;
+EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;
+END $function$
+;
+
+-- ---------------------------------------------------------------
+-- ic_chart_of_accounts_structure(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_chart_of_accounts_structure(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.708 — catch accounts filed outside their parent's numeric range, and
+-- bank accounts typed as cash.
+--
+-- Both already existed in live data: a branch treasury coded 1001 while parented
+-- to 1110 (its code lands numerically BEFORE its own parent), and a bank account
+-- coded 1010 under 1000 instead of 1120 AND typed 'cash'. The second has a
+-- functional cost, not just a tidiness one: screens that list bank accounts only
+-- filter on sub_type='bank', so that account is invisible where it is needed.
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.account_code, c.account_name,
+           p.account_code AS parent_code, p.account_name AS parent_name
+    FROM chart_of_accounts c
+    JOIN chart_of_accounts p ON p.id = c.parent_id
+    WHERE c.company_id = p_company_id
+      AND COALESCE(c.is_active, true)
+      AND c.account_code ~ '^[0-9]+$'
+      AND p.account_code ~ '^[0-9]+$'
+      AND c.account_code::numeric <= p.account_code::numeric
+    LIMIT 20
+  LOOP
+    severity := 'medium';
+    detail := jsonb_build_object(
+      'account_code', r.account_code, 'account_name', r.account_name,
+      'parent_code', r.parent_code, 'parent_name', r.parent_name,
+      'hint', 'Account code sits at or before its parent. Range-based roll-up reports will place it outside its branch of the tree.');
+    RETURN NEXT;
+  END LOOP;
+
+  FOR r IN
+    SELECT c.account_code, c.account_name, c.sub_type
+    FROM chart_of_accounts c
+    WHERE c.company_id = p_company_id
+      AND COALESCE(c.is_active, true)
+      AND (c.account_name ILIKE '%بنك%' OR c.account_name ILIKE '%bank%' OR c.account_name ILIKE '%مصرف%')
+      AND COALESCE(c.sub_type,'') = 'cash'
+    LIMIT 20
+  LOOP
+    severity := 'medium';
+    detail := jsonb_build_object(
+      'account_code', r.account_code, 'account_name', r.account_name,
+      'sub_type', r.sub_type,
+      'hint', 'Named as a bank but typed as cash. Bank-only pickers filter on sub_type=bank and will not list this account.');
     RETURN NEXT;
   END LOOP;
 EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;

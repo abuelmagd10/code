@@ -150,6 +150,9 @@ function ChartOfAccountsPage() {
   const [comparisonBalances, setComparisonBalances] = useState<Record<string, number>>({})
   const [userContext, setUserContext] = useState<any>(null)
 
+  // v3.74.708 — once the user types a code themselves, stop auto-filling it.
+  const [codeTouched, setCodeTouched] = useState(false)
+
   const [formData, setFormData] = useState({
     account_code: "",
     account_name: "",
@@ -744,6 +747,99 @@ function ChartOfAccountsPage() {
     }
   }
 
+  // v3.74.708 — suggest the next free code INSIDE the chosen parent's range.
+  //
+  // Manual entry had already produced two misfiled accounts in live data: a
+  // branch treasury numbered 1001 while sitting under 1110 (its code lands
+  // numerically BEFORE its own parent), and a bank account numbered 1010 under
+  // 1000 instead of 1120. Any report that rolls up by code range misplaces them.
+  //
+  // The range is (parentCode, nextNonDescendantCode): the first code greater
+  // than the parent that does NOT belong to the parent's own subtree. Everything
+  // between the two belongs to this parent, so any free number there is valid.
+  // Returns "" for non-numeric schemes rather than guessing — some statutory
+  // charts are alphanumeric and must not be auto-filled.
+  const suggestAccountCode = useCallback((parentId: string): string => {
+    if (!parentId) return ""
+    const parent = accounts.find((a) => a.id === parentId)
+    if (!parent) return ""
+
+    const parentNum = Number(parent.account_code)
+    if (!Number.isFinite(parentNum)) return ""
+
+    // Collect the parent's whole subtree so its own descendants do not act as
+    // the range boundary.
+    const descendants = new Set<string>()
+    const walk = (id: string) => {
+      for (const a of accounts) {
+        if (a.parent_id === id && !descendants.has(a.id)) {
+          descendants.add(a.id)
+          walk(a.id)
+        }
+      }
+    }
+    walk(parentId)
+
+    let boundary = Number.POSITIVE_INFINITY
+    for (const a of accounts) {
+      if (a.id === parentId || descendants.has(a.id)) continue
+      const n = Number(a.account_code)
+      if (Number.isFinite(n) && n > parentNum && n < boundary) boundary = n
+    }
+    if (!Number.isFinite(boundary)) boundary = parentNum + 1000
+
+    const taken = new Set(accounts.map((a) => String(a.account_code)))
+    const width = String(parent.account_code).length
+
+    // Keep an existing round-number convention when the parent's children all
+    // follow one (1110, 1120, 1130 ...), so suggestions look deliberate rather
+    // than sequential.
+    const childCodes = accounts
+      .filter((a) => a.parent_id === parentId)
+      .map((a) => Number(a.account_code))
+      .filter((n) => Number.isFinite(n) && n > parentNum && n < boundary)
+    if (childCodes.length > 0 && childCodes.every((n) => n % 10 === 0)) {
+      const stepped = Math.max(...childCodes) + 10
+      if (stepped < boundary && !taken.has(String(stepped))) return String(stepped)
+    }
+
+    for (let n = parentNum + 1; n < boundary; n++) {
+      const candidate = String(n).padStart(width, "0")
+      if (!taken.has(candidate)) return candidate
+    }
+    return ""
+  }, [accounts])
+
+  // v3.74.708 — warn, never block: a mandated chart may legitimately break both
+  // of these rules, so the user keeps the final say.
+  const accountCodeWarnings = useMemo(() => {
+    const out: string[] = []
+    const code = String(formData.account_code || "").trim()
+    const parent = accounts.find((a) => a.id === formData.parent_id)
+
+    if (code && parent) {
+      const codeNum = Number(code)
+      const parentNum = Number(parent.account_code)
+      if (Number.isFinite(codeNum) && Number.isFinite(parentNum)) {
+        const suggestion = suggestAccountCode(formData.parent_id)
+        if (codeNum <= parentNum) {
+          out.push(appLang === 'en'
+            ? `Code ${code} sits at or before its parent ${parent.account_code}. Range-based reports will misplace it. Suggested: ${suggestion || '—'}`
+            : `الرمز ${code} يقع عند أو قبل الحساب الأب ${parent.account_code}. التقارير التى تُجمِّع بالنطاقات ستضعه فى المكان الخطأ. المقترح: ${suggestion || '—'}`)
+        }
+      }
+    }
+
+    const name = String(formData.account_name || "").toLowerCase()
+    const looksLikeBank = name.includes('بنك') || name.includes('bank') || name.includes('مصرف')
+    if (looksLikeBank && formData.is_cash && !formData.is_bank) {
+      out.push(appLang === 'en'
+        ? 'Named as a bank but typed as cash. Bank-only pickers (customer refunds, invoice returns) filter on the bank type and will not list it.'
+        : 'الاسم يشير إلى بنك لكن النوع مُسجَّل نقدية. الشاشات التى تعرض الحسابات البنكية فقط (صرف رصيد العميل، مرتجعات الفواتير) تُرشِّح على نوع البنك ولن تعرضه.')
+    }
+    return out
+  }, [accounts, appLang, formData.account_code, formData.account_name, formData.is_bank, formData.is_cash, formData.parent_id, suggestAccountCode])
+
   const childrenMap = useMemo(() => {
     const m = new Map<string, string[]>()
     for (const a of accounts) {
@@ -949,6 +1045,9 @@ function ChartOfAccountsPage() {
         currency_code: String((account as any).original_currency || "").toUpperCase(),
       })
       setEditingId(account.id)
+      // v3.74.708 — an existing account already has a deliberate code; never
+      // auto-fill over it if the parent is changed during the edit.
+      setCodeTouched(true)
       setIsDialogOpen(true)
     } catch (error) {
       console.error("Error in handleEdit:", error)
@@ -1133,6 +1232,7 @@ function ChartOfAccountsPage() {
                     <Button data-ai-help="chart_of_accounts.new_account_button" onClick={async () => {
                       try {
                         setEditingId(null)
+                        setCodeTouched(false)
                         setFormData({ account_code: "", account_name: "", account_type: "asset", sub_type: "", is_cash: false, is_bank: false, parent_id: "", level: 1, description: "", opening_balance: 0, branch_id: "", cost_center_id: "", normal_balance: "debit", currency_code: "" })
                         setFormErrors({})
                         // التأكد من تحميل الفروع ومراكز التكلفة + العملات قبل فتح النموذج
@@ -1169,7 +1269,20 @@ function ChartOfAccountsPage() {
                     <form onSubmit={handleSubmit} className="space-y-4">
                       <div className="space-y-2" data-ai-help="chart_of_accounts.account_code">
                         <Label htmlFor="account_code">{appLang === 'en' ? 'Account Code' : 'رمز الحساب'}</Label>
-                        <Input id="account_code" value={formData.account_code} onChange={(e) => setFormData({ ...formData, account_code: e.target.value })} required />
+                        <Input id="account_code" value={formData.account_code} onChange={(e) => { setCodeTouched(true); setFormData({ ...formData, account_code: e.target.value }) }} required />
+                        {/* v3.74.708 — the code is suggested from the parent's range, not
+                            imposed: a statutory chart or a migration may require an exact
+                            code, so the field stays fully editable. */}
+                        {!editingId && formData.parent_id ? (
+                          <p className="text-xs text-muted-foreground">
+                            {appLang === 'en'
+                              ? 'Suggested from the parent account range — edit freely if your chart requires a specific code.'
+                              : 'مُقترح من نطاق الحساب الأب — عدّله بحرية إذا كان دليل حساباتك يفرض رمزاً بعينه.'}
+                          </p>
+                        ) : null}
+                        {accountCodeWarnings.map((w, i) => (
+                          <p key={i} className="text-xs text-amber-600 dark:text-amber-500">⚠ {w}</p>
+                        ))}
                       </div>
                       <div className="space-y-2" data-ai-help="chart_of_accounts.account_name">
                         <Label htmlFor="account_name">{appLang === 'en' ? 'Account Name' : 'اسم الحساب'}</Label>
@@ -1191,7 +1304,16 @@ function ChartOfAccountsPage() {
                         <select id="parent_id" value={formData.parent_id} onChange={(e) => {
                           const newParentId = e.target.value
                           const parentAcc = accounts.find((a) => a.id === newParentId)
-                          setFormData({ ...formData, parent_id: newParentId, level: parentAcc ? ((parentAcc.level ?? 1) + 1) : 1 })
+                          // v3.74.708 — fill the code from the parent's range, but only
+                          // when creating and only while the field is still untouched, so
+                          // a deliberately typed code is never overwritten.
+                          const suggested = (!editingId && !codeTouched) ? suggestAccountCode(newParentId) : ""
+                          setFormData({
+                            ...formData,
+                            parent_id: newParentId,
+                            level: parentAcc ? ((parentAcc.level ?? 1) + 1) : 1,
+                            ...(suggested ? { account_code: suggested } : {}),
+                          })
                         }} className="w-full px-3 py-2 border rounded-lg">
                           <option value="">لا يوجد</option>
                           {accounts.map((a) => (<option key={a.id} value={a.id}>{a.account_code} - {a.account_name}</option>))}
