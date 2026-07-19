@@ -30,6 +30,11 @@ interface Customer {
   tax_id: string
   credit_limit: number
   payment_terms: string
+  // v3.74.743 — needed to prefill the branch picker when editing. Supplied by
+  // get_customers_overview, which already returns it; the type just never
+  // declared it. Optional-with-null so a caller that omits it is a type error
+  // rather than a silent '__shared__' default that would blank the branch.
+  branch_id?: string | null
 }
 
 interface CustomerFormDialogProps {
@@ -253,6 +258,10 @@ export function CustomerFormDialog({
         tax_id: editingCustomer.tax_id,
         credit_limit: editingCustomer.credit_limit,
         payment_terms: editingCustomer.payment_terms,
+        // v3.74.743 — carry the current branch in, so the picker opens showing
+        // where the customer actually sits rather than empty. '__shared__' is
+        // the UI's name for a branchless (all-branches) customer.
+        branch_id: editingCustomer.branch_id ?? '__shared__',
       })
       // Update location data
       const govs = getGovernoratesByCountry(editingCustomer.country)
@@ -592,6 +601,24 @@ export function CustomerFormDialog({
       if (editingCustomer) {
         // تحديد البيانات المراد إرسالها
         // v3.74.44: إذا كان العميل مقفلاً (فواتير/رصيد/ذمم)، أرسل حقول العنوان فقط
+        // v3.74.743 — the lock was stricter than the governance rule it serves.
+        //
+        // The database trigger protect_customer_branch_id() states the rule
+        // plainly: an Owner or General Manager MAY reassign a customer's
+        // branch, and every such change is written to audit_logs with the
+        // actor's id. The UI lock, added in v3.74.44, is not role-aware at all
+        // — so it also blocked the two roles the database explicitly permits.
+        //
+        // The result was a permission that formally existed and could not be
+        // exercised anywhere. A customer whose branch was recorded wrongly
+        // BEFORE any invoice existed could never be corrected, by anyone, which
+        // is exactly the state ahmed abuelmagd and بيومى مصطفى are in: both
+        // customers' documents were raised in the opposite branch to the one on
+        // their record.
+        //
+        // Branch stays editable for those two roles. Everything else stays
+        // locked for everyone, and the database remains the final arbiter — the
+        // trigger still rejects the change and still logs it.
         const dataForUpdate = isCustomerLocked
           ? {
               address: formData.address,
@@ -599,6 +626,9 @@ export function CustomerFormDialog({
               city: formData.city,
               country: formData.country,
               detailed_address: formData.detailed_address,
+              ...(needsBranchPicker && formData.branch_id
+                ? { branch_id: formData.branch_id === '__shared__' ? null : formData.branch_id }
+                : {}),
             }
           : dataToSave
 
@@ -769,11 +799,21 @@ export function CustomerFormDialog({
 
           {/* v3.74.331 — Branch picker (only for company-scope roles or
               a floating booking_officer). Other roles get their branch
-              auto-assigned by governance. */}
-          {!editingCustomer && needsBranchPicker && (
+              auto-assigned by governance.
+
+              v3.74.743 — now shown when EDITING too, not only when creating.
+              protect_customer_branch_id() in the database permits an Owner or
+              General Manager to reassign a customer's branch and logs every
+              such change; the form simply never offered them the control. A
+              customer recorded against the wrong branch was therefore
+              uncorrectable by anyone, which is how two customers ended up with
+              every one of their invoices raised in the opposite branch to the
+              one on their record. */}
+          {needsBranchPicker && (
             <div className="space-y-2">
               <Label htmlFor="branch_id" className="flex items-center gap-1">
-                {appLang === 'en' ? 'Branch' : 'الفرع'} <span className="text-red-500">*</span>
+                {appLang === 'en' ? 'Branch' : 'الفرع'}
+                {!editingCustomer && <span className="text-red-500">*</span>}
               </Label>
               <Select
                 value={formData.branch_id || ""}
@@ -812,6 +852,13 @@ export function CustomerFormDialog({
                   ? 'Customers are scoped to a branch for visibility and reporting.'
                   : 'كل عميل مرتبط بفرع لتنظيم الرؤية والتقارير.'}
               </p>
+              {editingCustomer && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {appLang === 'en'
+                    ? 'Changing the branch moves who can see this customer. Existing documents keep their own branch. The change is recorded in the audit log against your account.'
+                    : 'تغيير الفرع يُغيّر من يرى هذا العميل. المستندات القائمة تحتفظ بفرعها. ويُسجَّل التغيير فى سجل المراجعة باسم حسابك.'}
+                </p>
+              )}
             </div>
           )}
 

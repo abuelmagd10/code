@@ -85,15 +85,35 @@ export async function POST(request: NextRequest) {
     const updateData = data || {}
     const requestedFields = Object.keys(updateData)
 
-    // هل التعديل يحتوي على حقول غير العنوان؟
-    const nonAddressFields = requestedFields.filter(field => !ADDRESS_FIELDS.includes(field))
-    const isAddressOnlyUpdate = nonAddressFields.length === 0
-
-    // ============================================
-    // 🔐 حماية حقول الحوكمة (branch_id, cost_center_id, warehouse_id)
-    // ============================================
     const normalizedRole = String(member.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
     const isGovernanceAdmin = GOVERNANCE_ADMIN_ROLES.includes(normalizedRole)
+
+    // هل التعديل يحتوي على حقول غير العنوان؟
+    //
+    // v3.74.743 — a governance field the caller is authorised to change no
+    // longer counts as "non-address" for the active-invoice gate below.
+    //
+    // Two rules were colliding. This route already grants Owner / General
+    // Manager the right to reassign branch_id, and logs it (see immediately
+    // below). But branch_id is not an address field, so isAddressOnlyUpdate
+    // became false and the invoice check further down rejected the request
+    // with "you can only edit the address" — refusing the very permission the
+    // lines under this one had just granted.
+    //
+    // The effect was a customer whose branch was recorded wrongly could never
+    // be corrected once it had an invoice. Neither the UI nor the API offered
+    // any path, while both the database trigger and this route's own role check
+    // said an owner may do it.
+    //
+    // The invoice gate exists to protect financial data — name, tax id, credit
+    // terms. A branch reassignment changes none of those; documents keep the
+    // branch they were raised in. So it belongs with the address exemption, but
+    // only for the roles already permitted to make it.
+    const permittedGovernanceFields = isGovernanceAdmin ? PROTECTED_GOVERNANCE_FIELDS : []
+    const nonAddressFields = requestedFields.filter(
+      field => !ADDRESS_FIELDS.includes(field) && !permittedGovernanceFields.includes(field)
+    )
+    const isAddressOnlyUpdate = nonAddressFields.length === 0
 
     // فحص إذا كان التعديل يحتوي على حقول حوكمة محمية
     const governanceFieldsInRequest = requestedFields.filter(field => PROTECTED_GOVERNANCE_FIELDS.includes(field))
@@ -281,7 +301,26 @@ export async function POST(request: NextRequest) {
     // ============================================
     // ✅ تنفيذ التعديل
     // ============================================
-    const { error: updateError } = await db
+    // v3.74.743 — a governance change must be written as the USER, not as the
+    // service role.
+    //
+    // protect_customer_branch_id() decides whether to allow the change by
+    // reading auth.uid() and looking up that user's role. The service-role
+    // client has no auth.uid(), so the trigger saw NULL, defaulted the role to
+    // 'staff', and rejected the update — even for an owner. It also meant the
+    // audit row the trigger writes would have had a null actor.
+    //
+    // So the third guard cancelled a permission the first two had granted. Each
+    // was written sensibly on its own; together they made the owner's stated
+    // right to reassign a branch impossible to exercise anywhere in the system.
+    //
+    // Governance changes now go through the session client. RLS still applies
+    // (customers_update → can_modify_data), the trigger sees the real user, and
+    // the audit entry names them. Everything else keeps using the service-role
+    // client exactly as before.
+    const writeClient = (governanceFieldsInRequest.length > 0 && isGovernanceAdmin) ? ssr : db
+
+    const { error: updateError } = await writeClient
       .from("customers")
       .update(updateData)
       .eq("id", customerId)
