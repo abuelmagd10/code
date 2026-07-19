@@ -48,10 +48,23 @@ jobs:
         run: npm test -- tests/critical
         continue-on-error: false
 
-      - name: Check Supabase credentials
+      # v3.74.740 — integration and E2E now gate on TEST_* credentials, not the
+      # application's.
+      #
+      # These suites create and delete users, companies, invoices, payments and
+      # journal entries. They previously read NEXT_PUBLIC_SUPABASE_URL and
+      # SUPABASE_SERVICE_ROLE_KEY — the same secrets this workflow passes to the
+      # app. Adding those secrets to "turn the tests on" would have started
+      # writing test companies into the live accounting database on every push.
+      #
+      # They also ran with continue-on-error: true, so failures were invisible.
+      # Running something whose result you ignore is worse than not running it:
+      # it buys a feeling of coverage and pays nothing for it. Now they either
+      # run for real and block, or they are honestly reported as not wired up.
+      - name: Check for a dedicated test database
         id: check-credentials
         run: |
-          if [ -n "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+          if [ -n "${{ secrets.TEST_SUPABASE_URL }}" ] && [ -n "${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
             echo "credentials_available=true" >> $GITHUB_OUTPUT
           else
             echo "credentials_available=false" >> $GITHUB_OUTPUT
@@ -59,21 +72,33 @@ jobs:
 
       - name: Run API integration tests
         if: steps.check-credentials.outputs.credentials_available == 'true'
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+          TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
         run: npm test -- tests/integration
-        continue-on-error: true
-
-      - name: Skip integration tests (no credentials)
-        if: steps.check-credentials.outputs.credentials_available == 'false'
-        run: echo "⚠️ Skipping integration tests - Supabase credentials not configured"
 
       - name: Run E2E tests
         if: steps.check-credentials.outputs.credentials_available == 'true'
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+          TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
         run: npm test -- tests/e2e
-        continue-on-error: true
 
-      - name: Skip E2E tests (no credentials)
+      - name: Integration and E2E are NOT running
         if: steps.check-credentials.outputs.credentials_available == 'false'
-        run: echo "⚠️ Skipping E2E tests - Supabase credentials not configured"
+        run: |
+          echo "::warning title=Integration and E2E tests are not running::TEST_SUPABASE_URL and TEST_SUPABASE_SERVICE_ROLE_KEY are not set."
+          echo ""
+          echo "58 test cases across tests/integration and tests/e2e are NOT executing."
+          echo "The only suite guarding this build is tests/critical."
+          echo ""
+          echo "To enable them, create a SEPARATE Supabase project for tests and add:"
+          echo "  TEST_SUPABASE_URL"
+          echo "  TEST_SUPABASE_SERVICE_ROLE_KEY"
+          echo ""
+          echo "Do NOT point these at production. The suites create and delete"
+          echo "users, companies, invoices and journal entries, and test-setup.ts"
+          echo "will refuse the production project ref outright."
 
   security-check:
     name: Security Check

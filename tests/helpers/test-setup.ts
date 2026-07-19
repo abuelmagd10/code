@@ -19,10 +19,54 @@ export interface TestContext {
   testInvoiceId?: string
 }
 
+/**
+ * v3.74.740 — tests must name their own database. They may never fall back to
+ * the application's credentials.
+ *
+ * What these helpers do: createTestCompany() calls auth.admin.createUser and
+ * inserts a company; the e2e suites then create customers, products, invoices,
+ * payments and journal entries, and delete them again in afterAll.
+ *
+ * What they used to read: NEXT_PUBLIC_SUPABASE_URL and
+ * SUPABASE_SERVICE_ROLE_KEY — the exact variables the running application uses,
+ * and the exact three the CI workflow passes from GitHub secrets.
+ *
+ * So the moment anyone added those secrets to make the test tier "work", every
+ * push to main would have started creating and deleting real users and
+ * companies inside the live accounting database. Nothing anywhere said no.
+ *
+ * Checked before writing this: production has 0 users matching test-%@test.com
+ * and 0 companies matching %test%, which is how I know the secrets were never
+ * configured and this has not already happened. It was a landmine, not a fire.
+ *
+ * Now the destructive helpers read TEST_SUPABASE_URL and
+ * TEST_SUPABASE_SERVICE_ROLE_KEY only. No fallback. If they are unset the
+ * suites skip, which is what they already do today — the difference is that
+ * enabling them can no longer silently point at production.
+ */
 export function hasTestSupabaseCredentials() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const url = process.env.TEST_SUPABASE_URL
+  const key = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY
   return Boolean(String(url || '').trim() && String(key || '').trim())
+}
+
+/**
+ * Second line of defence: even if someone sets TEST_SUPABASE_URL to the
+ * production project, refuse. The project ref is not a secret — it ships in the
+ * browser bundle — so naming it here costs nothing and makes the accident
+ * impossible rather than merely unlikely.
+ */
+const PRODUCTION_PROJECT_REF = 'hfvsbsizokxontflgdyn'
+
+function assertNotProduction(url: string) {
+  if (url.includes(PRODUCTION_PROJECT_REF)) {
+    throw new Error(
+      'Refusing to run destructive tests against the production project ' +
+      `(${PRODUCTION_PROJECT_REF}). These helpers create and delete users, ` +
+      'companies, invoices and journal entries. Point TEST_SUPABASE_URL at a ' +
+      'separate Supabase project.'
+    )
+  }
 }
 
 export function getApiIntegrationBaseUrl() {
@@ -48,12 +92,18 @@ export function shouldRunApiIntegrationScenarios() {
  * Initialize test Supabase client
  */
 export function createTestClient(): TestSupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const url = process.env.TEST_SUPABASE_URL
+  const key = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
-    throw new Error('Missing Supabase credentials for tests. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
+    throw new Error(
+      'Missing TEST_SUPABASE_URL / TEST_SUPABASE_SERVICE_ROLE_KEY. These tests ' +
+      'create and delete real rows, so they require a database of their own — ' +
+      'they deliberately do not fall back to the application credentials.'
+    )
   }
+
+  assertNotProduction(url)
 
   return createClient(url, key, {
     auth: {
