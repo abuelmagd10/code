@@ -128,12 +128,23 @@ const AUTH_SIGNALS = [
  */
 const isAuthenticated = (src) => AUTH_SIGNALS.some((re) => re.test(src));
 
-/** companyId supplied by the caller, then checked against company_members. */
+/**
+ * companyId supplied by the caller, then checked against company_members.
+ *
+ * v3.74.738 — this used to require the session variable to be called `user`,
+ * `authUser` or `userId`. I then wrote a correct membership check in audit-log
+ * using `sessionUser` and the script flagged my own fix.
+ *
+ * That is the fifth time in two days a rule of mine matched a NAME instead of a
+ * SHAPE and rejected something valid (v3.74.726, .727, .733, .735, here). The
+ * shape that matters is: look in company_members, filtered by both the company
+ * and the user. What the variable is called is nobody's business.
+ */
 function verifiesMembership(src) {
   return (
     /company_members/.test(src) &&
-    /\buser\.id\b|\buser\?\.id\b|\bauthUser\.id\b|\buserId\b/.test(src) &&
-    /\.eq\(\s*["']company_id["']\s*,/.test(src)
+    /\.eq\(\s*["']company_id["']\s*,/.test(src) &&
+    /\.eq\(\s*["']user_id["']\s*,/.test(src)
   );
 }
 
@@ -146,12 +157,24 @@ function companyComesFromRequest(src) {
   );
 }
 
-/** Does the route constrain anything by company at all? */
+/**
+ * Does the route constrain anything by company at all?
+ *
+ * v3.74.738 — the first version only recognised .eq("company_id", ...) and so
+ * flagged six routes that scope perfectly well in other shapes:
+ *
+ *   .eq("id", companyId)                      -- querying the companies row itself
+ *   .eq("journal_entries.company_id", id)     -- filtering through a join
+ *
+ * All six derived companyId from an auth helper first. The narrow pattern
+ * turned them into noise, and noise is how a check stops being read.
+ */
 function constrainsByCompany(src) {
   return (
-    /\.eq\(\s*["']company_id["']\s*,/.test(src) ||
-    /\bp_company_id\s*:/.test(src) ||
-    /\.in\(\s*["']company_id["']\s*,/.test(src)
+    /\.eq\(\s*["'][\w.]*company_id["']\s*,/.test(src) ||
+    /\.in\(\s*["'][\w.]*company_id["']\s*,/.test(src) ||
+    /\.eq\(\s*["']id["']\s*,\s*company_?[Ii]d\s*\)/.test(src) ||
+    /\bp_company_id\s*:/.test(src)
   );
 }
 
@@ -198,23 +221,25 @@ function stripComments(src) {
  *   - bonuses (GET)                — WAS A REAL HOLE. Read companyId from the
  *                                    query string with no auth at all and
  *                                    returned that company's bonus records.
- *                                    Fixed in v3.74.737, removed from here.
+ *                                    Fixed in v3.74.737.
+ *   - audit-log                    — WAS A REAL HOLE. The service-role branch
+ *                                    inserted and returned before the auth check
+ *                                    below it, so anyone could forge audit
+ *                                    entries against any company and any user.
+ *                                    Fixed in v3.74.738.
+ *   - account-lines, billing/preview, billing/seats, bonuses/settings,
+ *     company-logo, send-purchase-order — all fine. They derive companyId from
+ *     an auth helper and scope with .eq("id", companyId) or a joined path,
+ *     which the first pattern did not recognise. Rule widened, not the code.
  *
  * The rest are unreviewed. Being on this list means "not yet examined", NOT
- * "known safe" — as bonuses just demonstrated.
+ * "known safe" — as bonuses and audit-log both demonstrated.
  */
 const UNREVIEWED = new Set([
-  "account-lines/route.ts",
-  "audit-log/route.ts",
   "billing/invoices/[id]/pdf/route.ts",
-  "billing/preview/route.ts",
   "billing/renew/route.ts",
-  "billing/seats/route.ts",
-  "bonuses/settings/route.ts",
-  "company-logo/route.ts",
   "invoices/[id]/record-payment/route.ts",
   "permissions/shared-with-me/route.ts",
-  "send-purchase-order/route.ts",
 ]);
 
 const violations = [];
