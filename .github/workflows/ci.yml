@@ -82,22 +82,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check for secureApiRequest usage
-        run: |
-          # Check that critical endpoints use secureApiRequest
-          if ! grep -r "requireOwnerOrAdmin\|secureApiRequest" app/api/fix-inventory/route.ts; then
-            echo "❌ fix-inventory missing secureApiRequest"
-            exit 1
-          fi
-          if ! grep -r "requireOwnerOrAdmin\|secureApiRequest" app/api/fix-sent-invoice-journals/route.ts; then
-            echo "❌ fix-sent-invoice-journals missing secureApiRequest"
-            exit 1
-          fi
-          if ! grep -r "requireOwnerOrAdmin\|secureApiRequest" app/api/repair-invoice/route.ts; then
-            echo "❌ repair-invoice missing secureApiRequest"
-            exit 1
-          fi
-          echo "✅ Security checks passed"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # v3.74.736 — replaces a hand-written list of three files.
+      #
+      # The old step checked that requireOwnerOrAdmin or secureApiRequest was
+      # CALLED in fix-inventory, fix-sent-invoice-journals and repair-invoice.
+      # Two problems, both proven in v3.74.733:
+      #
+      #   1. Three files out of 112 that use the service-role key. Nothing
+      #      covered the rest, and nobody grew the list.
+      #   2. It checked that the question was asked, not that the answer was
+      #      used. fix-negative-payments DID call requireOwnerOrAdmin, threw
+      #      away its companyId, and rewrote payments for every tenant. It
+      #      would have passed this step.
+      #
+      # The script below covers all 112 and asks whether the company the route
+      # acts on comes from somewhere the caller cannot choose.
+      - name: Service-role routes must scope to the caller's company
+        run: node scripts/check-service-role-scoping.js
 
       - name: Check for NextResponse.json usage in critical endpoints
         run: |
@@ -112,9 +119,48 @@ jobs:
           fi
           echo "✅ Error handling checks passed"
 
+      - name: Check for NextResponse.json usage in critical endpoints
+        run: |
+          # Critical endpoints should NOT use NextResponse.json for errors
+          if grep -r "NextResponse.json.*error" app/api/fix-inventory/route.ts; then
+            echo "❌ fix-inventory still uses NextResponse.json for errors"
+            exit 1
+          fi
+          if grep -r "NextResponse.json.*error" app/api/fix-sent-invoice-journals/route.ts; then
+            echo "❌ fix-sent-invoice-journals still uses NextResponse.json for errors"
+            exit 1
+          fi
+          echo "✅ Error handling checks passed"
+
+  ai-governance-audit:
+    name: AI Governance Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI governance audit
+        run: npm run governance:audit:ci
+
+      - name: Upload governance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-governance-reports
+          path: knowledge/governance/
+
   deploy:
     name: Deploy to Vercel (production)
-    needs: [test, security-check]
+    needs: [test, security-check, ai-governance-audit]
     runs-on: ubuntu-latest
     # ✅ نشر فقط عند push مباشرة على main (ليس على PR)
     # ملاحظة: التحقق من وجود التوكن يتم داخل سكربت الـ shell لتقليل مشاكل الـ lint

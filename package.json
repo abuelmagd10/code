@@ -19,6 +19,7 @@
     "tooltips:update": "npm run tooltips:extract",
     "audit:comprehensive": "node scripts/comprehensive-audit-simple.js",
     "audit:quick": "node scripts/quick-audit.js",
+    "check:service-role-scoping": "node scripts/check-service-role-scoping.js",
     "governance:audit": "node scripts/ai-governance-audit.js",
     "governance:audit:ci": "node scripts/ai-governance-audit.js --ci",
     "phase1b:prechecks": "node scripts/phase1b/run-prechecks.js",
