@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T13:59:54.141Z
--- Routines: 1205
+-- Generated: 2026-07-19T16:24:21.679Z
+-- Routines: 1206
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26687,23 +26687,14 @@ CREATE OR REPLACE FUNCTION public.ic_customer_branch_governance(p_company_id uui
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
--- v3.74.719 — two failures that only appear when someone changes branch.
---
--- (1) An ORPHANED customer: the person who created it no longer works in that
---     customer's branch. Staff see customers filtered by creator, so nobody in
---     the customer's own branch has it in their list, while the person who left
---     still does. Found exactly this way: an employee moved from one branch to
---     another and kept three customers of the branch he left.
---
--- (2) A document naming a customer from another branch — what the new guard now
---     prevents. Reported here so the ones created BEFORE the guard stay visible
---     instead of being silently carried forward.
+-- v3.74.724 — each finding now carries `subject`: one line naming the record it
+-- is about. Seven findings previously rendered as seven identical rows, because
+-- the dashboard shows `hint` (the same sentence for every row of a check) plus a
+-- fixed list of fields that did not include any of these. Unactionable.
 DECLARE r record;
 BEGIN
   FOR r IN
-    SELECT c.name AS customer_name,
-           cb.name AS customer_branch,
-           ub.name AS creator_branch
+    SELECT c.name AS customer_name, cb.name AS customer_branch, ub.name AS creator_branch
     FROM customers c
     JOIN branches cb ON cb.id = c.branch_id
     JOIN company_members m ON m.user_id = c.created_by_user_id AND m.company_id = c.company_id
@@ -26716,16 +26707,17 @@ BEGIN
   LOOP
     severity := 'medium';
     detail := jsonb_build_object(
+      'subject', 'العميل «' || r.customer_name || '» — فرعه: ' || r.customer_branch
+                 || ' · منشئه انتقل إلى: ' || COALESCE(r.creator_branch, 'بلا فرع'),
       'customer', r.customer_name,
       'customer_branch', r.customer_branch,
       'creator_branch_now', r.creator_branch,
-      'hint', 'Customer belongs to one branch while the staff member who created it now works in another. Nobody in the customer''s branch sees it, and the person who left still can. Reassign ownership to someone in the customer''s branch.');
+      'hint', 'Customer belongs to one branch while the staff member who created it now works in another. Nobody in the customer''s branch sees it, and the person who left still can. Reassign ownership via Settings > Users > Transfer Ownership, scoped to that branch.');
     RETURN NEXT;
   END LOOP;
 
   FOR r IN
-    SELECT d.doc_type, d.doc_no, d.cust_name,
-           db.name AS document_branch, cb.name AS customer_branch
+    SELECT d.doc_type, d.doc_no, d.cust_name, db.name AS document_branch, cb.name AS customer_branch
     FROM (
       SELECT 'invoice' AS doc_type, i.invoice_number AS doc_no, i.branch_id, c.branch_id AS cust_branch,
              c.name AS cust_name, i.company_id
@@ -26746,8 +26738,13 @@ BEGIN
   LOOP
     severity := 'high';
     detail := jsonb_build_object(
-      'document_type', r.doc_type, 'document_no', r.doc_no,
-      'customer', r.cust_name,
+      'subject', CASE r.doc_type
+                   WHEN 'invoice' THEN 'فاتورة '
+                   WHEN 'sales_order' THEN 'أمر بيع '
+                   ELSE 'حجز ' END
+                 || r.doc_no || ' (فرع: ' || r.document_branch || ')'
+                 || ' — العميل «' || r.cust_name || '» من فرع ' || r.customer_branch,
+      'document_type', r.doc_type, 'document_no', r.doc_no, 'customer', r.cust_name,
       'document_branch', r.document_branch, 'customer_branch', r.customer_branch,
       'hint', 'Document uses a customer from another branch. Created before the isolation guard existed; new ones are now rejected.');
     RETURN NEXT;

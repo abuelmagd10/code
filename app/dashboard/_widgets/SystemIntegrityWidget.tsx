@@ -157,6 +157,17 @@ export default function SystemIntegrityWidget() {
                     {appLang === "en" ? CAT_LABEL_EN[f.category] : CAT_LABEL_AR[f.category]}
                   </span>
                 </div>
+                {/* v3.74.724 — WHICH record, before the explanation of what is wrong.
+                    The widget used to render only `hint` plus a hardcoded list of
+                    three fields (difference, invoice_number, product_name). A checker
+                    emitting anything else showed nothing identifying, so seven
+                    customer-isolation findings appeared as seven identical rows with
+                    no way to tell them apart or act on any of them.
+                    `subject` is a convention every checker can fill: one short line
+                    naming the record. No widget change needed for the next one. */}
+                {f.detail?.subject && (
+                  <div className="font-medium text-gray-800 dark:text-gray-200 mt-1">{f.detail.subject}</div>
+                )}
                 {f.detail?.hint && (
                   <div className="text-gray-600 dark:text-gray-400 mt-1">{f.detail.hint}</div>
                 )}
