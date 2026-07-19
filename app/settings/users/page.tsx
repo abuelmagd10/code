@@ -4056,7 +4056,21 @@ export default function UsersSettingsPage() {
                 <div className="space-y-2">
                   <Label>{t('Target employees (multiple allowed)', 'الموظفين الهدف (يمكن اختيار أكثر من واحد)')}</Label>
                   <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
-                    {members.filter(m => m.user_id !== selectedSourceUser && !m.is_current).map(m => (
+                    {/*
+                      v3.74.744 — completes a fix I left half-done in v3.74.725.
+                      There I made the current user selectable as the SOURCE,
+                      because the auto-park deposits stranded customers with the
+                      owner and he then needs to hand them on. I did not do the
+                      same for the TARGET — so transferring TO the owner, which
+                      is the whole point of parking, was impossible to do by hand.
+                      It only worked when the code did it automatically during a
+                      branch change; anything predating that feature was stuck.
+                      That is exactly the state three مدينة نصر customers are in:
+                      their branch has no staff at all, and the only correct
+                      destination is the owner.
+                    */}
+                    {members.filter(m => m.user_id !== selectedSourceUser
+                                         && (permissionAction === 'transfer' || !m.is_current)).map(m => (
                       <label key={m.user_id} className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded cursor-pointer">
                         <Checkbox
                           checked={selectedTargetUsers.includes(m.user_id)}
@@ -4070,6 +4084,9 @@ export default function UsersSettingsPage() {
                         />
                         <span className="text-sm">{m.display_name || m.email}</span>
                         <Badge className={`text-[10px] ${roleLabels[m.role]?.color}`}>{roleLabels[m.role]?.ar}</Badge>
+                        {m.is_current && (
+                          <Badge className="text-[10px] bg-blue-500 text-white">{t("You", "أنت")}</Badge>
+                        )}
                       </label>
                     ))}
                   </div>
