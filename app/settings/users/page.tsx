@@ -1218,6 +1218,23 @@ export default function UsersSettingsPage() {
               branchName: oldBranchName,
               memberName: currentMember?.email || t("the employee", "الموظف"),
             })
+
+            // v3.74.721 — open the transfer form straight away, pre-filled, with
+            // the explanation carried INSIDE it.
+            //
+            // A separate notice first meant an extra click on the common path.
+            // But opening the form with no context would drop the owner into a
+            // screen without knowing why it appeared — and the two mistakes that
+            // actually happen are silent ones: using Share Permissions instead of
+            // Transfer Ownership, and leaving Branch on "All", which quietly
+            // moves the employee's other branches too. Both are answered by the
+            // banner rendered inside the dialog.
+            setPermissionAction('transfer')
+            setSelectedResourceType('customers')
+            setSelectedSourceUser(editingMemberId)
+            setSelectedTargetUsers([])
+            setTransferBranchId(previousBranchId)
+            setShowPermissionDialog(true)
           }
         } catch (checkErr) {
           console.error("Error checking stranded customers:", checkErr)
@@ -2239,90 +2256,10 @@ export default function UsersSettingsPage() {
         </Dialog>
 
         {/* 🏢 موديال إدارة فروع الموظف */}
-        {/* v3.74.720 — shown right after a branch change that left customers
-            behind. It does not block the move; it explains what was stranded and
-            the exact route to hand it over, at the moment the owner is thinking
-            about that employee. */}
-        <Dialog open={!!strandedInfo} onOpenChange={(v) => { if (!v) setStrandedInfo(null) }}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-                  <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                </div>
-                <DialogTitle>
-                  {t("Customers left in the previous branch", "عملاء بقوا فى الفرع السابق")}
-                </DialogTitle>
-              </div>
-            </DialogHeader>
-
-            {strandedInfo && (
-              <div className="space-y-4 text-sm">
-                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
-                  {appLang === 'en' ? (
-                    <p>
-                      This employee created <strong>{strandedInfo.count}</strong> customer(s) in{" "}
-                      <strong>{strandedInfo.branchName}</strong>. After the move he can no longer see
-                      them — and nobody in that branch can either, because none of them created those
-                      records. Documents for those customers are also blocked from his new branch.
-                    </p>
-                  ) : (
-                    <p>
-                      هذا الموظف أنشأ <strong>{strandedInfo.count}</strong> عميلاً فى{" "}
-                      <strong>{strandedInfo.branchName}</strong>. بعد النقل لم يعد يراهم —
-                      <strong> ولا يراهم أحد فى ذلك الفرع</strong> لأن لا أحد منهم أنشأهم.
-                      كما أن مستندات هؤلاء العملاء مرفوضة من فرعه الجديد.
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="font-medium mb-2">
-                    {t("To hand them to a colleague in that branch:", "لتسليمهم لزميل فى ذلك الفرع:")}
-                  </p>
-                  <ol className="list-decimal space-y-1.5 ps-5 text-gray-700 dark:text-gray-300">
-                    <li>{t("Open the Permissions dialog and choose the Transfer Ownership tab — not Share Permissions.", "افتح نافذة الصلاحيات واختر تبويب «نقل ملكية» — لا «فتح صلاحيات».")}</li>
-                    <li>{t("Source employee: this employee. Target: a colleague who works in that branch.", "الموظف المصدر: هذا الموظف. والهدف: زميل يعمل فى ذلك الفرع.")}</li>
-                    <li>{t("Resource type: Customers.", "نوع المورد: العملاء.")}</li>
-                    <li>
-                      <strong>{t("Branch: pick ", "الفرع: اختر ")}{strandedInfo.branchName}</strong>
-                      {t(" — leaving it as All would move his other branches' customers too.", " — وتركه على «الكل» ينقل عملاء فروعه الأخرى أيضاً.")}
-                    </li>
-                    <li>{t("Confirm the transfer.", "أكّد النقل.")}</li>
-                  </ol>
-                </div>
-
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {t(
-                    "You can do this later — the dashboard integrity check reports these customers until they are reassigned.",
-                    "يمكنك تأجيل هذا — فاحص السلامة فى لوحة التحكم يعرض هؤلاء العملاء حتى تُنقل ملكيتهم."
-                  )}
-                </p>
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setStrandedInfo(null)}>
-                {t("Later", "لاحقاً")}
-              </Button>
-              <Button
-                onClick={() => {
-                  // Pre-fill the transfer form with exactly this case so the
-                  // owner does not have to re-derive it from the message.
-                  setPermissionAction('transfer')
-                  setSelectedResourceType('customers')
-                  if (editingMemberId) setSelectedSourceUser(editingMemberId)
-                  const b = branches.find(x => x.name === strandedInfo?.branchName)
-                  if (b) setTransferBranchId(b.id)
-                  setStrandedInfo(null)
-                  setShowPermissionDialog(true)
-                }}
-              >
-                {t("Transfer now", "انقلهم الآن")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* v3.74.721 — the standalone notice that stood here is gone. Its
+            explanation now renders as a banner inside the transfer dialog, which
+            opens directly on a branch move: same information, one less click, and
+            the warning sits next to the two fields it is warning about. */}
 
         <Dialog open={showMemberBranchDialog} onOpenChange={(v) => { if (!v) setShowMemberBranchDialog(false) }}>
           <DialogContent className="sm:max-w-lg">
@@ -3945,7 +3882,9 @@ export default function UsersSettingsPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
+        {/* v3.74.721 — drop the branch-move context when the dialog closes, so it
+            never bleeds into an unrelated transfer opened later. */}
+        <Dialog open={showPermissionDialog} onOpenChange={(v) => { setShowPermissionDialog(v); if (!v) setStrandedInfo(null) }}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <div className="flex items-center gap-3">
@@ -3963,6 +3902,53 @@ export default function UsersSettingsPage() {
             </DialogHeader>
 
             <div className="space-y-4 py-4">
+              {/* v3.74.721 — context banner when this dialog was opened by a branch
+                  move. It answers the two questions the owner would otherwise have
+                  to ask: why did this open, and what must I not get wrong. */}
+              {strandedInfo && permissionAction === 'transfer' && (
+                <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                    <div className="space-y-2">
+                      <p className="font-medium text-amber-900 dark:text-amber-200">
+                        {t("Customers left behind by the branch change",
+                           "عملاء بقوا بلا راعٍ بعد تغيير الفرع")}
+                      </p>
+                      {appLang === 'en' ? (
+                        <p className="text-amber-800 dark:text-amber-300">
+                          This employee created <strong>{strandedInfo.count}</strong> customer(s) in{" "}
+                          <strong>{strandedInfo.branchName}</strong>. He can no longer see them, and
+                          nobody in that branch can either — none of them created those records.
+                        </p>
+                      ) : (
+                        <p className="text-amber-800 dark:text-amber-300">
+                          هذا الموظف أنشأ <strong>{strandedInfo.count}</strong> عميلاً فى{" "}
+                          <strong>{strandedInfo.branchName}</strong>. لم يعد يراهم،
+                          <strong> ولا يراهم أحد فى ذلك الفرع</strong> لأن لا أحد منهم أنشأهم.
+                        </p>
+                      )}
+                      <ul className="list-disc ps-5 text-amber-800 dark:text-amber-300 space-y-1">
+                        <li>
+                          {t("Everything below is pre-filled — just pick a colleague who works in ",
+                             "كل ما بالأسفل مملوء مسبقاً — اختر فقط زميلاً يعمل فى ")}
+                          <strong>{strandedInfo.branchName}</strong>.
+                        </li>
+                        <li>
+                          {t("Keep the Branch field on ", "أبقِ حقل الفرع على ")}
+                          <strong>{strandedInfo.branchName}</strong>
+                          {t(" — switching it to All would move his other branches' customers too.",
+                             " — تغييره إلى «الكل» ينقل عملاء فروعه الأخرى أيضاً.")}
+                        </li>
+                        <li>
+                          {t("You can close this and do it later; the dashboard check keeps reporting them.",
+                             "يمكنك الإغلاق والتأجيل؛ فاحص السلامة يظل يعرضهم حتى تُنقل ملكيتهم.")}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* اختيار نوع العملية */}
               <div className="flex gap-2">
                 <Button
