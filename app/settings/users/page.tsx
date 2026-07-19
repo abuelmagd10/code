@@ -150,6 +150,8 @@ export default function UsersSettingsPage() {
   const [selectedTargetUsers, setSelectedTargetUsers] = useState<string[]>([])
   const [selectedResourceType, setSelectedResourceType] = useState<string>("all")
   const [transferBranchId, setTransferBranchId] = useState<string>("") // اختياري: نقل عملاء/أوامر فرع معين فقط
+  // v3.74.720 — customers left behind in the branch an employee just moved out of.
+  const [strandedInfo, setStrandedInfo] = useState<{ count: number; branchName: string; memberName: string } | null>(null)
   const [selectedBranches, setSelectedBranches] = useState<string[]>([])
   const [shareCanEdit, setShareCanEdit] = useState(false)
   const [shareCanDelete, setShareCanDelete] = useState(false)
@@ -1186,6 +1188,42 @@ export default function UsersSettingsPage() {
 
       toastActionSuccess(toast, t("Save", "حفظ"), t("Employee branch", "فرع الموظف"))
 
+      // v3.74.720 — the moment the problem is created is the moment to say so.
+      //
+      // Staff see customers they created, scoped to their branch. Moving an
+      // employee therefore strands every customer he created in the branch he
+      // left: he can no longer see them, and nobody in that branch can either,
+      // because none of them created those records. It surfaced only when an
+      // owner happened to notice an employee still holding another branch's
+      // customers weeks later.
+      //
+      // Checked after the save, never blocking it — moving an employee is a
+      // legitimate act. This only tells the owner what it left behind and how to
+      // hand it over.
+      const previousBranchId = currentMember?.branch_id || ""
+      if (previousBranchId && previousBranchId !== memberBranchId) {
+        try {
+          const { count: strandedCount } = await supabase
+            .from("customers")
+            .select("id", { count: "exact", head: true })
+            .eq("company_id", companyId)
+            .eq("created_by_user_id", editingMemberId)
+            .eq("branch_id", previousBranchId)
+
+          if ((strandedCount || 0) > 0) {
+            const oldBranchName =
+              branches.find(b => b.id === previousBranchId)?.name || t("the previous branch", "الفرع السابق")
+            setStrandedInfo({
+              count: strandedCount || 0,
+              branchName: oldBranchName,
+              memberName: currentMember?.email || t("the employee", "الموظف"),
+            })
+          }
+        } catch (checkErr) {
+          console.error("Error checking stranded customers:", checkErr)
+        }
+      }
+
       // إنشاء إشعار للمستخدم عند تغيير فرعه من الخلفية فقط
       if ((currentMember?.branch_id || "") !== memberBranchId) {
         try {
@@ -2201,6 +2239,91 @@ export default function UsersSettingsPage() {
         </Dialog>
 
         {/* 🏢 موديال إدارة فروع الموظف */}
+        {/* v3.74.720 — shown right after a branch change that left customers
+            behind. It does not block the move; it explains what was stranded and
+            the exact route to hand it over, at the moment the owner is thinking
+            about that employee. */}
+        <Dialog open={!!strandedInfo} onOpenChange={(v) => { if (!v) setStrandedInfo(null) }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                  <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <DialogTitle>
+                  {t("Customers left in the previous branch", "عملاء بقوا فى الفرع السابق")}
+                </DialogTitle>
+              </div>
+            </DialogHeader>
+
+            {strandedInfo && (
+              <div className="space-y-4 text-sm">
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+                  {appLang === 'en' ? (
+                    <p>
+                      This employee created <strong>{strandedInfo.count}</strong> customer(s) in{" "}
+                      <strong>{strandedInfo.branchName}</strong>. After the move he can no longer see
+                      them — and nobody in that branch can either, because none of them created those
+                      records. Documents for those customers are also blocked from his new branch.
+                    </p>
+                  ) : (
+                    <p>
+                      هذا الموظف أنشأ <strong>{strandedInfo.count}</strong> عميلاً فى{" "}
+                      <strong>{strandedInfo.branchName}</strong>. بعد النقل لم يعد يراهم —
+                      <strong> ولا يراهم أحد فى ذلك الفرع</strong> لأن لا أحد منهم أنشأهم.
+                      كما أن مستندات هؤلاء العملاء مرفوضة من فرعه الجديد.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="font-medium mb-2">
+                    {t("To hand them to a colleague in that branch:", "لتسليمهم لزميل فى ذلك الفرع:")}
+                  </p>
+                  <ol className="list-decimal space-y-1.5 ps-5 text-gray-700 dark:text-gray-300">
+                    <li>{t("Open the Permissions dialog and choose the Transfer Ownership tab — not Share Permissions.", "افتح نافذة الصلاحيات واختر تبويب «نقل ملكية» — لا «فتح صلاحيات».")}</li>
+                    <li>{t("Source employee: this employee. Target: a colleague who works in that branch.", "الموظف المصدر: هذا الموظف. والهدف: زميل يعمل فى ذلك الفرع.")}</li>
+                    <li>{t("Resource type: Customers.", "نوع المورد: العملاء.")}</li>
+                    <li>
+                      <strong>{t("Branch: pick ", "الفرع: اختر ")}{strandedInfo.branchName}</strong>
+                      {t(" — leaving it as All would move his other branches' customers too.", " — وتركه على «الكل» ينقل عملاء فروعه الأخرى أيضاً.")}
+                    </li>
+                    <li>{t("Confirm the transfer.", "أكّد النقل.")}</li>
+                  </ol>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t(
+                    "You can do this later — the dashboard integrity check reports these customers until they are reassigned.",
+                    "يمكنك تأجيل هذا — فاحص السلامة فى لوحة التحكم يعرض هؤلاء العملاء حتى تُنقل ملكيتهم."
+                  )}
+                </p>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStrandedInfo(null)}>
+                {t("Later", "لاحقاً")}
+              </Button>
+              <Button
+                onClick={() => {
+                  // Pre-fill the transfer form with exactly this case so the
+                  // owner does not have to re-derive it from the message.
+                  setPermissionAction('transfer')
+                  setSelectedResourceType('customers')
+                  if (editingMemberId) setSelectedSourceUser(editingMemberId)
+                  const b = branches.find(x => x.name === strandedInfo?.branchName)
+                  if (b) setTransferBranchId(b.id)
+                  setStrandedInfo(null)
+                  setShowPermissionDialog(true)
+                }}
+              >
+                {t("Transfer now", "انقلهم الآن")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showMemberBranchDialog} onOpenChange={(v) => { if (!v) setShowMemberBranchDialog(false) }}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
