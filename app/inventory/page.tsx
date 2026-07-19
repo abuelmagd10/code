@@ -1332,6 +1332,43 @@ export default function InventoryPage() {
                             </span>
                           </div>
                         </td>
+                        {/* v3.74.716 — these two were missing. The footer is a hand-built
+                            row with one cell per column, so adding the Service Use and
+                            In Custody columns in v3.74.714 without their totals left the
+                            footer two cells short and every figure after write-offs
+                            landed under the wrong heading. */}
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.total_service_use">
+                          {(() => {
+                            const totalServiceUse = displayedProducts.reduce((sum, p) => sum + (serviceUseTotals[p.id] ?? 0), 0)
+                            return (
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${totalServiceUse > 0
+                                ? 'bg-purple-200 dark:bg-purple-800 border border-purple-400 dark:border-purple-600'
+                                : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                                }`}>
+                                <Wrench className={`w-5 h-5 ${totalServiceUse > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-bold text-lg ${totalServiceUse > 0 ? 'text-purple-800 dark:text-purple-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                  {totalServiceUse.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
+                        </td>
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.total_in_custody">
+                          {(() => {
+                            const totalCustody = displayedProducts.reduce((sum, p) => sum + (custodyTotals[p.id] ?? 0), 0)
+                            return (
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${totalCustody > 0
+                                ? 'bg-amber-200 dark:bg-amber-800 border border-amber-400 dark:border-amber-600'
+                                : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                                }`}>
+                                <UserCheck className={`w-5 h-5 ${totalCustody > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-bold text-lg ${totalCustody > 0 ? 'text-amber-800 dark:text-amber-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                  {totalCustody.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
+                        </td>
                         {/* ✅ إجمالي النقل الواردة (Incoming Transfers) */}
                         <td className="px-4 py-4 text-center" data-ai-help="inventory.incoming_transfers">
                           {(() => {
