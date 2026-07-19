@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T10:53:17.343Z
+-- Generated: 2026-07-19T12:34:16.538Z
 -- Routines: 1202
 -- =====================================================================
 
@@ -20114,33 +20114,36 @@ CREATE OR REPLACE FUNCTION public.fn_bill_item_landed_unit_cost(p_bill_id uuid, 
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 -- v3.74.704 — LANDED COST: what a unit actually cost us, not its list price.
+-- Allocates the bill's own authoritative (subtotal + shipping) across the lines
+-- in proportion to their net value, so the lot costs sum to the inventory debit
+-- exactly, whatever pricing rules the application applies.
 --
--- FIFO lots were created at bill_items.unit_price, the gross list price, while
--- the ledger debited inventory with the amount actually payable. Every purchase
--- discount and every freight charge therefore drove FIFO and the GL apart, and
--- because FIFO now drives COGS, cost of sales was overstated and reported profit
--- understated. IAS 2 / ASC 330: the cost of inventory is the purchase price less
--- trade discounts and rebates, plus transport and handling.
---
--- Rather than re-deriving the discount rules (line %, header % or fixed amount,
--- before/after tax, tax-inclusive pricing), this allocates the bill's OWN
--- authoritative subtotal plus shipping across the lines in proportion to their
--- net value. Whatever pricing rules the application applies, the sum of the lot
--- costs then equals the inventory debit exactly, by construction — so GL and
--- FIFO cannot drift apart again.
---
--- Recoverable tax is excluded, matching the ledger: tax goes to the input-VAT
--- account, never to inventory.
+-- v3.74.715 — the weights must be NET OF TAX.
+-- bills.subtotal is always stored excluding tax. The weights were taken straight
+-- from unit_price, which on a TAX-INCLUSIVE bill still contains the tax. With one
+-- tax rate that cancels out — every weight is inflated by the same factor — but
+-- with DIFFERENT rates on different lines it silently skews the split: a line at
+-- 14% is weighted 1.14x against a line at 0%, so it absorbs cost belonging to the
+-- other product. Verified: two lines whose true cost is 100 each came out 106.54
+-- and 93.46. The bill total stayed right, which is exactly why nothing caught it —
+-- only the per-product cost, and therefore per-product profit, was wrong.
 DECLARE
   v_qty         numeric;
   v_unit_price  numeric;
   v_disc_pct    numeric;
+  v_tax_rate    numeric;
   v_line_net    numeric;
   v_base        numeric;
   v_allocatable numeric;
+  v_tax_incl    boolean;
 BEGIN
-  SELECT bi.quantity, bi.unit_price, COALESCE(bi.discount_percent, 0)
-    INTO v_qty, v_unit_price, v_disc_pct
+  SELECT COALESCE(b.tax_inclusive, false),
+         COALESCE(b.subtotal, 0) + COALESCE(b.shipping, 0)
+    INTO v_tax_incl, v_allocatable
+  FROM bills b WHERE b.id = p_bill_id;
+
+  SELECT bi.quantity, bi.unit_price, COALESCE(bi.discount_percent, 0), COALESCE(bi.tax_rate, 0)
+    INTO v_qty, v_unit_price, v_disc_pct, v_tax_rate
   FROM bill_items bi
   WHERE bi.bill_id = p_bill_id AND bi.product_id = p_product_id
   LIMIT 1;
@@ -20148,19 +20151,21 @@ BEGIN
   IF v_qty IS NULL OR v_qty <= 0 THEN RETURN NULL; END IF;
 
   v_line_net := v_qty * COALESCE(v_unit_price, 0) * (1 - v_disc_pct / 100.0);
+  IF v_tax_incl THEN
+    v_line_net := v_line_net / (1 + v_tax_rate / 100.0);
+  END IF;
 
-  SELECT COALESCE(SUM(bi.quantity * COALESCE(bi.unit_price,0)
-                      * (1 - COALESCE(bi.discount_percent,0) / 100.0)), 0)
+  SELECT COALESCE(SUM(
+           (bi.quantity * COALESCE(bi.unit_price,0) * (1 - COALESCE(bi.discount_percent,0) / 100.0))
+           / CASE WHEN v_tax_incl THEN (1 + COALESCE(bi.tax_rate,0) / 100.0) ELSE 1 END
+         ), 0)
     INTO v_base
   FROM bill_items bi
   WHERE bi.bill_id = p_bill_id;
 
-  SELECT COALESCE(b.subtotal, 0) + COALESCE(b.shipping, 0)
-    INTO v_allocatable
-  FROM bills b WHERE b.id = p_bill_id;
-
   -- No usable basis to allocate against: fall back to the list price rather than
-  -- risk a zero-cost lot (the failure mode that caused the zero-cost COGS bug).
+  -- risk a zero-cost lot — that failure mode is exactly what produced the
+  -- zero-cost COGS bug fixed in v3.74.702.
   IF v_base IS NULL OR v_base <= 0 OR v_allocatable IS NULL OR v_allocatable <= 0 THEN
     RETURN COALESCE(v_unit_price, 0);
   END IF;
