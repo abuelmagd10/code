@@ -177,6 +177,24 @@ export const getErrorMessage = (errorKey: string, lang: 'ar' | 'en' = 'ar'): str
   return message ? message[lang] : commonErrorMessages.UNEXPECTED_ERROR[lang]
 }
 
+/**
+ * v3.74.732 — the cross-tenant guard reports itself as 57014.
+ *
+ * assert_company_access raises 57014 (query_canceled) rather than 42501
+ * (insufficient_privilege) on purpose: PL/pgSQL's `EXCEPTION WHEN OTHERS`
+ * swallows 42501, and 15 of the guarded functions carry such a handler, so a
+ * 42501 guard was silently doing nothing (see v3.74.730).
+ *
+ * The cost of that choice is here: the code now travelling to the browser says
+ * "query cancelled", which reads as a timeout. Without this translation the
+ * user is told the operation timed out when it was actually refused — and, as
+ * bad, we would waste time investigating phantom performance problems.
+ */
+const CROSS_TENANT_ERRCODE = '57014'
+
+const isCrossTenantRefusal = (error: { code?: string | null; message?: string | null } | null | undefined): boolean =>
+  error?.code === CROSS_TENANT_ERRCODE && Boolean(error?.message)
+
 export const formatSupabaseError = (
   error: {
     message?: string | null
@@ -187,6 +205,15 @@ export const formatSupabaseError = (
   lang: 'ar' | 'en' = 'ar'
 ): string => {
   if (!error) return getErrorMessage('UNEXPECTED_ERROR', lang)
+
+  // Show the guard's own wording, and do NOT append the code — "(57014)"
+  // alongside an authorisation message is just noise that invites a timeout
+  // diagnosis.
+  if (isCrossTenantRefusal(error)) {
+    return lang === 'en'
+      ? 'Not permitted: this operation belongs to another company.'
+      : 'غير مصرح: هذه العملية تخص شركة أخرى.'
+  }
 
   const parts = [error.message, error.details, error.hint]
     .map((part) => (typeof part === 'string' ? part.trim() : ''))
@@ -302,6 +329,17 @@ export const handleSupabaseError = (
   lang: 'ar' | 'en' = 'ar',
   defaultErrorKey: string = 'OPERATION_FAILED'
 ): { title: string; description: string; isRLS: boolean } => {
+  // v3.74.732 — a cross-tenant refusal is a permission problem, and must be
+  // titled as one. Falling through would title it "Operation failed" over a
+  // 57014, which reads as a timeout.
+  if (isCrossTenantRefusal(error)) {
+    return {
+      title: lang === 'ar' ? 'غير مصرح لك' : 'Permission Denied',
+      description: formatSupabaseError(error, lang),
+      isRLS: true
+    }
+  }
+
   if (isRLSError(error)) {
     return {
       ...getRLSErrorMessage(tableName, lang),
