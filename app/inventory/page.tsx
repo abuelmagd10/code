@@ -7,7 +7,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
-import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2 } from "lucide-react"
+import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2, Wrench, UserCheck } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -73,6 +73,9 @@ export default function InventoryPage() {
   const [writeOffTotals, setWriteOffTotals] = useState<Record<string, number>>({})
   const [saleReturnTotals, setSaleReturnTotals] = useState<Record<string, number>>({})
   const [purchaseReturnTotals, setPurchaseReturnTotals] = useState<Record<string, number>>({})
+  // v3.74.714 — so every unit that left the warehouse is accounted for in a column.
+  const [serviceUseTotals, setServiceUseTotals] = useState<Record<string, number>>({})
+  const [custodyTotals, setCustodyTotals] = useState<Record<string, number>>({})
   const [productsWithMovements, setProductsWithMovements] = useState<Set<string>>(new Set()) // 🆕 المنتجات التي لها حركات في المخزن
   
   // ✅ بيانات النقل (Incoming/Outgoing Transfers)
@@ -488,6 +491,13 @@ export default function InventoryPage() {
       const writeOffsAgg: Record<string, number> = {}
       const saleReturnsAgg: Record<string, number> = {}
       const purchaseReturnsAgg: Record<string, number> = {}
+      // v3.74.714 — movements introduced by the booking/custody model had no
+      // bucket here, so they changed the stock total while appearing in no
+      // column. A row could read "bought 1, sold 0, no returns, no write-offs,
+      // available 0" — arithmetic that does not close, and no way for the user
+      // to find out where the unit went.
+      const serviceUseAgg: Record<string, number> = {}
+      const custodyAgg: Record<string, number> = {}
 
       allTransactions.forEach((t: any) => {
         const pid = String(t.product_id || '')
@@ -513,6 +523,15 @@ export default function InventoryPage() {
           saleReturnsAgg[pid] = (saleReturnsAgg[pid] || 0) + Math.abs(q)
         } else if (type === 'purchase_return' || type === 'purchase_reversal') {
           purchaseReturnsAgg[pid] = (purchaseReturnsAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'service_consumption') {
+          // Materials used up performing a service. Gone for good, like a sale,
+          // but not a sale — it has no revenue line of its own.
+          serviceUseAgg[pid] = (serviceUseAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'booking_custody_out' || type === 'booking_custody_return') {
+          // Signed, not absolute: out is negative and return is positive, so the
+          // running total is what is STILL in a technician's hands. It settles
+          // to zero once the service is executed or the custody is returned.
+          custodyAgg[pid] = (custodyAgg[pid] || 0) - q
         }
         // 🔐 transfer_in و transfer_out يتم حسابها تلقائياً في agg لأن quantity_change يحتوي على القيمة الصحيحة
       })
@@ -523,6 +542,8 @@ export default function InventoryPage() {
       setWriteOffTotals(writeOffsAgg)
       setSaleReturnTotals(saleReturnsAgg)
       setPurchaseReturnTotals(purchaseReturnsAgg)
+      setServiceUseTotals(serviceUseAgg)
+      setCustodyTotals(custodyAgg)
 
       // 🆕 تحديد المنتجات التي لها حركات في المخزن المحدد
       const productsSet = new Set<string>(Object.keys(agg))
@@ -847,6 +868,49 @@ export default function InventoryPage() {
             <AlertCircle className={`w-4 h-4 ${writeOff > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
             <span className={`font-bold text-base ${writeOff > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'}`}>
               {writeOff.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      // v3.74.714 — materials consumed performing a service. Without this column
+      // the quantity vanished from the breakdown while still reducing the stock.
+      key: 'serviceUse',
+      header: appLang === 'en' ? 'Service Use' : 'استهلاك الخدمات',
+      align: 'center',
+      format: (_v, product) => {
+        const used = serviceUseTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${used > 0
+            ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.service_use">
+            <Wrench className={`w-4 h-4 ${used > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${used > 0 ? 'text-purple-700 dark:text-purple-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {used.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      // Stock physically held by a technician: approved and withdrawn, not yet
+      // consumed. It is still owned, which is why it is shown apart from
+      // consumption rather than lumped in with it.
+      key: 'custody',
+      header: appLang === 'en' ? 'In Custody' : 'في عهدة الفنّي',
+      align: 'center',
+      format: (_v, product) => {
+        const held = custodyTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${held > 0
+            ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.in_custody">
+            <UserCheck className={`w-4 h-4 ${held > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${held > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {held.toLocaleString()}
             </span>
           </div>
         )
