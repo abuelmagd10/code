@@ -1213,6 +1213,46 @@ export default function UsersSettingsPage() {
           if ((strandedCount || 0) > 0) {
             const oldBranchName =
               branches.find(b => b.id === previousBranchId)?.name || t("the previous branch", "الفرع السابق")
+
+            // v3.74.725 — if the branch he left has NO staff at all, there is
+            // nobody to hand these customers to. Leaving them stranded means
+            // nobody can see or serve them, so park them with the owner, who
+            // sees every branch. The owner can reassign later when the branch is
+            // staffed; until then the customers stay reachable instead of
+            // vanishing from the business.
+            const { data: remainingStaff } = await supabase
+              .from("company_members")
+              .select("user_id")
+              .eq("company_id", companyId)
+              .eq("branch_id", previousBranchId)
+              .neq("user_id", editingMemberId)
+              .limit(1)
+
+            if (!remainingStaff || remainingStaff.length === 0) {
+              const ownerId = members.find(m => m.role === 'owner')?.user_id
+              if (ownerId) {
+                const { error: parkErr } = await supabase
+                  .from("customers")
+                  .update({ created_by_user_id: ownerId })
+                  .eq("company_id", companyId)
+                  .eq("created_by_user_id", editingMemberId)
+                  .eq("branch_id", previousBranchId)
+
+                if (parkErr) {
+                  console.error("Error parking customers with the owner:", parkErr)
+                } else {
+                  toastActionSuccess(
+                    toast,
+                    t("Transferred", "نُقلت"),
+                    t(`${strandedCount} customer(s) moved to the owner — that branch has no staff`,
+                      `${strandedCount} عميل انتقلوا للمالك — لا يوجد موظف فى ${oldBranchName}`)
+                  )
+                  setStrandedInfo(null)
+                  loadPermissionData()
+                  return
+                }
+              }
+            }
             setStrandedInfo({
               count: strandedCount || 0,
               branchName: oldBranchName,
@@ -3991,10 +4031,20 @@ export default function UsersSettingsPage() {
                     <SelectValue placeholder="اختر الموظف..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {members.filter(m => !m.is_current).map(m => (
+                    {/*
+                      v3.74.725 — the logged-in user is normally hidden here, since
+                      you rarely transfer your own data to yourself. But when an
+                      employee leaves a branch with no replacement his customers are
+                      parked with the OWNER, who is usually the person on this screen.
+                      Hiding him made those customers impossible to hand on: they were
+                      deposited somewhere no dropdown could reach. So for a transfer,
+                      the current user is selectable as the source.
+                    */}
+                    {members.filter(m => permissionAction === 'transfer' || !m.is_current).map(m => (
                       <SelectItem key={m.user_id} value={m.user_id}>
                         {m.display_name || m.email || m.user_id}
                         <Badge className={`mr-2 text-[10px] ${roleLabels[m.role]?.color}`}>{roleLabels[m.role]?.ar}</Badge>
+                        {m.is_current && <Badge className="mr-2 text-[10px] bg-blue-500 text-white">{t("You", "أنت")}</Badge>}
                       </SelectItem>
                     ))}
                   </SelectContent>

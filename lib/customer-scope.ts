@@ -34,6 +34,16 @@ type UserContextLike = { branch_id?: string | null } | null | undefined
  * Adds the branch constraint to a customers query for creator-scoped users.
  * Returns the query unchanged for anyone else, so it is safe to call
  * unconditionally on every customer picker.
+ *
+ * v3.74.725 — a customer with NO branch is a SHARED customer, usable from any
+ * branch, and must stay visible.
+ *
+ * The first version filtered on `branch_id = mine` exactly, which silently
+ * excluded them: validate_customer_branch_isolation deliberately allows a
+ * branchless customer on any branch's document, but the picker hid that same
+ * customer from everyone. The database permitted what the interface concealed —
+ * so the one mechanism the system already had for "this customer deals with
+ * more than one branch" was unusable.
  */
 export function applyCustomerBranchScope<T>(
   query: T,
@@ -45,5 +55,6 @@ export function applyCustomerBranchScope<T>(
   const branchId = accessFilter.branchId || userContext?.branch_id || null
   if (!branchId) return query
 
-  return (query as any).eq("branch_id", branchId) as T
+  // "my branch OR shared" — matches what the database guard accepts.
+  return (query as any).or(`branch_id.eq.${branchId},branch_id.is.null`) as T
 }

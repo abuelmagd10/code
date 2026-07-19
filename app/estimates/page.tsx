@@ -399,7 +399,9 @@ export default function EstimatesPage() {
           // the customers of the branch he left, and the document is then
           // refused by validate_customer_branch_isolation after the form is
           // already filled in.
-          if (ctx?.branch_id) custQuery = custQuery.eq('branch_id', ctx.branch_id);
+          // v3.74.725 — "or no branch": a branchless customer is a SHARED one,
+          // valid on any branch's document, so it must stay selectable here too.
+          if (ctx?.branch_id) custQuery = custQuery.or(`branch_id.eq.${ctx.branch_id},branch_id.is.null`);
         }
         // ctx unresolved → defaults to company-only (no role-based filter)
 

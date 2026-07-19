@@ -469,6 +469,9 @@ export function CustomerFormDialog({
     // v3.74.331 — For company-scope creators, require an explicit branch
     // choice. Other roles get their branch auto-assigned by governance,
     // so we skip the check for them.
+    // v3.74.725 — "__shared__" IS an explicit choice: it means the customer
+    // deals with every branch. It satisfies the requirement here and is
+    // translated to a real NULL on save.
     if (!editingCustomer && needsBranchPicker && !formData.branch_id) {
       setFormErrors(prev => ({
         ...prev,
@@ -635,8 +638,11 @@ export function CustomerFormDialog({
           body: JSON.stringify({
             ...dataToSave,
             company_id: activeCompanyId,
+            // v3.74.725 — "__shared__" is the UI's way of saying "no branch".
+            // Sent as an explicit null so the server records a shared customer
+            // rather than falling back to the creator's own branch.
             ...(needsBranchPicker && formData.branch_id
-              ? { branch_id: formData.branch_id }
+              ? { branch_id: formData.branch_id === '__shared__' ? null : formData.branch_id }
               : {})
           })
         })
@@ -785,6 +791,17 @@ export function CustomerFormDialog({
                       {b.name}{b.is_main ? (appLang === 'en' ? ' (Main)' : ' (رئيسى)') : ''}
                     </SelectItem>
                   ))}
+                  {/* v3.74.725 — a customer with no branch has always been usable
+                      from ANY branch: validate_customer_branch_isolation lets a
+                      branchless customer onto any branch's document. But that was
+                      only reachable by leaving the field blank, which nobody knew
+                      and the form treated as a validation error. Naming it makes
+                      the system's own third state selectable, for the case it was
+                      built for — a customer who genuinely deals with more than
+                      one branch. */}
+                  <SelectItem value="__shared__">
+                    {appLang === 'en' ? 'Shared — all branches' : 'عميل مشترك — كل الفروع'}
+                  </SelectItem>
                 </SelectContent>
               </Select>
               {formErrors.branch_id && (
