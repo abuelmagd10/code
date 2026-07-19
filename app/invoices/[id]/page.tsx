@@ -4052,7 +4052,16 @@ export default function InvoiceDetailPage() {
                 asChild
               >
                 <Link href="/sales-return-requests">
-                  {appLang === 'en' ? 'Request Return' : 'طلب مرتجع'}
+                  {/* v3.74.707 — same wording rule as the direct-return button
+                      above, driven by the same isServiceOnlyInvoice flag so the
+                      two can never drift apart. On a purely service invoice no
+                      goods come back to the shelf, so "return" misleads the
+                      accountant into thinking stock is being restocked. Any
+                      sold-product line makes the flag false and the wording
+                      stays "return", which is then accurate. */}
+                  {isServiceOnlyInvoice
+                    ? (appLang === 'en' ? 'Request Service Cancellation' : 'طلب إلغاء خدمة')
+                    : (appLang === 'en' ? 'Request Return' : 'طلب مرتجع')}
                 </Link>
               </Button>
             ) : null}
