@@ -59,6 +59,13 @@ const ALLOWLIST = new Map([
   ["check-email-registered", "pre-login existence check, returns a boolean only"],
   ["resend-confirmation", "pre-login, keyed by email"],
   ["biometric/", "attendance device push — authenticated by device key, no user session"],
+  [
+    "subscription/create",
+    "public signup — creates a NEW tenant (user + company + branch) and touches " +
+      "no existing one. Reviewed v3.74.737. Separate concern noted there: it " +
+      "calls auth.admin.createUser with no rate limit, which is an abuse vector, " +
+      "not a cross-tenant one.",
+  ],
 ]);
 
 /**
@@ -182,14 +189,19 @@ function stripComments(src) {
  * shrink. The script also fails if an entry here stops violating, which forces
  * the list down instead of letting it rot.
  *
- * Of the three I did read while calibrating the rule:
+ * Reviewed so far:
  *   - bills/[id]/journal-entry-id  — fine, uses enforceGovernance(). Rule fixed.
  *   - customers/delete             — fine, verifies membership. Rule fixed.
  *   - billing/renew                — HMAC renewal token; still listed because
  *                                    it constrains by token, not company_id.
+ *   - subscription/create          — public signup, moved to ALLOWLIST.
+ *   - bonuses (GET)                — WAS A REAL HOLE. Read companyId from the
+ *                                    query string with no auth at all and
+ *                                    returned that company's bonus records.
+ *                                    Fixed in v3.74.737, removed from here.
  *
  * The rest are unreviewed. Being on this list means "not yet examined", NOT
- * "known safe".
+ * "known safe" — as bonuses just demonstrated.
  */
 const UNREVIEWED = new Set([
   "account-lines/route.ts",
@@ -198,13 +210,11 @@ const UNREVIEWED = new Set([
   "billing/preview/route.ts",
   "billing/renew/route.ts",
   "billing/seats/route.ts",
-  "bonuses/route.ts",
   "bonuses/settings/route.ts",
   "company-logo/route.ts",
   "invoices/[id]/record-payment/route.ts",
   "permissions/shared-with-me/route.ts",
   "send-purchase-order/route.ts",
-  "subscription/create/route.ts",
 ]);
 
 const violations = [];

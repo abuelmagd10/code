@@ -15,17 +15,32 @@ async function getAdmin() {
 // GET: جلب البونصات لمستخدم معين أو للشركة
 export async function GET(req: NextRequest) {
   try {
-    console.log("🔍 [Bonuses API] Starting GET request...")
+    // v3.74.737 — this handler used to read companyId straight out of the query
+    // string with no authentication whatsoever, then query user_bonuses with
+    // the service-role client:
+    //
+    //     GET /api/bonuses?companyId=<any uuid>
+    //
+    // Anyone who could reach the URL could read any company's bonus records —
+    // employee compensation data — for a company id they simply guessed or saw.
+    // POST on this same route was already correct; only GET was open.
+    //
+    // The company now comes from the session, exactly as POST does. The
+    // companyId query parameter is ignored: callers do not get to choose whose
+    // data they read.
+    const { user, companyId, error } = await secureApiRequest(req, {
+      requireAuth: true,
+      requireCompany: true,
+      requirePermission: { resource: "bonuses", action: "read" },
+      allowRoles: ['owner', 'admin', 'manager', 'accountant']
+    })
 
-    // جلب companyId من الـ URL parameters مباشرة
-    const { searchParams } = new URL(req.url)
-    const companyId = searchParams.get("companyId")
-
-    console.log("🔍 [Bonuses API] Company ID from URL:", companyId)
-
-    if (!companyId) {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "companyId مطلوب", "companyId is required")
+    if (error) return error
+    if (!companyId || !user) {
+      return apiError(HTTP_STATUS.NOT_FOUND, "لم يتم العثور على الشركة أو المستخدم", "Company or user not found")
     }
+
+    const { searchParams } = new URL(req.url)
 
     const admin = await getAdmin()
     if (!admin) {
