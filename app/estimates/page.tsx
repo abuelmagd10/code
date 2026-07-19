@@ -969,10 +969,13 @@ export default function EstimatesPage() {
         </Card>
 
         <Dialog open={open} onOpenChange={setOpen}>
-          {/* v3.74.718 — eight columns of line-item inputs did not fit in max-w-3xl.
-              Widened so the row breathes on a normal screen; the table below still
-              scrolls horizontally rather than crushing on a narrow one. */}
-          <DialogContent className="max-w-5xl">
+          {/* v3.74.723 — must be sm:max-w-5xl, not max-w-5xl.
+              DialogContent ships `sm:max-w-lg` in its own defaults. A plain
+              `max-w-5xl` is a different variant, so tailwind-merge keeps both and
+              the sm: rule wins above 640px — the dialog stayed 512px wide while
+              the table inside was told to be 880px, which is why the whole
+              dialog (customer, dates, notes and all) scrolled sideways. */}
+          <DialogContent className="sm:max-w-5xl overflow-x-hidden">
             <DialogHeader>
               <DialogTitle>{editing ? t("Edit Estimate", "تعديل العرض") : t("New Estimate", "عرض سعري جديد")}</DialogTitle>
             </DialogHeader>
@@ -1006,7 +1009,9 @@ export default function EstimatesPage() {
               </div>
             </div>
 
-            <div className="mt-4 space-y-2">
+            {/* min-w-0 must repeat on every ancestor between the grid and the
+                scroll box: one missing link and the overflow escapes upward again. */}
+            <div className="mt-4 space-y-2 min-w-0">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium">{t("Estimate Items", "بنود العرض")}</h3>
                 <Button variant="secondary" onClick={addItem}>{t("Add Item", "إضافة بند")}</Button>
@@ -1016,8 +1021,12 @@ export default function EstimatesPage() {
                   "خصم %" and "ضريبة %" ran into one another and the number inputs were
                   clipped mid-digit. min-w keeps the columns at a usable size and lets
                   the wrapper scroll instead of compressing. */}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[880px] text-sm border-separate border-spacing-x-2 border-spacing-y-1">
+              {/* min-w-0 is what confines the scroll to this box. DialogContent is
+                  a grid, and a grid item defaults to min-width:auto — it refuses to
+                  shrink below its content, so the wide table pushed the whole
+                  dialog wider instead of scrolling inside this wrapper. */}
+              <div className="min-w-0 w-full overflow-x-auto">
+                <table className="w-full min-w-[820px] text-sm border-separate border-spacing-x-2 border-spacing-y-1">
                   <colgroup>
                     <col className="w-[22%]" />
                     <col className="w-[22%]" />
