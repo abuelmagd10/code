@@ -1,0 +1,26 @@
+-- v3.74.726 — retire fix_historical_cogs.
+--
+-- Three defects, any one of which is disqualifying:
+--
+--  1. CROSS-TENANT WRITE. SECURITY DEFINER + EXECUTE granted to PUBLIC, and
+--     p_company_id is taken from the caller with NO membership check. Any
+--     authenticated user of any company could pass another company's UUID
+--     straight to PostgREST and inject journal entries into that company's
+--     ledger, bypassing the API layer entirely. The permission check in
+--     /api/fix-cogs-accounting was therefore protecting nothing.
+--
+--  2. WRONG COST. It values COGS at products.cost_price — the single editable
+--     snapshot we abandoned in v3.74.702 precisely because it diverges from
+--     what was actually paid and inflates profit.
+--
+--  3. LOTS AND LEDGER DIVERGE. It posts the journal without calling
+--     consume_fifo_lots, so the FIFO batches still show stock the ledger has
+--     already expensed.
+--
+-- It is superseded: auto_create_cogs_journal now posts COGS from FIFO on every
+-- sale, so there is no ongoing gap for this function to close. Dropping rather
+-- than revoking, so no landmine remains for someone to re-grant later.
+--
+-- If a historical backfill is ever needed, it must be written fresh against
+-- consume_fifo_lots with a company-membership check.
+DROP FUNCTION IF EXISTS public.fix_historical_cogs(uuid);
