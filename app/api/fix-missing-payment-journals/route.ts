@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 interface PaymentData {
   id: string
@@ -25,6 +26,13 @@ interface PaymentData {
 // GET: عرض المدفوعات التي ليس لها قيود
 export async function GET(request: NextRequest) {
   try {
+    // v3.74.711 — role gate, same as every other repair route.
+    const { user, companyId: authCompanyId, error: authError } = await requireOwnerOrAdmin(request)
+    if (authError) return authError
+    if (!user || !authCompanyId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) {
@@ -70,6 +78,13 @@ export async function GET(request: NextRequest) {
 // POST: إنشاء قيود محاسبية للمدفوعات المفقودة
 export async function POST(request: NextRequest) {
   try {
+    // v3.74.711 — this one creates journal entries; the gate matters most here.
+    const { user, companyId: authCompanyId, error: authError } = await requireOwnerOrAdmin(request)
+    if (authError) return authError
+    if (!user || !authCompanyId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const supabase = await createClient()
     const companyId = await getActiveCompanyId(supabase)
     if (!companyId) {

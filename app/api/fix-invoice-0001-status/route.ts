@@ -5,9 +5,20 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireOwnerOrAdmin } from '@/lib/api-security'
 
 export async function POST(request: NextRequest) {
   try {
+    // v3.74.711 — repair endpoints mutate invoices and journals directly, so
+    // they must carry the same role gate as every other repair route. RLS alone
+    // only stops anonymous callers; without this any signed-in employee could
+    // call it and bypass the role checks the UI enforces.
+    const { user, companyId: authCompanyId, error: authError } = await requireOwnerOrAdmin(request)
+    if (authError) return authError
+    if (!user || !authCompanyId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createClient()
     
     // الحصول على شركة FOODCAN

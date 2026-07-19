@@ -471,8 +471,15 @@ export class CustomerRefundCommandService {
       .select("id, account_name, sub_type, account_code")
       .eq("company_id", params.companyId)
       .eq("is_active", true)
-    const ccRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "customer_credits")
-      || (accounts as any[] | null)?.find((x: any) => /credit|سلف|دائن.*عميل/i.test(String(x.account_name || "")))
+    // v3.74.711 — the sub_type is "customer_credit" (singular). The plural never
+    // existed in the chart, so this always fell through to the name regex — and
+    // that regex matches "سلف ومقدمات للموظفين" (employee advances, an ASSET)
+    // and "سلف من العملاء" just as readily as the real credit account. Which one
+    // it picked depended on row order, so an FX adjustment on a customer refund
+    // could land in an unrelated account, differently each time.
+    const ccRecord = (accounts as any[] | null)?.find((x: any) => x.sub_type === "customer_credit")
+      || (accounts as any[] | null)?.find((x: any) => x.account_code === "2155")
+      || (accounts as any[] | null)?.find((x: any) => /رصيد العملاء الدائن|customer credit/i.test(String(x.account_name || "")))
     const ccAccountId = ccRecord?.id as string | undefined
     if (!ccAccountId) return
 

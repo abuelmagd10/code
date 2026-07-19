@@ -1,9 +1,16 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest } from "next/server"
-import { apiSuccess, internalError } from "@/lib/api-error-handler"
+import { apiSuccess, internalError, unauthorizedError } from "@/lib/api-error-handler"
+import { requireOwnerOrAdmin } from "@/lib/api-security"
 
 export async function POST(request: NextRequest) {
   try {
+    // v3.74.711 — see fix-invoice-0001-status: RLS stops anonymous callers, not
+    // signed-in ones. This route performs six mutations on invoices and journals.
+    const { user, companyId: authCompanyId, error: authError } = await requireOwnerOrAdmin(request)
+    if (authError) return authError
+    if (!user || !authCompanyId) return unauthorizedError()
+
     const supabase = await createClient()
     const companyId = "3a663f6b-0689-4952-93c1-6d958c737089"
 
