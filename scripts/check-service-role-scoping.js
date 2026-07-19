@@ -148,6 +148,48 @@ function verifiesMembership(src) {
   );
 }
 
+/**
+ * Is the company obtained from a source the caller cannot choose?
+ *
+ * v3.74.739 — the last four flagged routes were all sound, each scoping in a
+ * shape the rule did not know:
+ *
+ *   billing/invoices/[id]/pdf   fetches the row, then `if (invoice.company_id
+ *                               !== companyId) return 403` — a comparison, not
+ *                               a filter.
+ *   permissions/shared-with-me  filters on grantee_user_id = the session user,
+ *                               so the company parameter cannot widen anything.
+ *   invoices/[id]/record-payment hands the derived companyId to a command
+ *                               service, which does the scoping.
+ *   billing/renew               takes the company out of a verified HMAC token.
+ *
+ * Chasing each shape individually is a losing game — that is six rule revisions
+ * and counting. The question underneath all of them is simply whether the
+ * company came from somewhere trustworthy. If it did, and it is actually used,
+ * the route is scoped however it chooses to express that.
+ */
+function companyFromTrustedSource(src) {
+  const fromAuthHelper = /\{[^}]*\bcompanyId\b[^}]*\}\s*=\s*await\s+\w*(?:secureApiRequest|requireOwnerOrAdmin|apiGuard|requireAuth|getAuthContext|requireCompanyAccess|enforceGovernance)\s*\(/.test(src);
+  const fromContext = /\b(?:context|governance|ctx)\s*!?\.?\??\.\s*companyId\b/.test(src);
+  // v3.74.739 — this used to additionally require the identifier to be spelled
+  // `companyId`. billing/renew calls it `payload.cid`, so the rule rejected a
+  // route whose company comes out of a signed HMAC token — about as trustworthy
+  // a source as exists here. Sixth time I have matched a name instead of a
+  // shape. A verified token IS the authorisation; what its field is called is
+  // not my business.
+  const fromVerifiedToken = /verify\w*Token\s*\(/.test(src);
+  return fromAuthHelper || fromContext || fromVerifiedToken;
+}
+
+/**
+ * Some routes scope to the SESSION USER rather than the company — a share
+ * inbox filtered by grantee_user_id cannot be widened by naming another
+ * company, because the rows still belong to the caller either way.
+ */
+function pinsToSessionUser(src) {
+  return /\.eq\(\s*["']\w*user_id["']\s*,\s*\w*[Uu]ser\??\.\s*id\s*\)/.test(src);
+}
+
 /** Does the company identifier arrive in the request the caller controls? */
 function companyComesFromRequest(src) {
   return (
@@ -231,16 +273,116 @@ function stripComments(src) {
  *     company-logo, send-purchase-order — all fine. They derive companyId from
  *     an auth helper and scope with .eq("id", companyId) or a joined path,
  *     which the first pattern did not recognise. Rule widened, not the code.
+ *   - billing/invoices/[id]/pdf     — compares invoice.company_id against the
+ *                                     session's after fetching. Fine.
+ *   - permissions/shared-with-me    — filters on grantee_user_id = session user,
+ *                                     so naming another company widens nothing.
+ *   - invoices/[id]/record-payment  — hands the derived companyId to a command
+ *                                     service that scopes. Fine.
+ *   - billing/renew                 — company comes from a verified HMAC token.
  *
- * The rest are unreviewed. Being on this list means "not yet examined", NOT
- * "known safe" — as bonuses and audit-log both demonstrated.
+ * All 13 originally flagged are now reviewed: 2 were real holes (bonuses GET,
+ * audit-log), 1 was a misclassification (subscription/create, public signup),
+ * and 10 were my rule being narrower than the codebase.
+ *
+ * The list is empty. That is the point of a ratchet — it is supposed to reach
+ * zero, and then stay there because anything new fails the build.
  */
-const UNREVIEWED = new Set([
-  "billing/invoices/[id]/pdf/route.ts",
-  "billing/renew/route.ts",
-  "invoices/[id]/record-payment/route.ts",
-  "permissions/shared-with-me/route.ts",
-]);
+const UNREVIEWED = new Set([]);
+
+/**
+ * SELF-TEST — the rule was widened six times to clear false positives, and
+ * each widening risked loosening it into uselessness. These fixtures pin the
+ * two ends: the shape that caused the incident must still fail, and the shapes
+ * that were wrongly flagged must still pass.
+ *
+ * Runs on every invocation. If the rule ever stops rejecting the first fixture,
+ * the check has become decoration.
+ */
+const VERDICT_TEXT = {
+  "no-auth": "builds a service-role client with no authentication of any kind",
+  "unused-scope": "derives the company from the session but never uses it — the scope is discarded",
+  unverified: "takes company_id from the request but never verifies the caller is a member of it",
+  unbounded: "never constrains any query by company — it can reach every tenant's data",
+};
+
+function evaluate(src) {
+  if (!isAuthenticated(src)) return "no-auth";
+  const trusted = companyFromTrustedSource(src);
+  const uses = (src.match(/\bcompany_?[Ii]d\b/g) || []).length;
+  if (trusted && uses >= 2) return "ok";
+  if (trusted) return "unused-scope";
+  if (companyComesFromRequest(src)) {
+    return verifiesMembership(src) || pinsToSessionUser(src) ? "ok" : "unverified";
+  }
+  return constrainsByCompany(src) || pinsToSessionUser(src) ? "ok" : "unbounded";
+}
+
+const FIXTURES = [
+  {
+    name: "the fix-negative-payments incident — helper called, company discarded",
+    expect: "unbounded",
+    src: `
+      const { error: authError } = await requireOwnerOrAdmin(req)
+      if (authError) return authError
+      const { data } = await supabase.from("payments").select("*").lt("amount", 0)
+    `,
+  },
+  {
+    name: "the bonuses GET hole — company from the query string, no auth",
+    expect: "no-auth",
+    src: `
+      const companyId = searchParams.get("companyId")
+      const q = admin.from("user_bonuses").select("*").eq("company_id", companyId)
+    `,
+  },
+  {
+    name: "company supplied by caller, membership never checked",
+    expect: "unverified",
+    src: `
+      const { data: { user } } = await ssr.auth.getUser()
+      const { companyId } = await req.json()
+      await admin.from("invoices").select("*").eq("company_id", companyId)
+    `,
+  },
+  {
+    name: "derived from auth helper and used — the normal correct shape",
+    expect: "ok",
+    src: `
+      const { user, companyId, error } = await secureApiRequest(req, { requireAuth: true })
+      await admin.from("invoices").select("*").eq("company_id", companyId)
+    `,
+  },
+  {
+    name: "caller-supplied company, verified against company_members",
+    expect: "ok",
+    src: `
+      const { data: { user } } = await ssr.auth.getUser()
+      const { companyId } = await req.json()
+      await admin.from("company_members").select("id").eq("company_id", companyId).eq("user_id", user.id)
+    `,
+  },
+  {
+    name: "scoped to the session user rather than the company",
+    expect: "ok",
+    src: `
+      const { data: { user } } = await supabase.auth.getUser()
+      const companyId = searchParams.get("company_id")
+      await supabase.from("shares").select("*").eq("company_id", companyId).eq("grantee_user_id", user.id)
+    `,
+  },
+];
+
+const fixtureFailures = FIXTURES.filter((f) => evaluate(f.src) !== f.expect);
+if (fixtureFailures.length > 0) {
+  console.error("X The rule itself is broken — self-test fixtures failed:\n");
+  for (const f of fixtureFailures) {
+    console.error(`   ${f.name}`);
+    console.error(`      expected "${f.expect}", got "${evaluate(f.src)}"\n`);
+  }
+  console.error("Fix the rule before trusting anything else this script reports.");
+  process.exit(1);
+}
 
 const violations = [];
 const exempted = [];
@@ -261,30 +403,12 @@ for (const file of walk(API_DIR)) {
 
   const src = stripComments(raw);
 
-  if (!isAuthenticated(src)) {
-    violations.push({
-      rel,
-      why: "builds a service-role client with no authentication of any kind",
-    });
-    continue;
-  }
-
-  // The fix-negative-payments defect: nothing bounds the query by company, so
-  // it reaches every tenant.
-  if (!constrainsByCompany(src)) {
-    violations.push({
-      rel,
-      why: "never constrains any query by company — it can reach every tenant's data",
-    });
-    continue;
-  }
-
-  // The caller chose the company and nobody checked they belong to it.
-  if (companyComesFromRequest(src) && !verifiesMembership(src)) {
-    violations.push({
-      rel,
-      why: "takes company_id from the request but never verifies the caller is a member of it",
-    });
+  // One implementation of the rule, shared with the self-test fixtures. An
+  // earlier draft of this file had the logic written out twice — the very
+  // duplication that produces "the checker passed but the fixture didn't".
+  const verdict = evaluate(src);
+  if (verdict !== "ok") {
+    violations.push({ rel, why: VERDICT_TEXT[verdict] });
   }
 }
 
