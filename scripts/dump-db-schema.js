@@ -76,9 +76,26 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
 const FLOORS = {
   "CREATE TABLE": 200,
   "CREATE POLICY": 700,
-  "TRIGGER": 450,
   "ADD CONSTRAINT": 1500,
 };
+
+/**
+ * Counting triggers takes a regex, and both obvious approaches are wrong.
+ *
+ * v3.74.734 first counted "CREATE TRIGGER" and got 499 against the database's
+ * 501: two are CONSTRAINT triggers, emitted as "CREATE CONSTRAINT TRIGGER" —
+ * and they happen to be trg_enforce_journal_balance and
+ * trg_recurring_template_balance, the double-entry balance enforcers.
+ *
+ * Widening to the bare word "TRIGGER" then reported 1359, because TRIGGER is
+ * also a table privilege: every "GRANT DELETE, INSERT, REFERENCES, SELECT,
+ * TRIGGER, ..." line matched. That wrong figure was written into the snapshot's
+ * own header — a file whose entire job is to state what production contains.
+ *
+ * Match the statement, not the word.
+ */
+const TRIGGER_RE = /CREATE (?:CONSTRAINT )?TRIGGER /g;
+const TRIGGER_FLOOR = 450;
 
 (async () => {
   console.log("Fetching live schema (tables, policies, triggers, grants)...");
@@ -97,9 +114,11 @@ const FLOORS = {
   }
 
   const count = (needle) => body.split(needle).length - 1;
+  const triggerCount = (body.match(TRIGGER_RE) || []).length;
 
   const shortfalls = Object.entries(FLOORS)
     .map(([needle, floor]) => [needle, count(needle), floor])
+    .concat([["CREATE [CONSTRAINT] TRIGGER", triggerCount, TRIGGER_FLOOR]])
     .filter(([, actual, floor]) => actual < floor);
 
   if (shortfalls.length > 0) {
@@ -129,7 +148,7 @@ const FLOORS = {
     "-- Generated: " + new Date().toISOString() + "\n" +
     "-- Tables: " + count("CREATE TABLE") +
     " | Policies: " + count("CREATE POLICY") +
-    " | Triggers: " + count("TRIGGER") +
+    " | Triggers: " + triggerCount +
     " | Constraints: " + count("ADD CONSTRAINT") + "\n" +
     "-- =====================================================================\n\n";
 
@@ -137,7 +156,7 @@ const FLOORS = {
   console.log(
     "+ Wrote " + path.relative(path.join(__dirname, ".."), outFile) +
     ` (${count("CREATE TABLE")} tables, ${count("CREATE POLICY")} policies, ` +
-    `${count("TRIGGER")} triggers, ${body.length} chars)`
+    `${triggerCount} triggers, ${body.length} chars)`
   );
 })().catch((e) => {
   console.error("X Unexpected error:", e && e.message ? e.message : e);

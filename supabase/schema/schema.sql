@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-07-19T20:47:43.789Z
--- Tables: 249 | Policies: 797 | Triggers: 1359 | Constraints: 1795
+-- Generated: 2026-07-19T20:53:19.417Z
+-- Tables: 249 | Policies: 797 | Triggers: 501 | Constraints: 1795
 -- =====================================================================
 
 
