@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-19T12:34:16.538Z
--- Routines: 1202
+-- Generated: 2026-07-19T13:59:54.141Z
+-- Routines: 1205
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26679,6 +26679,84 @@ END $function$
 ;
 
 -- ---------------------------------------------------------------
+-- ic_customer_branch_governance(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_customer_branch_governance(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.719 — two failures that only appear when someone changes branch.
+--
+-- (1) An ORPHANED customer: the person who created it no longer works in that
+--     customer's branch. Staff see customers filtered by creator, so nobody in
+--     the customer's own branch has it in their list, while the person who left
+--     still does. Found exactly this way: an employee moved from one branch to
+--     another and kept three customers of the branch he left.
+--
+-- (2) A document naming a customer from another branch — what the new guard now
+--     prevents. Reported here so the ones created BEFORE the guard stay visible
+--     instead of being silently carried forward.
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.name AS customer_name,
+           cb.name AS customer_branch,
+           ub.name AS creator_branch
+    FROM customers c
+    JOIN branches cb ON cb.id = c.branch_id
+    JOIN company_members m ON m.user_id = c.created_by_user_id AND m.company_id = c.company_id
+    LEFT JOIN branches ub ON ub.id = m.branch_id
+    WHERE c.company_id = p_company_id
+      AND m.branch_id IS NOT NULL
+      AND m.branch_id <> c.branch_id
+      AND m.role NOT IN ('owner','admin','general_manager','manager')
+    LIMIT 20
+  LOOP
+    severity := 'medium';
+    detail := jsonb_build_object(
+      'customer', r.customer_name,
+      'customer_branch', r.customer_branch,
+      'creator_branch_now', r.creator_branch,
+      'hint', 'Customer belongs to one branch while the staff member who created it now works in another. Nobody in the customer''s branch sees it, and the person who left still can. Reassign ownership to someone in the customer''s branch.');
+    RETURN NEXT;
+  END LOOP;
+
+  FOR r IN
+    SELECT d.doc_type, d.doc_no, d.cust_name,
+           db.name AS document_branch, cb.name AS customer_branch
+    FROM (
+      SELECT 'invoice' AS doc_type, i.invoice_number AS doc_no, i.branch_id, c.branch_id AS cust_branch,
+             c.name AS cust_name, i.company_id
+        FROM invoices i JOIN customers c ON c.id = i.customer_id
+      UNION ALL
+      SELECT 'sales_order', s.so_number, s.branch_id, c.branch_id, c.name, s.company_id
+        FROM sales_orders s JOIN customers c ON c.id = s.customer_id
+      UNION ALL
+      SELECT 'booking', b.booking_no, b.branch_id, c.branch_id, c.name, b.company_id
+        FROM bookings b JOIN customers c ON c.id = b.customer_id
+    ) d
+    JOIN branches db ON db.id = d.branch_id
+    JOIN branches cb ON cb.id = d.cust_branch
+    WHERE d.company_id = p_company_id
+      AND d.branch_id IS NOT NULL AND d.cust_branch IS NOT NULL
+      AND d.branch_id <> d.cust_branch
+    LIMIT 20
+  LOOP
+    severity := 'high';
+    detail := jsonb_build_object(
+      'document_type', r.doc_type, 'document_no', r.doc_no,
+      'customer', r.cust_name,
+      'document_branch', r.document_branch, 'customer_branch', r.customer_branch,
+      'hint', 'Document uses a customer from another branch. Created before the isolation guard existed; new ones are now rejected.');
+    RETURN NEXT;
+  END LOOP;
+EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;
+END $function$
+;
+
+-- ---------------------------------------------------------------
 -- ic_customer_credit(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.ic_customer_credit(p_company_id uuid)
@@ -52728,6 +52806,51 @@ BEGIN
       v_cogs_total, v_invoice_total, NEW.reference_id;
   END IF;
   
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- validate_customer_branch_isolation()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.validate_customer_branch_isolation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- v3.74.719 — a document may not name a customer belonging to another branch.
+--
+-- The product side has had this guard since v3.74.701 (validate_product_branch_isolation
+-- on every *_items table). Customers had NO equivalent, and the gap was not
+-- theoretical: four documents already exist whose customer belongs to a branch
+-- other than the document's own.
+--
+-- How it happens: staff see customers filtered by WHO CREATED THEM, not by
+-- branch. An employee who moves between branches keeps seeing — and can still
+-- pick — customers of the branch he left.
+--
+-- Deliberately permissive in two cases, mirroring the product guard:
+--   * document branch NULL  -> company-level document, nothing to violate
+--   * customer branch NULL  -> a company-wide customer, usable from any branch
+-- Only a real mismatch between two known branches is rejected.
+DECLARE
+  v_cust_branch UUID;
+  v_doc_branch  UUID;
+BEGIN
+  IF NEW.customer_id IS NULL THEN RETURN NEW; END IF;
+  v_doc_branch := NEW.branch_id;
+  IF v_doc_branch IS NULL THEN RETURN NEW; END IF;
+
+  SELECT branch_id INTO v_cust_branch FROM customers WHERE id = NEW.customer_id;
+  IF v_cust_branch IS NULL THEN RETURN NEW; END IF;
+
+  IF v_cust_branch <> v_doc_branch THEN
+    RAISE EXCEPTION 'CUSTOMER_BRANCH_ISOLATION: العميل يتبع فرعاً آخر — لا يمكن استخدامه فى مستند هذا الفرع. (customer_branch=%, document_branch=%)',
+      v_cust_branch, v_doc_branch
+      USING ERRCODE = 'P0001';
+  END IF;
+
   RETURN NEW;
 END;
 $function$

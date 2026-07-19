@@ -389,6 +389,18 @@ export default function CustomersPage() {
         p_employee_filter = filterEmployeeId
       } else if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
         p_employee_filter = accessFilter.createdByUserId
+        // v3.74.719 — scope by creator AND branch, not creator alone.
+        //
+        // "Customers I created" follows the PERSON, not the data. An employee who
+        // moves between branches keeps seeing — and could still pick — customers
+        // of the branch he left. That is how four documents ended up naming a
+        // customer from another branch.
+        //
+        // Branch alone would be wrong too: it would hand every rep the whole
+        // branch book and undo the per-rep privacy this scoping exists for. The
+        // correct rule is the intersection.
+        const staffBranchId = accessFilter.branchId || userContext?.branch_id || null
+        if (staffBranchId) p_branch_filter = staffBranchId
         // Shared grantors (permission_sharing) — single lookup, narrow.
         if (currentUserId) {
           const { data: sharedPerms } = await supabase
