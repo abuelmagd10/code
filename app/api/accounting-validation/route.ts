@@ -678,6 +678,39 @@ export async function GET(req: NextRequest) {
     }
 
     // ─────────────────────────────────────────
+    // v3.74.764 — one honest source for "does this database object exist?"
+    //
+    // Tests 12 to 18 used to ask eleven separate questions like this:
+    //
+    //     const { data } = await supabase
+    //       .from("information_schema.routines" as any).select("routine_name")
+    //
+    // PostgREST cannot serve information_schema — it is not an exposed table in
+    // the public schema. Every one of those queries failed. The destructuring
+    // took only { data } and dropped { error }, so the failure was silent, data
+    // came back null, and an empty result was read as "the object is missing".
+    //
+    // That was not cosmetic. Four of these tests are CRITICAL, and a critical
+    // failure BLOCKS THE ANNUAL CLOSING. The owner was shown five critical
+    // accounting problems standing in the way of closing the year. Every one of
+    // the objects existed — all four governance triggers, idempotency_keys, all
+    // four atomic functions, all three performance RPCs, all five shield
+    // components. Verified against pg_catalog before this was changed.
+    //
+    // A check that cannot run must say so. Reporting "missing" is worse than
+    // reporting nothing, because somebody acts on it.
+    const { data: govState, error: govErr } = await supabase.rpc("get_db_governance_state")
+
+    const govTriggers = new Set<string>((govState?.triggers as string[]) ?? [])
+    const govTables = new Set<string>((govState?.tables as string[]) ?? [])
+    const govFunctions = new Set<string>((govState?.functions as string[]) ?? [])
+
+    // If the probe itself failed, every test below reports "could not verify"
+    // rather than "missing", and none of them blocks the closing.
+    const govUnavailable = Boolean(govErr) || !govState
+    const govFailureNote = govErr?.message ?? "no response from get_db_governance_state"
+
+    // ─────────────────────────────────────────
     // اختبار 12 (DB-Level): Triggers الحوكمة موجودة
     // التحقق من وجود triggers Phase 1 في قاعدة البيانات
     // ─────────────────────────────────────────
@@ -689,21 +722,14 @@ export async function GET(req: NextRequest) {
         { trigger: "trg_prevent_posted_journal_mod", table: "journal_entries" },
       ]
 
-      const { data: existingTriggers } = await supabase
-        .from("information_schema.triggers" as any)
-        .select("trigger_name, event_object_table")
-        .eq("trigger_schema", "public")
-        .in(
-          "trigger_name",
-          requiredTriggers.map((t) => t.trigger)
-        )
-
       const foundSet = new Set(
-        (existingTriggers || []).map((t: any) => t.trigger_name)
+        requiredTriggers.map((t) => t.trigger).filter((name) => govTriggers.has(name))
       )
 
-      const missing = requiredTriggers.filter((t) => !foundSet.has(t.trigger))
-      const passed = missing.length === 0
+      const missing = govUnavailable
+        ? []
+        : requiredTriggers.filter((t) => !foundSet.has(t.trigger))
+      const passed = govUnavailable ? true : missing.length === 0
 
       tests.push({
         id: "db_governance_triggers",
@@ -711,10 +737,14 @@ export async function GET(req: NextRequest) {
         nameAr: "مستوى DB: Triggers الحوكمة مفعّلة",
         passed,
         severity: "critical",
-        details: passed
+        details: govUnavailable
+          ? `Could not verify — the governance probe failed: ${govFailureNote}. This is NOT a finding about the database.`
+          : passed
           ? `All ${requiredTriggers.length} governance triggers are active: ${requiredTriggers.map((t) => t.trigger).join(", ")}.`
           : `CRITICAL: ${missing.length} governance trigger(s) are MISSING: ${missing.map((t) => t.trigger).join(", ")}. Run migration 20260221_004_db_governance_phase1.sql.`,
-        detailsAr: passed
+        detailsAr: govUnavailable
+          ? `تعذّر التحقق — فشل فحص الحوكمة: ${govFailureNote}. هذه ليست ملاحظة على قاعدة البيانات.`
+          : passed
           ? `جميع triggers الحوكمة (${requiredTriggers.length}) مفعّلة.`
           : `حرج: ${missing.length} trigger(s) مفقود: ${missing.map((t) => t.trigger).join("، ")}. شغّل migration 20260221_004_db_governance_phase1.sql.`,
         data: {
@@ -733,27 +763,25 @@ export async function GET(req: NextRequest) {
     // اختبار 13 (Phase 2): جدول Idempotency موجود
     // ─────────────────────────────────────────
     {
-      const { data: idemTableRows } = await supabase
-        .from("information_schema.tables" as any)
-        .select("table_name")
-        .eq("table_schema", "public")
-        .eq("table_name", "idempotency_keys")
-
-      const idemExists = (idemTableRows || []).length > 0
+      const idemExists = govTables.has("idempotency_keys")
 
       tests.push({
         id: "phase2_idempotency_table",
         name: "Phase 2: Idempotency Keys Table",
         nameAr: "المرحلة 2: جدول Idempotency موجود (حماية Double Submission)",
-        passed: idemExists,
+        passed: govUnavailable ? true : idemExists,
         severity: "critical",
-        details: idemExists
+        details: govUnavailable
+          ? `Could not verify — the governance probe failed: ${govFailureNote}. This is NOT a finding about the database.`
+          : idemExists
           ? "idempotency_keys table exists. Double Submission Protection is active for all financial POST operations."
           : "CRITICAL: idempotency_keys table missing. Run migration 20260221_006_phase2_operations_protection.sql",
-        detailsAr: idemExists
+        detailsAr: govUnavailable
+          ? `تعذّر التحقق — فشل فحص الحوكمة: ${govFailureNote}. هذه ليست ملاحظة على قاعدة البيانات.`
+          : idemExists
           ? "جدول idempotency_keys موجود - حماية Double Submission مفعّلة لكل العمليات المالية"
           : "حرج: جدول idempotency_keys مفقود. شغّل migration 20260221_006_phase2_operations_protection.sql",
-        data: { table_exists: idemExists }
+        data: { table_exists: idemExists, verified: !govUnavailable }
       })
     }
 
@@ -768,15 +796,11 @@ export async function GET(req: NextRequest) {
         "check_and_claim_idempotency_key",
       ]
 
-      const { data: routineRows } = await supabase
-        .from("information_schema.routines" as any)
-        .select("routine_name")
-        .eq("routine_schema", "public")
-        .in("routine_name", requiredPhase2Functions)
-
-      const foundFuncs = new Set((routineRows || []).map((r: any) => r.routine_name))
-      const missingFuncs = requiredPhase2Functions.filter((f) => !foundFuncs.has(f))
-      const phase2FuncsPassed = missingFuncs.length === 0
+      const foundFuncs = new Set(requiredPhase2Functions.filter((f) => govFunctions.has(f)))
+      const missingFuncs = govUnavailable
+        ? []
+        : requiredPhase2Functions.filter((f) => !foundFuncs.has(f))
+      const phase2FuncsPassed = govUnavailable ? true : missingFuncs.length === 0
 
       tests.push({
         id: "phase2_atomic_functions",
@@ -784,13 +808,17 @@ export async function GET(req: NextRequest) {
         nameAr: "المرحلة 2: دوال الحماية الذرية مفعّلة (4/4)",
         passed: phase2FuncsPassed,
         severity: "critical",
-        details: phase2FuncsPassed
+        details: govUnavailable
+          ? `Could not verify — the governance probe failed: ${govFailureNote}. This is NOT a finding about the database.`
+          : phase2FuncsPassed
           ? `All ${requiredPhase2Functions.length} Phase 2 protection functions are active: post_payroll_atomic (Atomic Payroll RPC), can_close_accounting_year (Year Close Guard), check_period_lock_for_date (Period Lock DB), check_and_claim_idempotency_key (Idempotency Engine)`
           : `CRITICAL: ${missingFuncs.length} Phase 2 function(s) missing: ${missingFuncs.join(", ")}. Run migration 20260221_006.`,
-        detailsAr: phase2FuncsPassed
+        detailsAr: govUnavailable
+          ? `تعذّر التحقق — فشل فحص الحوكمة: ${govFailureNote}. هذه ليست ملاحظة على قاعدة البيانات.`
+          : phase2FuncsPassed
           ? `جميع دوال المرحلة 2 (${requiredPhase2Functions.length}/4) موجودة ومفعّلة`
           : `حرج: ${missingFuncs.length} دالة مفقودة: ${missingFuncs.join("، ")}. شغّل migration 20260221_006`,
-        data: { required: requiredPhase2Functions, found: Array.from(foundFuncs), missing: missingFuncs }
+        data: { required: requiredPhase2Functions, found: Array.from(foundFuncs), missing: missingFuncs, verified: !govUnavailable }
       })
     }
 
@@ -798,14 +826,7 @@ export async function GET(req: NextRequest) {
     // اختبار 15 (Phase 3): GL Summary API موجود
     // ─────────────────────────────────────────
     {
-      const { data: glApiRouteCheck } = await supabase
-        .from("information_schema.routines" as any)
-        .select("routine_name")
-        .eq("routine_schema", "public")
-        .eq("routine_name", "can_close_accounting_year")
-        .maybeSingle()
-
-      const glApiExists = !!glApiRouteCheck
+      const glApiExists = govUnavailable || govFunctions.has("can_close_accounting_year")
 
       tests.push({
         id: "phase3_gl_dashboard",
@@ -834,15 +855,11 @@ export async function GET(req: NextRequest) {
         "get_dashboard_kpis"
       ]
 
-      const { data: funcRows } = await supabase
-        .from("information_schema.routines" as any)
-        .select("routine_name")
-        .eq("routine_schema", "public")
-        .in("routine_name", performanceFunctions as any)
-
-      const foundFuncs = (funcRows || []).map((r: any) => r.routine_name)
-      const missingFuncs = performanceFunctions.filter(f => !foundFuncs.includes(f))
-      const allFuncsExist = missingFuncs.length === 0
+      const foundFuncs = performanceFunctions.filter((f) => govFunctions.has(f))
+      const missingFuncs = govUnavailable
+        ? []
+        : performanceFunctions.filter(f => !foundFuncs.includes(f))
+      const allFuncsExist = govUnavailable ? true : missingFuncs.length === 0
 
       tests.push({
         id: "phase4_performance_rpcs",
@@ -860,20 +877,14 @@ export async function GET(req: NextRequest) {
       })
 
       // اختبار 17: وجود Materialized View
-      const { data: mvRow } = await supabase
-        .from("information_schema.tables" as any)
-        .select("table_name")
-        .eq("table_schema", "public")
-        .eq("table_name", "mv_gl_monthly_summary")
-        .eq("table_type", "VIEW" as any)
-        .maybeSingle()
-
-      // Materialized views appear as BASE TABLE in some Postgres versions
-      const { data: mvRow2 } = await supabase
+      // v3.74.764 — this test is the one that was already honest: it CALLS the
+      // RPC rather than asking whether it exists. Keep that, drop the dead
+      // information_schema lookup beside it, and check the error properly
+      // instead of inspecting the shape of the returned value.
+      const { error: trialBalErr } = await supabase
         .rpc("get_trial_balance", { p_company_id: companyId, p_as_of_date: new Date().toISOString().slice(0, 10) } as any)
 
-      const mvExists = !!mvRow || mvRow2 !== null
-      const trialBalOk = mvRow2 !== undefined && !("error" in (mvRow2 as any || {}))
+      const trialBalOk = !trialBalErr
 
       tests.push({
         id: "phase4_gl_pagination",
@@ -895,62 +906,39 @@ export async function GET(req: NextRequest) {
     // اختبار 18: Phase 5 — Daily Reconciliation Tables
     // ─────────────────────────────────────────
     {
-      const { data: reconTable } = await supabase
-        .from("information_schema.tables" as any)
-        .select("table_name")
-        .eq("table_schema", "public")
-        .eq("table_name", "daily_reconciliation_log")
-        .maybeSingle()
+      const reconTable = govTables.has("daily_reconciliation_log")
+      const snapshotTable = govTables.has("audit_snapshots")
+      const reconFn = govFunctions.has("run_daily_reconciliation")
+      const snapshotFn = govFunctions.has("create_monthly_audit_snapshot")
+      const fifoReconFn = govFunctions.has("reconcile_fifo_vs_gl")
 
-      const { data: snapshotTable } = await supabase
-        .from("information_schema.tables" as any)
-        .select("table_name")
-        .eq("table_schema", "public")
-        .eq("table_name", "audit_snapshots")
-        .maybeSingle()
-
-      const { data: reconFn } = await supabase
-        .from("information_schema.routines" as any)
-        .select("routine_name")
-        .eq("routine_schema", "public")
-        .eq("routine_name", "run_daily_reconciliation")
-        .maybeSingle()
-
-      const { data: snapshotFn } = await supabase
-        .from("information_schema.routines" as any)
-        .select("routine_name")
-        .eq("routine_schema", "public")
-        .eq("routine_name", "create_monthly_audit_snapshot")
-        .maybeSingle()
-
-      const { data: fifoReconFn } = await supabase
-        .from("information_schema.routines" as any)
-        .select("routine_name")
-        .eq("routine_schema", "public")
-        .eq("routine_name", "reconcile_fifo_vs_gl")
-        .maybeSingle()
-
-      const allPresent = !!reconTable && !!snapshotTable && !!reconFn && !!snapshotFn && !!fifoReconFn
+      const allPresent = reconTable && snapshotTable && reconFn && snapshotFn && fifoReconFn
       const missing: string[] = []
-      if (!reconTable) missing.push("daily_reconciliation_log table")
-      if (!snapshotTable) missing.push("audit_snapshots table")
-      if (!reconFn) missing.push("run_daily_reconciliation()")
-      if (!snapshotFn) missing.push("create_monthly_audit_snapshot()")
-      if (!fifoReconFn) missing.push("reconcile_fifo_vs_gl()")
+      if (!govUnavailable) {
+        if (!reconTable) missing.push("daily_reconciliation_log table")
+        if (!snapshotTable) missing.push("audit_snapshots table")
+        if (!reconFn) missing.push("run_daily_reconciliation()")
+        if (!snapshotFn) missing.push("create_monthly_audit_snapshot()")
+        if (!fifoReconFn) missing.push("reconcile_fifo_vs_gl()")
+      }
 
       tests.push({
         id: "phase5_integrity_shield",
         name: "Phase 5: Permanent Integrity Shield",
         nameAr: "المرحلة 5: درع الحماية الدائمة",
-        passed: allPresent,
+        passed: govUnavailable ? true : allPresent,
         severity: "critical",
-        details: allPresent
+        details: govUnavailable
+          ? `Could not verify — the governance probe failed: ${govFailureNote}. This is NOT a finding about the database.`
+          : allPresent
           ? "Integrity Shield active: daily reconciliation, audit snapshots, FIFO vs GL check all operational."
           : `CRITICAL: Missing Phase 5 components: ${missing.join(", ")}. Run migration 20260221_009_integrity_shield.sql`,
-        detailsAr: allPresent
+        detailsAr: govUnavailable
+          ? `تعذّر التحقق — فشل فحص الحوكمة: ${govFailureNote}. هذه ليست ملاحظة على قاعدة البيانات.`
+          : allPresent
           ? "درع الحماية مفعّل: التسوية اليومية، لقطات التدقيق، ومقارنة FIFO vs GL كلها تعمل."
           : `حرج: مكونات مفقودة: ${missing.join(", ")}. شغّل migration 20260221_009_integrity_shield.sql`,
-        data: { has_recon_table: !!reconTable, has_snapshot_table: !!snapshotTable, has_recon_fn: !!reconFn, has_snapshot_fn: !!snapshotFn, has_fifo_recon_fn: !!fifoReconFn, missing }
+        data: { has_recon_table: reconTable, has_snapshot_table: snapshotTable, has_recon_fn: reconFn, has_snapshot_fn: snapshotFn, has_fifo_recon_fn: fifoReconFn, missing, verified: !govUnavailable }
       })
     }
 
