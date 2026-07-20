@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-20T10:33:48.532Z
--- Routines: 1213
+-- Generated: 2026-07-20T10:45:05.464Z
+-- Routines: 1214
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -27023,6 +27023,65 @@ BEGIN
       'hint','customer_credit row without matching credit_from_overpayment journal.');
     RETURN NEXT;
   END LOOP;
+END $function$
+;
+
+-- ---------------------------------------------------------------
+-- ic_critical_triggers(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_critical_triggers(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  r        RECORD;
+  v_found  INT;
+  v_off    INT;
+BEGIN
+  FOR r IN
+    SELECT * FROM (VALUES
+      ('enforce_period_lock_header',          1, 'قفل الفترات المحاسبية (رأس القيد)'),
+      ('enforce_period_lock_lines',           1, 'قفل الفترات المحاسبية (سطور القيد)'),
+      ('fn_check_journal_balance',            1, 'توازن القيد المزدوج'),
+      ('recurring_template_balance_check_trg',1, 'توازن قوالب القيود الدورية'),
+      ('auto_create_cogs_journal',            1, 'ترحيل تكلفة البضاعة المباعة من دفعات FIFO'),
+      ('auto_reverse_cogs_on_sale_return',    1, 'عكس التكلفة عند مرتجع المبيعات'),
+      ('auto_link_inventory_to_journal',      1, 'ربط حركة المخزون بالقيد'),
+      ('protect_customer_branch_id',          1, 'حماية فرع العميل'),
+      ('validate_customer_branch_isolation',  6, 'عزل العملاء بين الفروع'),
+      ('validate_product_branch_isolation',  12, 'عزل المنتجات بين الفروع')
+    ) AS v(fn, expected, purpose)
+  LOOP
+    SELECT count(*) FILTER (WHERE NOT t.tgisinternal),
+           count(*) FILTER (WHERE NOT t.tgisinternal AND t.tgenabled = 'D')
+      INTO v_found, v_off
+    FROM pg_trigger t
+    JOIN pg_proc p ON p.oid = t.tgfoid
+    WHERE p.pronamespace = 'public'::regnamespace AND p.proname = r.fn;
+
+    IF v_off > 0 THEN
+      severity := 'high';
+      detail := jsonb_build_object(
+        'subject', 'حماية مُعطَّلة: ' || r.purpose || ' (' || v_off || ' مُشغِّل موقوف)',
+        'function', r.fn,
+        'disabled', v_off,
+        'hint', 'A disabled trigger removes this protection silently — writes keep succeeding and nothing reports a problem. Re-enable with ALTER TABLE ... ENABLE TRIGGER, or explain in the changelog why it is off.');
+      RETURN NEXT;
+
+    ELSIF v_found < r.expected THEN
+      severity := 'high';
+      detail := jsonb_build_object(
+        'subject', 'حماية ناقصة: ' || r.purpose || ' (' || v_found || ' من ' || r.expected || ')',
+        'function', r.fn,
+        'found', v_found,
+        'expected', r.expected,
+        'hint', 'Fewer triggers than when this protection was last verified working. One was dropped, or a table it guards was rebuilt without re-attaching it.');
+      RETURN NEXT;
+    END IF;
+  END LOOP;
+EXCEPTION WHEN undefined_table OR undefined_column THEN RETURN;
 END $function$
 ;
 
