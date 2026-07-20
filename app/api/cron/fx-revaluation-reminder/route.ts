@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
 
   let processed = 0
   let notified = 0
+  // v3.74.754 — collected so a failed write cannot be mistaken for "nothing to do".
+  const writeErrors: string[] = []
   let skippedNoFx = 0
   let skippedAlreadyReval = 0
   let skippedDup = 0
@@ -130,8 +132,22 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    // Drop the reminder.
-    await supabase.from('notifications').insert({
+    // v3.74.754 — this insert has failed every day since the cron was written,
+    // and nothing said so. Two defects, both of the kind that only surface when
+    // you attempt the insert:
+    //
+    //   reference_id, kind, retry_count and created_by are NOT NULL and were
+    //   never supplied — reference_id is the one that raises first.
+    //
+    //   category 'accounting' is not in notifications_category_check. The
+    //   permitted values are finance, inventory, sales, approvals, system,
+    //   billing, hr, manufacturing, branch_activity, accountant_action. FX
+    //   revaluation is a finance concern, so 'finance' it is.
+    //
+    // Found by asking which crons have ever left a trace: this company holds 91
+    // foreign-currency accounts, so the reminder had real work to do, and had
+    // produced exactly zero notifications in thirty days.
+    const { error: notifErr } = await supabase.from('notifications').insert({
       company_id: company.id,
       title: 'إعادة تقييم العملات الأجنبية',
       message:
@@ -140,14 +156,41 @@ export async function GET(req: NextRequest) {
       priority: 'high',
       status: 'unread',
       severity: 'warning',
-      category: 'accounting',
+      category: 'finance',
+      kind: 'action',
       channel: 'in_app',
       event_key: eventKey,
       assigned_to_role: 'owner',
       assigned_to_user: company.user_id,
       reference_type: 'fx_period_end_revaluation',
+      reference_id: company.id,
+      retry_count: 0,
+      created_by: company.user_id,
     })
+
+    if (notifErr) {
+      // Silence is what let this run broken for a month. Record the failure and
+      // keep going, so one bad company does not hide the rest.
+      console.error('[cron/fx-revaluation-reminder] notification insert failed:', notifErr.message)
+      writeErrors.push(`${company.id}: ${notifErr.message}`)
+      continue
+    }
     notified++
+  }
+
+  // v3.74.754 — a reminder cron that writes nothing and reports 200 is exactly
+  // how this went unnoticed for a month. If any company's notification could
+  // not be written, the run failed.
+  if (writeErrors.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'FX reminders were computed but could not be delivered',
+        write_errors: writeErrors.slice(0, 10),
+        processed,
+        notified,
+      },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({
