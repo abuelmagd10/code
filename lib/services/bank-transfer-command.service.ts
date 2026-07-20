@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 const BANK_TRANSFER_EVENT = "bank_transfer_posting"
 
@@ -259,8 +260,8 @@ export class BankTransferCommandService {
       }
     } catch (error) {
       if (journalEntryId) {
-        await this.adminSupabase.from("journal_entry_lines").delete().eq("journal_entry_id", journalEntryId)
-        await this.adminSupabase.from("journal_entries").delete().eq("id", journalEntryId)
+        // v3.74.756 — see rollback-journal-entry.ts.
+        await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "bank transfer")
       }
       if (traceId) {
         await this.adminSupabase.from("financial_operation_trace_links").delete().eq("transaction_id", traceId)

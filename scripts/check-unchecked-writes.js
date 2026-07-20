@@ -59,22 +59,28 @@ const SCAN_DIRS = ["app", "lib"];
  * .tsx entirely — more than half the codebase. The script reporting the true
  * number is the only reason the baseline is not permanently wrong by 117.
  *
- * NOT all 213 are equal, and the list should not be worked through top to
- * bottom. The dangerous ones are the rollback paths that delete journal
- * entries after a failed operation:
+ * They are not equal, and the list should not be worked through top to bottom.
+ * The dangerous ones were the rollback paths that delete a journal entry after
+ * a failed operation: if that delete fails quietly the compensation never
+ * happens, and a half-written entry survives a failed transaction with no
+ * document explaining it. That is accounting integrity, not logging.
  *
- *     lib/services/manual-journal-command.service.ts
- *     lib/services/customer-refund-command.service.ts
- *     lib/services/shareholder-capital-command.service.ts
- *     lib/services/bank-transfer-command.service.ts
+ * v3.74.756 fixed the six command services in that class — manual-journal,
+ * customer-refund, customer-voucher, shareholder-capital, bank-transfer and
+ * supplier-refund-receipt — via lib/services/rollback-journal-entry.ts, which
+ * checks both deletes and logs ROLLBACK_INCOMPLETE if either fails. 213 → 201.
+ *
+ * Still in the same class and NOT yet done:
  *     lib/period-closing.ts
+ *     lib/pre-receipt-refund.ts
+ *     lib/pre-shipment-refund.ts
+ *     lib/sales-return-cash-disbursement.ts
+ *     lib/manufacturing/manufacturing-accounting.ts
  *
- * If one of those deletes fails quietly, the compensating rollback does not
- * happen and a half-written journal entry survives a failed transaction. That
- * is an accounting integrity problem, not a logging one. Audit-log inserts —
- * the bulk of the list — matter far less.
+ * The rest are largely audit-log inserts, where a failure is a lost log line
+ * rather than a corrupted ledger.
  */
-const BASELINE = 213;
+const BASELINE = 201;
 
 const WRITE_RE = /^\s*await\s+[\w.$]+\s*\.\s*from\s*\([^)]*\)\s*\.\s*(insert|update|upsert|delete)\s*\(/;
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 const CAPITAL_CONTRIBUTION_EVENT = "shareholder_capital_contribution_posting"
 
@@ -187,8 +188,8 @@ export class ShareholderCapitalCommandService {
       }
     } catch (error) {
       if (journalEntryId) {
-        await this.adminSupabase.from("journal_entry_lines").delete().eq("journal_entry_id", journalEntryId)
-        await this.adminSupabase.from("journal_entries").delete().eq("id", journalEntryId)
+        // v3.74.756 — see rollback-journal-entry.ts.
+        await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "shareholder capital")
       }
       if (contributionId) {
         await this.adminSupabase.from("capital_contributions").delete().eq("id", contributionId)

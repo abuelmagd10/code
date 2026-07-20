@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 const CUSTOMER_VOUCHER_EVENT = "customer_voucher_posting"
 
@@ -218,8 +219,8 @@ export class CustomerVoucherCommandService {
       }
       if (applicationIds.length > 0) await this.adminSupabase.from("advance_applications").delete().in("id", applicationIds)
       if (journalEntryId) {
-        await this.adminSupabase.from("journal_entry_lines").delete().eq("journal_entry_id", journalEntryId)
-        await this.adminSupabase.from("journal_entries").delete().eq("id", journalEntryId)
+        // v3.74.756 — see rollback-journal-entry.ts.
+        await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "customer voucher")
       }
       if (paymentId) await this.adminSupabase.from("payments").delete().eq("id", paymentId)
       if (traceId) {

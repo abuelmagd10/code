@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 const CUSTOMER_REFUND_EVENT = "customer_credit_refund_posting"
 
@@ -417,8 +418,9 @@ export class CustomerRefundCommandService {
       }
       if (paymentId) await this.adminSupabase.from("payments").delete().eq("id", paymentId)
       if (journalEntryId) {
-        await this.adminSupabase.from("journal_entry_lines").delete().eq("journal_entry_id", journalEntryId)
-        await this.adminSupabase.from("journal_entries").delete().eq("id", journalEntryId)
+        // v3.74.756 — see rollback-journal-entry.ts: a silent failure here left
+        // a refund's journal entry in the ledger after the refund was undone.
+        await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "customer refund")
       }
       if (traceId) {
         await this.adminSupabase.from("financial_operation_trace_links").delete().eq("transaction_id", traceId)
