@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
+import { rollbackJournalEntry } from '@/lib/services/rollback-journal-entry'
 
 export async function GET(
   request: NextRequest,
@@ -335,7 +336,9 @@ export async function POST(
 
           if (line1Error) {
             // ✅ Rollback: حذف القيد الذي تم إنشاؤه
-            await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            // v3.74.758 — checked now: an unreported failure here leaves a
+            // reversal entry with no lines against a still-posted schedule.
+            await rollbackJournalEntry(supabase as any, reversalEntry.id, 'depreciation reversal (line 1)')
             throw line1Error
           }
 
@@ -352,8 +355,9 @@ export async function POST(
 
           if (line2Error) {
             // ✅ Rollback: حذف القيد وسطوره
-            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', reversalEntry.id)
-            await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            // v3.74.758 — worse than the case above: line 1 succeeded, so a
+            // silent failure leaves a HALF-BALANCED reversal in the ledger.
+            await rollbackJournalEntry(supabase as any, reversalEntry.id, 'depreciation reversal (line 2)')
             throw line2Error
           }
 
@@ -370,8 +374,10 @@ export async function POST(
 
           if (updateError) {
             // ✅ Rollback: حذف القيد وسطوره (حتى لو processedScheduleIds فارغ)
-            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', reversalEntry.id)
-            await supabase.from('journal_entries').delete().eq('id', reversalEntry.id)
+            // v3.74.758 — the schedule stayed posted, so a silent failure here
+            // leaves a complete reversal entry AND the original still standing:
+            // the depreciation is cancelled twice over in the accounts.
+            await rollbackJournalEntry(supabase as any, reversalEntry.id, 'depreciation reversal (schedule update)')
             // إزالة القيد من reversalEntryIds لأنه تم حذفه
             const index = reversalEntryIds.indexOf(reversalEntry.id)
             if (index > -1) reversalEntryIds.splice(index, 1)
@@ -418,9 +424,10 @@ export async function POST(
 
         if (assetUpdateError) {
           // ✅ Rollback: إعادة جميع الجداول إلى posted وإلغاء القيود العكسية
+          // v3.74.758 — every entry reported individually, so a partial failure
+          // names which ones survived rather than losing the whole batch.
           for (const entryId of reversalEntryIds) {
-            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId)
-            await supabase.from('journal_entries').delete().eq('id', entryId)
+            await rollbackJournalEntry(supabase as any, entryId, 'depreciation reversal (asset update)')
           }
           // إعادة الجداول إلى posted
           await supabase
@@ -447,9 +454,10 @@ export async function POST(
         // يغطي جميع الحالات: فشل جزئي، فشل كامل، أو فشل بعد نجاح كل الجداول
         if (reversalEntryIds.length > 0) {
           // حذف جميع القيود العكسية التي تم إنشاؤها
+          // v3.74.758 — this is the last line of defence. If it fails quietly,
+          // nothing else will clean up after it.
           for (const entryId of reversalEntryIds) {
-            await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', entryId)
-            await supabase.from('journal_entries').delete().eq('id', entryId)
+            await rollbackJournalEntry(supabase as any, entryId, 'depreciation reversal (outer catch)')
           }
         }
         

@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 const PRIVILEGED_ROLES = new Set(["owner", "admin", "manager", "general_manager", "accountant"])
 
@@ -157,17 +158,32 @@ export async function POST(
       ])
     if (revLinesErr) {
       // Roll back the reversal JE so we don't leave an orphan draft.
-      await supabase.from("journal_entries").delete().eq("id", revJe.id)
+      // v3.74.758 — checked now, so "we don't leave an orphan" is a fact.
+      await rollbackJournalEntry(supabase as any, revJe.id, "capital contribution reversal")
       return NextResponse.json(
         { success: false, error: revLinesErr.message },
         { status: 500 }
       )
     }
 
-    await supabase
+    // v3.74.758 — this posting was unchecked. A silent failure leaves the
+    // reversal sitting as a draft: the application shows the contribution as
+    // reversed while the ledger still carries it in full. The same defect as
+    // the sales-return disbursement in v3.74.757.
+    const { error: revPostErr } = await supabase
       .from("journal_entries")
       .update({ status: "posted" })
       .eq("id", revJe.id)
+
+    if (revPostErr) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `reversal entry was created but could not be posted: ${revPostErr.message}`,
+        },
+        { status: 500 }
+      )
+    }
 
     // 4. Flag the original contribution as reversed.
     const userId = context.user?.id || null

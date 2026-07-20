@@ -77,17 +77,28 @@ const SCAN_DIRS = ["app", "lib"];
  *
  * Every journal-entry rollback in lib/ now reports its own failure.
  *
- * Still open, in other shapes and needing individual reading rather than a
- * sweep:
- *     app/api/fixed-assets/[id]/depreciation/route.ts   (5 sites)
- *     app/api/shareholders/contributions/[id]/reverse
- *     app/api/hr/payroll/payments
- *     the fix-* maintenance routes
+ * v3.74.758 finished the ledger-rollback work: the five depreciation-reversal
+ * sites and the capital-contribution reversal, including a posting update that
+ * would otherwise have left a contribution reversed in the app and intact in
+ * the ledger. 189 → 179.
+ *
+ * Two entries from that list turned out NOT to need anything, and both are
+ * worth recording so nobody re-opens them:
+ *
+ *   app/api/hr/payroll/payments — already checks both deletes. I had carried
+ *   it over from a different search's output and never re-read it.
+ *
+ *   app/invoices/[id]/edit/page.tsx — the journal delete + re-post block sits
+ *   inside a /* ... *​/ spanning lines 543-1024, headed "Legacy direct UI
+ *   mutation path retained as a reference only ... Do not re-enable this
+ *   block". It does not run; live edits go through the API. This scanner was
+ *   right to skip it, and a hand-check without block-comment tracking was what
+ *   made it look like a live defect.
  *
  * The remainder are largely audit-log inserts, where a failure costs a log
  * line rather than a ledger.
  */
-const BASELINE = 189;
+const BASELINE = 179;
 
 const WRITE_RE = /^\s*await\s+[\w.$]+\s*\.\s*from\s*\([^)]*\)\s*\.\s*(insert|update|upsert|delete)\s*\(/;
 
