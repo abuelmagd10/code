@@ -259,10 +259,49 @@ export async function GET(req: NextRequest) {
         .in("status", ["sent", "paid", "partially_paid"])
         .is("deleted_at", null)
 
-      const activeIds = (activeInvoices || []).map((inv: any) => inv.id)
+      const allActiveIds = (activeInvoices || []).map((inv: any) => inv.id)
+
+      // v3.74.765 — only invoices that actually SELL STOCK can have a cost of
+      // goods sold. This test used to check every active invoice, so a
+      // service-only invoice was permanently counted as "missing COGS" and,
+      // being critical, permanently blocked the annual closing.
+      //
+      // On this database that was INV-2026-00001: one line, product "تقشير",
+      // item_type = 'service'. A service has no inventory cost. There is
+      // nothing to post and there never will be. The message even told the
+      // owner "profit is overstated in the income statement", which was simply
+      // untrue.
+      //
+      // The rest of the codebase already knew this distinction — the read-only
+      // diagnostic in app/api/fix-cogs-accounting filters
+      // products.item_type !== "service" — but this test did not.
+      const stockInvoiceIds = new Set<string>()
+      let lineLookupFailed: string | null = null
+
+      if (allActiveIds.length > 0) {
+        const chunkSize = 100
+        for (let i = 0; i < allActiveIds.length; i += chunkSize) {
+          const chunk = allActiveIds.slice(i, i + chunkSize)
+          const { data: stockLines, error: linesErr } = await supabase
+            .from("invoice_items")
+            .select("invoice_id, products!inner(item_type)")
+            .in("invoice_id", chunk)
+            .neq("products.item_type", "service")
+
+          if (linesErr) {
+            // Do not guess. An unreadable line table must not be reported as
+            // "every invoice is missing COGS".
+            lineLookupFailed = linesErr.message
+            break
+          }
+          for (const row of stockLines || []) stockInvoiceIds.add((row as any).invoice_id)
+        }
+      }
+
+      const activeIds = Array.from(stockInvoiceIds)
       let invoicesWithoutCOGS = 0
 
-      if (activeIds.length > 0) {
+      if (!lineLookupFailed && activeIds.length > 0) {
         const chunkSize = 100
         for (let i = 0; i < activeIds.length; i += chunkSize) {
           const chunk = activeIds.slice(i, i + chunkSize)
@@ -279,7 +318,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const passed = invoicesWithoutCOGS === 0
+      const passed = lineLookupFailed ? true : invoicesWithoutCOGS === 0
 
       tests.push({
         id: "cogs_recorded",
@@ -287,13 +326,23 @@ export async function GET(req: NextRequest) {
         nameAr: "تكلفة البضاعة المباعة مسجّلة للفواتير المباعة",
         passed,
         severity: "critical",
-        details: passed
-          ? `All ${activeIds.length} active invoices have COGS journal entries`
-          : `${invoicesWithoutCOGS} invoices (out of ${activeIds.length}) are missing COGS entries. Profit is overstated in the income statement.`,
-        detailsAr: passed
-          ? `جميع الـ ${activeIds.length} فاتورة نشطة لها قيود تكلفة بضاعة`
-          : `${invoicesWithoutCOGS} فاتورة (من ${activeIds.length}) لا تحتوي على قيود COGS. الربح في قائمة الدخل مضخّم.`,
-        data: { totalActiveInvoices: activeIds.length, invoicesWithoutCOGS },
+        details: lineLookupFailed
+          ? `Could not verify — invoice lines could not be read: ${lineLookupFailed}. This is NOT a finding about the accounts.`
+          : passed
+          ? `All ${activeIds.length} stock-selling invoice(s) have COGS journal entries. ${allActiveIds.length - activeIds.length} service-only invoice(s) excluded — a service has no inventory cost.`
+          : `${invoicesWithoutCOGS} invoice(s) (out of ${activeIds.length} that sell stock) are missing COGS entries. Profit is overstated in the income statement.`,
+        detailsAr: lineLookupFailed
+          ? `تعذّر التحقق — لم تُقرأ سطور الفواتير: ${lineLookupFailed}. هذه ليست ملاحظة على الحسابات.`
+          : passed
+          ? `جميع الفواتير التى تبيع مخزوناً (${activeIds.length}) لها قيود تكلفة بضاعة. استُثنيت ${allActiveIds.length - activeIds.length} فاتورة خدمات — الخدمة لا تكلفة مخزون لها.`
+          : `${invoicesWithoutCOGS} فاتورة (من ${activeIds.length} تبيع مخزوناً) بلا قيود تكلفة. الربح فى قائمة الدخل مضخّم.`,
+        data: {
+          totalActiveInvoices: allActiveIds.length,
+          stockSellingInvoices: activeIds.length,
+          serviceOnlyExcluded: allActiveIds.length - activeIds.length,
+          invoicesWithoutCOGS,
+          verified: !lineLookupFailed,
+        },
       })
     }
 
