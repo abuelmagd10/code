@@ -131,6 +131,15 @@ jobs:
       - name: Service-role routes must scope to the caller's company
         run: node scripts/check-service-role-scoping.js
 
+      # v3.74.755 — supabase-js does not throw on a failed write; it returns
+      # { error }. Four writes that discarded that result were found broken in
+      # a single day, each having reported success for as long as it existed:
+      # the customer branch trigger, the nightly integrity cron, the FX
+      # revaluation reminder, and a retired repair tool. This stops the count
+      # from growing.
+      - name: Database writes must not discard their result
+        run: node scripts/check-unchecked-writes.js
+
       - name: Check for NextResponse.json usage in critical endpoints
         run: |
           # Critical endpoints should NOT use NextResponse.json for errors
