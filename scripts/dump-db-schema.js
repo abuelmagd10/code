@@ -28,10 +28,60 @@
  * this file would recreate every function with PostgreSQL's default EXECUTE to
  * PUBLIC — silently undoing the v3.74.727-731 lockdown.
  *
- * This snapshot is a fidelity record and a diff surface. It is NOT yet proven
- * to rebuild the database on its own; that requires restoring it into a scratch
- * project and comparing. Until that test is run and passes, treat this as
- * "we can see what production contains", not "we can recreate it".
+ * This snapshot is a fidelity record and a diff surface. It is NOT a restore
+ * script, and that is no longer a caution — it is a measured result.
+ *
+ * PROVEN, 2026-07-20 (v3.74.769)
+ * ------------------------------
+ * The sentence that used to sit here said this had "NOT yet proven to rebuild
+ * the database" and that the test required a scratch project. That test was
+ * finally run. It failed:
+ *
+ *     10,916 statements    4,871 applied    6,045 failed
+ *
+ *     tables    249 -> 243
+ *     functions 1204 -> 1053
+ *     policies  797  -> 429
+ *     triggers  501  -> 5
+ *
+ * Five triggers out of 501. Triggers are where COGS posting, journal balance
+ * enforcement and FIFO consumption live. A database restored from this file
+ * accepts data and silently stops doing accounting. Fewer than half the RLS
+ * policies came back, so it also leaks between companies.
+ *
+ * The dangerous part is not the failure count. It is that 4,871 statements
+ * SUCCEEDED: the result looks like a working system.
+ *
+ * Why it cannot work
+ * ------------------
+ *   1. No dependency ordering. Foreign keys are emitted before the primary keys
+ *      they reference, so most constraints fail with "there is no unique
+ *      constraint matching given keys".
+ *   2. Extensions are never emitted -> type "vector" does not exist.
+ *   3. Custom enum types are never emitted -> type "discount_document_type"
+ *      does not exist.
+ *   4. Sequences are never emitted -> relation "system_audit_log_id_seq" does
+ *      not exist.
+ *   5. Column DEFAULTs referencing functions run before functions.sql exists.
+ *
+ * And one fidelity bug worth its own line: audit_logs.entity and
+ * audit_logs.entity_id are GENERATED ALWAYS columns, and this dump writes them
+ * as DEFAULT expressions. Postgres rejects it — which is fortunate, because if
+ * it had been accepted the restored table would behave differently from
+ * production in a way nothing would report.
+ *
+ * What this file IS for
+ * ---------------------
+ * Seeing what production contains, and diffing it. That is real value and it
+ * has already been paid: on 2026-07-20 the checked-in copy was found still
+ * granting three dropped, dangerous functions to anon. Without this snapshot
+ * nobody would have noticed until a rebuild silently restored them.
+ *
+ * For actual disaster recovery use pg_dump, which handles ordering, extensions,
+ * types and sequences by design: `supabase db dump`. Do not extend this script
+ * to try to become pg_dump.
+ *
+ * Re-run the proof with: node scripts/restore-into-test-db.js
  *
  * Run:   node scripts/dump-db-schema.js
  * Env:   .env.local with NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL)
