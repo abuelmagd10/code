@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-20T10:45:05.464Z
+-- Generated: 2026-07-20T14:36:10.396Z
 -- Routines: 1214
 -- =====================================================================
 
@@ -22876,6 +22876,38 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- get_db_governance_state()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_db_governance_state()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT jsonb_build_object(
+    'triggers', (
+      SELECT coalesce(jsonb_agg(DISTINCT t.tgname), '[]'::jsonb)
+      FROM pg_trigger t
+      WHERE NOT t.tgisinternal AND t.tgenabled <> 'D'
+    ),
+    'tables', (
+      SELECT coalesce(jsonb_agg(DISTINCT c.relname), '[]'::jsonb)
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
+    ),
+    'functions', (
+      SELECT coalesce(jsonb_agg(DISTINCT p.proname), '[]'::jsonb)
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public'
+    ),
+    'generated_at', now()
+  );
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- get_effective_available_stock(p_company_id uuid, p_warehouse_id uuid, p_product_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_effective_available_stock(p_company_id uuid, p_warehouse_id uuid, p_product_id uuid)
@@ -26293,6 +26325,123 @@ BEGIN
   END IF;
 EXCEPTION WHEN undefined_column THEN RETURN;
 END $function$
+;
+
+-- ---------------------------------------------------------------
+-- ic_anon_reachable_readers(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_anon_reachable_readers(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_count int;
+  v_sample text;
+BEGIN
+  WITH policy_text AS (
+    SELECT string_agg(coalesce(pg_get_expr(pol.polqual, pol.polrelid),'') || ' ' ||
+                      coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid),''), ' ') AS body
+    FROM pg_policy pol
+  ),
+  open_readers AS (
+    SELECT p.oid::regprocedure::text AS sig
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    CROSS JOIN policy_text pt
+    WHERE n.nspname = 'public'
+      AND p.prosecdef
+      AND has_function_privilege('anon', p.oid, 'EXECUTE')
+      AND p.prorettype <> 'trigger'::regtype
+      AND p.prosrc !~* '\m(INSERT INTO|UPDATE |DELETE FROM)\M'
+      AND p.prosrc NOT ILIKE '%assert_company_access%'
+      AND p.prosrc NOT ILIKE '%auth.uid()%'
+      AND p.prosrc ~* 'company_id'
+      AND pg_get_function_identity_arguments(p.oid) <> ''
+      AND pt.body !~ ('\m' || p.proname || '\s*\(')
+      AND p.proname NOT IN ('find_user_by_login','check_username_available',
+                            'generate_username_from_email','get_user_company_status')
+  )
+  SELECT count(*), string_agg(sig, ', ' ORDER BY sig)
+    INTO v_count, v_sample
+  FROM (SELECT sig FROM open_readers ORDER BY sig LIMIT 5) s;
+
+  SELECT count(*) INTO v_count FROM (
+    WITH policy_text AS (
+      SELECT string_agg(coalesce(pg_get_expr(pol.polqual, pol.polrelid),'') || ' ' ||
+                        coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid),''), ' ') AS body
+      FROM pg_policy pol
+    )
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    CROSS JOIN policy_text pt
+    WHERE n.nspname = 'public' AND p.prosecdef
+      AND has_function_privilege('anon', p.oid, 'EXECUTE')
+      AND p.prorettype <> 'trigger'::regtype
+      AND p.prosrc !~* '\m(INSERT INTO|UPDATE |DELETE FROM)\M'
+      AND p.prosrc NOT ILIKE '%assert_company_access%'
+      AND p.prosrc NOT ILIKE '%auth.uid()%'
+      AND p.prosrc ~* 'company_id'
+      AND pg_get_function_identity_arguments(p.oid) <> ''
+      AND pt.body !~ ('\m' || p.proname || '\s*\(')
+      AND p.proname NOT IN ('find_user_by_login','check_username_available',
+                            'generate_username_from_email','get_user_company_status')
+  ) t;
+
+  IF v_count = 0 THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY SELECT 'medium'::text,
+    jsonb_build_object(
+      'open_reader_count', v_count,
+      'examples', v_sample,
+      'note', 'Infrastructure-wide, identical for every company. One row by design.',
+      'reason', 'SECURITY DEFINER + EXECUTE to anon + company-scoped read + no caller check'
+    );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- ic_anon_reachable_writers(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_anon_reachable_writers(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT
+    'high'::text,
+    jsonb_build_object(
+      'function',  p.proname,
+      'arguments', pg_get_function_identity_arguments(p.oid),
+      'writes_to_ledger', (p.prosrc ILIKE '%journal_entr%'),
+      'reason', 'SECURITY DEFINER + EXECUTE granted to anon + writes + no caller check'
+    )
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.prosecdef
+    AND has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND p.prorettype <> 'trigger'::regtype
+    AND p.prosrc ~* '\m(INSERT INTO|UPDATE|DELETE FROM)\M'
+    AND p.prosrc NOT ILIKE '%assert_company_access%'
+    AND p.prosrc NOT ILIKE '%assert_is_self%'
+    AND p.prosrc NOT ILIKE '%company_members%'
+    AND p.prosrc NOT ILIKE '%auth.uid()%'
+    -- Rate limiting must run before authentication, and it fails OPEN on error,
+    -- so revoking anon here would disable throttling on the login route without
+    -- reporting anything. Deliberate, and named so it is not re-flagged.
+    AND p.proname <> 'check_and_increment_rate_limit'
+  ORDER BY (p.prosrc ILIKE '%journal_entr%') DESC, p.proname;
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
