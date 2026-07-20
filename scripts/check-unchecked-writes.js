@@ -70,17 +70,24 @@ const SCAN_DIRS = ["app", "lib"];
  * supplier-refund-receipt — via lib/services/rollback-journal-entry.ts, which
  * checks both deletes and logs ROLLBACK_INCOMPLETE if either fails. 213 → 201.
  *
- * Still in the same class and NOT yet done:
- *     lib/period-closing.ts
- *     lib/pre-receipt-refund.ts
- *     lib/pre-shipment-refund.ts
- *     lib/sales-return-cash-disbursement.ts
- *     lib/manufacturing/manufacturing-accounting.ts
+ * v3.74.757 finished the class: period-closing, pre-receipt-refund,
+ * pre-shipment-refund, sales-return-cash-disbursement and
+ * manufacturing-accounting, eleven sites in all, plus one status update that
+ * would have left cash paid out against an unposted entry. 201 → 189.
  *
- * The rest are largely audit-log inserts, where a failure is a lost log line
- * rather than a corrupted ledger.
+ * Every journal-entry rollback in lib/ now reports its own failure.
+ *
+ * Still open, in other shapes and needing individual reading rather than a
+ * sweep:
+ *     app/api/fixed-assets/[id]/depreciation/route.ts   (5 sites)
+ *     app/api/shareholders/contributions/[id]/reverse
+ *     app/api/hr/payroll/payments
+ *     the fix-* maintenance routes
+ *
+ * The remainder are largely audit-log inserts, where a failure costs a log
+ * line rather than a ledger.
  */
-const BASELINE = 201;
+const BASELINE = 189;
 
 const WRITE_RE = /^\s*await\s+[\w.$]+\s*\.\s*from\s*\([^)]*\)\s*\.\s*(insert|update|upsert|delete)\s*\(/;
 

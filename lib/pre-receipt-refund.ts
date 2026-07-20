@@ -37,6 +37,7 @@
  */
 import { SupabaseClient } from "@supabase/supabase-js"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 export type PreReceiptRefundMode = "cancel_bill" | "keep_open"
 
@@ -219,7 +220,9 @@ export async function executePreReceiptRefund(
           },
         ])
       if (linesErr) {
-        await admin.from("journal_entries").delete().eq("id", jeRow.id)
+        // v3.74.757 — checked now: an unreported failure here leaves the very
+        // orphan the surrounding comments were written to avoid.
+        await rollbackJournalEntry(admin as any, jeRow.id, "pre-receipt refund")
         return { success: false, error: linesErr.message }
       }
       // v3.74.252 — keep JE 'draft' until the void payment + linkage
@@ -255,8 +258,8 @@ export async function executePreReceiptRefund(
         .single()
       if (vErr || !voidRow?.id) {
         // v3.74.252 — clean rollback: delete the draft JE + its lines.
-        await admin.from("journal_entry_lines").delete().eq("journal_entry_id", jeRow.id)
-        await admin.from("journal_entries").delete().eq("id", jeRow.id)
+        // v3.74.757 — "clean" was the intent; unchecked, it was only a hope.
+        await rollbackJournalEntry(admin as any, jeRow.id, "pre-receipt refund void-payment")
         return { success: false, error: vErr?.message || "Failed to record void payment" }
       }
 

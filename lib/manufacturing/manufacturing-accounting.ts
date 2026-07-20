@@ -23,6 +23,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Account resolution
@@ -324,8 +325,9 @@ export async function postMaterialIssueJournal(
         },
       ])
     if (linesPostErr) {
-      // Best effort: try to remove the orphan header
-      await supabase.from("journal_entries").delete().eq("id", header.id)
+      // v3.74.757 — was "best effort", meaning nobody found out when the effort
+      // failed. Now reported.
+      await rollbackJournalEntry(supabase as any, header.id, "manufacturing material issue")
       return { success: false, error: `Failed to insert journal lines: ${linesPostErr.message}` }
     }
 
@@ -639,7 +641,9 @@ export async function postProductReceiptJournal(
     const totalDebit = linesToInsert.reduce((s, l) => s + Number(l.debit_amount || 0), 0)
     const totalCredit = linesToInsert.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
     if (Math.abs(totalDebit - totalCredit) > 0.02) {
-      await supabase.from("journal_entries").delete().eq("id", header.id)
+      // v3.74.757 — aborting an unbalanced entry only helps if the header
+      // actually goes away.
+      await rollbackJournalEntry(supabase as any, header.id, "manufacturing unbalanced abort")
       return {
         success: false,
         error: `Journal would be unbalanced: Dr=${totalDebit} vs Cr=${totalCredit}. Aborted.`,
@@ -648,7 +652,8 @@ export async function postProductReceiptJournal(
 
     const { error: linesPostErr } = await supabase.from("journal_entry_lines").insert(linesToInsert)
     if (linesPostErr) {
-      await supabase.from("journal_entries").delete().eq("id", header.id)
+      // v3.74.757 — see above.
+      await rollbackJournalEntry(supabase as any, header.id, "manufacturing production posting")
       return { success: false, error: `Failed to insert journal lines: ${linesPostErr.message}` }
     }
 

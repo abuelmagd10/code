@@ -36,6 +36,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { rollbackJournalEntry } from '@/lib/services/rollback-journal-entry'
 
 export interface SalesReturnCashDisbursementParams {
   companyId: string
@@ -216,11 +217,26 @@ export async function postSalesReturnCashDisbursement(
 
     if (linesErr) {
       // Roll back the JE shell so it doesn't sit there as orphan draft.
-      await admin.from('journal_entries').delete().eq('id', jeRow.id)
+      // v3.74.757 — checked, so "doesn't sit there" is now a fact rather than
+      // an intention.
+      await rollbackJournalEntry(admin as any, jeRow.id, "sales return cash disbursement")
       return { success: false, error: `failed to insert journal lines: ${linesErr.message}` }
     }
 
-    await admin.from('journal_entries').update({ status: 'posted' }).eq('id', jeRow.id)
+    // v3.74.757 — a silent failure here left the entry as a draft: the cash
+    // went out, the lines exist, and the ledger does not count it because the
+    // entry was never posted. Worth failing loudly rather than continuing.
+    const { error: postErr } = await admin
+      .from('journal_entries')
+      .update({ status: 'posted' })
+      .eq('id', jeRow.id)
+
+    if (postErr) {
+      return {
+        success: false,
+        error: `journal entry was created but could not be posted: ${postErr.message}`,
+      }
+    }
 
     // ---------------------------------------------------------------
     // 6. Net the customer's credit balance back to zero with a negative

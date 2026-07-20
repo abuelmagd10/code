@@ -9,6 +9,7 @@
  */
 
 import { SupabaseClient } from "@supabase/supabase-js"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 export interface PeriodClosingParams {
   companyId: string
@@ -347,7 +348,9 @@ export async function createPeriodClosingEntry(
 
     if (linesError) {
       // حذف القيد الرئيسي في حالة فشل إنشاء السطور
-      await supabase.from("journal_entries").delete().eq("id", journalEntryId)
+      // v3.74.757 — the delete used to be unchecked, so a failure here left a
+      // stranded closing entry with no lines and said nothing about it.
+      await rollbackJournalEntry(supabase as any, journalEntryId, "period closing")
 
       return {
         success: false,

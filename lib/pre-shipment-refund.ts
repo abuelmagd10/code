@@ -40,6 +40,7 @@
  */
 import { SupabaseClient } from "@supabase/supabase-js"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
 export type PreShipmentRefundMode = "cancel_invoice" | "keep_open"
 
@@ -223,7 +224,10 @@ export async function executePreShipmentRefund(
           },
         ])
       if (linesErr) {
-        await admin.from("journal_entries").delete().eq("id", jeRow.id)
+        // v3.74.757 — the comment below explains the JE is kept draft so a
+        // failure stays recoverable by delete + retry. That only holds if the
+        // delete is known to have worked.
+        await rollbackJournalEntry(admin as any, jeRow.id, "pre-shipment refund")
         return { success: false, error: linesErr.message }
       }
       // v3.74.252 — DO NOT post the JE here. We post it only AFTER the
@@ -265,8 +269,9 @@ export async function executePreShipmentRefund(
       if (vErr || !voidRow?.id) {
         // v3.74.252 — void-payment insert failed; the JE is still draft,
         // so delete it + its lines and bail. No half-state is left behind.
-        await admin.from("journal_entry_lines").delete().eq("journal_entry_id", jeRow.id)
-        await admin.from("journal_entries").delete().eq("id", jeRow.id)
+        // v3.74.757 — "no half-state is left behind" was unverified: if either
+        // delete failed, precisely that half-state remained, unannounced.
+        await rollbackJournalEntry(admin as any, jeRow.id, "pre-shipment refund void-payment")
         return { success: false, error: vErr?.message || "Failed to record void payment" }
       }
 
