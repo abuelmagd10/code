@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
     }
 
     let notifiedCount = 0
+    const writeErrors: string[] = []
 
     for (const [companyId, companyFindings] of byCompany.entries()) {
       const { data: owners } = await admin
@@ -74,11 +75,22 @@ export async function GET(request: NextRequest) {
 
       const highCount = companyFindings.filter((f) => f.severity === "high").length
 
-      await admin.from("audit_logs").insert({
+      // v3.74.753 — this insert had failed silently every night since the cron
+      // was written. Four defects at once:
+      //   entity_type  — no such column on audit_logs
+      //   entity_id    — GENERATED ALWAYS (mirrors record_id); naming it is an error
+      //   target_table — NOT NULL, and never supplied
+      //   and the result was never checked, so all of it passed unnoticed
+      //
+      // Same generated-column mistake corrected in protect_customer_branch_id
+      // (v3.74.743). Write the real columns and let the generated ones fill
+      // themselves.
+      const { error: auditErr } = await admin.from("audit_logs").insert({
         company_id: companyId,
         action: "system_integrity_check",
-        entity_type: "system_integrity",
-        entity_id: companyId,
+        target_table: "system_integrity",
+        record_id: companyId,
+        record_identifier: `${companyFindings.length} finding(s)`,
         metadata: {
           findings_count: companyFindings.length,
           by_severity: {
@@ -86,11 +98,10 @@ export async function GET(request: NextRequest) {
             medium: companyFindings.filter((f) => f.severity === "medium").length,
             low: companyFindings.filter((f) => f.severity === "low").length,
           },
-          by_category: {
-            accounting: companyFindings.filter((f) => f.category === "accounting").length,
-            inventory: companyFindings.filter((f) => f.category === "inventory").length,
-            operational: companyFindings.filter((f) => f.category === "operational").length,
-          },
+          by_category: companyFindings.reduce<Record<string, number>>((acc, f) => {
+            acc[f.category] = (acc[f.category] || 0) + 1
+            return acc
+          }, {}),
           checks: companyFindings.map((f) => ({
             code: f.check_code,
             severity: f.severity,
@@ -100,22 +111,84 @@ export async function GET(request: NextRequest) {
           checked_at: new Date().toISOString(),
         },
       })
+      if (auditErr) writeErrors.push(`audit(${companyId}): ${auditErr.message}`)
 
-      for (const ownerId of ownerIds) {
-        const checkNames = Array.from(new Set(companyFindings.map((f) => f.name_ar))).slice(0, 3).join(" ، ")
-        await admin.from("notifications").insert({
+      // v3.74.753 — and the notification insert failed for its own reasons:
+      // notifications has no user_id column (recipients live in
+      // notification_user_states), and seven NOT NULL columns were never
+      // supplied — channel, created_by, kind, reference_id, reference_type,
+      // retry_count, severity.
+      //
+      // Shape copied from notification rows the application actually creates
+      // rather than inferred, and every enumerated value checked against its
+      // CHECK constraint: kind in (action, info), channel in (in_app, ...),
+      // severity in (info, warning, error, critical), priority in
+      // (low, normal, high, urgent, critical).
+      const checkNames = Array.from(new Set(companyFindings.map((f) => f.name_ar)))
+        .slice(0, 3)
+        .join(" ، ")
+
+      const { data: created, error: notifErr } = await admin
+        .from("notifications")
+        .insert({
           company_id: companyId,
-          user_id: ownerId,
           category: "system",
+          kind: "action",
+          channel: "in_app",
+          severity: highCount > 0 ? "critical" : "warning",
           priority: highCount > 0 ? "critical" : "high",
-          title: highCount > 0
-            ? `⚠️ ${highCount} انحِراف حَرِج فى سَلامَة النِّظام`
-            : `⚠️ ${companyFindings.length} انحِراف فى سَلامَة النِّظام`,
+          reference_type: "system_integrity",
+          reference_id: companyId,
+          retry_count: 0,
+          created_by: ownerIds[0] ?? null,
+          title:
+            highCount > 0
+              ? `⚠️ ${highCount} انحِراف حَرِج فى سَلامَة النِّظام`
+              : `⚠️ ${companyFindings.length} انحِراف فى سَلامَة النِّظام`,
+          // v3.74.753 — no action_url column exists on notifications. The old
+          // code set one and the insert failed on it; I copied it forward
+          // without checking, and the probe caught that before it shipped.
+          // The destination goes in the message instead.
           message: `${checkNames}${companyFindings.length > 3 ? " ، وغيرها..." : ""}. راجِع لوحَة التَّحَكُّم.`,
-          action_url: "/dashboard",
         })
-        notifiedCount++
+        .select("id")
+        .single()
+
+      if (notifErr) {
+        writeErrors.push(`notification(${companyId}): ${notifErr.message}`)
+        continue
       }
+
+      // Recipients are rows in notification_user_states, not a column.
+      if (created?.id && ownerIds.length > 0) {
+        const { error: stateErr } = await admin.from("notification_user_states").insert(
+          ownerIds.map((ownerId: string) => ({
+            notification_id: created.id,
+            user_id: ownerId,
+            status: "unread",
+          }))
+        )
+        if (stateErr) {
+          writeErrors.push(`recipients(${companyId}): ${stateErr.message}`)
+        } else {
+          notifiedCount += ownerIds.length
+        }
+      }
+    }
+
+    // v3.74.753 — a cron that reports success while writing nothing is the
+    // problem this release exists to fix. If a write failed, say so and fail.
+    if (writeErrors.length > 0) {
+      console.error("[system-integrity cron] write failures:", writeErrors)
+      return NextResponse.json(
+        {
+          success: false,
+          error: "integrity findings were computed but could not be recorded",
+          write_errors: writeErrors.slice(0, 10),
+          total_findings: rows.length,
+        },
+        { status: 500 }
+      )
     }
 
     const durationMs = Date.now() - startedAt
