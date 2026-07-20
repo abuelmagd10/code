@@ -220,14 +220,69 @@ export class FinancialIntegrityCheckService {
     }
 
     const linkedIds = new Set((linkedRows || []).map((row: any) => String(row.entity_id)))
-    return journalEntries
-      .filter((entry) => !linkedIds.has(entry.id))
+    const withoutDirectLink = journalEntries.filter((entry) => !linkedIds.has(entry.id))
+    if (withoutDirectLink.length === 0) return []
+
+    // v3.74.767 — a journal entry is auditable if EITHER it carries its own
+    // trace link OR the operation it belongs to does.
+    //
+    // Requiring a direct link on every entry produced 89 findings on this
+    // database, of which 73 were not gaps at all. A COGS entry is a child of its
+    // invoice: it is created by the auto_create_cogs_journal trigger, and a
+    // database trigger has no knowledge of the operation context, so it cannot
+    // write a trace link. The invoice above it carries the full trace, and every
+    // one of those 39 COGS entries was reachable through it. Same for the 21
+    // invoice_payment entries, and for bill, invoice, payment_reversal and the
+    // reversal families.
+    //
+    // The 16 that remain are the real finding, and they cluster in exactly two
+    // places: expenses (7) and booking custody movements (6), neither of which
+    // records a trace at any level. Those are the ones worth an auditor's
+    // question — "who authorised this expense and when?" — and until now they
+    // were sitting under four times their number in noise.
+    //
+    // Reporting a child as orphaned because the parent holds the record is the
+    // same over-reporting that blocked the annual closing in v3.74.764: a check
+    // asking a narrower question than the one that matters.
+    const parentIds = Array.from(
+      new Set(
+        withoutDirectLink
+          .map((entry) => entry.reference_id)
+          .filter((id): id is string => Boolean(id))
+      )
+    )
+
+    const tracedParents = new Set<string>()
+    if (parentIds.length > 0) {
+      const { data: parentLinks, error: parentError } = await this.adminSupabase
+        .from("financial_operation_trace_links")
+        .select("entity_id")
+        .in("entity_id", parentIds)
+
+      if (parentError) {
+        // Do not guess. An unreadable parent lookup must not silently turn back
+        // into "every child entry is orphaned".
+        return [
+          this.systemFinding(
+            "orphan_journal_entries",
+            "low",
+            "Journal parent-trace check unavailable",
+            parentError.message
+          ),
+        ]
+      }
+      for (const row of parentLinks || []) tracedParents.add(String((row as any).entity_id))
+    }
+
+    return withoutDirectLink
+      .filter((entry) => !(entry.reference_id && tracedParents.has(entry.reference_id)))
       .map((entry) => ({
         id: `orphan_journal_entry:${entry.id}`,
         check: "orphan_journal_entries",
         severity: String(entry.status || "").toLowerCase() === "posted" ? "high" : "medium",
         title: "Journal entry has no financial trace",
-        description: "A journal entry exists without a financial_operation_trace link.",
+        description:
+          "Neither this journal entry nor the operation it belongs to has a financial_operation_trace link, so there is no audit record of who performed it.",
         entity_type: "journal_entry",
         entity_id: entry.id,
         metadata: {
@@ -236,6 +291,7 @@ export class FinancialIntegrityCheckService {
           reference_id: entry.reference_id || null,
           entry_date: entry.entry_date || null,
           status: entry.status || null,
+          parent_operation_traced: false,
         },
       } satisfies FinancialIntegrityFinding))
   }
