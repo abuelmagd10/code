@@ -29,6 +29,7 @@ foreach ($must in @(
     "AND COALESCE(NEW.discount_value, 0) > 0 THEN",               # p5: zero-discount amendment guard
     "sales_order_id IS NOT NULL THEN RETURN NEW",                 # p6: amendment files nothing for SO-sourced
     "SO-sourced files nothing",                                   # p6c: inv_evaluate files nothing either
+    "v_disc_doc_type::public.discount_document_type",             # p7: delete gate enum cast
     "already applied"                                             # replay-safety markers
 )) {
     if ($c -notmatch [regex]::Escape($must)) {

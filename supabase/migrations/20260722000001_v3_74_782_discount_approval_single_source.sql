@@ -304,6 +304,42 @@ END;
 $p6c$;
 
 -- ---------------------------------------------------------------------------
+-- Patch 7 — the delete gate crashed on its own cleanup line.
+--
+-- transactional_document_delete_gate_trg compares the ENUM column
+-- discount_approvals.document_type against a TEXT variable with no cast:
+-- "operator does not exist: discount_document_type = text". That line runs on
+-- every PERMITTED (draft) delete — so since the gate shipped, no draft
+-- invoice, bill, sales order or purchase order could be hard-deleted at all.
+-- Surfaced when the owner asked to clean the SO-0002/INV-00002 test pair.
+-- ---------------------------------------------------------------------------
+DO $p7$
+DECLARE d text; n int;
+  a1 text := 'WHERE document_type = v_disc_doc_type AND document_id = OLD.id;';
+  a2 text := 'WHERE document_type = v_disc_doc_type AND document_id = OLD.id
+          )';
+BEGIN
+  SELECT pg_get_functiondef(p.oid) INTO d FROM pg_proc p
+   JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname='public' AND p.proname='transactional_document_delete_gate_trg';
+  IF d IS NULL THEN RAISE EXCEPTION 'transactional_document_delete_gate_trg not found'; END IF;
+  IF d LIKE '%v_disc_doc_type::public.discount_document_type%' THEN
+    RAISE NOTICE 'patch 7 already applied'; RETURN;
+  END IF;
+  n := (length(d) - length(replace(d, a1, ''))) / length(a1);
+  IF n <> 1 THEN RAISE EXCEPTION 'p7 anchor-1 matched %% times', n; END IF;
+  n := (length(d) - length(replace(d, a2, ''))) / length(a2);
+  IF n <> 1 THEN RAISE EXCEPTION 'p7 anchor-2 matched %% times', n; END IF;
+  d := replace(d, a1,
+    'WHERE document_type = v_disc_doc_type::public.discount_document_type AND document_id = OLD.id;');
+  d := replace(d, a2,
+    'WHERE document_type = v_disc_doc_type::public.discount_document_type AND document_id = OLD.id
+          )');
+  EXECUTE d;
+END;
+$p7$;
+
+-- ---------------------------------------------------------------------------
 -- Verify every patch actually landed. A migration that ran and changed nothing
 -- is this project's most familiar failure mode.
 -- ---------------------------------------------------------------------------
@@ -332,6 +368,10 @@ BEGIN
   SELECT prosrc INTO s FROM pg_proc p JOIN pg_namespace ns ON ns.oid=p.pronamespace
    WHERE ns.nspname='public' AND p.proname='inv_evaluate_discount_approval';
   IF s NOT LIKE '%SO-sourced files nothing%' THEN RAISE EXCEPTION 'patch 6c missing'; END IF;
+
+  SELECT prosrc INTO s FROM pg_proc p JOIN pg_namespace ns ON ns.oid=p.pronamespace
+   WHERE ns.nspname='public' AND p.proname='transactional_document_delete_gate_trg';
+  IF s NOT LIKE '%v_disc_doc_type::public.discount_document_type%' THEN RAISE EXCEPTION 'patch 7 missing'; END IF;
 END;
 $verify$;
 
