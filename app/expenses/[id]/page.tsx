@@ -16,7 +16,6 @@ import { ArrowLeft, ArrowRight, Pencil, Send, CheckCircle, XCircle, Receipt, Dol
 import { useToast } from "@/hooks/use-toast"
 import { createNotification } from "@/lib/governance-layer"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
-import { checkDuplicateJournalEntry, createExpenseJournalEntry } from "@/lib/journal-entry-governance"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
@@ -320,21 +319,31 @@ export default function ExpenseDetailPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const now = new Date().toISOString()
+      // v3.74.779 — approval, the cash-balance rule, the journal entry and the
+      // link back to this expense are now ONE server-side transaction.
+      //
+      // What stood here was six-plus browser round-trips: mark approved, resolve
+      // accounts, check cash, post the journal, link it, and un-approve if any
+      // of that failed. Three of those writes were unchecked, including the
+      // un-approve — so "تم التراجع" could appear when nothing had been reverted.
+      // There is nothing left to revert now, because a half-approval cannot exist.
+      const res = await fetch(`/api/expenses/${expense.id}/approve`, { method: "POST" })
+      const payload = await res.json().catch(() => ({}))
 
-      const { error } = await supabase
-        .from("expenses")
-        .update({
-          status: "approved",
-          approval_status: "approved",
-          approved_by: userId,
-          approved_at: now,
-          last_status_changed_at: now
+      if (!res.ok || !payload?.success) {
+        toast({
+          title:
+            payload?.error === "CASH_OVERDRAFT"  ? "رصيد غير كافٍ" :
+            payload?.error === "ACCOUNTS_MISSING" ? "مطلوب تحديد الحسابات" :
+            payload?.error === "FORBIDDEN"        ? "غير مصرح" :
+                                                    "تعذر الاعتماد",
+          description: payload?.message || payload?.error || "فشل اعتماد المصروف",
+          variant: "destructive"
         })
-        .eq("id", expense.id)
-        .eq("company_id", companyId)
-
-      if (error) throw error
+        setPosting(false)
+        loadExpense()
+        return
+      }
 
       // v3.74.18 — Archive every pending approval-category notification for
       // this expense (the "اعتماد المصروف" notifications that were sitting
@@ -347,150 +356,6 @@ export default function ExpenseDetailPage() {
         referenceId: expense.id,
       })
 
-      // ✅ إنشاء القيد المحاسبي تلقائياً عند الاعتماد
-      // v3.74.643 — نتتبّع نجاح الترحيل؛ إن لم يُرحَّل قيد نُلغي الاعتماد لاحقاً
-      let journalPosted = false
-      try {
-        const duplicateCheck = await checkDuplicateJournalEntry(
-          supabase,
-          companyId,
-          "expense",
-          expense.id
-        )
-
-        if (!duplicateCheck.exists) {
-          // أولوية الحسابات: المصروف → إعدادات الشركة → fallback 5000/1010 مع تحذير
-          let expenseAccountId = expense.expense_account_id
-          let paymentAccountId = expense.payment_account_id
-          if (!expenseAccountId || !paymentAccountId) {
-            const { data: companySettings } = await supabase
-              .from("company_expenses_settings")
-              .select("default_expense_account_id, default_payment_account_id")
-              .eq("company_id", companyId)
-              .maybeSingle()
-            if (companySettings?.default_expense_account_id) expenseAccountId = expenseAccountId || companySettings.default_expense_account_id
-            if (companySettings?.default_payment_account_id) paymentAccountId = paymentAccountId || companySettings.default_payment_account_id
-          }
-          if (!expenseAccountId || !paymentAccountId) {
-            const { data: accounts } = await supabase
-              .from("chart_of_accounts")
-              .select("id, account_code")
-              .eq("company_id", companyId)
-              .in("account_code", ["5000", "1010"])
-            const fallbackExpense = accounts?.find((a: any) => a.account_code === "5000")
-            const fallbackCash = accounts?.find((a: any) => a.account_code === "1010")
-            if (fallbackExpense) expenseAccountId = expenseAccountId || fallbackExpense.id
-            if (fallbackCash) paymentAccountId = paymentAccountId || fallbackCash.id
-            if (!expenseAccountId || !paymentAccountId) {
-              console.warn("[expenses] No expense/payment accounts: set company_expenses_settings or use accounts 5000/1010")
-            }
-          }
-
-          if (expenseAccountId && paymentAccountId) {
-            // v3.74.45 — Enterprise rule: prevent cash overdraft on expense approval.
-            // The validator is a no-op for non-cash payment accounts (e.g., AP/credit),
-            // so it's safe to call unconditionally. Only cash/bank accounts trigger overdraft.
-            try {
-              const { assertCashOutflowAllowed, CashOverdraftError } = await import("@/lib/accounting/cash-balance-validator")
-              const baseAmt = Number((expense as any).base_currency_amount ?? expense.amount ?? 0)
-              await assertCashOutflowAllowed(supabase, {
-                accountId: paymentAccountId,
-                amount: baseAmt,
-                nativeAmount: Number(expense.amount ?? 0),
-                companyId,
-                description: `Expense ${expense.expense_number}`,
-              })
-            } catch (e: any) {
-              if (e?.name === "CashOverdraftError") {
-                // v3.74.643 — أعد المصروف لبانتظار الاعتماد بدل تركه "معتمداً بلا قيد"
-                await supabase
-                  .from("expenses")
-                  .update({ status: "pending_approval", approval_status: "pending", approved_by: null, approved_at: null, last_status_changed_at: new Date().toISOString() })
-                  .eq("id", expense.id)
-                  .eq("company_id", companyId)
-                toast({ title: "رصيد غير كافٍ", description: e.message, variant: "destructive" })
-                setPosting(false)
-                loadExpense()
-                return
-              }
-              throw e
-            }
-
-            const journalResult = await createExpenseJournalEntry(
-              supabase,
-              {
-                id: expense.id,
-                company_id: companyId,
-                expense_number: expense.expense_number,
-                expense_date: expense.expense_date,
-                amount: expense.amount,
-                base_currency_amount: (expense as any).base_currency_amount ?? undefined,
-                branch_id: expense.branch_id,
-                cost_center_id: expense.cost_center_id,
-                // v3.27.2: pass FX metadata for multi-currency expenses (IAS 21)
-                currency_code: (expense as any).currency_code ?? null,
-                exchange_rate: (expense as any).exchange_rate ?? null,
-                exchange_rate_id: (expense as any).exchange_rate_id ?? null,
-              },
-              expenseAccountId,
-              paymentAccountId
-            )
-
-            if (journalResult.success && journalResult.entryId) {
-              journalPosted = true
-              // v3.26.1: When approval posts the cash-outflow journal (Dr Expense / Cr Cash),
-              // the cash is already withdrawn from the GL — so the expense is effectively
-              // PAID from an accounting standpoint. Auto-set status='paid' and paid_at to
-              // hide the now-misleading "Mark as Paid" button.
-              await supabase
-                .from("expenses")
-                .update({
-                  journal_entry_id: journalResult.entryId,
-                  status: "paid",
-                  paid_by: userId,
-                  paid_at: now,
-                  last_status_changed_at: now,
-                })
-                .eq("id", expense.id)
-                .eq("company_id", companyId)
-              console.log(`✅ تم إنشاء قيد محاسبي للمصروف ${expense.expense_number} + تم تسجيله كمدفوع`)
-            } else if (!journalResult.success) {
-              console.warn(`⚠️ فشل إنشاء قيد محاسبي: ${journalResult.error}`)
-            }
-          }
-        } else {
-          journalPosted = true
-          console.log(`ℹ️ قيد محاسبي موجود مسبقاً للمصروف ${expense.expense_number}`)
-        }
-      } catch (journalErr) {
-        console.warn("Failed to create journal entry:", journalErr)
-      }
-
-      // v3.74.643 — إن تعذّر ترحيل أي قيد (حسابات غير مهيأة أو فشل)، لا نترك المصروف
-      // "معتمداً بلا قيد": نُعيده لبانتظار الاعتماد ونُخطر المستخدم بضبط الحسابات.
-      if (!journalPosted) {
-        await supabase
-          .from("expenses")
-          .update({
-            status: "pending_approval",
-            approval_status: "pending",
-            approved_by: null,
-            approved_at: null,
-            last_status_changed_at: new Date().toISOString(),
-          })
-          .eq("id", expense.id)
-          .eq("company_id", companyId)
-        toast({
-          title: appLang === "en" ? "Accounts required" : "مطلوب تحديد الحسابات",
-          description: appLang === "en"
-            ? "Approval needs a posted journal. Set expense & payment accounts (or company defaults), then approve again."
-            : "الاعتماد يتطلب ترحيل قيد محاسبي. حدّد حساب المصروف وحساب الدفع (أو الإعدادات الافتراضية للشركة)، ثم أعد الاعتماد.",
-          variant: "destructive"
-        })
-        setPosting(false)
-        loadExpense()
-        return
-      }
 
       // Send notification to creator
       try {
@@ -542,20 +407,27 @@ export default function ExpenseDetailPage() {
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
-      const { error } = await supabase
-        .from("expenses")
-        .update({
-          status: "rejected",
-          approval_status: "rejected",
-          rejection_reason: rejectionReason.trim(),
-          rejected_by: userId,
-          rejected_at: new Date().toISOString(),
-          last_status_changed_at: new Date().toISOString()
-        })
-        .eq("id", expense.id)
-        .eq("company_id", companyId)
+      // v3.74.779 — rejection had NO server-side authorization at all: the page
+      // hid the button, and that was the whole control. Any authenticated member
+      // could reject any expense by calling PostgREST directly. The role check
+      // now lives in the database, where a hidden button cannot stand in for it.
+      const res = await fetch(`/api/expenses/${expense.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: rejectionReason.trim() }),
+      })
+      const payload = await res.json().catch(() => ({}))
 
-      if (error) throw error
+      if (!res.ok || !payload?.success) {
+        toast({
+          title: payload?.error === "FORBIDDEN" ? "غير مصرح" : "تعذر الرفض",
+          description: payload?.message || payload?.error || "فشل رفض المصروف",
+          variant: "destructive"
+        })
+        setPosting(false)
+        loadExpense()
+        return
+      }
 
       // v3.74.18 — Archive pending approval-category notifications for this
       // expense BEFORE sending the rejection notification to the creator.
@@ -619,88 +491,31 @@ export default function ExpenseDetailPage() {
       setPosting(true)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
-      const now = new Date().toISOString()
+      // v3.74.779 — routed through the same server function as approval, so
+      // there is no longer a second way to write a journal entry for an expense.
+      // This also folds payment_reference into the posting statement; it used to
+      // be written separately, which meant it could be recorded against an entry
+      // that was never written, or lost against one that was.
+      const res = await fetch(`/api/expenses/${expense.id}/post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentReference: paymentReference.trim() || null }),
+      })
+      const payload = await res.json().catch(() => ({}))
 
-      // v3.74.643 — تسجيل الدفع يجب أن يُرحّل قيداً محاسبياً (مدين مصروف / دائن نقدية).
-      // إن كان للمصروف قيد مسبق نكتفي بتعليمه مدفوعاً؛ وإلا نُنشئ القيد الآن.
-      // حارس قاعدة البيانات يمنع أصلاً أي "مدفوع بلا قيد".
-      let journalEntryId: string | null = expense.journal_entry_id || null
-      if (!journalEntryId) {
-        // حلّ الحسابات: المصروف ← إعدادات الشركة ← 5000/1010
-        let expenseAccountId = expense.expense_account_id
-        let paymentAccountId = expense.payment_account_id
-        if (!expenseAccountId || !paymentAccountId) {
-          const { data: cs } = await supabase
-            .from("company_expenses_settings")
-            .select("default_expense_account_id, default_payment_account_id")
-            .eq("company_id", companyId)
-            .maybeSingle()
-          expenseAccountId = expenseAccountId || (cs as any)?.default_expense_account_id
-          paymentAccountId = paymentAccountId || (cs as any)?.default_payment_account_id
-        }
-        if (!expenseAccountId || !paymentAccountId) {
-          const { data: accts } = await supabase
-            .from("chart_of_accounts")
-            .select("id, account_code")
-            .eq("company_id", companyId)
-            .in("account_code", ["5000", "1010"])
-          expenseAccountId = expenseAccountId || (accts as any[])?.find(a => a.account_code === "5000")?.id
-          paymentAccountId = paymentAccountId || (accts as any[])?.find(a => a.account_code === "1010")?.id
-        }
-        if (!expenseAccountId || !paymentAccountId) {
-          toast({
-            title: appLang === "en" ? "Accounts required" : "مطلوب تحديد الحسابات",
-            description: appLang === "en"
-              ? "Set an expense account and a payment account (or company defaults) before recording payment."
-              : "حدّد حساب المصروف وحساب الدفع (أو الإعدادات الافتراضية للشركة) قبل تسجيل الدفع.",
-            variant: "destructive"
-          })
-          setPosting(false)
-          return
-        }
-        const jr = await createExpenseJournalEntry(
-          supabase,
-          {
-            id: expense.id,
-            company_id: companyId,
-            expense_number: expense.expense_number,
-            expense_date: expense.expense_date,
-            amount: expense.amount,
-            base_currency_amount: (expense as any).base_currency_amount ?? undefined,
-            branch_id: expense.branch_id,
-            cost_center_id: expense.cost_center_id,
-            currency_code: (expense as any).currency_code ?? null,
-            exchange_rate: (expense as any).exchange_rate ?? null,
-            exchange_rate_id: (expense as any).exchange_rate_id ?? null,
-          },
-          expenseAccountId,
-          paymentAccountId
-        )
-        if (!jr.success || !jr.entryId) {
-          toast({
-            title: appLang === "en" ? "Error" : "خطأ",
-            description: (appLang === "en" ? "Failed to post journal: " : "تعذّر ترحيل القيد المحاسبي: ") + (jr.error || ""),
-            variant: "destructive"
-          })
-          setPosting(false)
-          return
-        }
-        journalEntryId = jr.entryId
-      }
-
-      const { error } = await supabase
-        .from("expenses")
-        .update({
-          status: "paid",
-          paid_by: userId,
-          paid_at: now,
-          journal_entry_id: journalEntryId,
-          payment_reference: paymentReference.trim() || null,
-          last_status_changed_at: now
+      if (!res.ok || !payload?.success) {
+        toast({
+          title:
+            payload?.error === "CASH_OVERDRAFT"   ? "رصيد غير كافٍ" :
+            payload?.error === "ACCOUNTS_MISSING" ? (appLang === "en" ? "Accounts required" : "مطلوب تحديد الحسابات") :
+                                                    (appLang === "en" ? "Error" : "خطأ"),
+          description: payload?.message || payload?.error || "تعذّر تسجيل الدفع",
+          variant: "destructive"
         })
-        .eq("id", expense.id)
-        .eq("company_id", companyId)
-      if (error) throw error
+        setPosting(false)
+        loadExpense()
+        return
+      }
       toast({
         title: appLang === "en" ? "Payment recorded" : "تم تسجيل الدفع",
         description: appLang === "en" ? "Expense marked as paid." : "تم تحديث المصروف كمدفوع."

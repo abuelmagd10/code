@@ -23,7 +23,6 @@ import { filterCashBankAccounts } from "@/lib/accounts"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { AttachmentUploader, uploadAttachmentItems, type AttachmentItem } from "@/components/attachments-uploader"
-import { createExpenseJournalEntry } from "@/lib/journal-entry-governance"
 
 type Account = {
   id: string
@@ -452,57 +451,27 @@ export default function NewExpensePage() {
 
       console.log("✅ [NewExpense v2026-01-31] Expense created successfully:", data.expense_number)
 
-      // v3.74.642 — للمصروف المعتمَد تلقائياً (المالك الوحيد): رحّل القيد المحاسبي
-      // فوراً (مدين المصروف / دائن النقدية) واجعله "مدفوع" — تماماً كما يفعل مسار
-      // الاعتماد العادي. إن فشل الترحيل نُعيد المصروف للدورة العادية بدل تركه
-      // "معتمد بلا قيد".
+      // v3.74.779 — the sole-senior auto-approve path now posts through the same
+      // server function as every other path. It used to do it here: post the
+      // journal, then update the expense, then revert on failure — with ALL
+      // THREE of those updates unchecked, so a failed revert reported nothing
+      // and left the expense approved with no entry.
+      //
+      // Nothing needs reverting now. The route either posts and links, or
+      // changes nothing, and the expense simply stays in the normal cycle.
       if (autoApprove && effExpenseAccountId && effPaymentAccountId) {
         try {
-          const journalResult = await createExpenseJournalEntry(
-            supabase,
-            {
-              id: data.id,
-              company_id: companyId,
-              expense_number: data.expense_number,
-              expense_date: data.expense_date,
-              amount: data.amount,
-              base_currency_amount: (data as any).base_currency_amount ?? undefined,
-              branch_id: data.branch_id,
-              cost_center_id: data.cost_center_id,
-              currency_code: (data as any).currency_code ?? null,
-              exchange_rate: (data as any).exchange_rate ?? null,
-              exchange_rate_id: (data as any).exchange_rate_id ?? null,
-            },
-            effExpenseAccountId,
-            effPaymentAccountId
-          )
-          if (journalResult.success && journalResult.entryId) {
-            await supabase
-              .from('expenses')
-              .update({
-                journal_entry_id: journalResult.entryId,
-                status: 'paid',
-                paid_by: userId,
-                paid_at: nowIso,
-                last_status_changed_at: nowIso,
-              })
-              .eq('id', data.id)
-              .eq('company_id', companyId)
-          } else {
-            console.warn('[NewExpense] auto-post journal failed; reverting to pending', journalResult.error)
-            await supabase
-              .from('expenses')
-              .update({ status: 'draft', approval_status: 'pending', approved_by: null, approved_at: null })
-              .eq('id', data.id)
-              .eq('company_id', companyId)
+          const res = await fetch(`/api/expenses/${data.id}/post`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          })
+          if (!res.ok) {
+            const p = await res.json().catch(() => ({}))
+            console.warn("[NewExpense] auto-post failed; expense stays in the normal cycle", p?.error)
           }
         } catch (jerr) {
-          console.warn('[NewExpense] auto-post journal threw; reverting to pending', jerr)
-          await supabase
-            .from('expenses')
-            .update({ status: 'draft', approval_status: 'pending', approved_by: null, approved_at: null })
-            .eq('id', data.id)
-            .eq('company_id', companyId)
+          console.warn("[NewExpense] auto-post threw; expense stays in the normal cycle", jerr)
         }
       }
 
