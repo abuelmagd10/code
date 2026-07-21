@@ -49,7 +49,7 @@ export class SalesInvoicePostingCommandService {
 
     const { data: invoice } = await this.supabase
       .from("invoices")
-      .select("invoice_date, status, invoice_number, branch_id, cost_center_id, warehouse_status, approval_status, approval_reason, approved_by, approval_date, rejected_by, rejected_at, warehouse_rejection_reason, warehouse_rejected_at")
+      .select("invoice_date, status, invoice_number, branch_id, cost_center_id, warehouse_status, approval_status, approval_reason, approved_by, approval_date, rejected_by, rejected_at, warehouse_rejection_reason, warehouse_rejected_at, sales_order_id")
       .eq("id", command.invoiceId)
       .eq("company_id", actor.companyId)
       .maybeSingle()
@@ -86,10 +86,35 @@ export class SalesInvoicePostingCommandService {
       .maybeSingle()
 
     if (pendingAmendment) {
+      // v3.74.782 — the old text sent the accountant to "صندوق الموافقات",
+      // a page can_approve_discount refuses them with 403. The block was
+      // right; the directions pointed at a locked door. Name who decides.
       throw new SalesInvoicePostingCommandError(
-        "يوجد تعديل/خصم معلق على الفاتورة بانتظار اعتماد الإدارة. لا يمكن الترحيل قبل البت فيه من صندوق الموافقات.",
+        "يوجد تعديل/خصم معلق بانتظار اعتماد المالك / المدير العام. سيُتاح الترحيل فور البت فيه.",
         409
       )
+    }
+
+    // v3.74.782 — SO-sourced invoices no longer carry their own approval rows;
+    // the sales order holds the one decision. Check IT, so the accountant gets
+    // a truthful message instead of falling through to a raw DB error.
+    if ((invoice as any).sales_order_id) {
+      const { data: pendingSo } = await this.supabase
+        .from("discount_approvals")
+        .select("id")
+        .eq("company_id", actor.companyId)
+        .eq("document_type", "sales_order")
+        .eq("document_id", (invoice as any).sales_order_id)
+        .eq("status", "pending")
+        .limit(1)
+        .maybeSingle()
+
+      if (pendingSo) {
+        throw new SalesInvoicePostingCommandError(
+          "خصم أمر البيع بانتظار اعتماد المالك / المدير العام. سيُتاح الترحيل فور البت فيه.",
+          409
+        )
+      }
     }
 
     if (invoice.invoice_date) {
