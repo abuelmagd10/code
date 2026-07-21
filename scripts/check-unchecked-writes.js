@@ -98,7 +98,39 @@ const SCAN_DIRS = ["app", "lib"];
  * The remainder are largely audit-log inserts, where a failure costs a log
  * line rather than a ledger.
  */
-const BASELINE = 179;
+/**
+ * v3.74.773 — 179 down to 145, by retiring three tools rather than fixing them.
+ *
+ * A full diagnostic of the remaining sites (see the release notes) found that
+ * the most dangerous ones were concentrated in tools that could not work:
+ *
+ *   app/api/repair-invoice            deleted an invoice's journal lines and
+ *                                     inventory movements and rebuilt them, with
+ *                                     11 unchecked writes. A failure mid-rebuild
+ *                                     left the ledger DELETED and returned 200.
+ *
+ *   app/api/fix-sent-invoice-journals inserted a journal header, then its lines
+ *                                     unchecked. A rejected line insert produced
+ *                                     a posted entry with no lines. Several of
+ *                                     its functions returned true regardless.
+ *
+ *   app/reports/update-account-balances
+ *                                     inserted SINGLE-SIDED lines to force
+ *                                     invoice entries to balance — and ran on
+ *                                     page load, not on a button. Tested against
+ *                                     a restored copy of production: the database
+ *                                     refuses it ("Cannot add lines to a posted
+ *                                     journal entry"), and the unchecked write
+ *                                     swallowed the refusal. It failed every time
+ *                                     it ran, silently, for as long as it existed.
+ *
+ * All three also valued COGS from products.cost_price rather than FIFO lots —
+ * the defect that removed four database functions in v3.74.726 and v3.74.759.
+ *
+ * The balance snapshot report itself was kept; only the balancing function was
+ * removed from it.
+ */
+const BASELINE = 145;
 
 const WRITE_RE = /^\s*await\s+[\w.$]+\s*\.\s*from\s*\([^)]*\)\s*\.\s*(insert|update|upsert|delete)\s*\(/;
 

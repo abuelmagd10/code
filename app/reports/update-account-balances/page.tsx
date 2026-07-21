@@ -21,7 +21,7 @@ export default function UpdateAccountBalancesPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
   const [computed, setComputed] = useState<Record<string, { debit: number; credit: number }>>({})
-  const [fixing, setFixing] = useState<boolean>(false)
+  // `fixing` removed in v3.74.773 along with the balancing function it drove.
   const [autoFixed, setAutoFixed] = useState<boolean>(false)
 
   // v3.74.581 — financial report: requires financial_reports (top management only)
@@ -44,7 +44,15 @@ export default function UpdateAccountBalancesPage() {
     ;(async () => {
       if (autoFixed) return
       if (loading) return
-      await fixUnbalancedInvoiceJournals()
+      // v3.74.773 — fixUnbalancedInvoiceJournals() used to run HERE, on mount.
+      //
+      // Merely opening this report attempted to write single-sided journal
+      // lines into the ledger. No button, no confirmation, no indication that
+      // viewing a report was also editing the accounts. It failed every time —
+      // the database rejects lines on posted entries — but the intent was to
+      // write, and the failure was silent.
+      //
+      // Only the balance snapshot remains, which is what the page is for.
       await computeBalances()
       setAutoFixed(true)
     })()
@@ -122,87 +130,32 @@ export default function UpdateAccountBalancesPage() {
     }
   }
 
-  const fixUnbalancedInvoiceJournals = async () => {
-    try {
-      setFixing(true)
-
-      // استخدام getActiveCompanyId لدعم المستخدمين المدعوين
-      const { getActiveCompanyId } = await import("@/lib/company")
-      const fixCompanyId = await getActiveCompanyId(supabase)
-      if (!fixCompanyId) return
-
-      const { data: accounts } = await supabase
-        .from("chart_of_accounts")
-        .select("id, account_code, account_type, account_name, sub_type, parent_id")
-        .eq("company_id", fixCompanyId)
-      const leafOnly = filterLeafAccounts(accounts || []) as any[]
-      const byNameIncludes = (name: string) => leafOnly.find((a: any) => String(a.account_name || "").toLowerCase().includes(name.toLowerCase()))?.id
-      const bySubType = (st: string) => leafOnly.find((a: any) => String(a.sub_type || "").toLowerCase() === st.toLowerCase())?.id
-      const byType = (type: string) => leafOnly.find((a: any) => String(a.account_type || "").toLowerCase() === type.toLowerCase())?.id
-      const byCode = (code: string) => leafOnly.find((a: any) => String(a.account_code || "").toUpperCase() === code.toUpperCase())?.id
-      const revenueId = bySubType("sales_revenue") || bySubType("revenue") || byType("income") || byCode("4000") || byNameIncludes("المبيعات") || byNameIncludes("revenue")
-      const arId = bySubType("accounts_receivable") || byCode("1100") || byNameIncludes("الذمم") || byNameIncludes("receivable") || byType("asset")
-
-      // Load invoice entries
-      const { data: entries } = await supabase
-        .from("journal_entries")
-        .select("id, reference_type, reference_id")
-        .eq("company_id", fixCompanyId)
-        .in("reference_type", ["invoice", "invoice_reversal"]) as any
-
-      const entryIds = (entries || []).map((e: any) => e.id)
-      if (entryIds.length === 0) return
-      const { data: lines } = await supabase
-        .from("journal_entry_lines")
-        .select("journal_entry_id, debit_amount, credit_amount")
-        .in("journal_entry_id", entryIds)
-
-      const linesByEntry: Record<string, { debit: number; credit: number }> = {}
-      ;(lines || []).forEach((l: any) => {
-        const prev = linesByEntry[l.journal_entry_id] || { debit: 0, credit: 0 }
-        linesByEntry[l.journal_entry_id] = { debit: prev.debit + Number(l.debit_amount || 0), credit: prev.credit + Number(l.credit_amount || 0) }
-      })
-
-      // Load invoices referenced
-      const invIds = Array.from(new Set((entries || []).map((e: any) => e.reference_id).filter(Boolean)))
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("id, subtotal, tax_amount, total_amount, shipping, adjustment")
-        .in("id", invIds)
-      const invMap = new Map<string, any>((invoices || []).map((i: any) => [i.id, i]))
-
-      for (const e of (entries || [])) {
-        const sums = linesByEntry[e.id] || { debit: 0, credit: 0 }
-        const inv = invMap.get(e.reference_id)
-        if (!inv) continue
-        const expectedCredit = Number(inv.subtotal || 0) + Number(inv.tax_amount || 0) + Number(inv.shipping || 0) + Math.max(0, Number(inv.adjustment || 0))
-        const expectedDebit = Number(inv.total_amount || 0)
-        const diffCredit = expectedCredit - sums.credit
-        const diffDebit = expectedDebit - sums.debit
-        const eps = 0.005
-        const rawDiff = (sums.credit - sums.debit)
-        if (e.reference_type === "invoice") {
-          if (revenueId && diffCredit > eps) {
-            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: 0, credit_amount: diffCredit, description: "موازنة الشحن/التعديل" })
-          }
-          if (arId && rawDiff > eps) {
-            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: arId, debit_amount: rawDiff, credit_amount: 0, description: "موازنة الذمم المدينة" })
-          }
-        }
-        if (e.reference_type === "invoice_reversal") {
-          if (revenueId && diffDebit > eps) {
-            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: revenueId, debit_amount: diffDebit, credit_amount: 0, description: "موازنة عكس الشحن/التعديل" })
-          }
-          if (arId && rawDiff < -eps) {
-            const needCredit = Math.abs(rawDiff)
-            await supabase.from("journal_entry_lines").insert({ journal_entry_id: e.id, account_id: arId, debit_amount: 0, credit_amount: needCredit, description: "موازنة الذمم المدينة (عكس)" })
-          }
-        }
-      }
-    } finally {
-      setFixing(false)
-    }
-  }
+  /**
+   * v3.74.773 — fixUnbalancedInvoiceJournals removed.
+   *
+   * It inserted SINGLE-SIDED journal lines to force invoice entries to balance:
+   * a credit-only line to revenue, a debit-only line to receivables, under two
+   * INDEPENDENT conditions — so one could fire without the other. The second
+   * condition was computed from figures taken before the first insert, so its
+   * arithmetic was already stale by the time it ran.
+   *
+   * That is not repairing accounting. It is forcing a total to look right by
+   * inventing revenue and receivables.
+   *
+   * It never worked. Tested against a restored copy of production: the database
+   * refuses it outright —
+   *
+   *     "Cannot add lines to a posted journal entry. Use Reversal instead."
+   *
+   * and every insert here discarded its result, so the rejection was silent and
+   * the page reported success. Every journal entry in this system is posted
+   * (validation test 3 confirms no drafts), so it failed every single time it
+   * was pressed.
+   *
+   * The snapshot report on this page is genuine and untouched; only the button
+   * is gone. A real imbalance is corrected with a reversal entry through the
+   * normal posting path.
+   */
   // مجموع صافي الأرصدة (مدين - دائن)
   const total = useMemo(() => Object.values(computed).reduce((s, v) => s + (v.debit - v.credit), 0), [computed])
 
@@ -253,9 +206,11 @@ export default function UpdateAccountBalancesPage() {
                 <Button onClick={saveSnapshots} disabled={saving || loading}>
                   {saving ? "جاري الحفظ..." : "حفظ اللقطة"}
                 </Button>
-                <Button onClick={fixUnbalancedInvoiceJournals} disabled={fixing || loading}>
-                  {fixing ? "جاري الموازنة..." : "موازنة قيود الفواتير"}
-                </Button>
+                {/* v3.74.773 — the "موازنة قيود الفواتير" button is gone.
+                    It inserted single-sided lines to force a total to balance,
+                    which the database rejects on posted entries. It reported
+                    success regardless. An imbalance is corrected with a
+                    reversal, not a plug. */}
               </div>
 
               {Object.keys(computed).length > 0 && (
