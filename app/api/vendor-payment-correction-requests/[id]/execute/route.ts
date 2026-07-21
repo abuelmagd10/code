@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { recordFinancialTrace } from "@/lib/financial-trace"
 
 export async function POST(
   _request: NextRequest,
@@ -62,6 +63,29 @@ export async function POST(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+
+    // v3.74.777 — record who executed this correction. See the customer-side
+    // route for why the trace sits here rather than inside the 12 KB RPC: it
+    // has zero database callers and this is its only entry point, both verified
+    // against pg_proc, and it returns every id it created.
+    const r = (data ?? {}) as Record<string, string | null>
+    await recordFinancialTrace(supabase, {
+      companyId,
+      sourceEntity: "vendor_payment_correction_request",
+      sourceId: id,
+      eventType: "vendor_payment_correction",
+      actorId: user.id,
+      idempotencyKey: `vendor_payment_correction:${id}`,
+      metadata: { request_id: id, original_payment_id: r.original_payment_id ?? null },
+      links: [
+        { entityType: "vendor_payment_correction_request", entityId: id, linkRole: "source" },
+        { entityType: "payment", entityId: r.original_payment_id, linkRole: "original_payment" },
+        { entityType: "payment", entityId: r.reversal_payment_id, linkRole: "reversal_payment" },
+        { entityType: "payment", entityId: r.new_payment_id, linkRole: "replacement_payment" },
+        { entityType: "journal_entry", entityId: r.reversal_journal_entry_id, linkRole: "reversal_journal_entry" },
+        { entityType: "journal_entry", entityId: r.new_journal_entry_id, linkRole: "journal_entry" },
+      ],
+    })
 
     return NextResponse.json({
       success: true,

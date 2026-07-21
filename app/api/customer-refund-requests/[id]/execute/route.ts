@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
 import { NotificationRecipientResolverService } from "@/lib/services/notification-recipient-resolver.service"
+import { recordFinancialTrace } from "@/lib/financial-trace"
 
 export async function POST(
   request: NextRequest,
@@ -136,6 +137,45 @@ export async function POST(
       if (rpcErr) {
         return NextResponse.json({ error: rpcErr.message || "Failed to execute correction" }, { status: 500 })
       }
+
+      // v3.74.777 — record who executed this correction.
+      //
+      // A payment correction voids a payment and posts a replacement: two
+      // journal entries and two payment rows, all from one decision. Until now
+      // none of it recorded the person who decided.
+      //
+      // The trace goes HERE rather than inside execute_payment_correction,
+      // which is the opposite of the choice made for booking custody in
+      // v3.74.774. The reason is different circumstances, not inconsistency:
+      //
+      //   - custody had several callers including automatic ones, so tracing at
+      //     the posting function was the only way to cover them all;
+      //   - this RPC has ZERO database callers and exactly one route, verified
+      //     against pg_proc. There is nothing else to cover.
+      //   - and it is a 14 KB function that writes journal entries directly.
+      //     Rewriting it wholesale to insert four lines is the transcription
+      //     risk that append-function-to-migration.js exists to avoid.
+      //
+      // It returns every id it created, so the links below describe what
+      // actually happened rather than what was requested.
+      const r = (rpcResult ?? {}) as Record<string, string | null>
+      await recordFinancialTrace(supabase, {
+        companyId,
+        sourceEntity: "customer_refund_request",
+        sourceId: id,
+        eventType: "payment_correction",
+        actorId: user.id,
+        idempotencyKey: `payment_correction:${id}`,
+        metadata: { request_id: id, original_payment_id: r.original_payment_id ?? null },
+        links: [
+          { entityType: "customer_refund_request", entityId: id, linkRole: "source" },
+          { entityType: "payment", entityId: r.original_payment_id, linkRole: "original_payment" },
+          { entityType: "payment", entityId: r.reversal_payment_id, linkRole: "reversal_payment" },
+          { entityType: "payment", entityId: r.new_payment_id, linkRole: "replacement_payment" },
+          { entityType: "journal_entry", entityId: r.reversal_journal_entry_id, linkRole: "reversal_journal_entry" },
+          { entityType: "journal_entry", entityId: r.new_journal_entry_id, linkRole: "journal_entry" },
+        ],
+      })
 
       // v3.74.105 - tell the requester their correction is now applied
       try {
