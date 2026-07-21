@@ -385,57 +385,19 @@ export async function consumeFIFOLotsWithCOGS(
 
 
 /**
- * تحضير بيانات عكس استهلاك FIFO (للاستخدام الذري)
- * يعتمد على إدخال سجل استهلاك جديد بكمية سالبة لزيادة المخزون المتبقي
+ * prepareReverseFIFOConsumption was REMOVED in v3.74.781.
+ *
+ * It reversed every recorded consumption for an invoice — all products, whole
+ * quantity — regardless of what was actually returned, and the caller applied
+ * that on top of restore_fifo_lots_on_return, which had already given the
+ * correct units back. A partial return therefore restored the lots twice, once
+ * correctly and once for the entire invoice.
+ *
+ * Sales-return lot restoration belongs to the database
+ * (restore_fifo_lots_on_return, driven by trg_auto_cogs_reversal_on_return).
+ * There is deliberately no replacement here: a second implementation is what
+ * caused the problem.
  */
-export async function prepareReverseFIFOConsumption(
-  supabase: SupabaseClient,
-  referenceType: string,
-  referenceId: string,
-  newSourceId?: string // معرف المرتجع الجديد (اختياري)
-): Promise<any[]> {
-  try {
-    // 1. جلب الاستهلاكات الأصلية
-    const { data: consumptions } = await supabase
-      .from('fifo_lot_consumptions')
-      .select(`
-        lot_id,
-        quantity_consumed,
-        unit_cost,
-        total_cost,
-        company_id
-      `)
-      .eq('reference_type', referenceType) // e.g. 'invoice'
-      .eq('reference_id', referenceId)
-
-    if (!consumptions || consumptions.length === 0) {
-      return []
-    }
-
-    const reversalConsumptions = []
-
-    for (const c of consumptions) {
-      // إنشاء سجل عكسي (كمية سالبة)
-      // هذا سيؤدي في RPC إلى: remaining_quantity - (-quantity) = +quantity
-      reversalConsumptions.push({
-        company_id: c.company_id,
-        lot_id: c.lot_id,
-        reference_type: 'sales_return', // نوع جديد للمرتجع
-        reference_id: newSourceId || referenceId, // ربط بالمرتجع الجديد أو الفاتورة كـ fallback
-        quantity_consumed: -Number(c.quantity_consumed), // عكس الكمية
-        unit_cost: c.unit_cost,
-        total_cost: -Number(c.total_cost), // عكس التكلفة أيضاً للتوازن
-        consumed_at: new Date().toISOString()
-      })
-    }
-
-    return reversalConsumptions
-
-  } catch (error) {
-    console.error('Error preparing reverse FIFO:', error)
-    return []
-  }
-}
 
 /**
  * عكس استهلاك دفعات FIFO (عند المرتجعات) - Legacy RPC Call

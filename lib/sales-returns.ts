@@ -356,6 +356,11 @@ export async function prepareSalesReturnData(
       refund_amount: creditAmount,
       refund_method: creditAmount > 0 ? 'credit_note' : 'none',
       status: 'completed',
+      // v3.74.781 — record who executed it. This was never sent, so
+      // sales_return_approval_insert_trg had no user to look up, found no role,
+      // and refused the insert outright. The workflow flag is what now permits
+      // the status; this column is what makes the row answer "who".
+      created_by_user_id: userId || null,
       reason: returnMode === 'full' ? 'مرتجع كامل' : 'مرتجع جزئي',
       notes: `مرتجع للفاتورة ${invoiceNumber}`,
       // v3.74.187 — FX snapshot. Without these the return looks like an
@@ -372,6 +377,14 @@ export async function prepareSalesReturnData(
     // 5️⃣ تحضير Sales Return Items
     const salesReturnItemsData = returnItems.map(item => ({
       sales_return_id: salesReturnId,
+      // v3.74.781 — the invoice line this came from. It was never sent, and the
+      // column was never populated, which silently disabled the committed-
+      // quantity half of check_sales_return_request_quantity: that guard sums
+      // sales_return_items.invoice_item_id, always got 0, and so only pending
+      // requests ever constrained a return. Sequential returns could exceed the
+      // quantity actually sold. The id was already flowing through every layer;
+      // only this line was missing.
+      invoice_item_id: item.id || null,
       product_id: item.product_id,
       quantity: item.qtyToReturn + (item.qtyCreditOnly || 0),
       // ملاحظة: sales_return_items يسجل الكمية الكلية (بما في ذلك التالف إذا أردنا توثيقه)
@@ -382,38 +395,29 @@ export async function prepareSalesReturnData(
       line_total: item.line_total
     }))
 
-    // 6️⃣ تحضير الحركات (Inventory + FIFO + COGS)
-    // استيراد الدوال
-    const { prepareReverseFIFOConsumption } = await import('./fifo-engine')
-    const { prepareReverseCOGSTransaction, getCOGSByInvoice } = await import('./cogs-transactions')
-
-    // أ) عكس استهلاك FIFO (إرجاع الدفعات)
-    // هذا يعيد مصفوفة من الاستهلاكات السالبة
-    const fifoConsumptions = await prepareReverseFIFOConsumption(supabase, 'invoice', invoiceId, salesReturnId)
-
-    // ب) عكس COGS Transactions
-    const originalCOGSTransactions = await getCOGSByInvoice(supabase, invoiceId)
-    const cogsTransactions = []
-
-    for (const returnItem of returnItems.filter(r => r.qtyToReturn > 0)) {
-      const productCOGS = originalCOGSTransactions.filter(tx => tx.product_id === returnItem.product_id)
-      for (const cogsTx of productCOGS) {
-        // عكس نسبة وتناسب
-        // لكن هنا سنفترض التبسيط: عكس سجل جديد بناءً على الكمية المرتجعة
-        // prepareReverseCOGSTransaction يعكس السجل كاملاً... هذا قد يكون خطأ إذا كان المرتجع جزئي!
-        // يجب تعديل المنطق ليدعم "الكمية المرتجعة"
-
-        const returnRatio = returnItem.qtyToReturn / returnItem.quantity
-        // تحديث الكمية في الذاكرة للسجل المعكوس
-        const reversal = await prepareReverseCOGSTransaction(supabase, cogsTx.id, salesReturnId)
-        if (reversal) {
-          reversal.quantity = cogsTx.quantity * returnRatio
-          reversal.total_cost = cogsTx.total_cost * returnRatio
-          // unit_cost يبقى كما هو
-          cogsTransactions.push(reversal)
-        }
-      }
-    }
+    // 6️⃣ الحركات المالية للمرتجع — تملكها قاعدة البيانات، لا هذه الطبقة
+    //
+    // v3.74.781 — what stood here built a full reversal of EVERY FIFO
+    // consumption on the invoice (all products, whole quantity, regardless of
+    // what was actually returned) and a COGS reversal pro-rated by
+    // qtyToReturn/quantity. Both were wrong, and both were duplicates:
+    //
+    //   * restore_fifo_lots_on_return already gives the units back, per product,
+    //     per returned quantity, at the cost each batch was taken at. Applying
+    //     this payload on top restored the lots a SECOND time.
+    //
+    //   * the GL reversal is posted by trg_auto_cogs_reversal_on_return from the
+    //     cost those lots actually returned. Pro-rating a different number here
+    //     produced a sub-ledger that could not agree with the ledger.
+    //
+    // The trigger now writes the cogs_transactions row itself, from the same
+    // figure it posts to the GL. One owner, one number, no reconciliation
+    // needed between two calculations of the same thing.
+    //
+    // Both arrays stay in the payload shape: post_accounting_event skips each
+    // block when the array is empty, so nothing downstream needs to change.
+    const fifoConsumptions: any[] = []
+    const cogsTransactions: any[] = []
 
     // ج) حركات المخزون (Inventory Transactions)
     const inventoryTransactions = []

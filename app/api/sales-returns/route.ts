@@ -64,41 +64,38 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+/**
+ * RETIRED in v3.74.781 — this was a back door into the sales_returns table.
+ *
+ * It took the request body, applied governance scoping, and inserted it
+ * straight into sales_returns. No return items. No inventory movement. No
+ * journal entry. No FIFO restoration. No COGS reversal. No approval. A row
+ * appeared saying goods had come back, and nothing in the ledger or the
+ * warehouse agreed with it.
+ *
+ * Retired rather than repaired: the real path already exists and is atomic —
+ * POST /api/sales-return-requests, then management approval, then
+ * PATCH /api/sales-return-requests/[id]/warehouse-approve. A second way in is
+ * the problem, not a missing feature.
+ *
+ * Authentication runs first and still answers 401, so an unauthenticated caller
+ * learns nothing about what exists here.
+ */
+export async function POST(_request: NextRequest) {
   try {
-    const governance = await enforceGovernance()
-    const body = await request.json()
-    const dataWithGovernance = addGovernanceData(body, governance)
-    validateGovernanceData(dataWithGovernance, governance)
+    await enforceGovernance()
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
-      .from("sales_returns")
-      .insert(dataWithGovernance)
-      .select()
-      .single()
-    
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    
     return NextResponse.json({
-      success: true,
-      data,
-      governance: {
-        enforced: true,
-        companyId: governance.companyId,
-        branchId: dataWithGovernance.branch_id,
-        warehouseId: dataWithGovernance.warehouse_id,
-        costCenterId: dataWithGovernance.cost_center_id
-      }
-    }, { status: 201 })
-    
+      error: "GONE",
+      message:
+        "أُوقف هذا المسار. مرتجع المبيعات يمر بدورة الاعتماد: طلب مرتجع ← اعتماد إدارى ← استلام مخزنى. " +
+        "استخدم /api/sales-return-requests.",
+    }, { status: 410 })
   } catch (error: any) {
-    return NextResponse.json({ 
-      error: error.message 
-    }, { 
-      status: error.message.includes('Violation') ? 403 : 500 
+    return NextResponse.json({
+      error: error.message
+    }, {
+      status: error.message.includes('Unauthorized') ? 401 : 403
     })
   }
 }
