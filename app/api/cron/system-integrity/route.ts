@@ -176,6 +176,59 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // v3.74.771 — record that the check RAN, even when it found nothing.
+    //
+    // The loop above iterates companies that HAVE findings. Once the system is
+    // clean it does not execute at all, and the cron writes nothing. Which
+    // means these two states are indistinguishable from the outside:
+    //
+    //     "the system is healthy"      -> 0 audit rows
+    //     "the cron stopped running"   -> 0 audit rows
+    //
+    // On 2026-07-21, the morning after the alert chain was repaired and every
+    // deviation cleared, there were 0 rows and no way to tell which had
+    // happened. That is precisely the failure v3.74.753 fixed, wearing a
+    // different costume: before, the cron ran and could not write; now it can
+    // write but has nothing to say, and silence reads the same either way.
+    //
+    // A monitor that cannot report its own health is not a monitor. One
+    // heartbeat row per run, cheap, and it makes absence meaningful: no row
+    // this morning now means the cron did not run.
+    // One heartbeat per company, so every company gets a "last checked at"
+    // rather than one global row that says nothing about any of them.
+    // audit_logs.company_id is NOT NULL, so the ids have to be fetched — the
+    // route otherwise only ever learns about companies that HAVE findings,
+    // which is the blind spot being closed.
+    const { data: allCompanies, error: companiesErr } = await admin
+      .from("companies")
+      .select("id")
+
+    if (companiesErr) {
+      writeErrors.push(`heartbeat companies lookup: ${companiesErr.message}`)
+    } else {
+      const heartbeatRows = (allCompanies || []).map((c: { id: string }) => ({
+        company_id: c.id,
+        action: "system_integrity_check",
+        target_table: "system_integrity",
+        record_id: c.id,
+        record_identifier: `${(byCompany.get(c.id) || []).length} finding(s)`,
+        metadata: {
+          heartbeat: true,
+          findings_for_company: (byCompany.get(c.id) || []).length,
+          total_findings_all_companies: rows.length,
+          companies_scanned: (allCompanies || []).length,
+          duration_ms: Date.now() - startedAt,
+        },
+      }))
+
+      if (heartbeatRows.length > 0) {
+        const { error: heartbeatErr } = await admin.from("audit_logs").insert(heartbeatRows)
+        if (heartbeatErr) {
+          writeErrors.push(`heartbeat: ${heartbeatErr.message}`)
+        }
+      }
+    }
+
     // v3.74.753 — a cron that reports success while writing nothing is the
     // problem this release exists to fix. If a write failed, say so and fail.
     if (writeErrors.length > 0) {

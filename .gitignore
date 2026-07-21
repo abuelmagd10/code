@@ -10,6 +10,18 @@ node_modules/
 .env.test.local
 .env.production.local
 
+# Database backups — these contain EVERY ROW of production data: customers,
+# invoices, journal entries, payroll. A pg_dump is not a schema file; it is the
+# business. Committing one publishes it.
+#
+# Added 2026-07-20 with the backup scripts themselves, before the first backup
+# was ever taken. supabase/schema/*.sql stays tracked deliberately: it holds
+# structure only and is the diff surface that caught a stale copy still granting
+# three dropped functions to anon.
+backups/
+*.dump
+*.sql.gz
+
 # Next.js
 .next/
 out/

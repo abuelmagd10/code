@@ -449,6 +449,9 @@ async function applyFile(client, file, label) {
 
   process.exit(totalFailed > 0 ? 1 : 0);
 })().catch((err) => {
-  console.error("\nX restore aborted:", err.message);
+  console.error(
+    "\nX restore aborted:",
+    String(err.message || err).replace(/postgres(ql)?:\/\/[^\s"']+/g, "postgresql://<redacted>")
+  );
   process.exit(1);
 });
