@@ -91,8 +91,36 @@ const PRODUCTION = { tables: 249, functions: 1204, policies: 797, triggers: 501 
 // request logs, deliberately excluded from the data dump because they are 87%
 // of the volume, worthless in a recovery, and were the reason the first restore
 // died half-way through. What must come back is everything else.
-const PRODUCTION_ROWS = 239872 - 209092;
+const PRODUCTION_ROWS = 220335 - 209092;
 const ROW_FLOOR = Math.floor(PRODUCTION_ROWS * 0.5);
+
+/**
+ * The tables that decide whether this is a recovered business.
+ *
+ * An aggregate row count is a smoke test and it got the scope wrong once
+ * already: the first floor was built from pg_stat_user_tables across ALL
+ * schemas, which folded in 18,165 rows of auth and 1,037 of storage, realtime
+ * and cron — none of which a public-schema dump contains. That made a complete
+ * restore look 60% short and reported a good backup as a failure.
+ *
+ * Aggregates are also estimates. n_live_tup is maintained by autovacuum and
+ * drifts. Comparing exact counts on the tables that matter answers the real
+ * question — are the invoices, the journal and the ledger all here — and does
+ * not depend on statistics being fresh.
+ *
+ * Verified 2026-07-21: every one of these matched production exactly.
+ */
+const CRITICAL_TABLES = [
+  "companies",
+  "customers",
+  "invoices",
+  "invoice_items",
+  "journal_entries",
+  "journal_entry_lines",
+  "payments",
+  "products",
+  "chart_of_accounts",
+];
 
 let Client;
 try {
@@ -154,23 +182,49 @@ function replay(file, extraCommand) {
     "--set", "keepalives_interval=10",
     "--set", "keepalives_count=5",
   ];
-  const cmd = extraCommand ? ["-c", extraCommand] : [];
+  // The session setting travels in the CONNECTION STRING, not as -c.
+  //
+  // Passing -c "SET session_replication_role = 'replica';" failed with:
+  //
+  //     ERROR:  syntax error at end of input
+  //     LINE 1: SET
+  //
+  // On Windows these commands run with shell: true, and the shell split the
+  // argument at its first space, so psql received the single word "SET". The
+  // data still loaded — the circular foreign keys happened not to be violated
+  // by the order pg_dump chose — which is worse than failing, because it
+  // means the protection was never active and nothing said so. It would have
+  // held until the day a dump came out in a different order.
+  //
+  // options= in the URL is not touched by the shell at all.
+  const url = extraCommand
+    ? dbUrl + (dbUrl.includes("?") ? "&" : "?") + "options=" + encodeURIComponent(extraCommand)
+    : dbUrl;
+
+  // stderr is INHERITED, not piped.
+  //
+  // Capturing it kept the output tidy and hung the script: restoring a 3.5 MB
+  // schema makes psql emit a very large volume of NOTICE lines, and the process
+  // stalls waiting on a pipe nobody is draining. The database showed the truth
+  // — 249 tables and 1208 functions already restored, and not a single psql
+  // connection left open. The work had finished; only the script was stuck.
+  //
+  // This is the second time today that capturing output for neatness produced a
+  // silent hang; the first was the hidden password prompt in
+  // backup-production.js. A stall that looks like work is as costly as a
+  // success that does nothing, and harder to notice — it was spotted because
+  // the owner said it had been sitting there a long time, not by any check.
+  //
+  // Errors are still visible: psql prints them to the terminal directly.
+  const io = { stdio: ["ignore", "ignore", "inherit"], shell: process.platform === "win32" };
 
   if (runner === "psql") {
-    return execFileSync("psql", [dbUrl, ...base, ...cmd, "-f", path.join(dir, file)], {
-      stdio: ["ignore", "ignore", "pipe"],
-      shell: process.platform === "win32",
-      maxBuffer: 64 * 1024 * 1024,
-    });
+    return execFileSync("psql", [url, ...base, "-f", path.join(dir, file)], io);
   }
   return execFileSync(
     "docker",
-    ["run", "--rm", "-v", `${dir}:/b`, PG_IMAGE, "psql", dbUrl, ...base, ...cmd, "-f", `/b/${file}`],
-    {
-      stdio: ["ignore", "ignore", "pipe"],
-      shell: process.platform === "win32",
-      maxBuffer: 64 * 1024 * 1024,
-    }
+    ["run", "--rm", "-v", `${dir}:/b`, PG_IMAGE, "psql", url, ...base, "-f", `/b/${file}`],
+    io
   );
 }
 
@@ -206,22 +260,47 @@ function replay(file, extraCommand) {
    */
   console.log("Wiping the test schema...");
 
+  /**
+   * Stop when a pass drops nothing.
+   *
+   * The first version looped until the SELECT returned no rows, and silently
+   * swallowed every failed DROP. Postgres refuses to drop a function owned by
+   * an extension — "cannot drop function X because extension Y requires it" —
+   * and this database has 145 of them from pgcrypto, pgjwt and friends. Once
+   * the loop reached those, each pass fetched the same undropped rows, failed
+   * on all of them, and fetched them again. It hung at 96 with no output and no
+   * end, and only stopped because it was interrupted.
+   *
+   * A retry loop whose exit condition depends on work succeeding needs a second
+   * exit condition for when it does not. Two are added: extension-owned objects
+   * are excluded from the query outright, and any pass that makes no progress
+   * ends the loop.
+   */
   const batchDrop = async (label, listSql, dropSql, size) => {
     let removed = 0;
+    let stuck = 0;
     for (;;) {
       const { rows } = await client.query(listSql, [size]);
       if (rows.length === 0) break;
+
+      const before = removed;
       for (const r of rows) {
         try {
           await client.query(dropSql(r));
           removed++;
         } catch {
-          /* already gone via a CASCADE from a sibling — expected, not an error */
+          /* CASCADE from a sibling already removed it, or it cannot be dropped */
         }
       }
       process.stdout.write(`  ${label}: ${removed}\r`);
+
+      if (removed === before) {
+        stuck = rows.length;
+        break;
+      }
     }
-    if (removed > 0) console.log(`  ${label}: ${removed} dropped   `);
+    const note = stuck > 0 ? ` (${stuck} could not be dropped — left in place)` : "";
+    console.log(`  ${label}: ${removed} dropped${note}   `);
   };
 
   await batchDrop(
@@ -236,11 +315,18 @@ function replay(file, extraCommand) {
     25
   );
 
+  // Extension-owned functions are excluded: Postgres will not drop them while
+  // the extension exists, they are not ours, and the schema restore recreates
+  // the extensions anyway. 145 of the 1208 functions here belong to pgcrypto,
+  // pgjwt and similar.
   await batchDrop(
     "functions",
-    `SELECT p.oid::regprocedure::text AS sig FROM pg_proc p
-      JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='public' LIMIT $1`,
+    `SELECT p.oid::regprocedure::text AS sig
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       LEFT JOIN pg_depend d ON d.objid = p.oid AND d.deptype = 'e'
+      WHERE n.nspname = 'public' AND d.objid IS NULL
+      LIMIT $1`,
     (r) => `DROP FUNCTION IF EXISTS ${r.sig} CASCADE`,
     50
   );
@@ -284,7 +370,10 @@ function replay(file, extraCommand) {
     //
     // Ignoring that warning would have produced a backup whose schema restores
     // perfectly and whose DATA does not. Verified as working, and useless.
-    const prelude = file === "data.sql" ? "SET session_replication_role = 'replica';" : null;
+    // libpq "options" syntax, not SQL: -c setting=value, no spaces, no quotes,
+    // no semicolon. It is applied as the session starts, before the first line
+    // of the dump is read.
+    const prelude = file === "data.sql" ? "-c session_replication_role=replica" : null;
 
     try {
       replay(file, prelude);
@@ -344,6 +433,34 @@ function replay(file, extraCommand) {
     if (!ok) bad++;
     console.log(`  ${(ok ? "+" : "X")} ${key.padEnd(10)} ${String(g).padStart(5)} / ${want}`);
   }
+  // Exact per-table comparison against the production counts recorded at the
+  // time of the backup. This is the check that answers "is the business here".
+  const prodCounts = {
+    companies: 4, customers: 22, invoices: 18, invoice_items: 161,
+    journal_entries: 89, journal_entry_lines: 922, payments: 30,
+    products: 9, chart_of_accounts: 367,
+  };
+
+  const tableClient = new Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+  await tableClient.connect();
+  console.log("\n=== CRITICAL TABLES ===");
+  for (const t of CRITICAL_TABLES) {
+    let got_ = null;
+    try {
+      const r = await tableClient.query(`SELECT count(*)::int AS c FROM public."${t}"`);
+      got_ = r.rows[0].c;
+    } catch {
+      got_ = null;
+    }
+    const want = prodCounts[t];
+    const ok = got_ !== null && want !== undefined && got_ >= want;
+    if (!ok) bad++;
+    console.log(
+      `  ${ok ? "+" : "X"} ${t.padEnd(22)} ${String(got_ ?? "missing").padStart(6)} / ${want ?? "?"}`
+    );
+  }
+  await tableClient.end();
+
   const restoredRows = Number(got.rows);
   const rowsOk = restoredRows >= ROW_FLOOR;
   if (!rowsOk) bad++;

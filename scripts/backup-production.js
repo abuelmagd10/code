@@ -283,11 +283,33 @@ for (const part of parts) {
     //
     // Tidiness is not worth a silent deadlock. The password is typed by the
     // owner directly into the CLI; it never passes through this script.
-    execFileSync("npx", ["--yes", "supabase", ...part.args, "-f", target], {
+    // stderr is CAPTURED here, and echoed below — the opposite of the psql
+    // replay in verify-backup.js, deliberately.
+    //
+    // The retry logic reads the error text to decide whether a failure is a
+    // dropped connection or a real fault. When stderr was inherited for the
+    // sake of a password prompt, that text never reached the code, and the
+    // retry silently stopped working: the pooler dropped a connection and the
+    // script gave up on the first attempt without ever printing "retrying".
+    // A safety net that cannot see the fall is not a safety net.
+    //
+    // Capturing is safe here where it was not for psql: the CLI emits tens of
+    // lines, psql restoring a 3.5 MB schema emits a flood. And stdin no longer
+    // needs to be interactive — the connection URL is passed explicitly, so
+    // there is no password prompt to answer.
+    const out = execFileSync("npx", ["--yes", "supabase", ...part.args, "-f", target], {
       cwd: ROOT,
-      stdio: ["inherit", "ignore", "inherit"],
+      stdio: ["ignore", "ignore", "pipe"],
+      encoding: "utf8",
       shell: process.platform === "win32",
+      maxBuffer: 32 * 1024 * 1024,
     });
+    // pg_dump's circular-foreign-key warnings arrive here on success. They are
+    // worth seeing once: they are the reason the restore defers FK checks.
+    if (out && /warning:/i.test(out)) {
+      const warnings = out.split("\n").filter((l) => /circular foreign-key/i.test(l)).length;
+      if (warnings > 0) console.log(`      ${warnings} circular foreign-key warning(s) — expected`);
+    }
     // If the CLI could not exclude system_logs, strip it here. Its rows are
     // INSERT INTO "public"."system_logs" ... statements, one per line, so this
     // is a line filter rather than SQL parsing — no statement spans lines in
@@ -377,11 +399,17 @@ for (const part of parts) {
     // assuming it stayed put.
     const redact = (s) =>
       String(s).replace(/postgres(ql)?:\/\/[^\s"']+/g, "postgresql://<redacted>");
-    const detail = redact(err.message || err).trim().split("\n").slice(-2).join(" ");
+    // stderr is captured now, so the CLI's real message is in err.stderr and
+    // has NOT been printed. Show it — a failed backup with no visible reason is
+    // how someone concludes "it just doesn't work" and stops running it.
+    const stderrText = String(err.stderr || "");
+    if (stderrText.trim()) {
+      const lines = stderrText.trim().split("\n");
+      for (const l of lines.slice(-6)) console.log(`      ${redact(l)}`);
+    }
 
-    // The CLI writes its real error to stderr, which is inherited, so it has
-    // already been printed above. Judge transience on everything available.
-    const transient = isTransient(String(err.message || "") + String(err.stderr || ""));
+    const detail = redact(err.message || err).trim().split("\n").slice(-2).join(" ");
+    const transient = isTransient(String(err.message || "") + stderrText);
 
     if (transient && attempt < RETRIES) {
       console.log(`      connection dropped — retrying (${attempt}/${RETRIES - 1})`);
@@ -391,7 +419,6 @@ for (const part of parts) {
     }
 
     console.log(`      FAILED — ${detail}`);
-    console.log("      (the CLI's own error is printed above)");
     if (transient) {
       console.log(`      still dropping after ${RETRIES} attempts — try again in a minute.`);
     }
