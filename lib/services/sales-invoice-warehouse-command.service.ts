@@ -146,7 +146,9 @@ export class SalesInvoiceWarehouseCommandService {
   }
 
   async rejectDelivery(actor: SalesInvoiceWarehouseActor, command: SalesInvoiceWarehouseCommand): Promise<SalesInvoiceWarehouseResult> {
-    const invoice = await this.loadInvoice(actor.companyId, command.invoiceId, "invoice_number, branch_id, cost_center_id, customer_id, paid_amount, created_by_user_id, posted_by_user_id, status, warehouse_status, approval_status")
+    // v3.74.787 — sales_order_id added: the rejection ACTION notification goes
+    // to the SOURCE document's creator (sales order / booking), per owner spec.
+    const invoice = await this.loadInvoice(actor.companyId, command.invoiceId, "invoice_number, branch_id, cost_center_id, customer_id, paid_amount, created_by_user_id, posted_by_user_id, status, warehouse_status, approval_status, sales_order_id")
     const invoiceSenderId = invoice.posted_by_user_id || invoice.created_by_user_id
 
     const { data: rpcData, error: rpcError } = await this.supabase.rpc("reject_sales_delivery", {
@@ -400,7 +402,70 @@ export class SalesInvoiceWarehouseCommandService {
       "⚠️ [WAREHOUSE_REJECT] Accountant draft-revert notification failed:"
     )
 
-    if (invoiceSenderId) {
+    // v3.74.787 — owner spec: the FIX starts at the SOURCE document. For an
+    // SO-sourced invoice the action notification goes to the SALES ORDER
+    // creator (edit the order → the edit mirrors onto the invoice → the
+    // accountant is notified to re-send). For a booking-linked service
+    // invoice it goes to the booking creator (edit the SOLD products in the
+    // booking; service-consumed products are outside this cycle — they were
+    // already used performing the service). Standalone invoices keep the
+    // old sender notification as the fallback.
+    let sourceEditorNotified = false
+
+    if ((invoice as any).sales_order_id) {
+      const { data: so } = await this.supabase
+        .from("sales_orders")
+        .select("so_number, created_by_user_id")
+        .eq("id", (invoice as any).sales_order_id)
+        .eq("company_id", actor.companyId)
+        .maybeSingle()
+
+      if (so?.created_by_user_id) {
+        await this.dispatchWorkflowNotification(
+          actor,
+          { ...invoice, id: command.invoiceId },
+          resolver.resolveInvoiceOriginatorRecipient(so.created_by_user_id, invoice.branch_id || null, invoice.cost_center_id || null),
+          {
+            title: "رفض المخزن صرف البضاعة — عدّل أمر البيع",
+            message: `رفض مسؤول المخزن صرف بضاعة الفاتورة رقم (${invoice.invoice_number}) المرتبطة بأمر البيع (${so.so_number}). سبب الرفض: ${command.notes || "لم يتم تحديد سبب"}. عدّل أمر البيع (المنتجات / الكميات) وسيسرى تعديلك على الفاتورة تلقائياً، ثم يتولى محاسب الفرع إعادة إرسالها.`,
+            priority: "high",
+            severity: "error",
+            category: "inventory",
+            eventAction: "warehouse_rejected_edit_sales_order",
+          },
+          "⚠️ [WAREHOUSE_REJECT] SO-editor notification failed:"
+        )
+        sourceEditorNotified = true
+      }
+    } else {
+      const { data: booking } = await this.supabase
+        .from("bookings")
+        .select("booking_no, created_by_user_id, staff_user_id")
+        .eq("invoice_id", command.invoiceId)
+        .eq("company_id", actor.companyId)
+        .maybeSingle()
+
+      const bookingEditor = booking?.created_by_user_id || booking?.staff_user_id || null
+      if (bookingEditor) {
+        await this.dispatchWorkflowNotification(
+          actor,
+          { ...invoice, id: command.invoiceId },
+          resolver.resolveInvoiceOriginatorRecipient(bookingEditor, invoice.branch_id || null, invoice.cost_center_id || null),
+          {
+            title: "رفض المخزن صرف المنتجات المباعة — عدّل أمر الحجز",
+            message: `رفض مسؤول المخزن صرف المنتجات المباعة فى فاتورة الخدمة رقم (${invoice.invoice_number}) المرتبطة بأمر الحجز (${booking?.booking_no || ""}). سبب الرفض: ${command.notes || "لم يتم تحديد سبب"}. عدّل المنتجات المباعة فى أمر الحجز وسيسرى التعديل على الفاتورة، ثم يتولى محاسب الفرع إعادة إرسالها. (المنتجات المستهلكة فى تنفيذ الخدمة خارج هذه الدورة — استُخدمت فى التنفيذ بالفعل.)`,
+            priority: "high",
+            severity: "error",
+            category: "inventory",
+            eventAction: "warehouse_rejected_edit_booking",
+          },
+          "⚠️ [WAREHOUSE_REJECT] Booking-editor notification failed:"
+        )
+        sourceEditorNotified = true
+      }
+    }
+
+    if (!sourceEditorNotified && invoiceSenderId) {
       await this.dispatchWorkflowNotification(
         actor,
         { ...invoice, id: command.invoiceId },
