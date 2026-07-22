@@ -30,28 +30,35 @@ export class SalesOrderNotificationService {
       params.costCenterId || null
     )
 
-    const accountantRefType = params.linkedInvoiceId ? "invoice" : "sales_order"
-    const accountantRefId = params.linkedInvoiceId || params.salesOrderId
-    const accountantTitle = params.linkedInvoiceId ? "فاتورة بيع جديدة في فرعكم" : "أمر بيع جديد في فرعكم"
-    const accountantMessage = params.linkedInvoiceId
-      ? `تم إنشاء فاتورة بيع جديدة رقم (${params.linkedInvoiceNumber || params.linkedInvoiceId}) في فرعكم وبانتظار المتابعة`
-      : `تم إنشاء أمر بيع جديد في فرعكم رقم (${params.salesOrderNumber}) وبانتظار المتابعة`
-
-    await this.dispatch(
-      params,
-      accountantRecipients,
-      {
-        referenceType: accountantRefType,
-        referenceId: accountantRefId,
-        title: accountantTitle,
-        message: accountantMessage,
-        priority: "normal",
-        severity: "info",
-        category: "finance",
-        eventAction: params.linkedInvoiceId ? "created_branch_invoice_followup" : "created_branch_order_followup",
-      },
-      "⚠️ [SALES_ORDER] Branch accountant notification failed:"
-    )
+    // v3.74.783 — the accountant is notified about INVOICES, never sales orders.
+    //
+    // The owner's rule, verbatim: the accountant's work starts once the invoice
+    // linked to the sales order exists — sales orders are not his concern.
+    //
+    // The fallback that notified him about the bare order was a leftover of the
+    // old flow, where order and invoice were born together in one request. In
+    // the single-approval cycle (v3.74.782) an order with a pending discount
+    // has NO invoice yet — and may be rejected and never get one — so that
+    // notification was noise about a document outside his role. When the
+    // invoice IS born (immediately for no-discount orders, at approval
+    // otherwise), he is notified about it here or by the approval path.
+    if (params.linkedInvoiceId) {
+      await this.dispatch(
+        params,
+        accountantRecipients,
+        {
+          referenceType: "invoice",
+          referenceId: params.linkedInvoiceId,
+          title: "فاتورة بيع جديدة في فرعكم",
+          message: `تم إنشاء فاتورة بيع جديدة رقم (${params.linkedInvoiceNumber || params.linkedInvoiceId}) في فرعكم وبانتظار المتابعة`,
+          priority: "normal",
+          severity: "info",
+          category: "finance",
+          eventAction: "created_branch_invoice_followup",
+        },
+        "⚠️ [SALES_ORDER] Branch accountant notification failed:"
+      )
+    }
 
     await this.dispatch(
       params,
