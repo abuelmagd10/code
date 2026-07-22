@@ -24,7 +24,8 @@ foreach ($must in @(
     "warehouse_rejected_edit_sales_order",
     "warehouse_rejected_edit_booking",
     "sourceEditorNotified",
-    "sales_order_id"
+    "sales_order_id",
+    "booking?.staff_user_id || booking?.created_by_user_id"
 )) {
     if ($svc -notmatch [regex]::Escape($must)) {
         Write-Host "X rejection-cycle notification rework incomplete: $must" -ForegroundColor Red
@@ -106,8 +107,10 @@ if (-not $staged) {
         'the sales order creator - edit the ORDER, the edit flows onto the',
         'linked invoice automatically, the branch accountant is notified to',
         're-send, and the cycle repeats until delivery. For service invoices',
-        'the action goes to the booking creator (SOLD products only; products',
-        'consumed performing the service are outside the cycle).',
+        'the action goes to the SERVICE EXECUTOR - staff_user_id, per the',
+        'owner''s correction; booking creator only as fallback - for the SOLD',
+        'products only (products consumed performing the service are outside',
+        'the cycle).',
         '',
         'Built:',
         '- rejectDelivery notifications reworked: action to the SO creator',

@@ -406,7 +406,7 @@ export class SalesInvoiceWarehouseCommandService {
     // SO-sourced invoice the action notification goes to the SALES ORDER
     // creator (edit the order → the edit mirrors onto the invoice → the
     // accountant is notified to re-send). For a booking-linked service
-    // invoice it goes to the booking creator (edit the SOLD products in the
+    // invoice it goes to the SERVICE EXECUTOR (edit the SOLD products in the
     // booking; service-consumed products are outside this cycle — they were
     // already used performing the service). Standalone invoices keep the
     // old sender notification as the fallback.
@@ -445,7 +445,12 @@ export class SalesInvoiceWarehouseCommandService {
         .eq("company_id", actor.companyId)
         .maybeSingle()
 
-      const bookingEditor = booking?.created_by_user_id || booking?.staff_user_id || null
+      // v3.74.787 — owner correction (verbatim): «الاشعار يصل الى الموظف
+      // المنفذ الخدمة». The SERVICE EXECUTOR (staff_user_id — the employee
+      // assigned to perform the booking) gets the action, NOT the booking
+      // record's creator; the creator is only the fallback when no staff
+      // is assigned.
+      const bookingEditor = booking?.staff_user_id || booking?.created_by_user_id || null
       if (bookingEditor) {
         await this.dispatchWorkflowNotification(
           actor,
