@@ -3,36 +3,35 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.782.ps1") { Remove-Item -LiteralPath "push_v3.74.782.ps1" -Force }
+if (Test-Path "push_v3.74.783.ps1") { Remove-Item -LiteralPath "push_v3.74.783.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.783"') {
-    Write-Host "+ 3.74.783" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.784"') {
+    Write-Host "+ 3.74.784" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.783]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.783]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.784]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.784]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- the owner's rule, asserted positively -------------------------------------
-$svc = Get-Content -LiteralPath "lib/services/sales-order-notification.service.ts" -Raw
-if ($svc -notmatch [regex]::Escape("if (params.linkedInvoiceId) {")) {
-    Write-Host "X the accountant dispatch is no longer gated on an invoice existing" -ForegroundColor Red
-    exit 1
+# --- the balancing line must exist, positively asserted -------------------------
+$eng = Get-Content -LiteralPath "lib/accrual-accounting-engine.ts" -Raw
+foreach ($must in @(
+    "const gapAmount = round2(netAmount + vatAmount + shippingAmount - totalAmount)",
+    "خصم مسموح به (بعد الضريبة)",
+    "mapping.sales_discount || mapping.sales_revenue",
+    "sales_discount: findAccount('sales_discounts')"
+)) {
+    if ($eng -notmatch [regex]::Escape($must)) {
+        Write-Host "X the after-tax discount balancing line is incomplete: $must" -ForegroundColor Red
+        exit 1
+    }
 }
-if ($svc -match [regex]::Escape("أمر بيع جديد في فرعكم")) {
-    Write-Host "X the bare-order fallback notification to the accountant is back" -ForegroundColor Red
-    exit 1
-}
-if ($svc -notmatch [regex]::Escape("created_management_visibility")) {
-    Write-Host "X the leadership visibility notification was lost - only the accountant fallback should go" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ accountant is notified about invoices only; leadership visibility intact" -ForegroundColor Green
+Write-Host "+ revenue journal balances by construction (after-tax discount + adjustment)" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -69,10 +68,9 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "lib/services/sales-order-notification.service.ts" `
-    "docs/HANDOVER_2026-07-21.md" `
-    "push_v3.74.783.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.782.ps1" 2>$null
+    "lib/accrual-accounting-engine.ts" `
+    "push_v3.74.784.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.783.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -84,33 +82,35 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_783.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_784.txt"
     $msgLines = @(
-        'fix(notifications): v3.74.783 - the accountant is notified about invoices, never sales orders',
+        'fix(accounting): v3.74.784 - after-tax discount invoices could never be posted',
         '',
-        'The owner, during live testing of the single-approval cycle: why does the',
-        'accountant get a "sales order created" notification? Orders are not his',
-        'concern - his work starts once the linked invoice exists.',
+        'Found at the finale of the owner''s live test of the single-approval cycle:',
+        'the accountant clicked post on INV-00002 (10% after-tax discount) and the',
+        'balance guard refused it - UNBALANCED_JOURNAL_PAYLOAD, Debit=274.60,',
+        'Credit=294.00. The 19.40 gap is exactly the discount.',
         '',
-        'SalesOrderNotificationService was a leftover of the old flow, where order',
-        'and invoice were born in the same request: notify about the invoice if',
-        'present, else FALL BACK to notifying about the bare order. Under',
-        'v3.74.782 an order with a pending discount has no invoice yet - and may',
-        'be rejected and never get one - so the fallback was noise about a',
-        'document outside his role.',
+        'prepareInvoiceRevenueJournal debits AR with the invoice TOTAL (net of',
+        'everything) and credits revenue + VAT + shipping - the PRE-discount',
+        'components - and never reads the discount at all. Before-tax discounts',
+        'survived by luck: subtotal arrives already net. After-tax discounts made',
+        'every such invoice permanently unpostable. Fifth never-executed-path',
+        'defect this week. The DB balance guard is the hero: no crooked entry',
+        'ever reached the ledger.',
         '',
-        'The fallback is removed: the accountant dispatch now runs only when a',
-        'linked invoice exists. No-discount orders still notify him immediately',
-        '(invoice is born in the same request); discounted orders notify him at',
-        'approval time via the existing invoice-creation path - proven by the',
-        'owner''s own live test, where the accountant received the invoice',
-        'notification after approval. Leadership visibility of new orders is',
-        'unchanged.',
+        'The fix balances by construction: the gap is computed from the very',
+        'numbers just placed on the lines - (revenue + VAT + shipping) - total.',
+        'Positive gap (after-tax discount) is debited to Sales Discounts (code',
+        '4120, sub_type sales_discounts, already in the seeded COA) so the',
+        'discount shows as contra-revenue; companies lacking the account net it',
+        'against revenue and stay balanced. Negative gap (an adjustment raising',
+        'the total) is credited symmetrically. FC invoices carry original_*',
+        'values per IAS 21 like every other line.',
         '',
-        'Also recorded from the same test session (handover, cosmetic): the',
-        'invoice notification text showed "0.00 EGP" because it was composed in',
-        'the instant before totals recomputation - the invoice data itself is',
-        'correct (274.60, verified). Same transient-zero family, fourth sighting.'
+        'All push-script assertions for this release are positive - what the code',
+        'MUST contain - per the lesson that negative checks match their own',
+        'documentation.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -119,5 +119,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.783 pushed - invoices for the accountant, orders for leadership" -ForegroundColor Green
+    Write-Host "`n+ v3.74.784 pushed - after-tax discounts can finally post, balanced by construction" -ForegroundColor Green
 }

@@ -50,6 +50,10 @@ export interface AccrualAccountMapping {
   customer_advance?: string
   supplier_advance?: string
   write_off_expense?: string // حساب مصروف الإهلاك
+  // v3.74.784 — خصم المبيعات (المسموح به): contra-revenue for after-tax
+  // discounts. Optional because older companies may lack the account; the
+  // revenue-journal builder falls back to netting against sales_revenue.
+  sales_discount?: string
 }
 
 /**
@@ -88,7 +92,11 @@ export async function getAccrualAccountMapping(
     vat_input: findAccount('vat_input', 'asset') || '',
     customer_advance: findAccount('customer_advance', 'liability'),
     supplier_advance: findAccount('supplier_advance', 'asset'),
-    write_off_expense: findAccount('write_off_expense', 'expense')
+    write_off_expense: findAccount('write_off_expense', 'expense'),
+    // v3.74.784 — sub_type is 'sales_discounts' (plural) in the seeded COA
+    // (code 4120, خصم المبيعات المسموح به). No account_type fallback: falling
+    // back to a random income account would post discounts as revenue.
+    sales_discount: findAccount('sales_discounts')
   }
 
   // التحقق من وجود الحسابات الأساسية
@@ -230,6 +238,55 @@ export async function prepareInvoiceRevenueJournal(
       cost_center_id: invoice.cost_center_id,
       original_debit: isFC ? 0 : null,
       original_credit: isFC ? fcShipping : null,
+      original_currency: isFC ? invoiceCurrency : null,
+      exchange_rate_used: isFC ? fxRate : 1,
+    } as any)
+  }
+
+  // v3.74.784 — the line this builder never wrote: the AFTER-TAX discount.
+  //
+  // The builder debits AR with the invoice TOTAL (net of everything) and
+  // credits revenue + VAT + shipping — the PRE-discount components. For a
+  // before-tax discount that balances, because subtotal is already net of it.
+  // For an after-tax discount nothing on the credit side shrinks, so every
+  // such invoice arrived at the DB guard unbalanced by exactly the discount
+  // (proven live: Debit=274.60, Credit=294.00, gap 19.40 = the 10% خصم بعد
+  // الضريبة) and could never be posted.
+  //
+  // The gap is computed from the very numbers just placed on the lines, so
+  // this line balances the entry BY CONSTRUCTION — whatever combination of
+  // after-tax discount and adjustment produced it. Debited to خصم المبيعات
+  // (المسموح به) [sub_type sales_discounts, code 4120 in the seeded COA] so
+  // the discount is visible as contra-revenue; if a company lacks that
+  // account, netting against sales_revenue keeps the books balanced.
+  const fcGap = round2(fcNet + fcVat + fcShipping - fcTotal)
+  const gapAmount = round2(netAmount + vatAmount + shippingAmount - totalAmount)
+  if (gapAmount > 0.009) {
+    journalEntry.lines.push({
+      account_id: mapping.sales_discount || mapping.sales_revenue,
+      debit_amount: gapAmount,
+      credit_amount: 0,
+      description: 'خصم مسموح به (بعد الضريبة)',
+      branch_id: invoice.branch_id,
+      cost_center_id: invoice.cost_center_id,
+      original_debit: isFC ? fcGap : null,
+      original_credit: isFC ? 0 : null,
+      original_currency: isFC ? invoiceCurrency : null,
+      exchange_rate_used: isFC ? fxRate : 1,
+    } as any)
+  } else if (gapAmount < -0.009) {
+    // the mirror case: an adjustment that RAISES the total above the
+    // components (invoices.adjustment > 0) — credited so the entry balances
+    // instead of failing at the guard.
+    journalEntry.lines.push({
+      account_id: mapping.sales_revenue,
+      debit_amount: 0,
+      credit_amount: -gapAmount,
+      description: 'تسوية على الفاتورة',
+      branch_id: invoice.branch_id,
+      cost_center_id: invoice.cost_center_id,
+      original_debit: isFC ? 0 : null,
+      original_credit: isFC ? -fcGap : null,
       original_currency: isFC ? invoiceCurrency : null,
       exchange_rate_used: isFC ? fxRate : 1,
     } as any)
