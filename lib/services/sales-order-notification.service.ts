@@ -60,21 +60,16 @@ export class SalesOrderNotificationService {
       )
     }
 
-    await this.dispatch(
-      params,
-      resolver.resolveLeadershipVisibilityRecipients(),
-      {
-        referenceType: "sales_order",
-        referenceId: params.salesOrderId,
-        title: "أمر بيع جديد",
-        message: `تم إنشاء أمر بيع جديد رقم (${params.salesOrderNumber}) في فرع (${params.branchName || "غير محدد"})`,
-        priority: "normal",
-        severity: "info",
-        category: "sales",
-        eventAction: "created_management_visibility",
-      },
-      "⚠️ [SALES_ORDER] Leadership notification failed:"
-    )
+    // v3.74.789 — the owner, upon receiving "أمر بيع جديد" for SO-0003:
+    // «ما فائدة هذا الإشعار إلى المالك؟». Decision: routine creation is the
+    // BRANCH MANAGER's operational concern — and he already gets his own
+    // notification from the DB trigger so_branch_manager_notify_trg
+    // («نشاط فرعك: تم إنشاء طلب مبيعات»). Owner and GM are summoned only
+    // when a DECISION is theirs (discount approval) or something exceptional
+    // happens (warehouse rejection, integrity findings). This leadership
+    // broadcast was pure noise on top of the branch manager's channel, so it
+    // is removed entirely rather than re-targeted — re-targeting would have
+    // DOUBLED the branch manager's notifications for every order.
   }
 
   private async dispatch(
