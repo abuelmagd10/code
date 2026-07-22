@@ -205,12 +205,19 @@ export async function GET(req: NextRequest) {
     {
       const { data: activeInvoices } = await supabase
         .from("invoices")
-        .select("id")
+        .select("id, status, warehouse_status")
         .eq("company_id", companyId)
         .in("status", ["sent", "paid", "partially_paid"])
         .is("deleted_at", null)
 
-      const activeIds = (activeInvoices || []).map((inv: any) => inv.id)
+      // v3.74.785 — owner rule: revenue is recognized at DELIVERY. A 'sent'
+      // invoice still awaiting warehouse dispatch approval legitimately has
+      // NO revenue journal yet — its journal is created inside the warehouse
+      // approval transaction. Excluding it here prevents a false "missing
+      // journal" finding for every invoice sitting in the dispatch queue.
+      const activeIds = (activeInvoices || [])
+        .filter((inv: any) => !(inv.status === "sent" && inv.warehouse_status === "pending"))
+        .map((inv: any) => inv.id)
       let invoicesWithoutJournals = 0
 
       if (activeIds.length > 0) {
@@ -254,12 +261,16 @@ export async function GET(req: NextRequest) {
     {
       const { data: activeInvoices } = await supabase
         .from("invoices")
-        .select("id")
+        .select("id, status, warehouse_status")
         .eq("company_id", companyId)
         .in("status", ["sent", "paid", "partially_paid"])
         .is("deleted_at", null)
 
-      const allActiveIds = (activeInvoices || []).map((inv: any) => inv.id)
+      // v3.74.785 — same exclusion as test 4: goods still awaiting warehouse
+      // dispatch approval have not left stock, so no COGS exists yet by design.
+      const allActiveIds = (activeInvoices || [])
+        .filter((inv: any) => !(inv.status === "sent" && inv.warehouse_status === "pending"))
+        .map((inv: any) => inv.id)
 
       // v3.74.765 — only invoices that actually SELL STOCK can have a cost of
       // goods sold. This test used to check every active invoice, so a

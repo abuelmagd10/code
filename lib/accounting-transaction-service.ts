@@ -98,7 +98,7 @@ export class AccountingTransactionService {
                 .select(`
            product_id, quantity,
            invoices!inner (
-             branch_id, cost_center_id, warehouse_id, status, invoice_date, shipping_provider_id
+             branch_id, cost_center_id, warehouse_id, status, warehouse_status, invoice_date, shipping_provider_id
            )
         `)
                 .eq('invoice_id', invoiceId)
@@ -107,6 +107,35 @@ export class AccountingTransactionService {
             if (!invoiceItems || invoiceItems.length === 0) throw new Error('Invoice has no items')
 
             const invoiceData = invoiceItems[0].invoices as any
+
+            const requiresWarehouseApproval = !!invoiceData.shipping_provider_id;
+
+            // v3.74.785 — owner rule (revenue recognition at delivery):
+            // «القيد المحاسبى يُسجَّل بعد اعتماد مسئول المخزن التسليم للعميل».
+            // When the invoice will pass through warehouse dispatch approval
+            // (same criterion that already defers inventory + COGS below), the
+            // revenue journal is deferred too — approveSalesDeliveryAtomic
+            // builds it inside the SAME approve_sales_delivery_v2 transaction
+            // as the stock movement, so revenue never precedes the goods.
+            // Bonus: an unpaid warehouse REJECTION now reverts to draft with
+            // no orphaned revenue journal left in the ledger (latent defect
+            // in the old sequencing). Gated on warehouseApprovalV2 because the
+            // V1 approval RPC cannot carry a journal payload — deferring there
+            // would strand the invoice with no revenue journal forever.
+            //
+            // warehouse_status must ALSO still be 'pending': a service-only
+            // invoice is auto-approved to 'approved' at INSERT (no goods to
+            // dispatch), so even with a shipping provider set there is no
+            // approval coming — deferring would strand it journal-less and
+            // unpayable. Owner rule for services: revenue at «مرسلة»; the
+            // products consumed in performing the service are recognized at
+            // service execution by the booking-custody flow; only SOLD goods
+            // wait for dispatch approval — and those keep warehouse_status
+            // 'pending', which is exactly what this condition reads.
+            const deferRevenueToDelivery =
+                requiresWarehouseApproval &&
+                enterpriseFinanceFlags.warehouseApprovalV2 &&
+                invoiceData.warehouse_status === 'pending'
 
             // 2. تحضير قيد الإيراد (Revenue Journal)
             // التحقق من وجود قيد إيراد سابق لهذه الفاتورة
@@ -118,7 +147,9 @@ export class AccountingTransactionService {
                 .maybeSingle()
 
             let revenueJournal = null
-            if (!existingRevenue) {
+            if (deferRevenueToDelivery) {
+                console.log('Revenue journal deferred to warehouse delivery approval (v3.74.785 owner rule).')
+            } else if (!existingRevenue) {
                 revenueJournal = await prepareInvoiceRevenueJournal(this.supabase, invoiceId, companyId, {
                     allowDraft: true,
                 })
@@ -145,8 +176,6 @@ export class AccountingTransactionService {
             let allFifoConsumptions: any[] = []
             let allCogsTx: any[] = []
             let totalTransactionCOGS = 0
-
-            const requiresWarehouseApproval = !!invoiceData.shipping_provider_id;
 
             if (requiresWarehouseApproval) {
                 console.log('Invoice requires warehouse approval (shipping provider assigned). Skipping direct inventory deduction and COGS in postInvoiceAtomic.')
@@ -690,6 +719,38 @@ export class AccountingTransactionService {
             // those); only the journal-line cost falls back to
             // products.cost_price via the trigger.
             const journalEntries: any[] = []
+
+            // v3.74.785 — owner rule: revenue is recognized at DELIVERY. The
+            // posting step (تحديد كمرسلة) no longer writes the revenue journal
+            // for warehouse-approval invoices; it is built HERE and rides the
+            // same approve_sales_delivery_v2 transaction as the stock-out, so
+            // either both land or neither does. reference_type 'invoice'
+            // (revenue) cannot collide with the trigger's 'invoice_cogs' row,
+            // so the v3.74.85 duplicate concern above does not apply. Existing
+            // invoices posted under the old sequencing already have their
+            // journal — the existence check keeps this fully idempotent.
+            const { data: existingRevenueJournal } = await this.supabase
+                .from('journal_entries')
+                .select('id')
+                .eq('reference_id', params.invoiceId)
+                .eq('reference_type', 'invoice')
+                .maybeSingle()
+
+            if (!existingRevenueJournal) {
+                const deferredRevenueJournal = await prepareInvoiceRevenueJournal(
+                    this.supabase,
+                    params.invoiceId,
+                    params.companyId,
+                    { allowDraft: false }
+                )
+                if (!deferredRevenueJournal) {
+                    throw new Error(
+                        'تعذّر تحضير قيد الإيراد المؤجَّل للفاتورة — لا يمكن اعتماد التسليم بدون قيد الإيراد'
+                    )
+                }
+                journalEntries.push(deferredRevenueJournal)
+                console.log('Deferred revenue journal attached to warehouse approval transaction (v3.74.785).')
+            }
 
             const { data: rpcResult, error: rpcError } = await this.supabase.rpc('approve_sales_delivery_v2', {
                 p_company_id: params.companyId,
