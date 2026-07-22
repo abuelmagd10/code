@@ -1919,16 +1919,9 @@ export default function NewInvoicePage() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label suppressHydrationWarning>{appLang === 'en' ? 'Adjustment' : 'تسوية'}</Label>
-                      <NumericInput
-                        step="0.01"
-                        value={adjustment}
-                        onChange={(val) => setAdjustment(val)}
-                        allowNegative={true}
-                        decimalPlaces={2}
-                      />
-                    </div>
+                    {/* v3.74.788 — خانة التسوية أُلغيت بقرار المالك: كانت تسمح
+                        بخصم مقنّع يلتف حول دورة الاعتماد. الحالة تبقى صفراً
+                        والحارس trg_block_manual_adjustment يمنع أى قيمة. */}
                   </div>
                 </div>
               </CardContent>

@@ -1033,10 +1033,8 @@ export default function EditSalesOrderPage() {
                     <Label suppressHydrationWarning>{appLang === 'en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
                     <Input type="number" step="0.01" min={0} value={shippingTaxRate} onChange={(e) => setShippingTaxRate(Number.parseFloat(e.target.value) || 0)} />
                   </div>
-                  <div className="space-y-2">
-                    <Label suppressHydrationWarning>{appLang === 'en' ? 'Adjustment' : 'تعديل'}</Label>
-                    <Input type="number" step="0.01" value={adjustment} onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)} />
-                  </div>
+                  {/* v3.74.788 — خانة التعديل أُلغيت بقرار المالك (خصم مقنّع يلتف
+                      حول دورة الاعتماد). القيمة التاريخية تُعرض فى الملخص فقط. */}
                 </div>
               </CardContent>
             </Card>

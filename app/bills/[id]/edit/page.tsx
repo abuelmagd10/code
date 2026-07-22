@@ -1190,10 +1190,14 @@ export default function EditBillPage() {
                           <NumericInput min={0} className="mt-1" value={shippingTaxRate} onChange={(val) => setShippingTaxRate(val)} decimalPlaces={2} />
                         </div>
                       </div>
-                      <div>
-                        <Label className="text-xs">{appLang === 'en' ? 'Adjustment (+/-)' : 'التعديل (+/-)'}</Label>
-                        <NumericInput className="mt-1" value={adjustment} onChange={(val) => setAdjustment(val)} decimalPlaces={2} />
-                      </div>
+                      {/* v3.74.788 — خانة التعديل أُلغيت بقرار المالك. القيمة
+                          التاريخية (إن وُجدت) تُعرض للقراءة فقط. */}
+                      {adjustment !== 0 && (
+                        <div>
+                          <Label className="text-xs">{appLang === 'en' ? 'Adjustment (historical)' : 'التعديل (تاريخى)'}</Label>
+                          <div className="mt-1 text-sm font-semibold">{adjustment.toFixed(2)}</div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 

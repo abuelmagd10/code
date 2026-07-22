@@ -473,10 +473,8 @@ export default function NewVendorCreditPage() {
                   <Label>ضريبة الشحن%</Label>
                   <NumericInput min={0} step="0.01" value={credit.shipping_tax_rate} onChange={(val) => setCredit({ ...credit, shipping_tax_rate: val })} decimalPlaces={2} />
                 </div>
-                <div>
-                  <Label>تسوية/تعديل</Label>
-                  <NumericInput step="0.01" value={credit.adjustment} onChange={(val) => setCredit({ ...credit, adjustment: val })} decimalPlaces={2} />
-                </div>
+                {/* v3.74.788 — خانة التسوية أُلغيت بقرار المالك: كانت تسمح
+                    بتغيير الإجمالى خارج البنود ودورة الاعتماد. */}
               </div>
 
               <div className="border-t pt-4">

@@ -1491,10 +1491,14 @@ export default function EditInvoicePage() {
                       <NumericInput step="0.01" min={0} value={shippingTaxRate} onChange={(val) => setShippingTaxRate(val)} decimalPlaces={2} className="w-20 h-8 text-sm" />
                     </div>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span>{appLang === 'en' ? 'Adjustment:' : 'تسوية:'}</span>
-                    <NumericInput step="0.01" value={adjustment} onChange={(val) => setAdjustment(val)} allowNegative={true} decimalPlaces={2} className="w-24 h-8 text-sm" />
-                  </div>
+                  {/* v3.74.788 — خانة التسوية أُلغيت بقرار المالك. القيمة
+                      التاريخية (إن وُجدت) تُعرض للقراءة فقط. */}
+                  {adjustment !== 0 && (
+                    <div className="flex justify-between items-center">
+                      <span>{appLang === 'en' ? 'Adjustment (historical):' : 'تسوية (تاريخية):'}</span>
+                      <span className="text-sm font-semibold">{adjustment.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="border-t pt-3 flex justify-between text-lg">
                     <span>{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
                     <span className="font-bold text-blue-600">{totals.total.toFixed(2)}</span>

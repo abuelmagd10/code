@@ -1008,10 +1008,8 @@ export default function NewPurchaseOrderPage() {
                   <Label>{appLang === 'en' ? 'Shipping Tax %' : 'ضريبة الشحن %'}</Label>
                   <NumericInput step="0.1" min={0} value={shippingTaxRate} onChange={(val) => setShippingTaxRate(val)} decimalPlaces={1} />
                 </div>
-                <div>
-                  <Label>{appLang === 'en' ? 'Adjustment' : 'التسوية'}</Label>
-                  <NumericInput step="0.01" value={adjustment} onChange={(val) => setAdjustment(val)} decimalPlaces={2} />
-                </div>
+                {/* v3.74.788 — خانة التسوية أُلغيت بقرار المالك: كانت تسمح
+                    بتغيير الإجمالى خارج البنود ودورة الاعتماد. */}
                 <div className="md:col-span-3">
                   <Label>{appLang === 'en' ? 'Notes' : 'ملاحظات'}</Label>
                   <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder={appLang === 'en' ? 'Optional notes...' : 'ملاحظات اختيارية...'} />

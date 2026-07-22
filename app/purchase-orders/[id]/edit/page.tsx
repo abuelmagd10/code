@@ -959,11 +959,14 @@ export default function EditPurchaseOrderPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2 pt-4 border-t">
-                    <Label>{appLang === 'en' ? 'Adjustment' : 'التسوية'}</Label>
-                    <NumericInput value={adjustment} onChange={setAdjustment} disabled={!canEdit} />
-                    <p className="text-xs text-slate-500">{appLang === 'en' ? 'Add or subtract an adjustment amount (use negative numbers to subtract)' : 'إضافة أو طرح مبلغ تسوية (استخدم أرقام سالبة للطرح)'}</p>
-                  </div>
+                  {/* v3.74.788 — خانة التسوية أُلغيت بقرار المالك. القيمة
+                      التاريخية (إن وُجدت) تُعرض للقراءة فقط. */}
+                  {adjustment !== 0 && (
+                    <div className="space-y-2 pt-4 border-t">
+                      <Label>{appLang === 'en' ? 'Adjustment (historical)' : 'التسوية (تاريخية)'}</Label>
+                      <div className="text-sm font-semibold">{adjustment.toFixed(2)}</div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

@@ -1727,20 +1727,9 @@ export default function NewSalesOrderPage() {
                         placeholder="0.00%"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="adjustment" suppressHydrationWarning className="text-sm text-gray-600 dark:text-gray-400">
-                        {appLang === 'en' ? 'Adjustment' : 'تعديل'}
-                      </Label>
-                      <Input
-                        id="adjustment"
-                        type="number"
-                        step="0.01"
-                        value={adjustment}
-                        onChange={(e) => setAdjustment(Number.parseFloat(e.target.value) || 0)}
-                        className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
-                        placeholder={appLang === 'en' ? '0.00' : '٠.٠٠'}
-                      />
-                    </div>
+                    {/* v3.74.788 — خانة التعديل أُلغيت بقرار المالك: كانت تسمح
+                        بخصم مقنّع يلتف حول دورة الاعتماد. الحالة تبقى صفراً
+                        والحارس trg_block_manual_adjustment يمنع أى قيمة. */}
                   </div>
                 </div>
               </CardContent>
