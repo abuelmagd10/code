@@ -100,6 +100,21 @@ export default function SalesOrderDetailPage() {
   const [order, setOrder] = useState<SalesOrder | null>(null)
   const [items, setItems] = useState<SOItem[]>([])
   const [linkedInvoices, setLinkedInvoices] = useState<LinkedInvoice[]>([])
+  // v3.74.794 — approval context lives where the action starts (owner rule)
+  const [dispatchInfo, setDispatchInfo] = useState<{
+    invoice_number: string | null
+    warehouse_status: string
+    reason: string | null
+    decided_at: string | null
+    actor_name: string | null
+  } | null>(null)
+  const [discountApproval, setDiscountApproval] = useState<{
+    status: string
+    discount_value: number | null
+    decided_at: string | null
+    decision_note: string | null
+    decider_name: string | null
+  } | null>(null)
   const [linkedPayments, setLinkedPayments] = useState<LinkedPayment[]>([])
   const [linkedReturns, setLinkedReturns] = useState<LinkedReturn[]>([])
   // 💸 إجمالي الرصيد الدائن المُصرَف للعميل (مرجع توضيحي)
@@ -205,11 +220,73 @@ export default function SalesOrderDetailPage() {
       // Also check for invoices that reference this sales order
       const { data: invoicesData } = await supabase
         .from("invoices")
-        .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount, returned_amount, return_status")
+        .select("id, invoice_number, invoice_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, warehouse_status, warehouse_rejection_reason, warehouse_rejected_at, rejected_by, approved_by, approval_date")
         .or(`sales_order_id.eq.${orderId}${orderData.invoice_id ? `,id.eq.${orderData.invoice_id}` : ''}`)
 
       const uniqueInvoices = invoicesData || []
       setLinkedInvoices(uniqueInvoices)
+
+      // v3.74.794 — the owner, landing on the SO from the rejection
+      // notification: the employee must see the dispatch decision and the
+      // discount approval HERE, where his action starts — not a click away
+      // on the invoice. Same two cards the invoice page carries.
+      try {
+        const primaryInvoice: any = uniqueInvoices[0] || null
+        if (primaryInvoice) {
+          let actorName: string | null = null
+          const actorId = primaryInvoice.warehouse_status === 'rejected'
+            ? primaryInvoice.rejected_by
+            : primaryInvoice.approved_by
+          if (actorId) {
+            const { data: prof } = await supabase
+              .from('user_profiles')
+              .select('display_name, username')
+              .eq('user_id', actorId)
+              .maybeSingle()
+            actorName = prof?.display_name || prof?.username || String(actorId).slice(0, 8)
+          }
+          setDispatchInfo({
+            invoice_number: primaryInvoice.invoice_number,
+            warehouse_status: primaryInvoice.warehouse_status || 'pending',
+            reason: primaryInvoice.warehouse_rejection_reason || null,
+            decided_at: primaryInvoice.warehouse_rejected_at || primaryInvoice.approval_date || null,
+            actor_name: actorName,
+          })
+        } else {
+          setDispatchInfo(null)
+        }
+
+        const { data: approval } = await supabase
+          .from('discount_approvals')
+          .select('status, discount_value, decided_by, decided_at, decision_note')
+          .eq('document_type', 'sales_order')
+          .eq('document_id', orderId)
+          .order('requested_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (approval) {
+          let deciderName: string | null = null
+          if (approval.decided_by) {
+            const { data: prof } = await supabase
+              .from('user_profiles')
+              .select('display_name, username')
+              .eq('user_id', approval.decided_by)
+              .maybeSingle()
+            deciderName = prof?.display_name || prof?.username || String(approval.decided_by).slice(0, 8)
+          }
+          setDiscountApproval({
+            status: approval.status,
+            discount_value: approval.discount_value,
+            decided_at: approval.decided_at,
+            decision_note: approval.decision_note,
+            decider_name: deciderName,
+          })
+        } else {
+          setDiscountApproval(null)
+        }
+      } catch (approvalContextError) {
+        console.warn('Failed to load approval context for SO:', approvalContextError)
+      }
 
       // 💸 تحميل الرصيد الدائن المُصرَف للعميل (مرجع توضيحي)
       if (orderData.customer_id && orderData.company_id) {
@@ -630,6 +707,109 @@ export default function SalesOrderDetailPage() {
                 </Card>
               </div>
 
+              {/* v3.74.794 — بطاقتا سياق الاعتماد: الموظف يصل هنا من إشعار
+                  الرفض، فيجد قرار الصرف واعتماد الخصم أمامه حيث يبدأ إجراؤه */}
+              {(dispatchInfo || discountApproval) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 no-print">
+                  {dispatchInfo && (
+                    <Card className="dark:bg-gray-800 dark:border-gray-700">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base dark:text-white flex items-center justify-between gap-2">
+                          <span>{appLang === 'en' ? 'Linked Invoice Dispatch' : 'صرف الفاتورة المرتبطة'}</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${dispatchInfo.warehouse_status === 'approved'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+                            : dispatchInfo.warehouse_status === 'rejected'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                            }`}>
+                            {dispatchInfo.warehouse_status === 'approved'
+                              ? (appLang === 'en' ? 'Dispatched' : 'تم الصرف')
+                              : dispatchInfo.warehouse_status === 'rejected'
+                                ? (appLang === 'en' ? 'Dispatch Rejected' : 'الصرف مرفوض')
+                                : (appLang === 'en' ? 'Awaiting Dispatch' : 'بانتظار الصرف')}
+                          </span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Invoice' : 'الفاتورة'}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{dispatchInfo.invoice_number || '-'}</span>
+                        </div>
+                        {dispatchInfo.actor_name && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Decision By' : 'تم بواسطة'}</span>
+                            <span className="text-gray-900 dark:text-white">{dispatchInfo.actor_name}</span>
+                          </div>
+                        )}
+                        {dispatchInfo.decided_at && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Decision Date' : 'تاريخ القرار'}</span>
+                            <span className="text-gray-900 dark:text-white">{new Date(dispatchInfo.decided_at).toLocaleString(appLang === 'en' ? 'en-GB' : 'ar-EG')}</span>
+                          </div>
+                        )}
+                        {dispatchInfo.warehouse_status === 'rejected' && (
+                          <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-900/20 px-4 py-3">
+                            <div className="text-xs font-medium mb-1 text-red-800 dark:text-red-200">{appLang === 'en' ? 'Rejection Reason' : 'سبب الرفض'}</div>
+                            <div className="text-sm text-red-700 dark:text-red-300">{dispatchInfo.reason || (appLang === 'en' ? 'No reason given' : 'لم يتم تحديد سبب')}</div>
+                            <div className="text-xs mt-2 text-red-700/80 dark:text-red-300/80">{appLang === 'en' ? 'Edit this order (products / quantities) — your edit flows to the invoice automatically, then the branch accountant re-sends it.' : 'عدّل هذا الأمر (المنتجات / الكميات) — تعديلك يسرى على الفاتورة تلقائياً، ثم يعيد محاسب الفرع إرسالها.'}</div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {discountApproval && (
+                    <Card className="dark:bg-gray-800 dark:border-gray-700">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base dark:text-white flex items-center justify-between gap-2">
+                          <span>{appLang === 'en' ? 'Discount Approval' : 'اعتماد الخصم'}</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${discountApproval.status === 'approved'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+                            : discountApproval.status === 'rejected'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              : discountApproval.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}>
+                            {discountApproval.status === 'approved'
+                              ? (appLang === 'en' ? 'Approved' : 'الخصم معتمَد')
+                              : discountApproval.status === 'rejected'
+                                ? (appLang === 'en' ? 'Rejected' : 'الخصم مرفوض')
+                                : discountApproval.status === 'pending'
+                                  ? (appLang === 'en' ? 'Awaiting Decision' : 'بانتظار البت')
+                                  : (appLang === 'en' ? 'Cancelled' : 'ملغى')}
+                          </span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Approved Amount' : 'قيمة الخصم'}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{Number(discountApproval.discount_value || 0).toFixed(2)}</span>
+                        </div>
+                        {discountApproval.decider_name && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Decided By' : 'اعتُمد بواسطة'}</span>
+                            <span className="text-gray-900 dark:text-white">{discountApproval.decider_name}</span>
+                          </div>
+                        )}
+                        {discountApproval.decided_at && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Decision Date' : 'تاريخ القرار'}</span>
+                            <span className="text-gray-900 dark:text-white">{new Date(discountApproval.decided_at).toLocaleString(appLang === 'en' ? 'en-GB' : 'ar-EG')}</span>
+                          </div>
+                        )}
+                        {discountApproval.decision_note && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 px-4 py-3">
+                            <div className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Decision Note' : 'ملاحظة القرار'}</div>
+                            <div className="text-sm text-gray-900 dark:text-white">{discountApproval.decision_note}</div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+
               {/* Tabs for Items, Invoices, Payments, Returns */}
               <Card className="dark:bg-gray-800 dark:border-gray-700">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -696,7 +876,14 @@ export default function SalesOrderDetailPage() {
                               <td className="py-3 px-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{symbol}{item.unit_price.toFixed(2)}</td>
                               <td className="py-3 px-2 text-gray-700 dark:text-gray-300 hidden md:table-cell">{item.discount_percent || 0}%</td>
                               <td className="py-3 px-2 text-gray-700 dark:text-gray-300 hidden md:table-cell">{item.tax_rate || 0}%</td>
-                              <td className="py-3 px-2 font-medium text-gray-900 dark:text-white text-right">{symbol}{(item.total || item.subtotal || 0).toFixed(2)}</td>
+                              {/* v3.74.794 — edits save line_total only; total/subtotal may be 0 → the
+                                  cell showed £0.00 for a real line (live-caught on SO-0003). Fall back
+                                  through line_total then a computed gross before surrendering to 0. */}
+                              <td className="py-3 px-2 font-medium text-gray-900 dark:text-white text-right">{symbol}{(
+                                Number(item.total || 0) ||
+                                Number((item as any).line_total || 0) * (1 + Number(item.tax_rate || 0) / 100) ||
+                                Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 - Number(item.discount_percent || 0) / 100) * (1 + Number(item.tax_rate || 0) / 100)
+                              ).toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
