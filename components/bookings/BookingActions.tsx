@@ -1,7 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+// v3.74.802 — the mandatory-custody gate is read from the same DB function
+// that enforces it inside activate_booking_atomic.
+import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -87,6 +90,32 @@ export function BookingActions({
   const isConfirmed = !!confirmedAt
   const isDraft = status === "draft"
   const isTerminal = ["completed", "cancelled", "no_show"].includes(status)
+
+  // v3.74.802 — owner rule: «زر تنفيذ الخدمة يجب أن يظهر بعد اعتماد مسئول
+  // المخزن للمنتجات المرتبطة الإلزامية». The DB guard in
+  // activate_booking_atomic ENFORCES it; this mirrors it in the UI so the
+  // button locks with a hint naming what is missing instead of erroring.
+  // Fail-open on read errors — the server guard is the real gate.
+  const supabase = useSupabase()
+  const [custodyGate, setCustodyGate] = useState<{ ready: boolean; missing: string[] } | null>(null)
+  useEffect(() => {
+    if (isTerminal) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await supabase.rpc("booking_mandatory_custody_gate", { p_booking_id: bookingId })
+        if (!cancelled && data && typeof data === "object") {
+          setCustodyGate({
+            ready: Boolean((data as any).ready),
+            missing: Array.isArray((data as any).missing) ? (data as any).missing : [],
+          })
+        }
+      } catch { /* fail-open */ }
+    })()
+    return () => { cancelled = true }
+  }, [bookingId, isTerminal, status, supabase])
+  const custodyBlocked = custodyGate ? !custodyGate.ready : false
+  const custodyMissingText = custodyGate?.missing?.join("، ") || ""
 
   // v3.74.367 — "تنفيذ الخدمة" visibility (owner-confirmed rules):
   //   * Owner / general_manager (admin) -> always allowed
@@ -225,17 +254,24 @@ export function BookingActions({
           <Button
             size="sm"
             className="gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={discountGate !== "open"}
+            disabled={discountGate !== "open" || custodyBlocked}
             title={discountGate !== "open"
               ? t("التنفيذ موقوف حتى يتم اعتماد الخصم", "Execution blocked until the discount is approved")
-              : undefined}
+              : custodyBlocked
+                ? t(
+                    `التنفيذ موقوف حتى يعتمد مسؤول المخزن سحب الأصناف الإلزامية: ${custodyMissingText}`,
+                    `Execution blocked until the store manager approves the mandatory withdrawals: ${custodyMissingText}`
+                  )
+                : undefined}
             onClick={() => setPending("execute")}
           >
             <PlayCircle className="w-4 h-4" />
             {t("تنفيذ الخدمة", "Execute Service")}
-            {discountGate !== "open" && (
+            {(discountGate !== "open" || custodyBlocked) && (
               <span className="text-[10px] opacity-90">
-                · {t("معلّق", "blocked")}
+                · {custodyBlocked && discountGate === "open"
+                    ? t("بانتظار اعتماد السحب", "awaiting custody")
+                    : t("معلّق", "blocked")}
               </span>
             )}
           </Button>
