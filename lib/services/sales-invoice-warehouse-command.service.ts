@@ -169,6 +169,9 @@ export class SalesInvoiceWarehouseCommandService {
     const creditCreated = Boolean(rpcData?.credit_created ?? false)
     const creditAmount = Number(rpcData?.credit_amount ?? 0)
     const revertedToDraft = Boolean(rpcData?.reverted_to_draft ?? false)
+    // v3.74.792 — the RPC (SECURITY DEFINER) notifies the source document's
+    // editor itself; this flag suppresses the TS sender fallback.
+    const sourceEditorNotified = Boolean(rpcData?.notified_source_editor ?? false)
 
     await this.writeWarehouseRejectAudit(actor, command, invoice, {
       creditCreated,
@@ -177,7 +180,7 @@ export class SalesInvoiceWarehouseCommandService {
     })
 
     if (revertedToDraft) {
-      await this.notifyWarehouseRejectedDraft(actor, command, invoice, invoiceSenderId)
+      await this.notifyWarehouseRejectedDraft(actor, command, invoice, invoiceSenderId, sourceEditorNotified)
       return {
         success: true,
         message: "تم رفض التسليم وإرجاع الفاتورة إلى مسودة (لا توجد دفعات — لا تأثير محاسبي)",
@@ -385,7 +388,7 @@ export class SalesInvoiceWarehouseCommandService {
     )
   }
 
-  private async notifyWarehouseRejectedDraft(actor: SalesInvoiceWarehouseActor, command: SalesInvoiceWarehouseCommand, invoice: any, invoiceSenderId: string | null) {
+  private async notifyWarehouseRejectedDraft(actor: SalesInvoiceWarehouseActor, command: SalesInvoiceWarehouseCommand, invoice: any, invoiceSenderId: string | null, sourceEditorNotified: boolean) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
     await this.dispatchWorkflowNotification(
       actor,
@@ -402,74 +405,14 @@ export class SalesInvoiceWarehouseCommandService {
       "⚠️ [WAREHOUSE_REJECT] Accountant draft-revert notification failed:"
     )
 
-    // v3.74.787 — owner spec: the FIX starts at the SOURCE document. For an
-    // SO-sourced invoice the action notification goes to the SALES ORDER
-    // creator (edit the order → the edit mirrors onto the invoice → the
-    // accountant is notified to re-send). For a booking-linked service
-    // invoice it goes to the SERVICE EXECUTOR (edit the SOLD products in the
-    // booking; service-consumed products are outside this cycle — they were
-    // already used performing the service). Standalone invoices keep the
-    // old sender notification as the fallback.
-    let sourceEditorNotified = false
-
-    if ((invoice as any).sales_order_id) {
-      const { data: so } = await this.supabase
-        .from("sales_orders")
-        .select("so_number, created_by_user_id")
-        .eq("id", (invoice as any).sales_order_id)
-        .eq("company_id", actor.companyId)
-        .maybeSingle()
-
-      if (so?.created_by_user_id) {
-        await this.dispatchWorkflowNotification(
-          actor,
-          { ...invoice, id: command.invoiceId },
-          resolver.resolveInvoiceOriginatorRecipient(so.created_by_user_id, invoice.branch_id || null, invoice.cost_center_id || null),
-          {
-            title: "رفض المخزن صرف البضاعة — عدّل أمر البيع",
-            message: `رفض مسؤول المخزن صرف بضاعة الفاتورة رقم (${invoice.invoice_number}) المرتبطة بأمر البيع (${so.so_number}). سبب الرفض: ${command.notes || "لم يتم تحديد سبب"}. عدّل أمر البيع (المنتجات / الكميات) وسيسرى تعديلك على الفاتورة تلقائياً، ثم يتولى محاسب الفرع إعادة إرسالها.`,
-            priority: "high",
-            severity: "error",
-            category: "inventory",
-            eventAction: "warehouse_rejected_edit_sales_order",
-          },
-          "⚠️ [WAREHOUSE_REJECT] SO-editor notification failed:"
-        )
-        sourceEditorNotified = true
-      }
-    } else {
-      const { data: booking } = await this.supabase
-        .from("bookings")
-        .select("booking_no, created_by_user_id, staff_user_id")
-        .eq("invoice_id", command.invoiceId)
-        .eq("company_id", actor.companyId)
-        .maybeSingle()
-
-      // v3.74.787 — owner correction (verbatim): «الاشعار يصل الى الموظف
-      // المنفذ الخدمة». The SERVICE EXECUTOR (staff_user_id — the employee
-      // assigned to perform the booking) gets the action, NOT the booking
-      // record's creator; the creator is only the fallback when no staff
-      // is assigned.
-      const bookingEditor = booking?.staff_user_id || booking?.created_by_user_id || null
-      if (bookingEditor) {
-        await this.dispatchWorkflowNotification(
-          actor,
-          { ...invoice, id: command.invoiceId },
-          resolver.resolveInvoiceOriginatorRecipient(bookingEditor, invoice.branch_id || null, invoice.cost_center_id || null),
-          {
-            title: "رفض المخزن صرف المنتجات المباعة — عدّل أمر الحجز",
-            message: `رفض مسؤول المخزن صرف المنتجات المباعة فى فاتورة الخدمة رقم (${invoice.invoice_number}) المرتبطة بأمر الحجز (${booking?.booking_no || ""}). سبب الرفض: ${command.notes || "لم يتم تحديد سبب"}. عدّل المنتجات المباعة فى أمر الحجز وسيسرى التعديل على الفاتورة، ثم يتولى محاسب الفرع إعادة إرسالها. (المنتجات المستهلكة فى تنفيذ الخدمة خارج هذه الدورة — استُخدمت فى التنفيذ بالفعل.)`,
-            priority: "high",
-            severity: "error",
-            category: "inventory",
-            eventAction: "warehouse_rejected_edit_booking",
-          },
-          "⚠️ [WAREHOUSE_REJECT] Booking-editor notification failed:"
-        )
-        sourceEditorNotified = true
-      }
-    }
-
+    // v3.74.792 — owner spec (v3.74.787): the FIX starts at the SOURCE
+    // document. That action notification is now born inside the
+    // reject_sales_delivery RPC (SECURITY DEFINER), because this layer runs
+    // under the WAREHOUSE MANAGER's RLS context, which hides sales_orders /
+    // bookings from him — live-caught on INV-00003: the SO lookup returned
+    // null silently and the legacy sender fallback fired at the accountant.
+    // The RPC returns notified_source_editor; the sender fallback below runs
+    // only for standalone invoices the RPC could not map to a source.
     if (!sourceEditorNotified && invoiceSenderId) {
       await this.dispatchWorkflowNotification(
         actor,

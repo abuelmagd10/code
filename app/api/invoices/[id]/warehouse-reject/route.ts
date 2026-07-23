@@ -31,7 +31,11 @@ export async function POST(
       { companyId, userId: user.id },
       {
         invoiceId,
-        notes: body?.notes || null,
+        // v3.74.792 — the dispatch-approvals modal sends the reason as
+        // rejection_reason; this route only read notes, so every typed
+        // rejection reason silently died at the API boundary (live-caught:
+        // INV-00003 showed «لا توجد ملاحظات» despite a written reason).
+        notes: body?.rejection_reason ?? body?.notes ?? null,
         idempotencyKey: request.headers.get("Idempotency-Key"),
       }
     )
