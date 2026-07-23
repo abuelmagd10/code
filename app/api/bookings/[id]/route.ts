@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { apiGuard, asyncAuditLog } from '@/lib/core'
 import {
   handleBookingApiError,
@@ -82,6 +82,33 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     if (!booking) {
       throw new BookingApiError(404, 'الحجز غير موجود أو غير مصرح بالوصول إليه')
+    }
+
+    // v3.74.799 — the assigned EXECUTOR must know whom he is serving. The
+    // view runs with the caller's RLS (security_invoker), and a staff
+    // member's customers policy is creator-scoped — so the customer of a
+    // booking he is assigned to came back NULL and the page showed «—»
+    // (live-caught by the owner on BKG-2026-00007). The caller has already
+    // proven the right to read THIS booking (the view returned the row
+    // under his own RLS); the customer's identity is part of that booking,
+    // so we supplement it server-side, narrowly: name/phone/email only.
+    if (!booking.customer_name && booking.customer_id) {
+      try {
+        const admin = createServiceClient()
+        const { data: cust } = await admin
+          .from('customers')
+          .select('name, phone, email')
+          .eq('id', booking.customer_id)
+          .eq('company_id', companyId)
+          .maybeSingle()
+        if (cust) {
+          booking.customer_name  = cust.name
+          booking.customer_phone = booking.customer_phone ?? cust.phone
+          booking.customer_email = booking.customer_email ?? cust.email
+        }
+      } catch (supplementError) {
+        console.warn('[bookings/GET] customer identity supplement failed:', supplementError)
+      }
     }
 
     return NextResponse.json({

@@ -3,39 +3,45 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.797.ps1") { Remove-Item -LiteralPath "push_v3.74.797.ps1" -Force }
+if (Test-Path "push_v3.74.798.ps1") { Remove-Item -LiteralPath "push_v3.74.798.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.798"') {
-    Write-Host "+ 3.74.798" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.799"') {
+    Write-Host "+ 3.74.799" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.798]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.798]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.799]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.799]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- customers follow the selected branch, positively asserted ------------------
-$form = Get-Content -LiteralPath "components/bookings/BookingForm.tsx" -Raw
+# --- confirm confirms + the executor knows his customer, positively asserted ----
+$mig = Get-Content -LiteralPath "supabase/migrations/20260723000005_v3_74_799_confirm_actually_confirms.sql" -Raw
 foreach ($must in @(
-    "const visibleCustomers = isFloatingBookingOfficer && watchedBranchId",
-    "customers.filter((c) => !c.branch_id || c.branch_id === watchedBranchId)",
-    'form.setValue("customer_id", "")',
-    "customers={visibleCustomers}"
+    "SET status       = 'confirmed'",
+    "IF v_booking.status = 'confirmed' THEN",
+    "AND confirmed_at IS NOT NULL"
 )) {
-    if ($form -notmatch [regex]::Escape($must)) {
-        Write-Host "X branch-scoped customer dropdown incomplete: $must" -ForegroundColor Red
+    if ($mig -notmatch [regex]::Escape($must)) {
+        Write-Host "X confirm-fix migration incomplete: $must" -ForegroundColor Red
         exit 1
     }
 }
-$page = Get-Content -LiteralPath "app/bookings/new/page.tsx" -Raw
-if ($page -notmatch [regex]::Escape('"id, name, phone, branch_id"')) {
-    Write-Host "X the customers query no longer fetches branch_id" -ForegroundColor Red; exit 1
+$route = Get-Content -LiteralPath "app/api/bookings/[id]/route.ts" -Raw
+foreach ($must in @(
+    "createServiceClient",
+    "if (!booking.customer_name && booking.customer_id) {",
+    ".eq('company_id', companyId)"
+)) {
+    if ($route -notmatch [regex]::Escape($must)) {
+        Write-Host "X customer identity supplement incomplete: $must" -ForegroundColor Red
+        exit 1
+    }
 }
-Write-Host "+ booking customers follow the selected branch (like services)" -ForegroundColor Green
+Write-Host "+ confirm transitions the status; the executor sees whom he serves" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -72,10 +78,10 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "components/bookings/BookingForm.tsx" `
-    "app/bookings/new/page.tsx" `
-    "push_v3.74.798.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.797.ps1" 2>$null
+    "app/api/bookings/[id]/route.ts" `
+    "supabase/migrations/20260723000005_v3_74_799_confirm_actually_confirms.sql" `
+    "push_v3.74.799.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.798.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -87,22 +93,33 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_798.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_799.txt"
     $msgLines = @(
-        'fix(bookings): v3.74.798 - the customer dropdown follows the selected branch',
+        'fix(bookings): v3.74.799 - confirm actually confirms; the executor knows his customer',
         '',
-        'Owner observation opening scenario 1 of the booking live test: a',
-        'floating booking officer (no branch binding) picks the branch first,',
-        'but the customer list still showed EVERY branch''s customers - a',
-        'wrong-branch pick only died at submit, on the raw',
-        'CUSTOMER_BRANCH_ISOLATION guard, after the whole form was filled.',
+        'Two defects live-caught by the owner on BKG-2026-00007, scenario 1 of',
+        'the booking-cycle test:',
         '',
-        'The services rule now applies to customers too: pick the branch',
-        'first, see that branch''s customers (plus unassigned ones, which the',
-        'DB guard accepts); changing branches clears the customer selection',
-        'like it clears the service; hint text updated. Branch-bound roles',
-        'keep their already page-scoped lists. The DB isolation guard stays',
-        'as the last line of defence.'
+        '1. confirm_booking_atomic stamped confirmed_at/by and sent the',
+        '   confirmation notification - but the docstring''s promised',
+        '   draft->confirmed transition was MISSING from the body. The page',
+        '   chip said "draft" under a confirmation timestamp, and the',
+        '   executor''s start step would have refused (the state machine',
+        '   requires confirmed before in_progress). The UPDATE now sets the',
+        '   status; idempotency keys on STATUS so re-clicks self-heal stamped',
+        '   -but-draft bookings; a one-time backfill healed the stuck ones',
+        '   through the legal transition (status history records it).',
+        '',
+        '2. The customer showed as a dash on the assigned EXECUTOR''s page:',
+        '   v_bookings_full runs with the caller''s RLS, and a staff member''s',
+        '   customers policy is creator-scoped, so the join returned NULL for',
+        '   the very customer he is assigned to serve. GET /api/bookings/[id]',
+        '   now supplements name/phone/email server-side, narrowly, for a',
+        '   caller who has already proven the right to read THAT booking.',
+        '',
+        'DB migration applied to test + prod (rehearsed: confirm ->',
+        'confirmed, second click idempotent); the route fix ships with this',
+        'deploy.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -111,5 +128,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.798 pushed - the branch decides who appears in the list" -ForegroundColor Green
+    Write-Host "`n+ v3.74.799 pushed - confirmed means confirmed" -ForegroundColor Green
 }
