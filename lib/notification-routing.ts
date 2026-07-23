@@ -149,9 +149,22 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
 
   // الحجوزات
   'booking': (id) => `/bookings/${id}`,
-  // v3.74.680 — طلب/قرار سحب منتج من المخزن للحجز يُعتمد الآن من صندوق
-  // الموافقات فى تبويب مستقل "سحب مخزون الحجوزات" (bwd). نوجّه الإشعار إليه.
-  'booking_stock_withdrawal': () => `/approvals?tab=bwd`,
+  // v3.74.680 — طلب سحب منتج من المخزن يُعتمد من صندوق الموافقات (تبويب bwd).
+  // v3.74.800 — لكن إشعار «القرار» (اعتماد/رفض/إلغاء تلقائى) يخص الموظفَ
+  // المنفذ، وإجراؤه التالى على «الحجز» نفسه لا فى صندوقٍ ليس له فيه فعل —
+  // رصده المالك حياً: خالد ضغط «تم اعتماد سحب المنتج» فهبط على صندوق
+  // الموافقات. مفتاح الحدث يحمل رقم الحجز فى ذيله فنوجّه به.
+  'booking_stock_withdrawal': (_id, eventKey) => {
+    if (eventKey?.startsWith('booking_withdrawal_decided:')) {
+      const bookingId = eventKey.split(':')[3]
+      if (bookingId) return `/bookings/${bookingId}`
+    }
+    if (eventKey?.startsWith('booking_withdrawal_voided:')) {
+      const bookingId = eventKey.split(':')[2]
+      if (bookingId) return `/bookings/${bookingId}`
+    }
+    return `/approvals?tab=bwd`
+  },
   // v3.74.686 — receipt approval of materials returned from technician custody
   // after a booking cancellation lands on its own inbox tab (bcr).
   'booking_custody_return': () => `/approvals?tab=bcr`,

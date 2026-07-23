@@ -3,45 +3,38 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.798.ps1") { Remove-Item -LiteralPath "push_v3.74.798.ps1" -Force }
+if (Test-Path "push_v3.74.799.ps1") { Remove-Item -LiteralPath "push_v3.74.799.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.799"') {
-    Write-Host "+ 3.74.799" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.800"') {
+    Write-Host "+ 3.74.800" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.799]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.799]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.800]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.800]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- confirm confirms + the executor knows his customer, positively asserted ----
-$mig = Get-Content -LiteralPath "supabase/migrations/20260723000005_v3_74_799_confirm_actually_confirms.sql" -Raw
+# --- decision notifications route to the booking, positively asserted -----------
+$routing = Get-Content -LiteralPath "lib/notification-routing.ts" -Raw
 foreach ($must in @(
-    "SET status       = 'confirmed'",
-    "IF v_booking.status = 'confirmed' THEN",
-    "AND confirmed_at IS NOT NULL"
+    'booking_withdrawal_decided:',
+    'booking_withdrawal_voided:',
+    '/approvals?tab=bwd'
 )) {
-    if ($mig -notmatch [regex]::Escape($must)) {
-        Write-Host "X confirm-fix migration incomplete: $must" -ForegroundColor Red
+    if ($routing -notmatch [regex]::Escape($must)) {
+        Write-Host "X withdrawal routing incomplete: $must" -ForegroundColor Red
         exit 1
     }
 }
-$route = Get-Content -LiteralPath "app/api/bookings/[id]/route.ts" -Raw
-foreach ($must in @(
-    "createServiceClient",
-    "if (!booking.customer_name && booking.customer_id) {",
-    ".eq('company_id', companyId)"
-)) {
-    if ($route -notmatch [regex]::Escape($must)) {
-        Write-Host "X customer identity supplement incomplete: $must" -ForegroundColor Red
-        exit 1
-    }
+$mig = Get-Content -LiteralPath "supabase/migrations/20260723000006_v3_74_800_decided_withdrawal_routes_to_booking.sql" -Raw
+if ($mig -notmatch [regex]::Escape('p_booking_id::text')) {
+    Write-Host "X the voided event key does not carry the booking id" -ForegroundColor Red; exit 1
 }
-Write-Host "+ confirm transitions the status; the executor sees whom he serves" -ForegroundColor Green
+Write-Host "+ decisions land on the booking; requests stay on the approvals inbox" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -78,10 +71,10 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "app/api/bookings/[id]/route.ts" `
-    "supabase/migrations/20260723000005_v3_74_799_confirm_actually_confirms.sql" `
-    "push_v3.74.799.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.798.ps1" 2>$null
+    "lib/notification-routing.ts" `
+    "supabase/migrations/20260723000006_v3_74_800_decided_withdrawal_routes_to_booking.sql" `
+    "push_v3.74.800.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.799.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -93,33 +86,23 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_799.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_800.txt"
     $msgLines = @(
-        'fix(bookings): v3.74.799 - confirm actually confirms; the executor knows his customer',
+        'fix(notifications): v3.74.800 - withdrawal DECISIONS route to the booking',
         '',
-        'Two defects live-caught by the owner on BKG-2026-00007, scenario 1 of',
-        'the booking-cycle test:',
+        'Live-caught by the owner: the executor clicked "withdrawal approved"',
+        'and landed on the approvals inbox - a page whose actions belong to',
+        'the store manager. The requester''s next step lives on the BOOKING',
+        '(start the service).',
         '',
-        '1. confirm_booking_atomic stamped confirmed_at/by and sent the',
-        '   confirmation notification - but the docstring''s promised',
-        '   draft->confirmed transition was MISSING from the body. The page',
-        '   chip said "draft" under a confirmation timestamp, and the',
-        '   executor''s start step would have refused (the state machine',
-        '   requires confirmed before in_progress). The UPDATE now sets the',
-        '   status; idempotency keys on STATUS so re-clicks self-heal stamped',
-        '   -but-draft bookings; a one-time backfill healed the stuck ones',
-        '   through the legal transition (status history records it).',
+        'Routing is now event-aware: decided/voided notifications open',
+        '/bookings/<id> (the booking id rides the event key''s tail); the',
+        'manager''s REQUEST notification keeps the approvals inbox tab. The',
+        'auto-void event key (v3.74.797) now carries the booking id too',
+        '(DB fn updated on test + prod; migration is the repo record).',
         '',
-        '2. The customer showed as a dash on the assigned EXECUTOR''s page:',
-        '   v_bookings_full runs with the caller''s RLS, and a staff member''s',
-        '   customers policy is creator-scoped, so the join returned NULL for',
-        '   the very customer he is assigned to serve. GET /api/bookings/[id]',
-        '   now supplements name/phone/email server-side, narrowly, for a',
-        '   caller who has already proven the right to read THAT booking.',
-        '',
-        'DB migration applied to test + prod (rehearsed: confirm ->',
-        'confirmed, second click idempotent); the route fix ships with this',
-        'deploy.'
+        'Logged for later: name the product inside withdrawal notification',
+        'texts instead of the generic "product".'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -128,5 +111,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.799 pushed - confirmed means confirmed" -ForegroundColor Green
+    Write-Host "`n+ v3.74.800 pushed - decisions land where the next action lives" -ForegroundColor Green
 }
