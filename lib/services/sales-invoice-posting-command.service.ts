@@ -343,7 +343,16 @@ export class SalesInvoicePostingCommandService {
             ...resolver.buildRecipientScopeSegments(recipient)
           ),
           p_severity: normalizeNotificationSeverity("warning"),
-          p_category: "inventory",
+          // v3.74.793 — live-caught on INV-00003's SECOND send: with category
+          // 'inventory', create_notification's dedup finds the first round's
+          // (already actioned) notification under the same event_key and
+          // returns it — the warehouse manager gets NO fresh notification on
+          // any re-send after a rejection, ever. The 'approvals' category is
+          // the one whose dedup branch ARCHIVES the stale copy and creates a
+          // fresh unread one — exactly right for a dispatch-approval request
+          // that legitimately repeats each rejection/edit/resend round. It is
+          // an approval request, so the category is also simply truthful.
+          p_category: "approvals",
           // v3.74.588 — طلب تأكيد إخراج البضاعة من المخزن (مرحلة تنفيذ) — يُغلق تلقائياً عبر trigger حالة المخزن
           p_kind: "action",
         })
