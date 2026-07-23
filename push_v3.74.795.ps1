@@ -3,37 +3,34 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.793.ps1") { Remove-Item -LiteralPath "push_v3.74.793.ps1" -Force }
+if (Test-Path "push_v3.74.794.ps1") { Remove-Item -LiteralPath "push_v3.74.794.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.794"') {
-    Write-Host "+ 3.74.794" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.795"') {
+    Write-Host "+ 3.74.795" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.794]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.794]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.795]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.795]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- approval context on the SO page, positively asserted -----------------------
-$page = Get-Content -LiteralPath "app/sales-orders/[id]/page.tsx" -Raw
+# --- the note travels with the edit, positively asserted ------------------------
+$mig = Get-Content -LiteralPath "supabase/migrations/20260723000002_v3_74_795_employee_note_travels_with_the_edit.sql" -Raw
 foreach ($must in @(
-    "const [dispatchInfo, setDispatchInfo]",
-    "const [discountApproval, setDiscountApproval]",
-    "'صرف الفاتورة المرتبطة'",
-    "'اعتماد الخصم'",
-    "warehouse_rejection_reason",
-    "Number((item as any).line_total || 0)"
+    "ملاحظة الموظف",
+    "UPDATE public.invoices SET notes = v_so_notes",
+    "left(TRIM(v_so_notes), 200)"
 )) {
-    if ($page -notmatch [regex]::Escape($must)) {
-        Write-Host "X SO approval-context work incomplete: $must" -ForegroundColor Red
+    if ($mig -notmatch [regex]::Escape($must)) {
+        Write-Host "X note-travel migration incomplete: $must" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ SO page shows dispatch decision + discount approval; item total falls back sanely" -ForegroundColor Green
+Write-Host "+ the employee's note reaches the invoice notes AND the re-send notification" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -70,9 +67,9 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "app/sales-orders/[id]/page.tsx" `
-    "push_v3.74.794.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.793.ps1" 2>$null
+    "supabase/migrations/20260723000002_v3_74_795_employee_note_travels_with_the_edit.sql" `
+    "push_v3.74.795.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.794.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -84,26 +81,23 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_794.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_795.txt"
     $msgLines = @(
-        'feat(sales): v3.74.794 - approval context lives where the action starts',
+        'feat(sales): v3.74.795 - the employee''s note travels with the edit',
         '',
-        'Owner suggestion during the live rejection-cycle test: the rejection',
-        'notification lands the employee on the SALES ORDER - so the dispatch',
-        'decision (who rejected, why) and the discount approval must be visible',
-        'there, not one click away on the invoice.',
+        'Owner observation during the rejection-cycle live test: the employee',
+        'wrote WHY he edited the order ("I convinced the customer") in the SO',
+        'notes - and the accountant never saw it. Half the story was missing',
+        'at the desk where the re-send decision is made.',
         '',
-        'The SO detail page now carries both cards next to the order info:',
-        '- Linked invoice dispatch: status chip, decision actor + date, the',
-        '  rejection reason, and the action hint (edit THIS order - it flows to',
-        '  the invoice automatically, the accountant re-sends).',
-        '- Discount approval: status, amount, decider, date, note - the same',
-        '  card the invoice page gained in v3.74.791.',
+        'Inside the same mirror trigger (same safe-window gate as the items):',
+        '- the SO notes are copied onto the linked invoice''s notes;',
+        '- the re-send notification quotes them verbatim ("Employee note:',
+        '  ...", first 200 chars).',
         '',
-        'Same release: the SO items table showed a real line as GBP 0.00',
-        '(live-caught on SO-0003) because edits persist line_total only while',
-        'the cell read total/subtotal. It now falls back through line_total',
-        'with tax, then a full computed gross.'
+        'Rehearsed on the restored test copy: quantity mirrored, invoice notes',
+        'carry the note, the notification quotes it in full. DB-only release,',
+        'applied to test + prod; effective immediately.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -112,5 +106,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.794 pushed - the SO page tells the employee the whole story" -ForegroundColor Green
+    Write-Host "`n+ v3.74.795 pushed - the note rides along; the accountant reads the whole story" -ForegroundColor Green
 }
