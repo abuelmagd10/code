@@ -3,34 +3,35 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.794.ps1") { Remove-Item -LiteralPath "push_v3.74.794.ps1" -Force }
+if (Test-Path "push_v3.74.795.ps1") { Remove-Item -LiteralPath "push_v3.74.795.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.795"') {
-    Write-Host "+ 3.74.795" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.796"') {
+    Write-Host "+ 3.74.796" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.795]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.795]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.796]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.796]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- the note travels with the edit, positively asserted ------------------------
-$mig = Get-Content -LiteralPath "supabase/migrations/20260723000002_v3_74_795_employee_note_travels_with_the_edit.sql" -Raw
+# --- the corrected tax formula, positively asserted -----------------------------
+$mig = Get-Content -LiteralPath "supabase/migrations/20260723000003_v3_74_796_tax_checker_learns_the_real_formula.sql" -Raw
 foreach ($must in @(
-    "ملاحظة الموظف",
-    "UPDATE public.invoices SET notes = v_so_notes",
-    "left(TRIM(v_so_notes), 200)"
+    "WHEN i2.tax_inclusive",
+    "discount_position,'') = 'before_tax'",
+    "COALESCE(i.shipping,0) * COALESCE(i.shipping_tax_rate,0)/100.0",
+    "backfilled shipping_tax_rate"
 )) {
     if ($mig -notmatch [regex]::Escape($must)) {
-        Write-Host "X note-travel migration incomplete: $must" -ForegroundColor Red
+        Write-Host "X tax-checker migration incomplete: $must" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ the employee's note reaches the invoice notes AND the re-send notification" -ForegroundColor Green
+Write-Host "+ tax checker understands inclusive pricing, discounts and shipping tax" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -67,9 +68,9 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "supabase/migrations/20260723000002_v3_74_795_employee_note_travels_with_the_edit.sql" `
-    "push_v3.74.795.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.794.ps1" 2>$null
+    "supabase/migrations/20260723000003_v3_74_796_tax_checker_learns_the_real_formula.sql" `
+    "push_v3.74.796.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.795.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -81,23 +82,33 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_795.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_796.txt"
     $msgLines = @(
-        'feat(sales): v3.74.795 - the employee''s note travels with the edit',
+        'fix(integrity): v3.74.796 - a clean integrity board for the first time',
         '',
-        'Owner observation during the rejection-cycle live test: the employee',
-        'wrote WHY he edited the order ("I convinced the customer") in the SO',
-        'notes - and the accountant never saw it. Half the story was missing',
-        'at the desk where the re-send decision is made.',
+        'Handover session, executed after a verified OneDrive backup:',
         '',
-        'Inside the same mirror trigger (same safe-window gate as the items):',
-        '- the SO notes are copied onto the linked invoice''s notes;',
-        '- the re-send notification quotes them verbatim ("Employee note:',
-        '  ...", first 200 chars).',
+        '- ic_tax_accuracy compared stored tax to qty*price*rate - blind to',
+        '  line discounts, tax-INCLUSIVE pricing, the before-tax document',
+        '  discount, and shipping tax (the owner''s rule). Every CORRECT',
+        '  invoice carrying any of those looked wrong - the 8.11/11.2',
+        '  dashboard false positives. The formula now understands all four.',
+        '- Data companion: exactly TWO historical invoices system-wide had 14%',
+        '  shipping tax inside their totals from before shipping_tax_rate was',
+        '  persisted (both imply exactly 14.0%) - backfilled.',
+        '- BKG-2026-00006 cancelled per the owner''s decision: custody already',
+        '  returned, custody GL at zero; the completed->cancelled transition',
+        '  is rightly forbidden by the state machine, so the fix ran under a',
+        '  documented trigger bypass with a manual status-history row.',
+        '- FIFO reconciliation: QUANTITIES clean 100% across all companies;',
+        '  the value drift shrank from -5.41 to -0.14 (rounding residue inside',
+        '  the valuation checker''s healthy tolerance). Closed.',
+        '- The purchases dispatch-notification twin was audited and found',
+        '  already immune (per-round trace id in its event keys). No change.',
         '',
-        'Rehearsed on the restored test copy: quantity mirrored, invoice notes',
-        'carry the note, the notification quotes it in full. DB-only release,',
-        'applied to test + prod; effective immediately.'
+        'Verified: zero false positives on every real invoice on both DBs; a',
+        'deliberately corrupted invoice IS caught (diff 95.65); on prod all',
+        'three checkers (tax, valuation, bookings) report ZERO findings.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -106,5 +117,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.795 pushed - the note rides along; the accountant reads the whole story" -ForegroundColor Green
+    Write-Host "`n+ v3.74.796 pushed - the integrity board is clean and it means it" -ForegroundColor Green
 }
