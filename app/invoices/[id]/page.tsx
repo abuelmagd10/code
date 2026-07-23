@@ -360,6 +360,19 @@ export default function InvoiceDetailPage() {
   const [allBranches, setAllBranches] = useState<{ id: string; name: string; defaultCostCenterId?: string | null }[]>([])
   const [allCostCenters, setAllCostCenters] = useState<{ id: string; name: string; code?: string }[]>([])
   const [approvalActorNames, setApprovalActorNames] = useState<Record<string, string>>({})
+  // v3.74.791 — the owner, reading INV-00003: the accountant must SEE that a
+  // discounted invoice's discount was sanctioned — who approved it and when.
+  // SO-sourced invoices inherit the decision from the sales order (v3.74.782:
+  // one decision lives on the SO); standalone invoices carry their own row.
+  const [discountApproval, setDiscountApproval] = useState<{
+    status: string
+    discount_value: number | null
+    decided_at: string | null
+    decision_note: string | null
+    document_no: string | null
+    document_type: string
+    decider_name: string | null
+  } | null>(null)
   const { profile: accessProfile, canAccessBranch } = useAccess()
   const currentUserRole = accessProfile?.role || ''
   const userBranchId = accessProfile?.branch_id || null
@@ -515,6 +528,52 @@ export default function InvoiceDetailPage() {
       }
     })()
   }, [invoice?.approved_by, invoice?.rejected_by, supabase])
+
+  // v3.74.791 — load the inherited (or own) discount approval so the
+  // accountant sees the discount was sanctioned, by whom and when. RLS on
+  // discount_approvals is company-scoped SELECT, so every member can read it.
+  useEffect(() => {
+    ;(async () => {
+      try {
+        if (!invoice?.id) { setDiscountApproval(null); return }
+        const docType = invoice.sales_order_id ? 'sales_order' : 'sales_invoice'
+        const docId = invoice.sales_order_id || invoice.id
+        const { data: approval } = await supabase
+          .from('discount_approvals')
+          .select('status, discount_value, decided_by, decided_at, decision_note, document_no, document_type')
+          .eq('document_type', docType)
+          .eq('document_id', docId)
+          .order('requested_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (!approval) { setDiscountApproval(null); return }
+
+        let deciderName: string | null = null
+        if (approval.decided_by) {
+          const { data: prof } = await supabase
+            .from('user_profiles')
+            .select('display_name, username')
+            .eq('user_id', approval.decided_by)
+            .maybeSingle()
+          deciderName = prof?.display_name || prof?.username || String(approval.decided_by).slice(0, 8)
+        }
+
+        setDiscountApproval({
+          status: approval.status,
+          discount_value: approval.discount_value,
+          decided_at: approval.decided_at,
+          decision_note: approval.decision_note,
+          document_no: approval.document_no,
+          document_type: approval.document_type,
+          decider_name: deciderName,
+        })
+      } catch (error) {
+        console.warn('Failed to load discount approval:', error)
+        setDiscountApproval(null)
+      }
+    })()
+  }, [invoice?.id, invoice?.sales_order_id, supabase])
 
   useEffect(() => {
     (async () => {
@@ -3042,6 +3101,75 @@ export default function InvoiceDetailPage() {
                         {approvalReasonText || (appLang === 'en' ? 'No notes' : 'لا توجد ملاحظات')}
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* v3.74.791 — اعتماد الخصم: المحاسب يرى أن خصم الفاتورة معتمَد،
+                  ممن ومتى — موروث من أمر البيع أو خاص بالفاتورة المستقلة */}
+              {discountApproval && (
+                <Card className="print:hidden dark:bg-slate-900 dark:border-slate-800">
+                  <CardContent className="pt-6 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                          {appLang === 'en' ? 'Discount Approval' : 'اعتماد الخصم'}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {discountApproval.document_type === 'sales_order'
+                            ? (appLang === 'en'
+                              ? `Inherited from sales order (${discountApproval.document_no || ''})`
+                              : `موروث من أمر البيع (${discountApproval.document_no || ''}) — القرار الواحد يعيش على الأمر`)
+                            : (appLang === 'en' ? 'This invoice\'s own approval' : 'اعتماد خاص بهذه الفاتورة')}
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${discountApproval.status === 'approved'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+                        : discountApproval.status === 'rejected'
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          : discountApproval.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        }`}>
+                        {discountApproval.status === 'approved'
+                          ? (appLang === 'en' ? 'Discount Approved' : 'الخصم معتمَد')
+                          : discountApproval.status === 'rejected'
+                            ? (appLang === 'en' ? 'Discount Rejected' : 'الخصم مرفوض')
+                            : discountApproval.status === 'pending'
+                              ? (appLang === 'en' ? 'Awaiting Decision' : 'بانتظار البت')
+                              : (appLang === 'en' ? 'Cancelled' : 'ملغى')}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                      <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Approved Amount' : 'قيمة الخصم المعتمدة'}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {Number(discountApproval.discount_value || 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Decided By' : 'اعتُمد بواسطة'}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{discountApproval.decider_name || '-'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                        <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Decision Date' : 'تاريخ القرار'}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {discountApproval.decided_at
+                            ? new Date(discountApproval.decided_at).toLocaleString(appLang === 'en' ? 'en-GB' : 'ar-EG')
+                            : '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {discountApproval.decision_note && (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 px-4 py-3">
+                        <div className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                          {appLang === 'en' ? 'Decision Note' : 'ملاحظة القرار'}
+                        </div>
+                        <div className="text-sm text-gray-900 dark:text-white">{discountApproval.decision_note}</div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
