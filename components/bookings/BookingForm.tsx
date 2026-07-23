@@ -56,6 +56,11 @@ interface SimpleCustomer {
   id: string
   name: string
   phone?: string
+  // v3.74.798 — the owner, opening scenario 1 of the booking live test:
+  // a floating booking officer saw EVERY branch's customers and could pick
+  // a wrong-branch one, only to die at submit on the DB isolation guard.
+  // The dropdown now filters by the selected branch, like services do.
+  branch_id?: string | null
 }
 
 interface SimpleStaff {
@@ -205,6 +210,18 @@ export function BookingForm({
       ? [] // no branch picked yet
       : services
 
+  // v3.74.798 — same rule for CUSTOMERS: the floating officer must pick the
+  // branch first, then sees only that branch's customers (plus unassigned
+  // ones — the DB isolation guard accepts those). Without this he could pick
+  // a wrong-branch customer and hit CUSTOMER_BRANCH_ISOLATION at submit,
+  // after filling the whole form. Branch-bound roles keep their page-scoped
+  // list untouched.
+  const visibleCustomers = isFloatingBookingOfficer && watchedBranchId
+    ? customers.filter((c) => !c.branch_id || c.branch_id === watchedBranchId)
+    : isFloatingBookingOfficer
+      ? [] // no branch picked yet
+      : customers
+
   // When service changes: update selectedService, pull its branch_id
   // into the booking, reset the slot, and reload the staff list.
   // v3.74.323 — auto-fill branch_id from the chosen service so the
@@ -349,6 +366,8 @@ export function BookingForm({
                         field.onChange(v)
                         // Clear the previous service if it doesn't belong to the new branch
                         form.setValue("service_id", "")
+                        // v3.74.798 — the customer follows the branch too
+                        form.setValue("customer_id", "")
                       }}
                     >
                       <FormControl>
@@ -366,8 +385,8 @@ export function BookingForm({
                     </Select>
                     <FormDescription className="text-xs">
                       {t(
-                        "اختر الفرع علشان تشوف خدماته. لو غيّرت الفرع، اختيار الخدمة الحالى يتمسح.",
-                        "Pick a branch to see its services. Changing branches clears the current service selection."
+                        "اختر الفرع علشان تشوف خدماته وعملاءه. لو غيّرت الفرع، اختيار الخدمة والعميل الحاليين يتمسحان.",
+                        "Pick a branch to see its services and customers. Changing branches clears the current service and customer selections."
                       )}
                     </FormDescription>
                     <FormMessage />
@@ -433,10 +452,14 @@ export function BookingForm({
                     <FormLabel>{t("العميل", "Customer")} *</FormLabel>
                     <FormControl>
                       <CustomerSearchSelect
-                        customers={customers}
+                        customers={visibleCustomers}
                         value={field.value}
                         onValueChange={field.onChange}
-                        placeholder={t("اختر عميل...", "Select customer...")}
+                        placeholder={
+                          isFloatingBookingOfficer && !watchedBranchId
+                            ? t("اختر الفرع أولاً", "Pick a branch first")
+                            : t("اختر عميل...", "Select customer...")
+                        }
                         searchPlaceholder={t("ابحث بالاسم أو الهاتف...", "Search by name or phone...")}
                       />
                     </FormControl>

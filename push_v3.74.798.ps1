@@ -3,35 +3,39 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.796.ps1") { Remove-Item -LiteralPath "push_v3.74.796.ps1" -Force }
+if (Test-Path "push_v3.74.797.ps1") { Remove-Item -LiteralPath "push_v3.74.797.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.797"') {
-    Write-Host "+ 3.74.797" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.798"') {
+    Write-Host "+ 3.74.798" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.797]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.797]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.798]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.798]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- the custody lifecycle seal, positively asserted ----------------------------
-$mig = Get-Content -LiteralPath "supabase/migrations/20260723000004_v3_74_797_custody_lifecycle_sealed.sql" -Raw
+# --- customers follow the selected branch, positively asserted ------------------
+$form = Get-Content -LiteralPath "components/bookings/BookingForm.tsx" -Raw
 foreach ($must in @(
-    "fn_void_pending_booking_withdrawals",
-    "WITHDRAWAL_BOOKING_FINISHED",
-    "b.status IN ('draft','confirmed','in_progress')",
-    "completion anchor matched % times"
+    "const visibleCustomers = isFloatingBookingOfficer && watchedBranchId",
+    "customers.filter((c) => !c.branch_id || c.branch_id === watchedBranchId)",
+    'form.setValue("customer_id", "")',
+    "customers={visibleCustomers}"
 )) {
-    if ($mig -notmatch [regex]::Escape($must)) {
-        Write-Host "X custody lifecycle migration incomplete: $must" -ForegroundColor Red
+    if ($form -notmatch [regex]::Escape($must)) {
+        Write-Host "X branch-scoped customer dropdown incomplete: $must" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ pending withdrawals die with the booking; stale approvals are refused" -ForegroundColor Green
+$page = Get-Content -LiteralPath "app/bookings/new/page.tsx" -Raw
+if ($page -notmatch [regex]::Escape('"id, name, phone, branch_id"')) {
+    Write-Host "X the customers query no longer fetches branch_id" -ForegroundColor Red; exit 1
+}
+Write-Host "+ booking customers follow the selected branch (like services)" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -68,9 +72,10 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "supabase/migrations/20260723000004_v3_74_797_custody_lifecycle_sealed.sql" `
-    "push_v3.74.797.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.796.ps1" 2>$null
+    "components/bookings/BookingForm.tsx" `
+    "app/bookings/new/page.tsx" `
+    "push_v3.74.798.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.797.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -82,37 +87,22 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_797.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_798.txt"
     $msgLines = @(
-        'fix(bookings): v3.74.797 - the custody lifecycle is sealed (3.8c closed)',
+        'fix(bookings): v3.74.798 - the customer dropdown follows the selected branch',
         '',
-        'The comprehensive review of the booking<->invoice gap found the',
-        'designed protocol SOUND: custody returns at completion so consumption',
-        'deducts exactly once; cancellation requests custody returns; sold-',
-        'product edits already resync onto the draft invoice with full',
-        'notifications (resync_booking_invoice, wired via the extra/bundle',
-        'RPCs).',
+        'Owner observation opening scenario 1 of the booking live test: a',
+        'floating booking officer (no branch binding) picks the branch first,',
+        'but the customer list still showed EVERY branch''s customers - a',
+        'wrong-branch pick only died at submit, on the raw',
+        'CUSTOMER_BRANCH_ISOLATION guard, after the whole form was filled.',
         '',
-        'The real holes - the BKG-2026-00006 story verbatim:',
-        '1. complete_booking_atomic left still-PENDING withdrawal requests',
-        '   alive.',
-        '2. cancel_booking_atomic did too.',
-        '3. decide_booking_stock_withdrawal had no booking-state guard, so a',
-        '   stale request approved AFTER completion moved stock into a custody',
-        '   nothing would ever consume or return - and the invoice "did not',
-        '   read it" because there was rightly nothing left to read.',
-        '',
-        'Fixes: fn_void_pending_booking_withdrawals (auto-reject with an',
-        'explanatory note + requester notification) called by completion AND',
-        'cancellation; and an approve-guard in decide (rejecting stale',
-        'requests stays allowed).',
-        '',
-        'Rehearsed end-to-end on the test copy (after aligning its legacy',
-        'accrual triggers to prod''s disabled state): completion voids the',
-        'pending request AND still births the invoice; a stale approve is',
-        'blocked with the Arabic message while a stale reject succeeds;',
-        'cancellation voids the pending request. DB-only release, applied to',
-        'test + prod.'
+        'The services rule now applies to customers too: pick the branch',
+        'first, see that branch''s customers (plus unassigned ones, which the',
+        'DB guard accepts); changing branches clears the customer selection',
+        'like it clears the service; hint text updated. Branch-bound roles',
+        'keep their already page-scoped lists. The DB isolation guard stays',
+        'as the last line of defence.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -121,5 +111,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.797 pushed - custody in, custody out, nothing stranded in between" -ForegroundColor Green
+    Write-Host "`n+ v3.74.798 pushed - the branch decides who appears in the list" -ForegroundColor Green
 }

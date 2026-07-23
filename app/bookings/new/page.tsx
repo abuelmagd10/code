@@ -82,7 +82,9 @@ export default function NewBookingPage() {
 
     let customersQuery = supabase
       .from("customers")
-      .select("id, name, phone")
+      // v3.74.798 — branch_id included so the form can filter the customer
+      // dropdown by the selected branch (floating booking officer).
+      .select("id, name, phone, branch_id")
       .eq("company_id", companyId)
 
     if (accessFilter.filterByCreatedBy && accessFilter.createdByUserId) {
