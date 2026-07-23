@@ -96,7 +96,16 @@ export function BookingActions({
   // Also gated on isConfirmed: an unconfirmed draft is not yet an
   // "أمر حجز" and shouldn't be executed.
   const canExecute = (() => {
-    if (!isDraft || !isConfirmed) return false
+    // v3.74.801 — this condition was written AROUND the broken confirm
+    // (v3.74.799): confirm used to stamp confirmed_at while leaving
+    // status='draft', so "draft + stamped" was the executable state. The
+    // moment confirm was fixed to actually transition to 'confirmed', this
+    // condition went false and the تنفيذ الخدمة button vanished exactly
+    // when it became legal (live-caught by the owner on BKG-2026-00007).
+    // Executable now = properly confirmed, with the legacy stamped-draft
+    // kept as tolerance for any unhealed row.
+    const executable = status === "confirmed" || (isDraft && isConfirmed)
+    if (!executable) return false
     if (profile?.is_owner || profile?.is_admin) return true
     const myId = profile?.user_id ?? null
     if (!myId) return false
