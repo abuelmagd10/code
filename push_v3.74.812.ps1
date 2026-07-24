@@ -34,6 +34,13 @@ if ($mig -notmatch [regex]::Escape("'manufacturing_officer', 'products', TRUE"))
 }
 Write-Host "+ the BOM builder has components to show" -ForegroundColor Green
 
+# --- every manufacturing page maps to a real resource --------------------------
+$pc = Get-Content -LiteralPath "lib/permissions-context.tsx" -Raw
+if ($pc -notmatch [regex]::Escape("'/manufacturing': 'manufacturing_boms'")) {
+    Write-Host "X permissions map missing the /manufacturing umbrella entry" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the whole manufacturing module opens for authorized roles" -ForegroundColor Green
+
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
 Write-Host "Running the snapshot freshness check..." -ForegroundColor Cyan
@@ -70,6 +77,7 @@ if ($tscErr -eq 0) {
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
     "app/api/member-role/route.ts" `
+    "lib/permissions-context.tsx" `
     "supabase/migrations/20260724000005_v3_74_812_manufacturing_officer_reads_products.sql" `
     "push_v3.74.812.ps1" 2>&1 | Out-Null
 git add -u -- "push_v3.74.811.ps1" 2>$null
@@ -81,11 +89,16 @@ if ($staged -match "backups/.*\.(sql|dump)$") {
 }
 if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -ForegroundColor Red; exit 1 }
 
-$missing = @("app/api/member-role/route.ts",
-             "supabase/migrations/20260724000005_v3_74_812_manufacturing_officer_reads_products.sql") |
-    Where-Object { $staged -notcontains $_ }
-if ($missing) {
-    Write-Host "X files failed to stage: $($missing -join ', ')" -ForegroundColor Red; exit 1
+# v3.74.812b — the strict "must be staged" check failed on a RE-RUN: files
+# pushed by the first run have no new diff, which is fine. Fail only when a
+# required file has PENDING changes that somehow didn't stage.
+foreach ($f in @("app/api/member-role/route.ts",
+                 "lib/permissions-context.tsx",
+                 "supabase/migrations/20260724000005_v3_74_812_manufacturing_officer_reads_products.sql")) {
+    $pending = git status --porcelain -- $f
+    if ($pending -and ($staged -notcontains $f)) {
+        Write-Host "X $f has pending changes that failed to stage" -ForegroundColor Red; exit 1
+    }
 }
 
 if (-not $staged) {
@@ -106,7 +119,15 @@ if (-not $staged) {
         'Also: the manufacturing_officer role had approvals + BOMs + reports',
         'but NO products read - the BOM builder would have shown an empty',
         'component picker. Migration 20260724000005 grants read-only',
-        'products (applied to both DBs at discovery time).'
+        'products (applied to both DBs at discovery time).',
+        '',
+        'Third catch, same session: the sidebar showed the manufacturing',
+        'module but NO page would open. The path->resource map knew only',
+        '3 manufacturing routes; the rest fell through to a phantom',
+        '''manufacturing'' resource no role owns, so the route guard evicted',
+        'even authorized users. One umbrella entry (/manufacturing ->',
+        'manufacturing_boms) covers the whole module; the more specific',
+        'entries above it keep direct-match priority.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }

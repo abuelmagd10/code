@@ -172,6 +172,13 @@ const PATH_TO_RESOURCE: Record<string, string> = {
   '/manufacturing/boms': 'manufacturing_boms',
   '/manufacturing/routings': 'manufacturing_boms',
   '/manufacturing/production-orders': 'manufacturing_boms',
+  // v3.74.812 — المالك: «مديول التصنيع فى القائمة لكن أى صفحة لا تفتح».
+  // بقية صفحات المديول (material-issue / product-receive / bom-versions /
+  // routing-versions / mrp / close-production-order) لم تكن فى الخريطة،
+  // فكانت تسقط لمورد وهمى 'manufacturing' لا يملكه أى دور → الحارس يطرد
+  // حتى المخوَّلين. مدخل المظلة التالى يلتقطها كلها (البحث الجزئى يعمل
+  // بـ startsWith، والمداخل الأدق أعلاه لها الأسبقية فى التطابق المباشر).
+  '/manufacturing': 'manufacturing_boms',
 
   // 🏦 المالية والمحاسبة
   '/expenses': 'expenses',
