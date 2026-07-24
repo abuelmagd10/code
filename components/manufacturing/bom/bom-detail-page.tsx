@@ -470,6 +470,21 @@ export function BomDetailPage({ bomId }: BomDetailPageProps) {
 
   const handleCreateVersion = async () => {
     if (!bom) return
+    // v3.74.813 — المالك اصطدم بها حياً: ملء «سارى من/حتى» بنفس اللحظة
+    // كان ينفجر عند حارس القاعدة برسالة 23514 غامضة. نتحقق هنا برسالة
+    // واضحة قبل الإرسال (والدالة القاعدية تتحقق أيضاً بنفس الرسالة).
+    if (createVersionForm.effective_from && createVersionForm.effective_to
+        && createVersionForm.effective_to <= createVersionForm.effective_from) {
+      toast({
+        variant: "destructive",
+        title: t("Invalid validity window", "نافذة سريان غير صالحة"),
+        description: t(
+          '"Effective to" must be after "effective from" — or leave it empty for an open-ended version.',
+          "تاريخ «سارى حتى» يجب أن يكون بعد «سارى من» — أو اتركه فارغاً لنسخة مفتوحة النهاية."
+        ),
+      })
+      return
+    }
     try {
       setRunningAction("create-version")
       const result = await createBomVersion(bom.id, {

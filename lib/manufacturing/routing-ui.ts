@@ -297,6 +297,18 @@ export async function updateRoutingOperations(versionId: string, operations: Rou
   return parsed.data || {}
 }
 
+// v3.74.813 — المالك علق فى شاشة المسار: الخادم يشترط «إرسال للاعتماد
+// أولاً» (409) بينما الواجهة لا تعرض الزر أصلاً — مسار submit-approval
+// كان موجوداً فى الـAPI بلا مستدع من الواجهة.
+export async function submitRoutingVersion(versionId: string) {
+  const response = await fetch(`/api/manufacturing/routing-versions/${versionId}/submit-approval`, {
+    method: "POST",
+  })
+
+  const parsed = await parseApiResponse<Record<string, unknown>>(response)
+  return parsed.data || {}
+}
+
 export async function activateRoutingVersion(versionId: string) {
   const response = await fetch(`/api/manufacturing/routing-versions/${versionId}/activate`, {
     method: "POST",

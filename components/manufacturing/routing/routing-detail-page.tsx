@@ -57,6 +57,7 @@ import {
   type RoutingVersionStatus,
   type WorkCenterSummary,
   activateRoutingVersion,
+  submitRoutingVersion,
   archiveRoutingVersion,
   buildProductLabel,
   buildWorkCenterLabel,
@@ -144,7 +145,10 @@ function getRoutingVersionLockMessage(status: RoutingVersionStatus, lang: AppLan
 function createEmptyOperation(nextOperationNo: number): RoutingOperationDraft {
   return {
     operation_no: nextOperationNo,
-    operation_code: "",
+    // v3.74.813 — طلب المالك: كود العملية تلقائى. النمط الصناعى المتعارف
+    // OP-010 / OP-020 / OP-030 (قفزات عشرات تسمح بإقحام خطوات لاحقاً).
+    // يبقى الحقل قابلاً للتعديل لمن يريد ترميزه الخاص.
+    operation_code: `OP-${String(nextOperationNo * 10).padStart(3, "0")}`,
     operation_name: "",
     work_center_id: "",
     setup_time_minutes: 0,
@@ -1358,6 +1362,21 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                       <div className="text-xs text-slate-400">{formatDateTime(selectedVersion.updated_at)}</div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
+                                      {/* v3.74.813 — المالك علق حياً: الخادم يرفض التفعيل قبل
+                                          «الإرسال للاعتماد» (409) والزر لم يكن موجوداً أصلاً —
+                                          مسار submit-approval كان بلا مستدعٍ من الواجهة. */}
+                                      {selectedVersion.status === "draft" && (
+                                        <Button onClick={() => executeVersionAction(
+                                            "submit-approval",
+                                            () => submitRoutingVersion(selectedVersion.id),
+                                            t("Sent for approval", "أُرسل للاعتماد"),
+                                            t(`Version v${selectedVersion.version_no} is awaiting management approval.`, `الإصدار v${selectedVersion.version_no} بانتظار اعتماد الإدارة.`)
+                                          )}
+                                          disabled={!canWrite || loadingVersion || activationRequiresSavedOperation || Boolean(runningAction)}
+                                          className="gap-2" data-ai-help="manufacturing_routing_detail.submit_approval_button">
+                                          <PlayCircle className="h-4 w-4" />{t("Submit for approval", "إرسال للاعتماد")}
+                                        </Button>
+                                      )}
                                       <Button variant="outline" onClick={() => setConfirmAction("activate")}
                                         disabled={!canUpdate || !canActivateRoutingVersion(selectedVersion.status) || loadingVersion || activationRequiresSavedOperation || Boolean(runningAction)}
                                         className="gap-2" data-ai-help="manufacturing_routing_detail.activate_button">
