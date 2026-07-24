@@ -1,5 +1,11 @@
 const { spawn } = require("child_process")
 
+// v3.74.809 — stamp the Service Worker version BEFORE the Next build so
+// every deployment changes sw.js bytes and browsers detect the update.
+// (The old runtime Date.now() left sw.js byte-identical across deploys,
+// so open tabs never auto-reloaded onto new bundles.)
+require("../stamp-sw-version.js")
+
 const nextBin = require.resolve("next/dist/bin/next")
 const requiredHeapFlag = "--max-old-space-size=8192"
 const existingNodeOptions = process.env.NODE_OPTIONS || ""

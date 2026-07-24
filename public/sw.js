@@ -1,9 +1,21 @@
 // 7ESAB ERP Service Worker - Secure Multi-Tenant Version
-// Version: 4.3.0 - 2026-05-23 - Pages bypass SW completely (only static + supabase REST)
+// Version: 4.4.0 - 2026-07-24 - build-stamped version (v3.74.809)
 // ✅ Production Ready: No caching for dynamic/sensitive data
 // ✅ v4.3.0: SW only handles static assets + supabase REST API; all pages bypass
-const VERSION = '4.3.0-' + Date.now(); // Force unique version on each deployment
-const BUILD_DATE = new Date().toISOString().split('T')[0];
+// ✅ v4.4.0 — THE STALE-CLIENT ROOT CAUSE: the old line was
+//    `const VERSION = '4.3.0-' + Date.now()` — Date.now() runs at SW
+//    EVALUATION time, not at build time. The file's BYTES were therefore
+//    identical across deployments, so the browser's update check never
+//    found a new worker, `updatefound`/SW_UPDATED never fired, and open
+//    tabs kept running the previous bundle forever (the owner's warehouse
+//    manager was on build N-2 while production was on N). The stamp below
+//    is replaced by scripts/stamp-sw-version.js during `npm run build`,
+//    so every deployment changes sw.js bytes -> browsers detect the new
+//    worker -> skipWaiting + SW_UPDATED -> the page auto-reloads onto the
+//    fresh bundle. As a bonus, STATIC_CACHE is now stable within a
+//    deployment (no more cache-name churn on every SW idle-wake).
+const VERSION = '4.4.0-1784903708317';
+const BUILD_DATE = '2026-07-24';
 const STATIC_CACHE = `7esab-static-v${VERSION}`;
 
 console.log(`[SW v${VERSION}] Service Worker initializing... (Build: ${BUILD_DATE})`);

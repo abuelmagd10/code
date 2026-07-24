@@ -169,7 +169,11 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   { account_code: '5100', account_name: 'تكلفة البضائع المباعة', account_name_en: 'Cost of Goods Sold', account_type: 'expense', normal_balance: 'debit', sub_type: 'cogs', parent_code: '5000' },
   { account_code: '5110', account_name: 'مشتريات', account_name_en: 'Purchases', account_type: 'expense', normal_balance: 'debit', sub_type: 'purchases', parent_code: '5100' },
   { account_code: '5120', account_name: 'مردودات المشتريات', account_name_en: 'Purchase Returns', account_type: 'expense', normal_balance: 'credit', sub_type: 'purchase_returns', parent_code: '5100' },
-  { account_code: '5130', account_name: 'خصم المشتريات (المكتسب)', account_name_en: 'Purchase Discounts', account_type: 'expense', normal_balance: 'credit', parent_code: '5100' },
+  // v3.74.808 — sub_type was missing: getAccrualAccountMapping resolves this
+  // account by sub_type='purchase_discounts', and the bill-receipt JE now
+  // requires it for any bill carrying a document discount. Without the
+  // sub_type a NEW company could not post a discounted purchase receipt.
+  { account_code: '5130', account_name: 'خصم المشتريات (المكتسب)', account_name_en: 'Purchase Discounts', account_type: 'expense', normal_balance: 'credit', sub_type: 'purchase_discounts', parent_code: '5100' },
   { account_code: '5140', account_name: 'مصاريف نقل المشتريات', account_name_en: 'Freight-in', account_type: 'expense', normal_balance: 'debit', parent_code: '5100' },
 
   // ─────────────────────────────────────────────────────────────
