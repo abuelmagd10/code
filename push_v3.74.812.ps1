@@ -3,39 +3,36 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.810.ps1") { Remove-Item -LiteralPath "push_v3.74.810.ps1" -Force }
+if (Test-Path "push_v3.74.811.ps1") { Remove-Item -LiteralPath "push_v3.74.811.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.811"') {
-    Write-Host "+ 3.74.811" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.812"') {
+    Write-Host "+ 3.74.812" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.811]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.811]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.812]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.812]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- apiGuard denial branches return real Responses (positive assertions) ------
-$guard = Get-Content -LiteralPath "lib/core/security/api-guard.ts" -Raw
-$wrapped = ([regex]::Matches($guard, [regex]::Escape("ErrorHandler.handle(ErrorHandler."))).Count
-if ($wrapped -lt 3) {
-    Write-Host "X apiGuard: expected >=3 denial branches wrapped in ErrorHandler.handle, found $wrapped" -ForegroundColor Red; exit 1
+# --- job title follows the role, positively asserted ---------------------------
+$mr = Get-Content -LiteralPath "app/api/member-role/route.ts" -Raw
+foreach ($must in @("ROLE_LABELS_AR", "job_title: newJobTitle", "manufacturing_officer")) {
+    if ($mr -notmatch [regex]::Escape($must)) {
+        Write-Host "X member-role route: job_title sync missing: $must" -ForegroundColor Red; exit 1
+    }
 }
-if ($guard -match "errorResponse: ErrorHandler\.(unauthorized|forbidden|validation)\(") {
-    Write-Host "X apiGuard still returns a bare ERPError somewhere" -ForegroundColor Red; exit 1
-}
-Write-Host "+ permission denials now return clean 401/403 JSON, not empty 500s" -ForegroundColor Green
+Write-Host "+ role changes now update the employee card's job title" -ForegroundColor Green
 
-# --- manager can create products (data migration present) ----------------------
-$mig = Get-Content -LiteralPath "supabase/migrations/20260724000004_v3_74_811_manager_creates_products.sql" -Raw
-if ($mig -notmatch [regex]::Escape("SET can_write = TRUE, can_update = TRUE") -or
-    $mig -notmatch [regex]::Escape("role = 'manager'")) {
-    Write-Host "X manager-products migration incomplete" -ForegroundColor Red; exit 1
+# --- manufacturing officer reads products (migration present) ------------------
+$mig = Get-Content -LiteralPath "supabase/migrations/20260724000005_v3_74_812_manufacturing_officer_reads_products.sql" -Raw
+if ($mig -notmatch [regex]::Escape("'manufacturing_officer', 'products', TRUE")) {
+    Write-Host "X manufacturing-officer products migration incomplete" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the two permission layers agree: branch manager creates products" -ForegroundColor Green
+Write-Host "+ the BOM builder has components to show" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -72,10 +69,10 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "lib/core/security/api-guard.ts" `
-    "supabase/migrations/20260724000004_v3_74_811_manager_creates_products.sql" `
-    "push_v3.74.811.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.810.ps1" 2>$null
+    "app/api/member-role/route.ts" `
+    "supabase/migrations/20260724000005_v3_74_812_manufacturing_officer_reads_products.sql" `
+    "push_v3.74.812.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.811.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -84,8 +81,8 @@ if ($staged -match "backups/.*\.(sql|dump)$") {
 }
 if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -ForegroundColor Red; exit 1 }
 
-$missing = @("lib/core/security/api-guard.ts",
-             "supabase/migrations/20260724000004_v3_74_811_manager_creates_products.sql") |
+$missing = @("app/api/member-role/route.ts",
+             "supabase/migrations/20260724000005_v3_74_812_manufacturing_officer_reads_products.sql") |
     Where-Object { $staged -notcontains $_ }
 if ($missing) {
     Write-Host "X files failed to stage: $($missing -join ', ')" -ForegroundColor Red; exit 1
@@ -94,28 +91,22 @@ if ($missing) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_811.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_812.txt"
     $msgLines = @(
-        'fix(security): v3.74.811 - permission denials return Responses;',
-        'branch manager can create products',
+        'fix(rbac): v3.74.812 - job title follows the role; manufacturing',
+        'officer can read products',
         '',
-        'Owner catch at the start of manufacturing testing: product creation',
-        'succeeded for the owner but 500''d with an EMPTY body for the branch',
-        'manager. Vercel logs named it: "Expected a Response object but',
-        'received ''object''".',
+        'Owner diagnosed it himself: changing a role in settings updates',
+        'company_members.role (the real permission driver - it DID change)',
+        'but never touched employees.job_title, which is what the employees',
+        'list displays - so the change looked like it never happened. The',
+        'member-role route now syncs the job title to the new role''s Arabic',
+        'label (best-effort; a sync failure never fails the role change).',
         '',
-        'Two defects, one scene:',
-        '1) FLEET-WIDE: apiGuard''s three denial branches returned a bare',
-        '   ERPError instead of a Response - every permission denial through',
-        '   the guard crashed as an empty 500 instead of clean 401/403 JSON.',
-        '   All three branches now wrap in ErrorHandler.handle().',
-        '2) Layer mismatch: the route''s owner-approved allowlist (675)',
-        '   includes the branch manager, but company_role_permissions had',
-        '   manager/products can_write=false, so the guard denied him before',
-        '   the allowlist was ever consulted. Migration 20260724000004',
-        '   grants manager write+update on products (applied to both DBs,',
-        '   verified: probe-created a product as the manager successfully).',
-        '   Delete stays upper-management only.'
+        'Also: the manufacturing_officer role had approvals + BOMs + reports',
+        'but NO products read - the BOM builder would have shown an empty',
+        'component picker. Migration 20260724000005 grants read-only',
+        'products (applied to both DBs at discovery time).'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -124,5 +115,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.811 pushed - denials speak JSON, and the manager builds the catalog" -ForegroundColor Green
+    Write-Host "`n+ v3.74.812 pushed - what you see is now what the system believes" -ForegroundColor Green
 }

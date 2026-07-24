@@ -48,6 +48,34 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "خطأ في تحديث الدور", updateError.message)
     }
 
+    // v3.74.812 — المالك: «عمود الوظيفة فى قائمة الموظفين لم يتغير».
+    // القائمة تعرض employees.job_title (نص حر) بينما التغيير هنا يلمس
+    // company_members.role فقط — فبقيت البطاقة تعرض المسمى القديم وخُدع
+    // المستخدم بأن التغيير لم يحدث. نزامن المسمى مع عنوان الدور الجديد
+    // (إن وُجد سجل موظف). فشل المزامنة لا يفشل تغيير الدور.
+    const ROLE_LABELS_AR: Record<string, string> = {
+      owner: "مالك",
+      admin: "مدير النظام",
+      general_manager: "المدير العام",
+      manager: "مدير الفرع",
+      accountant: "محاسب",
+      purchasing_officer: "مسؤول المشتريات",
+      store_manager: "مسئول المخزن",
+      booking_officer: "مسؤول الحجوزات",
+      manufacturing_officer: "مسؤول التصنيع",
+      staff: "موظف",
+      viewer: "مشاهد",
+    }
+    const newJobTitle = ROLE_LABELS_AR[role]
+    if (newJobTitle) {
+      const { error: jtErr } = await admin
+        .from("employees")
+        .update({ job_title: newJobTitle })
+        .eq("company_id", companyId)
+        .eq("user_id", userId)
+      if (jtErr) console.warn("[member-role] job_title sync failed:", jtErr.message)
+    }
+
     // ✅ Async Audit (Non-Blocking — Core Infrastructure)
     asyncAuditLog({
       companyId,
