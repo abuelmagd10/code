@@ -56,7 +56,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: canErr.message }, { status: 500 })
     }
     if (canApprove !== true) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 })
+      // v3.74.810 — was a 403. Every non-approver page-load (warehouse
+      // manager's inbox, accountant's bill view) logged a red network
+      // error in the console — the owner flagged the noise repeatedly.
+      // An empty list carries zero information a non-approver shouldn't
+      // have, and the callers already render nothing for empty data.
+      return NextResponse.json({ success: true, data: [], can_approve: false })
     }
 
     // Load approvals. We use the service client for the join into

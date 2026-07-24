@@ -1167,7 +1167,31 @@ export default function PaymentsPage() {
 
         const { data: bills, error: billsFetchErr } = await query.order("bill_date", { ascending: false })
         if (billsFetchErr) console.error("Error loading supplier bills:", billsFetchErr)
-        setFormSupplierBills(bills || [])
+
+        // v3.74.810 — المالك: «مازال يظهر فى فواتير المورد غير المسددة»
+        // بعد إنشاء دفعة معلقة. القائمة كانت تحسب الصافى من الدفعات
+        // المعتمدة فقط (bills.paid_amount) وتتجاهل المعلقة — فتغرى
+        // المحاسب بدفعة ثانية يصدها الخادم عند الحفظ (حارس 559).
+        // نجلب مخصصات الدفعات المعلقة دفعة واحدة ونطرحها فى العرض.
+        let pendingMap: Record<string, number> = {}
+        const billIds = (bills || []).map((b: any) => b.id)
+        if (billIds.length > 0) {
+          try {
+            const { data: pend } = await supabase
+              .from("payment_allocations")
+              .select("bill_id, allocated_amount, payments!inner(status)")
+              .in("bill_id", billIds)
+              .eq("payments.status", "pending_approval")
+            for (const r of (pend || []) as any[]) {
+              if (!r?.bill_id) continue
+              pendingMap[r.bill_id] = (pendingMap[r.bill_id] || 0) + Number(r.allocated_amount || 0)
+            }
+          } catch { /* best-effort — العرض يتدهور للسلوك القديم */ }
+        }
+        setFormSupplierBills((bills || []).map((b: any) => ({
+          ...b,
+          pending_amount: pendingMap[b.id] || 0,
+        })))
       } catch (e) {
         console.error("Error loading supplier bills:", e)
         setFormSupplierBills([])
@@ -1379,7 +1403,8 @@ export default function PaymentsPage() {
       const hasOutstandingBills = (formSupplierBills || []).some((b: any) => {
         const returnedAmt = Number((b as any).returned_amount || 0)
         const net = Math.max(Number(b.total_amount || 0) - returnedAmt - Number(b.paid_amount || 0), 0)
-        return net > 0
+        // v3.74.810 — المستحق الفعلى بعد طرح الدفعات المعلقة
+        return Math.max(net - Number((b as any).pending_amount || 0), 0) > 0
       })
       if (hasOutstandingBills && !selectedFormBillId && !confirmAdvanceUnlinked) {
         toast({
@@ -3463,6 +3488,11 @@ export default function PaymentsPage() {
                       )
                       // Only show bills with net outstanding > 0
                       if (netOutstanding <= 0) return null
+                      // v3.74.810 — المستحق الفعلى = الصافى − الدفعات المعلقة.
+                      // الشاشة كانت تكذب: تعرض الصافى وزر اختيار نشطاً رغم
+                      // دفعة معلقة تغطيه، والمحاسب لا يكتشف إلا برفض الخادم.
+                      const pendingAmt = Number((b as any).pending_amount || 0)
+                      const effectiveOutstanding = Math.max(netOutstanding - pendingAmt, 0)
                       return (
                         <tr key={b.id} className="border-b">
                           <td className="px-2 py-2">{b.bill_number}</td>
@@ -3473,17 +3503,30 @@ export default function PaymentsPage() {
                             </span>
                           </td>
                           <td className="px-2 py-2">{Number(b.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
-                          <td className="px-2 py-2">{Number(b.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2">
+                            {Number(b.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}
+                            {pendingAmt > 0 && (
+                              <span className="block text-xs text-amber-600 dark:text-amber-400">
+                                ⏳ {appLang === 'en' ? 'Pending approval' : 'معلقة'}: {pendingAmt.toFixed(2)}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-2 py-2 text-orange-600">
                             {returnedAmt > 0 ? `-${returnedAmt.toFixed(2)} ${currencySymbols[baseCurrency] || baseCurrency}` : '-'}
                           </td>
-                          <td className="px-2 py-2 font-semibold text-red-600">{netOutstanding.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2 font-semibold text-red-600">{effectiveOutstanding.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
                           <td className="px-2 py-2">
-                            <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
-                              setSelectedFormBillId(b.id)
-                              // ✅ Auto-fill with net outstanding (not gross remaining)
-                              setNewSuppPayment({ ...newSuppPayment, amount: netOutstanding })
-                            }}>{appLang === 'en' ? 'Select' : 'اختيار'}</Button>
+                            {effectiveOutstanding > 0 ? (
+                              <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
+                                setSelectedFormBillId(b.id)
+                                // ✅ Auto-fill with EFFECTIVE outstanding
+                                setNewSuppPayment({ ...newSuppPayment, amount: effectiveOutstanding })
+                              }}>{appLang === 'en' ? 'Select' : 'اختيار'}</Button>
+                            ) : (
+                              <span className="text-xs text-amber-600 dark:text-amber-400">
+                                {appLang === 'en' ? 'Fully covered by a pending payment' : 'مغطاة بدفعة معلقة'}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       )
@@ -3503,7 +3546,8 @@ export default function PaymentsPage() {
                 {!selectedFormBillId && formSupplierBills.some((b: any) => {
                   const returnedAmt = Number((b as any).returned_amount || 0)
                   const net = Math.max(Number(b.total_amount || 0) - returnedAmt - Number(b.paid_amount || 0), 0)
-                  return net > 0
+                  // v3.74.810 — فاتورة مغطاة بدفعة معلقة لا تُحسب «مستحقة»
+                  return Math.max(net - Number((b as any).pending_amount || 0), 0) > 0
                 }) && (
                   <label className="mt-3 flex items-start gap-2 text-sm cursor-pointer p-2 border border-amber-300 dark:border-amber-700 rounded bg-amber-50 dark:bg-amber-950/30">
                     <input

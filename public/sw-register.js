@@ -40,32 +40,15 @@
     });
   }
 
-  // ✅ تنظيف جميع الـ Caches القديمة
+  // v3.74.810 — page-side cache deletion REMOVED. The old filter kept
+  // only caches containing 'v4.0.0' (this register file's URL version),
+  // so once sw.js moved to build-stamped 'v4.4.0-<ts>' cache names the
+  // page was deleting the ACTIVE cache on every single load (seen live
+  // in the owner's console: "Deleting old cache: 7esab-static-v4.4.0-…"),
+  // forcing a full re-download of every chunk each visit. The Service
+  // Worker's own `activate` handler is the single janitor now — it
+  // deletes every 7esab-* cache except its current STATIC_CACHE.
   function clearOldCaches() {
-    if ('caches' in window) {
-      return caches.keys().then(function(cacheNames) {
-        // ✅ حساب تنسيقات الإصدار مرة واحدة خارج الـ loop
-        // التحقق من كلا التنسيقين (النقاط والشرطات) كإجراء دفاعي:
-        // - التنسيق الحالي: 7esab-static-v4.0.0 (بنقاط)
-        // - قد تكون هناك نسخ قديمة أو مستقبلية تستخدم الشرطات: 7esab-static-v4-0-0
-        const versionWithDots = 'v' + SW_VERSION; // v4.0.0
-        const versionWithDashes = 'v' + SW_VERSION.replace(/\./g, '-'); // v4-0-0
-        
-        const deletePromises = cacheNames.map(function(cacheName) {
-          // ✅ حذف جميع الـ caches التي تبدأ بـ '7esab-' وليست النسخة الجديدة
-          if (cacheName.startsWith('7esab-') && 
-              !cacheName.includes(versionWithDots) && 
-              !cacheName.includes(versionWithDashes)) {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-          return Promise.resolve();
-        });
-        return Promise.all(deletePromises);
-      }).catch(function(err) {
-        console.warn('[SW] Error clearing old caches:', err);
-      });
-    }
     return Promise.resolve();
   }
 

@@ -1807,7 +1807,11 @@ export default function BillViewPage() {
                           <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Shipping' : 'الشحن'}</span><span>{(bill.shipping || 0).toFixed(2)} {appLang === 'en' ? `(+Tax ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)` : `(+ضريبة ${Number(bill.shipping_tax_rate || 0).toFixed(2)}%)`}</span></div>
                         </>
                       )}
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span><span>{(bill.adjustment || 0).toFixed(2)}</span></div>
+                      {/* v3.74.810 — خانة التسوية أُلغيت (788)؛ نعرض القيم
+                          الموروثة غير الصفرية فقط بدل سطر «التعديل 0.00» دائم */}
+                      {Number(bill.adjustment || 0) !== 0 && (
+                        <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span><span>{Number(bill.adjustment || 0).toFixed(2)}</span></div>
+                      )}
                       {/* عرض المرتجعات إذا وجدت */}
                       {Number((bill as any).returned_amount || 0) > 0 ? (
                         <>

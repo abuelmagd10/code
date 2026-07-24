@@ -12,7 +12,6 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { getActiveCompanyId } from "@/lib/company"
 import { getAccessFilter, UserContext } from "@/lib/validation"
-import { notifyPaymentApprovalRequest } from "@/lib/notification-helpers"
 
 export function SupplierPaymentAllocationUI({ 
   appLang, 
@@ -174,21 +173,11 @@ export function SupplierPaymentAllocationUI({
         throw new Error(result?.error || 'Failed to create supplier payment')
       }
 
-      // 🔔 Non-privileged users: send notification for approval
-      if (!result?.approved && member?.role && !['admin', 'owner', 'general_manager'].includes(member.role)) {
-        const supplierName = suppliers.find(s => s.id === supplierId)?.name || 'مورد'
-        await notifyPaymentApprovalRequest({
-          companyId,
-          paymentId: result.paymentId,
-          partyName: supplierName,
-          amount,
-          currency,
-          branchId,
-          createdBy: user?.id || '',
-          paymentType: 'supplier',
-          appLang
-        })
-      }
+      // v3.74.810 — approval-request notification removed from here: the
+      // DB trigger payment_supplier_notify_approval_trg is the single
+      // sender now (this client-side legacy call was duplicate #3 in the
+      // owner's inbox, fanning out to admin+GM on top of the trigger's
+      // direct owner+GM sends).
 
       toast({ title: appLang === 'en' ? "Success" : "نجاح", description: appLang === 'en' ? "Payment created successfully" : "تم إنشاء الدفعة بنجاح" })
       setOpen(false)

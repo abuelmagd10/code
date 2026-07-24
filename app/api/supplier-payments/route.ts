@@ -3,7 +3,6 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
-import { PaymentApprovalNotificationService } from "@/lib/services/payment-approval-notification.service"
 import { SupplierPaymentCommandService, isPrivilegedRole, type CreateSupplierPaymentCommand } from "@/lib/services/supplier-payment-command.service"
 
 type RawAllocation = {
@@ -189,37 +188,13 @@ export async function POST(request: NextRequest) {
       { idempotencyKey, requestHash }
     )
 
-    if (!result.approved) {
-      const { data: createdPayment } = await adminSupabase
-        .from("payments")
-        .select("id, supplier_id, branch_id, cost_center_id, created_by, amount, currency_code, original_currency")
-        .eq("id", result.paymentId)
-        .eq("company_id", context.companyId)
-        .maybeSingle()
-
-      if (createdPayment?.created_by && createdPayment?.supplier_id) {
-        const { data: supplier } = await adminSupabase
-          .from("suppliers")
-          .select("name")
-          .eq("id", createdPayment.supplier_id)
-          .eq("company_id", context.companyId)
-          .maybeSingle()
-
-        const notificationService = new PaymentApprovalNotificationService(adminSupabase)
-        await notificationService.notifyApprovalRequested({
-          companyId: context.companyId,
-          paymentId: result.paymentId,
-          partyName: String(supplier?.name || "مورد"),
-          amount: Number(createdPayment.amount || amount),
-          currency: String(createdPayment.original_currency || createdPayment.currency_code || currencyCode || "EGP"),
-          branchId: createdPayment.branch_id,
-          costCenterId: createdPayment.cost_center_id,
-          createdBy: createdPayment.created_by,
-          paymentType: "supplier",
-          appLang,
-        })
-      }
-    }
+    // v3.74.810 — the approval-request notification is now sent by ONE
+    // sender only: the DB trigger payment_supplier_notify_approval_trg
+    // (fires on entering pending_approval, targets owner + GM directly,
+    // works for every entry path). This API-side send was one of THREE
+    // duplicate senders the owner counted in his inbox for a single
+    // payment — removed. (Customer payments keep their TS path: they
+    // have no DB approval-request trigger.)
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {
