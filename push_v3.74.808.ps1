@@ -39,6 +39,16 @@ if ($pg -notmatch [regex]::Escape('creator_note_card')) {
 }
 Write-Host "+ the creator's note is quoted in notifications and rendered on the PO page" -ForegroundColor Green
 
+# --- realtime init promise must not outlive its attempt ------------------------
+$rtm = Get-Content -LiteralPath "lib/realtime-manager.ts" -Raw
+if ($rtm -notmatch [regex]::Escape('this.initializationPromise = null')) {
+    Write-Host "X realtime-manager: stale init promise fix missing" -ForegroundColor Red; exit 1
+}
+if ($rtm -notmatch [regex]::Escape('.finally(')) {
+    Write-Host "X realtime-manager: finally-clear pattern missing" -ForegroundColor Red; exit 1
+}
+Write-Host "+ a failed realtime init can retry - live notifications no longer need a reload" -ForegroundColor Green
+
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
 Write-Host "Running the snapshot freshness check..." -ForegroundColor Cyan
@@ -78,6 +88,7 @@ git add -- "lib/version.ts" "CHANGELOG.md" `
     "app/api/purchase-orders/[id]/notifications/route.ts" `
     "app/api/purchase-orders/route.ts" `
     "app/purchase-orders/[id]/page.tsx" `
+    "lib/realtime-manager.ts" `
     "push_v3.74.808.ps1" 2>&1 | Out-Null
 git add -u -- "push_v3.74.807.ps1" 2>$null
 
@@ -106,7 +117,15 @@ if (-not $staged) {
         '- the PO detail page renders a "creator''s note" card - the field',
         '  was fetched (select *) but never displayed',
         '- notifyPOApprovalRequest in notification-helpers is dead code',
-        '  (no callers) and was left untouched'
+        '  (no callers) and was left untouched',
+        '',
+        'Second fix, same version - the live-notifications mystery from',
+        'the handover ledger, finally caught in the owner''s console: an',
+        'aborted first RealtimeManager init (auth fetch aborted during a',
+        'fast route change) left its settled promise cached forever, so',
+        'every later initialize() got the same dead promise back and',
+        'realtime never subscribed until a full reload. The init promise',
+        'is now cleared in finally() - failed attempts can retry.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }

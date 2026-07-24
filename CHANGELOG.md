@@ -22,6 +22,18 @@ All notable changes to ERB VitaSlims ERP System will be documented in this file.
 - `notifyPOApprovalRequest` فى notification-helpers مسار ميت بلا
   مستدعين — تُرك كما هو.
 
+### إصلاح ثانٍ فى نفس الإصدار — علة الإشعارات الحية (من دفتر التسليم)
+
+كونسول المالك أظهر السلسلة كاملة أخيراً: `AbortError` أثناء تهيئة
+RealtimeManager (طلب المصادقة يُجهض عند تنقل سريع) ← الوعد الفاشل يظل
+محفوظاً فى `initializationPromise` **للأبد** ← كل `initialize()` لاحقة
+تستلم نفس الوعد الميت ← لا اشتراك حى حتى إعادة تحميل كاملة. هذا هو سبب
+«الإشعارات لا تصل إلا بعد ريفرش».
+
+الإصلاح: `_doInitialize().finally(() => initializationPromise = null)`
+— الوعد لا يعيش بعد محاولته؛ `isInitialized` وحدها تحكم المسار السريع،
+وأى mount أو subscribe لاحق يعيد المحاولة نظيفاً.
+
 ### ملفات
 
 - lib/services/purchase-order-notification.service.ts — حقل notes +

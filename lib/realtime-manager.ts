@@ -156,7 +156,19 @@ class RealtimeManager {
     if (this.isInitialized) return
     if (this.initializationPromise) return this.initializationPromise
 
-    this.initializationPromise = this._doInitialize()
+    // v3.74.808 — the attempt's promise must not outlive the attempt.
+    // Previously a failed/aborted first initialization (e.g. the auth
+    // fetch aborted during a quick route change — seen live in the
+    // owner's console) left the settled promise cached here forever:
+    // every later initialize() call got the SAME dead promise back, so
+    // realtime never subscribed until a full page reload. That was the
+    // root cause of «الإشعارات لا تصل إلا بعد ريفرش».
+    // isInitialized alone governs the fast path; clearing the promise
+    // in finally allows the next mount (or the next subscribe call) to
+    // retry cleanly.
+    this.initializationPromise = this._doInitialize().finally(() => {
+      this.initializationPromise = null
+    })
     return this.initializationPromise
   }
 
