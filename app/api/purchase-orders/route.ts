@@ -681,6 +681,7 @@ export async function POST(request: NextRequest) {
           branchId: dataWithGovernance.branch_id,
           costCenterId: dataWithGovernance.cost_center_id,
           createdBy: newOrder.created_by_user_id || user?.id || "",
+          notes: newOrder.notes || null, // v3.74.808 — الملاحظة تسافر للمعتمِد
           appLang: body.appLang === "en" ? "en" : "ar",
           isResubmission: false,
         })

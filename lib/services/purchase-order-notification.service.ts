@@ -29,6 +29,14 @@ export type PurchaseOrderApprovalRequestNotificationParams = PurchaseOrderNotifi
    */
   createdByName?: string | null
   isResubmission?: boolean
+  /**
+   * v3.74.808 — the creator's justification (purchase_orders.notes),
+   * quoted inside the approver-facing message so the owner / GM can
+   * see WHY before deciding — the owner: the officer's note is the
+   * essence of the approval decision, especially after a rejection.
+   * Mirrors v3.74.795 (sales: the employee note travels).
+   */
+  notes?: string | null
 }
 
 export type PurchaseOrderApprovedNotificationParams = PurchaseOrderNotificationBaseParams & {
@@ -62,14 +70,21 @@ export class PurchaseOrderNotificationService {
     const creatorClauseEn = params.createdByName ? ` (created by ${params.createdByName})` : ""
     const creatorClauseAr = params.createdByName ? ` (المُنشِئ: ${params.createdByName})` : ""
 
+    // v3.74.808 — quote the creator's note (truncated like v3.74.795)
+    // so the approver reads the justification inside the notification.
+    const rawNote = (params.notes || "").trim()
+    const quotedNote = rawNote.length > 200 ? `${rawNote.slice(0, 200)}…` : rawNote
+    const noteClauseEn = quotedNote ? ` — Creator's note: «${quotedNote}»` : ""
+    const noteClauseAr = quotedNote ? ` — ملاحظة المُنشِئ: «${quotedNote}»` : ""
+
     const message =
       params.appLang === "en"
         ? isResubmission
-          ? `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been modified and requires your re-approval${creatorClauseEn}`
-          : `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) requires your approval${creatorClauseEn}`
+          ? `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) has been modified and requires your re-approval${creatorClauseEn}${noteClauseEn}`
+          : `Purchase Order ${params.poNumber} for ${params.supplierName} (${params.amount} ${params.currency}) requires your approval${creatorClauseEn}${noteClauseEn}`
         : isResubmission
-          ? `تم تعديل أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} ويحتاج إلى إعادة الاعتماد${creatorClauseAr}`
-          : `أمر شراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} يحتاج إلى موافقتك${creatorClauseAr}`
+          ? `تم تعديل أمر الشراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} ويحتاج إلى إعادة الاعتماد${creatorClauseAr}${noteClauseAr}`
+          : `أمر شراء ${params.poNumber} للمورد ${params.supplierName} بقيمة ${params.amount} ${params.currency} يحتاج إلى موافقتك${creatorClauseAr}${noteClauseAr}`
 
     // v3.74.22 — was resolveLeadershipVisibilityRecipients (admin-only)
     // which silently relied on RPC fan-out to reach owner / general_manager.

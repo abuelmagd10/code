@@ -3,34 +3,41 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.806.ps1") { Remove-Item -LiteralPath "push_v3.74.806.ps1" -Force }
+if (Test-Path "push_v3.74.807.ps1") { Remove-Item -LiteralPath "push_v3.74.807.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.807"') {
-    Write-Host "+ 3.74.807" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.808"') {
+    Write-Host "+ 3.74.808" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.807]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.807]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.808]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.808]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- the seat gate checks the right company, positively asserted ---------------
-$mig = Get-Content -LiteralPath "supabase/migrations/20260724000001_v3_74_807_seat_gate_checks_the_right_company.sql" -Raw
-foreach ($must in @(
-    "AND csl.company_id = v_company_id",
-    "ORDER BY (c.user_id = p_user_id) DESC",
-    "ORDER BY (csl.expires_at > NOW()) DESC, csl.expires_at DESC"
-)) {
-    if ($mig -notmatch [regex]::Escape($must)) {
-        Write-Host "X seat-gate migration incomplete: $must" -ForegroundColor Red
-        exit 1
+# --- the creator's note travels to the approver, positively asserted -----------
+$svc = Get-Content -LiteralPath "lib/services/purchase-order-notification.service.ts" -Raw
+foreach ($must in @('noteClauseAr', 'notes?: string | null')) {
+    if ($svc -notmatch [regex]::Escape($must)) {
+        Write-Host "X notification service missing: $must" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ license lookup scoped to the gated company; membership pick deterministic" -ForegroundColor Green
+$rt1 = Get-Content -LiteralPath "app/api/purchase-orders/[id]/notifications/route.ts" -Raw
+if ($rt1 -notmatch [regex]::Escape('notes: (po as any).notes || null')) {
+    Write-Host "X [id]/notifications route does not pass notes" -ForegroundColor Red; exit 1
+}
+$rt2 = Get-Content -LiteralPath "app/api/purchase-orders/route.ts" -Raw
+if ($rt2 -notmatch [regex]::Escape('notes: newOrder.notes || null')) {
+    Write-Host "X creation route does not pass notes" -ForegroundColor Red; exit 1
+}
+$pg = Get-Content -LiteralPath "app/purchase-orders/[id]/page.tsx" -Raw
+if ($pg -notmatch [regex]::Escape('creator_note_card')) {
+    Write-Host "X PO page missing the creator-note card" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the creator's note is quoted in notifications and rendered on the PO page" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -67,9 +74,12 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "supabase/migrations/20260724000001_v3_74_807_seat_gate_checks_the_right_company.sql" `
-    "push_v3.74.807.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.806.ps1" 2>$null
+    "lib/services/purchase-order-notification.service.ts" `
+    "app/api/purchase-orders/[id]/notifications/route.ts" `
+    "app/api/purchase-orders/route.ts" `
+    "app/purchase-orders/[id]/page.tsx" `
+    "push_v3.74.808.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.807.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -81,25 +91,22 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_807.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_808.txt"
     $msgLines = @(
-        'fix(billing): v3.74.807 - the seat gate checks the right company',
+        'fix(purchasing): v3.74.808 - the creator''s note travels to the approver',
         '',
-        'Owner catch: a purchasing officer (member of two companies) was',
-        'locked out of company A with "seat expired July 22" while the',
-        'seats admin page truthfully showed his seat valid until July 29.',
+        'Owner catch: the purchasing officer justified his discount in the',
+        'PO notes field - and neither the approval notification nor the PO',
+        'page ever showed it. The owner/GM decided blind.',
         '',
-        'get_user_company_status had two unordered LIMIT 1 reads: the',
-        'membership pick was arbitrary, and the seat-license lookup was',
-        'not scoped by company at all - it grabbed the expired license',
-        'from his OTHER company and gated the wrong session with it.',
-        '',
-        'Fix: membership pick is deterministic (owner, then valid license,',
-        'then oldest) so a user active anywhere can log in; the license',
-        'lookup is scoped to the gated company. get_user_seat_license',
-        '(same pattern, unused) hardened too. Verified on the test DB',
-        'first (incl. an all-expired rollback probe), then live on prod:',
-        'the officer resolves to the right company, unsuspended.'
+        'Mirror of the sales-side fix (v3.74.795):',
+        '- approval-request / re-approval notifications now quote the',
+        '  creator''s note (truncated at 200 chars), on both the creation',
+        '  and the edit paths',
+        '- the PO detail page renders a "creator''s note" card - the field',
+        '  was fetched (select *) but never displayed',
+        '- notifyPOApprovalRequest in notification-helpers is dead code',
+        '  (no callers) and was left untouched'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -108,5 +115,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.807 pushed - the gate now reads the license of the company it guards" -ForegroundColor Green
+    Write-Host "`n+ v3.74.808 pushed - approvers now read the why, not just the how much" -ForegroundColor Green
 }

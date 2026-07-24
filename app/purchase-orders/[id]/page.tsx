@@ -907,6 +907,23 @@ export default function PurchaseOrderDetailPage() {
           </div>
 
           <div ref={printContentRef} className="space-y-6">
+            {/* v3.74.808 — the creator's note travels to the approver.
+                The owner: «مبرر الموظف هو جوهر قرار الاعتماد» — the note was
+                saved in purchase_orders.notes but never rendered, so the
+                owner/GM decided blind. Mirrors the sales-side fix (v3.74.795). */}
+            {(po.notes || '').trim() !== '' && (
+              <div className="rounded-lg border border-slate-300 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-600 p-4 flex items-start gap-3" data-ai-help="purchase_orders.creator_note_card">
+                <FileText className="h-5 w-5 text-slate-600 dark:text-slate-300 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">
+                    {appLang === 'en' ? "Creator's note" : 'ملاحظة مُنشئ الأمر'}
+                  </div>
+                  <div className="text-sm text-slate-700 dark:text-slate-300 mt-1 whitespace-pre-wrap">
+                    {po.notes}
+                  </div>
+                </div>
+              </div>
+            )}
             {/* v3.74.420 — discount approval banner.
                 Shows for POs with a discount that is pending or rejected.
                 POs without discount do not see this banner at all. */}

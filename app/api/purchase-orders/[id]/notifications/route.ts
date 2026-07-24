@@ -44,7 +44,7 @@ export async function POST(
 
     const { data: po, error: poError } = await supabase
       .from("purchase_orders")
-      .select("id, po_number, supplier_id, total_amount, currency, branch_id, cost_center_id, created_by_user_id, status, bill_id")
+      .select("id, po_number, supplier_id, total_amount, currency, branch_id, cost_center_id, created_by_user_id, status, bill_id, notes")
       .eq("id", id)
       .eq("company_id", companyId)
       .single()
@@ -124,6 +124,7 @@ export async function POST(
           costCenterId: po.cost_center_id,
           createdBy: po.created_by_user_id || user.id,
           createdByName, // v3.74.397
+          notes: (po as any).notes || null, // v3.74.808 — الملاحظة تسافر للمعتمِد
           appLang,
           isResubmission: action === "approval_resubmitted",
         })
