@@ -634,6 +634,41 @@ export function ProductionOrderDetailPage({ productionOrderId }: ProductionOrder
                 <RotateCcw className="h-4 w-4" />
                 {copy.detail.regenerate}
               </Button>
+              {/* v3.74.814 — المالك علق حياً: «إصدار الأمر» يرفض 409 قبل
+                  الاعتماد بينما لا يوجد زر إرسال للاعتماد أصلاً — مسار
+                  submit-approval كان بلا مستدعٍ (نفس نمط مسار التشغيل 813).
+                  الأمر العالق أُرسل يدوياً بالدالة الذرية وقتها. */}
+              {order?.status === "draft"
+                && ["draft", "rejected"].includes(String((order as any)?.approval_status ?? "draft")) && (
+                <Button
+                  onClick={async () => {
+                    if (!order) return
+                    try {
+                      setRunningAction("submit-approval")
+                      const res = await fetch(`/api/manufacturing/production-orders/${order.id}/submit-approval`, { method: "POST" })
+                      const json = await res.json().catch(() => ({}))
+                      if (!res.ok) throw new Error(json?.error || "Failed")
+                      toast({
+                        title: appLang === "en" ? "Sent for approval" : "أُرسل للاعتماد",
+                        description: appLang === "en"
+                          ? "The production order is awaiting management approval."
+                          : "أمر الإنتاج بانتظار اعتماد الإدارة.",
+                      })
+                      await refreshWorkspace()
+                    } catch (e: any) {
+                      toast({ variant: "destructive", title: appLang === "en" ? "Failed" : "تعذر الإرسال", description: e?.message })
+                    } finally {
+                      setRunningAction(null)
+                    }
+                  }}
+                  disabled={!canUpdate || busy}
+                  className="gap-2"
+                  data-ai-help="manufacturing_production_order_detail.submit_approval_button"
+                >
+                  <Send className="h-4 w-4" />
+                  {appLang === "en" ? "Submit for approval" : "إرسال للاعتماد"}
+                </Button>
+              )}
               <Button
                 onClick={() => {
                   if (!hasOperations && order?.status === "draft") {

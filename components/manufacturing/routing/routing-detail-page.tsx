@@ -1365,7 +1365,12 @@ export function RoutingDetailPage({ routingId }: RoutingDetailPageProps) {
                                       {/* v3.74.813 — المالك علق حياً: الخادم يرفض التفعيل قبل
                                           «الإرسال للاعتماد» (409) والزر لم يكن موجوداً أصلاً —
                                           مسار submit-approval كان بلا مستدعٍ من الواجهة. */}
-                                      {selectedVersion.status === "draft" && (
+                                      {/* v3.74.814 — المالك: «هل يستمر الزر فعالاً بعد الاعتماد؟» لا —
+                                          للنسخة حالتان: دورة الحياة (تبقى draft حتى التفعيل) وحالة
+                                          الاعتماد. الزر يقرأ الآن حالة الاعتماد فيختفى بعد الإرسال
+                                          أو الاعتماد ويعود للظهور عند الرفض فقط. */}
+                                      {selectedVersion.status === "draft"
+                                        && ["draft", "rejected"].includes(String((selectedVersion as any).approval_status ?? "draft")) && (
                                         <Button onClick={() => executeVersionAction(
                                             "submit-approval",
                                             () => submitRoutingVersion(selectedVersion.id),
