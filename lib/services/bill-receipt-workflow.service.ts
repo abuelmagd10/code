@@ -575,6 +575,8 @@ export class BillReceiptWorkflowService {
           ap: accountMapping.accounts_payable,
           inventory: accountMapping.inventory,
           vatInput: accountMapping.vat_input || undefined,
+          // v3.74.808 — قيد خصم المستند فى مسار الاستلام التلقائى أيضاً
+          purchaseDiscount: accountMapping.purchase_discount || undefined,
         }
       )
 

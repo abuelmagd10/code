@@ -467,6 +467,8 @@ function buildBillReceiptReplayPayload(params: {
       inventory: params.accountMapping.inventory || null,
       purchases: null,
       vat_input: params.accountMapping.vat_input || null,
+      // v3.74.808 — قيد خصم المستند فى الـreplay أيضاً
+      purchase_discounts: params.accountMapping.purchase_discount || null,
       mapping_source: "getAccrualAccountMapping",
       mapping_version: "runtime_snapshot_v1",
     },
@@ -836,6 +838,8 @@ export async function POST(
         ap: accountMapping.accounts_payable,
         inventory: accountMapping.inventory,
         vatInput: accountMapping.vat_input || undefined,
+        // v3.74.808 — قيد خصم المستند (خصم المشتريات المكتسب 5130)
+        purchaseDiscount: accountMapping.purchase_discount || undefined,
       }
     )
 

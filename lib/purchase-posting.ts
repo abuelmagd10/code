@@ -115,6 +115,9 @@ export type BillReceiptReplayPayload = {
         inventory: string | null
         purchases: string | null
         vat_input: string | null
+        // v3.74.808 — خصم المشتريات المكتسب. Optional: older payloads
+        // (bills without a document discount) never needed it.
+        purchase_discounts?: string | null
         mapping_source: string
         mapping_version: string
     }
@@ -236,6 +239,12 @@ export async function prepareBillPosting(
         inventory?: string
         purchases?: string
         vatInput?: string
+        /**
+         * v3.74.808 — خصم المشتريات المكتسب (5130). Credit side of the
+         * bill's document discount; without it a discounted bill posts
+         * debit-heavy by exactly the discount amount.
+         */
+        purchaseDiscount?: string
     }
 ): Promise<BillPostingResult> {
     try {
@@ -358,6 +367,36 @@ export async function prepareBillPosting(
                 description: 'ضريبة القيمة المضافة المدفوعة',
                 debit_amount: taxAmount,
                 credit_amount: 0,
+                branch_id: branchId,
+                cost_center_id: costCenterId
+            })
+        }
+
+        // v3.74.808 — Credit: document discount (خصم المشتريات المكتسب).
+        // The bill's totalAmount is net of the header discount while the
+        // debit side (inventory + shipping + adjustment + VAT) is gross,
+        // so a discounted bill was unbalanced by exactly the discount —
+        // caught live on BILL-0004 (debit 41.04 / credit 37.04, diff 4.00
+        // = the 10% after-tax discount). We derive the discount from the
+        // settled totals (works for amount/percent, before/after tax) and
+        // credit 5130. Deliberately NOT netted into inventory: the FIFO
+        // lots carry line-level costs only, and crediting inventory would
+        // desync the inventory GL from the FIFO valuation.
+        const documentDiscount = Number(
+            (subtotal + shipping + adjustment + taxAmount - totalAmount).toFixed(2)
+        )
+        if (documentDiscount > 0.005) {
+            if (!accountMapping.purchaseDiscount) {
+                return {
+                    success: false,
+                    error: 'حساب «خصم المشتريات المكتسب» (sub_type: purchase_discounts) غير موجود فى دليل الحسابات — مطلوب لترحيل فاتورة بخصم مستند'
+                }
+            }
+            journalLines.push({
+                account_id: accountMapping.purchaseDiscount,
+                description: 'خصم مستند مكتسب على المشتريات',
+                debit_amount: 0,
+                credit_amount: documentDiscount,
                 branch_id: branchId,
                 cost_center_id: costCenterId
             })
@@ -567,6 +606,26 @@ export function prepareBillPostingFromPayload(payload: BillReceiptReplayPayload)
                 description: 'ضريبة القيمة المضافة المدفوعة',
                 debit_amount: taxAmount,
                 credit_amount: 0,
+                branch_id: bill.branch_id,
+                cost_center_id: bill.cost_center_id
+            })
+        }
+
+        // v3.74.808 — mirror the live path: the document discount is the
+        // gap between the gross debits and the net AP credit. A replay of
+        // a discounted bill must produce the same balanced JE.
+        const replayDocumentDiscount = Number(
+            (subtotal + shipping + adjustment + taxAmount - totalAmount).toFixed(2)
+        )
+        if (replayDocumentDiscount > 0.005) {
+            if (!mapping.purchase_discounts) {
+                return invalidPayload('Discounted bill replay requires the purchase_discounts account in the mapping snapshot')
+            }
+            journalLines.push({
+                account_id: mapping.purchase_discounts,
+                description: 'خصم مستند مكتسب على المشتريات',
+                debit_amount: 0,
+                credit_amount: replayDocumentDiscount,
                 branch_id: bill.branch_id,
                 cost_center_id: bill.cost_center_id
             })

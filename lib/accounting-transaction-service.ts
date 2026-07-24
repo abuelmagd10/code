@@ -955,6 +955,8 @@ export class AccountingTransactionService {
             inventory?: string
             purchases?: string
             vatInput?: string
+            // v3.74.808 — خصم المشتريات المكتسب (5130) لقيد خصم المستند
+            purchaseDiscount?: string
         }
     ): Promise<AtomicTransactionResult> {
         try {

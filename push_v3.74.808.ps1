@@ -49,6 +49,31 @@ if ($rtm -notmatch [regex]::Escape('.finally(')) {
 }
 Write-Host "+ a failed realtime init can retry - live notifications no longer need a reload" -ForegroundColor Green
 
+# --- the bill-receipt JE now credits the document discount ---------------------
+$pp = Get-Content -LiteralPath "lib/purchase-posting.ts" -Raw
+foreach ($must in @(
+    "documentDiscount > 0.005",
+    "replayDocumentDiscount > 0.005",
+    "purchaseDiscount?: string"
+)) {
+    if ($pp -notmatch [regex]::Escape($must)) {
+        Write-Host "X purchase-posting: discount credit line missing: $must" -ForegroundColor Red; exit 1
+    }
+}
+$aae = Get-Content -LiteralPath "lib/accrual-accounting-engine.ts" -Raw
+if ($aae -notmatch [regex]::Escape("findAccount('purchase_discounts')")) {
+    Write-Host "X accrual engine: purchase_discount account lookup missing" -ForegroundColor Red; exit 1
+}
+$cr = Get-Content -LiteralPath "app/api/bills/[id]/confirm-receipt/route.ts" -Raw
+if ($cr -notmatch [regex]::Escape("purchaseDiscount: accountMapping.purchase_discount")) {
+    Write-Host "X confirm-receipt route does not pass the discount account" -ForegroundColor Red; exit 1
+}
+$wf = Get-Content -LiteralPath "lib/services/bill-receipt-workflow.service.ts" -Raw
+if ($wf -notmatch [regex]::Escape("purchaseDiscount: accountMapping.purchase_discount")) {
+    Write-Host "X auto-receipt workflow does not pass the discount account" -ForegroundColor Red; exit 1
+}
+Write-Host "+ discounted bill receipts post balanced: Cr 5130 = the document discount" -ForegroundColor Green
+
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
 Write-Host "Running the snapshot freshness check..." -ForegroundColor Cyan
@@ -89,6 +114,11 @@ git add -- "lib/version.ts" "CHANGELOG.md" `
     "app/api/purchase-orders/route.ts" `
     "app/purchase-orders/[id]/page.tsx" `
     "lib/realtime-manager.ts" `
+    "lib/purchase-posting.ts" `
+    "lib/accrual-accounting-engine.ts" `
+    "lib/accounting-transaction-service.ts" `
+    "lib/services/bill-receipt-workflow.service.ts" `
+    "app/api/bills/[id]/confirm-receipt/route.ts" `
     "push_v3.74.808.ps1" 2>&1 | Out-Null
 git add -u -- "push_v3.74.807.ps1" 2>$null
 
@@ -125,7 +155,17 @@ if (-not $staged) {
         'fast route change) left its settled promise cached forever, so',
         'every later initialize() got the same dead promise back and',
         'realtime never subscribed until a full reload. The init promise',
-        'is now cleared in finally() - failed attempts can retry.'
+        'is now cleared in finally() - failed attempts can retry.',
+        '',
+        'Third fix - the first-ever discounted purchase bill (BILL-0004,',
+        '10% after tax) was rejected by enforce_journal_entry_balance:',
+        'debit 41.04 vs credit 37.04, diff 4.00 = exactly the discount.',
+        'The receipt JE builder (which learned shipping+adjustment in 499)',
+        'never learned the document discount. It now derives the discount',
+        'from the settled totals and credits 5130 (purchase discounts',
+        'earned) - deliberately NOT netted into inventory, which would',
+        'desync the inventory GL from the FIFO valuation. Covered on the',
+        'live path, the auto-receipt path, and the replay contract.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }

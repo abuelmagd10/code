@@ -54,6 +54,13 @@ export interface AccrualAccountMapping {
   // discounts. Optional because older companies may lack the account; the
   // revenue-journal builder falls back to netting against sales_revenue.
   sales_discount?: string
+  // v3.74.808 — خصم المشتريات (المكتسب) 5130: the credit side of a bill's
+  // document discount. Without it the receipt JE debits gross
+  // (inventory+VAT+shipping) but credits AP net → unbalanced by exactly
+  // the discount (caught live by enforce_journal_entry_balance on
+  // BILL-0004). No fallback to inventory: netting the discount into the
+  // inventory GL would break the FIFO⇄GL reconciliation.
+  purchase_discount?: string
 }
 
 /**
@@ -96,7 +103,10 @@ export async function getAccrualAccountMapping(
     // v3.74.784 — sub_type is 'sales_discounts' (plural) in the seeded COA
     // (code 4120, خصم المبيعات المسموح به). No account_type fallback: falling
     // back to a random income account would post discounts as revenue.
-    sales_discount: findAccount('sales_discounts')
+    sales_discount: findAccount('sales_discounts'),
+    // v3.74.808 — sub_type 'purchase_discounts' (code 5130 in the seeded
+    // COA). Like sales_discount: no account_type fallback on purpose.
+    purchase_discount: findAccount('purchase_discounts')
   }
 
   // التحقق من وجود الحسابات الأساسية
