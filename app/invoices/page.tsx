@@ -1322,7 +1322,13 @@ export default function InvoicesPage() {
 
         // تحديد ما إذا كان هناك مرتجع جزئي
         const hasPartialReturn = returnedAmount > 0 && returnedAmount < originalTotal
-        const deliveryApprovalStatus = String((row as any).approval_status || (row as any).warehouse_status || '').toLowerCase()
+        // v3.74.805 — warehouse_status is the AUTHORITATIVE dispatch state
+        // (the whole revenue-at-delivery cycle keys on it). approval_status
+        // stays at its 'pending' default on booking-born invoices even when
+        // the dispatch is auto-approved at completion, so preferring it
+        // showed «بانتظار اعتماد التسليم» on an already-approved invoice
+        // (live-caught by the owner on INV-2026-00002).
+        const deliveryApprovalStatus = String((row as any).warehouse_status || (row as any).approval_status || '').toLowerCase()
         const activeReturnRequest = activeSalesReturnRequestsByInvoiceId[row.id]
         const shouldShowDeliveryApproval =
           deliveryApprovalStatus === 'approved' ||

@@ -3,34 +3,41 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.803.ps1") { Remove-Item -LiteralPath "push_v3.74.803.ps1" -Force }
+if (Test-Path "push_v3.74.804.ps1") { Remove-Item -LiteralPath "push_v3.74.804.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.804"') {
-    Write-Host "+ 3.74.804" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.805"') {
+    Write-Host "+ 3.74.805" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.804]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.804]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.805]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.805]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-# --- the zombie triggers are gone for good, positively asserted -----------------
-$mig = Get-Content -LiteralPath "supabase/migrations/20260723000009_v3_74_804_drop_zombie_accrual_triggers.sql" -Raw
+# --- the gate is locked; the accountant lands on the invoice; the chip is true --
+$mig = Get-Content -LiteralPath "supabase/migrations/20260723000010_v3_74_805_custody_gate_locked_down.sql" -Raw
 foreach ($must in @(
-    "DROP TRIGGER IF EXISTS trg_accrual_invoice",
-    "DROP TRIGGER IF EXISTS trg_accrual_invoices",
-    "DROP TRIGGER IF EXISTS trg_invoice_sent_accrual"
+    "REVOKE EXECUTE ON FUNCTION public.booking_mandatory_custody_gate(uuid) FROM anon",
+    "assert_company_access_by_row('bookings', p_booking_id)"
 )) {
     if ($mig -notmatch [regex]::Escape($must)) {
-        Write-Host "X zombie-trigger drop migration incomplete: $must" -ForegroundColor Red
+        Write-Host "X gate-lockdown migration incomplete: $must" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ the three legacy accrual triggers are dropped, not merely disabled" -ForegroundColor Green
+$svc = Get-Content -LiteralPath "lib/services/booking-notification.service.ts" -Raw
+if ($svc -notmatch [regex]::Escape('referenceType: ctx.invoice_id ? "invoice" : "booking"')) {
+    Write-Host "X the accountant completion notification still references the booking" -ForegroundColor Red; exit 1
+}
+$page = Get-Content -LiteralPath "app/invoices/page.tsx" -Raw
+if ($page -notmatch [regex]::Escape("String((row as any).warehouse_status || (row as any).approval_status || '')")) {
+    Write-Host "X the delivery chip still prefers approval_status" -ForegroundColor Red; exit 1
+}
+Write-Host "+ gate locked (anon revoked + caller check); accountant lands on the invoice; chip reads warehouse_status" -ForegroundColor Green
 
 git checkout -- "supabase/schema/functions.sql" "supabase/schema/schema.sql" 2>&1 | Out-Null
 
@@ -67,9 +74,11 @@ if ($tscErr -eq 0) {
 }
 
 git add -- "lib/version.ts" "CHANGELOG.md" `
-    "supabase/migrations/20260723000009_v3_74_804_drop_zombie_accrual_triggers.sql" `
-    "push_v3.74.804.ps1" 2>&1 | Out-Null
-git add -u -- "push_v3.74.803.ps1" 2>$null
+    "lib/services/booking-notification.service.ts" `
+    "app/invoices/page.tsx" `
+    "supabase/migrations/20260723000010_v3_74_805_custody_gate_locked_down.sql" `
+    "push_v3.74.805.ps1" 2>&1 | Out-Null
+git add -u -- "push_v3.74.804.ps1" 2>$null
 
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
@@ -81,26 +90,29 @@ if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -Fore
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_804.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_805.txt"
     $msgLines = @(
-        'fix(db): v3.74.804 - the zombie accrual triggers are dropped for good',
+        'fix(security+ux): v3.74.805 - the checker catches our own new gate; two owner catches',
         '',
-        'Honest root cause: the v3.74.796 backfill ended with ALTER TABLE',
-        'invoices ENABLE TRIGGER USER - which re-arms EVERY user trigger,',
-        'including three legacy naive accrual triggers that were deliberately',
-        'DISABLED long ago. The resurrected accrual_invoice_accounting fired',
-        'on the booking invoice''s draft->sent update during completion,',
-        'attempted a direct journal INSERT, and enforce_je_integrity rightly',
-        'blocked it (DIRECT_POST_BLOCKED) - live-caught by the owner on',
-        'BKG-2026-00007. It would also have killed any post-rejection re-send',
-        '(also draft->sent). No data damage: the block aborted atomically.',
+        'The integrity board''s FIRST real security finding since going clean:',
+        'ic_anon_reachable_readers flagged booking_mandatory_custody_gate',
+        '(born in 802) - SECURITY DEFINER with Postgres''s default PUBLIC',
+        'execute, company-scoped reads, no caller check. Locked down: EXECUTE',
+        'revoked from PUBLIC/anon (authenticated only) plus an',
+        'assert_company_access_by_row caller check inside. Verified: the',
+        'checker reports zero anon-reachable readers again. The checker',
+        'infrastructure proved itself on our own code.',
         '',
-        'Lesson: disabled-by-design is a landmine for every future',
-        'ENABLE TRIGGER USER. The three are superseded (naive math - no',
-        'discounts, no inclusive pricing, no shipping tax; the real journal',
-        'paths are the atomic executors and execute_sales_invoice_accounting).',
-        'DROPPED on test + prod; verified afterwards: ZERO non-enabled',
-        'triggers remain anywhere - no more landmines of this class.'
+        'Owner catches from the live booking test:',
+        '- the booking-completed notification routed the ACCOUNTANT to the',
+        '  dashboard: it referenced the booking, a page outside his role. It',
+        '  now references the INVOICE - his workspace - and lands there.',
+        '- the invoice list showed "awaiting delivery approval" on an',
+        '  approved invoice: the chip preferred approval_status (stuck at its',
+        '  pending default on booking-born invoices) over warehouse_status,',
+        '  the authoritative dispatch state. Priority inverted.',
+        '  (The "full return" the owner read as a status chip is actually a',
+        '  legitimate action button.)'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -109,5 +121,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.804 pushed - dead code stays dead" -ForegroundColor Green
+    Write-Host "`n+ v3.74.805 pushed - the watchman caught the locksmith" -ForegroundColor Green
 }

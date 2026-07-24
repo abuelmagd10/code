@@ -296,8 +296,11 @@ export class BookingNotificationService {
     const invoicePart = invoiceNo !== "—" ? ` | فاتورة: ${invoiceNo}` : ""
 
     const accountantPayload: NotificationPayload = {
-      referenceType: "booking",
-      referenceId:   p.bookingId,
+      // v3.74.805 — the accountant's workspace is the INVOICE. Referencing
+      // the booking routed him to /bookings — a page outside his role, so
+      // the router bounced him to the dashboard (live-caught by the owner).
+      referenceType: ctx.invoice_id ? "invoice" : "booking",
+      referenceId:   ctx.invoice_id || p.bookingId,
       title:         "حجز مكتمل — فاتورة صادرة",
       message:       `اكتمل الحجز وتم إصدار الفاتورة — ${label}${invoicePart}`,
       priority:      "high",
