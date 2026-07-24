@@ -86,7 +86,12 @@ export async function apiGuard(req: Request, options: GuardOptions = {}): Promis
         if (defaultOptions.requireAuth) {
             const { data: authData, error: authError } = await supabase.auth.getUser();
             if (authError || !authData.user) {
-                return { errorResponse: ErrorHandler.unauthorized() };
+                // v3.74.811 — was a bare ERPError (not a Response). Any route
+                // doing `return errorResponse` then crashed Next with
+                // "Expected a Response object but received 'object'" → an
+                // empty 500 instead of a clean 401/403 JSON. Caught live when
+                // the branch manager was denied products.write.
+                return { errorResponse: ErrorHandler.handle(ErrorHandler.unauthorized(), correlationId) };
             }
             user = authData.user;
         }
@@ -111,7 +116,7 @@ export async function apiGuard(req: Request, options: GuardOptions = {}): Promis
                 .single();
 
             if (memberError || !member) {
-                return { errorResponse: ErrorHandler.forbidden('المستخدم غير مرتبط بهذه الشركة أو تم إيقافه') };
+                return { errorResponse: ErrorHandler.handle(ErrorHandler.forbidden('المستخدم غير مرتبط بهذه الشركة أو تم إيقافه'), correlationId) };
             }
 
             memberData = member;
@@ -122,7 +127,7 @@ export async function apiGuard(req: Request, options: GuardOptions = {}): Promis
             if (defaultOptions.resource && defaultOptions.action) {
                 const permResult = await checkPermission(supabase, defaultOptions.resource, defaultOptions.action);
                 if (!permResult.allowed) {
-                    return { errorResponse: ErrorHandler.forbidden('صلاحيات غير كافية لإتمام الإجراء المطلوب') };
+                    return { errorResponse: ErrorHandler.handle(ErrorHandler.forbidden('صلاحيات غير كافية لإتمام الإجراء المطلوب'), correlationId) };
                 }
             }
         }
