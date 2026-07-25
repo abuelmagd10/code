@@ -101,7 +101,12 @@ export default function NewFixedAssetPage() {
     depreciation_expense_account_id: '',
     branch_id: '',
     cost_center_id: '',
-    warehouse_id: ''
+    warehouse_id: '',
+    // v3.74.819 — مصدر الاقتناء: 'direct' يُرحّل قيد الاقتناء من هنا،
+    // و'bill' يعنى أن قيده مُرحَّل بالفعل من فاتورة المشتريات فلا يتكرر.
+    acquisition_source: 'direct',
+    acquisition_payment_account_id: '',
+    source_bill_id: ''
   })
 
   useEffect(() => {
@@ -401,6 +406,72 @@ export default function NewFixedAssetPage() {
                     <CardTitle>{appLang === 'en' ? 'Accounting' : 'المحاسبة'}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {/* v3.74.819 — مصدر الاقتناء: كانت الشاشة تُنشئ الأصل بلا
+                        أى قيد، فيُرحَّل الإهلاك على أصل لا تعرفه الدفاتر. */}
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30 p-3 space-y-3">
+                      <Label className="text-sm font-medium">
+                        {appLang === 'en' ? 'How was this asset acquired?' : 'كيف تم اقتناء هذا الأصل؟'} *
+                      </Label>
+                      <Select
+                        value={formData.acquisition_source}
+                        onValueChange={(value) => setFormData(prev => ({
+                          ...prev,
+                          acquisition_source: value,
+                          acquisition_payment_account_id: value === 'bill' ? '' : prev.acquisition_payment_account_id,
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="direct">
+                            {appLang === 'en'
+                              ? 'Direct registration — post the acquisition entry now'
+                              : 'تسجيل مباشر — رحّل قيد الاقتناء الآن'}
+                          </SelectItem>
+                          <SelectItem value="bill">
+                            {appLang === 'en'
+                              ? 'Acquired through a purchase bill — already posted'
+                              : 'مُقتنى عبر فاتورة مشتريات — قيده مُرحَّل بالفعل'}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {formData.acquisition_source === 'direct' ? (
+                        <div>
+                          <Label htmlFor="acquisition_payment_account_id">
+                            {appLang === 'en' ? 'Paid from (cash / bank / supplier)' : 'السداد من (خزنة / بنك / مورد)'} *
+                          </Label>
+                          <Select
+                            value={formData.acquisition_payment_account_id}
+                            onValueChange={(value) => setFormData(prev => ({ ...prev, acquisition_payment_account_id: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={appLang === 'en' ? 'Select account' : 'اختر الحساب'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {accounts.map((account) => (
+                                <SelectItem key={`pay-${account.id}`} value={account.id}>
+                                  {account.account_code} - {account.account_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-blue-800 dark:text-blue-200 mt-2 leading-relaxed">
+                            {appLang === 'en'
+                              ? 'The system will post: Dr Asset / Cr the selected account, so the asset appears on the balance sheet and the cash actually leaves the books.'
+                              : 'سيُرحّل النظام: مدين حساب الأصل / دائن الحساب المختار — فيظهر الأصل فى الميزانية وتخرج النقدية فعلاً من الدفاتر.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
+                          {appLang === 'en'
+                            ? 'No entry will be posted here — the purchase bill already capitalised it. Posting again would double the asset.'
+                            : 'لن يُرحَّل قيد من هنا — فاتورة المشتريات أثبتته بالفعل، وترحيله ثانية يضاعف قيمة الأصل.'}
+                        </p>
+                      )}
+                    </div>
+
                     <div data-ai-help="fixed_assets.asset_account">
                       <Label htmlFor="asset_account_id">{appLang === 'en' ? 'Asset Account' : 'حساب الأصل'} *</Label>
                       <Select value={formData.asset_account_id} onValueChange={(value) => setFormData(prev => ({ ...prev, asset_account_id: value }))}>

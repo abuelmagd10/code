@@ -84,7 +84,13 @@ export async function POST(request: NextRequest) {
       depreciation_expense_account_id,
       branch_id,
       cost_center_id,
-      warehouse_id
+      warehouse_id,
+      // v3.74.819 — مصدر الاقتناء (قرار المالك 25/7): إمّا الأصل مُقتنى عبر
+      // فاتورة مشتريات (قيده مُرحَّل بالفعل من دورة المشتريات فلا يُرحَّل
+      // ثانية)، أو تسجيل مباشر فيُرحّل النظام قيد الاقتناء بنفسه.
+      acquisition_source,
+      source_bill_id,
+      acquisition_payment_account_id
     } = body
 
     // Validate required fields
@@ -207,6 +213,9 @@ export async function POST(request: NextRequest) {
       branch_id: branch_id || null,
       cost_center_id: cost_center_id || null,
       warehouse_id: warehouse_id || null,
+      acquisition_source: acquisition_source === 'bill' ? 'bill' : 'direct',
+      source_bill_id: acquisition_source === 'bill' ? (source_bill_id || null) : null,
+      acquisition_payment_account_id: acquisition_source === 'bill' ? null : (acquisition_payment_account_id || null),
       status: 'draft'
     }
     console.log('📊 Asset data to insert:', JSON.stringify(assetData, null, 2))
@@ -227,6 +236,31 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
     console.log('✅ Asset created successfully:', asset)
+
+    // v3.74.819 — إثبات الأصل دفترياً عند التسجيل المباشر.
+    // كانت الشاشة تُنشئ الأصل وجدول إهلاكه ولا تُرحّل أى قيد اقتناء إطلاقاً:
+    // النقدية لا تنقص، والأصل لا يظهر فى الميزانية، ثم يُرحَّل الإهلاك على
+    // أصل لا وجود له فى الدفاتر. الآن يُرحَّل مدين الأصل / دائن حساب السداد.
+    // (الأصل المُقتنى عبر فاتورة مستثنى — قيده مُرحَّل من دورة المشتريات.)
+    if (assetData.acquisition_source === 'direct' && assetData.acquisition_payment_account_id) {
+      const { data: postResult, error: postErr } = await supabase.rpc(
+        'post_fixed_asset_acquisition_atomic',
+        {
+          p_asset_id: asset.id,
+          p_payment_account_id: assetData.acquisition_payment_account_id,
+          p_user_id: null,
+        },
+      )
+      if (postErr) {
+        console.error('❌ Asset acquisition posting failed:', postErr.message)
+        return NextResponse.json({
+          error: 'تم إنشاء الأصل لكن تعذّر ترحيل قيد الاقتناء',
+          details: postErr.message,
+          data: asset,
+        }, { status: 207 })
+      }
+      console.log('✅ Acquisition entry posted:', postResult)
+    }
 
     // Generate depreciation schedule
     console.log('📅 Generating depreciation schedule...')
