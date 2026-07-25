@@ -71,7 +71,14 @@ export async function GET(req: NextRequest) {
     if (serviceId)    query = query.eq('service_id', serviceId)
     if (customerId)   query = query.eq('customer_id', customerId)
     if (staffUserId)  query = query.eq('staff_user_id', staffUserId)
-    if (status)       query = query.eq('status', status)
+    // v3.74.826 — 'active' يستبعد الملغى وعدم الحضور: سجلّ تاريخى يزحم
+    // التقويم ويدفع الحجوزات الحقيقية خلف التمرير. أى قيمة أخرى تعنى حالة
+    // بعينها، وغياب القيمة يعنى «الكل» كما كان.
+    if (status === 'active') {
+      query = query.not('status', 'in', '("cancelled","no_show")')
+    } else if (status) {
+      query = query.eq('status', status)
+    }
     if (paymentStatus) query = query.eq('payment_status', paymentStatus)
     if (dateFrom)     query = query.gte('booking_date', dateFrom)
     if (dateTo)       query = query.lte('booking_date', dateTo)

@@ -15,7 +15,8 @@ import type { BookingStatus, PaymentStatus } from "@/types/bookings"
 
 export interface BookingFiltersState {
   search:        string
-  status:        string   // "all" | BookingStatus
+  // v3.74.826 — "active" = كل شىء عدا الملغى وعدم الحضور (الافتراضى)
+  status:        string   // "active" | "all" | BookingStatus
   paymentStatus: string   // "all" | PaymentStatus
   dateFrom:      string
   dateTo:        string
@@ -26,7 +27,8 @@ export interface BookingFiltersState {
 
 export const DEFAULT_BOOKING_FILTERS: BookingFiltersState = {
   search:        "",
-  status:        "all",
+  // v3.74.826 — الافتراضى يستبعد الملغى وعدم الحضور
+  status:        "active",
   paymentStatus: "all",
   dateFrom:      "",
   dateTo:        "",
@@ -112,6 +114,10 @@ export function BookingsFilters({
             <SelectValue placeholder={t("الحالة", "Status")} />
           </SelectTrigger>
           <SelectContent>
+            {/* v3.74.826 — «الحالات النشطة» هى الافتراضى: الملغى وعدم الحضور
+                سجلّ تاريخى يزحم التقويم ويخفى الحجوزات الحقيقية خلف التمرير.
+                و«جميع الحالات» باقية لمن يريد السجل كاملاً. */}
+            <SelectItem value="active">{t("الحالات النشطة (بدون ملغى)", "Active (excl. cancelled)")}</SelectItem>
             <SelectItem value="all">{t("جميع الحالات", "All Statuses")}</SelectItem>
             {ALL_BOOKING_STATUSES.map((s) => (
               <SelectItem key={s} value={s}>
