@@ -71,6 +71,19 @@ export async function POST(request: NextRequest) {
       return jsonError(400, "نوع مركز العمل غير صالح")
     }
 
+    // v3.74.827 — نفس زوج الطاقة كما فى مسار التعديل: يُفحص هنا برسالة عربية
+    // بدل تركه يصطدم بحارس القاعدة برسالة إنجليزية خام.
+    const capUom = capacity_uom?.trim() || null
+    const capPerHour = nominal_capacity_per_hour !== "" && nominal_capacity_per_hour != null
+      ? Number(nominal_capacity_per_hour) : null
+    if ((capUom === null) !== (capPerHour === null)) {
+      return jsonError(400,
+        "وحدة القياس والطاقة فى الساعة يجب إدخالهما معاً أو تركهما فارغين معاً — أكمل الناقص أو امسح الاثنين.")
+    }
+    if (capPerHour !== null && !(capPerHour > 0)) {
+      return jsonError(400, "الطاقة فى الساعة يجب أن تكون أكبر من صفر")
+    }
+
     const normalizedCostUom = (cost_rate_uom && COST_RATE_UOMS.includes(cost_rate_uom)) ? cost_rate_uom : "per_hour"
     const hasCostRates = [labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate].some(v => v != null && Number(v) > 0)
 
@@ -84,8 +97,8 @@ export async function POST(request: NextRequest) {
         work_center_type: work_center_type || "machine",
         status: WORK_CENTER_STATUSES.includes(status) ? status : "active",
         description: description?.trim() || null,
-        capacity_uom: capacity_uom?.trim() || null,
-        nominal_capacity_per_hour: nominal_capacity_per_hour ? Number(nominal_capacity_per_hour) : null,
+        capacity_uom: capUom,
+        nominal_capacity_per_hour: capPerHour,
         available_hours_per_day: available_hours_per_day ? Number(available_hours_per_day) : null,
         efficiency_percent: efficiency_percent ? Number(efficiency_percent) : 100,
         labor_cost_rate: labor_cost_rate != null ? Number(labor_cost_rate) : 0,

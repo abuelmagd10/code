@@ -43,6 +43,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return jsonError(400, "نوع مركز العمل غير صالح")
     }
 
+    // v3.74.827 — وحدة القياس والطاقة/ساعة **زوج**: حارس القاعدة يرفض أن
+    // يُملأ أحدهما دون الآخر، لكن المسار كان يُطبّع كلاً منهما على حدة فيمر
+    // النصف ويصطدم بالحارس — فيرى المستخدم رسالة إنجليزية خام من قاعدة
+    // البيانات لا يفهمها ولا تدله على الحقل. يُفحص الزوج هنا برسالة عربية
+    // تسمّى الحقلين، بدل إسقاط ما كتبه المستخدم صامتين.
+    const capUom = capacity_uom?.trim() || null
+    const capPerHour = nominal_capacity_per_hour !== "" && nominal_capacity_per_hour != null
+      ? Number(nominal_capacity_per_hour) : null
+    if ((capUom === null) !== (capPerHour === null)) {
+      return jsonError(400,
+        "وحدة القياس والطاقة فى الساعة يجب إدخالهما معاً أو تركهما فارغين معاً — أكمل الناقص أو امسح الاثنين.")
+    }
+    if (capPerHour !== null && !(capPerHour > 0)) {
+      return jsonError(400, "الطاقة فى الساعة يجب أن تكون أكبر من صفر")
+    }
+
     // Verify ownership AND check whether cost rates are changing (for cost_rates_effective_from)
     const { data: existing } = await supabase
       .from("manufacturing_work_centers")
@@ -72,8 +88,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       work_center_type: work_center_type || "machine",
       status: WORK_CENTER_STATUSES.includes(status) ? status : "active",
       description: description?.trim() || null,
-      capacity_uom: capacity_uom?.trim() || null,
-      nominal_capacity_per_hour: nominal_capacity_per_hour ? Number(nominal_capacity_per_hour) : null,
+      capacity_uom: capUom,
+      nominal_capacity_per_hour: capPerHour,
       available_hours_per_day: available_hours_per_day ? Number(available_hours_per_day) : null,
       efficiency_percent: efficiency_percent ? Number(efficiency_percent) : 100,
       labor_cost_rate: newLabor,
