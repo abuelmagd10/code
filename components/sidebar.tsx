@@ -552,8 +552,18 @@ export function Sidebar() {
         console.log('🔔 [SIDEBAR_REALTIME] Subscription status:', status)
         if (status === 'SUBSCRIBED') {
           console.log('✅ [SIDEBAR_REALTIME] Successfully subscribed to notification count')
+          // v3.74.815 — **catch-up بعد كل اشتراك ناجح**.
+          // موثّق حياً: إشعار وُلد 17:18:32 بينما كان اشتراك المالك منقطعاً،
+          // وعاد الاشتراك 17:18:36 — فالحدث ضاع إلى الأبد والجرس بقى صامتاً
+          // حتى فتح المستخدم الصندوق بنفسه. البث الحى لا يعوّض ما فات أثناء
+          // انقطاعه، فنعيد حساب العداد من الخادم عند كل اتصال (وأيضاً عند
+          // إعادة الاتصال بعد نوم الجهاز أو تغيّر الشبكة).
+          scheduleUnreadCountRefresh()
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [SIDEBAR_REALTIME] Channel error - check Supabase Realtime configuration')
+          // v3.74.815 — خفضناها من error إلى warn: انقطاع القناة العابر
+          // حدث طبيعى (تغيّر شبكة/نوم جهاز) وSupabase يعيد الاتصال تلقائياً،
+          // فإظهاره خطأً أحمر يُفزع المستخدم ويغرق الكونسول بضجيج.
+          console.warn('⚠️ [SIDEBAR_REALTIME] انقطع اتصال قناة الإشعارات — تتم إعادة المحاولة تلقائياً')
         }
       })
 
@@ -572,8 +582,11 @@ export function Sidebar() {
         }
       )
       .subscribe((status: any) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('❌ [SIDEBAR_REALTIME] Notification user-state channel error')
+        // v3.74.815 — نفس منطق القناة الأولى: catch-up عند الاتصال وتهدئة الضجيج
+        if (status === 'SUBSCRIBED') {
+          scheduleUnreadCountRefresh()
+        } else if (status === 'CHANNEL_ERROR') {
+          console.warn('⚠️ [SIDEBAR_REALTIME] انقطع اتصال قناة حالات الإشعارات — تتم إعادة المحاولة تلقائياً')
         }
       })
 

@@ -205,20 +205,72 @@ export async function prepareInvoiceRevenueJournal(
     exchange_rate_used: isFC ? fxRate : 1,
   } as any)
 
-  // دائن: إيرادات المبيعات (Sales Revenue) - صافي المبلغ (base currency)
+  // دائن: الإيراد — موزَّعاً على حساب إيراد كل صنف (base currency)
+  //
+  // v3.74.815 — هذا البانى كان يُرحّل **كل** الإيراد لحساب المبيعات العام
+  // (4100) مهما كان الصنف، بينما نظيره فى قاعدة البيانات
+  // (execute_sales_invoice_accounting) يوزّعه على products.income_account_id.
+  // فوقع النظام فى ازدواج تصنيف موثق حياً: فاتورة حجز خدمة INV-2026-00001
+  // رُحّلت لـ«إيرادات المبيعات 4100» بينما INV-2026-00002/3 لنفس نوع الخدمة
+  // رُحّلت لـ«إيرادات الخدمات 4200» — فقائمة الدخل لا تفصل إيراد البضاعة عن
+  // إيراد الخدمة، وتحليل الربحية بالنشاط يصير بلا معنى.
+  // الحل: نفس منطق دالة القاعدة (تجميع حسب حساب إيراد الصنف مع الرجوع
+  // لحساب المبيعات العام عند غيابه) حتى يتطابق المساران أياً كان المستخدَم.
   if (netAmount > 0) {
-    journalEntry.lines.push({
-      account_id: mapping.sales_revenue,
-      debit_amount: 0,
-      credit_amount: netAmount,
-      description: 'إيراد المبيعات',
-      branch_id: invoice.branch_id,
-      cost_center_id: invoice.cost_center_id,
-      original_debit: isFC ? 0 : null,
-      original_credit: isFC ? fcNet : null,
-      original_currency: isFC ? invoiceCurrency : null,
-      exchange_rate_used: isFC ? fxRate : 1,
-    } as any)
+    const { data: revenueItems } = await supabase
+      .from('invoice_items')
+      .select('line_total, products(income_account_id)')
+      .eq('invoice_id', invoiceId)
+
+    // تجميع بنود الفاتورة على حساب الإيراد الخاص بكل صنف
+    const buckets = new Map<string, number>()
+    let itemsTotal = 0
+    for (const item of (revenueItems || []) as any[]) {
+      const amount = Number(item?.line_total || 0)
+      if (!(amount > 0)) continue
+      const product = Array.isArray(item?.products) ? item.products[0] : item?.products
+      const accountId = product?.income_account_id || mapping.sales_revenue
+      buckets.set(accountId, round2((buckets.get(accountId) || 0) + amount))
+      itemsTotal = round2(itemsTotal + amount)
+    }
+
+    // التوزيع بالتناسب على صافى القيد (لأن صافى الفاتورة قد يخالف مجموع
+    // البنود بعد الخصم/التقريب، والقيد يجب أن يساوى netAmount بالضبط).
+    // إن غابت البنود أو انعدم مجموعها ⇒ سطر واحد كالسابق (سلوك آمن).
+    const groups = buckets.size > 0 && itemsTotal > 0
+      ? Array.from(buckets.entries()).sort((a, b) => b[1] - a[1])
+      : [[mapping.sales_revenue, 1] as [string, number]]
+    const groupsTotal = buckets.size > 0 && itemsTotal > 0 ? itemsTotal : 1
+
+    // تُحسب الأسطر أولاً ثم تُطرح الأسطر غير الموجبة، وتبتلع **أكبر** مجموعة
+    // كل الفروق — فيساوى مجموع أسطر الإيراد صافى القيد حرفياً مهما كان
+    // التقريب (وإلا كسر القيد حارس التوازن فى القاعدة).
+    const drafted = groups.map(([accountId, share]) => ({
+      accountId,
+      amount: round2(netAmount * share / groupsTotal),
+      fcAmount: round2(fcNet * share / groupsTotal),
+    })).filter(line => line.amount > 0)
+
+    if (drafted.length === 0) {
+      drafted.push({ accountId: mapping.sales_revenue, amount: netAmount, fcAmount: fcNet })
+    }
+    drafted[0].amount = round2(drafted[0].amount + (netAmount - drafted.reduce((s, l) => s + l.amount, 0)))
+    drafted[0].fcAmount = round2(drafted[0].fcAmount + (fcNet - drafted.reduce((s, l) => s + l.fcAmount, 0)))
+
+    for (const line of drafted) {
+      journalEntry.lines.push({
+        account_id: line.accountId,
+        debit_amount: 0,
+        credit_amount: line.amount,
+        description: 'إيراد المبيعات',
+        branch_id: invoice.branch_id,
+        cost_center_id: invoice.cost_center_id,
+        original_debit: isFC ? 0 : null,
+        original_credit: isFC ? line.fcAmount : null,
+        original_currency: isFC ? invoiceCurrency : null,
+        exchange_rate_used: isFC ? fxRate : 1,
+      } as any)
+    }
   }
 
   // دائن: ضريبة القيمة المضافة (إذا وجدت)

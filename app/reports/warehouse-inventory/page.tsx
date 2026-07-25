@@ -24,6 +24,11 @@ type WarehouseInventory = {
   inboundQty: number
   outboundQty: number
   netMovement: number
+  // v3.74.815 — تدفق التصنيع كان مخفياً داخل «الوارد/الصادر» فيبدو المنتج
+  // التام كأنه ظهر من العدم والخامات كأنها اختفت بلا سبب. العمودان يفصلان
+  // حركتَى التصنيع عن الشراء والبيع.
+  productionInQty: number   // production_receipt — إنتاج تام وارد
+  productionOutQty: number  // production_issue  — استهلاك تصنيع
 }
 
 export default function WarehouseInventoryReportPage() {
@@ -158,6 +163,8 @@ export default function WarehouseInventoryReportPage() {
         let inboundQty = 0
         let outboundQty = 0
         let totalQuantity = 0
+        let productionInQty = 0
+        let productionOutQty = 0
 
         for (const tx of transactions || []) {
           const qty = Number(tx.quantity_change) || 0
@@ -167,6 +174,11 @@ export default function WarehouseInventoryReportPage() {
             outboundQty += Math.abs(qty)
           }
           totalQuantity += qty
+
+          // فصل حركتَى التصنيع (يظلان ضمن الوارد/الصادر — عمودان تفسيريان)
+          const kind = String(tx.transaction_type || '')
+          if (kind === 'production_receipt') productionInQty += Math.abs(qty)
+          else if (kind === 'production_issue') productionOutQty += Math.abs(qty)
         }
 
         data.push({
@@ -180,6 +192,8 @@ export default function WarehouseInventoryReportPage() {
           inboundQty,
           outboundQty,
           netMovement: inboundQty - outboundQty,
+          productionInQty,
+          productionOutQty,
         })
       }
 
@@ -194,13 +208,44 @@ export default function WarehouseInventoryReportPage() {
 
   const formatNumber = (num: number) => new Intl.NumberFormat(appLang === 'en' ? 'en-US' : 'ar-EG').format(num)
 
+  // v3.74.815 — زر التصدير كان معروضاً بلا وظيفة (يضغطه المستخدم فلا شىء
+  // يحدث). التصدير بترميز UTF-8 BOM حتى تفتح إكسل العربية سليمة.
+  const exportCsv = () => {
+    if (inventoryData.length === 0) return
+    const header = [
+      t('Warehouse', 'المخزن'), t('Code', 'الكود'), t('Branch', 'الفرع'),
+      t('Products', 'المنتجات'), t('Inbound', 'الوارد'), t('Outbound', 'الصادر'),
+      t('Production In', 'إنتاج تام وارد'), t('Production Consumption', 'استهلاك تصنيع'),
+      t('Net Movement', 'صافي الحركة'),
+    ]
+    const rows = inventoryData.map(inv => [
+      inv.warehouseName, inv.warehouseCode, inv.branchName,
+      inv.totalProducts, inv.inboundQty, inv.outboundQty,
+      inv.productionInQty, inv.productionOutQty, inv.netMovement,
+    ])
+    const escape = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = [header, ...rows].map(r => r.map(escape).join(',')).join('\r\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `warehouse-inventory-${dateFrom}_${dateTo}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const totals = inventoryData.reduce((acc, inv) => ({
     totalProducts: acc.totalProducts + inv.totalProducts,
     totalQuantity: acc.totalQuantity + inv.totalQuantity,
     inboundQty: acc.inboundQty + inv.inboundQty,
     outboundQty: acc.outboundQty + inv.outboundQty,
     netMovement: acc.netMovement + inv.netMovement,
-  }), { totalProducts: 0, totalQuantity: 0, inboundQty: 0, outboundQty: 0, netMovement: 0 })
+    productionInQty: acc.productionInQty + inv.productionInQty,
+    productionOutQty: acc.productionOutQty + inv.productionOutQty,
+  }), {
+    totalProducts: 0, totalQuantity: 0, inboundQty: 0, outboundQty: 0, netMovement: 0,
+    productionInQty: 0, productionOutQty: 0,
+  })
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
@@ -282,7 +327,7 @@ export default function WarehouseInventoryReportPage() {
                     <FileText className="w-4 h-4 mr-2" />
                     {loading ? t('Loading...', 'جاري التحميل...') : t('Generate', 'إنشاء')}
                   </Button>
-                  <Button variant="outline" disabled={inventoryData.length === 0}>
+                  <Button variant="outline" disabled={inventoryData.length === 0} onClick={exportCsv}>
                     <Download className="w-4 h-4" />
                   </Button>
                 </div>
@@ -337,6 +382,9 @@ export default function WarehouseInventoryReportPage() {
                         <th className="text-right p-3 font-medium">{t('Products', 'المنتجات')}</th>
                         <th className="text-right p-3 font-medium">{t('Inbound', 'الوارد')}</th>
                         <th className="text-right p-3 font-medium">{t('Outbound', 'الصادر')}</th>
+                        {/* v3.74.815 — تفسير حركة التصنيع داخل الوارد/الصادر */}
+                        <th className="text-right p-3 font-medium">{t('Production In', 'إنتاج تام وارد')}</th>
+                        <th className="text-right p-3 font-medium">{t('Production Consumption', 'استهلاك تصنيع')}</th>
                         <th className="text-right p-3 font-medium">{t('Net Movement', 'صافي الحركة')}</th>
                       </tr>
                     </thead>
@@ -365,6 +413,12 @@ export default function WarehouseInventoryReportPage() {
                           </td>
                           <td className="p-3 text-green-600 font-medium">+{formatNumber(inv.inboundQty)}</td>
                           <td className="p-3 text-red-600 font-medium">-{formatNumber(inv.outboundQty)}</td>
+                          <td className="p-3 text-purple-600 dark:text-purple-400 font-medium">
+                            {inv.productionInQty > 0 ? `+${formatNumber(inv.productionInQty)}` : '—'}
+                          </td>
+                          <td className="p-3 text-purple-600 dark:text-purple-400 font-medium">
+                            {inv.productionOutQty > 0 ? `-${formatNumber(inv.productionOutQty)}` : '—'}
+                          </td>
                           <td className={`p-3 font-bold ${inv.netMovement >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
                             <div className="flex items-center gap-1">
                               {inv.netMovement >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
@@ -380,6 +434,12 @@ export default function WarehouseInventoryReportPage() {
                         <td className="p-3">{formatNumber(totals.totalProducts)}</td>
                         <td className="p-3 text-green-600">+{formatNumber(totals.inboundQty)}</td>
                         <td className="p-3 text-red-600">-{formatNumber(totals.outboundQty)}</td>
+                        <td className="p-3 text-purple-600 dark:text-purple-400">
+                          {totals.productionInQty > 0 ? `+${formatNumber(totals.productionInQty)}` : '—'}
+                        </td>
+                        <td className="p-3 text-purple-600 dark:text-purple-400">
+                          {totals.productionOutQty > 0 ? `-${formatNumber(totals.productionOutQty)}` : '—'}
+                        </td>
                         <td className={`p-3 ${totals.netMovement >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>{totals.netMovement >= 0 ? '+' : ''}{formatNumber(totals.netMovement)}</td>
                       </tr>
                     </tfoot>

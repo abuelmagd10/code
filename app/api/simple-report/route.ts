@@ -158,8 +158,11 @@ export async function GET(request: NextRequest) {
     let salesCount = 0
     const salesLines = periodLines.filter((line: any) => {
       const coa = line.chart_of_accounts
-      return coa?.account_type === "income" &&
-             (coa?.sub_type === "sales_revenue" || coa?.account_code === "4000") // ✅ تصحيح: 4000 = المبيعات (ليس 4100)
+      // v3.74.815 — كان يلتقط إيراد المبيعات فقط، فيسقط **إيراد الخدمات**
+      // (الحجوزات) كاملاً: ظهر صافى ربح 1,049 بينما الحقيقة 2,434.03.
+      // المعيار الصحيح: كل حساب إيراد (بما فيه الخدمات والإيرادات الأخرى)
+      // مع خصومات المبيعات المقابلة — أى نفس أساس قائمة الدخل.
+      return coa?.account_type === "income"
     })
     const salesEntryIds = new Set<string>()
     for (const line of salesLines) {

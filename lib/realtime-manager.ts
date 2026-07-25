@@ -411,8 +411,18 @@ class RealtimeManager {
         .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR') => {
           if (status === 'SUBSCRIBED') {
             console.log(`✅ [RealtimeManager] Subscribed to ${table}`)
+            // v3.74.815 — catch-up: البث الحى لا يعوّض ما فات أثناء انقطاعه،
+            // فنُعلم الشاشات المفتوحة بإعادة الجلب بعد كل اتصال ناجح.
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('realtime_resubscribed', { detail: { table } }))
+              if (table === 'notifications') {
+                window.dispatchEvent(new Event('notifications_updated'))
+              }
+            }
           } else if (status === 'CHANNEL_ERROR') {
-            console.error(`❌ [RealtimeManager] Error subscribing to ${table}`)
+            // v3.74.815 — انقطاع عابر يعيد Supabase الاتصال بعده تلقائياً:
+            // تحذير لا خطأ، حتى لا يمتلئ الكونسول بأحمر لا يحتاج تدخلاً.
+            console.warn(`⚠️ [RealtimeManager] انقطع اتصال قناة ${table} — تتم إعادة المحاولة تلقائياً`)
           }
         })
 

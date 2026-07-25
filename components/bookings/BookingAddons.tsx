@@ -271,6 +271,10 @@ export function BookingAddons({
         .select("id, name, sku, unit_price, item_type, quantity_on_hand, image_urls, branch_id")
         .eq("company_id", companyId)
         .in("item_type", ["product", "raw_material", "manufactured"])
+        // v3.74.815 — التمييز الحقيقى للخامة فى product_type لا item_type
+        // (كل الأصناف المخزنية item_type='product')، فكانت المواد الخام تظهر
+        // فى إضافات الحجز ويمكن بيعها للعميل. تُستبعد هنا كما فى الفواتير.
+        .or("product_type.is.null,product_type.neq.raw_material")
         .order("name", { ascending: true })
         .limit(500)
       if (bookingBranchId) {

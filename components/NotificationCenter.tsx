@@ -361,6 +361,21 @@ export function NotificationCenter({
     }
   }, [open, loadNotifications])
 
+  // v3.74.815 — إعادة الجلب عند عودة الاتصال الحى (catch-up).
+  // كان الصندوق المفتوح يبقى على قائمته القديمة إذا انقطعت القناة ثم عادت،
+  // فتصل إشعارات لا يراها المستخدم إلا بإغلاق الصندوق وفتحه.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onResubscribed = (e: any) => {
+      if (!open) return
+      const table = e?.detail?.table
+      if (table && table !== 'notifications') return
+      loadNotifications()
+    }
+    window.addEventListener('realtime_resubscribed', onResubscribed)
+    return () => window.removeEventListener('realtime_resubscribed', onResubscribed)
+  }, [open, loadNotifications])
+
   // 🔔 Realtime Updates - التحقق من جميع الفلاتر
   const shouldShowNotification = useCallback((notification: any): boolean => {
     // 1. التحقق من الشركة

@@ -293,6 +293,8 @@ export default function EditSalesOrderPage() {
         .from("products")
         .select("id, name, unit_price, sku, item_type")
         .eq("company_id", activeCompanyId)
+        // v3.74.815 — استبعاد المواد الخام من أصناف تعديل أمر البيع
+        .or("product_type.is.null,product_type.neq.raw_material")
 
       setCustomers(customersData || [])
       setProducts(productsData || [])

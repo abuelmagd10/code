@@ -383,13 +383,14 @@ export default function SimpleSummaryReport() {
                     </div>
                     <div>
                       <CardTitle className="text-xl flex items-center gap-2">
-                        🟪 {t('Sales', 'المبيعات')}
+                        {/* v3.74.815 — البند يشمل الآن كل الإيرادات (بضائع + خدمات) */}
+                        🟪 {t('Revenue', 'الإيرادات')}
                         <TooltipProvider>
                           <UITooltip>
                             <TooltipTrigger><HelpCircle className="w-4 h-4 text-gray-400" /></TooltipTrigger>
                             <TooltipContent className="max-w-[300px]">
-                              <p>{t('Net sales revenue after deducting any returned products.',
-                                'صافي إيرادات المبيعات بعد خصم المرتجعات من العملاء.')}</p>
+                              <p>{t('All revenue — goods and services — net of returns and discounts.',
+                                'كل الإيرادات — بضائع وخدمات (الحجوزات) — بعد خصم المرتجعات والخصومات.')}</p>
                             </TooltipContent>
                           </UITooltip>
                         </TooltipProvider>

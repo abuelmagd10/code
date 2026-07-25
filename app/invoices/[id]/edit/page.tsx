@@ -215,6 +215,8 @@ export default function EditInvoicePage() {
         .from("products")
         .select("id, name, unit_price, sku")
         .eq("company_id", loadCompanyId)
+        // v3.74.815 — استبعاد المواد الخام من أصناف تعديل الفاتورة
+        .or("product_type.is.null,product_type.neq.raw_material")
 
       setCustomers(customersData || [])
       setProducts(productsData || [])

@@ -421,6 +421,8 @@ export default function NewSalesOrderPage() {
         .from("products")
         .select("id, name, unit_price, sku, item_type, quantity_on_hand, image_urls")
         .eq("company_id", companyId)
+        // v3.74.815 — استبعاد المواد الخام من أصناف أمر البيع (نظير الفاتورة)
+        .or("product_type.is.null,product_type.neq.raw_material")
 
       if (!adminCheck && userBranchId) {
         productsQuery = productsQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`)

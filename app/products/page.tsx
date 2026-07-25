@@ -482,9 +482,12 @@ export default function ProductsPage() {
     const errors: Record<string, string> = {}
 
     // Validate unit price
-    const unitPriceValidation = validateField(formData.unit_price.toString(), 'amount')
-    if (!unitPriceValidation.isValid) {
-      errors.unit_price = unitPriceValidation.error || ''
+    // v3.74.815 — المادة الخام بلا سعر بيع (الحقل مخفى)، فلا يُطالَب بها.
+    if (formData.product_type !== 'raw_material') {
+      const unitPriceValidation = validateField(formData.unit_price.toString(), 'amount')
+      if (!unitPriceValidation.isValid) {
+        errors.unit_price = unitPriceValidation.error || ''
+      }
     }
 
     // Validate cost price (only if user can view COGS and it's provided)
@@ -1352,6 +1355,10 @@ export default function ProductsPage() {
                               onClick={() => {
                                 const d: any = { ...formData, product_type: 'raw_material' }
                                 if (!editingId) { const a = resolveDefaultAccountsFor('product', 'raw_material'); d.income_account_id = a.incomeId; d.expense_account_id = a.expenseId }
+                                // v3.74.815 — الخامة لا تُباع: يُصفَّر سعر البيع
+                                // مع إخفاء حقله حتى لا يبقى رقم قديم يظهر لاحقاً
+                                // فى شاشات البيع أو قوائم الأسعار.
+                                d.unit_price = 0
                                 setFormData(d)
                               }}
                               title={appLang === 'en' ? 'Used as input component in BOM structures' : 'يُستخدم مكوّناً في هياكل BOM'}
@@ -1441,6 +1448,11 @@ export default function ProductsPage() {
 
                       {/* Pricing */}
                       <div className="grid grid-cols-2 gap-3">
+                        {/* v3.74.815 — المادة الخام لا تُباع (نفس منطق إخفاء
+                            حسابَى الإيراد والتكلفة أعلاه)، فطلب «سعر بيع» لها
+                            إلزامياً يربك المستخدم ويملأ الحقل برقم لا معنى له
+                            يظهر بعدها فى شاشات البيع. يُخفى الحقل ويُثبت صفراً. */}
+                        {formData.product_type !== 'raw_material' && (
                         <div className="space-y-2">
                           <Label htmlFor="unit_price">{appLang === 'en' ? 'Sale Price' : 'سعر البيع'}</Label>
                           <NumericInput
@@ -1460,6 +1472,7 @@ export default function ProductsPage() {
                             <p className="text-sm text-red-500">{formErrors.unit_price}</p>
                           )}
                         </div>
+                        )}
                         {/* === إصلاح أمني: إخفاء سعر التكلفة للمستخدمين غير المصرح لهم === */}
                         {canViewCOGS && (
                           <div className="space-y-2">

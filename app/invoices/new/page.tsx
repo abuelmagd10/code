@@ -378,6 +378,10 @@ export default function NewInvoicePage() {
         .from("products")
         .select("id, name, unit_price, sku, item_type, quantity_on_hand, image_urls")
         .eq("company_id", companyId)
+        // v3.74.815 — المواد الخام تُستهلك فى الإنتاج ولا تُباع للعملاء،
+        // فظهورها فى قائمة أصناف الفاتورة يغرى ببيعها بسعر صفرى ويفسد
+        // تكلفة الإنتاج. (الشرط يُبقى الأصناف القديمة بلا تصنيف.)
+        .or("product_type.is.null,product_type.neq.raw_material")
 
       if (!canOverride && context.branch_id) {
         productsQuery = productsQuery.or(`branch_id.eq.${context.branch_id},branch_id.is.null`)

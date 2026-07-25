@@ -58,6 +58,10 @@ export class EquityReportingService {
       `)
             .eq('journal_entries.company_id', companyId)
             .eq('journal_entries.status', 'posted')
+            // v3.74.815 — كان يحتسب القيود المؤرشفة (is_deleted) بينما كل
+            // التقارير الأخرى تستبعدها ⇒ أرباح محتجزة تخالف الميزانية
+            // وقائمة الدخل. نفس الفلتر المعتمد فى بقية التقارير.
+            .or('is_deleted.is.null,is_deleted.eq.false', { foreignTable: 'journal_entries' })
             .lte('journal_entries.entry_date', toDate) // We need history up to endDate
             .gt('journal_entries.entry_date', '1900-01-01') // Optimization
         // Note: We need ALL history for opening balance, so no lower bound on date unless we have closing entries.
