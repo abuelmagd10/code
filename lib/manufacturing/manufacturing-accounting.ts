@@ -115,7 +115,22 @@ export async function resolveManufacturingAccounts(
   // chain always fell through to code 2210 — which in the default chart is
   // "القروض طويلة الأجل". Manufacturing wages would have been credited to the
   // long-term loans account. Match the sub_type the chart actually ships.
+  // v3.74.823 — العمالة المحمَّلة على الإنتاج ليست **التزاماً جديداً**.
+  //
+  // كان السطر يُدائن «الرواتب والأجور المستحقة 2130» (التزام)، بينما مسار
+  // المرتبات يُحمّل الأجر كاملاً على مصروف الرواتب 5210 ويدفعه نقداً. النتيجة
+  // عطبان معاً:
+  //   (١) **ازدواج تكلفة العمالة**: مرة مصروفاً فى قائمة الدخل، ومرة داخل
+  //       قيمة المخزون — فتظهر التكلفة مرتين ويُشوَّه الربح.
+  //   (٢) **التزام وهمى دائم**: 2130 يتضخم مع كل أمر إنتاج ولا مسار يسدده،
+  //       فتبدو الشركة مدينة لموظفيها بمبالغ سبق أن دفعتها فعلاً.
+  //
+  // المعالجة القياسية: حساب **مقابل للمصروف** «أجور محمَّلة على الإنتاج
+  // 5415» — نظير «أعباء صناعية محملة 5410» الموجود أصلاً. فيُخفَّض صافى
+  // مصروف الأجور بما استُوعب منه فى قيمة المخزون، بلا التزام ولا ازدواج.
   const wagesPayableAccountId =
+    bySubType("direct_labour_applied") ||
+    byCode("5415") ||
     (company?.wages_payable_account_id as string | null) ||
     bySubType("wages_payable") ||
     bySubType("accrued_salaries") ||
@@ -624,7 +639,9 @@ export async function postProductReceiptJournal(
         account_id: accounts.wagesPayableAccountId,
         debit_amount: 0,
         credit_amount: Math.round(laborCost * 100) / 100,
-        description: "تحميل تكلفة العمالة المباشرة على الإنتاج",
+        // v3.74.823 — «محمَّلة» لا «مستحقة»: هذا استيعاب لجزء من أجور دُفعت
+        // فعلاً داخل قيمة المخزون، لا التزام جديد على الشركة.
+        description: "أجور محمَّلة على الإنتاج (استيعاب فى تكلفة المنتج)",
       })
     }
     if (overheadCost > 0.01 && accounts.manufacturingOverheadAccountId) {

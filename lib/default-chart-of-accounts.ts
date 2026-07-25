@@ -114,6 +114,10 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
 
   // المستحقات
   { account_code: '2130', account_name: 'الرواتب والأجور المستحقة', account_name_en: 'Accrued Salaries & Wages', account_type: 'liability', normal_balance: 'credit', sub_type: 'accrued_salaries', parent_code: '2100' },
+  // v3.74.817/822 — استقطاعات المرتب التزامات على الشركة حتى توريدها،
+  // والعمولة المستحقة دَين للموظف من لحظة البيع لا من لحظة الصرف.
+  { account_code: '2135', account_name: 'تأمينات اجتماعية مستحقة', account_name_en: 'Accrued Social Insurance', account_type: 'liability', normal_balance: 'credit', sub_type: 'accrued_insurance', parent_code: '2100' },
+  { account_code: '2136', account_name: 'عمولات ومكافآت مستحقة', account_name_en: 'Accrued Commissions & Bonuses', account_type: 'liability', normal_balance: 'credit', sub_type: 'accrued_commissions', parent_code: '2100' },
   { account_code: '2140', account_name: 'إيرادات مقدمة (غير مكتسبة)', account_name_en: 'Unearned Revenue', account_type: 'liability', normal_balance: 'credit', sub_type: 'unearned_revenue', parent_code: '2100' },
   { account_code: '2145', account_name: 'سلف من العملاء', account_name_en: 'Customer Deposits', account_type: 'liability', normal_balance: 'credit', parent_code: '2100' },
   { account_code: '2150', account_name: 'الأرباح الموزعة المستحقة', account_name_en: 'Dividends Payable', account_type: 'liability', normal_balance: 'credit', sub_type: 'dividends_payable', parent_code: '2100' },
@@ -181,6 +185,8 @@ export const DEFAULT_ACCOUNTS: DefaultAccount[] = [
   // ─────────────────────────────────────────────────────────────
   { account_code: '5200', account_name: 'المصروفات التشغيلية', account_name_en: 'Operating Expenses', account_type: 'expense', normal_balance: 'debit', sub_type: 'operating_expenses', parent_code: '5000' },
   { account_code: '5210', account_name: 'الرواتب والأجور', account_name_en: 'Salaries & Wages', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
+  // v3.74.822 — عمولة البيع مصروف مستقل عن الرواتب: تُعترف عند البيع لا عند الصرف
+  { account_code: '5215', account_name: 'عمولات ومكافآت البيع', account_name_en: 'Sales Commissions & Bonuses', account_type: 'expense', normal_balance: 'debit', sub_type: 'sales_commission', parent_code: '5200' },
   { account_code: '5220', account_name: 'الإيجارات', account_name_en: 'Rent Expense', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
   { account_code: '5230', account_name: 'المرافق (كهرباء، مياه، غاز)', account_name_en: 'Utilities', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
   { account_code: '5240', account_name: 'الاتصالات والإنترنت', account_name_en: 'Communication & Internet', account_type: 'expense', normal_balance: 'debit', parent_code: '5200' },
