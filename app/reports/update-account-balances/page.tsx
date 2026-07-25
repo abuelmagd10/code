@@ -91,9 +91,13 @@ export default function UpdateAccountBalancesPage() {
     // ✅ جلب القيود المحاسبية (من journal_entries فقط)
     const { data: lines, error } = await supabase
       .from("journal_entry_lines")
-      .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, deleted_at)")
+      .select("account_id, debit_amount, credit_amount, journal_entries!inner(entry_date, company_id, deleted_at, status, is_deleted)")
       .eq("journal_entries.company_id", companyId)
       .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة
+      // v3.74.824 — هذه الشاشة **تكتب** أرصدة الحسابات، وكانت تحسبها بلا فلتر
+      // الحالة ⇒ أى قيد مسودة يُخبَز داخل رصيد مخزَّن يصعب تتبع خطئه لاحقاً.
+      .eq("journal_entries.status", "posted")
+      .or("is_deleted.is.null,is_deleted.eq.false", { foreignTable: "journal_entries" })
     if (error) {
       console.error("Failed loading journal lines:", error)
       return {}

@@ -109,6 +109,8 @@ export default function FXGainsLossesReportPage() {
         `)
         .in('account_id', accountIds)
         .is('journal_entries.deleted_at', null) // ✅ استثناء القيود المحذوفة
+        // v3.74.824 — فروق الصرف كانت تُحسب من القيود المسودة أيضاً
+        .eq('journal_entries.status', 'posted')
         .gte('journal_entries.entry_date', dateFrom)
         .lte('journal_entries.entry_date', dateTo)
         .order('journal_entries(entry_date)', { ascending: false })

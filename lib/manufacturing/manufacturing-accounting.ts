@@ -183,6 +183,43 @@ interface CreateEntryParams {
   userId: string
 }
 
+/**
+ * v3.74.824 — ترحيل القيد بعد إدراج سطوره، مع التحقق من التوازن **من قاعدة
+ * البيانات** لا من المصفوفة فى الذاكرة: قيد التصنيع لا يُرحَّل إلا إذا كان
+ * ما استقر فى الجدول فعلاً متوازناً. وإن اختل، يُتراجع عن القيد بالكامل بدل
+ * ترك رأس قيد يتيم أو قيد مشوَّه فى الدفاتر.
+ */
+async function postEntryHeader(
+  supabase: SupabaseClient,
+  entryId: string,
+  context: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: lines, error: readErr } = await supabase
+    .from("journal_entry_lines")
+    .select("debit_amount, credit_amount")
+    .eq("journal_entry_id", entryId)
+
+  if (readErr) {
+    return { ok: false, error: `Failed to verify journal lines: ${readErr.message}` }
+  }
+  const dr = (lines || []).reduce((s: number, l: any) => s + Number(l.debit_amount || 0), 0)
+  const cr = (lines || []).reduce((s: number, l: any) => s + Number(l.credit_amount || 0), 0)
+  if (!lines || lines.length === 0 || Math.abs(dr - cr) > 0.02) {
+    await rollbackJournalEntry(supabase as any, entryId, `${context}: unbalanced on post`)
+    return { ok: false, error: `Journal entry is unbalanced (Dr=${dr}, Cr=${cr}). Not posted.` }
+  }
+
+  const { error: postErr } = await supabase
+    .from("journal_entries")
+    .update({ status: "posted", posted_at: new Date().toISOString() })
+    .eq("id", entryId)
+
+  if (postErr) {
+    return { ok: false, error: `Failed to post journal entry: ${postErr.message}` }
+  }
+  return { ok: true }
+}
+
 async function createEntryHeader(p: CreateEntryParams): Promise<{ id: string; entry_number: string } | null> {
   const refUuid = (typeof crypto !== "undefined" && (crypto as any).randomUUID)
     ? (crypto as any).randomUUID()
@@ -344,6 +381,14 @@ export async function postMaterialIssueJournal(
       // failed. Now reported.
       await rollbackJournalEntry(supabase as any, header.id, "manufacturing material issue")
       return { success: false, error: `Failed to insert journal lines: ${linesPostErr.message}` }
+    }
+
+    // v3.74.824 — **الترحيل**: كان القيد يُنشأ بحالة 'draft' ولا يُرحَّل أبداً،
+    // فصرف المواد للإنتاج **لا يدخل الدفاتر إطلاقاً**. راجع التعليق المفصّل
+    // فى postProductReceiptJournal.
+    const posted = await postEntryHeader(supabase, header.id, "manufacturing material issue")
+    if (!posted.ok) {
+      return { success: false, error: posted.error }
     }
 
     return {
@@ -672,6 +717,22 @@ export async function postProductReceiptJournal(
       // v3.74.757 — see above.
       await rollbackJournalEntry(supabase as any, header.id, "manufacturing production posting")
       return { success: false, error: `Failed to insert journal lines: ${linesPostErr.message}` }
+    }
+
+    // v3.74.824 — **الترحيل**: أخطر ما فى مديول التصنيع المحاسبى.
+    //
+    // `createEntryHeader` تُنشئ القيد بحالة `'draft'`، ولم يكن فى الملف كله
+    // سطر واحد يحوّله إلى `'posted'`. النتيجة: **كل قيود التصنيع تُولد ميتة**
+    // — صرف المواد واستلام المنتج التام لا يدخلان الدفاتر إطلاقاً، بينما
+    // دفعات FIFO والمخزون الفعلى تتحرك. الدالة كانت تُرجع `success: true`
+    // فلا يشك أحد.
+    //
+    // لم ينكشف فى الدورة التجريبية لأن حارساً قديماً كان يُرحّل قيد الاستلام
+    // بالتوازى (JE-000056) فبدت الدفاتر سليمة — ثم أُسقط الحارس فى 814
+    // بوصفه «ازدواجاً»، وهو فى الحقيقة كان **المُرحِّل الوحيد**.
+    const posted = await postEntryHeader(supabase, header.id, "manufacturing product receipt")
+    if (!posted.ok) {
+      return { success: false, error: posted.error }
     }
 
     return {

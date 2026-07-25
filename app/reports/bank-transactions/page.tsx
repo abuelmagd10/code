@@ -107,6 +107,10 @@ export default function BankTransactionsReport() {
         .select("id, entry_date, description, reference_type, branch_id, cost_center_id")
         .eq("company_id", cid)
         .is("deleted_at", null) // ✅ استثناء القيود المحذوفة
+        // v3.74.824 — كشف حركة البنك كان يعرض القيود المسودة كأنها حركات
+        // بنكية حقيقية، فيصعب مطابقته مع كشف البنك الفعلى.
+        .eq("status", "posted")
+        .or("is_deleted.is.null,is_deleted.eq.false")
         .gte("entry_date", dateFrom)
         .lte("entry_date", dateTo)
         .order("entry_date", { ascending: false })

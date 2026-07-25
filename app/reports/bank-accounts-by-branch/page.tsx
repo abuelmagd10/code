@@ -87,8 +87,13 @@ export default function BankAccountsByBranchReport() {
         supabase.from("cost_centers").select("id, cost_center_name, cost_center_code, branch_id").eq("company_id", cid).eq("is_active", true),
         supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type, sub_type, parent_id, branch_id, cost_center_id, original_currency, branches(name), cost_centers(cost_center_name)").eq("company_id", cid),
         supabase.from("journal_entry_lines")
-          .select("account_id, debit_amount, credit_amount, original_debit, original_credit, journal_entries!inner(deleted_at)")
-          .is("journal_entries.deleted_at", null), // ✅ استثناء القيود المحذوفة
+          .select("account_id, debit_amount, credit_amount, original_debit, original_credit, journal_entries!inner(deleted_at, status, is_deleted)")
+          .is("journal_entries.deleted_at", null) // ✅ استثناء القيود المحذوفة
+          // v3.74.824 — كان الفلتر على deleted_at وحده: **القيود المسودة تدخل
+          // أرصدة البنوك**. مسودة واحدة عالقة تكفى لعرض رصيد بنكى غير حقيقى.
+          // ويُضاف is_deleted لأنه العلم المعتمد فى بقية النظام.
+          .eq("journal_entries.status", "posted")
+          .or("is_deleted.is.null,is_deleted.eq.false", { foreignTable: "journal_entries" }),
       ])
 
       setBranches((branchRes.data || []) as Branch[])
