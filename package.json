@@ -51,9 +51,8 @@
     "load-test": "npx tsx scripts/load-test.ts",
     "test:coa-constraints": "npx tsx scripts/test-coa-constraints.ts",
     "test:period-closing": "npx tsx scripts/test-period-closing.ts",
-    "audit:fix": "node scripts/fix-missing-journals.js",
     "inventory:audit": "node scripts/inventory-audit.js",
-    "inventory:fix": "node scripts/fix-inventory-issues.js",
+    "check:scripts-tracked": "node scripts/check-referenced-scripts-tracked.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
@@ -127,6 +126,7 @@
     "@types/pdfkit": "^0.13.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "pg": "^8.22.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
