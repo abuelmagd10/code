@@ -48,6 +48,10 @@ export default function NewExpensePage() {
   const [description, setDescription] = useState("")
   const [notes, setNotes] = useState("")
   const [amount, setAmount] = useState<number>(0)
+  // v3.74.820 — ضريبة المدخلات على المصروف: كان الجدول بلا حقل ضريبة أصلاً،
+  // فتُحمَّل الضريبة كلها مصروفاً ويضيع حق خصمها من تقرير ضريبة المدخلات.
+  // «المبلغ» يبقى الإجمالى المدفوع، وهذا الحقل هو الضريبة داخله.
+  const [taxAmount, setTaxAmount] = useState<number>(0)
   const [currencyCode, setCurrencyCode] = useState("EGP")
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   // v3.18.0: base currency for FX dropdown (loaded from companies.base_currency)
@@ -413,6 +417,10 @@ export default function NewExpensePage() {
         description: description.trim(),
         notes: notes.trim() || null,
         amount,
+        // v3.74.820 — الضريبة داخل المبلغ؛ يُرحّلها القيد لحساب ضريبة
+        // المدخلات بدل تحميلها على المصروف.
+        tax_amount: Math.min(Number(taxAmount) || 0, Number(amount) || 0),
+        tax_rate: amount > 0 ? Number((((Number(taxAmount) || 0) / (amount - (Number(taxAmount) || 0) || 1)) * 100).toFixed(3)) : 0,
         currency_code: currencyCode,
         exchange_rate: exchangeRate,
         // v3.18.0: rate selected via ExchangeRateSelector dropdown
@@ -642,6 +650,25 @@ export default function NewExpensePage() {
                     placeholder="0.00"
                     className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
                   />
+                  {/* v3.74.820 — ضريبة المدخلات داخل المبلغ */}
+                  <div className="pt-2 space-y-1">
+                    <Label className="text-xs text-gray-600 dark:text-gray-400" suppressHydrationWarning>
+                      {appLang === 'en' ? 'Deductible input VAT (included in the amount)' : 'ضريبة مدخلات قابلة للخصم (ضمن المبلغ)'}
+                    </Label>
+                    <NumericInput
+                      value={taxAmount}
+                      onChange={(v) => setTaxAmount(Math.max(0, Math.min(Number(v) || 0, Number(amount) || 0)))}
+                      placeholder="0.00"
+                      className="bg-white dark:bg-slate-900 border-gray-300 dark:border-slate-600"
+                    />
+                    {taxAmount > 0 && (
+                      <p className="text-[11px] text-blue-700 dark:text-blue-300 leading-relaxed">
+                        {appLang === 'en'
+                          ? `Expense ${(amount - taxAmount).toFixed(2)} + input VAT ${taxAmount.toFixed(2)} = ${amount.toFixed(2)} paid. The VAT is claimable, not an expense.`
+                          : `مصروف ${(amount - taxAmount).toFixed(2)} + ضريبة مدخلات ${taxAmount.toFixed(2)} = ${amount.toFixed(2)} مدفوعة. الضريبة قابلة للخصم ولا تُحمَّل مصروفاً.`}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm text-gray-600 dark:text-gray-400" suppressHydrationWarning>
