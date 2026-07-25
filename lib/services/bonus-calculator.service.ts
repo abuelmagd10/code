@@ -223,6 +223,28 @@ export async function calculateBonusForPaidInvoice(
     return { ok: false, skipped: false, error: `bonus insert failed: ${insertErr.message}` }
   }
 
+  // ── v3.74.822: إثبات العمولة محاسبياً وقت استحقاقها ──────────────────
+  // كانت العمولة تُحسب وتُخزَّن ولا تدخل الدفاتر إطلاقاً: لا مصروف عمولات
+  // ولا التزام تجاه الموظف — فالشركة مدينة بمبلغ لا يظهر فى أى تقرير، وربحها
+  // يبدو أعلى من حقيقته حتى شهر الصرف. القيد الآن:
+  //   مدين 5215 عمولات ومكافآت البيع / دائن 2136 عمولات ومكافآت مستحقة
+  // وعند صرفها مع المرتب تُحمَّل على الالتزام لا على المصروف (فلا ازدواج).
+  // الفشل هنا لا يُبطل احتساب العمولة — يُسجَّل ليُعالج، لأن الحرمان من
+  // العمولة أسوأ من تأخر قيدها.
+  if (bonus?.id) {
+    try {
+      const { error: accrualErr } = await admin.rpc('post_bonus_accrual_atomic', {
+        p_bonus_id: bonus.id,
+        p_user_id: actorUserId ?? null,
+      })
+      if (accrualErr) {
+        console.error('[bonus] accrual posting failed', { bonusId: bonus.id, error: accrualErr.message })
+      }
+    } catch (e: any) {
+      console.error('[bonus] accrual posting threw', { bonusId: bonus.id, error: e?.message })
+    }
+  }
+
   // ── Audit log (best-effort) ─────────────────────────────────────────
   try {
     await admin.from("audit_logs").insert({

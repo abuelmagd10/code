@@ -186,6 +186,22 @@ export async function reverseBonusForSalesReturn(
       .select("id, parent_bonus_id, bonus_amount, status, user_id")
       .single()
 
+    // v3.74.822 — الاسترداد يُعكس دفترياً أيضاً: مدين الالتزام / دائن مصروف
+    // العمولات. بدونه يبقى المصروف والالتزام على قيمتهما رغم إلغاء البيعة.
+    if (!insertErr && adjustment?.id) {
+      try {
+        const { error: accrualErr } = await admin.rpc('post_bonus_accrual_atomic', {
+          p_bonus_id: adjustment.id,
+          p_user_id: actorUserId ?? null,
+        })
+        if (accrualErr) {
+          console.error('[bonus] clawback accrual failed', { bonusId: adjustment.id, error: accrualErr.message })
+        }
+      } catch (e: any) {
+        console.error('[bonus] clawback accrual threw', { bonusId: adjustment.id, error: e?.message })
+      }
+    }
+
     if (insertErr) {
       // 23505 = the idempotency unique index — treat as already-processed
       if ((insertErr as any).code === '23505') continue
