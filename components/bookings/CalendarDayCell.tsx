@@ -14,6 +14,10 @@ interface CalendarDayCellProps {
 const DAY_LABELS_AR = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"]
 const DAY_LABELS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
+// v3.74.825 — الحد الذى تبدأ بعده الخلية بالتمرير: عنده يظهر عدّاد اليوم
+// ليعرف المستخدم أن هناك ما يستحق التمرير.
+const MAX_VISIBLE = 3
+
 export function CalendarDayCell({
   date,
   bookings,
@@ -32,7 +36,20 @@ export function CalendarDayCell({
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs text-muted-foreground">{dayName}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">{dayName}</span>
+          {/* v3.74.825 — عدّاد اليوم: يخبرك أن فى الخلية أكثر مما يظهر
+              فتعرف أن تُمرّر، بدل أن تكتشف ذلك بالمصادفة. */}
+          {bookings.length > MAX_VISIBLE && (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full
+                         bg-muted text-muted-foreground"
+              title={isAr ? `${bookings.length} حجوزات فى هذا اليوم` : `${bookings.length} bookings this day`}
+            >
+              {bookings.length}
+            </span>
+          )}
+        </div>
         <span
           className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full
             ${isToday ? "bg-orange-600 text-white" : "text-foreground"}`}
@@ -41,9 +58,21 @@ export function CalendarDayCell({
         </span>
       </div>
 
-      {/* Events (max 3, then "+N more") */}
-      <div className="space-y-0.5 flex-1">
-        {bookings.slice(0, 3).map((b) => (
+      {/* v3.74.825 — كل حجوزات اليوم داخل الخلية مع تمرير رأسى.
+          كانت الخلية تعرض ثلاثة فقط ثم «+N أخرى» — نص جامد لا يُنقر ولا
+          يفتح شيئاً، فيبقى الحجز الرابع مخفياً بلا طريقة لرؤيته من التقويم
+          إطلاقاً. الآن تُعرض كلها ويُمرَّر عليها، والارتفاع محدود فلا تتمدد
+          الخلية وتكسر شبكة الشهر. */}
+      <div
+        className="space-y-0.5 flex-1 max-h-[132px] overflow-y-auto pe-0.5
+                   [scrollbar-width:thin] [scrollbar-color:hsl(var(--muted-foreground)/0.35)_transparent]
+                   [&::-webkit-scrollbar]:w-1.5
+                   [&::-webkit-scrollbar-thumb]:rounded-full
+                   [&::-webkit-scrollbar-thumb]:bg-muted-foreground/30
+                   hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/50
+                   [&::-webkit-scrollbar-track]:bg-transparent"
+      >
+        {bookings.map((b) => (
           <CalendarEventCard
             key={b.id}
             booking={b}
@@ -52,11 +81,6 @@ export function CalendarDayCell({
             onClick={onEventClick}
           />
         ))}
-        {bookings.length > 3 && (
-          <span className="text-xs text-muted-foreground px-1">
-            +{bookings.length - 3} {lang !== "en" ? "أخرى" : "more"}
-          </span>
-        )}
       </div>
     </div>
   )
