@@ -30,6 +30,22 @@ export async function POST(
       )
     }
 
+    // v3.74.829 — مخزنا الصرف والاستلام شرط للإصدار: من أين تخرج الخامات،
+    // وإلى أين يدخل المنتج التام. كان الحارس فى القاعدة يرفض بلغة إنجليزية
+    // خام تصل للمستخدم كما هى («requires issue and receipt warehouses»)
+    // بلا أن تقول **أيهما** الناقص ولا أين يُضبط. يُفحص هنا بالعربية،
+    // ويُسمّى الناقص تحديداً.
+    const missingWarehouses: string[] = []
+    if (!(existing as any).issue_warehouse_id) missingWarehouses.push("مخزن صرف الخامات")
+    if (!(existing as any).receipt_warehouse_id) missingWarehouses.push("مخزن استلام المنتج التام")
+    if (missingWarehouses.length > 0) {
+      throw new ManufacturingApiError(
+        400,
+        `لا يمكن إصدار أمر الإنتاج قبل تحديد ${missingWarehouses.join(" و")} — ` +
+        `افتح «معلومات الأمر» واختر ${missingWarehouses.length > 1 ? "المخزنين" : "المخزن"} ثم أعد المحاولة.`
+      )
+    }
+
     const { data, error } = await admin.rpc("release_manufacturing_production_order_atomic", {
       p_company_id: companyId,
       p_production_order_id: id,

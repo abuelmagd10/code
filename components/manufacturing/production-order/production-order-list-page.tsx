@@ -90,7 +90,9 @@ export function ProductionOrderListPage() {
     q: "",
   })
   const [createForm, setCreateForm] = useState<ProductionOrderCreatePayload>(EMPTY_CREATE_FORM)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  // v3.74.829 — مفتوح افتراضياً: بداخله حقلان **مطلوبان** للإصدار، وطىّ
+  // المطلوب يجعل المستخدم يكمل النموذج وهو يظن أنه أتمّه.
+  const [showAdvanced, setShowAdvanced] = useState(true)
   const [autoCascading, setAutoCascading] = useState(false)
 
   useEffect(() => {
@@ -290,6 +292,28 @@ export function ProductionOrderListPage() {
         title: copy.list.createValidationTitle,
         description: copy.list.createValidationDescription,
       })
+      return
+    }
+
+    // v3.74.829 — المخزنان **شرط للإصدار** لا إعداد متقدم: بدونهما يُنشأ
+    // الأمر ويبدو سليماً ثم يُصد عند «إصدار الأمر للتنفيذ» برسالة من قاعدة
+    // البيانات. يُمنع الإنشاء ناقصاً من الأصل، ويُسمّى الناقص تحديداً.
+    const missingWh: string[] = []
+    if (!createForm.issue_warehouse_id?.trim()) {
+      missingWh.push(appLang === "ar" ? "مستودع صرف الخامات" : "the issue warehouse")
+    }
+    if (!createForm.receipt_warehouse_id?.trim()) {
+      missingWh.push(appLang === "ar" ? "مستودع استلام المنتج التام" : "the receipt warehouse")
+    }
+    if (missingWh.length > 0) {
+      toast({
+        variant: "destructive",
+        title: appLang === "ar" ? "بيانات ناقصة" : "Missing information",
+        description: appLang === "ar"
+          ? `اختر ${missingWh.join(" و")} — بدونهما لا يمكن إصدار الأمر للتنفيذ.`
+          : `Select ${missingWh.join(" and ")} — without them the order cannot be released.`,
+      })
+      setShowAdvanced(true)
       return
     }
 
@@ -725,7 +749,13 @@ export function ProductionOrderListPage() {
                 {showAdvanced
                   ? <ChevronUp className="h-4 w-4" />
                   : <ChevronDown className="h-4 w-4" />}
-                ⚙️ {appLang === "ar" ? "إعدادات متقدمة (المستودعات، التواريخ، الملاحظات)" : "Advanced Settings (Warehouses, Dates, Notes)"}
+                {/* v3.74.829 — لم تعد «متقدمة»: المستودعان مطلوبان للإصدار،
+                    وإخفاؤهما خلف قسم مطوى بلا نجمة هو ما جعل الأمر يُنشأ
+                    ناقصاً ثم يُصد عند التنفيذ برسالة من قاعدة البيانات. */}
+                ⚙️ {appLang === "ar"
+                  ? "المستودعات (مطلوبة) والتواريخ والملاحظات"
+                  : "Warehouses (required), dates and notes"}
+                <span className="text-red-500">*</span>
               </span>
               {(createForm.issue_warehouse_id || createForm.receipt_warehouse_id || createForm.planned_start_at || createForm.planned_end_at || createForm.notes) && (
                 <Badge variant="secondary" className="text-xs">{appLang === "ar" ? "تم التعبئة" : "Filled"}</Badge>
@@ -735,7 +765,10 @@ export function ProductionOrderListPage() {
             {showAdvanced && (
               <div className="grid gap-4 sm:grid-cols-2 border-t border-slate-200 dark:border-slate-700 px-4 py-4">
                 <div className="space-y-2">
-                  <Label>{appLang === "ar" ? "مستودع الصرف (المواد الخام)" : "Issue Warehouse (Raw Materials)"}</Label>
+                  <Label>
+                    {appLang === "ar" ? "مستودع الصرف (المواد الخام)" : "Issue Warehouse (Raw Materials)"}{" "}
+                    <span className="text-red-500">*</span>
+                  </Label>
                   <WarehouseSelector
                     value={createForm.issue_warehouse_id || ""}
                     onChange={(id) => setCreateForm((c) => ({ ...c, issue_warehouse_id: id }))}
@@ -744,7 +777,10 @@ export function ProductionOrderListPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{appLang === "ar" ? "مستودع الاستلام (المنتج النهائى)" : "Receipt Warehouse (Finished Goods)"}</Label>
+                  <Label>
+                    {appLang === "ar" ? "مستودع الاستلام (المنتج النهائى)" : "Receipt Warehouse (Finished Goods)"}{" "}
+                    <span className="text-red-500">*</span>
+                  </Label>
                   <WarehouseSelector
                     value={createForm.receipt_warehouse_id || ""}
                     onChange={(id) => setCreateForm((c) => ({ ...c, receipt_warehouse_id: id }))}
