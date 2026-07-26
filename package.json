@@ -57,6 +57,7 @@
     "check:lockfile": "node scripts/check-lockfile-in-sync.js",
     "check:migration-db": "node scripts/check-migration-matches-db.js",
     "check:signup": "node scripts/verify-signup-path.js",
+    "check:audit-safe": "node scripts/check-audit-cannot-abort.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
