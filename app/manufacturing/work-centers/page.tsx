@@ -39,6 +39,9 @@ interface WorkCenter {
   cost_rate_uom?: string | null
   cost_rates_effective_from?: string | null
   cost_center_id?: string | null
+  // v3.74.845
+  overhead_absorption_base?: string | null
+  labour_staffing_model?: string | null
 }
 
 interface Branch { id: string; name: string; code: string }
@@ -53,6 +56,9 @@ const EMPTY_FORM = {
   variable_overhead_rate: "", fixed_overhead_rate: "",
   cost_rate_uom: "per_hour",
   cost_center_id: "",
+  // v3.74.845 — أساس تحميل الأعباء وطبيعة العمالة
+  overhead_absorption_base: "machine_hours",
+  labour_staffing_model: "mixed",
 }
 
 const COST_UOM_LABELS: Record<string, string> = {
@@ -177,6 +183,8 @@ export default function WorkCentersPage() {
       variable_overhead_rate: wc.variable_overhead_rate ? wc.variable_overhead_rate.toString() : "",
       fixed_overhead_rate: wc.fixed_overhead_rate ? wc.fixed_overhead_rate.toString() : "",
       cost_rate_uom: wc.cost_rate_uom || "per_hour",
+      overhead_absorption_base: wc.overhead_absorption_base || "machine_hours",
+      labour_staffing_model: wc.labour_staffing_model || "mixed",
     })
     setDialogOpen(true)
   }
@@ -328,7 +336,19 @@ export default function WorkCentersPage() {
 
               <div className="space-y-2 sm:col-span-2">
                 <Label>{t("Work Center Type", "نوع المحطة")}</Label>
-                <Select value={formData.work_center_type} onValueChange={(v) => setFormData({ ...formData, work_center_type: v })} disabled={saving}>
+                <Select
+                  value={formData.work_center_type}
+                  onValueChange={(v) =>
+                    setFormData({
+                      ...formData,
+                      work_center_type: v,
+                      // v3.74.845 — الورشة اليدوية أعباؤها تسيرها العمالة لا الآلة.
+                      // يُقترح الأساس تلقائياً، ويبقى للمستخدم تغييره.
+                      overhead_absorption_base: v === "labor_group" ? "labour_hours" : "machine_hours",
+                    })
+                  }
+                  disabled={saving}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="machine">{t("⚙️ Machine — a single device that operates on its own", "⚙️ آلة — جهاز واحد يشتغل لوحده")}</SelectItem>
@@ -467,6 +487,61 @@ export default function WorkCentersPage() {
                     <Label className="text-sm">{t("Fixed Overheads", "مصاريف ثابتة")}</Label>
                     <Input type="number" min="0" step="0.01" value={formData.fixed_overhead_rate} onChange={(e) => setFormData({ ...formData, fixed_overhead_rate: e.target.value })} placeholder="0" disabled={saving} />
                     <p className="text-xs text-slate-400">{t("Fixed monthly expenses (rent, insurance, routine maintenance) allocated per hour.", "مصاريف ثابتة شهرياً (إيجار، تأمين، صيانة دورية) موزعة على الساعة.")}</p>
+                  </div>
+                </div>
+
+                {/* v3.74.845 — أساس تحميل الأعباء + طبيعة العمالة */}
+                <div className="grid gap-3 sm:grid-cols-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <div className="space-y-1">
+                    <Label className="text-sm">{t("Overheads are absorbed on", "المصاريف تتحمّل على أساس")}</Label>
+                    <Select value={formData.overhead_absorption_base} onValueChange={(v) => setFormData({ ...formData, overhead_absorption_base: v })} disabled={saving}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="machine_hours">{t("⚙️ Machine hours", "⚙️ ساعات الآلة")}</SelectItem>
+                        <SelectItem value="labour_hours">{t("👷 Labour hours", "👷 ساعات العمالة")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-slate-400">
+                      {formData.overhead_absorption_base === "labour_hours"
+                        ? t(
+                            "The variable and fixed overheads above are multiplied by the operation's LABOUR minutes. Choose this for a hand workshop: the burden follows the people, and a bench with no machine would otherwise absorb nothing.",
+                            "المصاريف المتغيرة والثابتة أعلاه تتضرب فى «زمن العمالة» بالعملية. اختر ده للورشة اليدوية: الأعباء بتسير مع الناس، ولو اخترت ساعات الآلة والورشة بلا آلة تبقى الأعباء صفر والمنتج يخرج بتكلفة ناقصة.",
+                          )
+                        : t(
+                            "The variable and fixed overheads above are multiplied by the operation's MACHINE minutes. Choose this for a machine or a production line, where the burden follows machine running time.",
+                            "المصاريف المتغيرة والثابتة أعلاه تتضرب فى «زمن الآلة» بالعملية. اختر ده للآلة أو خط الإنتاج، لأن الأعباء بتسير مع تشغيل الآلة.",
+                          )}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {t(
+                        "Note: \"Machine Operating Cost\" always follows machine minutes — it pays for a machine, so no machine time means no machine cost.",
+                        "ملحوظة: «تكلفة تشغيل الآلة» بتتحسب دايماً على زمن الآلة، لأنها مقابل آلة — ولو مفيش زمن آلة تبقى بصفر.",
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-sm">{t("Who works here", "طبيعة العمالة هنا")}</Label>
+                    <Select value={formData.labour_staffing_model} onValueChange={(v) => setFormData({ ...formData, labour_staffing_model: v })} disabled={saving}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="casual">{t("🧰 Daily casual workers", "🧰 عمالة مؤقتة باليومية")}</SelectItem>
+                        <SelectItem value="salaried">{t("🪪 Salaried employees", "🪪 موظفون بمرتب شهرى")}</SelectItem>
+                        <SelectItem value="mixed">{t("🔀 Both", "🔀 الاتنين معاً")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-slate-400">
+                      {t(
+                        "This does not block anything — it records what \"Labor Cost\" above means, and tells the variance report where the actual cost comes from: cash paid to casual workers (account 5211), or a share of the monthly payroll.",
+                        "ده ما بيمنعش حاجة — بس بيسجّل «تكلفة العامل» فوق دى معناها إيه، وبيقول لتقرير الانحراف التكلفة الفعلية جاية منين: نقدية مصروفة للعمالة المؤقتة (حساب ٥٢١١)، ولا حصة من المرتبات الشهرية.",
+                      )}
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      {t(
+                        "A salaried employee is never paid in cash for production work — the system records his hours only, and his pay is settled with the monthly payroll. Paying him twice is refused.",
+                        "الموظف اللى له مرتب ما بيتصرفش له نقدى على أمر الإنتاج — النظام بيسجّل ساعاته بس، وأجره بيتصرف مع المرتب الشهرى. ولو حد حاول يصرف له، النظام بيرفض عشان ما يقبضش مرتين.",
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>

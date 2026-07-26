@@ -17,7 +17,12 @@ const WORK_CENTER_SELECT = [
   "capacity_uom, nominal_capacity_per_hour, available_hours_per_day, efficiency_percent",
   "labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate",
   "cost_rate_uom, cost_rates_effective_from, cost_center_id",
+  // v3.74.845 — أساس تحميل الأعباء وطبيعة العمالة
+  "overhead_absorption_base, labour_staffing_model",
 ].join(", ")
+
+const OVERHEAD_BASES = ["machine_hours", "labour_hours"] as const
+const STAFFING_MODELS = ["casual", "salaried", "mixed"] as const
 
 /**
  * PATCH /api/manufacturing/work-centers/[id]
@@ -36,6 +41,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       cost_rate_uom,
       // v3.74.843 — مركز التكلفة، وبدونه يرفض حارس القاعدة تفعيل المركز
       cost_center_id,
+      // v3.74.845 — على أى ساعات تُحمَّل الأعباء، وطبيعة العمالة بالمركز
+      overhead_absorption_base, labour_staffing_model,
     } = body
 
     if (!code?.trim()) return jsonError(400, "كود مركز العمل مطلوب")
@@ -102,6 +109,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       cost_center_id: cost_center_id || null,
       updated_by: user.id,
       updated_at: new Date().toISOString(),
+    }
+    // v3.74.845 — تُكتب فقط إذا أرسلتها الشاشة، فلا يُصفَّر إعداد قائم
+    // من مسار قديم لا يعرف الحقلين.
+    if (OVERHEAD_BASES.includes(overhead_absorption_base)) {
+      updateData.overhead_absorption_base = overhead_absorption_base
+    }
+    if (STAFFING_MODELS.includes(labour_staffing_model)) {
+      updateData.labour_staffing_model = labour_staffing_model
     }
     if (costRatesChanged) {
       updateData.cost_rates_effective_from = new Date().toISOString()

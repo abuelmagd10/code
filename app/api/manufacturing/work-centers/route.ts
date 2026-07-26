@@ -16,7 +16,12 @@ const WORK_CENTER_SELECT = [
   "capacity_uom, nominal_capacity_per_hour, available_hours_per_day, efficiency_percent",
   "labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate",
   "cost_rate_uom, cost_rates_effective_from, cost_center_id",
+  // v3.74.845 — أساس تحميل الأعباء وطبيعة العمالة
+  "overhead_absorption_base, labour_staffing_model",
 ].join(", ")
+
+const OVERHEAD_BASES = ["machine_hours", "labour_hours"] as const
+const STAFFING_MODELS = ["casual", "salaried", "mixed"] as const
 
 /**
  * GET /api/manufacturing/work-centers
@@ -63,6 +68,8 @@ export async function POST(request: NextRequest) {
       // وأعباؤه، ويرفض حارس القاعدة تفعيله. كان الحقل غائباً عن المسار
       // والشاشة معاً، فكان المنع بلا طريق للامتثال.
       cost_center_id,
+      // v3.74.845 — على أى ساعات تُحمَّل الأعباء، وطبيعة العمالة بالمركز
+      overhead_absorption_base, labour_staffing_model,
     } = body
 
     if (!code?.trim()) return jsonError(400, "كود مركز العمل مطلوب")
@@ -112,6 +119,12 @@ export async function POST(request: NextRequest) {
         cost_rate_uom: normalizedCostUom,
         cost_rates_effective_from: hasCostRates ? new Date().toISOString() : null,
         cost_center_id: cost_center_id || null,
+        overhead_absorption_base: OVERHEAD_BASES.includes(overhead_absorption_base)
+          ? overhead_absorption_base
+          : (work_center_type === "labor_group" ? "labour_hours" : "machine_hours"),
+        labour_staffing_model: STAFFING_MODELS.includes(labour_staffing_model)
+          ? labour_staffing_model
+          : "mixed",
         created_by: user.id,
         updated_by: user.id,
       })

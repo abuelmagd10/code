@@ -434,8 +434,19 @@ export interface ConversionCostBreakdown {
  *   labor_cost         = labor_hours × labor_cost_rate × (100 / efficiency_percent)
  *   machine_hours      = machine_time_minutes / 60
  *   machine_cost       = machine_hours × machine_cost_rate
- *   variable_overhead  = machine_hours × variable_overhead_rate
- *   fixed_overhead     = machine_hours × fixed_overhead_rate
+ *   absorption_hours   = machine_hours  (overhead_absorption_base = 'machine_hours')
+ *                      | labor_hours    (overhead_absorption_base = 'labour_hours')
+ *   variable_overhead  = absorption_hours × variable_overhead_rate
+ *   fixed_overhead     = absorption_hours × fixed_overhead_rate
+ *
+ * v3.74.845 — overhead used to be absorbed on machine hours unconditionally.
+ * That is right for a machine-paced work centre and wrong for a hand-assembly
+ * bench, where the overhead is driven by the people, not by a machine that may
+ * not exist. A hand bench recorded zero machine minutes and therefore absorbed
+ * zero overhead, so the finished product carried labour but no factory burden.
+ * Each work centre now declares its own base. `machine_cost_rate` deliberately
+ * stays on machine hours in both cases: it pays for a machine, and no machine
+ * hours means no machine cost.
  *
  * Only "completed" operations are included (status = 'completed').
  */
@@ -453,7 +464,8 @@ export async function calculateConversionCost(
       manufacturing_work_centers!inner(
         labor_cost_rate, machine_cost_rate,
         variable_overhead_rate, fixed_overhead_rate,
-        cost_rate_uom, efficiency_percent
+        cost_rate_uom, efficiency_percent,
+        overhead_absorption_base
       )
     `)
     .eq("company_id", params.companyId)
@@ -492,10 +504,18 @@ export async function calculateConversionCost(
     // Efficiency adjustment for labor: if efficiency=95%, actual time = planned × (100/95)
     const efficiencyMultiplier = efficiency > 0 ? 100 / efficiency : 1
 
+    // v3.74.845 — the work centre decides what drives its overhead. The DB
+    // column is NOT NULL DEFAULT 'machine_hours', so the fallback below only
+    // matters if this ever runs against a database older than 845.
+    const absorptionHours =
+      String(wc.overhead_absorption_base || "machine_hours") === "labour_hours"
+        ? laborHours
+        : machineHours
+
     const opLabor = laborHours * laborRate * efficiencyMultiplier
     const opMachine = machineHours * machineRate
-    const opVarOh = machineHours * varOhRate
-    const opFixOh = machineHours * fixOhRate
+    const opVarOh = absorptionHours * varOhRate
+    const opFixOh = absorptionHours * fixOhRate
 
     totalLabor += opLabor
     totalMachine += opMachine

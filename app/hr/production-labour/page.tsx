@@ -139,7 +139,11 @@ export default function ProductionLabourPage() {
           .in("sub_type", ["cash", "bank"]).eq("is_active", true).order("account_code"),
         supabase.from("casual_workers").select("id, name, phone")
           .eq("company_id", cid).eq("is_active", true).order("name"),
-        supabase.from("employees").select("id, name").eq("company_id", cid).order("name").limit(300),
+        // v3.74.845 — كان العمود المقروء `name` وهو غير موجود فى جدول الموظفين
+        // (الصحيح `full_name`)، فكانت قائمة الموظفين تخرج فارغة دائماً بلا رسالة.
+        // و`base_salary` مطلوب لأنه الحقيقة التى تقرر منع الصرف النقدى المزدوج.
+        supabase.from("employees").select("id, full_name, base_salary")
+          .eq("company_id", cid).order("full_name").limit(300),
         supabase.from("production_labour_payments")
           .select("id, payment_no, period_from, period_to, labour_type, payment_mode, total_amount, estimated_amount, status, production_order_id")
           .eq("company_id", cid).order("created_at", { ascending: false }).limit(100),
@@ -208,7 +212,18 @@ export default function ProductionLabourPage() {
     if (r) { setShowForm(false); setLines(EMPTY_LINES) }
   }
 
-  const people = labourType === "casual" ? workers : employees
+  // v3.74.845 — التسمية موحَّدة للقائمتين: العامل المؤقت `name` والموظف `full_name`
+  const people = labourType === "casual"
+    ? workers.map((w: any) => ({ ...w, label: w.name, salaried: false }))
+    : employees.map((e: any) => ({ ...e, label: e.full_name, salaried: Number(e.base_salary || 0) > 0 }))
+
+  // الموظف الذى له مرتب أساسى يُسجَّل بالساعات فقط: أجره يُصرف مع المرتب الشهرى،
+  // فصرفه نقدياً هنا يعنى قبضه مرتين وتحميل التكلفة مرتين. القاعدة ترفضه أيضاً؛
+  // هذا هنا لكى يفهم المستخدم **قبل** أن يصطدم بالرفض.
+  const salariedInLines = lines
+    .map((l) => people.find((p: any) => p.id === l.personId))
+    .filter((p: any) => p?.salaried)
+  const blockedBySalaried = mode === "paid" && salariedInLines.length > 0
   const orderNo = (id: string) => orders.find((o) => o.id === id)?.order_no || "—"
 
   return (
@@ -363,21 +378,44 @@ export default function ProductionLabourPage() {
                       >
                         <SelectTrigger><SelectValue placeholder={t("Worker / employee", "العامل / الموظف")} /></SelectTrigger>
                         <SelectContent>
-                          {people.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                          {people.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.label}{p.salaried ? t(" — salaried", " — بمرتب") : ""}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <Input type="number" min="0" step="0.5" placeholder={t("Hours", "ساعات")} value={l.hours}
                              disabled={busy}
                              onChange={(e) => setLines((c) => c.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)))} />
-                      <Input type="number" min="0" step="0.01" placeholder={t("Amount paid", "المبلغ المدفوع")} value={l.amount}
-                             disabled={busy || mode === "hours_only"}
-                             onChange={(e) => setLines((c) => c.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
+                      {(() => {
+                        // v3.74.845 — خانة المبلغ تُقفل للموظف صاحب المرتب،
+                        // فلا يُدخل المستخدم رقماً ثم يُفاجأ بالرفض عند الحفظ.
+                        const person: any = people.find((p: any) => p.id === l.personId)
+                        const lockedSalaried = !!person?.salaried
+                        return (
+                          <Input type="number" min="0" step="0.01"
+                                 placeholder={lockedSalaried ? t("With payroll", "مع المرتب") : t("Amount paid", "المبلغ المدفوع")}
+                                 value={lockedSalaried ? "" : l.amount}
+                                 disabled={busy || mode === "hours_only" || lockedSalaried}
+                                 onChange={(e) => setLines((c) => c.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
+                        )
+                      })()}
                       <Button variant="ghost" size="sm" disabled={busy || lines.length === 1}
                               onClick={() => setLines((c) => c.filter((_, j) => j !== i))}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
+
+                  {blockedBySalaried && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                      {t(
+                        `${salariedInLines.map((p: any) => p.label).join("، ")} — already paid a monthly salary. Production wages cannot be paid to them in cash, or they would be paid twice and the cost charged twice. Switch the method to "Record hours only": the hours are still costed to the production order, and the pay is settled with the monthly payroll.`,
+                        `${salariedInLines.map((p: any) => p.label).join("، ")} — بيقبض مرتب شهرى. مينفعش يتصرف له أجر نقدى على أمر الإنتاج، لأنه ساعتها بيقبض مرتين والتكلفة بتتحمّل مرتين. غيّر الطريقة إلى «تسجيل ساعات فقط»: ساعاته هتفضل محمّلة على أمر الإنتاج، وأجره بيتصرف مع المرتب الشهرى.`,
+                      )}
+                    </div>
+                  )}
                   <Button variant="outline" size="sm" disabled={busy} className="gap-2"
                           onClick={() => setLines((c) => [...c, { key: String(Date.now()), personId: "", hours: "8", amount: "" }])}>
                     <Plus className="h-3 w-3" />{t("Add line", "إضافة سطر")}
@@ -387,7 +425,7 @@ export default function ProductionLabourPage() {
                 <div className="flex items-center justify-between border-t pt-3 dark:border-slate-800">
                   <span className="text-sm font-semibold">{t("Total", "الإجمالى")}: {money(total)}</span>
                   <div className="flex gap-2">
-                    <Button onClick={createPayment} disabled={busy || !orderId || (mode === "paid" && !accountId)} className="gap-2">
+                    <Button onClick={createPayment} disabled={busy || !orderId || (mode === "paid" && !accountId) || blockedBySalaried} className="gap-2">
                       {busy && <Loader2 className="h-4 w-4 animate-spin" />}{t("Save as draft", "حفظ كمسودة")}
                     </Button>
                     <Button variant="ghost" onClick={() => setShowForm(false)}>{t("Cancel", "إلغاء")}</Button>
