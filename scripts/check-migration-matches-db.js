@@ -47,12 +47,24 @@ const requireDb = args.includes("--require-db");
 let files = args.filter((a) => !a.startsWith("--"));
 
 // ── which files ────────────────────────────────────────────────────────────
-// Default to migrations touched in this release: unstaged AND staged, because
-// `git status` alone reports both and `git diff` alone misses what is staged —
-// a distinction that has cost this project a red build before.
+// Migrations touched in this release: unstaged, staged, AND untracked.
+//
+// v3.74.842 — untracked was missing, and that is the common case.
+// `git diff` lists modified TRACKED files; a brand-new migration is untracked
+// until it is staged. So on any release where the migration had not been staged
+// before this check ran, the check found nothing and reported success — a guard
+// that verified nothing while announcing that all was well. It happened on
+// 3.74.841: "no migration files changed" for a release whose entire substance
+// was a new 703-line migration. Whether it passes must not depend on the order
+// of `git add` in whatever script happens to call it.
 if (files.length === 0) {
   const seen = new Set();
-  for (const cmd of ["git diff --name-only", "git diff --cached --name-only"]) {
+  const commands = [
+    "git diff --name-only",                        // modified, not yet staged
+    "git diff --cached --name-only",               // staged
+    "git ls-files --others --exclude-standard",    // new, never added
+  ];
+  for (const cmd of commands) {
     let out = "";
     try {
       out = execSync(cmd, { cwd: repoRoot, encoding: "utf8" });

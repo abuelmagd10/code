@@ -81,8 +81,21 @@ try {
   }
 
   const existing = fs.readFileSync(file, "utf8");
-  if (existing.includes(`FUNCTION public.${functionName}(`)) {
-    console.log(`! ${path.basename(file)} already contains ${functionName} — nothing appended.`);
+
+  // v3.74.841 — look for a DEFINITION, not a mention.
+  // The old test was `existing.includes("FUNCTION public.<name>(")`, which a
+  // `CREATE TRIGGER ... EXECUTE FUNCTION public.<name>()` line satisfies. So a
+  // migration that merely *attached* a trigger was told the function was
+  // already present, and the body was silently never appended — leaving a file
+  // that creates a trigger pointing at a function it never defines. Applying it
+  // to a fresh database fails at the trigger, and nothing upstream notices,
+  // because the file does mention the name.
+  const definitionRe = new RegExp(
+    `CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+(?:public\\.)?"?${functionName}"?\\s*\\(`,
+    "i"
+  );
+  if (definitionRe.test(existing)) {
+    console.log(`! ${path.basename(file)} already defines ${functionName} — nothing appended.`);
     process.exit(0);
   }
 
