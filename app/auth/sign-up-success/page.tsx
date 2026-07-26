@@ -27,8 +27,11 @@ import { createClient } from "@/lib/supabase/client"
 // the issue entirely — see v3.74.287 commit for the full story.
 function translateAuthError(msg: string): string {
   const lower = (msg || "").toLowerCase()
-  if (lower.includes("token has expired") || lower.includes("expired")) {
-    return "انتهت صلاحية الكود. اطلب كود جديد."
+  // v3.74.837 — «اطلب كود جديد» وحدها تُغرِق مَن حسابه مؤكَّد بالفعل: لن يصله
+  // كود أبداً لأنه لا يوجد ما يُؤكَّد، فيُعيد المحاولة بلا نهاية. تُذكر له
+  // مخرَجه فى نفس الرسالة.
+  if (lower.includes("token has expired") || lower.includes("expired") || lower.includes("otp_expired")) {
+    return "انتهت صلاحية الكود. اطلب كود جديد — ولو حسابك مؤكَّد بالفعل فلن يُرسل كود، استخدم «تسجيل الدخول» تحت."
   }
   if (lower.includes("invalid") && (lower.includes("token") || lower.includes("otp") || lower.includes("code"))) {
     return "الكود اللى كتبته مش صحيح. تأكد منه أو اطلب كود جديد."
@@ -138,7 +141,17 @@ export default function SignUpSuccessPage() {
         setError(translateAuthError(rErr.message))
         return
       }
-      setResendMessage("✓ بعتنا كود جديد على بريدك. شوف الإيميل.")
+      // v3.74.837 — لا تُعلن نجاحاً لم يحدث.
+      // `supabase.auth.resend({type:'signup'})` **لا تُرجع خطأً** لحساب مؤكَّد
+      // بالفعل — ولا تُرسل شيئاً كذلك (لا يوجد ما يُؤكَّد، وSupabase تتعمّد ألا
+      // تكشف وجود البريد). وكانت الشاشة تقول «✓ بعتنا كود جديد» فى الحالتين،
+      // فترك عميلاً حقيقياً ينتظر بريداً لن يأتى ويُعيد المحاولة، بعد أن كان
+      // حسابه مؤكَّداً منذ دقائق وكل ما يحتاجه هو تسجيل الدخول.
+      // الرسالة تُغطّى الحالتين بصدق، بلا كشف وجود البريد لمن يُجرّب بريد غيره.
+      setResendMessage(
+        "لو بريدك غير مؤكَّد، وصلك كود جديد الآن — شوف الإيميل ومجلد الـ Spam. " +
+        "ولو حسابك مؤكَّد بالفعل فلن يُرسل كود؛ استخدم «تسجيل الدخول» تحت."
+      )
       setCooldown(60)
     } catch (e: any) {
       setError(translateAuthError(e?.message || "فشل إعادة الإرسال"))
@@ -241,6 +254,17 @@ export default function SignUpSuccessPage() {
                   رجوع لصفحة الدخول
                 </Link>
               </div>
+
+              {/* v3.74.837 — المخرج الظاهر لمن حسابه مؤكَّد بالفعل.
+                  كان الرابط الرمادى الصغير هو المخرج الوحيد، فبقى عميل حقيقى
+                  يطلب كوداً لن يُرسَل — وحسابه مؤكَّد وكل ما يحتاجه الدخول.
+                  المخرج الآن زر مستقل بعنوانه الصريح، لا رابط ثانوى. */}
+              <Link
+                href="/auth/login"
+                className="mt-2 flex w-full items-center justify-center rounded-md border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                عندى حساب مؤكَّد بالفعل — تسجيل الدخول
+              </Link>
             </form>
           </CardContent>
         </Card>
