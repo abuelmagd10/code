@@ -209,6 +209,15 @@ jobs:
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
 
+      # 🔴 v3.74.836 — أول شاشة يراها عميل يدفع. سقطت على عميل حقيقى برسالة
+      # «فشل في إنشاء الشركة»، ولم يكشفها شىء: بمفتاح الخدمة ينجح الإدراج
+      # دائماً لأن auth.uid() فارغة. فيُختبر المسار بهوية مستخدم مسجَّل داخل
+      # معاملة تُلغى. بلا مفتاح القاعدة يتخطّى الفحص بتنبيه.
+      - name: Smoke-test the signup path (new company creation)
+        run: npm run check:signup || echo "::warning::signup smoke test skipped or failed - check the log"
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 
