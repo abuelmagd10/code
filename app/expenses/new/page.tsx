@@ -392,13 +392,21 @@ export default function NewExpensePage() {
           effExpenseAccountId = effExpenseAccountId || (cs as any)?.default_expense_account_id || null
           effPaymentAccountId = effPaymentAccountId || (cs as any)?.default_payment_account_id || null
           if (!effExpenseAccountId || !effPaymentAccountId) {
+            // v3.74.847 — '1010' exists in no chart; the cash account is 1110.
+            // Resolved by meaning first, code only as a back-stop.
             const { data: accts } = await supabase
               .from('chart_of_accounts')
-              .select('id, account_code')
+              .select('id, account_code, account_type, sub_type')
               .eq('company_id', companyId)
-              .in('account_code', ['5000', '1010'])
-            effExpenseAccountId = effExpenseAccountId || (accts as any[])?.find(a => a.account_code === '5000')?.id || null
-            effPaymentAccountId = effPaymentAccountId || (accts as any[])?.find(a => a.account_code === '1010')?.id || null
+              .or('account_code.in.(5000,5200,1110),sub_type.in.(cash,operating_expenses)')
+            const list = (accts as any[]) || []
+            effExpenseAccountId = effExpenseAccountId
+              || list.find(a => a.account_code === '5000')?.id
+              || list.find(a => a.account_type === 'expense' && a.sub_type === 'operating_expenses')?.id
+              || list.find(a => a.account_code === '5200')?.id || null
+            effPaymentAccountId = effPaymentAccountId
+              || list.find(a => a.account_type === 'asset' && a.sub_type === 'cash')?.id
+              || list.find(a => a.account_code === '1110')?.id || null
           }
         } catch (e) {
           console.warn('[NewExpense] account resolution for auto-post failed', e)

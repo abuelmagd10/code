@@ -23,7 +23,7 @@
  *      ✅ الهدف في التقرير المبسط: عدم إخفاء أي مشتريات تمت فعليًا حتى لو كانت المعالجة المحاسبية عبر المخزون (inventory asset)
  *    - COGS: من حسابات expense (sub_type = 'cogs' أو account_code = '5100')
  *    - المصروفات: من حسابات expense (باستثناء COGS والمشتريات والإهلاك)
- *    - الإهلاك: من حسابات expense (account_code = '5500')
+ *    - الإهلاك: من حسابات expense (sub_type = 'depreciation_expense' أو account_code = '5290')
  *
  * 3. Calculations:
  *    - مجمل الربح = المبيعات - تكلفة البضاعة المباعة (COGS)
@@ -297,9 +297,16 @@ export async function GET(request: NextRequest) {
 
     // ✅ حساب الإهلاك (من journal_entries فقط)
     let totalDepreciation = 0
+    // v3.74.847 — this matched account code '5500', which exists in no company.
+    // The depreciation account is 5290 «مصروف الإهلاك» (sub_type
+    // 'depreciation_expense'), so the filter never matched anything: the report
+    // showed depreciation = 0 and therefore OVERSTATED net profit by the whole
+    // depreciation charge, quietly and every time. Matched by meaning now.
     const depreciationLines = periodLines.filter((line: any) => {
       const coa = line.chart_of_accounts
-      return coa?.account_code === "5500"
+      return coa?.sub_type === "depreciation_expense"
+        || coa?.account_code === "5290"
+        || coa?.account_code === "5500"
     })
     for (const line of depreciationLines) {
       const debit = Number(line.debit_amount || 0)

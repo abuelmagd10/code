@@ -73,13 +73,25 @@ export async function POST(
       paymentAccountId = paymentAccountId || (settings as any)?.default_payment_account_id || null
     }
     if (!expenseAccountId || !paymentAccountId) {
+      // v3.74.847 — the cash fallback used account code '1010', which exists in
+      // no company: the seeded cash account is 1110 «الصندوق». So whenever a
+      // company had no default payment account configured, this fallback found
+      // nothing and the expense was refused with ACCOUNTS_MISSING. Resolved by
+      // MEANING now (sub_type='cash'), with codes only as a back-stop.
       const { data: accounts } = await supabase
         .from("chart_of_accounts")
-        .select("id, account_code")
+        .select("id, account_code, account_type, sub_type")
         .eq("company_id", companyId)
-        .in("account_code", ["5000", "1010"])
-      expenseAccountId = expenseAccountId || accounts?.find((a: any) => a.account_code === "5000")?.id || null
-      paymentAccountId = paymentAccountId || accounts?.find((a: any) => a.account_code === "1010")?.id || null
+        .or("account_code.in.(5000,5200,1110),sub_type.in.(cash,operating_expenses)")
+      const pickExpense = (a: any[]) =>
+        a.find((x) => x.account_code === "5000")
+        ?? a.find((x) => x.account_type === "expense" && x.sub_type === "operating_expenses")
+        ?? a.find((x) => x.account_code === "5200")
+      const pickCash = (a: any[]) =>
+        a.find((x) => x.account_type === "asset" && x.sub_type === "cash")
+        ?? a.find((x) => x.account_code === "1110")
+      expenseAccountId = expenseAccountId || pickExpense(accounts || [])?.id || null
+      paymentAccountId = paymentAccountId || pickCash(accounts || [])?.id || null
     }
 
     // Only needed when there is no entry yet; an already-posted expense just

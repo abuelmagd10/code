@@ -54,8 +54,23 @@ export async function POST(req: NextRequest) {
 
     // ── جلب دفعة الرواتب
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
+    // v3.74.847 — `payroll_runs` has no `status` column and never had one.
+    // Asking for it made PostgREST reject the whole query, so this route
+    // answered "خطأ في جلب دفعة المرتبات" on EVERY attempt and never reached
+    // the posting RPC below. Payroll had therefore never been paid through the
+    // app at all: 2 runs and 18 payslips on production, and zero payroll
+    // payment journal entries.
+    //
+    // The "already paid" pre-check that used the column is deleted rather than
+    // rebuilt on a new column, and deliberately so. post_payroll_atomic already
+    // refuses a second payment by looking for a journal entry with
+    // reference_type='payroll_payment' and reference_id = this run - it returns
+    // {idempotent:true} with the existing entry instead of posting again. The
+    // LEDGER is the record that the payroll was paid. A `status` flag beside it
+    // would be a second source of truth that can drift from the first, and the
+    // one that matters for double payment is the ledger.
     let { data: run, error: runErr } = await admin.from('payroll_runs')
-      .select('id, status')
+      .select('id')
       .eq('company_id', companyId)
       .eq('period_year', year)
       .eq('period_month', month)
@@ -63,17 +78,13 @@ export async function POST(req: NextRequest) {
 
     if (useHr && runErr && ((runErr as any).code === 'PGRST205' || String(runErr.message || '').toUpperCase().includes('PGRST205'))) {
       const clientHr = (admin as any).schema ? (admin as any).schema('hr') : admin
-      const res = await clientHr.from('payroll_runs').select('id, status').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
+      const res = await clientHr.from('payroll_runs').select('id').eq('company_id', companyId).eq('period_year', year).eq('period_month', month).maybeSingle()
       run = res.data as any
       runErr = res.error as any
     }
 
     if (runErr) return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في جلب دفعة المرتبات", runErr.message)
     if (!run?.id) return notFoundError("دفعة المرتبات", "Payroll run not found")
-
-    if (run.status === 'paid') {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "تم صرف هذه الرواتب مسبقاً", "Payroll already paid")
-    }
 
     // ── التحقق من حساب الدفع
     const { data: payAcc } = await admin.from('chart_of_accounts')
@@ -87,16 +98,49 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.BAD_REQUEST, "نوع حساب الدفع غير صحيح. يجب أن يكون حساب أصول", "Invalid payment account type")
     }
 
-    // ── جلب حساب المصاريف 6110
-    const { data: expAcc } = await admin.from('chart_of_accounts')
+    // ── حساب مصروف المرتبات: بمعناه لا برقمه
+    //
+    // v3.74.847 — this looked for account code '6110'. That code does not exist
+    // in ANY company: the seeded chart uses 5210 «الرواتب والأجور». So even with
+    // the `status` bug above fixed, every payroll payment would still have been
+    // refused with "حساب المصروفات 6110 غير موجود" - in every company, not just
+    // one. Two hard-coded assumptions, one route, and the same shape: the code
+    // ASSUMED a fact instead of ASKING the chart of accounts for it.
+    //
+    // 5210 is now tagged sub_type='salaries_expense' in the template and in
+    // every existing company, so the account is found by what it MEANS. The
+    // code list behind it is a fallback for charts that predate the tag - and
+    // it keeps 6110 so a company that really uses it is not broken by this fix.
+    let expAccId: string | null = null
+
+    const { data: byMeaning } = await admin.from('chart_of_accounts')
       .select('id')
       .eq('company_id', companyId)
-      .eq('account_code', '6110')
+      .eq('sub_type', 'salaries_expense')
+      .eq('is_active', true)
+      .limit(1)
       .maybeSingle()
+    expAccId = byMeaning?.id ?? null
 
-    if (!expAcc?.id) {
-      return apiError(HTTP_STATUS.BAD_REQUEST, "حساب المصروفات 6110 غير موجود", "Expense account 6110 missing")
+    if (!expAccId) {
+      const { data: byCode } = await admin.from('chart_of_accounts')
+        .select('id, account_code')
+        .eq('company_id', companyId)
+        .eq('account_type', 'expense')
+        .in('account_code', ['5210', '6110'])
+      // 5210 first, then the legacy 6110 - order the database does not promise
+      expAccId = (byCode || []).sort((a: any, b: any) =>
+        String(a.account_code).localeCompare(String(b.account_code)))[0]?.id ?? null
     }
+
+    if (!expAccId) {
+      return apiError(
+        HTTP_STATUS.BAD_REQUEST,
+        "لا يوجد حساب لمصروف الرواتب والأجور فى دليل الحسابات. أضف حساب مصروف «الرواتب والأجور» (٥٢١٠) ثم أعد المحاولة.",
+        "No salaries expense account in the chart of accounts"
+      )
+    }
+    const expAcc = { id: expAccId }
 
     // v3.74.45 — Enterprise rule: prevent cash overdraft on payroll payment.
     // Sum the net_salary across payslips for this run; validate against payment account.

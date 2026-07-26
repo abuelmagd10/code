@@ -39,14 +39,17 @@ const schemaPath = path.join(root, "supabase", "schema", "schema.sql")
 //
 // ٨٤٥: ٤٤ مخالفة — فُحصت الاثنتان والثلاثون (جدول.عمود) كلها على قاعدة
 //      الإنتاج فكانت **كلها مفقودة فعلاً**، لا snapshot قديم.
-// ٨٤٦: ٣١ منها أُصلحت. والثلاث عشرة الباقية **ليست أخطاء تسمية**: هى
-//      مزايا كُتب كودها ولم تُنشأ أعمدتها فى القاعدة قط —
-//        · دفع المرتبات            payroll_runs.status
-//        · اشتراك المستخدمين        companies.max_users/monthly_cost/subscription_plan
-//        · عمولات مربوطة بالمرتبات  commission_*.payroll_run_id/payout_mode/payment_*
-//        · إعادة تقييم العملات      chart_of_accounts.balance/currency_code
-//      إصلاحها قرار منتج (تُنشأ الأعمدة أم تُزال الميزة)، لا إعادة تسمية.
-const BASELINE = Number(process.env.PHANTOM_SELECT_BASELINE ?? 13)
+// ٨٤٦: ٣١ منها أُصلحت ⇒ ١٣.
+// ٨٤٧: قراءتا `payroll_runs.status` أُصلحتا ⇒ ١١. ولم يكن الحل إنشاء العمود:
+//      دفتر اليومية هو سجلّ أن المرتب صُرف، و`post_payroll_atomic` يمنع
+//      الازدواج به بالفعل — فحُذف الفحص المسبق ولم يُبنَ مصدر حقيقة ثانٍ.
+// والإحدى عشرة الباقية **ليست أخطاء تسمية**: مزايا كُتب كودها ولم تُنشأ
+// أعمدتها فى القاعدة قط —
+//   · اشتراك المستخدمين        companies.max_users/monthly_cost/subscription_plan
+//   · عمولات مربوطة بالمرتبات  commission_*.payroll_run_id/payout_mode/payment_*
+//   · إعادة تقييم العملات      chart_of_accounts.balance/currency_code
+// إصلاحها قرار منتج (تُنشأ الأعمدة أم تُزال الميزة)، لا إعادة تسمية.
+const BASELINE = Number(process.env.PHANTOM_SELECT_BASELINE ?? 11)
 
 if (!fs.existsSync(schemaPath)) {
   console.log("+ Schema snapshot not found - skipping phantom-select check.")
