@@ -46,6 +46,36 @@ if (fs.existsSync(wfDir)) {
   }
 }
 
+// v3.74.832 — لا السكربتات وحدها: **ما تقرؤه** أيضاً.
+//
+// بعد رفع `ai-governance-audit.js` (828) فشل الـCI مرة أخرى — هذه المرة
+// لأن السكربت يقرأ `knowledge/api/routes.md` وهو غير مرفوع كذلك:
+//     ENOENT: no such file or directory, open '.../knowledge/api/routes.md'
+// السكربت وصل، ومدخلاته لم تصل. فالفحص يشمل الآن ملفات البيانات التى
+// تذكرها السكربتات نصاً (knowledge/ · docs/ · supabase/schema/).
+// الشرطة البادئة اختيارية: المراجع تُكتب غالباً `root + "/knowledge/…"`.
+const DATA_REF_RE = /["'`]\.?\/?((?:knowledge|docs|supabase\/schema)\/[\w./-]+\.\w{2,4})["'`]/g
+const scriptsDir = path.join(root, "scripts")
+if (fs.existsSync(scriptsDir)) {
+  const walkScripts = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) { walkScripts(p); continue }
+      if (!/\.(js|mjs|cjs)$/.test(e.name)) continue
+      // تُجرَّد التعليقات أولاً: التعليق الشارح يقتبس المسار ليشرحه، فيلتقطه
+      // البحث ويُبلّغ عن مرجع لا وجود له فى الكود. (فخ التعليق — سادس مرة
+      // فى هذا المشروع؛ القاعدة: افحص الكود، لا ما يُقال عنه.)
+      const src = fs.readFileSync(p, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/.*$/gm, "$1")
+      for (const m of src.matchAll(DATA_REF_RE)) {
+        note(m[1], `${path.relative(root, p)} reads it`)
+      }
+    }
+  }
+  walkScripts(scriptsDir)
+}
+
 function isTracked(rel) {
   try {
     execFileSync("git", ["ls-files", "--error-unmatch", rel], { cwd: root, stdio: "ignore" })
@@ -74,8 +104,9 @@ if (untracked.length === 0 && missing.length === 0) {
 }
 
 if (untracked.length > 0) {
-  console.error(`\nX ${untracked.length} script(s) exist locally but are NOT tracked by git.`)
-  console.error("  CI will fail with MODULE_NOT_FOUND, and the deploy job will be skipped:\n")
+  console.error(`\nX ${untracked.length} file(s) exist locally but are NOT tracked by git.`)
+  console.error("  CI will fail (MODULE_NOT_FOUND for a script, ENOENT for a data file),")
+  console.error("  and the deploy job will be skipped with it:\n")
   for (const u of untracked) console.error(`    ${u.rel}\n      referenced by: ${u.where}`)
   console.error("\n  Fix: git add " + untracked.map((u) => u.rel).join(" "))
 }

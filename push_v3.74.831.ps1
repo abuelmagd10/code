@@ -31,6 +31,8 @@ $files = @(
     "app/api/manufacturing/routing-versions/[id]/route.ts",
     "scripts/check-phantom-columns.js",
     "scripts/check-lockfile-in-sync.js",
+    "scripts/check-referenced-scripts-tracked.js",
+    "knowledge/api/routes.md",
     "push_v3.74.831.ps1"
 )
 git add -- $files 2>&1 | Out-Null
@@ -64,6 +66,21 @@ if ($g -notmatch [regex]::Escape('"diff", "--name-only"')) {
     Write-Host "X the lockfile guard only compares working files - it would have missed this" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the guard asks whether the match will ARRIVE, not just whether it exists here" -ForegroundColor Green
+
+# --- (b2) the audit's INPUT file travels too ---------------------------------
+git ls-files --error-unmatch knowledge/api/routes.md 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "X knowledge/api/routes.md is not tracked - the audit dies with ENOENT" -ForegroundColor Red; exit 1
+}
+$routes = Get-Content -LiteralPath "knowledge/api/routes.md" -Raw
+if ($routes.Length -lt 5000) {
+    Write-Host "X knowledge/api/routes.md looks like a stub - an empty catalogue marks every route unused" -ForegroundColor Red; exit 1
+}
+$tracker = Get-Content -LiteralPath "scripts/check-referenced-scripts-tracked.js" -Raw
+if ($tracker -notmatch [regex]::Escape("DATA_REF_RE")) {
+    Write-Host "X the guard still checks only scripts, not the files they read" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the audit's 437-route catalogue travels with the script that reads it" -ForegroundColor Green
 
 # --- (c) the manufacturing fix from 830 is intact ---------------------------
 foreach ($f in @("app/api/manufacturing/production-orders/[id]/route.ts",
