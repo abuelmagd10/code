@@ -54,6 +54,7 @@
     "inventory:audit": "node scripts/inventory-audit.js",
     "check:scripts-tracked": "node scripts/check-referenced-scripts-tracked.js",
     "check:phantom-columns": "node scripts/check-phantom-columns.js",
+    "check:lockfile": "node scripts/check-lockfile-in-sync.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
