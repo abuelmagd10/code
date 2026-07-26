@@ -41,7 +41,7 @@ async function runTest() {
         // We need Retained Earnings (Equity) and Dividends Payable (Liability)
         const { data: accounts } = await supabase
             .from('chart_of_accounts')
-            .select('id, account_name, code, account_type')
+            .select('id, account_name, code:account_code, account_type')
             .eq('company_id', company.id)
 
         // Find or fallback (simulated logic)

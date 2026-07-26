@@ -51,19 +51,11 @@ async function main() {
     let confirmedBy = null;
     if (logs && logs.length > 0 && logs[0].user_id) {
        confirmedBy = logs[0].user_id;
-    } else {
-       // Check for inventory transaction creators
-       const { data: invTx } = await supabase
-         .from('inventory_transactions')
-         .select('created_by')
-         .eq('reference_id', pr.id)
-         .eq('transaction_type', 'purchase_return')
-         .limit(1);
-         
-       if (invTx && invTx.length > 0 && invTx[0].created_by) {
-          confirmedBy = invTx[0].created_by;
-       }
     }
+    // v3.74.846 — a second fallback used to read inventory_transactions.created_by.
+    // That column does not exist on the table, so the read always failed and the
+    // branch could never produce a value: it looked like a fallback and was none.
+    // Removed rather than repaired - the table records no creator to fall back to.
 
     if (confirmedBy) {
       const { error: updErr } = await supabase

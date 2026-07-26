@@ -66,7 +66,7 @@ export function AddCapitalDialog({ open, onOpenChange, assetId, onSuccess, lang 
 
                 let accQuery = supabase
                     .from('chart_of_accounts')
-                    .select('id, account_name, code, sub_type, branch_id')
+                    .select('id, account_name, code:account_code, sub_type, branch_id')
                     .eq('company_id', companyId)
                     .eq('is_active', true)
                     .in('sub_type', ['cash', 'bank'])

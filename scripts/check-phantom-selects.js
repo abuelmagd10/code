@@ -34,15 +34,19 @@ const path = require("path")
 const root = path.resolve(__dirname, "..")
 const schemaPath = path.join(root, "supabase", "schema", "schema.sql")
 
-// عدد المخالفات القائمة وقت كتابة الحارس (٨٤٥). الهدف **تقليلها** لا
-// تثبيتها؛ والبناء يفشل إذا **زادت**، فلا يدخل عطب جديد من هذا النوع.
+// خط الأساس. الهدف **تقليله** لا تثبيته؛ والبناء يفشل إذا **زاد**، فلا
+// يدخل عطب جديد من هذا النوع.
 //
-// وليست هذه أرقاماً نظرية: فُحصت عيّنة من اثنتى عشرة منها على قاعدة
-// الإنتاج، فكانت **كلها** أعمدة غير موجودة فعلاً — أى قراءات مكسورة
-// صامتة تعمل اليوم فى شاشات حيّة (مراكز التكلفة، دليل الحسابات،
-// المرتبات، الفواتير...). كل واحدة تعنى قائمة تظهر فارغة أو قيمة
-// تظهر بلا سبب ظاهر.
-const BASELINE = Number(process.env.PHANTOM_SELECT_BASELINE ?? 44)
+// ٨٤٥: ٤٤ مخالفة — فُحصت الاثنتان والثلاثون (جدول.عمود) كلها على قاعدة
+//      الإنتاج فكانت **كلها مفقودة فعلاً**، لا snapshot قديم.
+// ٨٤٦: ٣١ منها أُصلحت. والثلاث عشرة الباقية **ليست أخطاء تسمية**: هى
+//      مزايا كُتب كودها ولم تُنشأ أعمدتها فى القاعدة قط —
+//        · دفع المرتبات            payroll_runs.status
+//        · اشتراك المستخدمين        companies.max_users/monthly_cost/subscription_plan
+//        · عمولات مربوطة بالمرتبات  commission_*.payroll_run_id/payout_mode/payment_*
+//        · إعادة تقييم العملات      chart_of_accounts.balance/currency_code
+//      إصلاحها قرار منتج (تُنشأ الأعمدة أم تُزال الميزة)، لا إعادة تسمية.
+const BASELINE = Number(process.env.PHANTOM_SELECT_BASELINE ?? 13)
 
 if (!fs.existsSync(schemaPath)) {
   console.log("+ Schema snapshot not found - skipping phantom-select check.")

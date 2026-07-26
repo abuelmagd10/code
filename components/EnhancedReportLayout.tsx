@@ -107,7 +107,7 @@ export const EnhancedReportLayout = ({
       // تحميل مراكز التكلفة
       const { data: costCentersData } = await supabase
         .from('cost_centers')
-        .select('id, name')
+        .select('id, name:cost_center_name')
         .eq('company_id', companyId)
         .order('name')
       setCostCenters(costCentersData || [])

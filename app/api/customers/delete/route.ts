@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     const { data: salesOrders } = await db
       .from("sales_orders")
-      .select("id, order_number, status")
+      .select("id, order_number:so_number, status")
       .eq("customer_id", customerId)
       .eq("company_id", companyId)
 

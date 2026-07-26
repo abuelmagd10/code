@@ -122,7 +122,7 @@ export default function VendorCreditViewPage() {
       if (vc.cost_center_id) {
         const { data: cc } = await supabase
           .from("cost_centers")
-          .select("id, name")
+          .select("id, name:cost_center_name")
           .eq("id", vc.cost_center_id)
           .single()
         setCostCenter(cc)

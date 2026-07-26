@@ -97,7 +97,9 @@ for (const dir of ["app/api", "lib"]) {
 // بعد هجرة حديثة (مثال: management_approved_* أُضيفت فى 814 وتظهر هنا
 // زائفةً حتى يُحدَّث الـsnapshot). لذلك الرقم «سقف لا يُتجاوز» لا قائمة
 // أخطاء مؤكدة — والتحقق من كل بند يكون بمقارنته بالقاعدة الحية.
-const BASELINE = 56
+// ٨٤٦: ٥٦ ← ٥٥ — كتابة `remaining_amount` على `customer_credits` وهى عمود
+// لا وجود له، فكان الإدراج يفشل بالكامل ولا يُسجَّل رصيد دائن صافٍ للعميل قط.
+const BASELINE = 55
 
 if (offenders.length === 0) {
   console.log(`+ No route writes a column its table does not have (${tableColumns.size} tables checked).`)

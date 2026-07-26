@@ -400,7 +400,7 @@ describe('5. مرتجعات المبيعات — Sales Return Integrity', () => 
 
     const { data: returns } = await supabase
       .from('sales_returns')
-      .select('id, return_number, status, original_invoice_id, return_amount')
+      .select('id, return_number, status, original_invoice_id:invoice_id, return_amount:total_amount')
       .eq('status', 'completed')
       .limit(50)
 

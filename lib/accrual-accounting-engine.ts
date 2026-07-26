@@ -856,7 +856,7 @@ export async function createPaymentJournal(
       .from("payments")
       .select(`
         id, payment_date, amount, payment_method,
-        reference, account_id, customer_id, supplier_id,
+        reference:reference_number, account_id, customer_id, supplier_id,
         branch_id, cost_center_id, warehouse_id, company_id
       `)
       .eq("id", paymentId)

@@ -341,30 +341,46 @@ export async function syncCustomerCredit(
 
     const { data: existingCredit } = await supabase
       .from('customer_credits')
-      .select('id, remaining_amount')
+      // v3.74.846 — there is no `remaining_amount` column. The table records
+      // `amount` and how much of it has been consumed (`used_amount` /
+      // `applied_amount`); what is left is the difference. Reading a column that
+      // does not exist made this SELECT fail, and the INSERT below wrote the same
+      // phantom column - so a net customer credit was never actually recorded.
+      .select('id, amount, used_amount, applied_amount')
       .eq('company_id', companyId)
       .eq('customer_id', customerId)
-      .eq('invoice_id', invoiceId)
+      // and no `invoice_id` column either - the rest of the codebase links the
+      // credit to its source through reference_type/reference_id.
+      .eq('reference_type', 'invoice')
+      .eq('reference_id', invoiceId)
       .eq('status', 'active')
       .maybeSingle()
 
     if (existingCredit) {
-      if (Math.abs(Number(existingCredit.remaining_amount) - creditAmount) > 0.005) {
+      const consumed = Number(existingCredit.used_amount || 0)
+        + Number(existingCredit.applied_amount || 0)
+      const remaining = Number(existingCredit.amount || 0) - consumed
+      if (Math.abs(remaining - creditAmount) > 0.005) {
+        // only the face value is restated; what the customer already consumed
+        // is history and is never rewritten.
         await supabase
           .from('customer_credits')
-          .update({ remaining_amount: creditAmount, amount: creditAmount })
+          .update({ amount: creditAmount + consumed })
           .eq('id', existingCredit.id)
       }
     } else {
       await supabase.from('customer_credits').insert({
         company_id:       companyId,
         customer_id:      customerId,
-        invoice_id:       invoiceId,
+        reference_type:   'invoice',
+        reference_id:     invoiceId,
         credit_number:    `CR-${Date.now()}`,
         credit_date:      new Date().toISOString().slice(0, 10),
         amount:           creditAmount,
-        remaining_amount: creditAmount,
-        reason:           reason || 'رصيد دائن صافٍ للعميل',
+        used_amount:      0,
+        applied_amount:   0,
+        // there is no `reason` column; the free-text field is `notes`
+        notes:            reason || 'رصيد دائن صافٍ للعميل',
         status:           'active',
       })
     }

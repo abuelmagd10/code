@@ -1360,7 +1360,7 @@ export class SupplierPaymentCommandService {
     // Lookup bill's recorded currency + rate + total
     const { data: bill, error: billErr } = await this.adminSupabase
       .from("bills")
-      .select("currency_code, exchange_rate, original_amount, total_amount, company_id, branch_id, cost_center_id")
+      .select("currency_code, exchange_rate, original_amount:original_total, total_amount, company_id, branch_id, cost_center_id")
       .eq("id", params.billId)
       .maybeSingle()
     if (billErr || !bill) return

@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
         // Get commission ledger entries for this run
         const { data: ledgerEntries, error: ledgerError } = await supabase
             .from('commission_ledger')
-            .select('employee_id, commission_amount')
+            .select('employee_id, commission_amount:amount')
             .eq('commission_run_id', commissionRunId)
             .eq('company_id', companyId);
 

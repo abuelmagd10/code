@@ -53,7 +53,7 @@ async function main() {
       // 1. Get Invoices for the company
       const { data: invoices } = await supabase
         .from('invoices')
-        .select('id, type')
+        .select('id')
         .eq('company_id', companyId);
 
       const invoiceIds = invoices?.map(i => i.id) || [];

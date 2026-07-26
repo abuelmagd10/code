@@ -68,7 +68,7 @@ export async function validateInventoryAvailability(
     // التحقق من نوع المنتج
     const { data: product } = await supabase
       .from('products')
-      .select('type, name')
+      .select('type:product_type, name')
       .eq('id', item.product_id)
       .single()
 
@@ -85,7 +85,7 @@ export async function validateInventoryAvailability(
     // التحقق من المخزون المتاح
     const { data: inventory } = await supabase
       .from('inventory_transactions')
-      .select('quantity, transaction_type')
+      .select('quantity:quantity_change, transaction_type')
       .eq('product_id', item.product_id)
       .eq('warehouse_id', warehouseId)
 
@@ -169,13 +169,13 @@ export async function validateAccountingPeriod(
   // التحقق من إقفال الفترة المحاسبية
   const { data: period } = await supabase
     .from('accounting_periods')
-    .select('is_closed, name')
+    .select('status, is_locked, name:period_name')
     .eq('company_id', companyId)
-    .lte('start_date', date)
-    .gte('end_date', date)
+    .lte('period_start', date)
+    .gte('period_end', date)
     .single()
 
-  if (period?.is_closed) {
+  if (period?.status === 'closed' || period?.is_locked) {
     errors.push(`الفترة المحاسبية مقفلة: ${period.name}`)
   }
 

@@ -114,7 +114,7 @@ export async function getUserBranchData(userId: string, companyId: string) {
   if (member.cost_center_id) {
     const { data: costCenter } = await supabase
       .from('cost_centers')
-      .select('id, name, code')
+      .select('id, name:cost_center_name, code:cost_center_code')
       .eq('id', member.cost_center_id)
       .maybeSingle()
     costCenterData = costCenter

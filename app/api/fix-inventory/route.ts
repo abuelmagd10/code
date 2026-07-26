@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     // ===== 1. جلب فواتير البيع =====
     const { data: invoices } = await supabase
       .from("invoices")
-      .select("id, status, invoice_type, returned_amount")
+      .select("id, status, returned_amount")
       .eq("company_id", companyId)
       .in("status", ["sent", "partially_paid", "paid"])
 

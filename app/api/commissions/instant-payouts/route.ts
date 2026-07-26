@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
                 .from('commission_ledger')
                 .select(`
                     employee_id,
-                    commission_amount,
+                    commission_amount:amount,
                     source_type,
                     employees!inner(full_name)
                 `)
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
                         id,
                         source_type,
                         source_id,
-                        commission_amount,
+                        commission_amount:amount,
                         created_at,
                         invoices:source_id(invoice_number, total_amount),
                         credit_notes:source_id(credit_note_number, total_amount)

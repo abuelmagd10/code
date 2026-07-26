@@ -83,28 +83,35 @@ export async function GET(request: Request) {
       if (adminUrl && serviceKey) {
         const admin = createAdminClient(adminUrl, serviceKey, { auth: { persistSession: false } })
 
-        // Pull from public.user_profiles if it exists; fall back to auth.users metadata.
+        // v3.74.846 — user_profiles has no `email` column; the address lives in
+        // auth.users. Asking for it made the whole read fail, so `profiles` came
+        // back empty and EVERY grantor fell through to the auth lookup below -
+        // the display name from the profile was never used at all. The failure
+        // was invisible because the fallback quietly produced a usable answer.
         const { data: profiles } = await admin
           .from("user_profiles")
-          .select("user_id, display_name, email")
+          .select("user_id, display_name")
           .in("user_id", grantorIds)
 
         for (const p of profiles || []) {
           grantorMap[p.user_id] = {
-            email: p.email ?? null,
+            email: null,
             display_name: p.display_name ?? null,
           }
         }
 
-        // For any missing, peek at auth.users
-        const missing = grantorIds.filter(id => !grantorMap[id])
+        // Emails always come from auth.users, so anyone still missing an address
+        // is looked up there - not only the users with no profile row.
+        const missing = grantorIds.filter(id => !grantorMap[id]?.email)
         for (const uid of missing) {
           try {
             const { data: u } = await admin.auth.admin.getUserById(uid)
             if (u?.user) {
               grantorMap[uid] = {
                 email: u.user.email ?? null,
-                display_name: (u.user.user_metadata as any)?.display_name
+                // the profile's own name wins; auth metadata is the fallback
+                display_name: grantorMap[uid]?.display_name
+                  ?? (u.user.user_metadata as any)?.display_name
                   ?? (u.user.user_metadata as any)?.name
                   ?? null,
               }

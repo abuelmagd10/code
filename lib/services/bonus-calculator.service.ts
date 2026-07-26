@@ -67,7 +67,7 @@ export async function calculateBonusForPaidInvoice(
   // ── Company settings ────────────────────────────────────────────────
   const { data: company, error: companyErr } = await admin
     .from("companies")
-    .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, base_currency, currency")
+    .select("bonus_enabled, bonus_type, bonus_percentage, bonus_fixed_amount, bonus_points_per_value, bonus_daily_cap, bonus_monthly_cap, bonus_payout_mode, base_currency")
     .eq("id", companyId)
     .maybeSingle()
 
@@ -78,7 +78,7 @@ export async function calculateBonusForPaidInvoice(
   // ── Invoice ─────────────────────────────────────────────────────────
   const { data: invoice, error: invErr } = await admin
     .from("invoices")
-    .select("id, company_id, total_amount, status, currency, sales_order_id, created_by_user_id")
+    .select("id, company_id, total_amount, status, currency:currency_code, sales_order_id, created_by_user_id")
     .eq("id", invoiceId)
     .maybeSingle()
 

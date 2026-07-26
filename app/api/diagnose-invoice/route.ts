@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     // 1. البحث في جدول invoices
     const { data: invoices } = await supabase
       .from("invoices")
-      .select("id, invoice_number, status, invoice_type, total_amount, returned_amount, company_id")
+      .select("id, invoice_number, status, total_amount, returned_amount, company_id")
       .or(`invoice_number.ilike.%${searchTerm}%`)
       .limit(10)
 
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
     if (numericPart && numericPart !== searchTerm) {
       const { data: numericInvoices } = await supabase
         .from("invoices")
-        .select("id, invoice_number, status, invoice_type, total_amount, company_id")
+        .select("id, invoice_number, status, total_amount, company_id")
         .or(`invoice_number.ilike.%${numericPart}%`)
         .limit(10)
 

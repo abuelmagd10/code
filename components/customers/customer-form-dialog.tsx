@@ -568,7 +568,7 @@ export function CustomerFormDialog({
           // جلب اسم المستخدم من user_profiles
           const { data: profileInfo } = await supabase
             .from("user_profiles")
-            .select("username, full_name")
+            .select("username, full_name:display_name")
             .eq("user_id", duplicateCustomer.created_by_user_id)
             .maybeSingle()
 

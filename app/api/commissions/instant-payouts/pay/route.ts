@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
         try {
             const { data: ledgerRows } = await supabase
                 .from('commission_ledger')
-                .select('commission_amount')
+                .select('commission_amount:amount')
                 .eq('company_id', companyId)
                 .in('employee_id', employeeIds)
                 .eq('payment_status', 'scheduled')
