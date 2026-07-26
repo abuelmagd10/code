@@ -42,13 +42,25 @@ export async function POST(
     // السلسلة. والمنع هنا محاسبى لا شكلى: تكلفة المنتج التام = خامات + تكلفة
     // تحويل، فلو استُلم بلا صرف لدخل المخزون بتكلفة ناقصة وبقيت الخامات فى
     // الدفاتر كأنها لم تُستهلك.
+    // ⚠️ المصدر هو سطور الصرف الفعلية `production_order_issue_lines`، لا العمود
+    // المُشتق `issued_quantity`: ذلك العمود كان مُجمَّداً على صفر لأن حارس
+    // اللقطة يرفض تحديثه والمسار لا يفحص نتيجة الكتابة. فحارس يقرأ العمود كان
+    // سيرفض **كل** استلام مشروع. نقرأ من حيث تقرأ الدالة الذرية نفسها.
     const { data: requirementRows, error: requirementsError } = await admin
       .from("production_order_material_requirements")
-      .select("issued_quantity, is_optional")
+      .select("id, is_optional")
       .eq("production_order_id", id)
       .eq("company_id", companyId)
 
     if (requirementsError) throw requirementsError
+
+    const { data: issueRows, error: issueLinesError } = await admin
+      .from("production_order_issue_lines")
+      .select("issued_qty")
+      .eq("production_order_id", id)
+      .eq("company_id", companyId)
+
+    if (issueLinesError) throw issueLinesError
 
     const mandatoryLines = (requirementRows || []).filter((r: any) => !r.is_optional)
     if (mandatoryLines.length === 0) {
@@ -63,12 +75,12 @@ export async function POST(
       )
     }
 
-    const issuedTotal = mandatoryLines.reduce(
-      (sum: number, r: any) => sum + Number(r.issued_quantity ?? 0),
+    const issuedTotal = (issueRows || []).reduce(
+      (sum: number, r: any) => sum + Number(r.issued_qty ?? 0),
       0
     )
     if (issuedTotal <= 0) {
-      const pending = mandatoryLines.filter((r: any) => Number(r.issued_quantity ?? 0) <= 0).length
+      const pending = mandatoryLines.length
       return NextResponse.json(
         {
           success: false,

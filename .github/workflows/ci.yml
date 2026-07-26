@@ -199,6 +199,16 @@ jobs:
       - name: Check for phantom column writes
         run: npm run check:phantom-columns
 
+      # v3.74.834 — ملف الترحيل ادّعاء بأن هذا ما فى القاعدة؛ فليُختبر الادّعاء.
+      # انحرف الاتجاهان فى ٢٦ يوليو: ملف مايو لم تصل كائناته للإنتاج (فتتبّع
+      # صرف الخامات مُجمَّد على صفر شهوراً)، ومسودة قديمة رُفعت مكان الإصلاح
+      # المطبَّق فعلاً (ولو طُبِّقت لرفضت كل استلام منتج). بلا مفتاح القاعدة
+      # يتخطّى الفحص بتنبيه — وفى سكربت النشر يُلزَم بـ --require-db.
+      - name: Verify changed migrations match the live database
+        run: npm run check:migration-db
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 
