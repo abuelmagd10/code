@@ -123,19 +123,23 @@ function translateAuthError(msg: string, lang: Lang = "ar"): string {
 /**
  * v3.74.838 — هل هذا البريد مؤكَّد بالفعل؟
  * تُرجع "confirmed" | "pending" | "unknown". و"unknown" تعنى أننا لم نعرف
- * (حدّ معدّل أو بلا مفتاح خدمة) — فتُستخدم الرسالة الغامضة الصادقة بدل
- * تخمين حالة قد تكون خاطئة.
+ * (تجاوز حدّ المعدّل أو خطأ) — فتُستخدم الرسالة الغامضة الصادقة بدل تخمين
+ * حالة قد تكون خاطئة.
+ *
+ * v3.74.839 — تُنادى الدالة **مباشرة بمفتاح anon**، بلا مسار خادمى.
+ * كان هناك `POST /api/auth/email-state` يحمل **مفتاح الخدمة** (صلاحيات كاملة
+ * على القاعدة كلها) **بلا أى مصادقة** — وأمسكه حارس `check-service-role-scoping`
+ * محقاً: مسار عام يحمل صلاحيات كاملة خطر قائم بذاته، حتى لو كان استعماله
+ * اليوم بريئاً. وحدّ المعدّل انتقل **إلى داخل الدالة** (٨/دقيقة لكل IP مقروء
+ * من ترويسات الطلب)، فلم يبق للمفتاح داعٍ — والحدّ صار غير قابل للتجاوز لأنه
+ * جزء من الدالة لا من مُناديها.
  */
 async function fetchEmailState(email: string): Promise<"confirmed" | "pending" | "unknown"> {
   try {
-    const res = await fetch("/api/auth/email-state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    })
-    const json = await res.json().catch(() => null)
-    const state = json?.state
-    return state === "confirmed" ? "confirmed" : state === "pending" ? "pending" : "unknown"
+    const supabase = createClient()
+    const { data, error } = await supabase.rpc("auth_email_state", { p_email: email })
+    if (error) return "unknown"
+    return data === "confirmed" ? "confirmed" : data === "pending" ? "pending" : "unknown"
   } catch {
     return "unknown"
   }
