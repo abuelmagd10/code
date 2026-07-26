@@ -189,6 +189,11 @@ jobs:
       - name: Verify referenced scripts are committed
         run: npm run check:scripts-tracked
 
+      # v3.74.830 — لا كتابة **جديدة** لعمود لا وجود له فى جدوله. الديون
+      # الموروثة على خط أساس (56)، وأى واحدة جديدة تكسر البناء.
+      - name: Check for phantom column writes
+        run: npm run check:phantom-columns
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 

@@ -52,13 +52,18 @@ export async function PATCH(
 
     // ── Re-approval on edit (Phase R4) ───────────────────────
     const currentApprovalStatus = (existing as any).approval_status ?? "draft"
+    // v3.74.830 — كان هذا البلوك يكتب **ثلاثة أعمدة لا وجود لها** على جدول
+    // أوامر الإنتاج: `cycle_no` (مكانها جدول approval_history وحده)
+    // و`po_approved_by` و`po_approved_at` (الأعمدة الحقيقية `approved_by`
+    // و`approved_at`). النتيجة: **تعديل أى أمر إنتاج معتمد كان يفشل دائماً**
+    // بخطأ 500 من PostgREST — أى أن دورة «عدّل ⇒ يعود للاعتماد» لم تعمل قط.
+    // رقم الدورة يُشتق من تاريخ الاعتمادات لا يُخزَّن على الأمر.
     const wasApproved = currentApprovalStatus === "approved"
     const reapprovalFields = wasApproved
       ? {
           approval_status: "pending_approval",
-          cycle_no: ((existing as any).cycle_no ?? 1) + 1,
-          po_approved_by: null,
-          po_approved_at: null,
+          approved_by: null,
+          approved_at: null,
         }
       : {}
 
@@ -89,7 +94,19 @@ export async function PATCH(
     if (error) throw error
 
     if (wasApproved) {
-      const newCycleNo = ((existing as any).cycle_no ?? 1) + 1
+      // v3.74.830 — رقم الدورة من مصدره الوحيد: `approval_history`.
+      // (كان يُقرأ من عمود وهمى على الأمر فيعطى 2 دائماً مهما تكررت الدورات.)
+      const { data: lastCycle } = await supabase
+        .from("approval_history")
+        .select("cycle_no")
+        .eq("company_id", companyId)
+        .eq("reference_type", "production_order")
+        .eq("reference_id", id)
+        .order("cycle_no", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const newCycleNo = Number((lastCycle as any)?.cycle_no ?? 1) + 1
+
       await recordApprovalAction({
         supabase, companyId,
         referenceType: "production_order",

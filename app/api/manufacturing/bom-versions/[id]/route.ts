@@ -48,11 +48,12 @@ export async function PATCH(
 
     // ── Re-approval on edit (Phase R3) ───────────────────────
     // إذا كانت النسخة معتمدة وتم تعديلها → إعادة دورة الاعتماد
+    // v3.74.830 — `cycle_no` عمود لا وجود له على هذا الجدول (مكانه
+    // `approval_history` وحده)، فكان تعديل أى نسخة معتمدة يفشل بخطأ 500.
     const wasApproved = existing.status === "approved"
     const reapprovalFields = wasApproved
       ? {
           status: "pending_approval",
-          cycle_no: ((existing as any).cycle_no ?? 1) + 1,
           approved_by: null,
           approved_at: null,
         }
@@ -74,7 +75,18 @@ export async function PATCH(
 
     // تسجيل إعادة الدورة في approval_history
     if (wasApproved) {
-      const newCycleNo = ((existing as any).cycle_no ?? 1) + 1
+      // v3.74.830 — رقم الدورة من مصدره الوحيد: approval_history
+      const { data: lastCycle } = await supabase
+        .from("approval_history")
+        .select("cycle_no")
+        .eq("company_id", companyId)
+        .eq("reference_type", "bom_version")
+        .eq("reference_id", id)
+        .order("cycle_no", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const newCycleNo = Number((lastCycle as any)?.cycle_no ?? 1) + 1
+
       await recordApprovalAction({
         supabase, companyId,
         referenceType: "bom_version",
