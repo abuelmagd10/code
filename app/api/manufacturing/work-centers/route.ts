@@ -15,7 +15,7 @@ const WORK_CENTER_SELECT = [
   "id, code, name, work_center_type, status, branch_id, description",
   "capacity_uom, nominal_capacity_per_hour, available_hours_per_day, efficiency_percent",
   "labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate",
-  "cost_rate_uom, cost_rates_effective_from",
+  "cost_rate_uom, cost_rates_effective_from, cost_center_id",
 ].join(", ")
 
 /**
@@ -59,6 +59,10 @@ export async function POST(request: NextRequest) {
       // v3.7.0: cost rates for 3-element costing (Material + Labor + Overhead)
       labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate,
       cost_rate_uom,
+      // v3.74.843 — مركز التكلفة: بدونه لا جهة تُحمَّل عليها أجور المركز
+      // وأعباؤه، ويرفض حارس القاعدة تفعيله. كان الحقل غائباً عن المسار
+      // والشاشة معاً، فكان المنع بلا طريق للامتثال.
+      cost_center_id,
     } = body
 
     if (!code?.trim()) return jsonError(400, "كود مركز العمل مطلوب")
@@ -107,6 +111,7 @@ export async function POST(request: NextRequest) {
         fixed_overhead_rate: fixed_overhead_rate != null ? Number(fixed_overhead_rate) : 0,
         cost_rate_uom: normalizedCostUom,
         cost_rates_effective_from: hasCostRates ? new Date().toISOString() : null,
+        cost_center_id: cost_center_id || null,
         created_by: user.id,
         updated_by: user.id,
       })

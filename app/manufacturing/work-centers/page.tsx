@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 import { Cpu, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import { CompanyHeader } from "@/components/company-header"
@@ -37,6 +38,7 @@ interface WorkCenter {
   fixed_overhead_rate?: number | null
   cost_rate_uom?: string | null
   cost_rates_effective_from?: string | null
+  cost_center_id?: string | null
 }
 
 interface Branch { id: string; name: string; code: string }
@@ -50,6 +52,7 @@ const EMPTY_FORM = {
   labor_cost_rate: "", machine_cost_rate: "",
   variable_overhead_rate: "", fixed_overhead_rate: "",
   cost_rate_uom: "per_hour",
+  cost_center_id: "",
 }
 
 const COST_UOM_LABELS: Record<string, string> = {
@@ -80,6 +83,7 @@ export default function WorkCentersPage() {
 
   const [workCenters, setWorkCenters] = useState<WorkCenter[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
+  const [costCenters, setCostCenters] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingWC, setEditingWC] = useState<WorkCenter | null>(null)
@@ -109,14 +113,18 @@ export default function WorkCentersPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [wcRes, brRes] = await Promise.all([
+      const [wcRes, brRes, ccRes] = await Promise.all([
         fetch("/api/manufacturing/work-centers"),
         fetch("/api/branches"),
+        // v3.74.843 — مراكز التكلفة: الحارس يمنع تفعيل مركز عمل بلا مركز
+        // تكلفة، وكانت الشاشة بلا الحقل — أى منع بلا طريق للامتثال.
+        createClient().from("cost_centers").select("id, cost_center_code, cost_center_name, branch_id, is_active"),
       ])
       const wcJson = await wcRes.json()
       const brJson = await brRes.json()
       setWorkCenters(wcJson.data || [])
       setBranches(brJson.branches || [])
+      setCostCenters(((ccRes as any)?.data || []).filter((c: any) => c.is_active !== false))
     } catch {
       toast({ variant: "destructive", title: t("Load Error", "خطأ في التحميل"), description: t("Could not fetch work centers data", "تعذر جلب بيانات مراكز العمل") })
     } finally {
@@ -142,7 +150,12 @@ export default function WorkCentersPage() {
     // v3.74.266 — pre-fill code and branch so the visible form only asks
     // the user for things they actually have to decide (name + type).
     const defaultBranch = branches[0]?.id || ""
-    setFormData({ ...EMPTY_FORM, code: nextAutoCode(), branch_id: defaultBranch })
+    // v3.74.843 — يُقترح مركز تكلفة الفرع تلقائياً: الغالب أن لكل فرع واحداً،
+    // فلا يُطالَب المستخدم باختيار لا خيار فيه — ويبقى قابلاً للتغيير.
+    const defaultCostCentre =
+      costCenters.find((c) => c.branch_id === defaultBranch)?.id ||
+      (costCenters.length === 1 ? costCenters[0].id : "")
+    setFormData({ ...EMPTY_FORM, code: nextAutoCode(), branch_id: defaultBranch, cost_center_id: defaultCostCentre })
     setDialogOpen(true)
   }
   const openEdit = (wc: WorkCenter) => {
@@ -151,6 +164,7 @@ export default function WorkCentersPage() {
       code: wc.code,
       name: wc.name,
       branch_id: wc.branch_id,
+      cost_center_id: wc.cost_center_id || "",
       work_center_type: wc.work_center_type,
       status: wc.status,
       description: wc.description || "",
@@ -358,6 +372,26 @@ export default function WorkCentersPage() {
                     <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
                   </Select>
                   <p className="text-xs text-slate-400">{t("The branch where this work center is physically located.", "الفرع اللى موجودة فيه المحطة فعلياً.")}</p>
+                </div>
+                {/* v3.74.843 — مركز التكلفة: بدونه تُحمَّل أجور المركز وأعباؤه
+                    بلا جهة، فتستحيل مقارنة التكلفة الفعلية بالمعيارية — ويرفض
+                    حارس القاعدة تفعيل المركز. */}
+                <div className="space-y-2">
+                  <Label>{t("Cost center", "مركز التكلفة")}</Label>
+                  <Select value={formData.cost_center_id} onValueChange={(v) => setFormData({ ...formData, cost_center_id: v })} disabled={saving}>
+                    <SelectTrigger><SelectValue placeholder={t("Select cost center...", "اختر مركز التكلفة...")} /></SelectTrigger>
+                    <SelectContent>
+                      {costCenters
+                        .filter((c) => !formData.branch_id || !c.branch_id || c.branch_id === formData.branch_id)
+                        .map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.cost_center_code} — {c.cost_center_name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-400">
+                    {t("Required to activate: labour and overhead are charged to it, and without it actual cost cannot be compared with standard.",
+                       "مطلوب للتفعيل: تُحمَّل عليه أجور المحطة وأعباؤها، وبدونه لا يمكن مقارنة التكلفة الفعلية بالمعيارية.")}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>{t("Status", "الحالة")}</Label>

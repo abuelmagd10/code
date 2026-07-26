@@ -226,7 +226,7 @@ export function Sidebar() {
       setPermissionsReady(true)
       // حساب deniedResources من allowed_pages
       const allResources = [
-        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'manufacturing_boms', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
+        'dashboard', 'reports', 'invoices', 'customers', 'estimates', 'sales_orders', 'sales_returns', 'sent_invoice_returns', 'customer_debit_notes', 'bills', 'suppliers', 'purchase_orders', 'purchase_returns', 'vendor_credits', 'manufacturing_boms', 'products', 'inventory', 'inventory_transfers', 'write_offs', 'third_party_inventory', 'product_availability', 'inventory_goods_receipt', 'payments', 'expenses', 'drawings', 'journal_entries', 'banking', 'chart_of_accounts', 'fixed_assets', 'asset_categories', 'fixed_assets_reports', 'annual_closing', 'shareholders', 'taxes', 'exchange_rates', 'accounting_maintenance', 'accounting_periods', 'hr', 'employees', 'attendance', 'payroll', 'production_labour_wages', 'instant_payouts', 'branches', 'cost_centers', 'warehouses', 'settings', 'users', 'company_settings', 'audit_log', 'backup', 'shipping', 'profile', 'orders_rules', 'system_status', 'permission_sharing', 'permission_transfers', 'user_branch_access', 'role_permissions'
       ]
       const denied = allResources.filter(r => !profile.allowed_pages.includes(r) && r !== "profile")
       setDeniedResources(denied)
@@ -269,6 +269,11 @@ export function Sidebar() {
     // الموارد البشرية
     if (href.includes('/hr/employees')) return 'employees'
     if (href.includes('/hr/attendance')) return 'attendance'
+    // v3.74.843 — مفتاح **مستقل** عن `payroll` عن قصد: محاسب الفرع ومسؤول
+    // التصنيع يصلان لهذه الشاشة ولا يريان مرتب أحد. لو رُبطت بـ`payroll`
+    // لانفتحت رواتب الجميع عليهما. يُفحص قبل `/hr/payroll` لأن المسارين
+    // يتشاركان البادئة `/hr/p`.
+    if (href.includes('/hr/production-labour')) return 'production_labour_wages'
     if (href.includes('/hr/payroll')) return 'payroll'
     if (href.includes('/hr/instant-payouts')) return 'instant_payouts'
     if (href.includes('/hr')) return 'hr'
@@ -1136,6 +1141,12 @@ export function Sidebar() {
               const lang = hydrated ? appLanguage : 'ar'
               const q = lang === 'en' ? '?lang=en' : ''
               const allowHr = ["owner", "admin", "manager"].includes(myRole)
+              // v3.74.843 — مجموعة «الموظفون والمرتبات» كانت محصورة بقائمة أدوار
+              // ثابتة، فمحاسب الفرع ومسؤول التصنيع لا يريانها إطلاقاً — وهما
+              // بالضبط من يحتاج «أجور عمالة التصنيع». تُفتح المجموعة لهما،
+              // ويتكفّل فلتر العناصر بإخفاء المرتبات والموظفين عنهما.
+              const allowProductionLabour =
+                (accessReady && profile) ? canAccessPage('production_labour_wages') : false
               const groups: Array<{ key: string; icon: any; label: string; badge?: number; items: Array<{ label: string; href: string; icon: any; badge?: number }> }> = [
                 { key: 'dashboard', icon: BarChart3, label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), items: [{ label: (lang === 'en' ? 'Dashboard' : 'لوحة التحكم'), href: `/dashboard${q}`, icon: BarChart3 }] },
                 // v3.74.482 — Approval Inbox moved out of the Manufacturing
@@ -1263,12 +1274,13 @@ export function Sidebar() {
                     { label: (lang === 'en' ? 'Asset Reports' : 'تقارير الأصول'), href: `/fixed-assets/reports${q}`, icon: BarChart3 },
                   ]
                 },
-                ...(allowHr ? [{
+                ...((allowHr || allowProductionLabour) ? [{
                   key: 'hr', icon: Users, label: (lang === 'en' ? 'HR & Payroll' : 'الموظفون والمرتبات'), items: [
                     { label: (lang === 'en' ? 'HR Home' : 'الرئيسية'), href: `/hr${q}`, icon: Users },
                     { label: (lang === 'en' ? 'Employees' : 'الموظفون'), href: `/hr/employees${q}`, icon: Users },
                     { label: (lang === 'en' ? 'Attendance' : 'الحضور والانصراف'), href: `/hr/attendance${q}`, icon: FileText },
                     { label: (lang === 'en' ? 'Payroll' : 'المرتبات'), href: `/hr/payroll${q}`, icon: DollarSign },
+                    { label: (lang === 'en' ? 'Production Labour Wages' : 'أجور عمالة التصنيع'), href: `/hr/production-labour${q}`, icon: Factory },
                     { label: (lang === 'en' ? 'Instant Payouts' : 'الصرف الفوري'), href: `/hr/instant-payouts${q}`, icon: DollarSign },
                   ]
                 }] : []),

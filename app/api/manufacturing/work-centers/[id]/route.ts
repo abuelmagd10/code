@@ -16,7 +16,7 @@ const WORK_CENTER_SELECT = [
   "id, code, name, work_center_type, status, branch_id, description",
   "capacity_uom, nominal_capacity_per_hour, available_hours_per_day, efficiency_percent",
   "labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate",
-  "cost_rate_uom, cost_rates_effective_from",
+  "cost_rate_uom, cost_rates_effective_from, cost_center_id",
 ].join(", ")
 
 /**
@@ -34,6 +34,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       // v3.7.0: cost rates
       labor_cost_rate, machine_cost_rate, variable_overhead_rate, fixed_overhead_rate,
       cost_rate_uom,
+      // v3.74.843 — مركز التكلفة، وبدونه يرفض حارس القاعدة تفعيل المركز
+      cost_center_id,
     } = body
 
     if (!code?.trim()) return jsonError(400, "كود مركز العمل مطلوب")
@@ -97,6 +99,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       variable_overhead_rate: newVarOh,
       fixed_overhead_rate: newFixOh,
       cost_rate_uom: normalizedCostUom,
+      cost_center_id: cost_center_id || null,
       updated_by: user.id,
       updated_at: new Date().toISOString(),
     }
