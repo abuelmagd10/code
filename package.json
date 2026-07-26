@@ -58,6 +58,7 @@
     "check:migration-db": "node scripts/check-migration-matches-db.js",
     "check:signup": "node scripts/verify-signup-path.js",
     "check:audit-safe": "node scripts/check-audit-cannot-abort.js",
+    "check:anon-functions": "node scripts/check-anon-reachable-functions.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"

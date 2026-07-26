@@ -227,6 +227,15 @@ jobs:
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
 
+      # 🔒 v3.74.844 — `CREATE FUNCTION` يمنح التنفيذ لـ PUBLIC تلقائياً وPUBLIC
+      # تشمل الزائر، والمنح الصريح لا يُلغى الموروث. عشر دوال من ٨٤١/٨٤٣ كانت
+      # مفتوحة بهذا. يُطابق فحص لوحة التحكم `ic_anon_reachable_readers` حتى
+      # يسقط البناء بدل انتظار ملاحظته على شاشة.
+      - name: No company-reading function open to anonymous callers
+        run: npm run check:anon-functions
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 
