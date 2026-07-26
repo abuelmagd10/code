@@ -36,6 +36,50 @@ export async function POST(
       )
     }
 
+    // v3.74.833 — لا يُطلب استلام منتج تام قبل صرف خاماته.
+    // كان الطلب يُنشأ ويُرسل إشعاراً لمسؤول المخزن، فيفتح الصندوق ويضغط
+    // «اعتماد الاستلام» فتصله رسالة إنجليزية خام من قاعدة البيانات فى آخر
+    // السلسلة. والمنع هنا محاسبى لا شكلى: تكلفة المنتج التام = خامات + تكلفة
+    // تحويل، فلو استُلم بلا صرف لدخل المخزون بتكلفة ناقصة وبقيت الخامات فى
+    // الدفاتر كأنها لم تُستهلك.
+    const { data: requirementRows, error: requirementsError } = await admin
+      .from("production_order_material_requirements")
+      .select("issued_quantity, is_optional")
+      .eq("production_order_id", id)
+      .eq("company_id", companyId)
+
+    if (requirementsError) throw requirementsError
+
+    const mandatoryLines = (requirementRows || []).filter((r: any) => !r.is_optional)
+    if (mandatoryLines.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "لم تُحضَّر احتياجات المواد لهذا الأمر بعد — لا توجد قائمة مواد مجمَّدة عليه، " +
+            "فلا يمكن حساب تكلفة المنتج التام. راجع إصدار الأمر ثم اصرف الخامات.",
+        },
+        { status: 422 }
+      )
+    }
+
+    const issuedTotal = mandatoryLines.reduce(
+      (sum: number, r: any) => sum + Number(r.issued_quantity ?? 0),
+      0
+    )
+    if (issuedTotal <= 0) {
+      const pending = mandatoryLines.filter((r: any) => Number(r.issued_quantity ?? 0) <= 0).length
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            `لا يمكن طلب استلام المنتج التام قبل صرف خاماته — ${pending} بند بانتظار الصرف. ` +
+            "اطلب «صرف الخامات» واعتمده أولاً، فتكلفة المنتج = الخامات + تكلفة التحويل.",
+        },
+        { status: 422 }
+      )
+    }
+
     // قراءة الكمية والملاحظات
     let proposedQuantity: number = Number(existing.planned_quantity) || 0
     let notes: string | null = null
