@@ -139,6 +139,33 @@ export async function updateSession(request: NextRequest) {
           is_suspended?: boolean
         } | null
 
+        // v3.74.856 — 🔴 مستخدمٌ بلا شركة يُوجَّه إلى الإعداد، لا يُترك تائهاً.
+        //
+        // الشركة تُنشأ لحظة تأكيد البريد (`createCompanyFromMetadata` فى
+        // `/auth/callback`). فإن تعثّرت تلك اللحظة لأى سبب — أُغلق التبويب،
+        // انقطعت الشبكة، فُتح الرابط على جهاز آخر — يبقى للعميل **حساب بلا
+        // شركة**، ولا شىء فى النظام يُعيد المحاولة أو يدلّه.
+        //
+        // وهذا ما حدث لعميل «جريس تاون للمقاولات»: بريده مؤكَّد، ودخوله ناجح،
+        // وصفر شركات — فيصل إلى شاشة لا تُنشئ شركة ولا تشرح، ويظن النظام معطلاً.
+        //
+        // والحالة محسوبة هنا بالفعل (`has_company`) وكانت **تُهمَل**. توجيهها
+        // إلى `/onboarding` يعنى أن أى خلل فى التسجيل ينتهى بالعميل عند شاشة
+        // **يستطيع أن يتصرّف فيها**، لا عند طريق مسدود.
+        //
+        // ⇒ **أول شاشة يراها العميل لا يجوز أن تكون بلا مخرج.**
+        //
+        // ⚠️ والتوجيه **للصفحات وحدها**. طلبٌ برمجى (`/api/*`) لو وُجّه لعاد
+        // بصفحة HTML بدل بيانات، فينكسر عند من ينتظر JSON — وهو عطبٌ أسوأ من
+        // الذى نُصلحه، وأصعب فى تشخيصه. الطرق تردّ ٤٠١/٤٠٣ بنفسها.
+        const isApiRequest = request.nextUrl.pathname.startsWith("/api/")
+        if (status && status.has_company === false && !isApiRequest) {
+          const url = request.nextUrl.clone()
+          url.pathname = "/onboarding"
+          url.search = ""
+          return NextResponse.redirect(url)
+        }
+
         const isNonOwnerOnSuspendedCompany =
           status?.has_company === true &&
           status?.is_suspended === true &&

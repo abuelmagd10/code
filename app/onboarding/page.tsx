@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { Building2, Globe, Coins, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Sparkles, MapPin, Phone, FileText, Rocket, LayoutGrid } from "lucide-react"
+import { Building2, Globe, Coins, CheckCircle2, ArrowRight, ArrowLeft, Loader2, Sparkles, MapPin, Phone, FileText, Rocket, LayoutGrid, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createDefaultChartOfAccounts } from "@/lib/default-chart-of-accounts"
 import { OPTIONAL_MODULES, MODULE_LABELS, type ModuleKey } from "@/lib/module-manifest"
@@ -38,6 +38,9 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  // v3.74.856 — رسالة الفشل وزر إعادة المحاولة: العميل يعرف ويتصرّف بدل الانتظار.
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [retryToken, setRetryToken] = useState(0)
 
   // Form data
   const [companyName, setCompanyName] = useState("")
@@ -70,33 +73,98 @@ export default function OnboardingPage() {
   }, [])
 
   // Check if user is authenticated and has no company
+  //
+  // v3.74.856 — 🔴 هذه الشاشة **أول ما يراه العميل**، وكانت تعلّق إلى الأبد.
+  //
+  // أبلغ عميل يسجّل «جريس تاون للمقاولات» أن الشاشة واقفة على «جارى
+  // التحميل...». والسبب أن `checkAuth` كانت بلا `try/catch` وبلا مهلة: أى
+  // تعثّر فى `auth.getUser()` أو فى قراءة العضويات — انقطاع لحظى، بدء بارد،
+  // خطأ RLS — يجعل الوعد يُرفَض، فلا يُنفَّذ `setCheckingAuth(false)` أبداً.
+  // فيبقى الدوّار يدور: **بلا رسالة، وبلا إعادة محاولة، وبلا مخرج**.
+  //
+  // ⇒ **الدرس (وقد تكرّر اليوم كثيراً)**: الفشل الذى يُنتج صمتاً أسوأ من
+  //   الفشل الذى يصرخ. والمستخدم يستحق أن يعرف ويستطيع أن يتصرّف.
+  //
+  // ثلاث طبقات هنا، وكلٌّ منها يمنع تعليقاً بمفرده:
+  //   ١) `finally` — تُنهى الانتظار مهما حدث.
+  //   ٢) مهلة — استعلامٌ لا يردّ لا يُبقى الشاشة رهينة إلى الأبد.
+  //   ٣) رسالة + زر «إعادة المحاولة» — فلا يُترك العميل أمام شاشة ميتة.
   useEffect(() => {
+    let cancelled = false
+
     const checkAuth = async () => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      try {
+        setAuthError(null)
 
-      if (!user) {
-        router.push('/auth/login')
-        return
+        // مهلة: الوعد الذى لا يُحسَم لا يُنهى `finally` أبداً بدونها.
+        //
+        // وهى `Promise<never>` عمداً: دالةٌ عامة تلفّ الوعد (`withTimeout<T>`)
+        // فشل استدلال نوعها مع بانى استعلامات Supabase فصار `unknown`، وضاعت
+        // أنواع `data` و`error`. أما السباق مع `never` فيُبقى نوع الطرف الآخر
+        // كما هو بلا استدلال ولا تعليق نوع عند كل نداء.
+        const timeout = (ms = 12000) =>
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('TIMEOUT')), ms)
+          )
+
+        const { data: { user } } = await Promise.race([
+          supabase.auth.getUser(),
+          timeout(),
+        ])
+
+        if (!user) {
+          router.push('/auth/login')
+          return
+        }
+
+        // Check if user already has a company (through company_members)
+        // `Promise.resolve(...)` حول بانى الاستعلام مقصود: البانى `PromiseLike`
+        // لا `Promise`، وخلطه مع `Promise<never>` داخل `race` يُربك الاستدلال.
+        // التغليف يجعل النوع صريحاً فلا يبقى ما يُستدَلّ عليه.
+        const { data: memberships, error: memberError } = await Promise.race([
+          Promise.resolve(
+            supabase
+              .from('company_members')
+              .select('company_id')
+              .eq('user_id', user.id)
+              .limit(1)
+          ),
+          timeout(),
+        ])
+
+        // خطأ فى القراءة ليس معناه «بلا شركة». لو مضينا هنا لعرضنا نموذج
+        // إنشاء شركة لمن قد يملك واحدة بالفعل — فتُنشأ شركة مكرَّرة.
+        if (memberError) throw memberError
+
+        if (cancelled) return
+
+        if (memberships && memberships.length > 0) {
+          // User already has a company, redirect to dashboard
+          router.push('/dashboard')
+          return
+        }
+      } catch (err: unknown) {
+        if (cancelled) return
+        const isTimeout = err instanceof Error && err.message === 'TIMEOUT'
+        setAuthError(
+          isTimeout
+            ? (language === 'en'
+                ? 'The connection is taking too long. Please check your internet and try again.'
+                : 'الاتصال يستغرق وقتاً أطول من المعتاد. تأكد من اتصالك بالإنترنت ثم أعد المحاولة.')
+            : (language === 'en'
+                ? 'We could not verify your account. Please try again.'
+                : 'تعذّر التحقق من حسابك. أعد المحاولة من فضلك.')
+        )
+      } finally {
+        // تُنفَّذ دائماً — وهى وحدها ما كان ينقص لمنع التعليق الأبدى.
+        if (!cancelled) setCheckingAuth(false)
       }
-
-      // Check if user already has a company (through company_members)
-      const { data: memberships } = await supabase
-        .from('company_members')
-        .select('company_id')
-        .eq('user_id', user.id)
-        .limit(1)
-
-      if (memberships && memberships.length > 0) {
-        // User already has a company, redirect to dashboard
-        router.push('/dashboard')
-        return
-      }
-
-      setCheckingAuth(false)
     }
+
     checkAuth()
-  }, [router])
+    return () => { cancelled = true }
+  }, [router, retryToken, language])
 
   const texts = {
     ar: {
@@ -284,6 +352,33 @@ export default function OnboardingPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // v3.74.856 — الفشل يُعرَض ولا يُخفى خلف دوّار دائم.
+  if (authError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-violet-50 via-blue-50 to-indigo-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800">
+        <div className="max-w-md w-full text-center rounded-2xl border border-amber-200 dark:border-amber-800 bg-white dark:bg-slate-900 p-8 shadow-lg">
+          <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            {language === 'en' ? 'Something interrupted the check' : 'تعثّر التحقق'}
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">{authError}</p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <Button
+              onClick={() => { setCheckingAuth(true); setRetryToken((t) => t + 1) }}
+              className="gap-2"
+            >
+              <Loader2 className="w-4 h-4" />
+              {language === 'en' ? 'Try again' : 'إعادة المحاولة'}
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/auth/login')}>
+              {language === 'en' ? 'Back to sign in' : 'العودة لتسجيل الدخول'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (checkingAuth) {

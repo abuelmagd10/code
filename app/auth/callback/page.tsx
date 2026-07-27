@@ -40,11 +40,16 @@ function CallbackInner() {
           currency = pendingData.currency || currency
           language = (pendingData.language || language) as 'ar' | 'en'
 
-          // Clean up pending data after reading
-          await supabase
-            .from('pending_companies')
-            .delete()
-            .eq('user_email', userEmail.toLowerCase())
+          // v3.74.856 — 🔴 لا يُحذف السجل الاحتياطى هنا.
+          //
+          // كان يُحذف **فور القراءة** (هذا الموضع)، والشركة تُنشأ بعده بعشرات
+          // الأسطر. فأى تعثّر بينهما — انقطاع، مهلة، خطأ فى إنشاء الفرع أو
+          // دليل الحسابات — يترك العميل **بلا شركة وبلا احتياطى يُعاد منه**.
+          // وهذا ما حدث لعميل «جريس تاون للمقاولات»: سجله الاحتياطى محذوف
+          // وشركته غير موجودة، فضاع اسم شركته وعملته ولغته معاً.
+          //
+          // ⇒ **لا يُتلَف المصدر قبل نجاح ما يعتمد عليه.** الحذف انتقل إلى ما
+          //   بعد الإنشاء الناجح، فالمحاولة التالية تجد بياناتها كاملة.
         }
       } catch (e) {
         console.log('No pending company found in database, checking other sources')
@@ -250,6 +255,20 @@ function CallbackInner() {
       document.cookie = `app_currency=${currency}; path=/; max-age=31536000`
       document.cookie = `app_language=${language}; path=/; max-age=31536000`
     } catch { }
+
+    // v3.74.856 — الآن فقط يُحذف السجل الاحتياطى: بعد أن صارت الشركة موجودة
+    // بفرعها ومخزنها ومركز تكلفتها ودليل حساباتها. وقبل هذا السطر، كل تعثّر
+    // يُبقى الاحتياطى سليماً فتنجح المحاولة التالية باسم الشركة الصحيح.
+    if (userEmail) {
+      try {
+        await supabase
+          .from('pending_companies')
+          .delete()
+          .eq('user_email', userEmail.toLowerCase())
+      } catch {
+        // الحذف تنظيفٌ لا أكثر — فشله لا يمسّ شركةً أُنشئت بنجاح.
+      }
+    }
 
     return company.id
   }

@@ -59,6 +59,7 @@
     "check:dup-notify": "node scripts/check-duplicate-role-notifications.js",
     "check:movement-coverage": "node scripts/check-inventory-movement-coverage.js",
     "check:fg-conversion": "node scripts/check-finished-goods-conversion-cost.js",
+    "check:stranded-users": "node scripts/check-users-without-company.js",
     "check:lockfile": "node scripts/check-lockfile-in-sync.js",
     "check:migration-db": "node scripts/check-migration-matches-db.js",
     "check:signup": "node scripts/verify-signup-path.js",
