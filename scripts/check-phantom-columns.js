@@ -99,7 +99,11 @@ for (const dir of ["app/api", "lib"]) {
 // أخطاء مؤكدة — والتحقق من كل بند يكون بمقارنته بالقاعدة الحية.
 // ٨٤٦: ٥٦ ← ٥٥ — كتابة `remaining_amount` على `customer_credits` وهى عمود
 // لا وجود له، فكان الإدراج يفشل بالكامل ولا يُسجَّل رصيد دائن صافٍ للعميل قط.
-const BASELINE = 55
+// ٨٤٩: ٥٥ ← ٥١ — سقطت أربع كتابات مع إزالة نسختَى الاشتراك الميتتين
+// (`companies.max_users/monthly_cost/subscription_plan` وما معها). لم تُصلَح
+// كتابةً كتابةً: زال الكود الذى كان يكتبها أصلاً بعد التأكد أن لا مستورد له
+// ولا مستدعى ولا شاشة، وأن ميزة بديلة صحيحة تعمل مكانه.
+const BASELINE = 51
 
 if (offenders.length === 0) {
   console.log(`+ No route writes a column its table does not have (${tableColumns.size} tables checked).`)

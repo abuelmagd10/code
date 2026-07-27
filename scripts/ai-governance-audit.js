@@ -538,7 +538,11 @@ console.log(`AI governance audit complete: ${findings.length} findings (${critic
 //   2. /api/biometric/attendance/push  ← جهاز البصمة يدفع حضوراً بلا سرّ جهاز
 //   3. /api/bills/:id/journal-entry-id ← يكشف رقم قيد أى فاتورة بتخمين المعرّف
 // مشروع تأمينها مستقل ومُسجَّل فى دفتر التسليم.
-const CRITICAL_BASELINE = 3;
+// ٨٤٩: ٣ ← ٢. سقطت واحدة بإزالة `app/api/subscription/create` — كان بلا أى
+// تحقق هوية ويُنشئ حسابات مستخدمين بصلاحية الخدمة الكاملة، ولا يستدعيه أحد.
+// لم يُكتشف بالبحث عنه، بل أثناء التأكد من أن نسخة الاشتراك الميتة آمنة الحذف.
+// الباقيتان موثَّقتان: bills/[id]/journal-entry-id و biometric/attendance/push.
+const CRITICAL_BASELINE = 2;
 
 if (ciMode) {
   if (criticalCount > CRITICAL_BASELINE) {
