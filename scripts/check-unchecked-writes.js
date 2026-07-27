@@ -175,7 +175,9 @@ const SCAN_DIRS = ["app", "lib"];
  * says so deliberately: supabase-js does not throw on a failed write, so the
  * catch never runs. That shape is the most misleading one in the codebase.
  */
-const BASELINE = 272;
+// v3.74.860 — شُدَّ من ٢٧٢ إلى ٢٦٩ بعد أن أزالت إصلاحات ٨٥٨ ثلاثة مواضع.
+// الأرض التى تُكسب لا تُعاد: خط الأساس يُشدّ ولا يُرخى أبداً.
+const BASELINE = 269;
 
 /**
  * Blank out comments and string bodies while preserving every byte offset and

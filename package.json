@@ -71,6 +71,8 @@
     "check:raw-body-writes:selftest": "node scripts/selftest-request-body-written-raw.js",
     "check:audit-records": "node scripts/check-audit-trail-actually-records.js",
     "check:audit-records:selftest": "node scripts/selftest-audit-trail-records.js",
+    "check:ledger": "node scripts/check-ledger-integrity.js",
+    "check:ledger:selftest": "node scripts/selftest-ledger-integrity.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
