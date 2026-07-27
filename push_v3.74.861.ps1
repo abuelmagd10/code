@@ -3,90 +3,77 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.859.ps1") { Remove-Item -LiteralPath "push_v3.74.859.ps1" -Force }
+if (Test-Path "push_v3.74.860.ps1") { Remove-Item -LiteralPath "push_v3.74.860.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.860"') {
-    Write-Host "+ 3.74.860" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.861"') {
+    Write-Host "+ 3.74.861" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.860]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.860]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.861]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.861]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-$mig   = "supabase/migrations/20260727000006_v3_74_860_archive_orphan_journal_lines.sql"
-$guard = "scripts/check-ledger-integrity.js"
-$self  = "scripts/selftest-ledger-integrity.js"
-$uw    = "scripts/check-unchecked-writes.js"
+$mig   = "supabase/migrations/20260727000007_v3_74_861_movement_cost_single_authority.sql"
+$guard = "scripts/check-movement-cost-matches-ledger.js"
+$self  = "scripts/selftest-movement-cost.js"
 
-$files = @("lib/version.ts", "CHANGELOG.md", $mig, $guard, $self, $uw,
+$files = @("lib/version.ts", "CHANGELOG.md", $mig, $guard, $self,
            "package.json", ".github/workflows/ci.yml",
-           "docs/HANDOVER_2026-07-24.md", "push_v3.74.860.ps1")
+           "docs/HANDOVER_2026-07-24.md", "push_v3.74.861.ps1")
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.859.ps1" 2>$null
+git add -u -- "push_v3.74.860.ps1" 2>$null
 
 # WARNING -LiteralPath is required: square brackets are wildcards in PowerShell (858).
-foreach ($f in @($mig, $guard, $self, $uw)) {
+foreach ($f in @($mig, $guard, $self)) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. archive, never delete - and prove the move before removing anything --
-# 733 lines whose parent entry AND whose account were both gone. Archiving is
-# only safe if nothing can be deleted before the copy is proven, row for row
-# and piastre for piastre, and if the healthy lines are counted before/after.
+# -- 1. one authority for the cost, not two ---------------------------------
+# Ledger and FIFO both use fn_bill_item_landed_unit_cost; the TypeScript path
+# wrote raw bill_items.unit_price and never even selected discount_percent, so
+# every discounted purchase overstated the movement while the books stayed right.
 $mg = Get-Content -LiteralPath $mig -Raw
 $mgCode = ($mg -split "`n" | Where-Object { $_ -notmatch "^\s*--" }) -join "`n"
-foreach ($need in @("journal_entry_lines_orphan_archive", "INSERT INTO public.journal_entry_lines_orphan_archive",
-                    "RAISE EXCEPTION", "v_after_healthy")) {
+foreach ($need in @("fn_bill_item_landed_unit_cost",
+                    "BEFORE INSERT ON public.inventory_transactions",
+                    "REVOKE ALL ON FUNCTION public.fn_set_purchase_movement_landed_cost")) {
     if ($mgCode -notmatch [regex]::Escape($need)) {
         Write-Host "X the migration is missing '$need'" -ForegroundColor Red; exit 1
     }
 }
-$insAt = $mgCode.IndexOf("INSERT INTO public.journal_entry_lines_orphan_archive")
-$delAt = $mgCode.IndexOf("DELETE FROM public.journal_entry_lines l")
-if ($insAt -lt 0 -or $delAt -lt 0 -or $delAt -lt $insAt) {
-    Write-Host "X the migration deletes before it archives - STOP" -ForegroundColor Red; exit 1
+# History must stay immutable: those rows are linked to posted journals and
+# prevent_linked_inventory_modification refuses to touch them, by design.
+if ($mgCode -match "UPDATE public\.inventory_transactions") {
+    Write-Host "X the migration rewrites historical movements - immutable by design" -ForegroundColor Red
+    Write-Host "  If a fix needs a protection weakened, the fix is wrong, not the protection." -ForegroundColor Red
+    exit 1
 }
-# and the new archive table must be closed to anonymous visitors (857)
-if ($mgCode -notmatch "REVOKE ALL ON public\.journal_entry_lines_orphan_archive FROM anon") {
-    Write-Host "X the archive table is left reachable by anon" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the migration archives before deleting, and the archive is closed to anon" -ForegroundColor Green
+Write-Host "+ one authority for movement cost, and history is left immutable" -ForegroundColor Green
 
-# -- 2. every ledger query must exclude soft-deleted entries -----------------
-# Computing this by hand twice in one session produced the same phantom 22.69
-# inventory gap twice, because is_deleted was forgotten both times.
-$gd = Get-Content -LiteralPath $guard -Raw
-if ($gd -notmatch "coalesce\(e\.is_deleted, false\) = false") {
-    Write-Host "X the ledger check does not exclude soft-deleted entries" -ForegroundColor Red; exit 1
-}
+# -- 2. the self-test must not touch data -----------------------------------
+# The trigger makes the defect unplantable, so the probe widens the enforcement
+# window until the known-bad historical rows fall inside it. No writes at all.
 $sf = Get-Content -LiteralPath $self -Raw
-# the inverted probe: a soft-deleted entry that touches nothing must add NO new
-# failure. If the guard ever forgot is_deleted it would add one, and fail here.
-if ($sf -notmatch "expectAdds: \[\]") {
-    Write-Host "X the self-test has no inverted probe - is_deleted is not proven" -ForegroundColor Red; exit 1
+if ($sf -match "INSERT INTO|UPDATE |DELETE FROM") {
+    Write-Host "X the self-test writes to the database - it must not need to" -ForegroundColor Red; exit 1
 }
-# and it must measure the DELTA, not the absolute state: the test database
-# carries real pre-existing debt (a 0.1419 ledger/FIFO gap), so an absolute
-# assertion would fail for a reason that has nothing to do with the probe.
-if ($sf -notmatch "baseFails") {
-    Write-Host "X the self-test is not differential - pre-existing debt would break it" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the ledger check honours is_deleted, and the self-test proves it" -ForegroundColor Green
+Write-Host "+ the self-test proves the guard without touching any data" -ForegroundColor Green
 
 # -- 3. THE GUARD MUST BE SEEN REFUSING -------------------------------------
-# Three probes on the TEST database: an unbalanced entry, an orphan line, and
-# an inverted one - an imbalance inside a soft-deleted entry, which must NOT
-# be reported. 833, 845, 851, 853, 857, 858, 859 all shipped past sleeping guards.
-Write-Host "Proving the ledger-integrity guard actually refuses..." -ForegroundColor Cyan
-node scripts/selftest-ledger-integrity.js
+Write-Host "Proving the movement-cost guard actually refuses..." -ForegroundColor Cyan
+node scripts/selftest-movement-cost.js
 if ($LASTEXITCODE -ne 0) {
     Write-Host "X the guard was not seen refusing - NOT pushing" -ForegroundColor Red; exit 1
 }
+
+Write-Host "Checking purchase movement cost matches the ledger..." -ForegroundColor Cyan
+node scripts/check-movement-cost-matches-ledger.js --require-db --list
+if ($LASTEXITCODE -ne 0) { Write-Host "X a movement disagrees with the ledger" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking ledger integrity..." -ForegroundColor Cyan
 node scripts/check-ledger-integrity.js --require-db
@@ -197,7 +184,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.859.ps1" 2>$null
+git add -u -- "push_v3.74.860.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -218,56 +205,60 @@ if (-not $staged) {
 } else {
     $msgPath = Join-Path $env:TEMP "commit_v3_74_859.txt"
     $msgLines = @(
-        'fix(ledger): v3.74.860 - 733 journal lines were hanging in mid-air',
+        'fix(inventory): v3.74.861 - one authority for purchase cost, not two',
         '',
-        'Moving on to the 269 database writes whose result is never checked, the',
-        'owner chose the right method over the obvious one: rather than patching',
-        '63 call sites, ask the database whether the books actually hang together.',
+        'Chasing the last thing the new ledger check flagged and we did not yet',
+        'understand, the trail led somewhere better: on production, movement',
+        'records disagree with the books whenever a purchase carries a discount.',
         '',
-        'They do. Trial balance 0.0000. Every entry balances on its own. No posted',
-        'document without its journal entry. Inventory in the ledger matches FIFO.',
+        '  bill with a discount     movements 21.00   ledger 16.92   mismatch',
+        '  bill without a discount  movements 60,000  ledger 60,000  exact',
         '',
-        'But the same scan found 733 journal lines whose parent entry does not',
-        'exist - 349 missing entries - and all 733 point at 40 accounts that do not',
-        'exist either. They violate two validated foreign keys at once, which is',
-        'impossible unless constraint enforcement was switched off during a bulk',
-        'delete. The evidence points at a cleanup of a deleted company (the repo',
-        'even ships a delete-non-vitaslims-users function); the cause is not',
-        'asserted.',
+        'The cost of a single purchase was being computed twice, two ways:',
         '',
-        'Debit equals credit exactly - 2,363,266.08 each - so these are whole',
-        'entries whose heads were removed, not stray rows. Dated 28 Nov 2025 to',
-        '22 May 2026, and nothing new for over two months: the phenomenon stopped.',
+        '  ledger    bills.subtotal + bills.shipping                 correct',
+        '  FIFO      fn_bill_item_landed_unit_cost() - a DB trigger  correct',
+        '  movement  raw bill_items.unit_price from TypeScript       wrong',
         '',
-        'They changed no number anyone sees: every report joins a line to its entry,',
-        'so a line without one drops out. That is exactly why nobody noticed, and',
-        'exactly why they were a trap for the next query that sums lines directly.',
+        'lib/purchase-posting.ts:287 does not even select discount_percent, so the',
+        'discount is structurally invisible to that path. The books were never',
+        'wrong - only the movement log, which any report reading cost straight off',
+        'inventory_transactions would overstate, with the discount disappearing',
+        'from the item history entirely.',
         '',
-        'Archived, not deleted, on the owner decision. Copied whole into',
-        'journal_entry_lines_orphan_archive, then removed from the live table - in',
-        'that order, inside one transaction. Nothing is deleted before the copy is',
-        'proven row for row and piastre for piastre, and one final condition rolls',
-        'everything back if the number of healthy lines changes at all. It did not:',
-        '274 before, 274 after, trial balance still 0.0000, inventory still matched.',
-        'The archive table is closed to anon and authenticated from its first day.',
+        'Fixed by deleting the second computation rather than repairing it. A',
+        'BEFORE INSERT trigger fills the cost from the very same function FIFO and',
+        'the ledger already use. One authority, nothing left to drift apart. It',
+        'covers all three purchase paths - two of which recorded no cost at all -',
+        'without touching a line of application code.',
         '',
-        'And the reason the check exists at all, stated plainly: I computed the',
-        'inventory gap by hand twice in one session and got it wrong both times, the',
-        'same way both times - forgetting to exclude soft-deleted entries. Both',
-        'times it produced the identical phantom figure, 22.69. As long as this is',
-        're-derived by hand it will keep being derived wrong, by me included. So it',
-        'is written once: check:ledger, eight checks, baseline zero, with the',
-        'is_deleted condition built in.',
+        'Proven on the test database: an insert deliberately carrying 999.00 was',
+        'stored as 10.00, the landed cost. Rolled back.',
         '',
-        'The self-test plants three probes on the test database. Two must be caught:',
-        'an unbalanced entry, and an orphan line created the same way the 733 were -',
-        'by disabling constraint enforcement. The third is inverted: an imbalance',
-        'inside a soft-deleted entry, which the guard must NOT report. If the guard',
-        'ever forgets is_deleted it fails that probe, so the mistake I made twice',
-        'cannot be made by the guard itself.',
+        'The eight historical rows are deliberately NOT repaired. The owner',
+        'approved repairing them; the database refused -',
+        'prevent_linked_inventory_modification: a movement tied to a posted journal',
+        'cannot be edited, with no escape hatch. That is the same principle as',
+        'reverse-never-edit for entries, so it stands, and the rule written into',
+        'the handover today applies: if a fix needs a protection weakened, the fix',
+        'is wrong, not the protection. The overstatement is 11.74 across eight',
+        'rows, documented in the migration and the changelog, and the guard starts',
+        'from this migration date so its baseline stays a true zero rather than a',
+        'constant that readers learn to ignore.',
         '',
-        'Also ratcheted the unchecked-writes baseline from 272 to 269 after the 858',
-        'fixes removed three. Ground won is not given back.'
+        'The self-test touches no data at all - it cannot, because the trigger now',
+        'makes the defect unplantable. Instead it widens the enforcement window',
+        'until those eight known-bad rows fall inside it and demands the guard',
+        'fails, then narrows it again and demands it passes. A probe built out of',
+        'the truth instead of a fabrication.',
+        '',
+        'Nine protections refused me while building this: posted entries take no',
+        'new lines, session_replication_role needs superuser, an unbalanced entry',
+        'is structurally impossible, a paid-invoice revenue JE is protected, a',
+        'linked movement cannot be modified, duplicate movements per bill+product',
+        'are rejected, cost centres are scoped to their company, branch isolation',
+        'is enforced, and a draft bill cannot move stock. Every one of them was',
+        'right. None was weakened.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -276,5 +267,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.860 pushed - the books are proven to hang together" -ForegroundColor Green
+    Write-Host "`n+ v3.74.861 pushed - purchase cost has one authority" -ForegroundColor Green
 }

@@ -73,6 +73,8 @@
     "check:audit-records:selftest": "node scripts/selftest-audit-trail-records.js",
     "check:ledger": "node scripts/check-ledger-integrity.js",
     "check:ledger:selftest": "node scripts/selftest-ledger-integrity.js",
+    "check:movement-cost": "node scripts/check-movement-cost-matches-ledger.js",
+    "check:movement-cost:selftest": "node scripts/selftest-movement-cost.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"

@@ -319,6 +319,15 @@ jobs:
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
 
+      # 🔴 v3.74.861 — تكلفة واقعة الشراء كانت تُحسب مرّتين: الدفاتر وFIFO
+      # بالتكلفة المحمَّلة، وسجل الحركة بالسعر الخام من TypeScript الذى لا
+      # يجلب `discount_percent` أصلاً. كل فاتورة بخصم ⇒ فارق. الآن مُشغِّل
+      # BEFORE INSERT يفرض السلطة الواحدة، وهذا الفحص يمنع عودة الانقسام.
+      - name: Purchase movement cost matches the ledger
+        run: npm run check:movement-cost
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 
