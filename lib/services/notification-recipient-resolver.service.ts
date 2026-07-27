@@ -42,18 +42,47 @@ export function buildNotificationRecipientScopeSegments(
 export class NotificationRecipientResolverService {
   constructor(private readonly supabase: SupabaseLike) {}
 
+  /**
+   * v3.74.855 — **إرسالٌ واحد للإدارة العليا، لا ثلاثة.**
+   *
+   * `components/NotificationCenter.tsx` يعامل (owner / admin / general_manager)
+   * **جمهوراً واحداً**: كلٌّ منهم يرى إشعارات الآخرين (`upperRoles`). فإرسالٌ
+   * بدور لكلٍّ منها يعنى أن المالك يفتح جرسه فيجد **الرسالة نفسها ثلاث مرات**.
+   *
+   * أبلغ المالك بذلك من الاستعمال الحى فى ٨٥١، فأُصلحت ستة مسارات تصنيع
+   * هناك — ثم أظهر فحصٌ يقرأ القاعدة **٢٢ حدثاً آخر بـ٤٥ نسخة زائدة** فى
+   * الفواتير والحجوزات والدفعات وردّ العميل. وكلها تمرّ من هنا.
+   *
+   * ⇒ **من يكتب لجمهور يقرأ قاعدة الجمهور أولاً.** وعدد المرسَل إليهم يُقاس
+   *   بعدد **من ستصلهم الرسالة**، لا بعدد الأدوار المذكورة.
+   *
+   * ولماذا `owner` تحديداً وليس `admin`؟ لأن قاعدة القراءة تُظهر إشعار أى دور
+   * علوى للثلاثة، **ولأن المالك موجود دائماً** بينما قد لا يكون فى الشركة
+   * admin ولا general_manager — وهو بالضبط عطب ٧٤.٢٠ المسجَّل أدناه: إرسالٌ
+   * لأدوار لا أحد يشغلها = إشعار لا يصل أحداً.
+   *
+   * ⚠️ ولا تُضَف الأدوار الثلاثة معاً هنا مرة أخرى: `check:dup-notify` يقرأ
+   *    قاعدة الإنتاج ويكسر البناء إن زاد عدد الأحداث المكرَّرة.
+   */
+  private static readonly SENIOR_MANAGEMENT_ROLE = "owner"
+
   resolveExecutiveRecipients(): ResolvedNotificationRecipient[] {
     return [
-      { kind: "role", role: "admin", branchId: null, warehouseId: null, costCenterId: null },
-      { kind: "role", role: "general_manager", branchId: null, warehouseId: null, costCenterId: null },
+      {
+        kind: "role",
+        role: NotificationRecipientResolverService.SENIOR_MANAGEMENT_ROLE,
+        branchId: null, warehouseId: null, costCenterId: null,
+      },
     ]
   }
 
   resolveLeadershipRecipients(): ResolvedNotificationRecipient[] {
     return [
-      { kind: "role", role: "owner", branchId: null, warehouseId: null, costCenterId: null },
-      { kind: "role", role: "admin", branchId: null, warehouseId: null, costCenterId: null },
-      { kind: "role", role: "general_manager", branchId: null, warehouseId: null, costCenterId: null },
+      {
+        kind: "role",
+        role: NotificationRecipientResolverService.SENIOR_MANAGEMENT_ROLE,
+        branchId: null, warehouseId: null, costCenterId: null,
+      },
     ]
   }
 
@@ -85,9 +114,17 @@ export class NotificationRecipientResolverService {
       // Owner / admin / general_manager are company-wide authorities — they
       // see every Level-1 request regardless of which branch raised it. We
       // intentionally do NOT scope these to branchId.
-      { kind: "role", role: "owner", branchId: null, warehouseId: null, costCenterId: null },
-      { kind: "role", role: "admin", branchId: null, warehouseId: null, costCenterId: null },
-      { kind: "role", role: "general_manager", branchId: null, warehouseId: null, costCenterId: null },
+      //
+      // v3.74.855 — ONE send for the three of them, not three. NotificationCenter
+      // shows each of owner/admin/general_manager the others' notifications, so a
+      // send per role delivered the same message three times to each of them. The
+      // owner reported exactly that. They all still receive it, and all three are
+      // still permitted to approve — only the duplication is gone.
+      {
+        kind: "role",
+        role: NotificationRecipientResolverService.SENIOR_MANAGEMENT_ROLE,
+        branchId: null, warehouseId: null, costCenterId: null,
+      },
       // Manager is branch-scoped — only the manager of the branch that raised
       // the request gets the notification. Pass-through the warehouse and
       // cost-center hints in case the caller wants tighter scoping (most
@@ -102,6 +139,14 @@ export class NotificationRecipientResolverService {
     ]
   }
 
+  /**
+   * إشعار «للعلم» للإدارة العليا — إرسالٌ واحد أصلاً، فلم يكن مصدر تكرار.
+   *
+   * v3.74.855 — وُحِّد مع الثابت رغم ذلك: كان يُرسل لـ`admin` صراحةً، ويصل
+   * الثلاثة بحكم قاعدة القراءة. لكن **مصدر حقيقة واحد أفضل من اثنين
+   * متطابقين بالصدفة**: لو غُيّر الجمهور يوماً، يُغيَّر فى موضع واحد.
+   * والأنسب `owner` لأنه موجود دائماً (درس ٧٤.٢٠) وغير مُقيَّد بفرع.
+   */
   resolveLeadershipVisibilityRecipients(
     branchId?: string | null,
     warehouseId?: string | null,
@@ -110,7 +155,7 @@ export class NotificationRecipientResolverService {
     return [
       {
         kind: "role",
-        role: "admin",
+        role: NotificationRecipientResolverService.SENIOR_MANAGEMENT_ROLE,
         branchId: branchId || null,
         warehouseId: warehouseId || null,
         costCenterId: costCenterId || null,
