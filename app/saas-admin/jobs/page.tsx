@@ -1,7 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 
 export default async function AdminJobsPage() {
-  const supabase = await createClient()
+  // v3.74.857 — مراقب المهام يعرض مهام كل الشركات. محمىٌّ ببوابة
+  // app/saas-admin/layout.tsx (قائمة SAAS_ADMIN_EMAILS) قبل الوصول هنا.
+  const supabase = createServiceClient()
 
   const { data: jobs } = await supabase
     .from('jobs_queue')

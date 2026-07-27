@@ -1,8 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { ERPPageHeader } from '@/components/erp-page-header'
 
 async function getAdminStats() {
-  const supabase = await createClient()
+  // v3.74.857 — لوحة مشرف المنصة تعرض أرقاماً عبر كل الشركات، فلا يصلح لها
+  // عميل المستخدم (يرى شركاته فقط). كانت تعمل سابقاً بالخطأ لأن الجداول كانت
+  // مفتوحة للجميع. الآن تُقرأ بحساب الخدمة **بعد** بوابة layout.tsx التى
+  // تحصر الدخول فى قائمة SAAS_ADMIN_EMAILS.
+  const supabase = createServiceClient()
 
   const [companies, jobs, errors, subs, logs] = await Promise.all([
     supabase.from('companies').select('id', { count: 'exact', head: true }),

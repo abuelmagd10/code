@@ -65,6 +65,8 @@
     "check:signup": "node scripts/verify-signup-path.js",
     "check:audit-safe": "node scripts/check-audit-cannot-abort.js",
     "check:anon-functions": "node scripts/check-anon-reachable-functions.js",
+    "check:anon-tables": "node scripts/check-anon-open-tables.js",
+    "check:anon-tables:selftest": "node scripts/selftest-anon-open-tables.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"

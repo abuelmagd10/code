@@ -215,13 +215,14 @@ export default function SignUpPage() {
       // IMPORTANT: Save company data to DATABASE (not just localStorage)
       // This ensures data persists across browser sessions when email is confirmed
       try {
-        // First, delete any existing pending company for this email
-        await supabase
-          .from('pending_companies')
-          .delete()
-          .eq('user_email', email.toLowerCase())
-
-        // Insert new pending company
+        // v3.74.857 — 🔴 حُذف الحذف المسبق من هنا عن عمد.
+        //
+        // كان يتطلب منح الزائر المجهول صلاحية الحذف على هذا الجدول — وهو ما
+        // جعل أى شخص على الإنترنت قادراً على محو النسخة الاحتياطية لأى عميل،
+        // فيفقد اسم شركته عند تأكيد بريده. الآن للمجهول **الإدخال فقط**.
+        //
+        // تعدُّد الصفوف لبريدٍ واحد لم يعد يضرّ: شاشة التأكيد تأخذ الأحدث،
+        // ثم تحذف كل صفوف بريدها بصلاحية صاحبها بعد إنشاء الشركة.
         const { error: pendingError } = await supabase
           .from('pending_companies')
           .insert({

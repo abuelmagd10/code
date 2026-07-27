@@ -28,11 +28,17 @@ function CallbackInner() {
     // PRIORITY 1: Get from database (pending_companies table) - most reliable!
     if (userEmail) {
       try {
+        // v3.74.857 — الأحدث لا «الوحيد». شاشة التسجيل لم تعد تحذف قبل
+        // الإدخال (الحذف كان مفتوحاً للمجهولين)، فقد يوجد أكثر من صفّ لبريد
+        // واحد إن أعاد العميل التسجيل. و`.single()` كانت تُخفق حينها فيضيع
+        // اسم الشركة صامتاً ويُستبدل بـ«شركتي».
         const { data: pendingData } = await supabase
           .from('pending_companies')
           .select('*')
           .eq('user_email', userEmail.toLowerCase())
-          .single()
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
 
         if (pendingData) {
           console.log('Found pending company in database:', pendingData)

@@ -6,7 +6,17 @@
  * Slow API calls (>500ms) auto-escalate to 'warn'.
  */
 
-import { createClient } from '@/lib/supabase/server'
+// v3.74.857 — 🔴 لا يستعمل هذا الملف عميل المستخدم.
+//
+// كان يكتب السجلات بصلاحية المستخدم الحالى، وهذا خطأ من وجهين:
+//   ١) التسجيل بنية تحتية: يجب أن ينجح حتى فى الطلبات غير المسجَّلة —
+//      وأهمّها بالضبط محاولات الدخول الفاشلة، وهى ما نريد تسجيله أكثر.
+//   ٢) لو كتب المستخدم، وجب أن يُمنح صلاحية على جدول السجلات — وهو ما فتح
+//      `system_logs` (١٧٤ ألف صف) للقراءة والحذف لأى زائر مجهول.
+//
+// والكتابة هنا «أطلِق وانسَ» مع `catch` صامت، فلو فشلت لتوقّف التسجيل كله
+// بلا أن يلاحظ أحد. لذلك يجب ألّا يعتمد نجاحه على صلاحيات المتصل إطلاقاً.
+import { createServiceClient } from '@/lib/supabase/server'
 
 // ─── Types ────────────────────────────────────────────────────
 export type LogLevel = 'info' | 'warn' | 'error'
@@ -32,7 +42,7 @@ function writeLog(entry: LogEntry): void {
   // Non-blocking: deliberately not awaited
   ;(async () => {
     try {
-      const supabase = await createClient()
+      const supabase = createServiceClient()
       await supabase.from('system_logs').insert({
         level: entry.level,
         category: entry.category,

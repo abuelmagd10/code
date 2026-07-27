@@ -280,6 +280,16 @@ jobs:
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
 
+      # 🔒 v3.74.857 — الحارس السابق يفحص الدوال؛ وكانت الفجوة فى **الجداول**.
+      # سياسات سُمّيت `*_service_role` بلا `TO service_role` تسرى على PUBLIC —
+      # أى على الزائر المجهول. ١٢ جدولاً كانت مكشوفة، منها ١٧٤ ألف صف سجلات
+      # قابلة للحذف، وبريد كل عميل سجَّل، وجداول الاشتراكات والفوترة.
+      # حارسٌ على بابٍ لا يحمى باباً آخر — تكرَّر فى ٨٣٣ و٨٤٥ و٨٥١ و٨٥٣.
+      - name: No table left open to anonymous visitors
+        run: npm run check:anon-tables
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 
