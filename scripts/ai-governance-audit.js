@@ -184,7 +184,22 @@ for (const c of cycles.slice(0, 25)) {
 // Security/API checks
 for (const f of fileData.filter((x) => x.isRoute)) {
   const s = f.source;
-  const hasAuthMarker = /secureApiRequest|apiGuard|auth\.getUser|getUser\(|getActiveCompanyId|requireOwner|requireOwnerOrAdmin|requireRole|get[A-Za-z]+ApiContext|requireAuth\s*:\s*true|CRON_SECRET|PAYMOB_HMAC|hmac|webhook|contact\/route|health\/route|sentry-test/.test(s);
+  // v3.74.854 — أُضيف نمطان **بعد قراءة الطريقين حرفاً حرفاً**، لا لإسكات
+  // الماسح:
+  //
+  //   · `enforceGovernance` — يستدعى `supabase.auth.getUser()` ويرمى
+  //     'Unauthorized' بلا جلسة، ثم يحلّ عضوية الشركة من `company_members`
+  //     ويعيد `companyId` و`branchIds`. مصادقةٌ ونطاقٌ كاملان، لكن الماسح لا
+  //     يراهما لأن `auth.getUser` داخل الدالة لا فى الطريق.
+  //
+  //   · `api_token` — مصادقة **جهاز** لا مستخدم: أجهزة البصمة ترسل
+  //     `Bearer <token>` يُطابَق بـ`biometric_devices.api_token`، ويُرفض
+  //     الجهاز المعطَّل، وكل ما بعده مُقيَّد بـ`device.company_id`. لا جلسة
+  //     مستخدم هنا **بالتصميم** — الجهاز ليس مستخدماً.
+  //
+  // ⇒ **العلة فى ترك إيجابيتين كاذبتين على خط الأساس**: رقمٌ ثابت غير صفر
+  //   يُدرّب القارئ على تجاهله، فتضيع الثغرة الحقيقية القادمة بين ضجيجهما.
+  const hasAuthMarker = /secureApiRequest|apiGuard|auth\.getUser|getUser\(|getActiveCompanyId|requireOwner|requireOwnerOrAdmin|requireRole|get[A-Za-z]+ApiContext|requireAuth\s*:\s*true|enforceGovernance|api_token|CRON_SECRET|PAYMOB_HMAC|hmac|webhook|contact\/route|health\/route|sentry-test/.test(s);
   const hasPermission = /requirePermission|canAction|canAdvancedAction|company_role_permissions|requireOwner|requireOwnerOrAdmin|requireRole|get[A-Za-z]+ApiContext|role\s*[!=]==|\.in\(["']role|financial_reports/.test(s);
   const serviceRole = /SUPABASE_SERVICE_ROLE_KEY|createAdminClient|getAdmin\(|serviceKey/.test(s);
   if (!hasAuthMarker) {
@@ -533,16 +548,35 @@ console.log(`AI governance audit complete: ${findings.length} findings (${critic
 // نفس منهج `check-unchecked-writes.js`: الديون الموروثة تُسجَّل كخط أساس،
 // وأى CRITICAL **جديد** يكسر البناء فوراً. وإن نزل العدد يُطلب خفض الخط
 // فلا يعود الدين للتسلل مرة أخرى.
-// الديون الثلاث الموروثة — **مسجَّلة لا مقبولة**، وكل واحدة ثغرة حقيقية:
-//   1. /api/subscription/create        ← الأخطر: إنشاء اشتراك بلا مصادقة إطلاقاً
-//   2. /api/biometric/attendance/push  ← جهاز البصمة يدفع حضوراً بلا سرّ جهاز
-//   3. /api/bills/:id/journal-entry-id ← يكشف رقم قيد أى فاتورة بتخمين المعرّف
-// مشروع تأمينها مستقل ومُسجَّل فى دفتر التسليم.
+// الديون الثلاث الموروثة كما وُصفت وقت إدخال الفحص:
+//   1. /api/subscription/create        ← إنشاء حسابات بلا مصادقة إطلاقاً
+//   2. /api/biometric/attendance/push  ← «بلا سرّ جهاز»
+//   3. /api/bills/:id/journal-entry-id ← «يكشف رقم قيد أى فاتورة»
+//
+// ⚠️ **تصحيح ٨٥٤ — الوصفان ٢ و٣ كانا خاطئين.** قُرئ الطريقان حرفاً حرفاً:
+//   · biometric يطلب `Bearer <token>` ويُطابقه بـ`biometric_devices.api_token`،
+//     ويرفض الجهاز المعطَّل، ويُقيّد كل ما بعده بـ`device.company_id`.
+//   · bills يستدعى `enforceGovernance()` الذى يرمى 'Unauthorized' بلا جلسة،
+//     ثم يقصر الاستعلام على `governance.companyId` ويفحص `branchIds`.
+//   والأول (subscription/create) كان حقيقياً فعلاً وأُزيل فى ٨٤٩.
+//
+// ⇒ **الدرس**: وصفٌ مكتوب فى تعليق **ليس دليلاً**. بقى وصفان خاطئان شهوراً
+//   يُقرآن كأنهما حقيقة، ويُبقيان خط الأساس مرفوعاً بلا سبب. التعليق يُصحَّح
+//   حين يُقرأ الكود، ولا يُترك يناقضه.
 // ٨٤٩: ٣ ← ٢. سقطت واحدة بإزالة `app/api/subscription/create` — كان بلا أى
 // تحقق هوية ويُنشئ حسابات مستخدمين بصلاحية الخدمة الكاملة، ولا يستدعيه أحد.
 // لم يُكتشف بالبحث عنه، بل أثناء التأكد من أن نسخة الاشتراك الميتة آمنة الحذف.
-// الباقيتان موثَّقتان: bills/[id]/journal-entry-id و biometric/attendance/push.
-const CRITICAL_BASELINE = 2;
+//
+// ٨٥٤: ٢ ← **صفر**. والاثنتان كانتا **إيجابيتين كاذبتين**، لا ثغرتين:
+//   · `bills/[id]/journal-entry-id` يستدعى `enforceGovernance` الذى يرمى
+//     'Unauthorized' بلا جلسة ثم يُقيّد بالشركة والفرع.
+//   · `biometric/attendance/push` يُصادِق **الجهاز** برمزه ويُقيّد بشركته.
+// لم يرهما الماسح لأنه يبحث عن علامات بعينها. أُضيفتا إليه بعد قراءة
+// الطريقين حرفاً حرفاً — لا لإسكاته.
+//
+// ⇒ **ولماذا يهمّ التصفير؟** رقمٌ ثابت غير صفر يُدرّب القارئ على تجاهله.
+//   خط أساسٍ عند صفر يعنى أن **أى** ظهور قادم حقيقىٌّ ويكسر البناء.
+const CRITICAL_BASELINE = 0;
 
 if (ciMode) {
   if (criticalCount > CRITICAL_BASELINE) {
