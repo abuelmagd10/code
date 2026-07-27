@@ -43,13 +43,14 @@ const schemaPath = path.join(root, "supabase", "schema", "schema.sql")
 // ٨٤٧: قراءتا `payroll_runs.status` أُصلحتا ⇒ ١١. ولم يكن الحل إنشاء العمود:
 //      دفتر اليومية هو سجلّ أن المرتب صُرف، و`post_payroll_atomic` يمنع
 //      الازدواج به بالفعل — فحُذف الفحص المسبق ولم يُبنَ مصدر حقيقة ثانٍ.
-// والإحدى عشرة الباقية **ليست أخطاء تسمية**: مزايا كُتب كودها ولم تُنشأ
-// أعمدتها فى القاعدة قط —
+// ٨٤٨: `chart_of_accounts.balance/currency_code` أُصلحتا ⇒ ٩. ولا هنا أيضاً
+//      أُنشئ عمود: **الرصيد لا يُخزَّن، يُشتَقّ** — افتتاحى + (مدين − دائن)
+//      على القيود المرحَّلة، وهى القاعدة المعتمدة فى المشروع أصلاً.
+// والتسع الباقية **ليست أخطاء تسمية**: مزايا كُتب كودها ولم تُنشأ أعمدتها قط —
 //   · اشتراك المستخدمين        companies.max_users/monthly_cost/subscription_plan
 //   · عمولات مربوطة بالمرتبات  commission_*.payroll_run_id/payout_mode/payment_*
-//   · إعادة تقييم العملات      chart_of_accounts.balance/currency_code
 // إصلاحها قرار منتج (تُنشأ الأعمدة أم تُزال الميزة)، لا إعادة تسمية.
-const BASELINE = Number(process.env.PHANTOM_SELECT_BASELINE ?? 11)
+const BASELINE = Number(process.env.PHANTOM_SELECT_BASELINE ?? 9)
 
 if (!fs.existsSync(schemaPath)) {
   console.log("+ Schema snapshot not found - skipping phantom-select check.")

@@ -680,23 +680,100 @@ export async function performCurrencyRevaluation(
       }
     }
 
-    // Get all monetary accounts with foreign currency balances
-    // This includes: AR, AP, Bank accounts, Cash accounts
-    const { data: accounts } = await supabase
+    // Get all monetary accounts (AR, AP, bank, cash) and their balances.
+    //
+    // v3.74.848 — this used to read `chart_of_accounts.balance` and
+    // `.currency_code`. NEITHER COLUMN EXISTS, and the second is not an
+    // oversight: the project's approved accounting rule is that a balance is
+    // never stored, it is derived - opening_balance + (debits - credits) over
+    // POSTED journal entries, exactly as /api/account-balances computes it.
+    //
+    // Because the columns are absent the whole SELECT failed, `accounts` came
+    // back null, and this function returned {success:true, gain:0, loss:0}
+    // without revaluing anything. A base-currency change therefore converted
+    // every displayed amount and posted NO revaluation entry at all - and it
+    // reported success while doing it.
+    const { data: accountRows, error: accountsErr } = await supabase
       .from('chart_of_accounts')
-      .select('id, account_code, account_name, account_type, balance, currency_code')
+      .select('id, account_code, account_name, account_type, opening_balance')
       .eq('company_id', companyId)
+      .eq('is_active', true)
       .in('account_type', ['asset', 'liability'])
-      .not('balance', 'is', null)
 
-    if (!accounts || accounts.length === 0) {
+    if (accountsErr) {
+      // Never again report success for a read that failed.
       return {
-        success: true,
+        success: false,
+        error: `تعذّر جلب الحسابات لإعادة التقييم: ${accountsErr.message}`,
         totalGain: 0,
         totalLoss: 0,
         revaluedAccounts: 0
       }
     }
+
+    if (!accountRows || accountRows.length === 0) {
+      return { success: true, totalGain: 0, totalLoss: 0, revaluedAccounts: 0 }
+    }
+
+    // Posted entries only - a draft entry must not move a balance.
+    const { data: postedEntries, error: entriesErr } = await supabase
+      .from('journal_entries')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('status', 'posted')
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .is('deleted_at', null)
+
+    if (entriesErr) {
+      return {
+        success: false,
+        error: `تعذّر جلب القيود لإعادة التقييم: ${entriesErr.message}`,
+        totalGain: 0,
+        totalLoss: 0,
+        revaluedAccounts: 0
+      }
+    }
+
+    const movement = new Map<string, number>()
+    const entryIds = (postedEntries || []).map((e: any) => e.id)
+    if (entryIds.length > 0) {
+      // Chunked: `.in()` on thousands of ids exceeds the URL length limit and
+      // would fail the request - which is how this class of bug starts.
+      const CHUNK = 500
+      for (let i = 0; i < entryIds.length; i += CHUNK) {
+        const { data: lines, error: linesErr } = await supabase
+          .from('journal_entry_lines')
+          .select('account_id, debit_amount, credit_amount')
+          .in('journal_entry_id', entryIds.slice(i, i + CHUNK))
+        if (linesErr) {
+          return {
+            success: false,
+            error: `تعذّر جلب سطور القيود لإعادة التقييم: ${linesErr.message}`,
+            totalGain: 0,
+            totalLoss: 0,
+            revaluedAccounts: 0
+          }
+        }
+        for (const l of lines || []) {
+          const id = String((l as any).account_id || '')
+          if (!id) continue
+          movement.set(
+            id,
+            (movement.get(id) || 0)
+              + Number((l as any).debit_amount || 0)
+              - Number((l as any).credit_amount || 0)
+          )
+        }
+      }
+    }
+
+    const accounts = accountRows.map((a: any) => ({
+      ...a,
+      balance: roundToDecimals(
+        Number(a.opening_balance || 0) + (movement.get(String(a.id)) || 0),
+        2
+      ),
+    }))
 
     // Calculate revaluation for each account
     for (const account of accounts) {
