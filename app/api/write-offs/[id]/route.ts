@@ -10,6 +10,29 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 
+/**
+ * v3.74.858 — أعمدة الإهلاك القابلة للتعديل من هذه الشاشة، بالاسم.
+ *
+ * تُستثنى عمداً كل أعمدة الحالة والمسار المحكوم:
+ * `status` · `approved_by/at` · `rejected_by/at` · `cancelled_by/at` ·
+ * `journal_entry_id` · `created_by` · `company_id` · `total_cost`.
+ * لكلٍّ منها مساره المعتمَد، ولا يجوز أن يبلغه المتصفح بتعديلٍ عادى — وهذا
+ * ما كان يسمح به نسخُ جسم الطلب كما وصل.
+ */
+const WRITABLE_WRITE_OFF_COLUMNS = [
+  "write_off_date", "reason", "reason_details", "notes",
+  "warehouse_id", "warehouse_name", "branch_id", "cost_center_id",
+  "attachments", "currency_code", "exchange_rate",
+] as const
+
+function pickWritableWriteOffFields(input: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const key of WRITABLE_WRITE_OFF_COLUMNS) {
+    if (input?.[key] !== undefined) out[key] = input[key]
+  }
+  return out
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -88,7 +111,10 @@ export async function PATCH(
     const { data: updated, error: updateError } = await supabase
       .from("inventory_write_offs")
       .update({
-        ...body,
+        // v3.74.858 — الأعمدة بالاسم لا نسخ الجسم كما وصل. أعمدة الحالة
+        // (الاعتماد/الرفض/الإلغاء/القيد) لا تُكتب من هنا عمداً: لها مساراتها
+        // المحكومة، ولا يجوز أن يبلغها المتصفح بتعديلٍ عادى.
+        ...pickWritableWriteOffFields(body),
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)

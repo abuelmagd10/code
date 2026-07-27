@@ -15,6 +15,25 @@ import {
 } from "@/lib/governance-middleware"
 
 /**
+ * v3.74.858 — أعمدة `warehouses` القابلة للكتابة، بالاسم.
+ * تُستثنى `id` و`company_id` و`created_at` و`updated_at` (يديرها الخادم)،
+ * و`is_main` (يُحدَّد هنا صراحةً لا من المتصفح).
+ */
+const WRITABLE_WAREHOUSE_COLUMNS = [
+  "branch_id", "cost_center_id", "name", "code",
+  "address", "city", "phone", "manager_name",
+  "is_active", "notes",
+] as const
+
+function pickWritableWarehouseFields(input: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const key of WRITABLE_WAREHOUSE_COLUMNS) {
+    if (input?.[key] !== undefined) out[key] = input[key]
+  }
+  return out
+}
+
+/**
  * GET /api/warehouses
  * جلب المستودعات مع تطبيق فلاتر الحوكمة
  */
@@ -147,7 +166,11 @@ export async function POST(request: NextRequest) {
     
     // 2️⃣ إضافة بيانات الحوكمة تلقائياً (فقط company_id و branch_id - لا warehouse_id لأننا ننشئ مستودعاً جديداً)
     const dataWithGovernance = {
-      ...body,
+      // v3.74.858 — الأعمدة بالاسم لا نسخ الجسم كما وصل. لم يكن هذا المسار
+      // مكسوراً (الحوكمة هنا تُبنى يدوياً ولا تضيف `warehouse_id`)، لكنه كان
+      // يحمل نفس القنبلة: أول حقل عرضٍ يُضاف لشاشة المخازن كان سيُسقط الإنشاء
+      // بخطأ ٤٠٠ لا يبلغ سجلات القاعدة — كما حدث فى شاشة الأصناف بـ`branch_name`.
+      ...pickWritableWarehouseFields(body),
       company_id: governance.companyId,
       branch_id: body.branch_id || (governance.branchIds.length > 0 ? governance.branchIds[0] : null),
       // ✅ لا نضيف warehouse_id و cost_center_id لأننا ننشئ مستودعاً جديداً
@@ -195,7 +218,8 @@ export async function POST(request: NextRequest) {
     const { data: warehouse, error: insertError } = await supabase
       .from("warehouses")
       .insert({
-        ...dataWithGovernance,
+        ...pickWritableWarehouseFields(dataWithGovernance),
+        company_id: governance.companyId,
         cost_center_id: resolvedCostCenterId,
         is_main: false,
         is_active: body.is_active !== false

@@ -769,8 +769,23 @@ export default function ProductsPage() {
     // v3.74.645 — عند التعديل نحافظ على الرمز الحالي ولا نقترح رمزاً جديداً
     setSkuTouched(true)
     // 🔐 Enterprise Logic: عند التعديل، للأدوار العادية نفرض القيم من بيانات المستخدم
+    // v3.74.858 — 🔴 لا يُنسخ صفّ القائمة كما هو إلى النموذج.
+    //
+    // `/api/products-list` يضيف `branch_name` للعرض فقط (ربط الفرع، v3.74.637)،
+    // وهو **ليس عموداً** فى `products`. ونسخ الصفّ كما هو كان يُعيده مع الحفظ
+    // فترفض قاعدة البيانات التحديث كله — فسقط تعديل **كل** صنف من هذه الشاشة.
+    // الحقول تُذكر بالاسم الآن، فأى حقل عرضٍ يُضاف مستقبلاً لا يصل للحفظ أصلاً.
     const editData: any = {
-      ...product,
+      sku: product.sku ?? "",
+      name: product.name ?? "",
+      description: product.description ?? "",
+      unit_price: product.unit_price ?? 0,
+      cost_price: product.cost_price ?? 0,
+      unit: product.unit ?? "piece",
+      quantity_on_hand: product.quantity_on_hand ?? 0,
+      reorder_level: product.reorder_level ?? 0,
+      item_type: product.item_type ?? "product",
+      requires_withdrawal_approval: (product as any).requires_withdrawal_approval ?? false,
       income_account_id: product.income_account_id || "",
       expense_account_id: product.expense_account_id || "",
       cost_center: product.cost_center || "",

@@ -7,6 +7,47 @@ import {
   validateProductAccountingSelection,
 } from "@/lib/product-accounting"
 
+/**
+ * v3.74.858 — 🔴 الأعمدة المسموح بكتابتها، بالاسم.
+ *
+ * **الحادثة**: المالك يعدّل صنفاً مُصنَّعاً فيرى «فشل خطأ فى تحديث المنتج».
+ * والسبب أن هذا المسار كان يكتب `{ ...body }` كما وصل من المتصفح.
+ *
+ * وشاشة الأصناف تُحمِّل بياناتها من `/api/products-list`، وهذا المسار يضيف
+ * منذ v3.74.637 حقلاً **للعرض فقط** اسمه `branch_name` (مأخوذاً من ربط الفرع).
+ * فعند الضغط على «تعديل» يُنسخ الصفّ كما هو إلى النموذج، ويعود `branch_name`
+ * مع الحفظ، فترفضه قاعدة البيانات: **لا عمود بهذا الاسم فى `products`** —
+ * ٤٠٠، فيتحوّل عندنا إلى ٥٠٠ ورسالة عامة لا تدلّ على شىء.
+ *
+ * ⇒ **والعطب ليس فى الصورة ولا فى كون الصنف مُصنَّعاً**: أى تعديل لأى صنف من
+ *   تلك الشاشة كان يسقط بنفس السبب.
+ *
+ * ⇒ **والدرس**: لا يُكتب جسم الطلب فى قاعدة البيانات كما وصل. تُذكر الأعمدة
+ *   بالاسم. عندئذٍ لا يستطيع أى حقل عرضٍ يُضاف مستقبلاً — فى أى شاشة، بأى
+ *   ربط — أن يكسر الحفظ. القائمة تشمل كل أعمدة `products` القابلة للكتابة،
+ *   عدا `id` و`company_id` و`created_at` و`updated_at` (يديرها الخادم).
+ */
+const WRITABLE_PRODUCT_COLUMNS = [
+  "sku", "name", "description", "unit",
+  "unit_price", "cost_price", "selling_price",
+  "quantity_on_hand", "reorder_level", "shelf_life_days", "units_per_carton",
+  "item_type", "product_type", "is_active", "track_inventory",
+  "requires_withdrawal_approval",
+  "income_account_id", "expense_account_id", "tax_code_id",
+  "branch_id", "warehouse_id", "cost_center", "cost_center_id",
+  "image_urls",
+  "original_unit_price", "original_cost_price", "original_currency", "exchange_rate_used",
+  "display_unit_price", "display_cost_price", "display_currency", "display_rate",
+] as const
+
+function pickWritableProductFields(body: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const key of WRITABLE_PRODUCT_COLUMNS) {
+    if (body[key] !== undefined) out[key] = body[key]
+  }
+  return out
+}
+
 // PUT - Update existing product
 export async function PUT(
   req: Request,
@@ -129,7 +170,8 @@ export async function PUT(
 
     // Prepare data with enforced values
     const productData = {
-      ...body,
+      // v3.74.858 — الأعمدة بالاسم لا نسخ الجسم كما وصل. انظر التعليق أعلى الملف.
+      ...pickWritableProductFields(body),
       income_account_id: finalIncomeAccountId,
       expense_account_id: finalExpenseAccountId,
       branch_id: finalBranchId,
