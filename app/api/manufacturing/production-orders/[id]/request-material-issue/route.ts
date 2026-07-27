@@ -1,16 +1,30 @@
 /**
  * POST /api/manufacturing/production-orders/[id]/request-material-issue
  * إنشاء طلب اعتماد صرف المواد الخام لأمر إنتاج مُصدر
- * يتطلب موافقة مسؤول المخزن قبل تنفيذ الصرف الفعلي
+ *
+ * الصرف على مرحلتين:
+ *   ١) اعتماد الإدارة (المالك / المدير العام / admin / مدير الفرع)
+ *   ٢) تنفيذ مسئول المخزن — وعندها فقط تُخصم المواد
+ *
+ * v3.74.851 — الإشعار كان يذهب **لمسئول المخزن وحده** لحظة الطلب، ونصّه
+ * «يتطلب موافقتك قبل بدء الإنتاج». والطلب يُنشأ بحالة `pending` أى
+ * **انتظار الإدارة** — فمسئول المخزن لا يملك التصرف بعد، والإدارة التى
+ * تملكه **لم يصلها شىء**. أبلغ المالك بذلك من الاستعمال الحى: الإشعار عند
+ * مسئول المخزن، والمالك والمدير العام يريان البند فى صندوق الاعتمادات بلا
+ * إشعار.
+ *
+ * ⇒ نفس درس ٨٤٥ و٨٣٣: **الرسالة تُرسَل إلى من يملك التصرف فى هذه اللحظة.**
+ * الإشعار الآن للإدارة عند الطلب، ولمسئول المخزن بعد موافقة الإدارة —
+ * وهذا الأخير قائم بالفعل فى مسار `management-approve`.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
+import { createNotification } from "@/lib/governance-layer"
 import {
   assertProductionOrderAccessible,
   getManufacturingApiContext,
   handleManufacturingApiError,
 } from "@/lib/manufacturing/production-order-api"
-import { notifyWarehouseStaff } from "@/lib/manufacturing/notification-helpers"
 
 export async function POST(
   request: NextRequest,
@@ -122,32 +136,42 @@ export async function POST(
 
     if (updateError) throw updateError
 
-    // ── warehouse-specific notification (R8.2) ─────────────────
-    const notifBase = {
-      p_company_id:       companyId,
-      p_reference_type:   "manufacturing_material_issue_approval",
-      p_reference_id:     approval.id,
-      p_title:            "🏭 طلب اعتماد صرف مواد خام",
-      p_message:          `طلب صرف مواد للأمر ${existing.order_no} — يتطلب موافقتك قبل بدء الإنتاج`,
-      p_created_by:       user.id,
-      p_branch_id:        approvalBranchId,
-      p_warehouse_id:     existing.issue_warehouse_id ?? null,
-      p_cost_center_id:   null as string | null,
-      p_assigned_to_role: null as string | null,
-      p_assigned_to_user: null as string | null,
-      p_priority:         "high",
-      p_severity:         "warning",
-      p_category:         "approvals",
-      // v3.74.588 — طلب اعتماد صرف مواد من مسؤول المخزن (مرحلة طلب)
-      p_kind:             "action",
+    // ── المرحلة ١: الاعتماد بيد الإدارة، فالإشعار للإدارة ──────────────
+    // مسئول المخزن لا يُشعَر هنا: لا يستطيع الصرف قبل موافقة الإدارة، وإشعاره
+    // بـ«يتطلب موافقتك» يدفعه لفتح شاشة لا يملك فيها زراً — ويترك من يملك
+    // القرار بلا خبر. يُشعَر فى `management-approve` بعد الموافقة.
+    const notificationBase = {
+      companyId,
+      referenceType: "manufacturing_material_issue_approval",
+      referenceId:   approval.id,
+      title:         "🏭 طلب اعتماد صرف مواد خام",
+      message:       `طلب صرف مواد للأمر ${existing.order_no} بانتظار اعتماد الإدارة — لن تُخصم المواد قبل تنفيذ مسئول المخزن بعد موافقتك`,
+      createdBy:     user.id,
+      branchId:      approvalBranchId ?? undefined,
+      // يُحتفظ بسياق المخزن على الإشعار وإن كان موجَّهاً للإدارة، فالبند
+      // يخصّ مخزناً بعينه ويظهر فى الفلاتر بذلك.
+      warehouseId:   existing.issue_warehouse_id ?? undefined,
+      priority:      "high" as const,
+      severity:      "warning" as const,
+      category:      "approvals" as const,
+      kind:          "action" as const,
     }
-    await notifyWarehouseStaff({
-      admin, companyId,
-      warehouseId:    existing.issue_warehouse_id ?? null,
-      notifBase,
-      eventKeyPrefix: "mmia_request",
-      referenceId:    approval.id,
-    })
+    // نفس الأدوار الأربعة التى يقبلها `management-approve`، فلا يصل الإشعار
+    // إلى من يُرفض تصرفه، ولا يُحرم منه من يُقبل.
+    for (const [role, key] of [
+      ["admin",           "admin"],
+      ["owner",           "owner"],
+      ["general_manager", "gm"],
+      ["manager",         "mgr"],
+    ] as const) {
+      try {
+        await createNotification({
+          ...notificationBase,
+          assignedToRole: role,
+          eventKey: `mmia_request_${key}_${approval.id}`,
+        })
+      } catch { /* non-critical: الإشعار لا يُسقط الطلب */ }
+    }
 
     asyncAuditLog({
       companyId,
