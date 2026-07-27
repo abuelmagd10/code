@@ -59,43 +59,36 @@ async function runTests() {
 async function testDatabaseSchema() {
     console.log('📋 Test 1: Verifying database schema changes...')
 
-    // Check commission_plans.payout_mode
-    const { data: plans, error: plansError } = await supabase
-        .from('commission_plans')
-        .select('id, payout_mode')
-        .limit(1)
-
-    if (plansError && !plansError.message.includes('column "payout_mode" does not exist')) {
-        console.log('  ✅ commission_plans.payout_mode exists')
-    } else if (plansError) {
-        throw new Error('❌ commission_plans.payout_mode column missing')
+    // v3.74.849 — this test COULD NOT FAIL, and it was checking the wrong table.
+    //
+    // The old condition read:
+    //     if (error && !error.message.includes('does not exist')) -> print "exists"
+    //     else if (error) -> throw
+    // When the column really existed there was no error at all, so both branches
+    // were skipped: nothing printed, nothing thrown, test "passed". And when the
+    // column was missing it threw only if the message did NOT say "does not
+    // exist" - which is exactly what such a message says. Inverted both ways.
+    //
+    // It was also asking commission_ledger for payment_status / paid_at /
+    // payment_journal_entry_id. Those columns are not there and never were: the
+    // payment facts live on commission_runs (status, paid_at,
+    // payment_journal_id) and the ledger carries status and journal_entry_id.
+    // A test aimed at the wrong table cannot pass however it is written.
+    //
+    // commission_plans.payout_mode is not checked any more: the column does not
+    // exist, nothing reads it, and the one query that selected it never used
+    // the value.
+    const mustHave = async (table: string, columns: string) => {
+        const { error } = await supabase.from(table).select(columns).limit(1)
+        if (error) {
+            throw new Error(`❌ ${table} is missing one of [${columns}] — ${error.message}`)
+        }
+        console.log(`  ✅ ${table}: ${columns}`)
     }
 
-    // Check commission_runs.payroll_run_id
-    const { data: runs, error: runsError } = await supabase
-        .from('commission_runs')
-        .select('id, payroll_run_id')
-        .limit(1)
-
-    if (runsError && !runsError.message.includes('column "payroll_run_id" does not exist')) {
-        console.log('  ✅ commission_runs.payroll_run_id exists')
-    } else if (runsError) {
-        throw new Error('❌ commission_runs.payroll_run_id column missing')
-    }
-
-    // Check commission_ledger.payment_status
-    const { data: ledger, error: ledgerError } = await supabase
-        .from('commission_ledger')
-        .select('id, payment_status, paid_at, payment_journal_entry_id')
-        .limit(1)
-
-    if (ledgerError && !ledgerError.message.includes('column "payment_status" does not exist')) {
-        console.log('  ✅ commission_ledger.payment_status exists')
-        console.log('  ✅ commission_ledger.paid_at exists')
-        console.log('  ✅ commission_ledger.payment_journal_entry_id exists')
-    } else if (ledgerError) {
-        throw new Error('❌ commission_ledger payment tracking columns missing')
-    }
+    // The link that makes attach-to-payroll possible, and stops it happening twice.
+    await mustHave('commission_runs', 'id, payroll_run_id, status, paid_at, payment_journal_id')
+    await mustHave('commission_ledger', 'id, status, journal_entry_id, amount, commission_run_id')
 
     console.log('  ✅ All schema changes verified\n')
 }

@@ -4,14 +4,33 @@ import { NextRequest } from 'next/server';
 
 /**
  * POST /api/commissions/attach-to-payroll
- * Attach commission run to payroll run (for payroll mode only)
- * 
- * Request body:
- * - companyId: UUID
- * - commissionRunId: UUID
- * - payrollRunId: UUID
- * 
+ * Attach a commission run to a payroll run: the commission is added to each
+ * employee's payslip as sales_bonus and the net salary is recomputed.
+ *
+ * Request body: companyId, commissionRunId, payrollRunId
  * Security: Owner/Admin only
+ *
+ * v3.74.849 — this route had THREE defects and never worked:
+ *
+ *   1. It read `commission_runs.payroll_run_id`, a column that did not exist,
+ *      so the very first SELECT failed and the route answered "Commission run
+ *      not found" for a run that was sitting right there.
+ *
+ *   2. It also selected `commission_plans(payout_mode)`, another phantom - and
+ *      nothing in the route ever used the value.
+ *
+ *   3. Its net-salary formula omitted `commission` and
+ *      `commission_advance_deducted`. Even had the reads worked, the payslip it
+ *      wrote would not balance, and post_payroll_atomic would then refuse the
+ *      whole payroll with PAYSLIP_IMBALANCE.
+ *
+ * The work now happens inside commission_attach_to_payroll_atomic, in one
+ * transaction, for a reason that matters: the old code updated every payslip
+ * FIRST and recorded the link LAST. Anything failing in between left the raise
+ * applied with nothing to record that it had been - so pressing the button
+ * again added the commission a second time. The RPC locks the run, CLAIMS the
+ * link, and only then touches payslips; a second call returns idempotent, and a
+ * database trigger refuses to re-point the link at a different payroll run.
  */
 export async function POST(request: NextRequest) {
     try {
@@ -47,128 +66,43 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Validate commission run
-        const { data: commissionRun, error: runError } = await supabase
-            .from('commission_runs')
-            .select('id, status, payroll_run_id, commission_plans(payout_mode)')
-            .eq('id', commissionRunId)
-            .eq('company_id', companyId)
-            .single();
+        const { data, error } = await supabase.rpc('commission_attach_to_payroll_atomic', {
+            p_company_id: companyId,
+            p_commission_run_id: commissionRunId,
+            p_payroll_run_id: payrollRunId,
+        });
 
-        if (runError || !commissionRun) {
-            return NextResponse.json(
-                { error: 'Commission run not found' },
-                { status: 404 }
-            );
-        }
-
-        // Validate status
-        if (!['posted', 'paid'].includes(commissionRun.status)) {
-            return NextResponse.json(
-                { error: 'Commission run must be posted or paid before attaching to payroll' },
-                { status: 400 }
-            );
-        }
-
-        // Check if already attached
-        if (commissionRun.payroll_run_id) {
-            return NextResponse.json(
-                { error: 'Commission run already attached to payroll' },
-                { status: 400 }
-            );
-        }
-
-        // Validate payroll run exists
-        const { data: payrollRun, error: payrollError } = await supabase
-            .from('payroll_runs')
-            .select('id')
-            .eq('id', payrollRunId)
-            .eq('company_id', companyId)
-            .single();
-
-        if (payrollError || !payrollRun) {
-            return NextResponse.json(
-                { error: 'Payroll run not found' },
-                { status: 404 }
-            );
-        }
-
-        // Get commission ledger entries for this run
-        const { data: ledgerEntries, error: ledgerError } = await supabase
-            .from('commission_ledger')
-            .select('employee_id, commission_amount:amount')
-            .eq('commission_run_id', commissionRunId)
-            .eq('company_id', companyId);
-
-        if (ledgerError) {
-            console.error('Error fetching ledger entries:', ledgerError);
-            return NextResponse.json(
-                { error: 'Failed to fetch commission ledger' },
-                { status: 500 }
-            );
-        }
-
-        // Aggregate commissions by employee
-        const employeeCommissions = (ledgerEntries || []).reduce((acc: any, entry: any) => {
-            const empId = entry.employee_id;
-            if (!acc[empId]) {
-                acc[empId] = 0;
+        if (error) {
+            const msg = error.message || '';
+            // The database speaks in codes; the user is owed a sentence.
+            if (msg.includes('RUN_NOT_FOUND')) {
+                return NextResponse.json({ error: 'دفعة العمولات غير موجودة' }, { status: 404 });
             }
-            acc[empId] += Number(entry.commission_amount || 0);
-            return acc;
-        }, {});
-
-        // Update payslips
-        let employeesUpdated = 0;
-        let totalCommissionAdded = 0;
-
-        for (const [employeeId, commissionAmount] of Object.entries(employeeCommissions)) {
-            const amount = Number(commissionAmount);
-            if (amount === 0) continue;
-
-            // Get current payslip
-            const { data: payslip } = await supabase
-                .from('payslips')
-                .select('sales_bonus, base_salary, allowances, bonuses, advances, insurance, deductions')
-                .eq('payroll_run_id', payrollRunId)
-                .eq('employee_id', employeeId)
-                .single();
-
-            if (payslip) {
-                const newSalesBonus = Number(payslip.sales_bonus || 0) + amount;
-                const newNetSalary = Number(payslip.base_salary || 0)
-                    + Number(payslip.allowances || 0)
-                    + Number(payslip.bonuses || 0)
-                    + newSalesBonus
-                    - Number(payslip.advances || 0)
-                    - Number(payslip.insurance || 0)
-                    - Number(payslip.deductions || 0);
-
-                await supabase
-                    .from('payslips')
-                    .update({
-                        sales_bonus: newSalesBonus,
-                        net_salary: newNetSalary
-                    })
-                    .eq('payroll_run_id', payrollRunId)
-                    .eq('employee_id', employeeId);
-
-                employeesUpdated++;
-                totalCommissionAdded += amount;
+            if (msg.includes('PAYROLL_NOT_FOUND')) {
+                return NextResponse.json({ error: 'دفعة المرتبات غير موجودة' }, { status: 404 });
             }
+            if (msg.includes('ALREADY_ATTACHED')) {
+                return NextResponse.json({
+                    error: 'دفعة العمولات مرتبطة بالفعل بدفعة مرتبات أخرى — لا يمكن ربطها مرتين، فذلك يضيف العمولة إلى المرتب مرة ثانية.',
+                }, { status: 400 });
+            }
+            if (msg.includes('BAD_STATUS')) {
+                return NextResponse.json({
+                    error: 'يجب ترحيل دفعة العمولات أو صرفها قبل ربطها بالمرتبات.',
+                }, { status: 400 });
+            }
+            console.error('[commissions/attach-to-payroll]', msg);
+            return NextResponse.json({ error: 'تعذّر ربط العمولات بالمرتبات', details: msg }, { status: 500 });
         }
 
-        // Link commission run to payroll run
-        await supabase
-            .from('commission_runs')
-            .update({ payroll_run_id: payrollRunId })
-            .eq('id', commissionRunId);
+        const result = (data || {}) as any;
 
         return NextResponse.json({
             success: true,
-            employeesUpdated,
-            totalCommissionAdded,
-            message: `Successfully attached commission run to payroll`
+            idempotent: !!result.idempotent,
+            employeesUpdated: Number(result.employeesUpdated || 0),
+            totalCommissionAdded: Number(result.totalCommissionAdded || 0),
+            message: result.message || 'تم ربط دفعة العمولات بالمرتبات',
         });
     } catch (error) {
         console.error('Unexpected error:', error);
