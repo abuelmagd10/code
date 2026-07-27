@@ -300,6 +300,16 @@ jobs:
       - name: Prove the raw-body guard refuses
         run: npm run check:raw-body-writes:selftest
 
+      # 🔴 v3.74.859 — ستة جداول كانت بلا سجل تدقيق إطلاقاً (الصلاحيات،
+      # الفترات المحاسبية، المرتبات، الضرائب) لأن الدالة تقرأ `NEW.branch_id`
+      # داخل تعبير CASE، وPL/pgSQL يُخطِّطه كاملاً مهما كان الشرط.
+      # الفحص تجريبى لا صرفى: يُحدِّث صفاً بلا تغيير داخل معاملة تُلغى،
+      # ويشترط ظهور قيد تدقيق. الفحص الصرفى أعطى ٢١ إنذاراً كاذباً.
+      - name: Every audited table actually records
+        run: npm run check:audit-records
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 

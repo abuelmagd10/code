@@ -69,6 +69,8 @@
     "check:anon-tables:selftest": "node scripts/selftest-anon-open-tables.js",
     "check:raw-body-writes": "node scripts/check-request-body-written-raw.js",
     "check:raw-body-writes:selftest": "node scripts/selftest-request-body-written-raw.js",
+    "check:audit-records": "node scripts/check-audit-trail-actually-records.js",
+    "check:audit-records:selftest": "node scripts/selftest-audit-trail-records.js",
     "audit:sql": "echo 'استخدم Supabase SQL Editor لتنفيذ scripts/COMPREHENSIVE_ACCOUNTING_AUDIT.sql'",
     "deploy": "vercel --prod",
     "deploy:preview": "vercel"
