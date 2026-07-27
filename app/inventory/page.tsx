@@ -7,7 +7,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
 import { getActiveCompanyId } from "@/lib/company"
-import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2, Wrench, UserCheck } from "lucide-react"
+import { ArrowUp, ArrowDown, RefreshCcw, AlertCircle, Package, TrendingUp, TrendingDown, Calendar, Filter, BarChart3, ShoppingCart, Truck, CheckCircle2, FileText, Warehouse, Building2, Wrench, UserCheck, Factory, PackagePlus } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -76,6 +76,13 @@ export default function InventoryPage() {
   // v3.74.714 — so every unit that left the warehouse is accounted for in a column.
   const [serviceUseTotals, setServiceUseTotals] = useState<Record<string, number>>({})
   const [custodyTotals, setCustodyTotals] = useState<Record<string, number>>({})
+  // v3.74.852 — manufacturing had no bucket, so the arithmetic did not close
+  // again: «قاعدة ماتور» read "bought 3 ... available 0" with no column saying
+  // the three went into production, and «ماتور مجهز» read "bought 0, sold 1"
+  // with nothing saying it had been produced. Exactly the defect v3.74.714
+  // fixed for custody — recurring because nothing guarded it.
+  const [productionIssueTotals, setProductionIssueTotals] = useState<Record<string, number>>({})
+  const [productionReceiptTotals, setProductionReceiptTotals] = useState<Record<string, number>>({})
   const [productsWithMovements, setProductsWithMovements] = useState<Set<string>>(new Set()) // 🆕 المنتجات التي لها حركات في المخزن
   
   // ✅ بيانات النقل (Incoming/Outgoing Transfers)
@@ -498,6 +505,9 @@ export default function InventoryPage() {
       // to find out where the unit went.
       const serviceUseAgg: Record<string, number> = {}
       const custodyAgg: Record<string, number> = {}
+      // v3.74.852 — and manufacturing repeated the same omission.
+      const productionIssueAgg: Record<string, number> = {}
+      const productionReceiptAgg: Record<string, number> = {}
 
       allTransactions.forEach((t: any) => {
         const pid = String(t.product_id || '')
@@ -532,6 +542,16 @@ export default function InventoryPage() {
           // running total is what is STILL in a technician's hands. It settles
           // to zero once the service is executed or the custody is returned.
           custodyAgg[pid] = (custodyAgg[pid] || 0) - q
+        } else if (type === 'production_issue') {
+          // Raw material consumed by a production order. Leaves the warehouse
+          // for good, like a sale, but earns no revenue — its value moves into
+          // work in progress and then into the finished product's cost.
+          productionIssueAgg[pid] = (productionIssueAgg[pid] || 0) + Math.abs(q)
+        } else if (type === 'production_receipt') {
+          // Finished goods handed in by production. The only inbound movement
+          // that is not a purchase, which is why a produced item used to look
+          // like it had appeared from nowhere.
+          productionReceiptAgg[pid] = (productionReceiptAgg[pid] || 0) + Math.abs(q)
         }
         // 🔐 transfer_in و transfer_out يتم حسابها تلقائياً في agg لأن quantity_change يحتوي على القيمة الصحيحة
       })
@@ -544,6 +564,8 @@ export default function InventoryPage() {
       setPurchaseReturnTotals(purchaseReturnsAgg)
       setServiceUseTotals(serviceUseAgg)
       setCustodyTotals(custodyAgg)
+      setProductionIssueTotals(productionIssueAgg)
+      setProductionReceiptTotals(productionReceiptAgg)
 
       // 🆕 تحديد المنتجات التي لها حركات في المخزن المحدد
       const productsSet = new Set<string>(Object.keys(agg))
@@ -911,6 +933,51 @@ export default function InventoryPage() {
             <UserCheck className={`w-4 h-4 ${held > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500'}`} />
             <span className={`font-bold text-base ${held > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'}`}>
               {held.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      // v3.74.852 — raw material consumed by production orders. Without this
+      // column «قاعدة ماتور» read "bought 3, sold 0, no returns, no write-offs,
+      // available 0": arithmetic that does not close, and no way for the user
+      // to find out where the three went.
+      key: 'productionIssue',
+      header: appLang === 'en' ? 'Issued to Production' : 'مصروف للتصنيع',
+      align: 'center',
+      format: (_v, product) => {
+        const issued = productionIssueTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${issued > 0
+            ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.production_issue">
+            <Factory className={`w-4 h-4 ${issued > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${issued > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {issued.toLocaleString()}
+            </span>
+          </div>
+        )
+      }
+    },
+    {
+      // Finished goods handed in by production - the only inbound movement that
+      // is not a purchase. «ماتور مجهز» used to read "bought 0, sold 1", as if
+      // the unit sold had come from nowhere.
+      key: 'productionReceipt',
+      header: appLang === 'en' ? 'Received from Production' : 'وارد من التصنيع',
+      align: 'center',
+      format: (_v, product) => {
+        const made = productionReceiptTotals[product.id] ?? 0
+        return (
+          <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${made > 0
+            ? 'bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800'
+            : 'bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800'
+            }`} data-ai-help="inventory.production_receipt">
+            <PackagePlus className={`w-4 h-4 ${made > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-gray-400 dark:text-gray-500'}`} />
+            <span className={`font-bold text-base ${made > 0 ? 'text-teal-700 dark:text-teal-300' : 'text-gray-500 dark:text-gray-400'}`}>
+              {made.toLocaleString()}
             </span>
           </div>
         )
@@ -1364,6 +1431,43 @@ export default function InventoryPage() {
                                 <UserCheck className={`w-5 h-5 ${totalCustody > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'}`} />
                                 <span className={`font-bold text-lg ${totalCustody > 0 ? 'text-amber-800 dark:text-amber-200' : 'text-gray-600 dark:text-gray-300'}`}>
                                   {totalCustody.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
+                        </td>
+                        {/* v3.74.852 — and the same two-cell discipline for the two
+                            manufacturing columns. The warning above is not decorative:
+                            this footer is hand-built, one cell per column, so a column
+                            added without its total silently shifts every later figure
+                            under the wrong heading. */}
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.total_production_issue">
+                          {(() => {
+                            const totalIssued = displayedProducts.reduce((sum, p) => sum + (productionIssueTotals[p.id] ?? 0), 0)
+                            return (
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${totalIssued > 0
+                                ? 'bg-orange-200 dark:bg-orange-800 border border-orange-400 dark:border-orange-600'
+                                : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                                }`}>
+                                <Factory className={`w-5 h-5 ${totalIssued > 0 ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-bold text-lg ${totalIssued > 0 ? 'text-orange-800 dark:text-orange-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                  {totalIssued.toLocaleString()}
+                                </span>
+                              </div>
+                            )
+                          })()}
+                        </td>
+                        <td className="px-4 py-4 text-center" data-ai-help="inventory.total_production_receipt">
+                          {(() => {
+                            const totalMade = displayedProducts.reduce((sum, p) => sum + (productionReceiptTotals[p.id] ?? 0), 0)
+                            return (
+                              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl ${totalMade > 0
+                                ? 'bg-teal-200 dark:bg-teal-800 border border-teal-400 dark:border-teal-600'
+                                : 'bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600'
+                                }`}>
+                                <PackagePlus className={`w-5 h-5 ${totalMade > 0 ? 'text-teal-700 dark:text-teal-300' : 'text-gray-500 dark:text-gray-400'}`} />
+                                <span className={`font-bold text-lg ${totalMade > 0 ? 'text-teal-800 dark:text-teal-200' : 'text-gray-600 dark:text-gray-300'}`}>
+                                  {totalMade.toLocaleString()}
                                 </span>
                               </div>
                             )
