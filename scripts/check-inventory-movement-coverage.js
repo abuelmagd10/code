@@ -59,9 +59,20 @@ try { ({ Client } = require("pg")) } catch {
 
 const src = fs.readFileSync(pagePath, "utf8")
 
-// الأنواع المُصنَّفة: كل `type === 'x'` داخل حلقة التجميع.
+// الأنواع المُصنَّفة فى **أعمدة** الجدول: كل `type === 'x'` داخل حلقة التجميع.
 const classified = new Set(
   [...src.matchAll(/type\s*===\s*['"]([a-z_]+)['"]/g)].map((m) => m[1])
+)
+
+// v3.74.852 — والأنواع التى لها **خيار فى فلتر الحركة**.
+// عمودٌ بلا خيار فلتر نصفُ إصلاح: يرى المستخدم الرقم ولا يستطيع عزله ولا
+// مراجعة حركاته. وكان الفلتر يعرض ثلاثة خيارات بينما الجدول تسعة أعمدة.
+const filterMapBlock = src.slice(
+  src.indexOf("MOVEMENT_FILTER_GROUPS"),
+  src.indexOf("function matchesMovementFilter")
+)
+const filterable = new Set(
+  [...filterMapBlock.matchAll(/['"]([a-z_]+)['"]/g)].map((m) => m[1])
 )
 
 ;(async () => {
@@ -81,35 +92,51 @@ const classified = new Set(
     `))
   } finally { await client.end() }
 
-  const missing = rows.filter(
+  const noColumn = rows.filter(
     (r) => !classified.has(r.transaction_type) && !COVERED_ELSEWHERE.has(r.transaction_type)
   )
+  const noFilter = rows.filter((r) => !filterable.has(r.transaction_type))
 
-  if (missing.length > 0) {
-    console.error(
-      `X ${missing.length} movement type(s) change stock but appear in no column ` +
-        `of the inventory report:\n`
-    )
-    for (const m of missing) {
+  if (noColumn.length > 0 || noFilter.length > 0) {
+    if (noColumn.length > 0) {
       console.error(
-        `  - ${m.transaction_type.padEnd(28)} ${String(m.movements).padStart(5)} movement(s), ` +
-          `net ${m.net_qty}`
+        `X ${noColumn.length} movement type(s) change stock but appear in NO COLUMN:\n`
+      )
+      for (const m of noColumn) {
+        console.error(
+          `  - ${m.transaction_type.padEnd(28)} ${String(m.movements).padStart(5)} movement(s), ` +
+            `net ${m.net_qty}`
+        )
+      }
+      console.error(
+        "\n  A row that reads \"bought 3, sold 0, no returns, no write-offs,\n" +
+          "  available 0\" is arithmetic that does not close, and the user has no\n" +
+          "  way to find where the units went. It costs trust in the whole report.\n\n" +
+          "  Add: a bucket in the aggregation loop, a state pair, a column, AND a\n" +
+          "  footer cell. The footer is hand-built one cell per column - miss it\n" +
+          "  and every later figure shifts under the wrong heading (v3.74.716).\n"
       )
     }
-    console.error(
-      "\n  A row that reads \"bought 3, sold 0, no returns, no write-offs,\n" +
-        "  available 0\" is arithmetic that does not close, and the user has no\n" +
-        "  way to find where the units went. It costs trust in the whole report.\n\n" +
-        "  In app/inventory/page.tsx add: a bucket in the aggregation loop, a\n" +
-        "  state pair, a column, AND a footer cell. The footer is hand-built one\n" +
-        "  cell per column - miss it and every later figure shifts under the\n" +
-        "  wrong heading (that is what v3.74.716 had to repair)."
-    )
+    if (noFilter.length > 0) {
+      console.error(
+        `X ${noFilter.length} movement type(s) have NO OPTION in the movement filter:\n`
+      )
+      for (const m of noFilter) {
+        console.error(
+          `  - ${m.transaction_type.padEnd(28)} ${String(m.movements).padStart(5)} movement(s)`
+        )
+      }
+      console.error(
+        "\n  A column without a filter option is half a fix: the number is visible\n" +
+          "  but cannot be isolated or reviewed. Add the type to\n" +
+          "  MOVEMENT_FILTER_GROUPS and give it an <option> in the dropdown.\n"
+      )
+    }
     process.exit(1)
   }
 
   console.log(
-    `+ every live movement type has a column ` +
+    `+ every live movement type has a column AND a filter option ` +
       `(${rows.length} type(s) in use, ${COVERED_ELSEWHERE.size} covered by the transfers table).`
   )
 })().catch((err) => {

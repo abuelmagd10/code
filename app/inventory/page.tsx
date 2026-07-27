@@ -60,6 +60,78 @@ interface BranchData {
   code?: string
 }
 
+/**
+ * v3.74.852 — مجموعات فلتر الحركة، **مطابقة لأعمدة الجدول**.
+ *
+ * كان الفلتر يعرض ثلاثة خيارات فقط: الكل / المشتريات / المبيعات — بينما
+ * الجدول يعرض تسعة أنواع حركة. فما لا خيار له **لا يمكن عزله ولا مراجعته**:
+ * استهلاك الخدمات، والعهدة، والهالك، والمرتجعات، والنقل، والتصنيع.
+ *
+ * وكان يُطابِق بالبادئة (`type.startsWith('purchase')`) فيبتلع `purchase` و
+ * `purchase_return` معاً، ويضع «الهالك» و«مرتجع المبيعات» داخل **المبيعات** —
+ * فيقرأ المستخدم رقم مبيعات يشمل بضاعة أُهلكت ولم تُبَع قط.
+ *
+ * ⇒ **الفلتر يعرض ما يعرضه الجدول، لا مجموعة أصغر**، والمطابقة بالاسم الصريح
+ *   لا بالبادئة.
+ *
+ * والخريطة واحدة يستعملها الموضعان (الإجماليات والقائمة). كانا شرطين
+ * مكتوبين مرتين — ونسختان من منطق واحد تنحرفان.
+ */
+const MOVEMENT_FILTER_GROUPS: Record<string, string[]> = {
+  purchase:           ['purchase'],
+  purchase_return:    ['purchase_return', 'purchase_reversal'],
+  sale:               ['sale', 'sale_dispatch'],
+  sale_return:        ['sale_return', 'return'],
+  write_off:          ['write_off', 'adjustment', 'write_off_reversal'],
+  service:            ['service_consumption'],
+  custody:            ['booking_custody_out', 'booking_custody_return'],
+  production_issue:   ['production_issue'],
+  production_receipt: ['production_receipt'],
+  transfer:           ['transfer_in', 'transfer_out'],
+}
+
+/** true إذا كانت الحركة ضمن المجموعة المختارة ('all' يقبل كل شىء). */
+function matchesMovementFilter(transactionType: string, filter: string): boolean {
+  if (filter === 'all') return true
+  const types = MOVEMENT_FILTER_GROUPS[filter]
+  return types ? types.includes(transactionType) : true
+}
+
+/**
+ * v3.74.852 — أسماء الحركات بالعربية.
+ *
+ * كانت القائمة تسمّى خمسة أنواع فقط، **واثنان منها باسم لم يعد مستعملاً**
+ * (`sale_reversal` و`purchase_reversal` بينما الحيّان `sale_return` و
+ * `purchase_return`). وما لا اسم له كان يظهر **بالإنجليزية الخام** —
+ * فيقرأ المستخدم العربى `production_issue` فى شاشته.
+ *
+ * ⇒ **قائمة الأسماء تُغطى ما تُنتجه القاعدة، لا ما تذكّره كاتبها.**
+ */
+const MOVEMENT_LABELS: Record<string, { ar: string; en: string }> = {
+  purchase:                { ar: 'شراء',              en: 'Purchase' },
+  purchase_return:         { ar: 'مرتجع شراء',        en: 'Purchase Return' },
+  purchase_reversal:       { ar: 'عكس شراء',          en: 'Purchase Reversal' },
+  sale:                    { ar: 'بيع',               en: 'Sale' },
+  sale_dispatch:           { ar: 'إخراج بيع',         en: 'Sale Dispatch' },
+  sale_return:             { ar: 'مرتجع بيع',         en: 'Sale Return' },
+  return:                  { ar: 'مرتجع',             en: 'Return' },
+  write_off:               { ar: 'هالك',              en: 'Write-off' },
+  write_off_reversal:      { ar: 'إلغاء هالك',        en: 'Write-off Reversal' },
+  adjustment:              { ar: 'تسوية',             en: 'Adjustment' },
+  service_consumption:     { ar: 'استهلاك خدمة',      en: 'Service Use' },
+  booking_custody_out:     { ar: 'تسليم عهدة',        en: 'Custody Out' },
+  booking_custody_return:  { ar: 'رد عهدة',           en: 'Custody Return' },
+  production_issue:        { ar: 'مصروف للتصنيع',     en: 'Issued to Production' },
+  production_receipt:      { ar: 'وارد من التصنيع',   en: 'From Production' },
+  transfer_in:             { ar: 'نقل وارد',          en: 'Transfer In' },
+  transfer_out:            { ar: 'نقل صادر',          en: 'Transfer Out' },
+}
+
+function movementLabel(transactionType: string, lang: string): string {
+  const l = MOVEMENT_LABELS[transactionType]
+  return l ? (lang === 'en' ? l.en : l.ar) : transactionType
+}
+
 export default function InventoryPage() {
   const supabase = useSupabase()
   const { toast } = useToast()
@@ -92,7 +164,7 @@ export default function InventoryPage() {
   const [outgoingTransfers, setOutgoingTransfers] = useState<Record<string, Array<{ quantity: number; warehouseName: string; warehouseId: string }>>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingInventory, setIsLoadingInventory] = useState(false)
-  const [movementFilter, setMovementFilter] = useState<'all' | 'purchase' | 'sale'>('all')
+  const [movementFilter, setMovementFilter] = useState<string>('all')
   const [movementProductId, setMovementProductId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -1582,14 +1654,23 @@ export default function InventoryPage() {
                     onChange={(e) => {
                       const val = e.target.value
                       startTransition(() => {
-                        setMovementFilter(val === 'purchase' ? 'purchase' : (val === 'sale' ? 'sale' : 'all'))
+                        // أى قيمة خارج الخريطة تُعامَل كـ'all' فى matchesMovementFilter
+                        setMovementFilter(val)
                       })
                     }}
                     className="px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="all">{appLang === 'en' ? 'All Types' : 'كل الأنواع'}</option>
                     <option value="purchase">{appLang === 'en' ? 'Purchases' : 'المشتريات'}</option>
+                    <option value="purchase_return">{appLang === 'en' ? 'Purchase Returns' : 'مرتجعات المشتريات'}</option>
                     <option value="sale">{appLang === 'en' ? 'Sales' : 'المبيعات'}</option>
+                    <option value="sale_return">{appLang === 'en' ? 'Sales Returns' : 'مرتجعات المبيعات'}</option>
+                    <option value="write_off">{appLang === 'en' ? 'Write-offs' : 'الهالك'}</option>
+                    <option value="service">{appLang === 'en' ? 'Service Use' : 'استهلاك الخدمات'}</option>
+                    <option value="custody">{appLang === 'en' ? 'Technician Custody' : 'عهدة الفنّى'}</option>
+                    <option value="production_issue">{appLang === 'en' ? 'Issued to Production' : 'مصروف للتصنيع'}</option>
+                    <option value="production_receipt">{appLang === 'en' ? 'Received from Production' : 'وارد من التصنيع'}</option>
+                    <option value="transfer">{appLang === 'en' ? 'Transfers' : 'النقل'}</option>
                   </select>
 
                   {/* فلتر المنتج */}
@@ -1640,11 +1721,7 @@ export default function InventoryPage() {
                   {(() => {
                     const filtered = transactions.filter((t) => {
                       const type = String(t.transaction_type || '')
-                      if (movementFilter === 'purchase') {
-                        if (!type.startsWith('purchase')) return false
-                      } else if (movementFilter === 'sale') {
-                        if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return false
-                      }
+                      if (!matchesMovementFilter(type, movementFilter)) return false
                       if (movementProductId && String(t.product_id || '') !== movementProductId) return false
                       const dStr = String(t.created_at || '').slice(0, 10)
                       if (fromDate && dStr < fromDate) return false
@@ -1689,12 +1766,8 @@ export default function InventoryPage() {
               ) : (() => {
                 const filtered = transactions.filter((t) => {
                   const type = String(t.transaction_type || '')
-                  // فلترة حسب النوع
-                  if (movementFilter === 'purchase') {
-                    if (!type.startsWith('purchase')) return false
-                  } else if (movementFilter === 'sale') {
-                    if (!type.startsWith('sale') && type !== 'return' && type !== 'write_off' && type !== 'adjustment') return false
-                  }
+                  // فلترة حسب النوع — نفس الخريطة المستعملة فى الإجماليات أعلاه
+                  if (!matchesMovementFilter(type, movementFilter)) return false
                   // فلترة حسب المنتج
                   if (movementProductId && String(t.product_id || '') !== movementProductId) return false
                   // فلترة حسب التاريخ
@@ -1736,26 +1809,31 @@ export default function InventoryPage() {
                                 <Badge
                                   data-ai-help="inventory.movement_type"
                                   variant="secondary"
-                                  className={`text-xs ${transType.startsWith('purchase') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                                    transType.startsWith('sale') ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-                                      'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                                  // v3.74.852 — اللون بالاتجاه لا بالبادئة. كان
+                                  // `startsWith('purchase')` يمنح **مرتجع الشراء**
+                                  // لون الشراء الأخضر وهو خروج من المخزن. وإشارة
+                                  // الكمية حقيقة لا تحتاج قائمة تُنسى.
+                                  className={`text-xs ${Number(transaction.quantity_change || 0) > 0
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                    : Number(transaction.quantity_change || 0) < 0
+                                      ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                                      : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
                                     }`}
                                 >
-                                  {transType === 'sale' ? (appLang === 'en' ? 'Sale' : 'بيع') :
-                                    transType === 'sale_reversal' ? (appLang === 'en' ? 'Sale Return' : 'مرتجع بيع') :
-                                      transType === 'purchase' ? (appLang === 'en' ? 'Purchase' : 'شراء') :
-                                        transType === 'purchase_reversal' ? (appLang === 'en' ? 'Purchase Return' : 'مرتجع شراء') :
-                                          transType === 'adjustment' ? (appLang === 'en' ? 'Adjustment' : 'تعديل') : transType}
+                                  {movementLabel(transType, appLang)}
                                 </Badge>
                               </div>
                               {transaction.reference_id && (
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                  {transType.startsWith('purchase') ? (
+                                  {/* v3.74.852 — نوع صريح لا بادئة: `purchase_return`
+                                      مرجعه مرتجع شراء لا فاتورة مورد، فالرابط
+                                      بالبادئة كان يقود لصفحة لا وجود لها. */}
+                                  {transType === 'purchase' ? (
                                     <Link href={`/bills/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                       <FileText className="w-3 h-3" />
                                       {appLang === 'en' ? 'View Bill' : 'عرض الفاتورة'}
                                     </Link>
-                                  ) : transType.startsWith('sale') ? (
+                                  ) : (transType === 'sale' || transType === 'sale_dispatch') ? (
                                     <Link href={`/invoices/${transaction.reference_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                       <FileText className="w-3 h-3" />
                                       {appLang === 'en' ? 'View Invoice' : 'عرض الفاتورة'}

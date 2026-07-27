@@ -29,6 +29,13 @@ git add -u -- "push_v3.74.851.ps1" 2>$null
 
 $p = Get-Content -LiteralPath $inv -Raw
 
+# COMMENTS STRIPPED for any check that asserts an ABSENCE. The comments in this
+# file deliberately quote the old behaviour they replaced - including the
+# literal `type.startsWith('purchase')` - so a raw search finds it and declares
+# the fix missing. Tenth time the project has hit this trap: an anchor must be
+# a line of CODE, never the mere presence or absence of text.
+$pCode = (($p -split "`n") | Where-Object { $_.TrimStart() -notmatch '^(//|\*|/\*|\{/\*)' }) -join "`n"
+
 # ── 1. the four pieces every new column needs ──────────────────────────────
 # A bucket alone changes nothing on screen; a column alone shows nothing; a
 # state pair alone is dead. All four, or the column is half-built.
@@ -72,6 +79,47 @@ foreach ($t in @("total_production_issue", "total_production_receipt")) {
     }
 }
 Write-Host "+ both manufacturing totals are in the footer" -ForegroundColor Green
+
+# ── 3b. the filter must offer what the table shows ─────────────────────────
+# The dropdown offered 3 options while the table showed 9 movement types, so
+# write-offs, returns, service use, custody, transfers and manufacturing could
+# be seen but never isolated. It also matched by PREFIX, which folded write-offs
+# and sales returns into "Sales" - a sales figure containing goods that were
+# scrapped and never sold.
+foreach ($opt in @("purchase_return", "sale_return", "write_off", "service",
+                   "custody", "production_issue", "production_receipt", "transfer")) {
+    # PowerShell has no C-style \" escape - it needs a backtick, or no quote at
+    # all. Building the string by concatenation avoids the question entirely and
+    # cannot be mis-escaped by the next person to touch it.
+    if ($p -notmatch [regex]::Escape('<option value="' + $opt + '">')) {
+        Write-Host "X the movement filter has no option for '$opt'" -ForegroundColor Red; exit 1
+    }
+}
+if ($pCode -match "type\.startsWith\('purchase'\)" -or $pCode -match "type\.startsWith\('sale'\)" -or $pCode -match 'transType\.startsWith\(') {
+    Write-Host "X the page still matches movement types by prefix - 'purchase' would swallow 'purchase_return'" -ForegroundColor Red; exit 1
+}
+# one map, used by both places. Two hand-written copies of one rule drift apart.
+$mapUses = ([regex]::Matches($pCode, 'matchesMovementFilter\(')).Count
+if ($mapUses -lt 3) {
+    Write-Host "X matchesMovementFilter is not used in both filter sites (found $mapUses reference(s))" -ForegroundColor Red; exit 1
+}
+Write-Host "+ 11 filter options, explicit matching, one shared map" -ForegroundColor Green
+
+# ── 3c. every live movement type needs an Arabic name ──────────────────────
+# Types with no entry rendered their raw English identifier, so an Arabic user
+# read "production_issue" on screen. The label list must cover what the
+# database produces, not what its author remembered.
+foreach ($t in @("purchase", "purchase_return", "sale", "sale_return", "write_off",
+                 "service_consumption", "booking_custody_out", "booking_custody_return",
+                 "production_issue", "production_receipt", "transfer_in", "transfer_out")) {
+    if ($p -notmatch ($t + ":\s*\{")) {
+        Write-Host "X no Arabic label for movement type '$t' - it would render in raw English" -ForegroundColor Red; exit 1
+    }
+}
+if ($pCode -notmatch [regex]::Escape("movementLabel(transType, appLang)")) {
+    Write-Host "X the movement list does not use the label map" -ForegroundColor Red; exit 1
+}
+Write-Host "+ every movement type has an Arabic name" -ForegroundColor Green
 
 # ── 4. the guard must be able to FAIL ──────────────────────────────────────
 # Reporting "all covered" proves nothing until the guard has been seen refusing
