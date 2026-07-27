@@ -137,9 +137,12 @@ export async function PATCH(
         category: "approvals" as const,
         kind: "action" as const, // v3.74.588 — إعادة اعتماد بعد تعديل (مرحلة طلب)
       }
-      try { await createNotification({ ...notifBase, assignedToRole: "admin",           eventKey: `po_reapproval_admin_${id}` }) } catch { /* non-critical */ }
-      try { await createNotification({ ...notifBase, assignedToRole: "owner",           eventKey: `po_reapproval_owner_${id}` }) } catch { /* non-critical */ }
-      try { await createNotification({ ...notifBase, assignedToRole: "general_manager", eventKey: `po_reapproval_gm_${id}`    }) } catch { /* non-critical */ }
+    // v3.74.851 — إشعار واحد للإدارة العليا لا ثلاثة.
+    // `NotificationCenter` يعامل (owner / admin / general_manager) كجمهور
+    // واحد: كلٌّ منهم يرى إشعارات الآخرين. فثلاثة إرسالات = **ثلاث نسخ من
+    // نفس الرسالة فى جرس المالك**. أبلغ المالك بالتكرار من الاستعمال الحى.
+    // ⇒ من يكتب لجمهور يقرأ قاعدة الجمهور أولاً.
+      try { await createNotification({ ...notifBase, assignedToRole: "owner", eventKey: `po_reapproval_mgmt_${id}` }) } catch { /* non-critical */ }
     }
 
     const snapshot = await loadProductionOrderSnapshot(supabase, companyId, id)

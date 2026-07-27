@@ -56,6 +56,7 @@
     "check:phantom-columns": "node scripts/check-phantom-columns.js",
     "check:phantom-selects": "node scripts/check-phantom-selects.js",
     "check:account-codes": "node scripts/check-hardcoded-account-codes.js",
+    "check:dup-notify": "node scripts/check-duplicate-role-notifications.js",
     "check:lockfile": "node scripts/check-lockfile-in-sync.js",
     "check:migration-db": "node scripts/check-migration-matches-db.js",
     "check:signup": "node scripts/verify-signup-path.js",

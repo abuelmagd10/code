@@ -86,17 +86,18 @@ export async function POST(
     try {
       await createNotification({ ...notificationBase, assignedToRole: "manager", eventKey: `bom_v_submitted_mgr_${id}` })
     } catch { /* non-critical */ }
+    // v3.74.22 — owner was missing from the recipient set, so in a company
+    // whose only senior member is the owner the approval notification reached
+    // nobody. Same fix pattern as v3.74.20.
+    //
+    // v3.74.851 — and then it reached him THREE times. `NotificationCenter`
+    // treats owner / admin / general_manager as one audience: each sees the
+    // others' notifications. So one send per role meant three copies of the
+    // same message in the owner's bell. Reported from live use.
+    // ⇒ one send for senior management; the branch manager keeps his own
+    // because he is not in that audience and sees none of theirs.
     try {
-      await createNotification({ ...notificationBase, assignedToRole: "admin", eventKey: `bom_v_submitted_admin_${id}` })
-    } catch { /* non-critical */ }
-    try {
-      await createNotification({ ...notificationBase, assignedToRole: "general_manager", eventKey: `bom_v_submitted_gm_${id}` })
-    } catch { /* non-critical */ }
-    // v3.74.22 — owner was missing from the recipient set, so in a
-    // company whose only senior member is the owner the approval
-    // notification reached nobody. Same fix pattern as v3.74.20.
-    try {
-      await createNotification({ ...notificationBase, assignedToRole: "owner", eventKey: `bom_v_submitted_owner_${id}` })
+      await createNotification({ ...notificationBase, assignedToRole: "owner", eventKey: `bom_v_submitted_mgmt_${id}` })
     } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true, data })

@@ -80,9 +80,12 @@ export async function POST(
       category: "approvals" as const,
       kind: "action" as const, // v3.74.588 — أمر إنتاج بانتظار الاعتماد (مرحلة طلب)
     }
-    try { await createNotification({ ...notificationBase, assignedToRole: "admin",           eventKey: `po_submitted_admin_${id}` }) } catch { /* non-critical */ }
-    try { await createNotification({ ...notificationBase, assignedToRole: "owner",           eventKey: `po_submitted_owner_${id}` }) } catch { /* non-critical */ }
-    try { await createNotification({ ...notificationBase, assignedToRole: "general_manager", eventKey: `po_submitted_gm_${id}`    }) } catch { /* non-critical */ }
+    // v3.74.851 — إشعار واحد للإدارة العليا لا ثلاثة.
+    // `NotificationCenter` يعامل (owner / admin / general_manager) كجمهور
+    // واحد: كلٌّ منهم يرى إشعارات الآخرين. فثلاثة إرسالات = **ثلاث نسخ من
+    // نفس الرسالة فى جرس المالك**. أبلغ المالك بالتكرار من الاستعمال الحى.
+    // ⇒ من يكتب لجمهور يقرأ قاعدة الجمهور أولاً.
+    try { await createNotification({ ...notificationBase, assignedToRole: "owner", eventKey: `po_submitted_mgmt_${id}` }) } catch { /* non-critical */ }
     // v3.74.22 — branch manager was missing. They're the branch-level
     // authority for production orders raised at their branch and must
     // receive the approval request alongside the company executives.

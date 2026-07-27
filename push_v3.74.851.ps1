@@ -22,6 +22,14 @@ $req = "app/api/manufacturing/production-orders/[id]/request-material-issue/rout
 $mga = "app/api/manufacturing/material-issue-approvals/[id]/management-approve/route.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", $req,
+           "app/api/manufacturing/bom-versions/[id]/submit-approval/route.ts",
+           "app/api/manufacturing/bom-versions/[id]/route.ts",
+           "app/api/manufacturing/routing-versions/[id]/submit-approval/route.ts",
+           "app/api/manufacturing/routing-versions/[id]/route.ts",
+           "app/api/manufacturing/production-orders/[id]/submit-approval/route.ts",
+           "app/api/manufacturing/production-orders/[id]/route.ts",
+           "scripts/check-duplicate-role-notifications.js",
+           "package.json", ".github/workflows/ci.yml",
            "docs/HANDOVER_2026-07-24.md", "push_v3.74.851.ps1")
 git add -- $files 2>&1 | Out-Null
 git add -u -- "push_v3.74.850.ps1" 2>$null
@@ -40,12 +48,38 @@ $rCode = CodeOnly $r
 if ($rCode -match 'notifyWarehouseStaff') {
     Write-Host "X the request stage still notifies warehouse staff - they cannot act until management approves" -ForegroundColor Red; exit 1
 }
-foreach ($role in @("admin", "owner", "general_manager", "manager")) {
+foreach ($role in @("owner", "manager")) {
     if ($rCode -notmatch ('"' + $role + '"')) {
         Write-Host "X the request stage does not notify the '$role' role" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the request notifies management, not the warehouse" -ForegroundColor Green
+# ONE send for senior management, not three. owner/admin/general_manager are a
+# single audience in NotificationCenter - each sees the others' notifications -
+# so a send per role puts three copies of the same message in the owner's bell.
+# That is exactly what the owner reported after the first attempt at this fix.
+foreach ($dupe in @("general_manager")) {
+    if ($rCode -match ('assignedToRole:\s*"' + $dupe + '"')) {
+        Write-Host "X '$dupe' is notified separately - the owner would receive a duplicate" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the request notifies management once, not the warehouse" -ForegroundColor Green
+
+# ── 1b. and the six manufacturing routes must not triplicate either ────────
+$fanout = 0
+foreach ($f in @("app/api/manufacturing/bom-versions/[id]/submit-approval/route.ts",
+                 "app/api/manufacturing/bom-versions/[id]/route.ts",
+                 "app/api/manufacturing/routing-versions/[id]/submit-approval/route.ts",
+                 "app/api/manufacturing/routing-versions/[id]/route.ts",
+                 "app/api/manufacturing/production-orders/[id]/submit-approval/route.ts",
+                 "app/api/manufacturing/production-orders/[id]/route.ts")) {
+    $t = CodeOnly (Get-Content -LiteralPath $f -Raw)
+    $n = ([regex]::Matches($t, 'assignedToRole:\s*"(owner|admin|general_manager)"')).Count
+    if ($n -gt 1) {
+        Write-Host "X $f sends $n notifications to one audience - the owner gets $n copies" -ForegroundColor Red; exit 1
+    }
+    $fanout += $n
+}
+Write-Host "+ six manufacturing routes send once each to senior management ($fanout total)" -ForegroundColor Green
 
 # ── 2. the notified roles must MATCH the roles the approver route accepts ──
 # Otherwise someone is invited to act and then refused, or holds the power and
@@ -54,12 +88,16 @@ $mgmtLine = ($m -split "`n" | Where-Object { $_ -match 'const MANAGEMENT_ROLES' 
 if (-not $mgmtLine) {
     Write-Host "X could not find MANAGEMENT_ROLES in the approver route" -ForegroundColor Red; exit 1
 }
-foreach ($role in @("admin", "owner", "general_manager", "manager")) {
+# Every role we notify must be one the approver route accepts, or someone is
+# invited to act and then refused. The reverse is fine: admin and
+# general_manager are not notified directly because they SEE the owner's
+# notification, and they are still allowed to approve.
+foreach ($role in @("owner", "manager")) {
     if ($mgmtLine -notmatch $role) {
         Write-Host "X '$role' is notified but the approver route does not accept it: $mgmtLine" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ notified roles match the roles allowed to approve" -ForegroundColor Green
+Write-Host "+ every notified role is allowed to approve" -ForegroundColor Green
 
 # ── 3. stage 2 must still reach the warehouse ──────────────────────────────
 # Fixing stage 1 by breaking stage 2 would just move the silence.
@@ -86,6 +124,10 @@ if ($rCode -notmatch [regex]::Escape('from "@/lib/governance-layer"')) {
     Write-Host "X createNotification is not imported from governance-layer" -ForegroundColor Red; exit 1
 }
 Write-Host "+ imports are correct and none left dangling" -ForegroundColor Green
+
+Write-Host "Counting duplicate-audience notifications in the live database..." -ForegroundColor Cyan
+node scripts/check-duplicate-role-notifications.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X duplicate-notification check failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking phantom column reads..." -ForegroundColor Cyan
 node scripts/check-phantom-selects.js
