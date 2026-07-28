@@ -313,7 +313,14 @@ export async function POST(
               entry_date: new Date().toISOString().split('T')[0],
               description: `إلغاء إهلاك: ${asset.name} - فترة ${schedule.period_number}`,
               reference_type: 'depreciation_reversal',
-              reference_id: id
+              reference_id: id,
+              // v3.74.883 — بلا status كان القيد يرث الافتراضى `posted`،
+              // وحارس `enforce_je_integrity` (٨٧١) يرفض المولود posted
+              // (`DIRECT_POST_BLOCKED`) ⇒ **إلغاء الإهلاك لم يعمل قط**
+              // (صفر قيد depreciation_reversal فى الإنتاج). يُدرَج مسودَّةً
+              // ويُرحَّل بعد نجاح كل التوابع — وبذلك تعمل التراجُعات أيضاً:
+              // حذف المسودَّة مسموح، وحذف المُرحَّل مرفوض.
+              status: 'draft'
             })
             .select()
             .single()
@@ -442,7 +449,21 @@ export async function POST(
           throw assetUpdateError
         }
 
-        return NextResponse.json({ 
+        // v3.74.883 — الترحيل آخر خطوة، بعد نجاح الجداول والأصل معاً.
+        // فشلُه يُرمى: فيهبط إلى الـcatch الخارجى الذى يحذف المسودّات
+        // ويُعيد الجداول — قيدُ عكسٍ بقى مسودَّةً لا يعكس شيئاً.
+        for (const entryId of reversalEntryIds) {
+          const { error: postErr } = await supabase
+            .from('journal_entries')
+            .update({ status: 'posted' })
+            .eq('id', entryId)
+            .eq('status', 'draft')
+          if (postErr) {
+            throw new Error(`DEPRECIATION_REVERSAL_POST_FAILED: entry ${entryId} — ${postErr.message}`)
+          }
+        }
+
+        return NextResponse.json({
           success: true,
           cancelled_count: processedScheduleIds.length,
           reversal_entry_ids: reversalEntryIds,

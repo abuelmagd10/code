@@ -287,7 +287,10 @@ export async function createPeriodClosingEntry(
         reference_type: "period_closing",
         entry_date: periodEnd, // تاريخ إقفال الفترة
         description: description,
-        status: "posted", // قيد منشور مباشرة
+        // v3.74.883 — كان `posted` مباشرةً، وحارس `enforce_je_integrity`
+        // (٨٧١) يرفض أى قيدٍ يُولد posted (`DIRECT_POST_BLOCKED`) ⇒
+        // **إقفال الفترة لم يكن يعمل أصلاً**. يُدرَج مسودَّةً ويُرحَّل بعد سطوره.
+        status: "draft",
       })
       .select()
       .single()
@@ -358,6 +361,21 @@ export async function createPeriodClosingEntry(
       return {
         success: false,
         error: `خطأ في إنشاء سطور القيد: ${linesError.message}`,
+      }
+    }
+
+    // v3.74.883 — الترحيل بعد السطور (المسار الذى يسمح به الحارس). وفشله
+    // لا يُبتلع: قيد إقفالٍ بقى مسودَّةً لا يُقفل شيئاً.
+    const { error: closingPostError } = await supabase
+      .from("journal_entries")
+      .update({ status: "posted" })
+      .eq("id", journalEntryId)
+      .eq("status", "draft")
+    if (closingPostError) {
+      await rollbackJournalEntry(supabase as any, journalEntryId, "period closing post")
+      return {
+        success: false,
+        error: `خطأ في ترحيل قيد الإقفال: ${closingPostError.message}`,
       }
     }
 

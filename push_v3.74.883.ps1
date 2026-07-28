@@ -6,84 +6,74 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.882 - the OLD script is removed, never this one. Five times a chained
+# v3.74.883 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # A replacement whose output can match its own next pattern is a loop, not a
 # replacement. This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.881.ps1") { Remove-Item -LiteralPath "push_v3.74.881.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.882.ps1") { Remove-Item -LiteralPath "push_v3.74.882.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.882"') {
-    Write-Host "+ 3.74.882" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.883"') {
+    Write-Host "+ 3.74.883" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.882]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.882]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.883]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.883]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$guard   = "scripts/check-impossible-rollback.js"
-$receipt = "lib/pre-receipt-refund.ts"
-$ship    = "lib/pre-shipment-refund.ts"
+$manual = "lib/services/manual-journal-command.service.ts"
+$period = "lib/period-closing.ts"
+$deprec = "app/api/fixed-assets/[id]/depreciation/route.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $guard, $receipt, $ship, "push_v3.74.882.ps1")
+           $manual, $period, $deprec, "push_v3.74.883.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. both refund paths build the reversal in ONE call ------------------
-# Header + lines + post used to be three separate writes, with a compensating
-# delete that three triggers could refuse. create_journal_entry_atomic does
-# all three inside one transaction that rolls itself back.
-foreach ($f in @($receipt, $ship)) {
+# -- 1. no path may give birth to a posted entry --------------------------
+# enforce_je_integrity refuses any INSERT born 'posted' (DIRECT_POST_BLOCKED).
+# The three paths below did exactly that and therefore could never run.
+foreach ($f in @($manual, $period, $deprec)) {
     $c = Get-Content -LiteralPath $f -Raw
-    if ($c -notmatch "create_journal_entry_atomic") {
-        Write-Host "X $f does not go through the atomic journal function" -ForegroundColor Red; exit 1
-    }
-    # NOTE deliberately NOT asserted: "no manual journal_entries insert at all".
-    # The payment-reversal block in both files still builds its entry by hand
-    # through the 756 shared helper (rollbackJournalEntry) - a cross-file
-    # compensating delete that reports but can still be refused. Tracked in the
-    # handover as the next conversion; asserting it here would fail the release
-    # on work it does not contain.
-    if ($c -match 'from\("journal_entries"\)\s*\r?\n?\s*\.?delete' -or
-        $c -match "REVERSAL_CLEANUP_FAILED") {
-        Write-Host "X $f still carries the compensating delete" -ForegroundColor Red; exit 1
+    if ($c -match 'status:\s*["'']posted["'']\s*,?\s*(//[^\r\n]*)?\r?\n[\s\S]{0,120}?\.insert\(' -or
+        $c -match '\.insert\(\{[\s\S]{0,600}?status:\s*["'']posted["'']') {
+        Write-Host "X $f still inserts a journal entry born posted" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ both refund paths build their reversal atomically, with no manual cleanup" -ForegroundColor Green
+Write-Host "+ no journal entry is born posted - all three paths insert draft first" -ForegroundColor Green
 
-# -- 2. reversal failure must THROW, not be swallowed ---------------------
-# Payments are reversed before this step. Continuing without the reversal
-# entry leaves money with no document explaining it.
-foreach ($pair in @(@($receipt, "BILL_REVERSAL_FAILED"), @($ship, "REVENUE_REVERSAL_FAILED"))) {
-    $c = Get-Content -LiteralPath $pair[0] -Raw
-    if ($c -notmatch $pair[1]) {
-        Write-Host "X $($pair[0]) swallows a reversal failure" -ForegroundColor Red; exit 1
-    }
+# -- 2. each path posts AFTER its lines, and checks the result -----------
+$c = Get-Content -LiteralPath $manual -Raw
+if ($c -notmatch "Failed to post the owner's manual journal entry") {
+    Write-Host "X the owner's manual entry is no longer posted after lines" -ForegroundColor Red; exit 1
 }
-Write-Host "+ a failed reversal stops the chain instead of being logged past" -ForegroundColor Green
-
-# -- 3. the measured baseline dropped and is pinned -----------------------
-$g = Get-Content -LiteralPath $guard -Raw
-if ($g -notmatch "const BASELINE = 4") {
-    Write-Host "X the impossible-rollback baseline is not 4" -ForegroundColor Red; exit 1
+$c = Get-Content -LiteralPath $period -Raw
+if ($c -notmatch [regex]::Escape("خطأ في ترحيل قيد الإقفال")) {
+    Write-Host "X the period-closing entry has no checked post step" -ForegroundColor Red; exit 1
 }
-Write-Host "+ impossible-rollback baseline tightened 6 -> 4 (both ledger sites cleared)" -ForegroundColor Green
+$c = Get-Content -LiteralPath $deprec -Raw
+if ($c -notmatch "DEPRECIATION_REVERSAL_POST_FAILED") {
+    Write-Host "X the depreciation reversal has no checked post step" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch "status: 'draft'") {
+    Write-Host "X the depreciation reversal is still born with the default status - which is posted" -ForegroundColor Red; exit 1
+}
+Write-Host "+ all three paths post after their lines, and a failed post stops the chain" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.881.ps1" 2>$null
+git add -u -- "push_v3.74.882.ps1" 2>$null
 
 # -- 3. nothing staged beyond this release (the 872 lesson) --------------
 # What a failed run staged stays staged. `git add -- $files` only adds.
-$expected = @($files) + @("push_v3.74.881.ps1")
+$expected = @($files) + @("push_v3.74.882.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -264,7 +254,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.881.ps1" 2>$null
+git add -u -- "push_v3.74.882.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -283,40 +273,41 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_882.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_883.txt"
     $msgLines = @(
-        'refactor(refunds): v3.74.882 - the reversal entry becomes one call',
+        'fix(ledger): v3.74.883 - three paths gave birth to posted entries; the guard refuses them all',
         '',
-        'Cancelling a bill before receipt, or an invoice before shipment,',
-        'reversed the original entry in three separate writes: a draft header,',
-        'then the lines, then the post. When the lines failed, a compensating',
-        'delete cleaned up the header - a delete that three triggers can refuse',
-        '(period lock first among them), and that before 881 was swallowed in',
-        'silence. These were the two ledger-touching sites of the six the 880',
-        'guard found.',
+        'enforce_je_integrity (871) refuses any journal entry INSERTed with',
+        'status=posted - DIRECT_POST_BLOCKED. Three paths did exactly that:',
         '',
-        'The three steps are now one call: create_journal_entry_atomic - which',
-        'has been in the database all along, serving vendor credits since 871.',
-        'It rolls itself back, and adds balance and duplicate guards the manual',
-        'path never had. Before writing a new atomic path, look for the one the',
-        'project already has.',
+        '  - the owner''s manual journal entry (the 865 governance flagship):',
+        '    status: "posted" at insert',
+        '  - the period-closing entry: status: "posted", explicitly',
+        '  - the depreciation reversal: no status at all - and the column',
+        '    DEFAULT is ''posted''',
         '',
-        'The callee guard was measured before use, not after: the function calls',
-        'assert_company_access, and these paths run server-side with no user',
-        'session. Its body says auth.uid() IS NULL => RETURN - the service',
-        'client passes. Replacing a path with a function means measuring that',
-        'function guards against the actual caller context.',
+        'All three could never run. Proven against production, rolled back;',
+        'zero depreciation_reversal entries in the database agree.',
         '',
-        'And a failed reversal now THROWS. The old code logged and moved on -',
-        'but the payments were already reversed above it, so continuing without',
-        'the reversal entry leaves money with no document explaining it. A step',
-        'in a financial chain either completes or brings the chain down.',
+        'The irony: the accountant''s entry (draft, awaiting approval) passed,',
+        'while the owner''s - the highest privilege - always failed, because the',
+        'higher privilege took the forbidden road. When a path is tested with',
+        'one role, test the role that takes the other branch too.',
         '',
-        'Proven on production against a real posted entry, rolled back by',
-        'design: atomic call succeeds; reversal posted, balanced; whole ledger',
-        '0.00 with the reversal live; duplicate call refused with DUPLICATE_JE.',
+        'The fix is the shape the guard itself permits: draft, then lines, then',
+        'post - and a failed post now throws instead of being swallowed, since a',
+        'closing or reversal entry left in draft closes and reverses nothing.',
+        'This also makes the rollbacks sound: deleting a draft works (881),',
+        'deleting a posted entry is refused out loud.',
         '',
-        'Baseline 6 -> 4. The remaining four do not touch the ledger.'
+        'And a plan reversed by measurement before execution: 883 was going to',
+        'convert the 756 helper to create_journal_entry_atomic. Measuring the',
+        'pattern showed draft-first-post-last is DELIBERATE (the 252 lesson) -',
+        'the atomic function posts immediately and would have broken it. Before',
+        'replacing a standing pattern, ask why it was built that way.',
+        '',
+        'Verified on production, rolled back: insert draft OK, balanced lines',
+        'OK, post-after-lines OK, draft rollback leaves zero rows.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -325,5 +316,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.882 pushed - before writing a new atomic path, look for the one the project already has" -ForegroundColor Green
+    Write-Host "`n+ v3.74.883 pushed - the higher privilege took the forbidden road; read the guard before you route around it" -ForegroundColor Green
 }

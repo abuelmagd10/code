@@ -123,9 +123,15 @@ export class ManualJournalCommandService {
 
       // v3.74.865 — المالك وحده يُرحَّل قيده مباشرة. وما عداه يبقى مسودَّة
       // حتى يعتمدها مُعتمِدٌ مخوَّل عبر `/api/journal-entries/[id]/approve`.
-      const initialStatus = SELF_POST_ROLES.has(normalizeRole(actor.actorRole))
-        ? "posted"
-        : "draft"
+      //
+      // v3.74.883 — لكن الترحيل المباشر **لا يكون عند الإدراج**: حارس
+      // `enforce_je_integrity` (٨٧١) يرفض أى قيدٍ يُولد `posted`
+      // (`DIRECT_POST_BLOCKED`) — فكان قيد المالك **يفشل دائماً** بينما
+      // قيد المحاسب (مسودَّة) يمرّ. أُثبت على الإنتاج داخل معاملةٍ مُلغاة.
+      // ⇒ يُدرَج الجميع مسودَّةً، ثم يُرحَّل قيدُ المالك **بعد سطوره** —
+      //   وهو المسار الذى يسمح به الحارس نفسه (تحويل draft→posted بسطور).
+      const selfPost = SELF_POST_ROLES.has(normalizeRole(actor.actorRole))
+      const initialStatus = "draft"
       const { data: entry, error: entryError } = await this.adminSupabase
         .from("journal_entries")
         .insert({
@@ -141,9 +147,10 @@ export class ManualJournalCommandService {
           // هنا منذ نشأة الخدمة وهو **غير موجود**، فكان PostgREST يرفض
           // الإدراج كاملاً قبل أن يُصدر SQL ⇒ صفر قيد يدوى فى الإنتاج.
           created_by: actor.actorId,
-          // مَن رحَّل ≠ مَن أنشأ. ولا يُملأ إلا عند ترحيلٍ فعلى.
-          posted_by: initialStatus === "posted" ? actor.actorId : null,
-          posted_at: initialStatus === "posted" ? new Date().toISOString() : null,
+          // مَن رحَّل ≠ مَن أنشأ. ولا يُملأ إلا عند ترحيلٍ فعلى — أى للمالك،
+          // وترحيلُه يقع بعد السطور (v3.74.883) لا هنا.
+          posted_by: selfPost ? actor.actorId : null,
+          posted_at: selfPost ? new Date().toISOString() : null,
         })
         .select("id")
         .single()
@@ -151,6 +158,20 @@ export class ManualJournalCommandService {
       journalEntryId = String(entry.id)
 
       journalLineIds = await this.insertLines(journalEntryId, prepared.lines)
+
+      // v3.74.883 — ترحيل قيد المالك: بعد السطور لا قبلها. الحارس يسمح
+      // بـdraft→posted حين توجد سطور، ويرفض القيد المولود posted.
+      if (selfPost) {
+        const { error: postError } = await this.adminSupabase
+          .from("journal_entries")
+          .update({ status: "posted" })
+          .eq("id", journalEntryId)
+          .eq("status", "draft")
+        if (postError) {
+          throw new Error(postError.message || "Failed to post the owner's manual journal entry")
+        }
+      }
+
       await this.linkTrace(traceId, "journal_entry", journalEntryId, "manual_journal_entry", "manual_journal")
       for (const lineId of journalLineIds) {
         await this.linkTrace(traceId, "journal_entry_line", lineId, "manual_journal_line", "manual_journal")
