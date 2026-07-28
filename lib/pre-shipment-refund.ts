@@ -327,66 +327,45 @@ export async function executePreShipmentRefund(
           .eq("journal_entry_id", revJe.id)
 
         if (revLines && revLines.length > 0) {
-          // Build opposing lines: every debit becomes a credit and vice versa.
-          const { data: revJeNew, error: revJeErr } = await admin
-            .from("journal_entries")
-            .insert({
-              company_id: params.companyId,
-              reference_type: REVENUE_REVERSAL_REF_TYPE,
-              reference_id: params.invoiceId,
-              entry_date: today,
-              description:
+          // v3.74.882 — رأسُ القيد وسطورُه وترحيلُه فى نداءٍ واحد.
+          // نفس إصلاح جانب المشتريات (pre-receipt-refund) وبنفس الدالة —
+          // **الشكل المتكرر يُصلَح بدالةٍ لا بنسخةٍ ثانية من الإصلاح.**
+          const opposing = revLines.map((l: any) => ({
+            account_id: l.account_id,
+            debit_amount: Number(l.credit_amount || 0),
+            credit_amount: Number(l.debit_amount || 0),
+            description:
+              params.lang === "en"
+                ? "Reverse — pre-shipment cancellation"
+                : "عكس — إلغاء قبل الشحن",
+            branch_id: l.branch_id || null,
+            cost_center_id: l.cost_center_id || null,
+          }))
+          const { data: atomicRes, error: atomicErr } = await admin.rpc(
+            "create_journal_entry_atomic",
+            {
+              p_company_id: params.companyId,
+              p_reference_type: REVENUE_REVERSAL_REF_TYPE,
+              p_reference_id: params.invoiceId,
+              p_entry_date: today,
+              p_description:
                 params.lang === "en"
                   ? `Revenue reversal — invoice cancelled before shipment ${invoice.invoice_number}`
                   : `عكس الإيراد — إلغاء فاتورة قبل الشحن ${invoice.invoice_number}`,
-              branch_id: revJe.branch_id || invoice.branch_id || null,
-              cost_center_id: revJe.cost_center_id || invoice.cost_center_id || null,
-              status: "draft",
-            })
-            .select("id")
-            .single()
-          if (!revJeErr && revJeNew?.id) {
-            const opposing = revLines.map((l: any) => ({
-              journal_entry_id: revJeNew.id,
-              account_id: l.account_id,
-              debit_amount: Number(l.credit_amount || 0),
-              credit_amount: Number(l.debit_amount || 0),
-              description:
-                params.lang === "en"
-                  ? "Reverse — pre-shipment cancellation"
-                  : "عكس — إلغاء قبل الشحن",
-              branch_id: l.branch_id || null,
-              cost_center_id: l.cost_center_id || null,
-            }))
-            const { error: oppErr } = await admin
-              .from("journal_entry_lines")
-              .insert(opposing)
-            if (!oppErr) {
-              // v3.74.868 — نفس عطب جانب المشتريات: الترحيل غير مفحوص، فيبقى
-              // **عكس الإيراد مسودَّةً** بينما يُعاد معرّفه كأن العكس تمّ.
-              const { error: postErr } = await admin
-                .from("journal_entries")
-                .update({ status: "posted" })
-                .eq("id", revJeNew.id)
-              if (postErr) {
-                throw new Error(
-                  `REVENUE_REVERSAL_POST_FAILED: entry ${revJeNew.id} has its lines but stayed draft — ${postErr.message}`
-                )
-              }
-              revenueReversalJeId = revJeNew.id
-            } else {
-              // مسارُ تراجُع: يُسجَّل ولا يُرفع.
-              const { error: cleanupErr } = await admin
-                .from("journal_entries")
-                .delete()
-                .eq("id", revJeNew.id)
-              if (cleanupErr) {
-                console.error(
-                  `REVENUE_REVERSAL_CLEANUP_FAILED: draft entry ${revJeNew.id} survived with no lines — ${cleanupErr.message}`
-                )
-              }
+              p_branch_id: revJe.branch_id || invoice.branch_id || null,
+              p_cost_center_id: revJe.cost_center_id || invoice.cost_center_id || null,
+              p_warehouse_id: null,
+              p_lines: opposing,
             }
+          )
+          // فشل العكس لا يُبتلع: المدفوعات عُكست فوقه بالفعل، فمواصلة
+          // الإلغاء بلا قيدِ عكسٍ تترك إيراداً مُعلَقاً بلا فاتورة.
+          if (atomicErr || !atomicRes?.success) {
+            throw new Error(
+              `REVENUE_REVERSAL_FAILED: ${atomicErr?.message || atomicRes?.error || "unknown"}`
+            )
           }
+          revenueReversalJeId = String(atomicRes.entry_id)
         }
       }
     }

@@ -49,10 +49,11 @@ const url = process.env.PRODUCTION_SUPABASE_DB_URL
 
 /**
  * ما هو موجودٌ اليوم، لا ما هو مقبول. يهبط ولا يصعد.
- * ٦ مواضع، كلٌّ منها حذفٌ تعويضى على جدولٍ محروس — تُعالَج بندًا بندًا،
- * ولا يُرفع هذا الرقم أبداً.
+ * v3.74.882 — ٦ ⇒ ٤: مسارا الاسترداد (قيود اليومية) وُحِّدا فى
+ * `create_journal_entry_atomic` فلم يعد فيهما حذفٌ تعويضى أصلاً.
+ * الأربعة الباقية: sales_orders ×٢ · invoices · chart_of_accounts.
  */
-const BASELINE = 6
+const BASELINE = 4
 
 const SCAN_DIRS = ["app", "lib", "components"]
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git", "dist", "build", "coverage"])

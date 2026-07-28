@@ -315,67 +315,52 @@ export async function executePreReceiptRefund(
           .eq("journal_entry_id", origJe.id)
 
         if (origLines && origLines.length > 0) {
-          const { data: revJe, error: revJeErr } = await admin
-            .from("journal_entries")
-            .insert({
-              company_id: params.companyId,
-              reference_type: BILL_REVERSAL_REF_TYPE,
-              reference_id: params.billId,
-              entry_date: today,
-              description:
+          // v3.74.882 — رأسُ القيد وسطورُه وترحيلُه فى نداءٍ واحد.
+          //
+          // كان هذا ثلاثَ خطوات: إدراج رأسٍ مسودَّة، ثم السطور، ثم الترحيل —
+          // وعند فشل السطور «يُنظَّف» بحذف الرأس. وذلك الحذف يمرّ عبر ثلاثة
+          // مُشغِّلات يستطيع أىٌّ منها رفضه (قفل الفترة أوّلها) — بل كان قبل
+          // v3.74.881 **يُبتلع بصمت** فيبقى قيدٌ مسودَّةً بلا سطور.
+          //
+          // `create_journal_entry_atomic` تفعل الثلاثة داخل معاملةٍ واحدة
+          // تتراجع بنفسها، وتزيد حارسَى توازنٍ وتكرار. ⇒ **تراجُعٌ يدوىٌّ قد
+          // يُرفض ليس تراجُعاً؛ والمعاملة لا تستأذن مُشغِّلاً.**
+          const opposing = origLines.map((l: any) => ({
+            account_id: l.account_id,
+            debit_amount: Number(l.credit_amount || 0),
+            credit_amount: Number(l.debit_amount || 0),
+            description:
+              params.lang === "en"
+                ? "Reverse — pre-receipt cancellation"
+                : "عكس — إلغاء قبل الاستلام",
+            branch_id: l.branch_id || null,
+            cost_center_id: l.cost_center_id || null,
+          }))
+          const { data: atomicRes, error: atomicErr } = await admin.rpc(
+            "create_journal_entry_atomic",
+            {
+              p_company_id: params.companyId,
+              p_reference_type: BILL_REVERSAL_REF_TYPE,
+              p_reference_id: params.billId,
+              p_entry_date: today,
+              p_description:
                 params.lang === "en"
                   ? `Bill reversal — cancelled before receipt ${bill.bill_number}`
                   : `عكس فاتورة الشراء — إلغاء قبل الاستلام ${bill.bill_number}`,
-              branch_id: origJe.branch_id || bill.branch_id || null,
-              cost_center_id: origJe.cost_center_id || bill.cost_center_id || null,
-              status: "draft",
-            })
-            .select("id")
-            .single()
-          if (!revJeErr && revJe?.id) {
-            const opposing = origLines.map((l: any) => ({
-              journal_entry_id: revJe.id,
-              account_id: l.account_id,
-              debit_amount: Number(l.credit_amount || 0),
-              credit_amount: Number(l.debit_amount || 0),
-              description:
-                params.lang === "en"
-                  ? "Reverse — pre-receipt cancellation"
-                  : "عكس — إلغاء قبل الاستلام",
-              branch_id: l.branch_id || null,
-              cost_center_id: l.cost_center_id || null,
-            }))
-            const { error: oppErr } = await admin
-              .from("journal_entry_lines")
-              .insert(opposing)
-            if (!oppErr) {
-              // v3.74.868 — الترحيل نفسه كان غير مفحوص: لو فشل، بقى القيد
-              // العكسى **مسودَّة لا تمسّ الأرصدة** بينما `billReversalJeId`
-              // يُملأ ويُعاد كنجاح. أى عكسٌ مُعلَنٌ لم يقع.
-              const { error: postErr } = await admin
-                .from("journal_entries")
-                .update({ status: "posted" })
-                .eq("id", revJe.id)
-              if (postErr) {
-                throw new Error(
-                  `BILL_REVERSAL_POST_FAILED: entry ${revJe.id} has its lines but stayed draft — ${postErr.message}`
-                )
-              }
-              billReversalJeId = revJe.id
-            } else {
-              // مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك قيداً مسودَّةً
-              // بلا سطور — وهو ما يرصده `check-ledger-integrity`.
-              const { error: cleanupErr } = await admin
-                .from("journal_entries")
-                .delete()
-                .eq("id", revJe.id)
-              if (cleanupErr) {
-                console.error(
-                  `BILL_REVERSAL_CLEANUP_FAILED: draft entry ${revJe.id} survived with no lines — ${cleanupErr.message}`
-                )
-              }
+              p_branch_id: origJe.branch_id || bill.branch_id || null,
+              p_cost_center_id: origJe.cost_center_id || bill.cost_center_id || null,
+              p_warehouse_id: null,
+              p_lines: opposing,
             }
+          )
+          // فشل العكس لا يُبتلع: المدفوعات عُكست فوقه بالفعل، فمواصلة
+          // الإلغاء بلا قيدِ عكسٍ تترك مصروفاً بلا فاتورة تُفسّره.
+          if (atomicErr || !atomicRes?.success) {
+            throw new Error(
+              `BILL_REVERSAL_FAILED: ${atomicErr?.message || atomicRes?.error || "unknown"}`
+            )
           }
+          billReversalJeId = String(atomicRes.entry_id)
         }
       }
     }
