@@ -1594,14 +1594,41 @@ function SalesOrdersContent() {
       if (orderToDelete.invoice_id) {
         const linkedInvoice = linkedInvoices[orderToDelete.invoice_id];
         if (linkedInvoice && linkedInvoice.status === 'draft') {
-          // Delete invoice items first
-          await supabase.from("invoice_items").delete().eq("invoice_id", orderToDelete.invoice_id);
-          // Delete invoice
-          await supabase.from("invoices").delete().eq("id", orderToDelete.invoice_id);
+          // ⚠️ v3.74.874 — كان الحذفان بلا فحص، ثم يُحذف أمر البيع بعدهما.
+          // فلو فشل حذف الفاتورة صامتاً، حُذف الأمر وبقيت **فاتورةٌ يتيمة**
+          // بلا مصدر — ومحسوبةٌ فى أرصدة العملاء والتقارير.
+          // ⇒ يُفحص، ويُوقَف الحذف كلّه قبل أن يُفقد الأمر.
+          const { error: itemsErr } = await supabase
+            .from("invoice_items").delete().eq("invoice_id", orderToDelete.invoice_id);
+          if (itemsErr) {
+            throw new Error(
+              appLang === 'en'
+                ? `Could not delete the linked invoice items (${orderToDelete.invoice_id}): ${itemsErr.message}`
+                : `تعذّر حذف بنود الفاتورة المرتبطة (${orderToDelete.invoice_id}): ${itemsErr.message}`
+            );
+          }
+
+          const { error: invErr } = await supabase
+            .from("invoices").delete().eq("id", orderToDelete.invoice_id);
+          if (invErr) {
+            throw new Error(
+              appLang === 'en'
+                ? `Could not delete the linked invoice (${orderToDelete.invoice_id}): ${invErr.message}`
+                : `تعذّر حذف الفاتورة المرتبطة (${orderToDelete.invoice_id}): ${invErr.message}`
+            );
+          }
         }
       }
       // Delete sales order items
-      await supabase.from("sales_order_items").delete().eq("sales_order_id", orderToDelete.id);
+      const { error: soItemsErr } = await supabase
+        .from("sales_order_items").delete().eq("sales_order_id", orderToDelete.id);
+      if (soItemsErr) {
+        throw new Error(
+          appLang === 'en'
+            ? `Could not delete the order items: ${soItemsErr.message}`
+            : `تعذّر حذف بنود أمر البيع: ${soItemsErr.message}`
+        );
+      }
       const deleteRes = await fetch(`/api/sales-orders/${orderToDelete.id}`, { method: "DELETE" });
       const deleteJson = await deleteRes.json().catch(() => ({} as any));
       if (!deleteRes.ok || !deleteJson?.success) {

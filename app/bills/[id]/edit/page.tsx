@@ -617,8 +617,18 @@ export default function EditBillPage() {
             : paid > 0
               ? "partially_paid"
               : (String(billFresh?.status || existingBill.status || "sent").toLowerCase() === "draft" ? "draft" : "sent")
-          // لا نعدّل paid_amount هنا؛ فقط الحالة وفق المجموع الجديد
-          await supabase.from("bills").update({ status: newStatus }).eq("id", existingBill.id)
+          // لا نعدّل paid_amount هنا؛ فقط الحالة وفق المجموع الجديد.
+          // v3.74.874 — الـ`catch` أدناه لا يلتقط شيئاً (supabase-js يُرجع
+          // `{ error }` ولا يرمى). فكانت الحالة تبقى قديمة صامتةً: فاتورةٌ
+          // صار إجماليها مسدَّداً وتظهر «مُرسَلة» — فتُطالَب بمالٍ دُفع.
+          const { error: statusUpdErr } = await supabase
+            .from("bills").update({ status: newStatus }).eq("id", existingBill.id)
+          if (statusUpdErr) {
+            console.error(
+              `BILL_STATUS_RECOMPUTE_FAILED: bill ${existingBill.id} kept its old status ` +
+              `instead of "${newStatus}" after the edit — ${statusUpdErr.message}`
+            )
+          }
         } catch (statusErr) {
           console.warn("Failed to recompute bill payment status after edit", statusErr)
         }

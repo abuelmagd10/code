@@ -863,10 +863,29 @@ export default function PurchaseOrdersPage() {
           }
         }
         // Delete linked bill if draft
-        await supabase.from("bills").delete().eq("id", orderToDelete.bill_id);
+        // ⚠️ v3.74.874 — كان بلا فحص، ثم يُحذف أمر الشراء بعده. فلو فشل
+        // حذف الفاتورة صامتاً، حُذف الأمر وبقيت **فاتورة شراءٍ يتيمة** بلا
+        // مصدر — ومحسوبةٌ فى أرصدة الموردين والالتزامات.
+        const { error: billErr } = await supabase
+          .from("bills").delete().eq("id", orderToDelete.bill_id);
+        if (billErr) {
+          throw new Error(
+            appLang === 'en'
+              ? `Could not delete the linked bill (${orderToDelete.bill_id}): ${billErr.message}`
+              : `تعذّر حذف فاتورة الشراء المرتبطة (${orderToDelete.bill_id}): ${billErr.message}`
+          );
+        }
       }
       // Delete order items first
-      await supabase.from("purchase_order_items").delete().eq("purchase_order_id", orderToDelete.id);
+      const { error: poItemsErr } = await supabase
+        .from("purchase_order_items").delete().eq("purchase_order_id", orderToDelete.id);
+      if (poItemsErr) {
+        throw new Error(
+          appLang === 'en'
+            ? `Could not delete the order items: ${poItemsErr.message}`
+            : `تعذّر حذف بنود أمر الشراء: ${poItemsErr.message}`
+        );
+      }
       // Delete order
       const { error } = await supabase.from("purchase_orders").delete().eq("id", orderToDelete.id);
       if (error) throw error;

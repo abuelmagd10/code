@@ -463,11 +463,21 @@ export class BillReceiptWorkflowService {
     // receipt_status and surface a clear message instead. (PO-0001: the
     // store manager was pinged for a bill the owner had not approved yet.)
     if (!alreadyPending && refreshedBill.status !== "sent") {
-      await this.adminSupabase
+      // v3.74.874 — مسارُ تراجُع: يُسجَّل ولا يُرفع، فالخطأ التالى هو
+      // الرسالة الحقيقية للمستخدم. وفشلُه يترك الفاتورة موسومةً بأنها
+      // **أُرسلت للاستلام** وهى فى صندوق الموافقات — فيراها مسؤول المخزن
+      // منتظِرةً وليست كذلك.
+      const { error: rollbackErr } = await this.adminSupabase
         .from("bills")
         .update({ receipt_status: null })
         .eq("company_id", actor.companyId)
         .eq("id", billId)
+      if (rollbackErr) {
+        console.error(
+          `BILL_RECEIPT_ROLLBACK_FAILED: bill ${billId} still carries receipt_status ` +
+          `while it went back to approval — ${rollbackErr.message}`
+        )
+      }
 
       throw new Error(
         "تعذر الإرسال للاستلام: الفاتورة تحتاج إعادة اعتماد إداري بسبب تعديل مالي عليها. تم إرسالها لصندوق الموافقات — بعد الاعتماد يمكنك الإرسال للاستلام."

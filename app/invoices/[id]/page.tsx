@@ -1355,7 +1355,11 @@ export default function InvoiceDetailPage() {
               .single()
 
             if (customerData) {
-              await supabase
+              // v3.74.874 — ملءٌ رجعىٌّ لبيانات العميل وقت الفاتورة. غير
+              // حَرِج — لو فشل عُرضت بيانات العميل الحالية بدل المحفوظة —
+              // لكنه **لا يصمت**: فتكراره الصامت يعنى أن كل فاتورةٍ قديمة
+              // ستُطبع ببيانات اليوم لا ببيانات يومها.
+              const { error: snapshotErr } = await supabase
                 .from("invoices")
                 .update({
                   customer_name_snapshot: customerData.name || null,
@@ -1369,6 +1373,11 @@ export default function InvoiceDetailPage() {
                   customer_detailed_address_snapshot: customerData.detailed_address || null,
                 })
                 .eq("id", invoiceId)
+              if (snapshotErr) {
+                console.error(
+                  `INVOICE_CUSTOMER_SNAPSHOT_BACKFILL_FAILED: invoice ${invoiceId} customer ${invoice.customer_id} — ${snapshotErr.message}`
+                )
+              }
             }
           }
 

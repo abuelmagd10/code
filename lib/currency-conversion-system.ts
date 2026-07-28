@@ -601,10 +601,21 @@ export async function resetToOriginalCurrency(companyId: string): Promise<Conver
 
     if (entries?.length) {
       const entryIds = entries.map(e => e.id)
-      await client
+      // v3.74.874 — إعادة ضبط عرض العملة على **كل سطور قيود الشركة**. ولو
+      // فشلت صامتةً لبقيت سطورٌ تحمل عرضاً بعملةٍ لم تعد قائمة، والدالة
+      // تُعيد `success: true` ⇒ يظنّ المستخدم أن الضبط تمّ.
+      const { error: linesErr } = await client
         .from('journal_entry_lines')
         .update({ display_debit: null, display_credit: null, display_rate: null, display_currency: null, exchange_rate_used: 1 })
         .in('journal_entry_id', entryIds)
+
+      if (linesErr) {
+        return {
+          success: false,
+          error: `CURRENCY_RESET_LINES_FAILED: ${entryIds.length} entr(ies) of company ${companyId} ` +
+                 `still carry the old display currency — ${linesErr.message}`,
+        }
+      }
     }
 
     return { success: true }
@@ -691,12 +702,22 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
     if (invoices) {
       for (const inv of invoices) {
         if (!inv.original_total || !inv.original_currency || inv.original_paid == null) {
-          await client.from('invoices').update({
+          // v3.74.874 — حفظُ المبالغ بعملتها الأصلية قبل التحويل. وهذه
+          // **لقطةٌ لا تُعاد**: لو فشلت صامتةً فُقد الأصل، وصارت الفاتورة
+          // تُقرأ بالعملة الجديدة كأنها كُتبت بها. ⇒ يُوقَف التحويل كلّه.
+          const { error: origErr } = await client.from('invoices').update({
             original_total: inv.original_total || inv.total_amount,
             original_subtotal: inv.original_total || inv.subtotal,
             original_paid: inv.original_paid ?? inv.paid_amount,
             original_currency: inv.original_currency || originalCurrency
           }).eq('id', inv.id)
+
+          if (origErr) {
+            throw new Error(
+              `CURRENCY_ORIGINAL_SNAPSHOT_FAILED: invoice ${inv.id} lost its pre-conversion ` +
+              `amounts (${inv.total_amount} ${originalCurrency}) — ${origErr.message}`
+            )
+          }
         }
       }
     }

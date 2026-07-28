@@ -298,12 +298,28 @@ export async function postSalesReturnCashDisbursement(
       .select('paid_amount')
       .eq('id', params.invoiceId)
       .maybeSingle()
-    if (invRow) {
-      const newPaid = Math.max(0, Number(invRow.paid_amount || 0) - creditCreated)
-      await admin
-        .from('invoices')
-        .update({ paid_amount: newPaid })
-        .eq('id', params.invoiceId)
+    // v3.74.874 — التعليق أعلاه يقول العاقبة بنفسه: «بدون هذه الخطوة تبقى
+    // تقارير الذمم والمسدَّد **مُبالَغاً فيها**». وكانت نتيجة الكتابة مُهملة،
+    // فالعاقبة الموصوفة تقع بلا أن يعلم أحد — والنقد قد خرج من الخزينة فعلاً.
+    if (!invRow) {
+      throw new Error(
+        `CASH_REFUND_INVOICE_MISSING: invoice ${params.invoiceId} vanished mid-refund ` +
+        `after ${creditCreated} left the till (entry ${jeRow.id})`
+      )
+    }
+
+    const newPaid = Math.max(0, Number(invRow.paid_amount || 0) - creditCreated)
+    const { error: paidErr } = await admin
+      .from('invoices')
+      .update({ paid_amount: newPaid })
+      .eq('id', params.invoiceId)
+
+    if (paidErr) {
+      throw new Error(
+        `CASH_REFUND_PAID_AMOUNT_UPDATE_FAILED: invoice ${params.invoiceId} still shows ` +
+        `${invRow.paid_amount} paid although ${creditCreated} was refunded in cash ` +
+        `(entry ${jeRow.id}) — receivables are overstated by that amount — ${paidErr.message}`
+      )
     }
 
     return {

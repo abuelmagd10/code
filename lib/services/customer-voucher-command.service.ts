@@ -211,11 +211,20 @@ export class CustomerVoucherCommandService {
         applicationIds,
       }
     } catch (error) {
+      // v3.74.874 — استعادة أرصدة الفواتير بعد فشل السند. مسارُ تراجُع:
+      // يُسجَّل ولا يُرفع. وفشلُه يترك الفاتورة **مسدَّدةً بمالٍ لم يُقيَّد**
+      // — أى نقصٌ فى الذمم المدينة لا مصدر له.
       for (const invoice of invoiceSnapshots.reverse()) {
-        await this.adminSupabase
+        const { error: restoreErr } = await this.adminSupabase
           .from("invoices")
           .update({ paid_amount: invoice.paid_amount, status: invoice.status })
           .eq("id", invoice.id)
+        if (restoreErr) {
+          console.error(
+            `VOUCHER_ROLLBACK_INVOICE_RESTORE_FAILED: invoice ${invoice.id} still shows the voucher ` +
+            `applied (paid_amount should be ${invoice.paid_amount}, status ${invoice.status}) — ${restoreErr.message}`
+          )
+        }
       }
       // v3.74.868 — مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك سجلَّ
       // «سلفة مُطبَّقة» على سندٍ أُلغى — فتبدو الفاتورة مسدَّدةً جزئياً بمالٍ

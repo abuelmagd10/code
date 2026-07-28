@@ -251,8 +251,11 @@ export class CustomerPaymentCommandService {
       // does not survive as a phantom. We do NOT hard-delete because the
       // audit triggers on the payments table reject FK-violating deletes;
       // is_deleted=true + status=rejected hides it from every consumer.
+      // v3.74.874 — الـ`try/catch` هنا لا يلتقط شيئاً: supabase-js **يُرجع**
+      // `{ error }` ولا يرمى. فكان توسيم الدفعة بالإلغاء يفشل صامتاً، وتبقى
+      // **دفعةٌ شبح** ظاهرةً لكل قارئ رغم فشل العملية التى أنشأتها.
       try {
-        await this.adminSupabase
+        const { error: voidErr } = await this.adminSupabase
           .from("payments")
           .update({
             is_deleted: true,
@@ -262,6 +265,12 @@ export class CustomerPaymentCommandService {
             updated_at: new Date().toISOString(),
           })
           .eq("id", paymentId)
+        if (voidErr) {
+          console.error(
+            `PAYMENT_ROLLBACK_VOID_FAILED: payment ${paymentId} survived as a phantom ` +
+            `after createPayment failed — ${voidErr.message}`
+          )
+        }
       } catch (cleanupErr) {
         console.error("[CUSTOMER_PAYMENT_CREATE] cleanup after failure also failed:", cleanupErr)
       }
