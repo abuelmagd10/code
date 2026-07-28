@@ -37,20 +37,38 @@ const verbose = process.argv.includes("--list")
 /**
  * خط الأساس — يُشدّ ولا يُرخى.
  *
- * الثلاثة القائمة عند إنشاء الحارس، كلٌّ منها مُسجَّلٌ باسمه كى لا يمرّ
- * رقمٌ مجرَّد دون أن يُعرف ما وراءه (درس ٨٦٣: خط أساسٍ ثابتٌ بلا تفصيل
- * يُدرّب قارئه على تجاهله):
+ * كان ٣ عند إنشاء الحارس فى ٨٦٩، وصار **١** فى ٨٧٠ بعد قرار المالك. وكلٌّ
+ * مُسجَّلٌ باسمه لا برقمٍ مجرَّد (درس ٨٦٣: عددٌ ثابتٌ بلا تفصيل يُدرّب قارئه
+ * على تجاهله).
  *
+ * ── حُذفت (v3.74.870) ────────────────────────────────────────────────────
  *   lib/services/sales-invoice-edit-command.service.ts
- *       يكتب journal_entries و journal_entry_lines و inventory_transactions
- *       و payments و invoices — أخطرها. خدمة «تعديل فاتورة مبيعات» كاملة
- *       غير موصولة بأى مسار.
+ *       **نسخةٌ مكرّرة** من `sales-invoice-update-command.service.ts` الحيّة
+ *       التى يستعملها `/api/invoices/[id]/update` من شاشة تعديل الفاتورة.
+ *       وخطرها لم يكن فى وجودها بل فى **تشابهها**: خدمتان لنفس المهمة،
+ *       فيوصّل أحدهم الخطأ منهما ظنّاً أنها الصحيحة.
+ *   lib/api-security-governance.ts
+ *       مكتوبةٌ بأسلوب Express ‏`(req, res)` — لا تعمل فى Next.js App Router
+ *       أصلاً. أثرٌ من بناءٍ سابق.
+ *
+ * ── باقٍ عمداً (١) ──────────────────────────────────────────────────────
  *   lib/supplier-balance.ts
  *       journal_entries · journal_entry_lines · vendor_credits · bills
- *   lib/api-security-governance.ts
- *       inventory_transactions · invoices · bills
+ *
+ *       **وليست كوداً زائداً بل ميزةً ناقصة** — وهذا هو الفرق الذى أوقف
+ *       حذفها. فنظيرتها `customer-balance.ts` **حيّة**: تُستدعى من
+ *       `app/invoices/[id]/page.tsx` فتُنشئ رصيداً دائناً للعميل حين يدفع
+ *       زيادةً عن فاتورته. ولا نظير لذلك عند الموردين:
+ *
+ *         • لا قيد ولا مُشغِّل يمنع `paid_amount > total_amount` على `bills`
+ *           ⇒ زيادة الدفع للمورد **ممكنةٌ فعلاً**.
+ *         • ولا مسارٌ حىٌّ يُنشئ إشعار دائنٍ عندها.
+ *
+ *       ⇒ فحذفها كان سيُخفى نقصاً بدل أن يُظهره. تبقى مرئيةً هنا حتى
+ *         يُقرَّر: تُوصَل فتكتمل التماثلية مع جانب العملاء، أم تُحذف
+ *         ويُسجَّل النقص صراحةً. (قرار المالك، ٢٦ يوليو ٢٠٢٦.)
  */
-const BASELINE = Number(process.env.LEDGER_LANDMINE_BASELINE ?? 3)
+const BASELINE = Number(process.env.LEDGER_LANDMINE_BASELINE ?? 1)
 
 /** الجداول التى يعنى الخطأ فيها مالاً أو دفاتر. */
 const LEDGER_TABLES = [
