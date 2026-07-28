@@ -51,6 +51,23 @@ export interface SyncVendorCreditResult {
   creditAmount:  number
   netBalance:    number
   error?:        string
+  /**
+   * v3.74.871 — إشعارٌ دائنٌ مفتوحٌ قائمٌ بمبلغٍ مختلف عن المحسوب الآن.
+   *
+   * ولا يُعاد كتابة مبلغه: فالقاعدة تُنشئ قيده المحاسبى **عند الإدراج
+   * وحده** (`trg_auto_journal_vendor_credit` هو BEFORE INSERT لا UPDATE).
+   * فتعديل `total_amount` بعد ذلك يترك القيد على مبلغه القديم ⇒ **إشعارٌ
+   * يقول رقماً والدفاتر تقول غيره**.
+   *
+   * وهذا هو موضع الاختلاف عن جانب العملاء، وهو اختلافٌ مُبرَّر لا سهو:
+   * `customer_credits` **لا مُشغِّل قيدٍ تلقائىّ عليه**، فتعديل مبلغه لا
+   * يمسّ دفتراً.
+   */
+  amountDiffersFromOpenCredit?: {
+    creditId:        string
+    openAmount:      number
+    calculatedAmount: number
+  }
 }
 
 // ─── Journal reference types for AP ──────────────────────────────────────────
@@ -320,6 +337,33 @@ export async function syncVendorCredit(
   reason?: string
 ): Promise<SyncVendorCreditResult> {
   try {
+    // v3.74.871 — الفرع ومركز التكلفة يُقرآن من الفاتورة المسبِّبة، لا
+    // يُترك استنتاجهما للمُشغِّل. فبديله «أقدم فرعٍ فى الشركة» — صحيحٌ
+    // لشركةٍ بفرعٍ واحد، وخاطئٌ صامتاً لأى شركةٍ بأكثر.
+    let branchId: string | null = null
+    let costCenterId: string | null = null
+
+    const { data: sourceBill, error: billErr } = await supabase
+      .from('bills')
+      .select('id, branch_id, cost_center_id')
+      .eq('id', billId)
+      .eq('company_id', companyId)
+      .maybeSingle()
+
+    if (billErr) {
+      return {
+        success:       false,
+        creditCreated: false,
+        creditAmount:  0,
+        netBalance:    0,
+        error: `VENDOR_CREDIT_BILL_LOOKUP_FAILED: bill ${billId} — ${billErr.message}`,
+      }
+    }
+    if (sourceBill) {
+      branchId = sourceBill.branch_id ?? null
+      costCenterId = sourceBill.cost_center_id ?? null
+    }
+
     const balance = await getSupplierNetBalance(supabase, companyId, supplierId)
 
     if (!balance.isCredit) {
@@ -348,32 +392,79 @@ export async function syncVendorCredit(
       const currentRemaining = Number(existingCredit.total_amount || 0)
         - Number(existingCredit.applied_amount || 0)
 
-      // تحديث فقط إذا تغيّر الرصيد بشكل ملحوظ (تجنب التحديثات غير الضرورية)
+      // v3.74.871 — كان هنا `update({ total_amount })` بلا فحصٍ ولا وعىٍ
+      // بالقيد. ولا يُعدَّل: القيد أُنشئ عند الإدراج ولا يتبع التعديل، فكتابة
+      // مبلغٍ جديد تجعل المستند يقول رقماً والدفاتر تقول غيره — وهو ما
+      // يمنعه أصل المشروع: **لا يُعدَّل قيدٌ مُرحَّل، بل يُعالَج بمستندٍ جديد**.
       if (Math.abs(currentRemaining - creditAmount) > 0.005) {
-        await supabase
-          .from('vendor_credits')
-          .update({ total_amount: creditAmount })
-          .eq('id', existingCredit.id)
+        return {
+          success:       true,
+          creditCreated: false,
+          creditAmount:  currentRemaining,
+          netBalance:    balance.netBalance,
+          amountDiffersFromOpenCredit: {
+            creditId:         String(existingCredit.id),
+            openAmount:       currentRemaining,
+            calculatedAmount: creditAmount,
+          },
+        }
       }
-    } else {
-      // إنشاء سجل vendor_credit جديد
-      const creditNumber = `VC-AUTO-${Date.now().toString().slice(-8)}`
-      const today        = new Date().toISOString().slice(0, 10)
 
-      await supabase.from('vendor_credits').insert({
-        company_id:                  companyId,
-        supplier_id:                 supplierId,
-        bill_id:                     billId,
-        source_purchase_invoice_id:  billId,
-        credit_number:               creditNumber,
-        credit_date:                 today,
-        status:                      'open',
-        subtotal:                    creditAmount,
-        tax_amount:                  0,
-        total_amount:                creditAmount,
-        applied_amount:              0,
-        notes: reason || 'رصيد دائن صافٍ للمورد (تم الاحتساب تلقائياً)',
-      })
+      // مطابق — لا عمل. و`creditCreated: false` صادقة هنا: لم يُنشأ شىء.
+      return {
+        success:       true,
+        creditCreated: false,
+        creditAmount,
+        netBalance:    balance.netBalance,
+      }
+    }
+
+    // إنشاء سجل vendor_credit جديد
+    const creditNumber = `VC-AUTO-${Date.now().toString().slice(-8)}`
+    const today        = new Date().toISOString().slice(0, 10)
+
+    const { error: insErr } = await supabase.from('vendor_credits').insert({
+      company_id:                  companyId,
+      supplier_id:                 supplierId,
+      bill_id:                     billId,
+      source_purchase_invoice_id:  billId,
+      credit_number:               creditNumber,
+      credit_date:                 today,
+      status:                      'open',
+      subtotal:                    creditAmount,
+      tax_amount:                  0,
+      total_amount:                creditAmount,
+      applied_amount:              0,
+      // ⭐ v3.74.871 — **المفتاح الذى كان ناقصاً.**
+      //
+      // `fn_auto_journal_vendor_credit` تُنشئ القيد المحاسبى تلقائياً، لكنها
+      // تبدأ بـ:
+      //     IF reference_type NOT IN ('purchase_return','supplier_overpayment')
+      //         THEN RETURN NEW;
+      // وهذه الدالة لم تكن ترسل `reference_type` إطلاقاً ⇒ كانت ستُنشئ
+      // إشعاراً دائناً **بلا أى أثرٍ محاسبى**: مستندٌ يقول إن للشركة مالاً
+      // عند المورد، والدفاتر لا تعرف عنه شيئاً.
+      //
+      // والقاعدة كانت تنتظر `'supplier_overpayment'` منذ البداية — الآلية
+      // مبنيّةٌ والقيمة لم تُرسل قط.
+      reference_type:              'supplier_overpayment',
+      reference_id:                billId,
+      // الفرع ومركز التكلفة من الفاتورة نفسها. والمُشغِّل يتراجع إلى أقدم
+      // فرعٍ فى الشركة إن غابا — وهو تخمينٌ يُغنى عنه المصدر الصحيح.
+      branch_id:                   branchId ?? null,
+      cost_center_id:              costCenterId ?? null,
+      notes: reason || 'رصيد دائن صافٍ للمورد (تم الاحتساب تلقائياً)',
+    })
+
+    if (insErr) {
+      return {
+        success:       false,
+        creditCreated: false,
+        creditAmount:  0,
+        netBalance:    balance.netBalance,
+        error: `VENDOR_CREDIT_INSERT_FAILED: bill ${billId} supplier ${supplierId} ` +
+               `amount ${creditAmount} — ${insErr.message}`,
+      }
     }
 
     return {
