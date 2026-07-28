@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   CheckCircle2, XCircle, Clock, Layers, GitMerge,
   RefreshCw, AlertCircle, ChevronDown, ChevronUp, Factory, Package,
-  Percent, Wallet,
+  Percent, Wallet, BookOpen,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
@@ -165,6 +165,30 @@ interface PendingWriteOff {
   warehouse_name: string | null
   requested_at: string
   type: "write_off"
+}
+
+// v3.74.866 — draft manual journal entry awaiting approval.
+//
+// Unified here on the owner's rule: approvals are requested from the
+// approvals inbox, never from the document screen. Reads journal_entries
+// where reference_type='manual_entry' AND status='draft'.
+//
+// Approve  -> POST /api/journal-entries/[id]/approve   (posts the entry)
+// Reject   -> POST /api/journal-entries/[id]/reject    (returns it, keeps draft)
+//
+// The approver matrix is enforced server-side; the buttons below mirror it
+// so the user is not offered an action that will be refused.
+interface PendingJournalEntry {
+  id: string
+  entry_number: string | null
+  description: string | null
+  entry_date: string
+  total_debit: number
+  branch_name: string | null
+  created_by: string | null
+  creator_role: string | null
+  requested_at: string
+  type: "journal_entry"
 }
 
 // v3.74.488 — manufacturing product receive pending approval.
@@ -435,6 +459,11 @@ type PendingItem =
   | PendingInventoryTransfer
   | PendingMiscApproval
   | PendingProductReceive
+// v3.74.866 — `PendingJournalEntry` is deliberately NOT in this union.
+// `PendingItem` is the input type of `handleApprove`, whose endpoint chain
+// ends in a manufacturing fallback; a journal entry reaching it would silently
+// POST to a material-issue URL. The journal card calls its own endpoint
+// inline, so widening this union would only make a wrong call type-check.
 
 // ── Card components (module-level for stable React identity) ──
 //
@@ -831,7 +860,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "booking_custody_return" | "misc"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "booking_custody_return" | "misc" | "journal_entry"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -1094,7 +1123,7 @@ function ApprovalsContent() {
   // v3.74.486 — Role-scoped tab visibility. Each role only sees the
   // tabs relevant to the workflows they participate in. Owner / admin /
   // general_manager see everything.
-  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"bcr"|"misc"
+  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"bcr"|"misc"|"je"
   const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
     // Warehouse: dispatch, receipt, write-offs, transfers, sales-return
     // warehouse stage, AND pending mfg product receive (v3.74.488).
@@ -1103,7 +1132,7 @@ function ApprovalsContent() {
     store_manager:      ["recv","disp","bwd","bcr","wo","tr","sret","pr","pret"],
     warehouse_manager:  ["recv","disp","bwd","bcr","wo","tr","sret","pr","pret"],
     // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
-    accountant:         ["pay","pret","disc","sret","cref","vcor","misc"],
+    accountant:         ["pay","pret","disc","sret","cref","vcor","misc","je"],
     // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
     purchasing_officer: ["pret","disc","misc"],
     // Manufacturing officer: BOM/routing/production/material issue/product receive
@@ -1120,7 +1149,7 @@ function ApprovalsContent() {
   const isOwnerOrGm = !!myRole && ["owner","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
-      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc"] as const)
+      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je"] as const)
       : (roleTabs[myRole] ?? [])
   const canShow = (t: TabKey) => visibleTabs.includes(t)
   // v3.74.487 — Mirror the tab visibility onto the history filter row.
@@ -1145,6 +1174,7 @@ function ApprovalsContent() {
     booking_stock_withdrawal: "bwd",
     booking_custody_return: "bcr",
     misc: "misc",
+    journal_entry: "je",              // v3.74.866
   }
   const canShowHistory = (c: HistoryCategory) => {
     const tabKey = historyCategoryToTab[c]
@@ -1163,8 +1193,10 @@ function ApprovalsContent() {
   const [bookingWithdrawals, setBookingWithdrawals] = useState<PendingBookingWithdrawal[]>([])
   // v3.74.686 — pending booking custody returns awaiting receipt approval (bcr tab).
   const [bookingCustodyReturns, setBookingCustodyReturns] = useState<PendingCustodyReturn[]>([])
+  // v3.74.866 — draft manual journal entries awaiting approval (je tab).
+  const [journalEntries, setJournalEntries] = useState<PendingJournalEntry[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "bcr" | "misc" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "bcr" | "misc" | "je" | "history">("all")
   // v3.74.484 — honor ?tab=... from notification routing so warehouse
   // manager clicking a dispatch/receipt notification lands on the
   // matching tab.
@@ -1172,7 +1204,7 @@ function ApprovalsContent() {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
     const initialTab = params.get("tab")
-    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","history"] as const
+    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","history"] as const
     if (initialTab && (valid as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as any)
     }
@@ -2099,6 +2131,60 @@ function ApprovalsContent() {
         setGoodsReceipts([])
       }
 
+      // v3.74.866 — draft manual journal entries.
+      //
+      // The totals come from journal_entry_lines, not from a header column,
+      // because journal_entries carries no total: the ledger's own rule is
+      // that the header states nothing the lines do not prove.
+      try {
+        const { data: jes } = await supabase
+          .from("journal_entries")
+          .select(`
+            id, entry_number, description, entry_date, created_at,
+            branch_id, created_by, branches(name),
+            journal_entry_lines(debit_amount)
+          `)
+          .eq("company_id", cid)
+          .eq("reference_type", "manual_entry")
+          .eq("status", "draft")
+          .eq("is_deleted", false)
+          .order("created_at", { ascending: true })
+          .limit(100)
+
+        // Resolve each creator's role so the card can offer only the
+        // action the server will actually accept (a GM's entry needs the
+        // owner; offering a GM a button that returns 403 is a lie).
+        const creatorIds = Array.from(
+          new Set((jes || []).map((j: any) => j.created_by).filter(Boolean).map(String))
+        )
+        const roleById = new Map<string, string>()
+        if (creatorIds.length > 0) {
+          const { data: mem } = await supabase
+            .from("company_members")
+            .select("user_id, role")
+            .eq("company_id", cid)
+            .in("user_id", creatorIds)
+          for (const m of (mem || []) as any[]) {
+            roleById.set(String(m.user_id), String(m.role || "").toLowerCase())
+          }
+        }
+
+        setJournalEntries((jes || []).map((j: any) => ({
+          id: j.id,
+          entry_number: j.entry_number ?? null,
+          description: j.description ?? null,
+          entry_date: j.entry_date,
+          total_debit: (j.journal_entry_lines || []).reduce(
+            (s: number, l: any) => s + Number(l.debit_amount || 0), 0
+          ),
+          branch_name: j.branches?.name ?? null,
+          created_by: j.created_by ?? null,
+          creator_role: j.created_by ? (roleById.get(String(j.created_by)) ?? null) : null,
+          requested_at: j.created_at,
+          type: "journal_entry" as const,
+        })))
+      } catch { setJournalEntries([]) }
+
       // v3.74.479 — inventory write-offs (approve requires account
       // selection → link to details page).
       try {
@@ -3021,6 +3107,81 @@ function ApprovalsContent() {
       } catch { /* keep going */ }
 
       // v3.74.481 — inventory write-offs history.
+      // ── v3.74.866 — manual journal entry record ────────────────────────
+      //
+      // Two sources, deliberately. An APPROVED entry is proved by the entry
+      // itself (status='posted', posted_by, posted_at). A REJECTED one has
+      // no trace on the entry at all - by design: rejection returns the draft
+      // to its author rather than stamping a third status onto the ledger's
+      // own table. Its record lives in the audit trail, which is exactly what
+      // an audit trail is for, and which only started working in v3.74.865.
+      try {
+        const { data: posted } = await supabase
+          .from("journal_entries")
+          .select(`id, entry_number, description, entry_date, branch_id,
+                   created_by, posted_by, posted_at, created_at,
+                   journal_entry_lines(debit_amount)`)
+          .eq("company_id", cid)
+          .eq("reference_type", "manual_entry")
+          .eq("status", "posted")
+          .eq("is_deleted", false)
+          .order("posted_at", { ascending: false })
+          .limit(50)
+        for (const r of (posted || []) as any[]) {
+          const total = (r.journal_entry_lines || []).reduce(
+            (s: number, l: any) => s + Number(l.debit_amount || 0), 0
+          )
+          merged.push({
+            id: `je-${r.id}`,
+            category: "journal_entry",
+            branch_id: r.branch_id ?? null,
+            warehouse_id: null,
+            doc_label: `قيد يدوى · ${r.entry_number ?? r.id.slice(0, 8)}`,
+            doc_href: `/journal-entries/${r.id}`,
+            party_label: r.description ?? null,
+            value_label: `${Number(total).toFixed(2)}`,
+            status: "approved" as any,
+            requested_by_email: null,
+            requested_by_id: r.created_by ?? null,
+            requested_at: r.created_at,
+            decided_by_email: null,
+            decided_by_id: r.posted_by ?? null,
+            decided_at: r.posted_at ?? null,
+            decision_note: null,
+          })
+        }
+      } catch { /* keep going */ }
+
+      try {
+        const { data: rejects } = await supabase
+          .from("audit_logs")
+          .select(`id, entity_id, user_id, reason, branch_id, created_at, new_data, metadata`)
+          .eq("company_id", cid)
+          .eq("action", "manual_journal_rejected")
+          .order("created_at", { ascending: false })
+          .limit(50)
+        for (const r of (rejects || []) as any[]) {
+          merged.push({
+            id: `jer-${r.id}`,
+            category: "journal_entry",
+            branch_id: r.branch_id ?? null,
+            warehouse_id: null,
+            doc_label: `قيد يدوى · ${String(r.entity_id || "").slice(0, 8)}`,
+            doc_href: `/journal-entries/${r.entity_id}`,
+            party_label: r.metadata?.description ?? null,
+            value_label: null,
+            status: "rejected" as any,
+            requested_by_email: null,
+            requested_by_id: r.new_data?.returned_to ?? null,
+            requested_at: r.metadata?.entry_date ?? r.created_at,
+            decided_by_email: null,
+            decided_by_id: r.user_id ?? null,
+            decided_at: r.created_at,
+            decision_note: r.reason ?? null,
+          })
+        }
+      } catch { /* keep going */ }
+
       try {
         const { data: wos } = await supabase
           .from("inventory_write_offs")
@@ -3381,7 +3542,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length + bookingCustodyReturns.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length + bookingCustodyReturns.length + journalEntries.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -3867,6 +4028,11 @@ function ApprovalsContent() {
                 <AlertCircle className="w-3.5 h-3.5" />{t("طلبات متنوعة", "Other Requests")} ({miscApprovals.length})
               </Button>
             )}
+            {canShow("je") && (
+              <Button size="sm" variant={activeTab === "je" ? "default" : "outline"} onClick={() => setActiveTab("je")} className="gap-1">
+                <BookOpen className="w-3.5 h-3.5" />{t("القيود اليدوية", "Manual Journals")} ({journalEntries.length})
+              </Button>
+            )}
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               {/* v3.74.696 — count the SCOPED feed (role + branch/warehouse),
@@ -4012,6 +4178,11 @@ function ApprovalsContent() {
                 {canShowHistory("goods_receipt") && (
                   <Button size="sm" variant={historyFilter === "goods_receipt" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("goods_receipt")}>
                     <Package className="w-3 h-3" />{t("استلام مخزنى", "Goods Receipt")} ({historyScoped.filter(h => h.category === "goods_receipt").length})
+                  </Button>
+                )}
+                {canShowHistory("journal_entry") && (
+                  <Button size="sm" variant={historyFilter === "journal_entry" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("journal_entry")}>
+                    <BookOpen className="w-3 h-3" />{t("القيود اليدوية", "Manual Journals")} ({historyScoped.filter(h => h.category === "journal_entry").length})
                   </Button>
                 )}
                 {canShowHistory("write_off") && (
@@ -4445,6 +4616,162 @@ function ApprovalsContent() {
               )}
 
               {/* v3.74.479 — Inventory write-offs (link out to details page). */}
+              {/* v3.74.866 — draft manual journal entries.
+                  Approve posts the entry; reject returns it to its author
+                  with a reason and leaves it a draft. */}
+              {(activeTab === "all" || activeTab === "je") && journalEntries.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <BookOpen className="w-4 h-4" />{t("اعتمادات القيود اليدوية", "Manual Journal Approvals")}
+                  </h2>
+                  {journalEntries.map(e => {
+                    // Mirror the server matrix exactly (approve/route.ts):
+                    //   creator = general_manager -> owner only
+                    //   creator = accountant      -> owner or general_manager
+                    // plus absolute separation of duties: never your own entry.
+                    const creatorRole = String(e.creator_role || "")
+                    const rankOk = creatorRole === "general_manager" ? myRole === "owner" : isOwnerOrGm
+                    const notMine = !!myUserId && String(e.created_by || "") !== String(myUserId)
+                    const canDecideJe = rankOk && notMine
+                    return (
+                      <Card key={e.id} className="border-l-4 border-l-emerald-500">
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg shrink-0">
+                                <BookOpen className="w-4 h-4 text-emerald-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">
+                                  {t("قيد يدوى", "Manual Journal")} · {e.entry_number ?? e.id.slice(0, 6)}
+                                </p>
+                                <p className="text-xs mt-1">
+                                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                                    {t("إجمالى المدين", "Total debit")}: {fmtMoney(e.total_debit)}
+                                  </span>
+                                </p>
+                                {e.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {e.description}</p>}
+                                {e.branch_name && <p className="text-xs text-muted-foreground mt-1">🏢 {e.branch_name}</p>}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  📅 {fmtDate(e.entry_date)} · {t("قُدِّم", "Submitted")} {fmtDate(e.requested_at)}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {t("عند الاعتماد: يُرحَّل القيد فوراً وتتأثر أرصدة الحسابات — ولا يُعدَّل بعدها إلا بقيدٍ عكسى. وعند الردّ: يعود مسودَّة لمُنشئه مع السبب دون أن يمسّ الأرصدة",
+                                        "On approval the entry posts immediately and moves the account balances - after that only a reversing entry can change it. On rejection it returns to its author as a draft, with the reason, touching no balances")}
+                                </p>
+                                {!canDecideJe && (
+                                  <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                                    {!notMine
+                                      ? t("لا يجوز اعتماد قيدٍ أنشأته بنفسك", "You cannot approve an entry you created")
+                                      : t("قيد المدير العام يعتمده المالك", "A general manager's entry is approved by the owner")}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                                <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {canDecideJe && (
+                            <div className="flex gap-2 mt-3 flex-wrap">
+                              <Button
+                                size="sm"
+                                className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                                disabled={runningId === e.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(e.id)
+                                    const res = await fetch(`/api/journal-entries/${encodeURIComponent(e.id)}/approve`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    // The route answers { error: "<code>", message: "<Arabic>" };
+                                    // showing j.error alone would surface "self_approval".
+                                    if (!res.ok || j.success === false) {
+                                      throw new Error(j.message || j.error || t("تعذّر اعتماد القيد", "Approve failed"))
+                                    }
+                                    toast({ title: t("تم الاعتماد", "Approved"), description: t("رُحِّل القيد بنجاح", "Entry posted") })
+                                    await load()
+                                  } catch (err: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(err?.message ?? err) })
+                                  } finally { setRunningId(null) }
+                                }}
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد وترحيل", "Approve & Post")}
+                              </Button>
+
+                              {rejectId !== e.id && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                                  disabled={runningId === e.id}
+                                  // rejectType stays null: this card does not go
+                                  // through the shared handleReject chain, and a
+                                  // stale type left by another card must not make
+                                  // that chain think it owns this rejection.
+                                  onClick={() => { setRejectId(e.id); setRejectType(null); setRejectReason("") }}
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />{t("ردّ للمُنشئ", "Return to author")}
+                                </Button>
+                              )}
+                            </div>
+                          )}
+
+                          {canDecideJe && rejectId === e.id && (
+                            <div className="mt-3 space-y-2">
+                              <Textarea
+                                value={rejectReason}
+                                onChange={(ev) => setRejectReason(ev.target.value)}
+                                placeholder={t("سبب الردّ — يصل للمُنشئ ليُصحِّح", "Reason - the author sees this so they can fix it")}
+                                className="text-xs"
+                                rows={2}
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="text-xs"
+                                  disabled={rejectReason.trim().length < 3 || runningId === e.id}
+                                  onClick={async () => {
+                                    try {
+                                      setRunningId(e.id)
+                                      const res = await fetch(`/api/journal-entries/${encodeURIComponent(e.id)}/reject`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ reason: rejectReason.trim() }),
+                                      })
+                                      const j = await res.json().catch(() => ({}))
+                                      if (!res.ok || j.success === false) {
+                                        throw new Error(j.message || j.error || t("تعذّر ردّ القيد", "Reject failed"))
+                                      }
+                                      toast({ title: t("رُدَّ للمُنشئ", "Returned"), description: t("أُعيد القيد مسودَّة مع السبب", "Returned as a draft with the reason") })
+                                      setRejectId(null); setRejectReason("")
+                                      await load()
+                                    } catch (err: any) {
+                                      toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(err?.message ?? err) })
+                                    } finally { setRunningId(null) }
+                                  }}
+                                >
+                                  {t("تأكيد الردّ", "Confirm return")}
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                                  {t("إلغاء", "Cancel")}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
+
               {(activeTab === "all" || activeTab === "wo") && writeOffs.length > 0 && (
                 <div className="space-y-3">
                   <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
