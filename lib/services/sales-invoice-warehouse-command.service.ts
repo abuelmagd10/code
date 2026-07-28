@@ -7,6 +7,7 @@ import {
   NotificationRecipientResolverService,
   type ResolvedNotificationRecipient,
 } from "@/lib/services/notification-recipient-resolver.service"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 type SupabaseLike = any
 
@@ -216,7 +217,7 @@ export class SalesInvoiceWarehouseCommandService {
 
   private async writeWarehouseApprovalAudit(actor: SalesInvoiceWarehouseActor, command: SalesInvoiceWarehouseCommand, invoice: any) {
     try {
-      await this.supabase.from("audit_logs").insert({
+      await writeAuditLog(this.supabase, {
         company_id: actor.companyId,
         user_id: actor.userId,
         action: "UPDATE",
@@ -234,7 +235,7 @@ export class SalesInvoiceWarehouseCommandService {
           approved_by: actor.userId,
           approval_date: new Date().toISOString(),
         },
-      })
+      }, "services/sales-invoice-warehouse-command.service")
     } catch (auditError: any) {
       console.warn("⚠️ [WAREHOUSE_APPROVE] Audit log failed:", auditError.message)
     }
@@ -247,7 +248,7 @@ export class SalesInvoiceWarehouseCommandService {
     result: { revertedToDraft: boolean; creditCreated: boolean; creditAmount: number },
   ) {
     try {
-      await this.supabase.from("audit_logs").insert({
+      await writeAuditLog(this.supabase, {
         company_id: actor.companyId,
         user_id: actor.userId,
         action: "UPDATE",
@@ -271,7 +272,7 @@ export class SalesInvoiceWarehouseCommandService {
           credit_created: result.creditCreated,
           credit_amount: result.creditAmount,
         },
-      })
+      }, "services/sales-invoice-warehouse-command.service")
     } catch (auditError: any) {
       console.warn("⚠️ [WAREHOUSE_REJECT] Audit log failed:", auditError.message)
     }

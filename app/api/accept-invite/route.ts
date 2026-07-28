@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, notFoundError } from "@/lib/api-error-handler"
 import { activateSeat } from "@/lib/billing/seat-service"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(req: NextRequest) {
   try {
@@ -78,14 +79,14 @@ export async function POST(req: NextRequest) {
 
     // 6. Audit log
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         action: "invite_accepted",
         company_id: inv.company_id,
         user_id: userId,
         target_table: "company_invitations",
         record_id: inv.id,
         new_data: { email: inv.email, role: inv.role },
-      })
+      }, "accept-invite/route")
     } catch { }
 
     return apiSuccess({ ok: true, email: inv.email, company_id: inv.company_id })

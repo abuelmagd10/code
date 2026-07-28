@@ -8,107 +8,133 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.877 - the OLD script is removed, never this one. Three releases in a
+# v3.74.878 - the OLD script is removed, never this one. Three releases in a
 # row a chained string-replace turned this line into self-deletion (861, 865,
 # 866). A replacement whose output can match its own next pattern is not a
 # replacement, it is a loop. This line is now written by hand.
-if (Test-Path -LiteralPath "push_v3.74.876.ps1") { Remove-Item -LiteralPath "push_v3.74.876.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.877.ps1") { Remove-Item -LiteralPath "push_v3.74.877.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.877"') {
-    Write-Host "+ 3.74.877" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.878"') {
+    Write-Host "+ 3.74.878" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.877]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.877]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.878]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.878]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$helper = "lib/services/financial-trace.ts"
+$helper = "lib/audit-log-write.ts"
 $uw     = "scripts/check-unchecked-writes.js"
-$svc    = @(
-  "lib/services/bank-transfer-command.service.ts",
-  "lib/services/consolidation.service.ts",
-  "lib/services/customer-payment-command.service.ts",
-  "lib/services/customer-refund-command.service.ts",
-  "lib/services/customer-voucher-command.service.ts",
-  "lib/services/intercompany.service.ts",
-  "lib/services/manual-journal-command.service.ts",
+$touched = @(
+  "app/api/accept-invite/route.ts",
+  "app/api/accept-membership/route.ts",
+  "app/api/backup/[id]/route.ts",
+  "app/api/backup/export-excel/route.ts",
+  "app/api/backup/export/route.ts",
+  "app/api/backup/restore/route.ts",
+  "app/api/billing/cancel-invite/route.ts",
+  "app/api/billing/renew/route.ts",
+  "app/api/bills/[id]/confirm-receipt/route.ts",
+  "app/api/bills/[id]/restart-approval-notifications/route.ts",
+  "app/api/bonuses/attach-to-payroll/route.ts",
+  "app/api/bonuses/reverse/route.ts",
+  "app/api/bonuses/settings/route.ts",
+  "app/api/commissions/advance-payments/pay/route.ts",
+  "app/api/cron/backup-daily/route.ts",
+  "app/api/cron/ensure-accounting-periods/route.ts",
+  "app/api/cron/expire-permission-shares/route.ts",
+  "app/api/cron/subscription-renewal/route.ts",
+  "app/api/employee-bonus-configs/route.ts",
+  "app/api/fixed-assets/auto-post-depreciation/route.ts",
+  "app/api/hr/attendance/anomalies/route.ts",
+  "app/api/hr/attendance/route.ts",
+  "app/api/hr/attendance/shifts/route.ts",
+  "app/api/hr/employees/route.ts",
+  "app/api/hr/payroll/payments/route.ts",
+  "app/api/init-missing-company-tables/route.ts",
+  "app/api/payments/[id]/resubmit-after-reject/route.ts",
+  "app/api/send-invite/route.ts",
+  "app/inventory/write-offs/page.tsx",
+  "app/invoices/[id]/page.tsx",
+  "app/settings/page.tsx",
+  "lib/billing/subscription-service.ts",
+  "lib/currency-service.ts",
+  "lib/refund-policy-engine.ts",
+  "lib/services/bill-receipt-workflow.service.ts",
+  "lib/services/bonus-calculator.service.ts",
+  "lib/services/bonus-reversal.service.ts",
   "lib/services/purchase-return-command.service.ts",
-  "lib/services/sales-invoice-draft-delete-command.service.ts",
-  "lib/services/sales-invoice-update-command.service.ts",
-  "lib/services/shareholder-capital-command.service.ts",
-  "lib/services/supplier-payment-command.service.ts",
-  "lib/services/supplier-refund-receipt-command.service.ts"
+  "lib/services/sales-invoice-warehouse-command.service.ts"
 )
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $helper, $uw) + $svc + @("push_v3.74.877.ps1")
+           $helper, $uw) + $touched + @("push_v3.74.878.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the helper carries the throw/report rule, so callers need not ------
-# linkTraceEntity is a forward path: a missing link means a document that
-# cannot be traced back to its operation, and the operation can still be
-# undone at that point - so it throws.
-# purgeTrace runs inside catch: throwing there would replace the original
-# error with a cleanup one - so it reports, with the trace id.
+# -- 1. the helper must NOT throw ----------------------------------------
+# A failed audit line does not invalidate work that succeeded. Voiding a
+# correct edit because its log row would not write punishes the user for a
+# defect that is not theirs. It reports instead - with table, action, id.
 $h = Get-Content -LiteralPath $helper -Raw
-$linkIdx  = $h.IndexOf("export async function linkTraceEntity")
-$purgeIdx = $h.IndexOf("export async function purgeTrace")
-if ($linkIdx -lt 0 -or $purgeIdx -lt 0) {
-    Write-Host "X the helper does not export both functions" -ForegroundColor Red; exit 1
-}
-$linkBody  = $h.Substring($linkIdx, $purgeIdx - $linkIdx)
-$purgeBody = $h.Substring($purgeIdx)
-if ($linkBody -notmatch "throw new Error") {
-    Write-Host "X linkTraceEntity does not raise on a forward-path failure" -ForegroundColor Red; exit 1
-}
-if ($purgeBody -match "throw ") {
-    Write-Host "X purgeTrace throws - it would mask the error that started the rollback" -ForegroundColor Red
+if ($h -match "throw ") {
+    Write-Host "X writeAuditLog throws - a failed log would void a successful operation" -ForegroundColor Red
     exit 1
 }
-if ($purgeBody -notmatch "console\.error") {
-    Write-Host "X purgeTrace fails in silence" -ForegroundColor Red; exit 1
+if ($h -notmatch "AUDIT_LOG_WRITE_FAILED") {
+    Write-Host "X writeAuditLog fails in silence" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the helper throws on the forward path and reports on the rollback path" -ForegroundColor Green
+Write-Host "+ the helper reports without voiding the operation it logs" -ForegroundColor Green
 
-# -- 2. no service may still write a trace row by hand --------------------
-foreach ($f in $svc) {
+# -- 2. no file may still insert an audit row by hand ---------------------
+# Two files write to DIFFERENT audit tables - payment_audit_logs and
+# refund_audit_logs - so they do not use the audit_logs helper. They were
+# fixed inline instead, and are checked by their own markers below.
+$inline = @{
+  "app/api/payments/[id]/resubmit-after-reject/route.ts" = "PAYMENT_AUDIT_ATTRIBUTION_FAILED"
+  "lib/refund-policy-engine.ts"                          = "REFUND_AUDIT_LOG_FAILED"
+}
+foreach ($f in $touched) {
     $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match 'from\("financial_operation_trace_links"\)\s*\r?\n?\s*\.?(upsert|delete)') {
-        Write-Host "X $f still writes trace links directly" -ForegroundColor Red; exit 1
+    if ($c -match 'from\("audit_logs"\)\s*\r?\n?\s*\.?insert' -or
+        $c -match "from\('audit_logs'\)\s*\r?\n?\s*\.?insert") {
+        Write-Host "X $f still inserts an audit row directly" -ForegroundColor Red; exit 1
     }
-    if ($c -notmatch "financial-trace") {
+    if ($inline.ContainsKey($f)) {
+        if ($c -notmatch $inline[$f]) {
+            Write-Host "X $f writes another audit table and still reports nothing" -ForegroundColor Red
+            exit 1
+        }
+    } elseif ($c -notmatch "audit-log-write") {
         Write-Host "X $f does not import the shared helper" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ all thirteen services route their trace writes through the helper" -ForegroundColor Green
+Write-Host "+ every audit write is either helper-routed or reports inline" -ForegroundColor Green
 
 # -- 3. ground won must be pinned down ------------------------------------
 $uwc = Get-Content -LiteralPath $uw -Raw
-if ($uwc -notmatch "const BASELINE = 165;") {
-    Write-Host "X the unchecked-writes baseline is not 165" -ForegroundColor Red; exit 1
+if ($uwc -notmatch "const BASELINE = 113;") {
+    Write-Host "X the unchecked-writes baseline is not 113" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline tightened 196 -> 165" -ForegroundColor Green
+Write-Host "+ unchecked-writes baseline tightened 165 -> 113" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.876.ps1" 2>$null
+git add -u -- "push_v3.74.877.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.876.ps1")
+$expected = @($files) + @("push_v3.74.877.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
         Write-Host "X staged but not part of this release: $p" -ForegroundColor Red
-        Write-Host "  Left over from an earlier run. Unstage it or add it to `$files." -ForegroundColor Red
         exit 1
     }
 }
@@ -274,42 +300,47 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_877.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_878.txt"
     $msgLines = @(
-        'refactor(trace): v3.74.877 - thirty-one silent writes closed by two functions',
+        'refactor(audit): v3.74.878 - a try around supabase is a broken promise',
         '',
-        'The financial operation trace is what later answers "which document came out',
-        'of which operation". It was written by hand in thirteen services, in two',
-        'repeating shapes, and every one of them discarded its result:',
+        'Of the fifty sites writing to the audit trail, thirty-nine sat inside a',
+        'try/catch. That is worse than no handling at all, because it looks like',
+        'handling:',
         '',
-        '    13x  upsert on financial_operation_trace_links   (forward link)',
-        '    18x  a pair of deletes cleaning up after a failure',
+        '    try { await admin.from("audit_logs").insert({ ... }) } catch { }',
         '',
-        'supabase-js returns { error } and never throws, so all thirty-one failed in',
-        'silence.',
+        'supabase-js RETURNS { error } and never throws. The catch cannot fire, and',
+        'the result is dropped. Silent twice over - the guard does not work, and the',
+        'wound is not visible.',
         '',
-        'lib/services/financial-trace.ts replaces them with two functions - exactly',
-        'what rollback-journal-entry.ts did in v3.74.756, which closed six sites of',
-        'the same shape in one change.',
+        'This exact shape has now turned up in six consecutive releases today: 865,',
+        '868, 871, 874, 877 and this one. It is the single most repeated defect in',
+        'the codebase. Look for try around a supabase call FIRST, not last.',
         '',
-        'A repeating shape is fixed with a function, not with a repeated copy of the',
-        'fix. The point is not brevity: patching thirty-one places is thirty-one',
-        'chances to miss one, while a function is one place to review.',
+        'lib/audit-log-write.ts, on the same method as rollback-journal-entry (756,',
+        'six sites) and financial-trace (877, thirty-one). When a shape repeats three',
+        'times the shared function is not a refinement - it is the only fix from',
+        'which no site gets forgotten.',
         '',
-        'The throw/report rule lives INSIDE the helper so no caller has to remember',
-        'it. linkTraceEntity is a forward path - a missing link means a document that',
-        'cannot be traced back to its operation, and the operation can still be undone',
-        'at that point, so it throws. purgeTrace runs inside catch, where throwing',
-        'would replace the original error with a cleanup one, so it reports with the',
-        'trace id and returns.',
+        'It does NOT throw. A failed audit line does not invalidate work that',
+        'succeeded: voiding a correct governance edit because its log row would not',
+        'write punishes the user for a defect that is not theirs. It logs the table,',
+        'the action, the id and the company, so the source is known without hunting.',
         '',
-        'The transformation was structural, not textual: the pattern required the full',
-        'linkTrace signature and body, not merely the presence of an upsert. It matched',
-        'ten identical sites and REFUSED three written differently, which were then',
-        'handled by a second explicit pattern. A loose pattern in an automated rewrite',
-        'that touches money is more dangerous than doing it by hand.',
+        'The rewrite caught a bug in itself. The automatic import inserter placed the',
+        'line INSIDE a multi-line import in two files, because it looked for the last',
+        'line starting with "import" - which was the opening line of a spanning',
+        'import. It broke both files, the syntax check caught it immediately, and',
+        'they were fixed by hand. "Last line starting with X" is not "end of the last',
+        'statement", and an automated rewrite needs a syntax check right after it,',
+        'not after the push.',
         '',
-        '196 -> 165, and zero silent trace writes remain anywhere.'
+        'Two more found on the way: payment_audit_logs, whose failure leaves a',
+        'resubmission attributed to nobody, and a function literally named',
+        'createAuditLog that never checked whether it had created anything.',
+        '',
+        '165 -> 113. No silent audit write remains anywhere.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -318,5 +349,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.877 pushed - thirty-one silent writes closed by two functions" -ForegroundColor Green
+    Write-Host "`n+ v3.74.878 pushed - a try around supabase is a broken promise" -ForegroundColor Green
 }

@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveActorInfo } from '@/lib/audit-actor'
 import { restoreBackup, canRestoreBackup } from '@/lib/backup/restore-utils'
 import { BackupData, RestoreOptions } from '@/lib/backup/types'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     // 6. تسجيل في Audit Log (server-side direct insert)
     try {
       const auditSupabase = await createClient()
-      await auditSupabase.from('audit_logs').insert({
+      await writeAuditLog(auditSupabase, {
         company_id: companyId,
         user_id: user.id,
         ...resolveActorInfo(user),
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
           errors: result.error ? [result.error] : [],
           warnings: result.warnings,
         },
-      })
+      }, "restore/route")
     } catch (auditErr: any) {
       console.warn('[Backup Restore] audit log skipped:', auditErr?.message || auditErr)
     }
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
       const { user, companyId } = await requireOwner(request)
       if (user && companyId) {
         const auditSupabase = await createClient()
-        await auditSupabase.from('audit_logs').insert({
+        await writeAuditLog(auditSupabase, {
           company_id: companyId,
           user_id: user.id,
           ...resolveActorInfo(user),
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
             error: err.message,
             duration_seconds: Math.round((Date.now() - startTime) / 1000),
           },
-        })
+        }, "restore/route")
       }
     } catch {
       // تجاهل أخطاء Audit Log

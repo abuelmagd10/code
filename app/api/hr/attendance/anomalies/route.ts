@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
 
         // Audit Log
         try {
-            await admin.from('audit_logs').insert({
+            await writeAuditLog(admin, {
                 action: 'UPDATE',
                 target_table: 'attendance_raw_logs',
                 company_id: companyId,
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
                 record_id: log_id,
                 reason: 'attendance_anomaly_resolved',
                 new_data: { action, resolution_notes }
-            })
+            }, "anomalies/route")
         } catch { }
 
         return apiSuccess({ message: 'Anomaly resolved successfully' })

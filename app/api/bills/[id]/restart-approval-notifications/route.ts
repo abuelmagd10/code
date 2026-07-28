@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createServiceClient } from "@/lib/supabase/server"
 import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(
   request: NextRequest,
@@ -163,7 +164,7 @@ export async function POST(
     )
 
     try {
-      await supabase.from("audit_logs").insert({
+      await writeAuditLog(supabase, {
         company_id: context.companyId,
         user_id: context.user.id,
         action: "bill_approval_restart_notification_dispatched",
@@ -171,7 +172,7 @@ export async function POST(
         record_id: bill.id,
         record_identifier: bill.bill_number,
         new_data: metadata,
-      })
+      }, "restart-approval-notifications/route")
     } catch (auditError: any) {
       console.warn("[BILL_APPROVAL_RESTART_NOTIFICATION]", auditError?.message || auditError)
     }

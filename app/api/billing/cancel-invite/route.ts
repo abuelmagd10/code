@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, internalError, badRequestError, HTTP_STATUS } from "@/lib/api-error-handler"
 import { releaseSeat } from "@/lib/billing/seat-service"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Audit log
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         action: "invite_cancelled",
         company_id: companyId,
         user_id: user.id,
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
         record_id: inviteId,
         old_data: { email: inv.email, role: inv.role, status: "pending" },
         new_data: { status: "cancelled" },
-      })
+      }, "cancel-invite/route")
     } catch { }
 
     return apiSuccess({

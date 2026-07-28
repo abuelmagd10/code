@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server"
 import { resolveActorInfo } from "@/lib/audit-actor"
 import { exportCompanyBackup, canExportBackup } from "@/lib/backup/export-utils"
 import { buildBackupExcel } from "@/lib/backup/excel-export"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 // exceljs needs the Node runtime (not edge); data can be large so allow time.
 export const runtime = "nodejs"
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     // Audit (non-fatal).
     try {
       const auditSupabase = await createClient()
-      await auditSupabase.from("audit_logs").insert({
+      await writeAuditLog(auditSupabase, {
         company_id: companyId,
         user_id: user.id,
         ...resolveActorInfo(user),
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
           total_records: backupData.metadata.total_records,
           duration_seconds: Math.round((Date.now() - startTime) / 1000),
         },
-      })
+      }, "export-excel/route")
     } catch (auditErr: any) {
       console.warn("[Backup Excel] audit log skipped:", auditErr?.message || auditErr)
     }

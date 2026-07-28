@@ -15,6 +15,7 @@ import { createInvoiceForPayment, type PricingSnapshot } from './invoice-generat
 import { sendReactivationNotice } from './renewal-emails'
 import { notifyReactivation, notifyPaymentSuccess } from './subscription-notifications'
 import { shouldDeliverChannel } from '@/lib/notifications/dispatcher'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 const GRACE_PERIOD_DAYS = 3
 
@@ -259,7 +260,7 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
     // Log to audit_logs
     try {
       const admin = getAdminClient()
-      await admin.from('audit_logs').insert({
+      await writeAuditLog(admin, {
         action: 'payment_success',
         company_id: payload.company_id,
         target_table: 'company_seats',
@@ -270,7 +271,7 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
           invoice_number: invoiceNumber ?? null,
           invoice_error: invoiceError ?? null,
         },
-      })
+      }, "billing/subscription-service")
     } catch (logErr) {
       console.error('[SubscriptionService] audit log failed:', logErr)
     }
@@ -295,12 +296,12 @@ export async function handlePaymentFailed(companyId: string): Promise<void> {
     .eq('id', companyId)
 
   try {
-    await admin.from('audit_logs').insert({
+    await writeAuditLog(admin, {
       action: 'payment_failed',
       company_id: companyId,
       target_table: 'companies',
       new_data: { subscription_status: 'past_due' },
-    })
+    }, "billing/subscription-service")
   } catch { /* audit failure should not crash */ }
 }
 
@@ -320,13 +321,13 @@ export async function cancelSubscription(
     .eq('id', companyId)
 
   try {
-    await admin.from('audit_logs').insert({
+    await writeAuditLog(admin, {
       action: 'subscription_canceled',
       company_id: companyId,
       user_id: performedBy || null,
       target_table: 'companies',
       new_data: { subscription_status: 'canceled' },
-    })
+    }, "billing/subscription-service")
   } catch { /* audit failure should not crash */ }
 }
 
@@ -412,7 +413,7 @@ export async function handleRenewalSuccess(payload: PaymobWebhookPayload): Promi
     // ── Audit + notify (best-effort) ──
     try {
       const admin = getAdminClient()
-      await admin.from('audit_logs').insert({
+      await writeAuditLog(admin, {
         action: 'renewal_success',
         company_id: payload.company_id,
         target_table: 'company_seat_licenses',
@@ -425,7 +426,7 @@ export async function handleRenewalSuccess(payload: PaymobWebhookPayload): Promi
           invoice_error: invoiceError ?? null,
           billing_period: payload.billing_period ?? 'monthly',
         },
-      })
+      }, "billing/subscription-service")
     } catch (logErr) {
       console.error('[SubscriptionService] renewal audit log failed:', logErr)
     }

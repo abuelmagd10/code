@@ -52,6 +52,7 @@ import {
 // v3.74.375 — discount approval banner + gate state for invoice posting.
 import { InvoiceDiscountApprovalBanner, type InvoiceDiscountGate } from "@/components/invoices/InvoiceDiscountApprovalBanner"
 import { BillAmendmentBanner } from "@/components/bills/BillAmendmentBanner"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 interface Invoice {
   id: string
@@ -1383,7 +1384,7 @@ export default function InvoiceDetailPage() {
 
           const { data: { user } } = await supabase.auth.getUser()
           if (user?.id && invoice.company_id) {
-            await supabase.from("audit_logs").insert({
+            await writeAuditLog(supabase, {
               company_id: invoice.company_id,
               user_id: user.id,
               action: "UPDATE",
@@ -1403,7 +1404,7 @@ export default function InvoiceDetailPage() {
                 shipping_provider_id: invoice.shipping_provider_id,
                 total_amount: invoice.total_amount
               }
-            })
+            }, "[id]/page")
           }
 
           if (typeof window !== 'undefined') {

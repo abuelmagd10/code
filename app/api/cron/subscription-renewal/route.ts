@@ -36,6 +36,7 @@ import {
   notifySuspension,
 } from '@/lib/billing/subscription-notifications'
 import { shouldDeliverChannel } from '@/lib/notifications/dispatcher'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -258,11 +259,11 @@ export async function GET(req: NextRequest) {
     // Audit log entry summarizing the run
     // ─────────────────────────────────────────
     try {
-      await admin.from('audit_logs').insert({
+      await writeAuditLog(admin, {
         action: 'cron_subscription_renewal',
         target_table: 'companies',
         new_data: result as any,
-      })
+      }, "subscription-renewal/route")
     } catch { /* non-fatal */ }
 
     return NextResponse.json(result)

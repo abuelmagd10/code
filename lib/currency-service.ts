@@ -9,6 +9,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 // Types
 export interface Currency {
@@ -616,7 +617,7 @@ export async function setManualExchangeRate(
     // Log to audit. Schema: action must be one of (INSERT, UPDATE, DELETE, SETTINGS, ...).
     // 'manual_exchange_rate' is an UPDATE/INSERT of exchange_rates; use 'INSERT' (new rate row) + reason.
     try {
-      await supabase.from('audit_logs').insert({
+      await writeAuditLog(supabase, {
         company_id: companyId,
         user_id: userId,
         action: 'INSERT',
@@ -624,7 +625,7 @@ export async function setManualExchangeRate(
         record_id: data.id,
         reason: 'manual_exchange_rate',
         new_data: { from_currency: fromCurrency, to_currency: toCurrency, rate, override_reason: reason }
-      })
+      }, "lib/currency-service")
     } catch {
       // Don't fail if audit log fails
     }
@@ -936,7 +937,7 @@ export async function performCurrencyRevaluation(
     // Log to audit. Schema: action must be one of CHECK constraint values
     // (INSERT/UPDATE/DELETE/SETTINGS/...). Original event name goes in `reason`.
     try {
-      await supabase.from('audit_logs').insert({
+      await writeAuditLog(supabase, {
         company_id: companyId,
         user_id: userId,
         action: 'SETTINGS',
@@ -951,7 +952,7 @@ export async function performCurrencyRevaluation(
           total_loss: totalLoss,
           accounts_revalued: revaluations.length
         }
-      })
+      }, "lib/currency-service")
     } catch {
       // Don't fail if audit log fails
     }
@@ -1370,7 +1371,7 @@ export async function revaluePeriodEndFXBalances(
 
     // 10. Audit log (correct schema)
     try {
-      await supabase.from('audit_logs').insert({
+      await writeAuditLog(supabase, {
         company_id: params.companyId,
         user_id: params.userId,
         action: 'INSERT',
@@ -1389,7 +1390,7 @@ export async function revaluePeriodEndFXBalances(
             diff: roundToDecimals(d.diff, 2),
           })),
         },
-      })
+      }, "lib/currency-service")
     } catch (auditErr) {
       console.warn('FX revaluation audit log failed:', auditErr)
     }

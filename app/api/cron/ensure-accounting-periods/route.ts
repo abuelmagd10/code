@@ -25,6 +25,7 @@
  */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     // Audit log — best effort
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         action: "accounting_periods_auto_seed",
         target_table: "accounting_periods",
         new_data: {
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
           months_ahead: 3,
           source: "cron",
         },
-      })
+      }, "ensure-accounting-periods/route")
     } catch (auditErr: any) {
       console.warn(
         "[cron/ensure-accounting-periods] audit_logs insert failed:",

@@ -4,6 +4,7 @@ import { AccountingTransactionService } from "@/lib/accounting-transaction-servi
 import { getAccrualAccountMapping } from "@/lib/accrual-accounting-engine"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { branchHasWarehouseManager, WAREHOUSE_AUTO_APPROVE_NOTE } from "@/lib/services/warehouse-manager-presence"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 type SupabaseLike = any
 
@@ -946,7 +947,7 @@ export class BillReceiptWorkflowService {
     extraData: Record<string, unknown> = {}
   ) {
     try {
-      await this.adminSupabase.from("audit_logs").insert({
+      await writeAuditLog(this.adminSupabase, {
         company_id: companyId,
         user_id: actorId,
         action,
@@ -961,7 +962,7 @@ export class BillReceiptWorkflowService {
           warehouse_id: bill.warehouse_id,
           ...extraData,
         },
-      })
+      }, "services/bill-receipt-workflow.service")
     } catch (error) {
       console.warn("[BILL_RECEIPT_WORKFLOW_AUDIT]", error)
     }

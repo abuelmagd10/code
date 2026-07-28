@@ -30,6 +30,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export type AdjustmentRow = {
   id: string
@@ -213,7 +214,7 @@ export async function reverseBonusForSalesReturn(
 
     // Audit log per adjustment — best effort
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         company_id: companyId,
         user_id: actorUserId,
         action: "REVERSE",
@@ -233,7 +234,7 @@ export async function reverseBonusForSalesReturn(
           adjustment_status: adjustmentStatus,
           original_status: original.status,
         }
-      })
+      }, "services/bonus-reversal.service")
     } catch {
       /* audit failure must not break the clawback */
     }

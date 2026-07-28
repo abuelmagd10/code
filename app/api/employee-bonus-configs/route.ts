@@ -20,6 +20,7 @@ import {
   badRequestError,
   validationError,
 } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -175,7 +176,7 @@ export async function POST(req: NextRequest) {
 
     // Audit log (best-effort, schema-aware)
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         company_id: companyId,
         user_id: user.id,
         action: "SETTINGS",
@@ -183,7 +184,7 @@ export async function POST(req: NextRequest) {
         record_id: resultId,
         reason: existing ? "employee_bonus_config_updated" : "employee_bonus_config_created",
         new_data: upsertData,
-      })
+      }, "employee-bonus-configs/route")
     } catch {
       /* don't fail the request if audit fails */
     }
@@ -234,7 +235,7 @@ export async function DELETE(req: NextRequest) {
 
     // Audit log (best-effort)
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         company_id: companyId,
         user_id: user.id,
         action: "DELETE",
@@ -242,7 +243,7 @@ export async function DELETE(req: NextRequest) {
         record_id: existing.id,
         reason: "employee_bonus_config_removed",
         metadata: { reverted_to: "company_default", target_user_id: userId },
-      })
+      }, "employee-bonus-configs/route")
     } catch {}
 
     return apiSuccess({ ok: true, deletedId: existing.id })

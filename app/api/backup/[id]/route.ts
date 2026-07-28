@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireOwner } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
 import { resolveActorInfo } from '@/lib/audit-actor'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 /**
  * DELETE /api/backup/[id]
@@ -61,7 +62,7 @@ export async function DELETE(
     }
 
     try {
-      await supabase.from('audit_logs').insert({
+      await writeAuditLog(supabase, {
         company_id: companyId,
         user_id: user.id,
         ...resolveActorInfo(user),
@@ -73,7 +74,7 @@ export async function DELETE(
           storage_path: row.storage_path,
           size_bytes: row.file_size_bytes,
         },
-      })
+      }, "[id]/route")
     } catch (auditErr: any) {
       console.warn('[Backup Delete] audit log skipped:', auditErr?.message || auditErr)
     }

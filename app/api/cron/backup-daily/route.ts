@@ -24,6 +24,7 @@ import { createClient } from "@supabase/supabase-js"
 import { exportCompanyBackupWithClient } from "@/lib/backup/export-utils"
 import { estimateBackupSize } from "@/lib/backup/export-utils"
 import { sendBackupFailureNotice } from "@/lib/backup/backup-emails"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -138,7 +139,7 @@ export async function GET(request: NextRequest) {
         .eq("id", companyId)
 
       // 5. Audit log
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         company_id: companyId,
         user_id: ownerId,
         user_name: "System (cron)",
@@ -155,7 +156,7 @@ export async function GET(request: NextRequest) {
           storage_path: storagePath,
           source: "cron-daily",
         },
-      })
+      }, "backup-daily/route")
 
       results.push({
         company_id: companyId,
@@ -183,7 +184,7 @@ export async function GET(request: NextRequest) {
         .then(() => undefined, () => undefined)
 
       // Audit the failure too
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         company_id: companyId,
         user_id: ownerId,
         user_name: "System (cron)",
@@ -193,7 +194,7 @@ export async function GET(request: NextRequest) {
         record_id: companyId,
         record_identifier: `فشل النسخة الاحتياطية اليومية`,
         metadata: { error: msg.slice(0, 500), source: "cron-daily", failed: true },
-      }).then(() => undefined, () => undefined)
+      }, "backup-daily/route").then(() => undefined, () => undefined)
 
       results.push({
         company_id: companyId,

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
     try {
-      await client.from("audit_logs").insert({
+      await writeAuditLog(client, {
         company_id: companyId,
         user_id: user.id,
         action: "UPDATE",
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
         record_id: payrollRunId,
         reason: "bonuses_attached_to_payroll",
         metadata: { payroll_run_id: payrollRunId, count: bonusIds.length, total_by_employee: bonusByEmployee }
-      })
+      }, "attach-to-payroll/route")
     } catch {}
 
     return apiSuccess({ 

@@ -8,6 +8,7 @@ import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-g
 import { ERPError } from "@/lib/core/errors/erp-errors"
 import type { BillReceiptReplayAccountSnapshot, BillReceiptReplayPayload } from "@/lib/purchase-posting"
 import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 const BILL_RECEIPT_EVENT = "bill_receipt_posting"
 const BILL_RECEIPT_REPLAY_PAYLOAD_VERSION = "bill_receipt_v1"
@@ -869,7 +870,7 @@ export async function POST(
     await clearReceiptRejectionReason(supabase, context.companyId, bill.id)
 
     try {
-      await supabase.from("audit_logs").insert({
+      await writeAuditLog(supabase, {
         company_id: context.companyId,
         user_id: context.user.id,
         action: "APPROVE",
@@ -885,7 +886,7 @@ export async function POST(
           received_at: receivedAtIso,
           financial_trace_transaction_id: traceId,
         },
-      })
+      }, "confirm-receipt/route")
     } catch (auditError: any) {
       console.warn("[BILL_CONFIRM_RECEIPT] Audit log failed:", auditError?.message || auditError)
     }

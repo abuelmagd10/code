@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { createClient } from "@supabase/supabase-js"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 /**
  * ERP Maintenance Tool: Initialize missing company tables
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     // Log to audit_logs
     try {
-      await admin.from("audit_logs").insert([
+      await writeAuditLog(admin, [
         {
           company_id: companyId,
           user_id: user.id,
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
           },
           ip_address: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
         }
-      ])
+      ], "init-missing-company-tables/route")
     } catch (auditError) {
       console.error("Failed to log to audit_logs:", auditError)
       // Don't fail the request if audit logging fails

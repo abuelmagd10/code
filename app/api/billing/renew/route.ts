@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyRenewalToken } from '@/lib/billing/renewal-token'
 import { calculatePricing } from '@/lib/billing/pricing-engine'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -223,7 +224,7 @@ export async function GET(req: NextRequest) {
 
     // ── 7. Log + redirect to Paymob ──
     try {
-      await admin.from('audit_logs').insert({
+      await writeAuditLog(admin, {
         action: 'renewal_link_used',
         company_id: payload.cid,
         target_table: 'billing_invoices',
@@ -233,7 +234,7 @@ export async function GET(req: NextRequest) {
           amount_egp: pricing.chargeTotalEgp,
           source: 'email_renewal_link',
         },
-      })
+      }, "renew/route")
     } catch { /* non-fatal */ }
 
     return NextResponse.redirect(checkoutUrl, { status: 302 })

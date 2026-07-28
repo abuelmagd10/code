@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,13 +45,13 @@ export async function POST(req: NextRequest) {
         if (insErr) continue
       }
       await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
-      try { await admin.from('audit_logs').insert({ action: 'invite_accepted', target_table: 'company_invitations', company_id: companyId, user_id: userId, new_data: { email, role: (inv as any).role } }) } catch {}
+      try { await writeAuditLog(admin, { action: 'invite_accepted', target_table: 'company_invitations', company_id: companyId, user_id: userId, new_data: { email, role: (inv as any).role } }, "accept-membership/route") } catch {}
       chosenCompanyId = chosenCompanyId || companyId
     }
     try {
       if (chosenCompanyId) {
         await (admin as any).auth.admin.updateUserById(userId, { user_metadata: { active_company_id: chosenCompanyId } })
-        try { await admin.from('audit_logs').insert({ action: 'active_company_set', target_table: 'users', company_id: chosenCompanyId, user_id: userId, new_data: { active_company_id: chosenCompanyId } }) } catch {}
+        try { await writeAuditLog(admin, { action: 'active_company_set', target_table: 'users', company_id: chosenCompanyId, user_id: userId, new_data: { active_company_id: chosenCompanyId } }, "accept-membership/route") } catch {}
       }
     } catch {}
     return NextResponse.json({ ok: true, companyId: chosenCompanyId }, { status: 200 })

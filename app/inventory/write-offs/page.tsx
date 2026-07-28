@@ -26,6 +26,7 @@ import { StatusBadge } from "@/components/DataTableFormatters"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
 import { PageHeaderList } from "@/components/PageHeader"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 // تنسيق العملة
 function formatCurrency(amount: number, currency: string = "EGP"): string {
@@ -2007,7 +2008,7 @@ export default function WriteOffsPage() {
       if (oldData.total_cost !== newData.total_cost) changedFields.push("total_cost")
       if (JSON.stringify(oldData.items) !== JSON.stringify(newData.items)) changedFields.push("items")
 
-      await supabase.from("audit_logs").insert({
+      await writeAuditLog(supabase, {
         company_id: companyId,
         user_id: userId,
         user_email: userData?.user?.email || "",
@@ -2019,7 +2020,7 @@ export default function WriteOffsPage() {
         old_data: oldData,
         new_data: newData,
         changed_fields: changedFields,
-      })
+      }, "write-offs/page")
 
       // ✅ إعادة تحميل البيانات المحدثة مباشرة قبل إظهار الرسالة
       // انتظار صغير للتأكد من اكتمال جميع العمليات في قاعدة البيانات

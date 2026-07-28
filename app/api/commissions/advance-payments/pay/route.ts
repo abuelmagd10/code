@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, badRequestError, internalError } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
     const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -104,14 +105,14 @@ export async function POST(req: NextRequest) {
 
         // ✅ تسجيل في Audit Log
         try {
-            await client.from('audit_logs').insert({
+            await writeAuditLog(client, {
                 action: 'INSERT',
                 target_table: 'commission_advance_payments',
                 company_id: companyId,
                 user_id: user!.id,
                 record_id: data?.advance_id,
                 new_data: { employee_id: employeeId, amount, reference: data?.reference_number }
-            })
+            }, "pay/route")
         } catch (auditErr) {
             console.log('Audit log error:', auditErr)
         }

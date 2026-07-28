@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest, requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError, validationError } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -106,7 +107,7 @@ export async function PATCH(req: NextRequest) {
 
     // Log to audit (schema-aware: action must be in CHECK list; metadata replaces 'details')
     try {
-      await client.from("audit_logs").insert({
+      await writeAuditLog(client, {
         company_id: companyId,
         user_id: user.id,
         action: "SETTINGS",
@@ -114,7 +115,7 @@ export async function PATCH(req: NextRequest) {
         record_id: companyId,
         reason: "bonus_settings_updated",
         new_data: updateData
-      })
+      }, "settings/route")
     } catch {}
 
     return apiSuccess({ ok: true, settings: data })

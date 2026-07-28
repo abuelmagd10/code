@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في إضافة الموظف", insertError.message)
     }
     // ✅ الآن ins.data موجود ويمكن الوصول إلى ID
-    try { await admin.from('audit_logs').insert({ action: 'INSERT', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: (ins.data as any)?.[0]?.id, reason: 'employee_added', new_data: { full_name: employee.full_name } }) } catch { }
+    try { await writeAuditLog(admin, { action: 'INSERT', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: (ins.data as any)?.[0]?.id, reason: 'employee_added', new_data: { full_name: employee.full_name } }, "employees/route") } catch { }
     return apiSuccess({ ok: true }, HTTP_STATUS.CREATED)
   } catch (e: any) {
     return internalError("حدث خطأ أثناء إضافة الموظف", e?.message)
@@ -177,7 +178,7 @@ export async function PUT(req: NextRequest) {
     if (updateError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في تحديث الموظف", updateError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, reason: 'employee_updated', new_data: { id } }) } catch { }
+    try { await writeAuditLog(admin, { action: 'UPDATE', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, reason: 'employee_updated', new_data: { id } }, "employees/route") } catch { }
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تحديث الموظف", e?.message)
@@ -228,7 +229,7 @@ export async function DELETE(req: NextRequest) {
     if (deleteError) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف الموظف", deleteError.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'DELETE', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, reason: 'employee_deleted', old_data: { id } }) } catch { }
+    try { await writeAuditLog(admin, { action: 'DELETE', target_table: 'employees', company_id: companyId, user_id: user.id, record_id: id, reason: 'employee_deleted', old_data: { id } }, "employees/route") } catch { }
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء حذف الموظف", e?.message)

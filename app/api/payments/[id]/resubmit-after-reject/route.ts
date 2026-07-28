@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(
   request: NextRequest,
@@ -207,24 +208,33 @@ export async function POST(
     // user who actually clicked "تَعديل وإِعادَة الإِرسال".
     try {
       const sinceIso = new Date(Date.now() - 5 * 1000).toISOString()
-      await serviceClient
+      // v3.74.878 — نتيجة التحديث كانت مُهملة، والـ`catch` لا يلتقط شيئاً.
+      // وفشلُه يُبقى سطر التدقيق منسوباً إلى «مستخدم غير محدَّد» — أى أن
+      // إعادة الإرسال تقع بلا صاحب.
+      const { error: attributionErr } = await serviceClient
         .from("payment_audit_logs")
         .update({ changed_by: user.id })
         .eq("payment_id", id)
         .eq("company_id", companyId)
         .is("changed_by", null)
         .gte("created_at", sinceIso)
+      if (attributionErr) {
+        console.error(
+          `PAYMENT_AUDIT_ATTRIBUTION_FAILED: payment ${id} company ${companyId} ` +
+          `stays attributed to nobody — ${attributionErr.message}`
+        )
+      }
     } catch { /* non-fatal */ }
 
     try {
-      await serviceClient.from("audit_logs").insert({
+      await writeAuditLog(serviceClient, {
         company_id: companyId,
         user_id: user.id,
         action: "payment_resubmitted_after_reject",
         target_table: "payments",
         record_id: id,
         new_data: { reason, changes: patch },
-      })
+      }, "resubmit-after-reject/route")
     } catch { }
 
     try {

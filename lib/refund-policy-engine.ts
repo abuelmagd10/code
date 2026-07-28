@@ -304,7 +304,9 @@ export class RefundPolicyEngine {
     userId: string,
     details: any
   ): Promise<void> {
-    await supabase
+    // v3.74.878 — دالةٌ اسمها `createAuditLog` كانت **لا تتحقّق أنها
+    // أنشأت شيئاً**. فشلُ التسجيل لا يُبطل الاسترداد، لكنه لا يصمت.
+    const { error } = await supabase
       .from('refund_audit_logs')
       .insert({
         refund_request_id: refundRequestId,
@@ -313,5 +315,12 @@ export class RefundPolicyEngine {
         details,
         created_at: new Date().toISOString()
       })
+
+    if (error) {
+      console.error(
+        `REFUND_AUDIT_LOG_FAILED: refund ${refundRequestId} action=${action} ` +
+        `user=${userId} — ${error.message}`
+      )
+    }
   }
 }

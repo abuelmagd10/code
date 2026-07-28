@@ -32,6 +32,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 /**
  * Result envelope. `ok=true` means a bonus row was created. `ok=false` plus
@@ -247,7 +248,7 @@ export async function calculateBonusForPaidInvoice(
 
   // ── Audit log (best-effort) ─────────────────────────────────────────
   try {
-    await admin.from("audit_logs").insert({
+    await writeAuditLog(admin, {
       company_id: companyId,
       user_id: actorUserId,
       action: "INSERT",
@@ -263,7 +264,7 @@ export async function calculateBonusForPaidInvoice(
         config_source: configSource,
         triggered_by_actor: actorUserId,
       }
-    })
+    }, "services/bonus-calculator.service")
   } catch {
     /* audit failure must not break the bonus calc */
   }

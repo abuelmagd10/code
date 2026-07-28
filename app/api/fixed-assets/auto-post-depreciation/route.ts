@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
 import { secureApiRequest } from '@/lib/api-security'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 /**
  * API Endpoint: Auto-post Monthly Depreciation
@@ -172,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     // Log successful operation
     try {
-      await admin.from('audit_logs').insert({
+      await writeAuditLog(admin, {
         company_id: verifiedCompanyId,
         user_id: user.id,
         user_email: user.email,
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
           errors_count: result.errors?.length || 0
         },
         reason: 'Auto-posted monthly depreciation'
-      })
+      }, "auto-post-depreciation/route")
     } catch (logError) {
       console.error('Failed to log audit event:', logError)
     }

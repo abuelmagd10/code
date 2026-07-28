@@ -20,6 +20,7 @@
  */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     // Audit log — best effort, don't fail the cron if this errors
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         action: "permission_shares_auto_expire",
         target_table: "permission_sharing",
         new_data: {
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
           duration_ms: durationMs,
           source: "cron",
         },
-      })
+      }, "expire-permission-shares/route")
     } catch (auditErr: any) {
       console.warn("[cron/expire-permission-shares] audit_logs insert failed:", auditErr?.message)
     }

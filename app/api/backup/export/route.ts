@@ -8,6 +8,7 @@ import { requireOwnerOrAdmin } from '@/lib/api-security'
 import { createClient } from '@/lib/supabase/server'
 import { resolveActorInfo } from '@/lib/audit-actor'
 import { exportCompanyBackup, canExportBackup, estimateBackupSize } from '@/lib/backup/export-utils'
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 const RETENTION_DAYS = 30
 const BUCKET = 'backups'
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
     // 7. تسجيل في Audit Log — server-side direct insert (logAudit wrapper is client-only)
     try {
       const auditSupabase = await createClient()
-      await auditSupabase.from('audit_logs').insert({
+      await writeAuditLog(auditSupabase, {
         company_id: companyId,
         user_id: user.id,
         ...resolveActorInfo(user),
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
           history_id: historyId,
           storage_path: storagePath,
         },
-      })
+      }, "export/route")
     } catch (auditErr: any) {
       console.warn('[Backup Export] audit log skipped:', auditErr?.message || auditErr)
     }

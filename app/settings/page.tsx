@@ -26,6 +26,7 @@ import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings }
 import { Progress } from "@/components/ui/progress"
 import { getActiveCurrencies, getFXAccounts, type Currency } from "@/lib/currency-service"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 // Professional currency list with symbols and flags (fallback)
 const FALLBACK_CURRENCIES = [
@@ -963,7 +964,7 @@ export default function SettingsPage() {
       // Schema constraints: action must be one of (INSERT, UPDATE, DELETE, SETTINGS, ...) per audit_logs_action_check.
       // We use 'SETTINGS' for config changes and put the specific event in `reason`.
       try {
-        await supabase.from('audit_logs').insert({
+        await writeAuditLog(supabase, {
           company_id: companyId,
           user_id: userId,
           action: 'SETTINGS',
@@ -972,7 +973,7 @@ export default function SettingsPage() {
           reason: 'fx_accounts_configured',
           new_data: { fx_gain_account_id: fxGainAccountId, fx_loss_account_id: fxLossAccountId },
           old_data: { fx_gain_account_id: prevGain, fx_loss_account_id: prevLoss }
-        })
+        }, "settings/page")
       } catch { /* Don't fail if audit log fails */ }
 
       toastActionSuccess(toast, language === 'en' ? 'Save' : 'حفظ', language === 'en' ? 'FX Account Settings' : 'إعدادات حسابات فروق العملة')

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 async function getAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -66,7 +67,7 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    try { await admin.from('audit_logs').insert({ action: 'UPDATE', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entryId, new_data: { runId, entryId } }) } catch {}
+    try { await writeAuditLog(admin, { action: 'UPDATE', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entryId, new_data: { runId, entryId } }, "payments/route") } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء تحديث دفعة المرتبات", e?.message)
@@ -112,7 +113,7 @@ export async function DELETE(req: NextRequest) {
     if (delEntry.error) {
       return apiError(HTTP_STATUS.INTERNAL_ERROR, "خطأ في حذف القيد", delEntry.error.message)
     }
-    try { await admin.from('audit_logs').insert({ action: 'DELETE', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entryId }) } catch {}
+    try { await writeAuditLog(admin, { action: 'DELETE', target_table: 'journal_entries', company_id: companyId, user_id: user.id, record_id: entryId }, "payments/route") } catch {}
     return apiSuccess({ ok: true })
   } catch (e: any) {
     return internalError("حدث خطأ أثناء حذف دفعة المرتبات", e?.message)

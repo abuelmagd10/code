@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
 import { apiError, apiSuccess, HTTP_STATUS, internalError, badRequestError } from "@/lib/api-error-handler"
 import { getSeatStatus, reserveSeat } from "@/lib/billing/seat-service"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 export async function POST(req: NextRequest) {
   try {
@@ -179,14 +180,14 @@ export async function POST(req: NextRequest) {
 
     // Audit log
     try {
-      await admin.from("audit_logs").insert({
+      await writeAuditLog(admin, {
         action: "invite_sent",
         company_id: companyId,
         user_id: user.id,
         target_table: "company_invitations",
         record_id: inviteId || null,
         new_data: { email, role, seat_reserved: true },
-      })
+      }, "send-invite/route")
     } catch (logError) {
       console.error("Failed to log invite:", logError)
     }

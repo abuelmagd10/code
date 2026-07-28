@@ -1,5 +1,6 @@
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { linkTraceEntity } from "@/lib/services/financial-trace"
+import { writeAuditLog } from "@/lib/audit-log-write"
 
 const CREATE_COMMAND_EVENT = "purchase_return_command"
 const DECISION_EVENT = "purchase_return_decision"
@@ -528,7 +529,7 @@ export class PurchaseReturnCommandService {
       refreshed = await this.loadPurchaseReturn(purchaseReturnId)
 
       try {
-        await this.adminSupabase.from("audit_logs").insert({
+        await writeAuditLog(this.adminSupabase, {
           company_id: actor.companyId,
           user_id: actor.actorId,
           action: "purchase_return_refund_received",
@@ -542,7 +543,7 @@ export class PurchaseReturnCommandService {
             recorded_by: actor.actorId,
             timestamp: new Date().toISOString(),
           },
-        })
+        }, "services/purchase-return-command.service")
       } catch (auditError) {
         console.warn("[PURCHASE_RETURN_REFUND_AUDIT]", auditError)
       }
