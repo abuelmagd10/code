@@ -1,136 +1,77 @@
 $ErrorActionPreference = "Continue"
 $env:GIT_PAGER = "cat"
-# Square brackets are glob characters in a git pathspec, and this release
-# touches several dynamic Next.js routes ("[id]"). Literal pathspecs turn
-# that off for every git call below. (Same family as the 858 PowerShell
-# lesson: -LiteralPath for Test-Path.)
+# Square brackets are glob characters in a git pathspec. Literal pathspecs turn
+# that off for every git call below. (858 lesson: -LiteralPath for Test-Path.)
 $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.878 - the OLD script is removed, never this one. Three releases in a
-# row a chained string-replace turned this line into self-deletion (861, 865,
-# 866). A replacement whose output can match its own next pattern is not a
-# replacement, it is a loop. This line is now written by hand.
-if (Test-Path -LiteralPath "push_v3.74.877.ps1") { Remove-Item -LiteralPath "push_v3.74.877.ps1" -Force }
+# v3.74.879 - the OLD script is removed, never this one. Five times a chained
+# string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
+# A replacement whose output can match its own next pattern is a loop, not a
+# replacement. This line is written by hand, every release, without exception.
+if (Test-Path -LiteralPath "push_v3.74.878.ps1") { Remove-Item -LiteralPath "push_v3.74.878.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.878"') {
-    Write-Host "+ 3.74.878" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.879"') {
+    Write-Host "+ 3.74.879" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.878]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.878]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.879]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.879]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$helper = "lib/audit-log-write.ts"
-$uw     = "scripts/check-unchecked-writes.js"
-$touched = @(
-  "app/api/accept-invite/route.ts",
-  "app/api/accept-membership/route.ts",
-  "app/api/backup/[id]/route.ts",
-  "app/api/backup/export-excel/route.ts",
-  "app/api/backup/export/route.ts",
-  "app/api/backup/restore/route.ts",
-  "app/api/billing/cancel-invite/route.ts",
-  "app/api/billing/renew/route.ts",
-  "app/api/bills/[id]/confirm-receipt/route.ts",
-  "app/api/bills/[id]/restart-approval-notifications/route.ts",
-  "app/api/bonuses/attach-to-payroll/route.ts",
-  "app/api/bonuses/reverse/route.ts",
-  "app/api/bonuses/settings/route.ts",
-  "app/api/commissions/advance-payments/pay/route.ts",
-  "app/api/cron/backup-daily/route.ts",
-  "app/api/cron/ensure-accounting-periods/route.ts",
-  "app/api/cron/expire-permission-shares/route.ts",
-  "app/api/cron/subscription-renewal/route.ts",
-  "app/api/employee-bonus-configs/route.ts",
-  "app/api/fixed-assets/auto-post-depreciation/route.ts",
-  "app/api/hr/attendance/anomalies/route.ts",
-  "app/api/hr/attendance/route.ts",
-  "app/api/hr/attendance/shifts/route.ts",
-  "app/api/hr/employees/route.ts",
-  "app/api/hr/payroll/payments/route.ts",
-  "app/api/init-missing-company-tables/route.ts",
-  "app/api/payments/[id]/resubmit-after-reject/route.ts",
-  "app/api/send-invite/route.ts",
-  "app/inventory/write-offs/page.tsx",
-  "app/invoices/[id]/page.tsx",
-  "app/settings/page.tsx",
-  "lib/billing/subscription-service.ts",
-  "lib/currency-service.ts",
-  "lib/refund-policy-engine.ts",
-  "lib/services/bill-receipt-workflow.service.ts",
-  "lib/services/bonus-calculator.service.ts",
-  "lib/services/bonus-reversal.service.ts",
-  "lib/services/purchase-return-command.service.ts",
-  "lib/services/sales-invoice-warehouse-command.service.ts"
-)
+$mig   = "supabase/migrations/20260728000007_v3_74_879_supplier_advance_subtype.sql"
+$guard = "scripts/check-subtype-tenant-divergence.js"
+$trap  = "scripts/selftest-subtype-tenant-divergence.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $helper, $uw) + $touched + @("push_v3.74.878.ps1")
+           $mig, $guard, $trap, "push_v3.74.879.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the helper must NOT throw ----------------------------------------
-# A failed audit line does not invalidate work that succeeded. Voiding a
-# correct edit because its log row would not write punishes the user for a
-# defect that is not theirs. It reports instead - with table, action, id.
-$h = Get-Content -LiteralPath $helper -Raw
-if ($h -match "throw ") {
-    Write-Host "X writeAuditLog throws - a failed log would void a successful operation" -ForegroundColor Red
+# -- 1. the migration must verify itself ---------------------------------
+# A data migration that only writes has no way of telling a partial success
+# from a complete one. This one re-reads what it wrote and raises if the
+# reclassification did not land in every company.
+$m = Get-Content -LiteralPath $mig -Raw
+if ($m -notmatch "RAISE EXCEPTION") {
+    Write-Host "X the migration writes without verifying what it wrote" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch "account_type = 'asset'") {
+    Write-Host "X the migration is not constrained by account_type - a same-coded account of another type could be hit" -ForegroundColor Red
     exit 1
 }
-if ($h -notmatch "AUDIT_LOG_WRITE_FAILED") {
-    Write-Host "X writeAuditLog fails in silence" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the helper reports without voiding the operation it logs" -ForegroundColor Green
+Write-Host "+ the data migration re-reads what it wrote and is type-constrained" -ForegroundColor Green
 
-# -- 2. no file may still insert an audit row by hand ---------------------
-# Two files write to DIFFERENT audit tables - payment_audit_logs and
-# refund_audit_logs - so they do not use the audit_logs helper. They were
-# fixed inline instead, and are checked by their own markers below.
-$inline = @{
-  "app/api/payments/[id]/resubmit-after-reject/route.ts" = "PAYMENT_AUDIT_ATTRIBUTION_FAILED"
-  "lib/refund-policy-engine.ts"                          = "REFUND_AUDIT_LOG_FAILED"
+# -- 2. the guard must not carry a silent exception list ------------------
+# ALLOWED_PARTIAL is deliberately empty. An exception added without a written
+# reason is a permanent hole (857 lesson), so the release refuses one that
+# arrives without a comment naming why.
+$g = Get-Content -LiteralPath $guard -Raw
+if ($g -notmatch "ALLOWED_PARTIAL") {
+    Write-Host "X the guard lost its exception map" -ForegroundColor Red; exit 1
 }
-foreach ($f in $touched) {
-    $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match 'from\("audit_logs"\)\s*\r?\n?\s*\.?insert' -or
-        $c -match "from\('audit_logs'\)\s*\r?\n?\s*\.?insert") {
-        Write-Host "X $f still inserts an audit row directly" -ForegroundColor Red; exit 1
-    }
-    if ($inline.ContainsKey($f)) {
-        if ($c -notmatch $inline[$f]) {
-            Write-Host "X $f writes another audit table and still reports nothing" -ForegroundColor Red
-            exit 1
-        }
-    } elseif ($c -notmatch "audit-log-write") {
-        Write-Host "X $f does not import the shared helper" -ForegroundColor Red; exit 1
-    }
+if ($g -match "ALLOWED_PARTIAL = new Map\(\[\s*\r?\n\s*\[") {
+    Write-Host "X ALLOWED_PARTIAL has an entry - each one must be reviewed by a human, not waved through" -ForegroundColor Red
+    exit 1
 }
-Write-Host "+ every audit write is either helper-routed or reports inline" -ForegroundColor Green
-
-# -- 3. ground won must be pinned down ------------------------------------
-$uwc = Get-Content -LiteralPath $uw -Raw
-if ($uwc -notmatch "const BASELINE = 113;") {
-    Write-Host "X the unchecked-writes baseline is not 113" -ForegroundColor Red; exit 1
-}
-Write-Host "+ unchecked-writes baseline tightened 165 -> 113" -ForegroundColor Green
+Write-Host "+ the guard's exception list is still empty" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.877.ps1" 2>$null
+git add -u -- "push_v3.74.878.ps1" 2>$null
 
-# -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.877.ps1")
+# -- 3. nothing staged beyond this release (the 872 lesson) --------------
+# What a failed run staged stays staged. `git add -- $files` only adds.
+$expected = @($files) + @("push_v3.74.878.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -139,6 +80,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the sub_type divergence guard refuses..." -ForegroundColor Cyan
+node scripts/selftest-subtype-tenant-divergence.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the divergence guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking no sub_type exists in some companies but not others..." -ForegroundColor Cyan
+node scripts/check-subtype-tenant-divergence.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X a sub_type the code searches for is present in only some companies" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the ledger-landmine guard refuses..." -ForegroundColor Cyan
 node scripts/selftest-ledger-landmines.js
@@ -167,6 +116,10 @@ if ($LASTEXITCODE -ne 0) { Write-Host "X the phantom-column guard was not seen r
 Write-Host "Checking phantom column writes (update + insert + upsert)..." -ForegroundColor Cyan
 node scripts/check-phantom-columns.js --require-db | Select-Object -Last 2
 if ($LASTEXITCODE -ne 0) { Write-Host "X phantom-column check failed" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking hard-coded account codes..." -ForegroundColor Cyan
+node scripts/check-hardcoded-account-codes.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X account-code check failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking purchase movement cost matches the ledger..." -ForegroundColor Cyan
 node scripts/check-movement-cost-matches-ledger.js --require-db
@@ -228,10 +181,6 @@ Write-Host "Checking phantom column reads..." -ForegroundColor Cyan
 node scripts/check-phantom-selects.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X phantom-select check failed" -ForegroundColor Red; exit 1 }
 
-Write-Host "Checking hard-coded account codes..." -ForegroundColor Cyan
-node scripts/check-hardcoded-account-codes.js
-if ($LASTEXITCODE -ne 0) { Write-Host "X account-code check failed" -ForegroundColor Red; exit 1 }
-
 Write-Host "Checking no company-reading function is open to anonymous callers..." -ForegroundColor Cyan
 node scripts/check-anon-reachable-functions.js --require-db
 if ($LASTEXITCODE -ne 0) { Write-Host "X the security finding is not cleared" -ForegroundColor Red; exit 1 }
@@ -281,7 +230,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.864.ps1" 2>$null
+git add -u -- "push_v3.74.878.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -300,47 +249,54 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_878.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_879.txt"
     $msgLines = @(
-        'refactor(audit): v3.74.878 - a try around supabase is a broken promise',
+        'fix(coa): v3.74.879 - the same return posted to two different accounts',
         '',
-        'Of the fifty sites writing to the audit trail, thirty-nine sat inside a',
-        'try/catch. That is worse than no handling at all, because it looks like',
-        'handling:',
+        'Account 1180 "supplier advances" is of type asset in all five companies.',
+        'In two of them it carried a sub_type named vendor_credit_liability. The',
+        'other three carried nothing.',
         '',
-        '    try { await admin.from("audit_logs").insert({ ... }) } catch { }',
+        'The contradiction in the name is not the problem. The problem is that the',
+        'code searches by that exact string:',
         '',
-        'supabase-js RETURNS { error } and never throws. The catch cannot fire, and',
-        'the result is dropped. Silent twice over - the guard does not work, and the',
-        'wound is not visible.',
+        '    app/purchase-returns/new/page.tsx',
+        '      findAcct("vendor_credit_liability", …) || findAcct("ap_contra", …) || apAccount',
         '',
-        'This exact shape has now turned up in six consecutive releases today: 865,',
-        '868, 871, 874, 877 and this one. It is the single most repeated defect in',
-        'the codebase. Look for try around a supabase call FIRST, not last.',
+        'So two companies found an ASSET and three fell through to accounts',
+        'payable - a liability. The same purchase return, posted to two different',
+        'accounts depending on which company you were logged into.',
         '',
-        'lib/audit-log-write.ts, on the same method as rollback-journal-entry (756,',
-        'six sites) and financial-trace (877, thirty-one). When a shape repeats three',
-        'times the shared function is not a refinement - it is the only fix from',
-        'which no site gets forgotten.',
+        'Nothing was posted wrong, because vendor credits were blocked outright:',
+        'first by a phantom column (865), then by direct-write prevention (871).',
+        'Zero journal lines on 1180 in any company. The fix that opened the path',
+        'exposed the divergence before it produced a single wrong entry.',
         '',
-        'It does NOT throw. A failed audit line does not invalidate work that',
-        'succeeded: voiding a correct governance edit because its log row would not',
-        'write punishes the user for a defect that is not theirs. It logs the table,',
-        'the action, the id and the company, so the source is known without hunting.',
+        'Asking for an account by its MEANING rather than its number is right -',
+        'that was the ruling of 847, after a hard-coded 6110 meant salary',
+        'disbursement had never once worked. But meaning-based lookup becomes a',
+        'trap the moment the meaning is not guaranteed in every tenant: a lookup',
+        'that finds in one company and misses in another does not FAIL. It',
+        'succeeds, on the wrong account, and nobody is told. Absence is visible.',
+        'Divergence is not.',
         '',
-        'The rewrite caught a bug in itself. The automatic import inserter placed the',
-        'line INSIDE a multi-line import in two files, because it looked for the last',
-        'line starting with "import" - which was the opening line of a spanning',
-        'import. It broke both files, the syntax check caught it immediately, and',
-        'they were fixed by hand. "Last line starting with X" is not "end of the last',
-        'statement", and an automated rewrite needs a syntax check right after it,',
-        'not after the push.',
+        'check-subtype-tenant-divergence.js extracts every sub_type the code',
+        'searches for - 39 of them - and asks production how each is spread. One',
+        'rule: present in every company, or in none. Nothing in between.',
         '',
-        'Two more found on the way: payment_audit_logs, whose failure leaves a',
-        'resubmission attributed to nobody, and a function literally named',
-        'createAuditLog that never checked whether it had created anything.',
+        'A second rule was written, measured, and deleted before shipping: "a',
+        'sub_type named …liability must sit on a liability account". Against',
+        'production it fired three times and all three were correct accounting -',
+        'prepaid_expense is an asset, unearned_revenue is a liability, and this',
+        'project names the type "income" not "revenue". A guard that cries wolf',
+        'three times out of three teaches its reader to ignore it, which silences',
+        'the true alarm the day it comes. A rule that does not survive measurement',
+        'is deleted, not papered over with an exception list - the list would hide',
+        'that the rule itself was wrong.',
         '',
-        '165 -> 113. No silent audit write remains anywhere.'
+        'Five companies now read supplier_advance. Zero journal lines touched -',
+        'a sub_type describes an account, it does not hold a balance. Trial',
+        'balance 0.0000.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -349,5 +305,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.878 pushed - a try around supabase is a broken promise" -ForegroundColor Green
+    Write-Host "`n+ v3.74.879 pushed - a lookup that misses in one tenant does not fail, it succeeds on the wrong account" -ForegroundColor Green
 }
