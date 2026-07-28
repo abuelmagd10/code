@@ -6,127 +6,106 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.880 - the OLD script is removed, never this one. Five times a chained
+# v3.74.881 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # A replacement whose output can match its own next pattern is a loop, not a
 # replacement. This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.879.ps1") { Remove-Item -LiteralPath "push_v3.74.879.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.880.ps1") { Remove-Item -LiteralPath "push_v3.74.880.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.880"') {
-    Write-Host "+ 3.74.880" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.881"') {
+    Write-Host "+ 3.74.881" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.880]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.880]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.881]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.881]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$mig    = "supabase/migrations/20260728000008_v3_74_880_vendor_credit_atomic_and_scope.sql"
-$guard  = "scripts/check-impossible-rollback.js"
-$trap   = "scripts/selftest-impossible-rollback.js"
-$page   = "app/vendor-credits/new/page.tsx"
-$helper = "lib/purchase-returns-vendor-credits.ts"
+$mig    = "supabase/migrations/20260728000009_v3_74_881_delete_silently_cancelled.sql"
+$guard  = "scripts/check-trigger-silently-cancels-delete.js"
+$trap   = "scripts/selftest-trigger-silently-cancels-delete.js"
 
-# نسخة المخطَّط تُولَّد قبل النشر، لا تُحرَّر باليد.
-# v3.74.880 — الترحيل أسقط `auto_inventory_for_vendor_credit`، وبقيت النسخة
-# تصفها **ومصرَّحاً بها لـanon**. فإعادة بناء القاعدة من المستودع كانت
-# ستُحييها بصلاحياتها. ⇒ **حذفٌ من القاعدة بلا تحديث النسخة ليس حذفاً، بل
-# تأجيل.** والحارس أمسكها فى أول تشغيل.
+# The schema snapshot is generated, never hand-edited. This release changes a
+# trigger function body, so it must be regenerated BEFORE running this script.
 $schemaFn  = "supabase/schema/functions.sql"
 $schemaAll = "supabase/schema/schema.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $mig, $guard, $trap, $page, $helper,
-           $schemaFn, $schemaAll, "push_v3.74.880.ps1")
+           $mig, $guard, $trap,
+           $schemaFn, $schemaAll, "push_v3.74.881.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. neither caller may write the header and the lines separately -------
-# The header insert POSTS A JOURNAL ENTRY through a database trigger. A second
-# statement that can fail therefore leaves a posted credit note with no lines
-# under it - which is exactly what production showed. Both callers must go
-# through the one function that rolls itself back.
-foreach ($f in @($page, $helper)) {
-    $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match 'from\(\s*["'']vendor_credits["'']\s*\)\s*
-?
-?\s*\.?insert' -or
-        $c -match 'from\(\s*["'']vendor_credit_items["'']\s*\)\s*
-?
-?\s*\.?insert') {
-        Write-Host "X $f still writes a vendor credit in two steps" -ForegroundColor Red; exit 1
-    }
-    if ($c -notmatch "create_vendor_credit_with_items") {
-        Write-Host "X $f does not go through the atomic function" -ForegroundColor Red; exit 1
-    }
+# -- 1. the function must be able to FINISH a delete, not only refuse one --
+# On DELETE, NEW is NULL, and a BEFORE trigger returning NULL cancels the row
+# operation. `RETURN NEW` at the end of a BEFORE DELETE function therefore
+# swallows the delete in silence.
+$m = Get-Content -LiteralPath $mig -Raw
+if ($m -notmatch "RETURN COALESCE\(NEW, OLD\);") {
+    Write-Host "X the migration does not give the function a way to finish a delete" -ForegroundColor Red; exit 1
 }
-Write-Host "+ both vendor-credit callers write header and lines as one operation" -ForegroundColor Green
+Write-Host "+ the trigger can now finish a delete, not just refuse one" -ForegroundColor Green
 
-# -- 2. the impossible rollback is gone, not merely logged ----------------
-$h = Get-Content -LiteralPath $helper -Raw
-if ($h -match "VENDOR_CREDIT_ROLLBACK_DELETE_FAILED") {
-    Write-Host "X the manual rollback is still there - a delete a trigger refuses is not a rollback" -ForegroundColor Red
+# -- 2. the migration must PROVE it by deleting, not by reading -----------
+# Reading the text is what missed this the first time.
+if ($m -notmatch "survived its own DELETE") {
+    Write-Host "X the migration verifies by reading, not by deleting" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch "PROBE-881-DELETE-WAS-ALLOWED") {
+    Write-Host "X the migration does not check that a POSTED entry is still refused" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the migration verifies by doing, and re-checks the refusal it must not break" -ForegroundColor Green
+
+# -- 3. the guard admits no exception ------------------------------------
+# There is no reason for a delete to be cancelled without saying so. If it must
+# be refused, RAISE. So this list stays empty - not "empty for now".
+$g = Get-Content -LiteralPath $guard -Raw
+if ($g -notmatch "ALLOWED = new Map\(\[\]\)") {
+    Write-Host "X the silent-cancel guard grew an exception list" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the silent-cancel guard admits no exception" -ForegroundColor Green
+
+# -- 4. the snapshot must carry the fixed body ---------------------------
+# The two snapshot files hold DIFFERENT things: functions.sql holds function
+# BODIES, schema.sql holds tables, policies, triggers and grants. Asking
+# schema.sql for a function body fails on a file that was never supposed to
+# contain one - which is exactly what the first version of this check did.
+# => A check must know which file can possibly answer its question.
+$fnBody = ($schemaFn | ForEach-Object { Get-Content -LiteralPath $_ -Raw })
+$idx = $fnBody.IndexOf("CREATE OR REPLACE FUNCTION public.prevent_posted_journal_modification")
+if ($idx -lt 0) {
+    Write-Host "X functions.sql does not contain prevent_posted_journal_modification at all" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the rollback that could never succeed is gone" -ForegroundColor Green
-
-# -- 3. the migration must verify itself, and stop the inventory trigger --
-$m = Get-Content -LiteralPath $mig -Raw
-if ($m -notmatch "RAISE EXCEPTION") {
-    Write-Host "X the migration writes without verifying what it wrote" -ForegroundColor Red; exit 1
+$body = $fnBody.Substring($idx, [Math]::Min(3000, $fnBody.Length - $idx))
+if ($body -notmatch "RETURN COALESCE\(NEW, OLD\)") {
+    Write-Host "X functions.sql still carries the old function body - regenerate the snapshot:" -ForegroundColor Red
+    Write-Host "    node scripts/dump-db-functions.js" -ForegroundColor Yellow
+    Write-Host "    node scripts/dump-db-schema.js" -ForegroundColor Yellow
+    exit 1
 }
-if ($m -notmatch "DROP FUNCTION IF EXISTS public\.auto_inventory_for_vendor_credit") {
-    Write-Host "X the migration does not stop the inventory trigger" -ForegroundColor Red; exit 1
+# schema.sql is asked what it CAN answer: is the trigger still attached?
+$all = Get-Content -LiteralPath $schemaAll -Raw
+if ($all -notmatch "trg_prevent_posted_journal_mod BEFORE DELETE OR UPDATE ON public\.journal_entries") {
+    Write-Host "X schema.sql no longer shows the trigger attached to journal_entries" -ForegroundColor Red
+    exit 1
 }
-# A SECURITY DEFINER here would bypass RLS unnoticed. Scope the search to the
-# function HEADER (between the CREATE line and the "AS $$" that opens the body):
-# the phrase also appears inside the migration's own assertion message, and a
-# check that trips on the text asserting its own safety is worse than none.
-if ($m -match "CREATE OR REPLACE FUNCTION public\.create_vendor_credit_with_items[\s\S]*?AS \`$\`$") {
-    if ($Matches[0] -match "SECURITY DEFINER") {
-        Write-Host "X the atomic function must not be SECURITY DEFINER" -ForegroundColor Red; exit 1
-    }
-} else {
-    Write-Host "X could not locate the atomic function header in the migration" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the migration verifies itself and runs with the caller's own rights" -ForegroundColor Green
-
-# -- 4. the narrowed guard keeps its measured baseline --------------------
-# 52 alarms became 6 by asking a sharper question, not by adding exceptions.
-$g = Get-Content -LiteralPath $guard -Raw
-if ($g -notmatch "const BASELINE = 6") {
-    Write-Host "X the impossible-rollback baseline is not 6" -ForegroundColor Red; exit 1
-}
-Write-Host "+ impossible-rollback baseline is 6 (was 7 before this release)" -ForegroundColor Green
-
-# -- 5. the snapshot must not describe what the migration dropped ---------
-# Regenerate it (dump-db-functions + dump-db-schema) BEFORE running this
-# script; it is a generated artefact, never hand-edited.
-foreach ($f in @($schemaFn, $schemaAll)) {
-    $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match "auto_inventory_for_vendor_credit") {
-        Write-Host "X $f still describes a function this release dropped - regenerate the snapshot:" -ForegroundColor Red
-        Write-Host "    node scripts/dump-db-functions.js" -ForegroundColor Yellow
-        Write-Host "    node scripts/dump-db-schema.js" -ForegroundColor Yellow
-        exit 1
-    }
-}
-Write-Host "+ the snapshot no longer describes the dropped inventory trigger" -ForegroundColor Green
+Write-Host "+ functions.sql carries the fixed body, and the trigger is still attached" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.879.ps1" 2>$null
+git add -u -- "push_v3.74.880.ps1" 2>$null
 
 # -- 3. nothing staged beyond this release (the 872 lesson) --------------
 # What a failed run staged stays staged. `git add -- $files` only adds.
-$expected = @($files) + @("push_v3.74.879.ps1")
+$expected = @($files) + @("push_v3.74.880.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -135,6 +114,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the silent-cancel guard refuses - and reproducing the defect..." -ForegroundColor Cyan
+node scripts/selftest-trigger-silently-cancels-delete.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the silent-cancel guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking no BEFORE DELETE trigger cancels a delete in silence..." -ForegroundColor Cyan
+node scripts/check-trigger-silently-cancels-delete.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X a trigger can swallow a delete" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the impossible-rollback guard refuses (and stays silent)..." -ForegroundColor Cyan
 node scripts/selftest-impossible-rollback.js
@@ -299,7 +286,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.879.ps1" 2>$null
+git add -u -- "push_v3.74.880.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -318,77 +305,65 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_880.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_881.txt"
     $msgLines = @(
-        'fix(vendor-credits): v3.74.880 - a credit note posted with no lines under it',
+        'fix(ledger): v3.74.881 - a delete that is neither refused nor performed',
         '',
-        'The manual vendor-credit screen saved in two steps: header, then lines.',
-        'The header insert POSTS A JOURNAL ENTRY for the full amount through a',
-        'database trigger. The line insert then failed - every time, if a product',
-        'was on it - with a message that lied: "Branch does not belong to company".',
+        'Deleting a DRAFT journal entry did not fail and did not happen. No error,',
+        'no deleted row. The caller walked away certain it had cleaned up after',
+        'itself. Proven on production inside a rolled-back transaction:',
         '',
-        'What was left behind was worse than a failure. A posted credit note, its',
-        'entry in the ledger, and nothing underneath it. The user saw an error and',
-        'assumed nothing had been saved. Proven on production inside a transaction',
-        'that was rolled back:',
+        '    chart_of_accounts : rows left after DELETE = 0   (deleted properly)',
+        '    journal_entries   : rows left after DELETE = 1   *** SWALLOWED ***',
         '',
-        '    STEP 1 (header): journal_entry=b329... status=posted lines=3',
-        '    STEP 2 (items):  *** FAILED *** -> Branch does not belong to company',
-        '    AFTERWARDS: credit rows=1  items=0  journal lines=3  amount=1140',
+        'One line. prevent_posted_journal_modification() is a BEFORE DELETE',
+        'trigger that ends with RETURN NEW. On a delete there is no NEW, so it is',
+        'NULL - and NULL from a BEFORE trigger means "cancel this operation" to',
+        'PostgreSQL. The function knew how to REFUSE a delete and not how to',
+        'FINISH one.',
         '',
-        'The cause: auto_inventory_for_vendor_credit inserted into',
-        'inventory_transactions without branch_id, warehouse_id or cost_center_id,',
-        'all three NOT NULL with no default. It could not succeed under any',
-        'circumstances. Its only possible effect was to abort the user.',
+        'A refusal is visible. A silent cancel is not. An outright error is kinder',
+        'than a false success: the first stops you, the second carries you along.',
         '',
-        'Its own comment says it skips the purchase-return path "to avoid',
-        'duplicates and missing branch_id issues" - and the line below it does',
-        'exactly what the comment warns about. A comment describing a guarantee is',
-        'not the guarantee.',
+        'It went unnoticed because the only path through it is a ROLLBACK path -',
+        'it runs only when something before it has already failed, and nobody',
+        'reads its result. Rollback paths have to be tested deliberately, because',
+        'they are never tested incidentally.',
         '',
-        'Nobody complained because zero vendor credits have ever been created. The',
-        'screen was never used. What has never run has never been tested - and this',
-        'path had already been fixed four times today (865, 871, 873, 879) without',
-        'once being executed. It was the first real execution that found this.',
+        'Scope, measured rather than assumed. 17 BEFORE DELETE triggers end with',
+        'RETURN NEW. Two were proven by actually deleting that they delete',
+        'correctly (chart_of_accounts, invoice_items - the only two with rows in a',
+        'permitted state). Eleven were proven by trying that they refuse loudly.',
+        'Eleven are structurally safe: their DELETE branch opens with RETURN OLD,',
+        'so the suspect last line is never reached on a delete. Exactly one never',
+        'returns OLD on any path. That was the distinguishing measurement: count of',
+        'RETURN OLD = zero.',
         '',
-        'A second landmine on the way. purchase-returns-vendor-credits.ts deleted',
-        'the header when the lines failed. That delete was impossible: the credit',
-        'is created "open" and prevent_vendor_credit_deletion allows only "draft"',
-        'or "cancelled". Also proven, also rolled back:',
+        'The guard was narrowed twice, against the whole schema, before shipping:',
+        'ends with RETURN NEW = 17; never returns OLD = 3; and has a non-raising',
+        'exit = 1. The two dropped at the last step RAISE unconditionally - tables',
+        'that are never deleted from have no silent path. A guard is narrowed until',
+        'it hits one thing exactly, not until it goes quiet.',
         '',
-        '    rollback DELETE (status=open) : *** REFUSED ***',
-        '    orphan header left behind : 1  (journal entry already posted)',
+        'The trap reproduces the defect instead of describing it: it plants a',
+        'trigger returning NEW on a probe table, deletes a row, and counts what is',
+        'left. Proving the fault exists is stronger than proving the guard matches',
+        'a string.',
         '',
-        'A manual rollback that can be refused is not a rollback. It is a wish.',
+        'The migration verifies by DOING - reading the text is what missed this the',
+        'first time. It creates a draft entry, deletes it, counts what remains. It',
+        'then re-checks that a POSTED entry is still refused, using a delete that',
+        'is forced to roll back by a deliberate error whether it succeeded or was',
+        'refused, then counts the row again. A check that touches real data is',
+        'built so it CANNOT leave a trace - not so that it probably will not.',
         '',
-        'Three fixes. The inventory trigger is STOPPED, not repaired: a credit from',
-        'a purchase return already gets its movement from the returns screen',
-        '(measured - both real rows reference purchase_returns), and a credit that',
-        'is not from a return has no goods moving at all. Reviving it would produce',
-        'either a duplicate or a fiction. Before filling in missing data, ask',
-        'whether the thing should run at all.',
+        'The owner asked to see all sixteen checked before anything was touched,',
+        'and was right to: it was the checking that showed two of them raise',
+        'unconditionally and never enter the judgement at all - which a quick read',
+        'would have counted as broken.',
         '',
-        'Header and lines now go through one function that rolls itself back, for',
-        'BOTH callers - one function, not a second copy of the fix. It is not',
-        'SECURITY DEFINER: RLS stays the judge.',
-        '',
-        'And the scope message now distinguishes "branch is not set" from "branch',
-        'belongs to another company". Same accepts, same refusals - only the',
-        'sentence is true now. Silence makes you search; a false message makes you',
-        'search in the wrong place.',
-        '',
-        'The new guard was measured before shipping and narrowed: "any delete from',
-        'a trigger-guarded table" fired 52 times and almost all were correct - a',
-        'user deleting a posted invoice SHOULD be refused. Narrowed to the',
-        'compensating delete - inside an error branch, undoing an insert made just',
-        'above - it is 6. Second time in one day a rule was measured against the',
-        'whole project before shipping and cut back. 879 deleted one outright.',
-        '',
-        'Ten checks on production, every one rolled back: inventory, invoices and',
-        'sales orders accept and refuse exactly as before; a manual credit with a',
-        'product line now SUCCEEDS (items=1, journal lines=3, inventory rows=0); a',
-        'bad line takes the whole thing down with it (orphan headers=0). Trial',
-        'balance 0.0000.'
+        '124 posted entries, zero empty drafts, trial balance 0.0000, and zero',
+        'triggers that can cancel a delete in silence.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -397,5 +372,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.880 pushed - what is never run is never tested; a rollback that can be refused is a wish" -ForegroundColor Green
+    Write-Host "`n+ v3.74.881 pushed - a refusal is visible, a silent cancel is not" -ForegroundColor Green
 }

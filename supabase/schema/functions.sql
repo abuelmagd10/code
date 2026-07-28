@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-28T17:47:41.065Z
+-- Generated: 2026-07-28T18:10:48.246Z
 -- Routines: 1256
 -- =====================================================================
 
@@ -43064,7 +43064,10 @@ BEGIN
       RETURN NEW;
     END IF;
   END IF;
-  RETURN NEW;
+
+  -- v3.74.881 — كان `RETURN NEW`. وعلى الحذف تكون `NEW` فارغةً فيُلغى
+  -- الحذف بصمت. `COALESCE(NEW, OLD)` تُعيد الصف الصحيح فى الحالتين.
+  RETURN COALESCE(NEW, OLD);
 END;
 $function$
 ;
