@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { emitEvent } from "@/lib/event-bus"
 import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
+import { linkTraceEntity } from "@/lib/services/financial-trace"
 
 type AdminClient = SupabaseClient<any, "public", any>
 
@@ -947,15 +948,7 @@ export class IntercompanyService {
   }
 
   private async linkTrace(traceId: string, entityType: string, entityId: string, linkRole?: string, referenceType?: string) {
-    await this.adminSupabase
-      .from("financial_operation_trace_links")
-      .upsert({
-        transaction_id: traceId,
-        entity_type: entityType,
-        entity_id: entityId,
-        link_role: linkRole || null,
-        reference_type: referenceType || null,
-      }, { onConflict: "transaction_id,entity_type,entity_id" })
+    await linkTraceEntity(this.adminSupabase, { traceId, entityType, entityId, linkRole: linkRole ?? "", referenceType: referenceType ?? "" })
   }
 
   private async emitIntercompanyEvent(

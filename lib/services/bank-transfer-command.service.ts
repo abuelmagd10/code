@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
+import { purgeTrace, linkTraceEntity } from "@/lib/services/financial-trace"
 
 const BANK_TRANSFER_EVENT = "bank_transfer_posting"
 
@@ -264,8 +265,7 @@ export class BankTransferCommandService {
         await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "bank transfer")
       }
       if (traceId) {
-        await this.adminSupabase.from("financial_operation_trace_links").delete().eq("transaction_id", traceId)
-        await this.adminSupabase.from("financial_operation_traces").delete().eq("transaction_id", traceId)
+        await purgeTrace(this.adminSupabase, traceId, "bank-transfer-command.service")
       }
       throw error
     }
@@ -339,13 +339,7 @@ export class BankTransferCommandService {
   }
 
   private async linkTrace(traceId: string, entityType: string, entityId: string, linkRole: string, referenceType: string) {
-    await this.adminSupabase.from("financial_operation_trace_links").upsert({
-      transaction_id: traceId,
-      entity_type: entityType,
-      entity_id: entityId,
-      link_role: linkRole,
-      reference_type: referenceType,
-    }, { onConflict: "transaction_id,entity_type,entity_id" })
+    await linkTraceEntity(this.adminSupabase, { traceId, entityType, entityId, linkRole: linkRole ?? "", referenceType: referenceType ?? "" })
   }
 
   private async findTraceByIdempotency(companyId: string, eventType: string, idempotencyKey: string): Promise<TraceRecord | null> {

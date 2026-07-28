@@ -1,5 +1,6 @@
 import { createCompleteJournalEntry } from "@/lib/journal-entry-governance"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { linkTraceEntity } from "@/lib/services/financial-trace"
 
 const CREATE_EVENT = "customer_payment_command"
 const PAYMENT_EVENT = "customer_payment_posting"
@@ -855,13 +856,7 @@ export class CustomerPaymentCommandService {
   }
 
   private async linkTrace(traceId: string, entityType: string, entityId: string, linkRole: string, referenceType: string) {
-    await this.adminSupabase.from("financial_operation_trace_links").upsert({
-      transaction_id: traceId,
-      entity_type: entityType,
-      entity_id: entityId,
-      link_role: linkRole,
-      reference_type: referenceType,
-    }, { onConflict: "transaction_id,entity_type,entity_id" })
+    await linkTraceEntity(this.adminSupabase, { traceId, entityType, entityId, linkRole: linkRole ?? "", referenceType: referenceType ?? "" })
   }
 
   private async findTraceByIdempotency(companyId: string, eventType: string, idempotencyKey: string): Promise<TraceRecord | null> {

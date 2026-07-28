@@ -1,4 +1,5 @@
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { linkTraceEntity } from "@/lib/services/financial-trace"
 
 const CREATE_COMMAND_EVENT = "purchase_return_command"
 const DECISION_EVENT = "purchase_return_decision"
@@ -1016,17 +1017,7 @@ export class PurchaseReturnCommandService {
     linkRole: string,
     referenceType: string
   ) {
-    await this.adminSupabase
-      .from("financial_operation_trace_links")
-      .upsert({
-        transaction_id: traceId,
-        entity_type: entityType,
-        entity_id: entityId,
-        link_role: linkRole,
-        reference_type: referenceType,
-      }, {
-        onConflict: "transaction_id,entity_type,entity_id",
-      })
+    await linkTraceEntity(this.adminSupabase, { traceId, entityType, entityId, linkRole: linkRole ?? "", referenceType: referenceType ?? "" })
   }
 
   private async findTraceByIdempotency(companyId: string, eventType: string, idempotencyKey: string): Promise<TraceRecord | null> {

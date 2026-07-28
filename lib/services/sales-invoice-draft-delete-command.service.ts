@@ -1,4 +1,5 @@
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
+import { purgeTrace, linkTraceEntity } from "@/lib/services/financial-trace"
 
 const SALES_INVOICE_DRAFT_DELETE_EVENT = "sales_invoice_draft_delete"
 
@@ -130,8 +131,7 @@ export class SalesInvoiceDraftDeleteCommandService {
       }
     } catch (error) {
       if (traceId) {
-        await this.adminSupabase.from("financial_operation_trace_links").delete().eq("transaction_id", traceId)
-        await this.adminSupabase.from("financial_operation_traces").delete().eq("transaction_id", traceId)
+        await purgeTrace(this.adminSupabase, traceId, "sales-invoice-draft-delete-command.service")
       }
       throw error
     }
@@ -211,13 +211,7 @@ export class SalesInvoiceDraftDeleteCommandService {
   }
 
   private async linkTrace(traceId: string, entityType: string, entityId: string, linkRole: string, referenceType: string) {
-    await this.adminSupabase.from("financial_operation_trace_links").upsert({
-      transaction_id: traceId,
-      entity_type: entityType,
-      entity_id: entityId,
-      link_role: linkRole,
-      reference_type: referenceType,
-    }, { onConflict: "transaction_id,entity_type,entity_id" })
+    await linkTraceEntity(this.adminSupabase, { traceId, entityType, entityId, linkRole: linkRole ?? "", referenceType: referenceType ?? "" })
   }
 
   private async findTraceByIdempotency(companyId: string, idempotencyKey: string): Promise<TraceRecord | null> {
