@@ -194,6 +194,14 @@ jobs:
       - name: Verify the lockfile matches package.json
         run: npm run check:lockfile
 
+      # v3.74.869 — لا وحدةَ غير موصولة تكتب فى الدفاتر. فاللغم لا يُبلَّغ
+      # عنه من أى حارسٍ آخر: لا يُنفَّذ فلا يفشل، ثم يُوصَل بعد شهور فينفجر.
+      - name: Check for ledger landmines
+        run: npm run check:ledger-landmines
+
+      - name: Prove the ledger-landmine guard refuses
+        run: npm run check:ledger-landmines:selftest
+
       # v3.74.867 — اللقطة تطابق القاعدة الحيّة. الحارس القائم
       # (check-schema-snapshot-fresh) يعترف بأنه لا يرى ما أُضيف للقاعدة
       # وغاب عن الملف — وهو الاتجاه الذى فقدنا فيه أربعة جداول كاملة.

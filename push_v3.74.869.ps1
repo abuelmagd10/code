@@ -8,117 +8,111 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.868 - the OLD script is removed, never this one. Three releases in a
+# v3.74.869 - the OLD script is removed, never this one. Three releases in a
 # row a chained string-replace turned this line into self-deletion (861, 865,
 # 866). A replacement whose output can match its own next pattern is not a
 # replacement, it is a loop. This line is now written by hand.
-if (Test-Path -LiteralPath "push_v3.74.867.ps1") { Remove-Item -LiteralPath "push_v3.74.867.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.868.ps1") { Remove-Item -LiteralPath "push_v3.74.868.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.868"') {
-    Write-Host "+ 3.74.868" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.869"') {
+    Write-Host "+ 3.74.869" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.868]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.868]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.869]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.869]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$uw    = "scripts/check-unchecked-writes.js"
-$cash  = "lib/sales-return-cash-disbursement.ts"
-$wo    = "app/api/write-offs/approve/route.ts"
-$fifo  = "lib/purchase-return-fifo-reversal.ts"
-$pre1  = "lib/pre-receipt-refund.ts"
-$pre2  = "lib/pre-shipment-refund.ts"
-$supp  = "lib/services/supplier-payment-command.service.ts"
-$cbal  = "lib/customer-balance.ts"
-$cref  = "lib/services/customer-refund-command.service.ts"
-$vou   = "lib/services/customer-voucher-command.service.ts"
-$srr   = "lib/services/supplier-refund-receipt-command.service.ts"
-$vcred = "lib/purchase-returns-vendor-credits.ts"
+$reach  = "scripts/lib-reachability.js"
+$guard  = "scripts/check-ledger-landmines.js"
+$selft  = "scripts/selftest-ledger-landmines.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $uw, $cash, $wo, $fifo, $pre1, $pre2, $supp, $cbal, $cref, $vou, $srr, $vcred,
-           "push_v3.74.868.ps1")
+           $reach, $guard, $selft, "package.json", ".github/workflows/ci.yml",
+           "push_v3.74.869.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. paying a customer in cash must settle his credit -------------------
-# Otherwise he keeps a spendable credit for money already handed over.
-$c = Get-Content -LiteralPath $cash -Raw
-foreach ($n in @("CREDIT_LEDGER_NETTING_FAILED", "CREDIT_SETTLE_AFTER_CASH_REFUND_FAILED")) {
-    if ($c -notmatch $n) { Write-Host "X $cash can still pay twice in silence ($n)" -ForegroundColor Red; exit 1 }
+# -- 1. the analyser must see BOTH shapes I got wrong ----------------------
+# 865: my search excluded .tsx.  868: it missed await import("./...").
+# Both errors called live code dead, which understates impact - the worse
+# direction to be wrong in.
+$rc = Get-Content -LiteralPath $reach -Raw
+if ($rc -notmatch [regex]::Escape('import\s*\(')) {
+    Write-Host "X the analyser does not follow dynamic imports (the 868 miss)" -ForegroundColor Red; exit 1
 }
-Write-Host "+ a cash refund cannot silently leave the credit spendable" -ForegroundColor Green
+if ($rc -notmatch [regex]::Escape('base + ".tsx"')) {
+    Write-Host "X the analyser does not resolve .tsx (the 865 miss)" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the reachability analyser follows dynamic imports and resolves .tsx" -ForegroundColor Green
 
-# -- 2. the ledger and the stock must not drift apart ----------------------
-$c = Get-Content -LiteralPath $wo -Raw
-if ($c -notmatch "WRITE_OFF_MOVEMENT_FAILED") {
-    Write-Host "X a write-off can post its expense and never move the stock" -ForegroundColor Red; exit 1
+# -- 2. it must declare which way it errs ----------------------------------
+# A measurement of financial or security impact has to say whether its number
+# is a floor or a ceiling.
+if ($rc -notmatch "لا تصف الحىَّ ميتاً") {
+    Write-Host "X the analyser does not declare its direction of conservatism" -ForegroundColor Red; exit 1
 }
-$c = Get-Content -LiteralPath $fifo -Raw
-if ($c -notmatch "FIFO_CONSUMPTION_REVERSAL_FAILED") {
-    Write-Host "X a purchase return can restore the lot and leave FIFO double-counting" -ForegroundColor Red; exit 1
-}
-Write-Host "+ stock movements and FIFO reversals report their own failure" -ForegroundColor Green
+Write-Host "+ the analyser declares the direction in which it errs" -ForegroundColor Green
 
-# -- 3. a reversal that stays draft is not a reversal ----------------------
-foreach ($f in @($pre1, $pre2)) {
-    $c = Get-Content -LiteralPath $f -Raw
-    if ($c -notmatch "REVERSAL_POST_FAILED") {
-        Write-Host "X $f can return a reversal id for an entry still in draft" -ForegroundColor Red; exit 1
-    }
+# -- 3. the landmine guard, with named findings not a bare number ----------
+$gc = Get-Content -LiteralPath $guard -Raw
+if ($gc -notmatch "LEDGER_LANDMINE_BASELINE") {
+    Write-Host "X the landmine guard has no overridable baseline for its selftest" -ForegroundColor Red; exit 1
 }
-Write-Host "+ a reversal is only reported once it is actually posted" -ForegroundColor Green
-
-# -- 4. forward paths throw, rollback paths report -------------------------
-$c = Get-Content -LiteralPath $supp -Raw
-if ($c -notmatch "ADVANCE_APPLICATION_WRITE_FAILED") {
-    Write-Host "X the advance/bill application can still vanish silently" -ForegroundColor Red; exit 1
-}
-foreach ($pair in @(@($cref, "REFUND_ROLLBACK_CREDIT_RESTORE_FAILED"),
-                    @($vou,  "VOUCHER_ROLLBACK_ADVANCE_DELETE_FAILED"),
-                    @($srr,  "SUPPLIER_REFUND_ROLLBACK_CREDIT_RESTORE_FAILED"),
-                    @($vcred,"VENDOR_CREDIT_ROLLBACK_DELETE_FAILED"))) {
-    $t = Get-Content -LiteralPath $pair[0] -Raw
-    if ($t -notmatch $pair[1]) {
-        Write-Host "X $($pair[0]) still unwinds in silence ($($pair[1]))" -ForegroundColor Red; exit 1
-    }
-    $blk = [regex]::Match($t, [regex]::Escape($pair[1]) + "[\s\S]{0,220}")
-    if ($blk.Success -and $blk.Value -match "throw ") {
-        Write-Host "X $($pair[0]) throws from a rollback path - it would mask the original error" -ForegroundColor Red
+foreach ($n in @("sales-invoice-edit-command.service.ts", "supplier-balance.ts", "api-security-governance.ts")) {
+    if ($gc -notmatch [regex]::Escape($n)) {
+        Write-Host "X the baseline does not name $n - a bare number teaches its reader to ignore it" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ forward paths fail loudly, rollback paths report without masking" -ForegroundColor Green
+Write-Host "+ the landmine baseline names every finding behind the number" -ForegroundColor Green
 
-# -- 5. the correction to 865 must be written down, not quietly fixed ------
-# I called this module unreachable in 865 because my search excluded .tsx.
-# Its two callers are .tsx pages, so the defect was live and I understated it.
-$c = Get-Content -LiteralPath $vcred -Raw
-if ($c -notmatch "app/bills/page.tsx") {
-    Write-Host "X the 865 reachability correction is not recorded in the file" -ForegroundColor Red
-    Write-Host "  A wrong claim gets corrected where it was made." -ForegroundColor Red
-    exit 1
+# -- 4. the selftest proves the analyser, not only the guard ---------------
+$sc = Get-Content -LiteralPath $selft -Raw
+foreach ($n in @("ROUTE_DYNAMIC", "ROUTE_ALIAS", "needle")) {
+    if ($sc -notmatch $n) { Write-Host "X the selftest is missing $n" -ForegroundColor Red; exit 1 }
 }
-Write-Host "+ the 865 misclassification is corrected in the code itself" -ForegroundColor Green
+Write-Host "+ the selftest proves both import shapes and names its probe" -ForegroundColor Green
 
-# -- 6. ground won must be pinned down -------------------------------------
-$c = Get-Content -LiteralPath $uw -Raw
-if ($c -notmatch "const BASELINE = 227;") {
-    Write-Host "X the unchecked-writes baseline is not 227" -ForegroundColor Red; exit 1
+# -- 5. wired into npm and CI ----------------------------------------------
+foreach ($pair in @(@("package.json"), @(".github/workflows/ci.yml"))) {
+    $t = Get-Content -LiteralPath $pair[0] -Raw
+    if ($t -notmatch "check:ledger-landmines") {
+        Write-Host "X $($pair[0]) does not run the landmine guard" -ForegroundColor Red; exit 1
+    }
 }
-Write-Host "+ unchecked-writes baseline tightened 247 -> 227" -ForegroundColor Green
+Write-Host "+ the landmine guard runs in npm and in CI" -ForegroundColor Green
+
+# -- 6. the two corrections must be recorded, not quietly dropped ----------
+# I overstated a PUBLIC-policy warning in 867 and called a live module dead
+# in 868. Both retractions belong in the changelog.
+$cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
+if ($cl -notmatch "٧٦٤ من ٧٩٤") {
+    Write-Host "X the 867 PUBLIC-policy warning is not retracted with its measurement" -ForegroundColor Red; exit 1
+}
+if ($cl -notmatch "استيرادٌ ديناميكىٌّ نسبى") {
+    Write-Host "X the 868 dead-code claim is not corrected" -ForegroundColor Red; exit 1
+}
+Write-Host "+ both retractions are recorded with the measurement behind them" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.867.ps1" 2>$null
+git add -u -- "push_v3.74.868.ps1" 2>$null
+
+Write-Host "Proving the ledger-landmine guard refuses..." -ForegroundColor Cyan
+node scripts/selftest-ledger-landmines.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the landmine guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking for ledger landmines..." -ForegroundColor Cyan
+node scripts/check-ledger-landmines.js | Select-Object -Last 2
+if ($LASTEXITCODE -ne 0) { Write-Host "X a new ledger landmine appeared" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the snapshot/database guard refuses..." -ForegroundColor Cyan
 node scripts/selftest-schema-snapshot-matches-db.js
@@ -272,51 +266,61 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_868.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_869.txt"
     $msgLines = @(
-        'fix(money): v3.74.868 - a reachability search that excludes .tsx calls live code dead',
+        'fix(tooling): v3.74.869 - twice wrong with a hand-rolled search means the tool is at fault',
         '',
-        'A correction first, because it is mine. In 865 I said the purchase-return',
-        'vendor-credit function had no callers, so its phantom column had never hurt',
-        'anyone. That was wrong. I searched with --include=*.ts and both callers are',
-        '.tsx pages: app/bills/page.tsx and app/bills/[id]/page.tsx. The path is live',
-        'and the defect was real - zero vendor credits in production despite actual',
-        'purchase returns.',
+        'Two retractions first.',
         '',
-        'An error that understates a defect is worse than one that overstates it. The',
-        'second costs an unnecessary check; the first grants false reassurance. The',
-        'correction is written into the file where the wrong claim was made, not only',
-        'into the changelog.',
+        'In 867 I warned that three policies target PUBLIC. Then I measured: 764 of',
+        '794 target PUBLIC. It is the norm here, not the anomaly, and the three I',
+        'flagged are conditioned on auth.uid() exactly like 761 others. Only seven',
+        'are genuinely open - USING (true), no condition - and all seven are already',
+        'in the documented allow-list in check-anon-open-tables. Warning withdrawn.',
+        'Had I built a guard on that warning it would have fired on 764 findings,',
+        'which is the noise that killed the phantom-column tool in 863. A number',
+        'that looks alarming alone is not a finding until it is measured against',
+        'the norm.',
         '',
-        'Then the work itself. Of the 227 unchecked writes, 33 touch the ledger or',
-        'money. Rather than fixing them in the order they printed, I measured which',
-        'were reachable - this time across .ts AND .tsx. Sixteen files live, two',
-        'genuinely dead.',
+        'In 868 I called lib/sales-returns.ts dead code. Half of it is live:',
+        'prepareSalesReturnData is called from accounting-transaction-service through',
+        'await import(./sales-returns) - a relative dynamic import my search for',
+        '@/lib/... could not see. Only processSalesReturn is unreachable.',
         '',
-        'What each silent failure was hiding:',
+        'So: two errors in two days on the same question, "is this reachable?", both',
+        'calling live code dead. 865 missed .tsx files; 868 missed dynamic relative',
+        'imports. Both understated the impact, which is the worse direction to be',
+        'wrong in - it reassures. After being wrong twice, "I will be more careful"',
+        'is not an answer. A measurement that does not depend on my attention is.',
         '',
-        '  cash refund settlement  the customer is paid in cash and keeps a',
-        '                          spendable credit - the company pays twice',
-        '  write-off movement      the expense posts, the stock never moves, and',
-        '                          the GL and FIFO drift apart',
-        '  FIFO reversal           the lot quantity is restored while the',
-        '                          consumption row still claims it - double count',
-        '  refund reversals        the reversing entry stays draft, touching no',
-        '                          balance, and its id is returned as success',
-        '  advance application     the payment posts, the advance looks unapplied',
-        '  customer credit         returns success: true having failed',
+        'scripts/lib-reachability.js builds the real import graph from every page,',
+        'route and layout, following alias, relative and dynamic imports plus',
+        're-exports, resolving .ts, .tsx and /index. It states in its own header',
+        'which way it errs: it measures modules, not functions, so it may call dead',
+        'code live but never live code dead. Any tool measuring financial or security',
+        'impact should say whether its number is a floor or a ceiling.',
         '',
-        'Three of them sat inside try/catch. supabase-js RETURNS { error } and never',
-        'throws, so the catch could not run and the result was discarded: silent',
-        'twice over. One carried a comment promising the error would "surface so we',
-        'notice if the schema drifts". It could never have surfaced.',
+        'On top of it, check-ledger-landmines.js: a module no route can reach that',
+        'writes to the ledger. Nothing else reports this class - it never runs, so it',
+        'never fails, and it is never fixed alongside the rest. The proof is already',
+        'here: processReturnAccounting builds a journal entry with no branch_id, a',
+        'NOT NULL column. It fails the instant it is called. It has never broken a',
+        'build.',
         '',
-        'The 864 distinction throughout: forward path throws, rollback path reports',
-        'with ids and never throws. Every message names the ids AND what the failure',
-        'means, so whoever reads the log at night knows the consequence without',
-        'opening the code.',
+        'Three exist, and the baseline names each one rather than stating a bare',
+        'count, because a constant with nothing behind it trains its reader to skip',
+        'the line. The worst is sales-invoice-edit-command.service.ts: an entire',
+        'sales-invoice edit service touching journal entries, stock movements and',
+        'payments, wired to nothing.',
         '',
-        '247 -> 227.'
+        'The guard does not delete and does not forbid existence. It forbids growth.',
+        'Deleting is the owner decision, not the tool.',
+        '',
+        'The selftest proves the analyser, not just the guard: it plants the ledger',
+        'writer, then connects it once by relative dynamic import and once by static',
+        'alias, and requires the guard to fall silent both times - the two shapes I',
+        'got wrong. A fourth probe, unreachable but touching nothing financial, must',
+        'never be reported.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -325,5 +329,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.868 pushed - a reachability search that excludes .tsx calls live code dead" -ForegroundColor Green
+    Write-Host "`n+ v3.74.869 pushed - twice wrong with a hand-rolled search means the tool is at fault" -ForegroundColor Green
 }
