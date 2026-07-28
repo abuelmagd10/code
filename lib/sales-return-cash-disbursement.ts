@@ -243,7 +243,11 @@ export async function postSalesReturnCashDisbursement(
     //    ledger entry. Without this, the books would say we owe the
     //    customer even though we already paid cash.
     // ---------------------------------------------------------------
-    await admin.from('customer_credit_ledger').insert({
+    // v3.74.868 — التعليق أعلاه يصف العاقبة بنفسه: «بدون هذا تقول الدفاتر
+    // إننا مدينون للعميل وقد دفعنا له نقداً بالفعل». وكانت نتيجة الكتابة
+    // **مُهملة**، فالعاقبة الموصوفة كانت واقعةً بلا أن يعلم أحد.
+    // مسارٌ يمضى للأمام — والنقد خرج فعلاً ⇒ يُرفع الخطأ.
+    const { error: ledgerError } = await admin.from('customer_credit_ledger').insert({
       company_id: params.companyId,
       customer_id: params.customerId,
       source_type: 'sales_return_cash_refund',
@@ -255,16 +259,32 @@ export async function postSalesReturnCashDisbursement(
         : 'استرداد نقدى للرصيد الدائن',
       created_by: params.actorUserId,
     })
+    if (ledgerError) {
+      throw new Error(
+        `CREDIT_LEDGER_NETTING_FAILED: sales_return ${params.salesReturnId} customer ${params.customerId} ` +
+        `amount ${-creditCreated} entry ${jeRow.id} — ${ledgerError.message}`
+      )
+    }
 
     // ---------------------------------------------------------------
     // 7. Settle the customer_credits header row(s) so the credit isn't
     //    available to be applied to a future invoice.
     // ---------------------------------------------------------------
-    await admin
+    // v3.74.868 — وهذه أخطر من سابقتها: لو فشلت صامتةً بقى الرصيد الدائن
+    // **صالحاً للتطبيق على فاتورةٍ قادمة** بعد أن استلم العميل قيمته نقداً.
+    // أى أن الشركة تدفع مرّتين، ولا شىء يُبلّغ.
+    const { error: creditSettleError } = await admin
       .from('customer_credits')
       .update({ status: 'used', used_amount: creditCreated, applied_amount: creditCreated })
       .eq('company_id', params.companyId)
       .eq('sales_return_id', params.salesReturnId)
+    if (creditSettleError) {
+      throw new Error(
+        `CREDIT_SETTLE_AFTER_CASH_REFUND_FAILED: sales_return ${params.salesReturnId} ` +
+        `company ${params.companyId} amount ${creditCreated} — the customer was paid in cash ` +
+        `and the credit may still be spendable — ${creditSettleError.message}`
+      )
+    }
 
     // ---------------------------------------------------------------
     // 8. Reduce invoice.paid_amount by the cash actually disbursed.

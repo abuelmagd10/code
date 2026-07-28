@@ -296,8 +296,13 @@ export class CustomerRefundCommandService {
       // /invoices/[id] still shows the old credit as "available" because the
       // ledger balance never decreased to match used_amount.
       // v3.74.223 — same currency fix: ledger is base-currency.
+      // v3.74.868 — الـ`try/catch` هنا **لا يلتقط شيئاً**: supabase-js يُرجع
+      // `{ error }` ولا يرفع استثناءً. فالتعليق أعلاه يَعِد بأن الخطأ
+      // «يظهر كى نلاحظ إن انحرف المخطَّط» — ولم يكن ليظهر أبداً.
+      // والأثر موصوفٌ فى التعليق نفسه: تبقى الشاشة تعرض الرصيد «متاحاً»
+      // بعد صرفه. ⇒ يُقرأ `error` صراحةً.
       try {
-        await this.adminSupabase.from("customer_credit_ledger").insert({
+        const { error: ledgerErr } = await this.adminSupabase.from("customer_credit_ledger").insert({
           company_id: command.companyId,
           customer_id: command.customerId,
           source_type: "customer_refund",
@@ -307,6 +312,12 @@ export class CustomerRefundCommandService {
             ? `صَرف رَصيد دائن للعَميل — مرتبط بفاتورة ${command.invoiceNumber}`
             : `صَرف رَصيد دائن للعَميل`,
         })
+        if (ledgerErr) {
+          console.error(
+            `CUSTOMER_REFUND_LEDGER_WRITE_FAILED: customer ${command.customerId} operation ${operationId} ` +
+            `amount ${-Math.abs(Number(command.baseAmount || 0))} — the credit may still show as available — ${ledgerErr.message}`
+          )
+        }
       } catch (err: any) {
         // Non-fatal: the GL/customer_credits are still consistent. Surface the
         // error so we notice if the constraint or schema drifts.
@@ -410,11 +421,20 @@ export class CustomerRefundCommandService {
         updatedCreditIds: updatedCredits.map((credit) => credit.id),
       }
     } catch (error) {
+      // v3.74.868 — استعادة الأرصدة الدائنة بعد فشل الاسترداد. مسارُ تراجُع:
+      // يُسجَّل ولا يُرفع (درس ٨٦٤). وفشلُه هنا يعنى أن رصيد العميل بقى
+      // مُستهلَكاً على استردادٍ لم يتمّ — أى **رصيدٌ ضاع على صاحبه**.
       for (const credit of updatedCredits.reverse()) {
-        await this.adminSupabase
+        const { error: restoreError } = await this.adminSupabase
           .from("customer_credits")
           .update({ used_amount: credit.used_amount, status: credit.status, updated_at: new Date().toISOString() })
           .eq("id", credit.id)
+        if (restoreError) {
+          console.error(
+            `REFUND_ROLLBACK_CREDIT_RESTORE_FAILED: credit ${credit.id} stayed consumed ` +
+            `(used_amount should be ${credit.used_amount}, status ${credit.status}) — ${restoreError.message}`
+          )
+        }
       }
       // v3.74.864 — مسار تراجُع: لا يُرفع خطأ هنا كى لا يُخفى الخطأ الأصلى،
       // لكنه **لا يصمت**: فشل الحذف يعنى بقاء دفعةٍ يتيمة بعد إلغاء الاسترداد،

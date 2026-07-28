@@ -306,8 +306,15 @@ export async function POST(request: NextRequest) {
     }
 
     // إنشاء حركات المخزون (inventory_transactions)
+    //
+    // ⚠️ v3.74.868 — القيد المحاسبى **رُحِّل بالفعل** قبل هذه الأسطر: المصروف
+    // مُقيَّد والمخزون مُخفَّض دفترياً. فلو فشلت حركةٌ هنا صامتةً، قالت
+    // الدفاتر إن البضاعة أُهلكت والمخزون الفعلى ما زال يحملها ⇒ **انفصال
+    // بين الأستاذ العام وFIFO**، وهو بالضبط ما يقيسه
+    // `check-ledger-integrity`. فيُفحص كل إدراج، وتُذكر المعرّفات كى يكون
+    // الفارق قابلاً للإصلاح لا للبحث عنه.
     for (const item of writeOffItems) {
-      await supabase
+      const { error: movementError } = await supabase
         .from('inventory_transactions')
         .insert({
           company_id: companyId,
@@ -322,6 +329,25 @@ export async function POST(request: NextRequest) {
           journal_entry_id: journalEntryId,
           notes: `إهلاك - ${writeOff.write_off_number}`
         })
+
+      if (movementError) {
+        console.error(
+          `WRITE_OFF_MOVEMENT_FAILED: write_off ${writeOffId} product ${item.product_id} ` +
+          `qty ${-item.quantity} entry ${journalEntryId} — ${movementError.message}`
+        )
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'القيد المحاسبى تم ترحيله لكن حركة المخزون فشلت — تواصل مع الدعم قبل إعادة المحاولة',
+            error_en: 'The journal entry posted but the stock movement failed - contact support before retrying',
+            stage: 'inventory_movement_failed',
+            write_off_id: writeOffId,
+            product_id: item.product_id,
+            journal_entry_id: journalEntryId,
+          },
+          { status: 500 }
+        )
+      }
     }
 
     // ✅ تحديث journal_entry_id فقط (status تم تحديثه مسبقاً في السطر 245)

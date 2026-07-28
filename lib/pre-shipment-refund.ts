@@ -362,16 +362,29 @@ export async function executePreShipmentRefund(
               .from("journal_entry_lines")
               .insert(opposing)
             if (!oppErr) {
-              await admin
+              // v3.74.868 — نفس عطب جانب المشتريات: الترحيل غير مفحوص، فيبقى
+              // **عكس الإيراد مسودَّةً** بينما يُعاد معرّفه كأن العكس تمّ.
+              const { error: postErr } = await admin
                 .from("journal_entries")
                 .update({ status: "posted" })
                 .eq("id", revJeNew.id)
+              if (postErr) {
+                throw new Error(
+                  `REVENUE_REVERSAL_POST_FAILED: entry ${revJeNew.id} has its lines but stayed draft — ${postErr.message}`
+                )
+              }
               revenueReversalJeId = revJeNew.id
             } else {
-              await admin
+              // مسارُ تراجُع: يُسجَّل ولا يُرفع.
+              const { error: cleanupErr } = await admin
                 .from("journal_entries")
                 .delete()
                 .eq("id", revJeNew.id)
+              if (cleanupErr) {
+                console.error(
+                  `REVENUE_REVERSAL_CLEANUP_FAILED: draft entry ${revJeNew.id} survived with no lines — ${cleanupErr.message}`
+                )
+              }
             }
           }
         }

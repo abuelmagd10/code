@@ -1201,29 +1201,41 @@ export class SupplierPaymentCommandService {
         .eq("bill_id", allocation.bill_id)
         .maybeSingle()
 
-      if (existingAdvanceApplication?.id) {
-        await this.adminSupabase
-          .from("advance_applications")
-          .update({
-            amount_applied: asNumber(allocation.allocated_amount),
-            applied_date: payment.payment_date,
-            notes: "تطبيق دفعة مورد على فاتورة مشتريات",
-          })
-          .eq("id", existingAdvanceApplication.id)
-      } else {
-        await this.adminSupabase
-          .from("advance_applications")
-          .insert({
-            company_id: payment.company_id,
-            customer_id: null,
-            supplier_id: payment.supplier_id,
-            payment_id: payment.id,
-            invoice_id: null,
-            bill_id: allocation.bill_id,
-            amount_applied: asNumber(allocation.allocated_amount),
-            applied_date: payment.payment_date,
-            notes: "تطبيق دفعة مورد على فاتورة مشتريات",
-          })
+      // v3.74.868 — هذا السجل هو **الدليل على أن السلفة طُبِّقت على هذه
+      // الفاتورة بهذا المبلغ**، والقيد المحاسبى قد رُحِّل قبله بأسطر. فلو
+      // ضاع صامتاً ظهرت الدفعة مُرحَّلة فى الدفاتر بينما السلفة تبدو غير
+      // مُطبَّقة — وهو فرقٌ يُدفع مرّتين.
+      // مسارٌ يمضى للأمام ⇒ يُرفع الخطأ (درس ٨٦٤).
+      {
+        const { error: advError } = existingAdvanceApplication?.id
+          ? await this.adminSupabase
+              .from("advance_applications")
+              .update({
+                amount_applied: asNumber(allocation.allocated_amount),
+                applied_date: payment.payment_date,
+                notes: "تطبيق دفعة مورد على فاتورة مشتريات",
+              })
+              .eq("id", existingAdvanceApplication.id)
+          : await this.adminSupabase
+              .from("advance_applications")
+              .insert({
+                company_id: payment.company_id,
+                customer_id: null,
+                supplier_id: payment.supplier_id,
+                payment_id: payment.id,
+                invoice_id: null,
+                bill_id: allocation.bill_id,
+                amount_applied: asNumber(allocation.allocated_amount),
+                applied_date: payment.payment_date,
+                notes: "تطبيق دفعة مورد على فاتورة مشتريات",
+              })
+
+        if (advError) {
+          throw new Error(
+            `ADVANCE_APPLICATION_WRITE_FAILED: payment ${payment.id} → bill ${allocation.bill_id} ` +
+            `amount ${asNumber(allocation.allocated_amount)} — ${advError.message}`
+          )
+        }
       }
     }
 
@@ -1604,29 +1616,37 @@ export class SupplierPaymentCommandService {
       .eq("bill_id", allocation.bill_id)
       .maybeSingle()
 
-    if (existingAdvanceApplication?.id) {
-      await this.adminSupabase
-        .from("advance_applications")
-        .update({
-          amount_applied: asNumber(allocation.allocated_amount),
-          applied_date: payment.payment_date,
-          notes: "تطبيق دفعة مورد على فاتورة مشتريات",
-        })
-        .eq("id", existingAdvanceApplication.id)
-    } else {
-      await this.adminSupabase
-        .from("advance_applications")
-        .insert({
-          company_id: payment.company_id,
-          customer_id: null,
-          supplier_id: payment.supplier_id,
-          payment_id: payment.id,
-          invoice_id: null,
-          bill_id: allocation.bill_id,
-          amount_applied: asNumber(allocation.allocated_amount),
-          applied_date: payment.payment_date,
-          notes: "تطبيق دفعة مورد على فاتورة مشتريات",
-        })
+    // v3.74.868 — نفس المعنى ونفس الخطر: سجلُّ تطبيق السلفة على الفاتورة.
+    {
+      const { error: advError } = existingAdvanceApplication?.id
+        ? await this.adminSupabase
+            .from("advance_applications")
+            .update({
+              amount_applied: asNumber(allocation.allocated_amount),
+              applied_date: payment.payment_date,
+              notes: "تطبيق دفعة مورد على فاتورة مشتريات",
+            })
+            .eq("id", existingAdvanceApplication.id)
+        : await this.adminSupabase
+            .from("advance_applications")
+            .insert({
+              company_id: payment.company_id,
+              customer_id: null,
+              supplier_id: payment.supplier_id,
+              payment_id: payment.id,
+              invoice_id: null,
+              bill_id: allocation.bill_id,
+              amount_applied: asNumber(allocation.allocated_amount),
+              applied_date: payment.payment_date,
+              notes: "تطبيق دفعة مورد على فاتورة مشتريات",
+            })
+
+      if (advError) {
+        throw new Error(
+          `ADVANCE_APPLICATION_WRITE_FAILED: payment ${payment.id} → bill ${allocation.bill_id} ` +
+          `amount ${asNumber(allocation.allocated_amount)} — ${advError.message}`
+        )
+      }
     }
 
     const billTraceId = await this.createTrace({

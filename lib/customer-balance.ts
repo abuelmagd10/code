@@ -363,13 +363,26 @@ export async function syncCustomerCredit(
       if (Math.abs(remaining - creditAmount) > 0.005) {
         // only the face value is restated; what the customer already consumed
         // is history and is never rewritten.
-        await supabase
+        // v3.74.868 — نتيجة الكتابة كانت مُهملة، و`try/catch` حولها لا يلتقط
+        // شيئاً لأن supabase-js **يُرجع** `{ error }` ولا يرمى. فكانت الدالة
+        // تُعيد `success: true` وقد فشلت. والعقد هنا يُعيد نتيجةً لا يرمى،
+        // فيُحترم شكلُه: فشلٌ صريح بدل نجاحٍ كاذب.
+        const { error: updErr } = await supabase
           .from('customer_credits')
           .update({ amount: creditAmount + consumed })
           .eq('id', existingCredit.id)
+        if (updErr) {
+          return {
+            success: false,
+            creditCreated: false,
+            creditAmount: 0,
+            netBalance: balance.netBalance,
+            error: `CUSTOMER_CREDIT_UPDATE_FAILED: credit ${existingCredit.id} invoice ${invoiceId} — ${updErr.message}`,
+          }
+        }
       }
     } else {
-      await supabase.from('customer_credits').insert({
+      const { error: insErr } = await supabase.from('customer_credits').insert({
         company_id:       companyId,
         customer_id:      customerId,
         reference_type:   'invoice',
@@ -383,6 +396,15 @@ export async function syncCustomerCredit(
         notes:            reason || 'رصيد دائن صافٍ للعميل',
         status:           'active',
       })
+      if (insErr) {
+        return {
+          success: false,
+          creditCreated: false,
+          creditAmount: 0,
+          netBalance: balance.netBalance,
+          error: `CUSTOMER_CREDIT_INSERT_FAILED: invoice ${invoiceId} customer ${customerId} amount ${creditAmount} — ${insErr.message}`,
+        }
+      }
     }
 
     return {

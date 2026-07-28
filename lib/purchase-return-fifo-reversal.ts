@@ -145,22 +145,31 @@ export async function reverseFIFOConsumptionForPurchaseReturn(
         totalReversedCost += reversedCost
 
         // تحديث أو حذف سجل الاستهلاك
-        if (returnQty >= Number(consumption.quantity_consumed)) {
-          // حذف كامل الاستهلاك
-          await supabase
-            .from('fifo_lot_consumptions')
-            .delete()
-            .eq('id', consumption.id)
-        } else {
-          // تحديث جزئي
-          const newConsumed = Number(consumption.quantity_consumed) - returnQty
-          await supabase
-            .from('fifo_lot_consumptions')
-            .update({
-              quantity_consumed: newConsumed,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', consumption.id)
+        //
+        // ⚠️ v3.74.868 — كمية الدفعة (lot) **عُدِّلت بالفعل** فى السطر أعلاه.
+        // فلو فشلت هذه الكتابة صامتةً، عادت الكمية للدفعة بينما سجلُّ
+        // الاستهلاك ما زال يدّعى استهلاكها ⇒ **ازدواجٌ فى FIFO**: نفس الوحدة
+        // محسوبةٌ متاحةً ومستهلَكةً معاً. وهو الانحراف الذى يقيسه
+        // `check-ledger-integrity` بين الأستاذ العام وFIFO.
+        const { error: consumptionError } = returnQty >= Number(consumption.quantity_consumed)
+          ? await supabase
+              .from('fifo_lot_consumptions')
+              .delete()
+              .eq('id', consumption.id)
+          : await supabase
+              .from('fifo_lot_consumptions')
+              .update({
+                quantity_consumed: Number(consumption.quantity_consumed) - returnQty,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', consumption.id)
+
+        if (consumptionError) {
+          throw new Error(
+            `FIFO_CONSUMPTION_REVERSAL_FAILED: consumption ${consumption.id} lot ${lot.id} ` +
+            `qty ${returnQty} — the lot quantity was already restored, so FIFO now double-counts — ` +
+            consumptionError.message
+          )
         }
       }
     }

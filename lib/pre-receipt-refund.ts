@@ -349,16 +349,31 @@ export async function executePreReceiptRefund(
               .from("journal_entry_lines")
               .insert(opposing)
             if (!oppErr) {
-              await admin
+              // v3.74.868 — الترحيل نفسه كان غير مفحوص: لو فشل، بقى القيد
+              // العكسى **مسودَّة لا تمسّ الأرصدة** بينما `billReversalJeId`
+              // يُملأ ويُعاد كنجاح. أى عكسٌ مُعلَنٌ لم يقع.
+              const { error: postErr } = await admin
                 .from("journal_entries")
                 .update({ status: "posted" })
                 .eq("id", revJe.id)
+              if (postErr) {
+                throw new Error(
+                  `BILL_REVERSAL_POST_FAILED: entry ${revJe.id} has its lines but stayed draft — ${postErr.message}`
+                )
+              }
               billReversalJeId = revJe.id
             } else {
-              await admin
+              // مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك قيداً مسودَّةً
+              // بلا سطور — وهو ما يرصده `check-ledger-integrity`.
+              const { error: cleanupErr } = await admin
                 .from("journal_entries")
                 .delete()
                 .eq("id", revJe.id)
+              if (cleanupErr) {
+                console.error(
+                  `BILL_REVERSAL_CLEANUP_FAILED: draft entry ${revJe.id} survived with no lines — ${cleanupErr.message}`
+                )
+              }
             }
           }
         }

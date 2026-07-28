@@ -138,8 +138,16 @@ export async function createVendorCreditForReturn(
         // v3.74.865 — `warehouse_id` عمودٌ **لا وجود له** فى `vendor_credits`،
         // فكان الإدراج يفشل كاملاً. والتعليق فى رأس هذا الملف يُدرج المخزن
         // ضمن ما «يجب ربط الإشعار به» بعلامة ✅ — **وهو ربطٌ لم يقم قط**.
-        // (والدالة اليوم بلا مستدعٍ، فلم يظهر العطب تشغيلياً.)
         // والمخزن مستخلَصٌ من المرتجع المصدر عبر `source_purchase_return_id`.
+        //
+        // ⚠️ **تصحيحٌ فى v3.74.868:** قلتُ فى ٨٦٥ إن هذه الدالة «بلا مستدعٍ
+        // فلم يظهر العطب تشغيلياً». **وهذا خطأ.** بحثى عن المستدعين قصرتُه
+        // على `--include=*.ts` والمستدعيان صفحتان `.tsx`:
+        //     app/bills/page.tsx  ·  app/bills/[id]/page.tsx
+        // ⇒ فالمسار **حىٌّ**، والعطب كان يقع فعلاً: صفر إشعار دائن فى
+        //   الإنتاج رغم وجود مرتجعات مشتريات. **بحثُ وصولٍ يستثنى `.tsx`
+        //   يَصِف الحىَّ ميتاً** — وهو خطأٌ يُهوِّن من أثر العطب لا يُضخّمه،
+        //   وهو أسوأ اتجاهٍ للخطأ.
         notes: `إشعار دائن تلقائي من مرتجع المشتريات ${returnNumber}`,
         // Multi-currency support
         original_currency: currency,
@@ -178,8 +186,18 @@ export async function createVendorCreditForReturn(
 
     if (itemsError) {
       console.error('Error creating vendor credit items:', itemsError)
-      // حذف vendor_credit إذا فشل إنشاء البنود
-      await supabase.from('vendor_credits').delete().eq('id', vendorCredit.id)
+      // حذف vendor_credit إذا فشل إنشاء البنود.
+      // v3.74.868 — مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك **إشعار دائن
+      // بلا بنود** — رأسٌ بمبلغٍ لا يُفسّره سطر، وهو ما تُظهره التقارير رصيداً
+      // للمورد بلا سند.
+      const { error: cleanupError } = await supabase
+        .from('vendor_credits').delete().eq('id', vendorCredit.id)
+      if (cleanupError) {
+        console.error(
+          `VENDOR_CREDIT_ROLLBACK_DELETE_FAILED: vendor_credit ${vendorCredit.id} (${creditNumber}) ` +
+          `survived with no items — ${cleanupError.message}`
+        )
+      }
       return {
         success: false,
         error: itemsError.message

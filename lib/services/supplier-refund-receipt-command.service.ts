@@ -196,11 +196,20 @@ export class SupplierRefundReceiptCommandService {
         updatedCreditIds: updatedCredits.map((credit) => credit.id),
       }
     } catch (error) {
+      // v3.74.868 — مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك إشعار
+      // الدائن لدى المورد مُستهلَكاً على استلامٍ لم يتمّ — أى **مالٌ لنا
+      // يبدو محصَّلاً وهو لم يُحصَّل**.
       for (const credit of updatedCredits.reverse()) {
-        await this.adminSupabase
+        const { error: restoreError } = await this.adminSupabase
           .from("vendor_credits")
           .update({ applied_amount: credit.applied_amount, status: credit.status, updated_at: new Date().toISOString() })
           .eq("id", credit.id)
+        if (restoreError) {
+          console.error(
+            `SUPPLIER_REFUND_ROLLBACK_CREDIT_RESTORE_FAILED: vendor_credit ${credit.id} stayed consumed ` +
+            `(applied_amount should be ${credit.applied_amount}, status ${credit.status}) — ${restoreError.message}`
+          )
+        }
       }
       if (journalEntryId) {
         // v3.74.756 — see rollback-journal-entry.ts.

@@ -217,7 +217,19 @@ export class CustomerVoucherCommandService {
           .update({ paid_amount: invoice.paid_amount, status: invoice.status })
           .eq("id", invoice.id)
       }
-      if (applicationIds.length > 0) await this.adminSupabase.from("advance_applications").delete().in("id", applicationIds)
+      // v3.74.868 — مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك سجلَّ
+      // «سلفة مُطبَّقة» على سندٍ أُلغى — فتبدو الفاتورة مسدَّدةً جزئياً بمالٍ
+      // لم يُقيَّد. والمعرّفات مذكورة كى يُصلَح يدوياً.
+      if (applicationIds.length > 0) {
+        const { error: appDelError } = await this.adminSupabase
+          .from("advance_applications").delete().in("id", applicationIds)
+        if (appDelError) {
+          console.error(
+            `VOUCHER_ROLLBACK_ADVANCE_DELETE_FAILED: applications [${applicationIds.join(", ")}] ` +
+            `survived the rollback — ${appDelError.message}`
+          )
+        }
+      }
       if (journalEntryId) {
         // v3.74.756 — see rollback-journal-entry.ts.
         await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "customer voucher")
