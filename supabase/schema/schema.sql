@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-07-28T12:33:23.104Z
--- Tables: 253 | Policies: 794 | Triggers: 523 | Constraints: 1827
+-- Generated: 2026-07-28T17:47:43.203Z
+-- Tables: 253 | Policies: 794 | Triggers: 522 | Constraints: 1827
 -- =====================================================================
 
 
@@ -8057,7 +8057,6 @@ CREATE TRIGGER trg_journal_on_vendor_credit_application AFTER INSERT ON public.v
 CREATE TRIGGER trg_update_vendor_credit_on_application AFTER INSERT OR DELETE OR UPDATE ON public.vendor_credit_applications FOR EACH ROW EXECUTE FUNCTION update_vendor_credit_on_application();
 CREATE TRIGGER ensure_vc_isolation BEFORE INSERT OR UPDATE ON public.vendor_credit_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER ensure_vc_item_branch_isolation BEFORE INSERT OR UPDATE ON public.vendor_credit_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
-CREATE TRIGGER trg_auto_inventory_vendor_credit_item AFTER INSERT ON public.vendor_credit_items FOR EACH ROW EXECUTE FUNCTION auto_inventory_for_vendor_credit();
 CREATE TRIGGER audit_vendor_credits AFTER INSERT OR DELETE OR UPDATE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_auto_journal_vendor_credit BEFORE INSERT ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION auto_journal_for_vendor_credit();
 CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION block_manual_adjustment_trg();
@@ -11125,10 +11124,6 @@ REVOKE ALL ON FUNCTION public.auto_generate_write_off_number() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auto_generate_write_off_number() TO anon;
 GRANT EXECUTE ON FUNCTION public.auto_generate_write_off_number() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auto_generate_write_off_number() TO service_role;
-REVOKE ALL ON FUNCTION public.auto_inventory_for_vendor_credit() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.auto_inventory_for_vendor_credit() TO anon;
-GRANT EXECUTE ON FUNCTION public.auto_inventory_for_vendor_credit() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.auto_inventory_for_vendor_credit() TO service_role;
 REVOKE ALL ON FUNCTION public.auto_journal_for_vendor_credit() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auto_journal_for_vendor_credit() TO anon;
 GRANT EXECUTE ON FUNCTION public.auto_journal_for_vendor_credit() TO authenticated;
@@ -11894,6 +11889,10 @@ REVOKE ALL ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uu
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) TO anon;
+GRANT EXECUTE ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.create_vendor_credits_for_all_returns() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credits_for_all_returns() TO anon;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credits_for_all_returns() TO authenticated;
@@ -14428,6 +14427,10 @@ REVOKE ALL ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id u
 GRANT EXECUTE ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO anon;
+GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO service_role;
 REVOKE ALL ON FUNCTION public.route_system_events_to_notifications() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.route_system_events_to_notifications() TO anon;
 GRANT EXECUTE ON FUNCTION public.route_system_events_to_notifications() TO authenticated;

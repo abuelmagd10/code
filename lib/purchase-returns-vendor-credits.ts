@@ -114,63 +114,23 @@ export async function createVendorCreditForReturn(
     // 2️⃣ إنشاء رقم إشعار دائن
     const creditNumber = `VC-${returnNumber.replace('PRET-', '')}`
 
-    // 3️⃣ إنشاء Vendor Credit
-    const { data: vendorCredit, error: vcError } = await supabase
-      .from('vendor_credits')
-      .insert({
-        company_id: companyId,
-        supplier_id: supplierId,
-        bill_id: billId,
-        source_purchase_invoice_id: billId,
-        source_purchase_return_id: purchaseReturnId,
-        credit_number: creditNumber,
-        credit_date: returnDate,
-        subtotal: subtotal,
-        tax_amount: taxAmount,
-        total_amount: totalAmount,
-        applied_amount: 0,
-        status: 'open',
-        reference_type: 'purchase_return',
-        reference_id: purchaseReturnId,
-        journal_entry_id: journalEntryId,
-        branch_id: branchId,
-        cost_center_id: costCenterId,
-        // v3.74.865 — `warehouse_id` عمودٌ **لا وجود له** فى `vendor_credits`،
-        // فكان الإدراج يفشل كاملاً. والتعليق فى رأس هذا الملف يُدرج المخزن
-        // ضمن ما «يجب ربط الإشعار به» بعلامة ✅ — **وهو ربطٌ لم يقم قط**.
-        // والمخزن مستخلَصٌ من المرتجع المصدر عبر `source_purchase_return_id`.
-        //
-        // ⚠️ **تصحيحٌ فى v3.74.868:** قلتُ فى ٨٦٥ إن هذه الدالة «بلا مستدعٍ
-        // فلم يظهر العطب تشغيلياً». **وهذا خطأ.** بحثى عن المستدعين قصرتُه
-        // على `--include=*.ts` والمستدعيان صفحتان `.tsx`:
-        //     app/bills/page.tsx  ·  app/bills/[id]/page.tsx
-        // ⇒ فالمسار **حىٌّ**، والعطب كان يقع فعلاً: صفر إشعار دائن فى
-        //   الإنتاج رغم وجود مرتجعات مشتريات. **بحثُ وصولٍ يستثنى `.tsx`
-        //   يَصِف الحىَّ ميتاً** — وهو خطأٌ يُهوِّن من أثر العطب لا يُضخّمه،
-        //   وهو أسوأ اتجاهٍ للخطأ.
-        notes: `إشعار دائن تلقائي من مرتجع المشتريات ${returnNumber}`,
-        // Multi-currency support
-        original_currency: currency,
-        original_subtotal: subtotal,
-        original_tax_amount: taxAmount,
-        original_total_amount: totalAmount,
-        exchange_rate_used: exchangeRate,
-        exchange_rate_id: exchangeRateId
-      })
-      .select('id')
-      .single()
-
-    if (vcError || !vendorCredit) {
-      console.error('Error creating vendor credit:', vcError)
-      return {
-        success: false,
-        error: vcError?.message || 'Failed to create vendor credit'
-      }
-    }
-
-    // 4️⃣ إنشاء بنود Vendor Credit
+    // 3️⃣ إنشاء Vendor Credit ببنوده — **نداءٌ واحد**
+    //
+    // v3.74.880 — كان الرأس يُدرَج أولاً، وعند فشل البنود يُحذف الرأس.
+    // **وذلك الحذف لم يكن ممكناً أصلاً**: الإشعار يُنشأ بحالة `open`،
+    // و`prevent_vendor_credit_deletion` لا يسمح بالحذف إلا لـ`draft`
+    // أو `cancelled`. أُثبت على الإنتاج (ومُلغى):
+    //
+    //     rollback DELETE (status=open) : REFUSED
+    //       -> Cannot delete Vendor Credit … (open).
+    //     orphan header left behind : 1  (journal entry already posted)
+    //
+    // فمسار التراجُع كان **يقينىَّ الفشل**، ويترك بالضبط ما حذّر منه
+    // تعليقه: رأسٌ بمبلغٍ لا يُفسّره سطر، وقيدٌ مُرحَّل خلفه.
+    //
+    // ⇒ **تراجُعٌ يدوىٌّ لا يُختبر ليس تراجُعاً، بل رجاء.** والمعاملة
+    //   الواحدة تتراجع بنفسها، ولا تحتاج إذناً من مُشغِّلٍ آخر.
     const vendorCreditItems = items.map(item => ({
-      vendor_credit_id: vendorCredit.id,
       product_id: item.productId,
       description: item.description,
       quantity: item.quantity,
@@ -180,29 +140,60 @@ export async function createVendorCreditForReturn(
       line_total: item.lineTotal
     }))
 
-    const { error: itemsError } = await supabase
-      .from('vendor_credit_items')
-      .insert(vendorCreditItems)
+    const { data: newCreditId, error: vcError } = await supabase
+      .rpc('create_vendor_credit_with_items', {
+        p_credit: {
+          company_id: companyId,
+          supplier_id: supplierId,
+          bill_id: billId,
+          source_purchase_invoice_id: billId,
+          source_purchase_return_id: purchaseReturnId,
+          credit_number: creditNumber,
+          credit_date: returnDate,
+          subtotal: subtotal,
+          tax_amount: taxAmount,
+          total_amount: totalAmount,
+          applied_amount: 0,
+          status: 'open',
+          reference_type: 'purchase_return',
+          reference_id: purchaseReturnId,
+          journal_entry_id: journalEntryId,
+          branch_id: branchId,
+          cost_center_id: costCenterId,
+          // v3.74.865 — `warehouse_id` عمودٌ **لا وجود له** فى `vendor_credits`،
+          // فكان الإدراج يفشل كاملاً. والتعليق فى رأس هذا الملف يُدرج المخزن
+          // ضمن ما «يجب ربط الإشعار به» بعلامة ✅ — **وهو ربطٌ لم يقم قط**.
+          // والمخزن مستخلَصٌ من المرتجع المصدر عبر `source_purchase_return_id`.
+          //
+          // ⚠️ **تصحيحٌ فى v3.74.868:** قلتُ فى ٨٦٥ إن هذه الدالة «بلا مستدعٍ
+          // فلم يظهر العطب تشغيلياً». **وهذا خطأ.** بحثى عن المستدعين قصرتُه
+          // على `--include=*.ts` والمستدعيان صفحتان `.tsx`:
+          //     app/bills/page.tsx  ·  app/bills/[id]/page.tsx
+          // ⇒ فالمسار **حىٌّ**، والعطب كان يقع فعلاً: صفر إشعار دائن فى
+          //   الإنتاج رغم وجود مرتجعات مشتريات. **بحثُ وصولٍ يستثنى `.tsx`
+          //   يَصِف الحىَّ ميتاً** — وهو خطأٌ يُهوِّن من أثر العطب لا يُضخّمه،
+          //   وهو أسوأ اتجاهٍ للخطأ.
+          notes: `إشعار دائن تلقائي من مرتجع المشتريات ${returnNumber}`,
+          // Multi-currency support
+          original_currency: currency,
+          original_subtotal: subtotal,
+          original_tax_amount: taxAmount,
+          original_total_amount: totalAmount,
+          exchange_rate_used: exchangeRate,
+          exchange_rate_id: exchangeRateId
+        },
+        p_items: vendorCreditItems
+      })
 
-    if (itemsError) {
-      console.error('Error creating vendor credit items:', itemsError)
-      // حذف vendor_credit إذا فشل إنشاء البنود.
-      // v3.74.868 — مسارُ تراجُع: يُسجَّل ولا يُرفع. وفشلُه يترك **إشعار دائن
-      // بلا بنود** — رأسٌ بمبلغٍ لا يُفسّره سطر، وهو ما تُظهره التقارير رصيداً
-      // للمورد بلا سند.
-      const { error: cleanupError } = await supabase
-        .from('vendor_credits').delete().eq('id', vendorCredit.id)
-      if (cleanupError) {
-        console.error(
-          `VENDOR_CREDIT_ROLLBACK_DELETE_FAILED: vendor_credit ${vendorCredit.id} (${creditNumber}) ` +
-          `survived with no items — ${cleanupError.message}`
-        )
-      }
+    if (vcError || !newCreditId) {
+      console.error('Error creating vendor credit:', vcError)
       return {
         success: false,
-        error: itemsError.message
+        error: vcError?.message || 'Failed to create vendor credit'
       }
     }
+
+    const vendorCredit = { id: newCreditId as string }
 
     console.log(`✅ Vendor Credit created successfully: ${creditNumber} (ID: ${vendorCredit.id})`)
 

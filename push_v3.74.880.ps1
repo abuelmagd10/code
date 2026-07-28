@@ -6,72 +6,127 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.879 - the OLD script is removed, never this one. Five times a chained
+# v3.74.880 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # A replacement whose output can match its own next pattern is a loop, not a
 # replacement. This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.878.ps1") { Remove-Item -LiteralPath "push_v3.74.878.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.879.ps1") { Remove-Item -LiteralPath "push_v3.74.879.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.879"') {
-    Write-Host "+ 3.74.879" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.880"') {
+    Write-Host "+ 3.74.880" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.879]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.879]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.880]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.880]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$mig   = "supabase/migrations/20260728000007_v3_74_879_supplier_advance_subtype.sql"
-$guard = "scripts/check-subtype-tenant-divergence.js"
-$trap  = "scripts/selftest-subtype-tenant-divergence.js"
+$mig    = "supabase/migrations/20260728000008_v3_74_880_vendor_credit_atomic_and_scope.sql"
+$guard  = "scripts/check-impossible-rollback.js"
+$trap   = "scripts/selftest-impossible-rollback.js"
+$page   = "app/vendor-credits/new/page.tsx"
+$helper = "lib/purchase-returns-vendor-credits.ts"
+
+# نسخة المخطَّط تُولَّد قبل النشر، لا تُحرَّر باليد.
+# v3.74.880 — الترحيل أسقط `auto_inventory_for_vendor_credit`، وبقيت النسخة
+# تصفها **ومصرَّحاً بها لـanon**. فإعادة بناء القاعدة من المستودع كانت
+# ستُحييها بصلاحياتها. ⇒ **حذفٌ من القاعدة بلا تحديث النسخة ليس حذفاً، بل
+# تأجيل.** والحارس أمسكها فى أول تشغيل.
+$schemaFn  = "supabase/schema/functions.sql"
+$schemaAll = "supabase/schema/schema.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $mig, $guard, $trap, "push_v3.74.879.ps1")
+           $mig, $guard, $trap, $page, $helper,
+           $schemaFn, $schemaAll, "push_v3.74.880.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the migration must verify itself ---------------------------------
-# A data migration that only writes has no way of telling a partial success
-# from a complete one. This one re-reads what it wrote and raises if the
-# reclassification did not land in every company.
+# -- 1. neither caller may write the header and the lines separately -------
+# The header insert POSTS A JOURNAL ENTRY through a database trigger. A second
+# statement that can fail therefore leaves a posted credit note with no lines
+# under it - which is exactly what production showed. Both callers must go
+# through the one function that rolls itself back.
+foreach ($f in @($page, $helper)) {
+    $c = Get-Content -LiteralPath $f -Raw
+    if ($c -match 'from\(\s*["'']vendor_credits["'']\s*\)\s*
+?
+?\s*\.?insert' -or
+        $c -match 'from\(\s*["'']vendor_credit_items["'']\s*\)\s*
+?
+?\s*\.?insert') {
+        Write-Host "X $f still writes a vendor credit in two steps" -ForegroundColor Red; exit 1
+    }
+    if ($c -notmatch "create_vendor_credit_with_items") {
+        Write-Host "X $f does not go through the atomic function" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ both vendor-credit callers write header and lines as one operation" -ForegroundColor Green
+
+# -- 2. the impossible rollback is gone, not merely logged ----------------
+$h = Get-Content -LiteralPath $helper -Raw
+if ($h -match "VENDOR_CREDIT_ROLLBACK_DELETE_FAILED") {
+    Write-Host "X the manual rollback is still there - a delete a trigger refuses is not a rollback" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the rollback that could never succeed is gone" -ForegroundColor Green
+
+# -- 3. the migration must verify itself, and stop the inventory trigger --
 $m = Get-Content -LiteralPath $mig -Raw
 if ($m -notmatch "RAISE EXCEPTION") {
     Write-Host "X the migration writes without verifying what it wrote" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch "account_type = 'asset'") {
-    Write-Host "X the migration is not constrained by account_type - a same-coded account of another type could be hit" -ForegroundColor Red
-    exit 1
+if ($m -notmatch "DROP FUNCTION IF EXISTS public\.auto_inventory_for_vendor_credit") {
+    Write-Host "X the migration does not stop the inventory trigger" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the data migration re-reads what it wrote and is type-constrained" -ForegroundColor Green
+# A SECURITY DEFINER here would bypass RLS unnoticed. Scope the search to the
+# function HEADER (between the CREATE line and the "AS $$" that opens the body):
+# the phrase also appears inside the migration's own assertion message, and a
+# check that trips on the text asserting its own safety is worse than none.
+if ($m -match "CREATE OR REPLACE FUNCTION public\.create_vendor_credit_with_items[\s\S]*?AS \`$\`$") {
+    if ($Matches[0] -match "SECURITY DEFINER") {
+        Write-Host "X the atomic function must not be SECURITY DEFINER" -ForegroundColor Red; exit 1
+    }
+} else {
+    Write-Host "X could not locate the atomic function header in the migration" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the migration verifies itself and runs with the caller's own rights" -ForegroundColor Green
 
-# -- 2. the guard must not carry a silent exception list ------------------
-# ALLOWED_PARTIAL is deliberately empty. An exception added without a written
-# reason is a permanent hole (857 lesson), so the release refuses one that
-# arrives without a comment naming why.
+# -- 4. the narrowed guard keeps its measured baseline --------------------
+# 52 alarms became 6 by asking a sharper question, not by adding exceptions.
 $g = Get-Content -LiteralPath $guard -Raw
-if ($g -notmatch "ALLOWED_PARTIAL") {
-    Write-Host "X the guard lost its exception map" -ForegroundColor Red; exit 1
+if ($g -notmatch "const BASELINE = 6") {
+    Write-Host "X the impossible-rollback baseline is not 6" -ForegroundColor Red; exit 1
 }
-if ($g -match "ALLOWED_PARTIAL = new Map\(\[\s*\r?\n\s*\[") {
-    Write-Host "X ALLOWED_PARTIAL has an entry - each one must be reviewed by a human, not waved through" -ForegroundColor Red
-    exit 1
+Write-Host "+ impossible-rollback baseline is 6 (was 7 before this release)" -ForegroundColor Green
+
+# -- 5. the snapshot must not describe what the migration dropped ---------
+# Regenerate it (dump-db-functions + dump-db-schema) BEFORE running this
+# script; it is a generated artefact, never hand-edited.
+foreach ($f in @($schemaFn, $schemaAll)) {
+    $c = Get-Content -LiteralPath $f -Raw
+    if ($c -match "auto_inventory_for_vendor_credit") {
+        Write-Host "X $f still describes a function this release dropped - regenerate the snapshot:" -ForegroundColor Red
+        Write-Host "    node scripts/dump-db-functions.js" -ForegroundColor Yellow
+        Write-Host "    node scripts/dump-db-schema.js" -ForegroundColor Yellow
+        exit 1
+    }
 }
-Write-Host "+ the guard's exception list is still empty" -ForegroundColor Green
+Write-Host "+ the snapshot no longer describes the dropped inventory trigger" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.878.ps1" 2>$null
+git add -u -- "push_v3.74.879.ps1" 2>$null
 
 # -- 3. nothing staged beyond this release (the 872 lesson) --------------
 # What a failed run staged stays staged. `git add -- $files` only adds.
-$expected = @($files) + @("push_v3.74.878.ps1")
+$expected = @($files) + @("push_v3.74.879.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -80,6 +135,20 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the impossible-rollback guard refuses (and stays silent)..." -ForegroundColor Cyan
+node scripts/selftest-impossible-rollback.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the impossible-rollback guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Counting compensating deletes a trigger can refuse..." -ForegroundColor Cyan
+# NO `| Select-Object -First N` here. -First STOPS the upstream pipeline, node
+# gets EPIPE while still writing its tracked-items list, its own error handler
+# exits 1, and the release calls a PASSING guard a failure. It printed
+# "+ No new impossible rollbacks" and was declared broken in the same breath.
+# `-Last N` is safe: it drains the stream. `-First N` on a live process is not.
+# => How a check is DISPLAYED must not change what it MEANS.
+node scripts/check-impossible-rollback.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X a new impossible rollback appeared" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the sub_type divergence guard refuses..." -ForegroundColor Cyan
 node scripts/selftest-subtype-tenant-divergence.js
@@ -230,7 +299,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.878.ps1" 2>$null
+git add -u -- "push_v3.74.879.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -249,53 +318,76 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_879.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_880.txt"
     $msgLines = @(
-        'fix(coa): v3.74.879 - the same return posted to two different accounts',
+        'fix(vendor-credits): v3.74.880 - a credit note posted with no lines under it',
         '',
-        'Account 1180 "supplier advances" is of type asset in all five companies.',
-        'In two of them it carried a sub_type named vendor_credit_liability. The',
-        'other three carried nothing.',
+        'The manual vendor-credit screen saved in two steps: header, then lines.',
+        'The header insert POSTS A JOURNAL ENTRY for the full amount through a',
+        'database trigger. The line insert then failed - every time, if a product',
+        'was on it - with a message that lied: "Branch does not belong to company".',
         '',
-        'The contradiction in the name is not the problem. The problem is that the',
-        'code searches by that exact string:',
+        'What was left behind was worse than a failure. A posted credit note, its',
+        'entry in the ledger, and nothing underneath it. The user saw an error and',
+        'assumed nothing had been saved. Proven on production inside a transaction',
+        'that was rolled back:',
         '',
-        '    app/purchase-returns/new/page.tsx',
-        '      findAcct("vendor_credit_liability", …) || findAcct("ap_contra", …) || apAccount',
+        '    STEP 1 (header): journal_entry=b329... status=posted lines=3',
+        '    STEP 2 (items):  *** FAILED *** -> Branch does not belong to company',
+        '    AFTERWARDS: credit rows=1  items=0  journal lines=3  amount=1140',
         '',
-        'So two companies found an ASSET and three fell through to accounts',
-        'payable - a liability. The same purchase return, posted to two different',
-        'accounts depending on which company you were logged into.',
+        'The cause: auto_inventory_for_vendor_credit inserted into',
+        'inventory_transactions without branch_id, warehouse_id or cost_center_id,',
+        'all three NOT NULL with no default. It could not succeed under any',
+        'circumstances. Its only possible effect was to abort the user.',
         '',
-        'Nothing was posted wrong, because vendor credits were blocked outright:',
-        'first by a phantom column (865), then by direct-write prevention (871).',
-        'Zero journal lines on 1180 in any company. The fix that opened the path',
-        'exposed the divergence before it produced a single wrong entry.',
+        'Its own comment says it skips the purchase-return path "to avoid',
+        'duplicates and missing branch_id issues" - and the line below it does',
+        'exactly what the comment warns about. A comment describing a guarantee is',
+        'not the guarantee.',
         '',
-        'Asking for an account by its MEANING rather than its number is right -',
-        'that was the ruling of 847, after a hard-coded 6110 meant salary',
-        'disbursement had never once worked. But meaning-based lookup becomes a',
-        'trap the moment the meaning is not guaranteed in every tenant: a lookup',
-        'that finds in one company and misses in another does not FAIL. It',
-        'succeeds, on the wrong account, and nobody is told. Absence is visible.',
-        'Divergence is not.',
+        'Nobody complained because zero vendor credits have ever been created. The',
+        'screen was never used. What has never run has never been tested - and this',
+        'path had already been fixed four times today (865, 871, 873, 879) without',
+        'once being executed. It was the first real execution that found this.',
         '',
-        'check-subtype-tenant-divergence.js extracts every sub_type the code',
-        'searches for - 39 of them - and asks production how each is spread. One',
-        'rule: present in every company, or in none. Nothing in between.',
+        'A second landmine on the way. purchase-returns-vendor-credits.ts deleted',
+        'the header when the lines failed. That delete was impossible: the credit',
+        'is created "open" and prevent_vendor_credit_deletion allows only "draft"',
+        'or "cancelled". Also proven, also rolled back:',
         '',
-        'A second rule was written, measured, and deleted before shipping: "a',
-        'sub_type named …liability must sit on a liability account". Against',
-        'production it fired three times and all three were correct accounting -',
-        'prepaid_expense is an asset, unearned_revenue is a liability, and this',
-        'project names the type "income" not "revenue". A guard that cries wolf',
-        'three times out of three teaches its reader to ignore it, which silences',
-        'the true alarm the day it comes. A rule that does not survive measurement',
-        'is deleted, not papered over with an exception list - the list would hide',
-        'that the rule itself was wrong.',
+        '    rollback DELETE (status=open) : *** REFUSED ***',
+        '    orphan header left behind : 1  (journal entry already posted)',
         '',
-        'Five companies now read supplier_advance. Zero journal lines touched -',
-        'a sub_type describes an account, it does not hold a balance. Trial',
+        'A manual rollback that can be refused is not a rollback. It is a wish.',
+        '',
+        'Three fixes. The inventory trigger is STOPPED, not repaired: a credit from',
+        'a purchase return already gets its movement from the returns screen',
+        '(measured - both real rows reference purchase_returns), and a credit that',
+        'is not from a return has no goods moving at all. Reviving it would produce',
+        'either a duplicate or a fiction. Before filling in missing data, ask',
+        'whether the thing should run at all.',
+        '',
+        'Header and lines now go through one function that rolls itself back, for',
+        'BOTH callers - one function, not a second copy of the fix. It is not',
+        'SECURITY DEFINER: RLS stays the judge.',
+        '',
+        'And the scope message now distinguishes "branch is not set" from "branch',
+        'belongs to another company". Same accepts, same refusals - only the',
+        'sentence is true now. Silence makes you search; a false message makes you',
+        'search in the wrong place.',
+        '',
+        'The new guard was measured before shipping and narrowed: "any delete from',
+        'a trigger-guarded table" fired 52 times and almost all were correct - a',
+        'user deleting a posted invoice SHOULD be refused. Narrowed to the',
+        'compensating delete - inside an error branch, undoing an insert made just',
+        'above - it is 6. Second time in one day a rule was measured against the',
+        'whole project before shipping and cut back. 879 deleted one outright.',
+        '',
+        'Ten checks on production, every one rolled back: inventory, invoices and',
+        'sales orders accept and refuse exactly as before; a manual credit with a',
+        'product line now SUCCEEDS (items=1, journal lines=3, inventory rows=0); a',
+        'bad line takes the whole thing down with it (orphan headers=0). Trial',
         'balance 0.0000.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
@@ -305,5 +397,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.879 pushed - a lookup that misses in one tenant does not fail, it succeeds on the wrong account" -ForegroundColor Green
+    Write-Host "`n+ v3.74.880 pushed - what is never run is never tested; a rollback that can be refused is a wish" -ForegroundColor Green
 }

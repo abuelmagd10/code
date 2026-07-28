@@ -204,9 +204,32 @@ export default function NewVendorCreditPage() {
       const finalBaseTax = credit.currency === baseCurrency ? itemsTax : Math.round(itemsTax * exchangeRate.rate * 10000) / 10000
       const finalBaseTotal = credit.currency === baseCurrency ? total : Math.round(total * exchangeRate.rate * 10000) / 10000
 
-      const { data: vc, error: vcErr } = await supabase
-        .from("vendor_credits")
-        .insert({
+      // v3.74.880 — رأسٌ وسطورٌ فى نداءٍ واحد.
+      //
+      // كان الحفظ على خطوتين: إدراج الرأس، ثم إدراج السطور. وإدراج الرأس
+      // **يُرحِّل قيداً فى الأستاذ بمبلغه كاملاً** عبر مُشغِّل قاعدة البيانات.
+      // فأى فشلٍ فى الخطوة الثانية كان يترك **إشعاراً دائناً مُرحَّلاً بلا
+      // بندٍ واحد تحته**، والمستخدم يرى رسالة فشلٍ فيظن أن شيئاً لم يُحفظ.
+      //
+      // وقد كان ذلك يقع **فى كل مرة** فيها منتج، لا أحياناً: مُشغِّلٌ كان
+      // يكتب حركة مخزون بلا فرع ولا مخزن (وهى حقولٌ إلزامية)، فيفشل حتماً.
+      // أُوقف ذلك المُشغِّل فى نفس الإصدار.
+      //
+      // ⇒ **ما لا يصحّ أن يوجد نصفه لا يُكتب على خطوتين.**
+      const rows = items.map(it => ({
+        product_id: it.product_id,
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        tax_rate: it.tax_rate,
+        tax_code_id: it.tax_code_id || null,
+        discount_percent: it.discount_percent,
+        account_id: it.account_id,
+        line_total: it.line_total,
+      }))
+
+      const { data: newCreditId, error: vcErr } = await supabase.rpc("create_vendor_credit_with_items", {
+        p_credit: {
           company_id: companyId,
           supplier_id: credit.supplier_id,
           credit_number: credit.credit_number,
@@ -232,26 +255,12 @@ export default function NewVendorCreditPage() {
           // Branch and Cost Center
           branch_id: branchId || null,
           cost_center_id: costCenterId || null,
-        })
-        .select()
-        .single()
+        },
+        p_items: rows,
+      })
       if (vcErr) throw vcErr
-
-      const rows = items.map(it => ({
-        vendor_credit_id: vc.id,
-        product_id: it.product_id,
-        description: it.description,
-        quantity: it.quantity,
-        unit_price: it.unit_price,
-        tax_rate: it.tax_rate,
-        tax_code_id: it.tax_code_id || null,
-        discount_percent: it.discount_percent,
-        account_id: it.account_id,
-        line_total: it.line_total,
-      }))
-
-      const { error: itemsErr } = await supabase.from("vendor_credit_items").insert(rows)
-      if (itemsErr) throw itemsErr
+      if (!newCreditId) throw new Error("لم يُرجع الخادم معرّف الإشعار الدائن")
+      const vc = { id: newCreditId as string }
 
       // إنشاء الإشعار من الخلفية فقط
       try {
