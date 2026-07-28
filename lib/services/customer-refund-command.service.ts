@@ -416,7 +416,17 @@ export class CustomerRefundCommandService {
           .update({ used_amount: credit.used_amount, status: credit.status, updated_at: new Date().toISOString() })
           .eq("id", credit.id)
       }
-      if (paymentId) await this.adminSupabase.from("payments").delete().eq("id", paymentId)
+      // v3.74.864 — مسار تراجُع: لا يُرفع خطأ هنا كى لا يُخفى الخطأ الأصلى،
+      // لكنه **لا يصمت**: فشل الحذف يعنى بقاء دفعةٍ يتيمة بعد إلغاء الاسترداد،
+      // فيُسجَّل بمعرّفها ليكون قابلاً للإصلاح.
+      if (paymentId) {
+        const { error: delError } = await this.adminSupabase.from("payments").delete().eq("id", paymentId)
+        if (delError) {
+          console.error(
+            `REFUND_ROLLBACK_PAYMENT_DELETE_FAILED: payment ${paymentId} survived the rollback — ${delError.message}`
+          )
+        }
+      }
       if (journalEntryId) {
         // v3.74.756 — see rollback-journal-entry.ts: a silent failure here left
         // a refund's journal entry in the ledger after the refund was undone.

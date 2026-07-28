@@ -263,7 +263,11 @@ export async function executePreReceiptRefund(
         return { success: false, error: vErr?.message || "Failed to record void payment" }
       }
 
-      await admin
+      // v3.74.864 — 🔴 كان يُهمل النتيجة. والتعليق تحته يقول «لا يُرحَّل القيد
+      // إلا بعد نجاح كل ما يعتمد عليه» — **وهذا بالضبط ما لم يكن يُتحقَّق منه**.
+      // فلو فشل توسيم الدفعة بالإلغاء صامتاً، رُحِّل القيد على أى حال: استردادٌ
+      // مُقيَّد فى الدفاتر ودفعةٌ أصلية مازالت تبدو سارية. الشرط الآن يُفحص فعلاً.
+      const { error: voidMarkError } = await admin
         .from("payments")
         .update({
           voided_at: new Date().toISOString(),
@@ -274,12 +278,21 @@ export async function executePreReceiptRefund(
             (params.lang === "en" ? "Pre-receipt refund" : "استرداد قبل الاستلام"),
         })
         .eq("id", p.id)
+      if (voidMarkError) {
+        await rollbackJournalEntry(admin as any, jeRow.id, "pre-receipt refund void-mark")
+        return { success: false, error: voidMarkError.message || "Failed to mark payment as voided" }
+      }
 
       // v3.74.252 — post the JE only after every dependent write succeeded.
-      await admin
+      // v3.74.864 — وترحيلُه نفسه يُفحص: قيدٌ بقى مسودةً بينما أُعلن الاسترداد
+      // ناجحاً يعنى مالاً تحرّك خارج الدفاتر.
+      const { error: postError } = await admin
         .from("journal_entries")
         .update({ status: "posted" })
         .eq("id", jeRow.id)
+      if (postError) {
+        return { success: false, error: postError.message || "Failed to post the refund journal entry" }
+      }
 
       paymentReversalJeIds.push(jeRow.id)
     }

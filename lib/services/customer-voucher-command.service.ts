@@ -222,7 +222,15 @@ export class CustomerVoucherCommandService {
         // v3.74.756 — see rollback-journal-entry.ts.
         await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "customer voucher")
       }
-      if (paymentId) await this.adminSupabase.from("payments").delete().eq("id", paymentId)
+      // v3.74.864 — مسار تراجُع: يُسجَّل ولا يُرفع، كى لا يُخفى الخطأ الأصلى.
+      if (paymentId) {
+        const { error: delError } = await this.adminSupabase.from("payments").delete().eq("id", paymentId)
+        if (delError) {
+          console.error(
+            `VOUCHER_ROLLBACK_PAYMENT_DELETE_FAILED: payment ${paymentId} survived the rollback — ${delError.message}`
+          )
+        }
+      }
       if (traceId) {
         await this.adminSupabase.from("financial_operation_trace_links").delete().eq("transaction_id", traceId)
         await this.adminSupabase.from("financial_operation_traces").delete().eq("transaction_id", traceId)

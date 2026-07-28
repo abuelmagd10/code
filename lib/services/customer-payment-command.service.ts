@@ -556,7 +556,20 @@ export class CustomerPaymentCommandService {
     }
 
     const primaryJournalEntryId = mainJournalEntryId || invoicePaymentJournalIds[0] || payment.journal_entry_id || null
-    await this.adminSupabase.from("payments").update({ journal_entry_id: primaryJournalEntryId }).eq("company_id", payment.company_id).eq("id", payment.id)
+    // v3.74.864 — 🔴 كان يُهمل النتيجة. والقيد **مُرحَّلٌ بالفعل** فى هذه
+    // اللحظة، فلو فشل الربط صامتاً بقى فى الدفاتر قيدٌ للمال، ودفعةٌ لا تعرف
+    // قيدها. وهذا أسوأ من فشلٍ معلن: المستخدم يرى نجاحاً، والمراجع يرى تعارضاً.
+    // ⇒ يُرفع الخطأ باسم القيد والدفعة معاً حتى يكون قابلاً للإصلاح يدوياً.
+    const { error: linkError } = await this.adminSupabase
+      .from("payments")
+      .update({ journal_entry_id: primaryJournalEntryId })
+      .eq("company_id", payment.company_id)
+      .eq("id", payment.id)
+    if (linkError) {
+      throw new Error(
+        `PAYMENT_JOURNAL_LINK_FAILED: payment ${payment.id} ← entry ${primaryJournalEntryId} — ${linkError.message}`
+      )
+    }
     const traceId = await this.createTrace({
       companyId: payment.company_id,
       sourceEntity: "payment",

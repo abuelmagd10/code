@@ -1241,11 +1241,18 @@ export class SupplierPaymentCommandService {
       paymentUpdatePayload.purchase_order_id = allocations[0].bills?.purchase_order_id || null
     }
 
-    await this.adminSupabase
+    // v3.74.864 — 🔴 كان يُهمل النتيجة. هذا التحديث يربط الدفعة بفاتورتها
+    // وأمر شرائها؛ ولو فشل صامتاً بقيت **دفعةٌ بلا فاتورة** بينما يُعلَن النجاح.
+    const { error: payUpdateError } = await this.adminSupabase
       .from("payments")
       .update(paymentUpdatePayload)
       .eq("company_id", payment.company_id)
       .eq("id", payment.id)
+    if (payUpdateError) {
+      throw new Error(
+        `PAYMENT_ALLOCATION_UPDATE_FAILED: payment ${payment.id} — ${payUpdateError.message}`
+      )
+    }
 
     const supplierTraceId = await this.createTrace({
       companyId: payment.company_id,
@@ -1718,11 +1725,18 @@ export class SupplierPaymentCommandService {
       }
 
       journalEntryId = entry.entryId
-      await this.adminSupabase
+      // v3.74.864 — 🔴 كان يُهمل النتيجة. والقيد **مُرحَّلٌ بالفعل** هنا، فلو
+      // فشل الربط صامتاً بقى فى الدفاتر قيدٌ للمال ودفعةٌ لا تعرف قيدها.
+      const { error: linkError } = await this.adminSupabase
         .from("payments")
         .update({ journal_entry_id: journalEntryId })
         .eq("company_id", payment.company_id)
         .eq("id", payment.id)
+      if (linkError) {
+        throw new Error(
+          `PAYMENT_JOURNAL_LINK_FAILED: payment ${payment.id} ← entry ${journalEntryId} — ${linkError.message}`
+        )
+      }
     }
 
     const traceId = await this.createTrace({

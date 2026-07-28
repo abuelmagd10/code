@@ -275,7 +275,9 @@ export async function executePreShipmentRefund(
         return { success: false, error: vErr?.message || "Failed to record void payment" }
       }
 
-      await admin
+      // v3.74.864 — 🔴 كان يُهمل النتيجة، والتعليق تحته يشترط نجاح كل ما
+      // يعتمد عليه القيد قبل ترحيله — **وهو شرطٌ لم يكن يُفحص**.
+      const { error: voidMarkError } = await admin
         .from("payments")
         .update({
           voided_at: new Date().toISOString(),
@@ -286,13 +288,22 @@ export async function executePreShipmentRefund(
             (params.lang === "en" ? "Pre-shipment refund" : "استرداد قبل الشحن"),
         })
         .eq("id", p.id)
+      if (voidMarkError) {
+        await rollbackJournalEntry(admin as any, jeRow.id, "pre-shipment refund void-mark")
+        return { success: false, error: voidMarkError.message || "Failed to mark payment as voided" }
+      }
 
       // v3.74.252 — flip the JE to posted only after every dependent
       // write succeeded.
-      await admin
+      // v3.74.864 — والترحيل نفسه يُفحص: قيدٌ بقى مسودةً بينما أُعلن الاسترداد
+      // ناجحاً يعنى مالاً تحرّك خارج الدفاتر.
+      const { error: postError } = await admin
         .from("journal_entries")
         .update({ status: "posted" })
         .eq("id", jeRow.id)
+      if (postError) {
+        return { success: false, error: postError.message || "Failed to post the refund journal entry" }
+      }
 
       paymentReversalJeIds.push(jeRow.id)
     }
