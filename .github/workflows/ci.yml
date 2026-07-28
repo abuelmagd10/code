@@ -328,6 +328,14 @@ jobs:
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
 
+      # 🔴 v3.74.862 — حركات العهدة كانت تُسجَّل بلا تكلفة وبلا رابطٍ لقيدها،
+      # رغم أن الدالة تحسب القيمة وتستعملها فى القيد وتحتفظ بمعرّفه. المعلومة
+      # كانت فى اليد ولم تُسجَّل — وهذا أسوأ من غيابها.
+      - name: Custody movements carry cost and journal link
+        run: npm run check:custody-movements
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 
