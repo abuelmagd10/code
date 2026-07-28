@@ -8,65 +8,90 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.872 - the OLD script is removed, never this one. Three releases in a
+# v3.74.873 - the OLD script is removed, never this one. Three releases in a
 # row a chained string-replace turned this line into self-deletion (861, 865,
 # 866). A replacement whose output can match its own next pattern is not a
 # replacement, it is a loop. This line is now written by hand.
-if (Test-Path -LiteralPath "push_v3.74.871.ps1") { Remove-Item -LiteralPath "push_v3.74.871.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.872.ps1") { Remove-Item -LiteralPath "push_v3.74.872.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.872"') {
-    Write-Host "+ 3.74.872" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.873"') {
+    Write-Host "+ 3.74.873" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.872]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.872]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.873]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.873]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$gone = "supabase/migrations/20260728000005_v3_74_871_vendor_credit_account_resolution.sql"
-$kept = "supabase/migrations/20260728000004_v3_74_871_vendor_credit_journal_via_gate.sql"
+$mig   = "supabase/migrations/20260728000006_v3_74_873_vendor_credit_overpayment_treatment.sql"
+$route = "app/api/supplier-payments/[id]/apply-bill/route.ts"
+$guard = "scripts/check-ledger-landmines.js"
+$selft = "scripts/selftest-ledger-landmines.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           "push_v3.74.872.ps1")
+           $mig, $route, $guard, $selft, "push_v3.74.873.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the superseded migration must be gone from the repo ----------------
-# It described an intermediate state we know is wrong: posting a supplier
-# credit to the CUSTOMER credit account. A fresh database built from these
-# files must never pass through it.
-if (Test-Path -LiteralPath $gone) {
-    Write-Host "X the superseded migration is still on disk" -ForegroundColor Red; exit 1
+# -- 1. overpayment must NOT be posted as a goods return -------------------
+# The old entry was Dr AP / Cr Inventory for every credit note. Correct for a
+# purchase return; for an overpayment it would reduce the company's stock in
+# exchange for money paid twice - an inventory shortfall with no source.
+$m = Get-Content -LiteralPath $mig -Raw
+if ($m -notmatch "supplier_overpayment") {
+    Write-Host "X the migration does not branch on the credit reason" -ForegroundColor Red; exit 1
 }
-$tracked = git ls-files -- $gone
-if ($tracked) {
-    Write-Host "X the superseded migration is still tracked by git" -ForegroundColor Red; exit 1
+if ($m -notmatch "VENDOR_CREDIT_NO_SUPPLIER_ADVANCE_ACCOUNT") {
+    Write-Host "X a missing supplier-advance account would pass silently" -ForegroundColor Red; exit 1
 }
-if (-not (Test-Path -LiteralPath $kept)) {
-    Write-Host "X the merged migration is missing - the wrong file was removed" -ForegroundColor Red; exit 1
+# The advance lookup must be constrained to an ASSET account: the sub_type on
+# that account is literally named vendor_credit_liability in two companies,
+# which is misleading, so account_type is what makes it safe.
+if ($m -notmatch [regex]::Escape("account_type = 'asset'")) {
+    Write-Host "X the advance account is not constrained to an asset" -ForegroundColor Red; exit 1
 }
-Write-Host "+ only the final migration remains, on disk and in git" -ForegroundColor Green
+Write-Host "+ an overpayment is reclassified as a supplier advance, not a goods return" -ForegroundColor Green
+
+# -- 2. the wiring belongs in the route, and must not break the payment ----
+# The payment is valid whether or not the credit note gets created. Anything
+# that is not a condition of correctness does not belong where it can void it.
+$r = Get-Content -LiteralPath $route -Raw
+if ($r -notmatch "syncVendorCredit") {
+    Write-Host "X the overpayment credit is still not wired to the payment path" -ForegroundColor Red; exit 1
+}
+foreach ($n in @("SUPPLIER_OVERPAYMENT_CREDIT_FAILED",
+                 "SUPPLIER_OVERPAYMENT_CREDIT_STALE",
+                 "SUPPLIER_OVERPAYMENT_CREDIT_THREW")) {
+    if ($r -notmatch $n) {
+        Write-Host "X the wiring can fail in silence ($n)" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ wired in the route, reports every failure, voids no payment" -ForegroundColor Green
+
+# -- 3. the last landmine is gone, and the baseline says so ---------------
+$gc = Get-Content -LiteralPath $guard -Raw
+if ($gc -notmatch [regex]::Escape("LEDGER_LANDMINE_BASELINE ?? 0")) {
+    Write-Host "X the landmine baseline was not tightened to 0" -ForegroundColor Red; exit 1
+}
+$sc = Get-Content -LiteralPath $selft -Raw
+if ($sc -notmatch [regex]::Escape('LEDGER_LANDMINE_BASELINE: "0"')) {
+    Write-Host "X the selftest still guards a baseline that no longer exists" -ForegroundColor Red; exit 1
+}
+Write-Host "+ ledger landmines 3 -> 1 -> 0, guard and selftest agree" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git rm -q --cached -- $gone 2>$null
-git add -u -- "push_v3.74.871.ps1" 2>$null
+git add -u -- "push_v3.74.872.ps1" 2>$null
 
-# -- 2. NOTHING may be staged that this release did not ask for ------------
-# This is the defect that produced the release: a previous failed run had
-# staged the intermediate migration, `git add -- $files` only ever ADDS, and
-# the leftover rode along into the commit. The file list described what gets
-# added to the staging area, not what ships from it.
-#
-# Any accumulating step needs a check on what accumulated before it.
-$expected = @($files) + @("push_v3.74.871.ps1", $gone)
+# -- 4. nothing staged beyond this release (the 872 lesson) ---------------
+$expected = @($files) + @("push_v3.74.872.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -237,29 +262,59 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_872.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_873.txt"
     $msgLines = @(
-        'fix(release): v3.74.872 - what a failed run staged stays staged',
+        'feat(ap): v3.74.873 - an overpayment is a supplier advance, not a goods return',
         '',
-        'In 871 I merged two migrations into one and deleted the intermediate from',
-        'disk. It went into the commit anyway.',
+        'The credit-note trigger posted the same entry for every reason: Dr accounts',
+        'payable, Cr inventory. Correct for a purchase return - goods came back, so',
+        'stock falls. Wrong for an overpayment, where nothing came back. Wiring the',
+        'overpayment path to it would have reduced the company inventory in exchange',
+        'for money paid twice: a stock shortfall with no source.',
         '',
-        'An earlier failed run of the same release script had already staged it, and',
-        'git add -- $files only ever ADDS. Nothing unstages what is no longer part of',
-        'the release, so the leftover rode along - visible only in the file list at',
-        'the end of the output, where nobody reads.',
+        'The right treatment is a reclassification. The extra payment already left a',
+        'DEBIT balance sitting in accounts payable - the supplier now owes us. That',
+        'does not belong in a liability account:',
         '',
-        'The repository therefore contained exactly the file I had argued must not',
-        'exist: an intermediate state that posts a supplier credit to the CUSTOMER',
-        'credit account. Anyone rebuilding from these files would have passed',
-        'through it.',
+        '    Dr  Advances to suppliers   the supplier owes us this',
+        '    Cr  Accounts payable        the liability account returns to normal',
         '',
-        'Two fixes, and the second is the one that matters. The file is gone from',
-        'disk and from git. And the release script now asserts that every staged',
-        'path belongs to this release - because $files described what gets added to',
-        'the staging area, not what ships out of it.',
+        'No tax line: an overpayment is neither a purchase nor a reversal of one.',
         '',
-        'Any accumulating step needs a check on what accumulated before it.'
+        'Both branches verified in one rolled-back transaction:',
+        '',
+        '    [return]      2110 Suppliers        Dr 114.00',
+        '                  1140 Inventory                  Cr 100.00',
+        '                  1160 VAT input                  Cr  14.00',
+        '',
+        '    [overpayment] 1180 Supplier advances Dr 250.00',
+        '                  2110 Suppliers                  Cr 250.00',
+        '',
+        'Inventory is untouched in the second one, which is the whole point.',
+        '',
+        'The advance lookup is constrained to account_type = asset, because the',
+        'sub_type on that account is literally named vendor_credit_liability in two',
+        'of the five companies. The name lies; the type does not.',
+        '',
+        'syncVendorCredit is wired in the apply-bill ROUTE, not inside the payment',
+        'command service. The service throws to void a payment, and the credit note',
+        'is not a condition of the payment being correct - the payment is booked',
+        'either way, and without the note the surplus simply stays in payables, less',
+        'classified rather than wrong. Whatever is not a condition of correctness',
+        'does not belong where it can invalidate it. It still does not go quiet:',
+        'three named messages cover failure, a stale open credit, and an unexpected',
+        'throw.',
+        '',
+        'Ledger landmines 3 -> 1 -> 0. The last one was not deleted, it was',
+        'connected. Zero here means every piece of code that touches the ledger is',
+        'reachable from some route, and a new one that is not will break the build.',
+        '',
+        'Also recorded: system log retention stays at 30 days. I had raised that',
+        'question on the premise that no retention policy existed. It does -',
+        'cleanup-system-logs has been running nightly at 02:00, which is why the',
+        'oldest row is exactly 30 days old and the table size is flat. Raising it to',
+        '90 would have TRIPLED the table, not shrunk it. Check cron.job before',
+        'saying anything about a table growing.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -268,5 +323,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.872 pushed - what a failed run staged stays staged" -ForegroundColor Green
+    Write-Host "`n+ v3.74.873 pushed - an overpayment is a supplier advance, not a goods return" -ForegroundColor Green
 }

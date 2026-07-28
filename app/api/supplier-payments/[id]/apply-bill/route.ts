@@ -58,6 +58,57 @@ export async function POST(
       { idempotencyKey, requestHash, uiSurface }
     )
 
+    // ═══════════════════════════════════════════════════════════════════
+    // v3.74.873 — لو صار المورد دائناً بعد هذه الدفعة، يُنشأ له إشعارٌ
+    // تلقائىٌّ يُصنِّف الزيادة كسُلفة لدى المورد.
+    //
+    // ولمَ هنا لا داخل الخدمة؟ لأن الخدمة محروسةٌ بعشرات الشروط وتُرمى
+    // أخطاؤها لتُبطل الدفعة. وهذا **اشتقاقٌ بعد الحقيقة** لا شرطٌ لصحّتها:
+    // الدفعة صحيحةٌ ومُقيَّدة سواء أُنشئ الإشعار أم لا، وغيابه يترك الزيادة
+    // فى «الموردين» — أقلَّ تصنيفاً، لا خطأً.
+    //
+    // ⇒ **لا يُبطل الدفعة، ولا يصمت.** والرصيد يُحسب من الأستاذ العام،
+    //   ويُنشئ الإشعارُ قيدَه بنفسه (مدين سلف الموردين / دائن الموردين)،
+    //   فيعود الرصيد صفراً ولا يتكرّر الإنشاء.
+    if (result?.success !== false) {
+      try {
+        const { data: bill } = await adminSupabase
+          .from("bills")
+          .select("supplier_id")
+          .eq("id", billId)
+          .eq("company_id", context.companyId)
+          .maybeSingle()
+
+        if (bill?.supplier_id) {
+          const { syncVendorCredit } = await import("@/lib/supplier-balance")
+          const credit = await syncVendorCredit(
+            adminSupabase as any,
+            context.companyId,
+            String(bill.supplier_id),
+            billId,
+            "رصيد دائن صافٍ للمورد — زيادة دفع"
+          )
+
+          if (!credit.success) {
+            console.error(
+              `SUPPLIER_OVERPAYMENT_CREDIT_FAILED: payment ${id} bill ${billId} — ${credit.error}`
+            )
+          } else if (credit.amountDiffersFromOpenCredit) {
+            const d = credit.amountDiffersFromOpenCredit
+            console.warn(
+              `SUPPLIER_OVERPAYMENT_CREDIT_STALE: bill ${billId} has open credit ${d.creditId} ` +
+              `at ${d.openAmount} while the ledger now says ${d.calculatedAmount}. ` +
+              `Not restated - its journal entry was posted at the original figure.`
+            )
+          }
+        }
+      } catch (creditErr: any) {
+        console.error(
+          `SUPPLIER_OVERPAYMENT_CREDIT_THREW: payment ${id} bill ${billId} — ${creditErr?.message || creditErr}`
+        )
+      }
+    }
+
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {
     console.error("[SUPPLIER_PAYMENT_APPLY_BILL]", error)

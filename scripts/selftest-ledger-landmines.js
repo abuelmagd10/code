@@ -63,7 +63,10 @@ function runGuard() {
   const r = spawnSync(process.execPath, ["scripts/check-ledger-landmines.js", "--list"], {
     encoding: "utf8",
     cwd: root,
-    env: { ...process.env, LEDGER_LANDMINE_BASELINE: "3" },
+    // v3.74.873 — تبع خط الأساس الحقيقى (٣ ← ١ ← صفر) بعد وصل آخر وحدة.
+    // ولو بقى ٣ لصار الفخّ يقبل عودة لغمين دون أن يسقط — أى **فخٌّ يحرس رقماً
+    // لم يعد قائماً**.
+    env: { ...process.env, LEDGER_LANDMINE_BASELINE: "0" },
   })
   return { failed: r.status !== 0, output: `${r.stdout || ""}${r.stderr || ""}` }
 }
