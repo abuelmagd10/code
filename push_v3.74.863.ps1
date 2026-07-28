@@ -3,83 +3,99 @@ $env:GIT_PAGER = "cat"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-if (Test-Path "push_v3.74.861.ps1") { Remove-Item -LiteralPath "push_v3.74.861.ps1" -Force }
+if (Test-Path "push_v3.74.862.ps1") { Remove-Item -LiteralPath "push_v3.74.862.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.862"') {
-    Write-Host "+ 3.74.862" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.863"') {
+    Write-Host "+ 3.74.863" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.862]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.862]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.863]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.863]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
-$mig   = "supabase/migrations/20260728000001_v3_74_862_custody_movement_cost_and_link.sql"
-$guard = "scripts/check-custody-movements-costed-and-linked.js"
-$self  = "scripts/selftest-custody-movements.js"
+$mig   = "supabase/migrations/20260728000002_v3_74_863_add_missing_updated_at.sql"
+$guard = "scripts/check-phantom-columns.js"
+$self  = "scripts/selftest-phantom-columns.js"
+$ship  = "app/api/invoices/[id]/warehouse-approve-with-shipping/route.ts"
+$curr  = "lib/currency-conversion-system.ts"
 
-$files = @("lib/version.ts", "CHANGELOG.md", $mig, $guard, $self,
+$files = @("lib/version.ts", "CHANGELOG.md", $mig, $guard, $self, $ship, $curr,
            "package.json", ".github/workflows/ci.yml",
-           "docs/HANDOVER_2026-07-24.md", "push_v3.74.862.ps1")
+           "docs/HANDOVER_2026-07-24.md", "push_v3.74.863.ps1")
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.861.ps1" 2>$null
+git add -u -- "push_v3.74.862.ps1" 2>$null
 
 # WARNING -LiteralPath is required: square brackets are wildcards in PowerShell (858).
-foreach ($f in @($mig, $guard, $self)) {
+foreach ($f in @($mig, $guard, $self, $ship, $curr)) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. record what the function already knows -------------------------------
-# Both custody functions compute the value from the FIFO batches and use it in
-# the journal entry, and both keep the entry id in a variable - then write
-# neither into the movement. Information held and not recorded is worse than
-# information absent: it looks like the system does not know.
+# -- 1. the guard must read the LIVE schema, not a stored snapshot ----------
+# The old one compared against supabase/schema/schema.sql, which lags the
+# database after any migration - and its own comment admitted it, telling the
+# reader to verify by hand. A guard that knows it sometimes lies, and is left
+# that way, teaches everyone to ignore it.
+$gd = Get-Content -LiteralPath $guard -Raw
+if ($gd -notmatch "information_schema\.columns") {
+    Write-Host "X the guard does not read the live schema" -ForegroundColor Red; exit 1
+}
+if ($gd -match "schema\.sql") {
+    Write-Host "X the guard still falls back to the stored snapshot" -ForegroundColor Red; exit 1
+}
+# nearest .from only - the gap must not swallow another .from(
+if ($gd -notmatch "\(\?\!\\\.from\\\(\)") {
+    Write-Host "X the guard's window can still cross a .from() boundary (26 false alarms)" -ForegroundColor Red
+    exit 1
+}
+# and it must understand object depth
+if ($gd -notmatch "topLevelKeys") {
+    Write-Host "X the guard does not distinguish top-level keys from nested jsonb keys" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the guard reads live schema, nearest .from only, depth-aware" -ForegroundColor Green
+
+# -- 2. the four real defects must actually be fixed ------------------------
+$shipCode = ((Get-Content -LiteralPath $ship -Raw) -split "`n" | Where-Object { $_ -notmatch "^\s*//" }) -join "`n"
+if ($shipCode -match "error_message:") {
+    Write-Host "X shipments.error_message is still written - that column does not exist" -ForegroundColor Red
+    exit 1
+}
+if ($shipCode -notmatch "last_api_error:") {
+    Write-Host "X the shipment error is no longer recorded anywhere" -ForegroundColor Red; exit 1
+}
+$currCode = ((Get-Content -LiteralPath $curr -Raw) -split "`n" | Where-Object { $_ -notmatch "^\s*//" }) -join "`n"
+$billsBlock = [regex]::Match($currCode, "from\('bills'\)[\s\S]{0,400}?\)")
+if ($billsBlock.Success -and $billsBlock.Value -match "display_paid") {
+    Write-Host "X bills.display_paid is still written - that column does not exist" -ForegroundColor Red
+    exit 1
+}
 $mg = Get-Content -LiteralPath $mig -Raw
-$mgCode = ($mg -split "`n" | Where-Object { $_ -notmatch "^\s*--" }) -join "`n"
-foreach ($need in @("unit_cost, total_cost", "SET journal_entry_id = v_entry")) {
-    if ($mgCode -notmatch [regex]::Escape($need)) {
+foreach ($need in @("commission_plans", "fifo_lot_consumptions", "updated_at = created_at")) {
+    if ($mg -notmatch [regex]::Escape($need)) {
         Write-Host "X the migration is missing '$need'" -ForegroundColor Red; exit 1
     }
 }
-# both functions, not one
-$outCount = ([regex]::Matches($mgCode, "fn_post_booking_custody_out")).Count
-$retCount = ([regex]::Matches($mgCode, "fn_post_booking_custody_return")).Count
-if ($outCount -lt 1 -or $retCount -lt 1) {
-    Write-Host "X the migration must fix BOTH custody legs, out and return" -ForegroundColor Red; exit 1
-}
-# the link must only ever FILL a gap, never overwrite an existing one
-if ($mgCode -notmatch "journal_entry_id IS NULL") {
-    Write-Host "X the link update is not restricted to filling a NULL link" -ForegroundColor Red
-    Write-Host "  Overwriting an existing link would fight prevent_linked_inventory_modification." -ForegroundColor Red
+# the initial value must be created_at, never now(): an untouched row must not
+# claim it was edited on the day of the migration.
+if ($mg -match "SET updated_at = now\(\) WHERE updated_at IS NULL") {
+    Write-Host "X back-fills updated_at with now() - old rows would look edited today" -ForegroundColor Red
     exit 1
 }
-# and history stays untouched
-if ($mgCode -match "UPDATE public\.inventory_transactions\s+SET unit_cost") {
-    Write-Host "X the migration rewrites historical movements - immutable by design" -ForegroundColor Red; exit 1
-}
-Write-Host "+ custody movements record their cost and link, filling gaps only" -ForegroundColor Green
+Write-Host "+ all four real defects are fixed, and history is not back-dated" -ForegroundColor Green
 
-# -- 2. the self-test must not touch data -----------------------------------
-$sf = Get-Content -LiteralPath $self -Raw
-if ($sf -match "INSERT INTO|UPDATE |DELETE FROM") {
-    Write-Host "X the self-test writes to the database - it must not need to" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the self-test proves the guard without touching any data" -ForegroundColor Green
-
-# -- 3. THE GUARD MUST BE SEEN REFUSING -------------------------------------
-Write-Host "Proving the custody-movement guard actually refuses..." -ForegroundColor Cyan
-node scripts/selftest-custody-movements.js
+# -- 3. THE GUARD MUST BE SEEN REFUSING - AND SEEN NOT REFUSING -------------
+# The old tool was not asleep; it was shouting in the wrong place. So a positive
+# probe alone proves nothing: two inverted probes prove the false alarms are gone.
+Write-Host "Proving the phantom-column guard refuses - and no longer cries wolf..." -ForegroundColor Cyan
+node scripts/selftest-phantom-columns.js
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "X the guard was not seen refusing - NOT pushing" -ForegroundColor Red; exit 1
+    Write-Host "X the guard was not seen behaving correctly - NOT pushing" -ForegroundColor Red; exit 1
 }
-
-Write-Host "Checking custody movements carry cost and journal link..." -ForegroundColor Cyan
-node scripts/check-custody-movements-costed-and-linked.js --require-db --list
-if ($LASTEXITCODE -ne 0) { Write-Host "X a custody movement is incomplete" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking purchase movement cost matches the ledger..." -ForegroundColor Cyan
 node scripts/check-movement-cost-matches-ledger.js --require-db
@@ -142,7 +158,7 @@ node scripts/check-hardcoded-account-codes.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X account-code check failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking phantom column writes..." -ForegroundColor Cyan
-node scripts/check-phantom-columns.js | Select-Object -Last 2
+node scripts/check-phantom-columns.js --require-db | Select-Object -Last 2
 if ($LASTEXITCODE -ne 0) { Write-Host "X phantom-column check failed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking no company-reading function is open to anonymous callers..." -ForegroundColor Cyan
@@ -194,7 +210,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.861.ps1" 2>$null
+git add -u -- "push_v3.74.862.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -215,49 +231,73 @@ if (-not $staged) {
 } else {
     $msgPath = Join-Path $env:TEMP "commit_v3_74_859.txt"
     $msgLines = @(
-        'fix(custody): v3.74.862 - the value was in hand and never written down',
+        'fix(guard): v3.74.863 - the guard was lying: 51 reports, four of them real',
         '',
-        'Found while tracing purchase cost in 861. Custody movements - materials',
-        'handed to a technician and returned - are recorded on production with no',
-        'unit_cost, no total_cost, and no journal_entry_id. The two cost columns',
-        'are not merely left null: they are absent from the INSERT column list.',
+        'Starting on the 51 phantom-column writes, I checked the first one before',
+        'fixing anything. It was a false alarm. So was the next. In the end, 41 of',
+        'the 51 were noise, from three separate defects in the tool itself:',
         '',
-        'And the journal entry does exist. It is created a few lines below, and',
-        'its id is already sitting in a variable. Nothing joined the two.',
+        '  26  a window that crosses statement boundaries. It allowed 400 chars',
+        '      between .from(x) and .update({, so it would grab one table and',
+        '      attribute another statement keys to it. Its loudest claim was that',
+        '      accounting period locking writes to company_members. It does not:',
+        '      the code READS company_members, then UPDATES accounting_periods.',
+        '      Perfectly correct code, reported as broken for months.',
         '',
-        'The worst part is that both functions compute the value themselves, from',
-        'the FIFO batches, and then use it in the journal entry - and still do not',
-        'write it into the movement. Information the system holds and does not',
-        'record is worse than information it lacks: it looks like it does not know.',
-        'Open the history of an item that went out on custody and there is no value',
-        'against it, and no way to reach its accounting effect.',
+        '  12  no notion of object depth. last_dispatch_summary: { mode, ... }',
+        '      writes those keys inside one jsonb column; every one was counted',
+        '      as a phantom column.',
         '',
-        'The fix is two columns in an INSERT and one UPDATE. Nothing else changes.',
-        'The sign follows the existing convention - total positive on an outbound',
-        'movement, as production_issue already does.',
+        '   3  compared against a stored schema snapshot that lags the database.',
+        '      The old comment in the file ADMITTED this and told the reader to',
+        '      verify by hand. A tool that knows it sometimes lies, left that way,',
+        '      teaches everyone to ignore it.',
         '',
-        'Verified on the test database, everything rolled back:',
+        'A guard whose output is nine tenths noise is worse than no guard. The',
+        'number stops being read, and the real defect passes inside the noise.',
+        'Same lesson as 859, where a syntactic check produced 21 false alarms and',
+        'was deleted rather than tuned.',
         '',
-        '  filling a NULL link          succeeded - the guard does not block it',
-        '  editing it after it is set   refused   - the protection is intact',
-        '  both functions now write cost and link                        2 of 2',
+        'Rewritten: nearest .from only - the gap may not contain another one - a',
+        'brace-balancing parser that takes top-level keys alone, and columns read',
+        'from the LIVE schema. The parser is unit-tested against the exact shapes',
+        'it used to misread: nested objects, arrays of objects, shorthand, spread,',
+        'and function calls.',
         '',
-        'That distinction is the whole point: we fill a gap, we do not change a',
-        'settled fact. Which is why this does not collide with',
-        'prevent_linked_inventory_modification - the same guard that stopped us',
-        'repairing history in 861, and was right to.',
+        'The four real ones were each a silently dead feature, and all four are',
+        'fixed here:',
         '',
-        'The ten historical movements are therefore left alone. Some are tied to',
-        'posted entries and cannot be edited, by design and by the same principle',
-        'as reverse-never-edit. They stay documented, and the guard starts from',
-        'this migration date so its baseline is a true zero rather than a constant',
-        'that readers learn to ignore.',
+        '  shipments.error_message         approval failing after the carrier had',
+        '                                  already created the shipment left it',
+        '                                  UNMARKED - the whole update was refused,',
+        '                                  so it was never even cancelled.',
+        '                                  The right column already existed:',
+        '                                  last_api_error.',
+        '  bills.display_paid              "reset to original currency" failed for',
+        '                                  supplier bills only, while succeeding',
+        '                                  everywhere else. Key removed - the',
+        '                                  conversion path never sets it for bills.',
+        '  commission_plans.updated_at     editing a commission plan failed',
+        '                                  entirely. Column added.',
+        '  fifo_lot_consumptions.updated_at  the partial reversal on a purchase',
+        '                                  return failed. Column added.',
         '',
-        'The self-test touches no data - it cannot, because the fix makes the',
-        'defect unplantable: cost and link are written in the same call now. So it',
-        'widens the enforcement window until those ten genuinely incomplete rows',
-        'fall inside it and demands the guard fails, then narrows it and demands it',
-        'passes. A probe built out of the truth rather than a fabrication.'
+        'The owner chose to add the columns rather than drop the writes: editing a',
+        'commission plan should record when. The addition is pure - no existing row',
+        'is touched, and the initial value is created_at, never now(), so a row',
+        'that was never edited does not claim it was edited on migration day. A',
+        'trigger keeps it honest, so the field does not depend on every writer',
+        'remembering to set it.',
+        '',
+        'Baseline is therefore zero - not because a ceiling was lowered, but',
+        'because the real debt is gone.',
+        '',
+        'The self-test carries three probes, two of them inverted. The old tool was',
+        'not asleep, it was shouting in the wrong place, so a positive probe alone',
+        'would prove nothing. It plants a genuine phantom write and demands a',
+        'failure; then it plants the two shapes that used to produce false alarms -',
+        'read one table and update another, and keys nested inside jsonb - and',
+        'demands silence.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -266,5 +306,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.862 pushed - custody movements know their own value" -ForegroundColor Green
+    Write-Host "`n+ v3.74.863 pushed - the guard tells the truth, and the truth was four" -ForegroundColor Green
 }

@@ -567,8 +567,13 @@ export async function resetToOriginalCurrency(companyId: string): Promise<Conver
         .update({ display_currency: null, display_total: null, display_subtotal: null, display_paid: null, display_rate: null, exchange_rate_used: 1 })
         .eq('company_id', companyId),
 
+      // v3.74.863 — 🔴 حُذف `display_paid`: لا وجود له على `bills` (وهو موجود
+      // على `invoices` وحدها). فكانت الجملة كلها تُرفض، و**«إعادة الضبط
+      // للعملة الأصلية» تفشل لفواتير الموردين وحدها** بينما تنجح لكل ما عداها
+      // — فتبقى قيم العرض القديمة معلّقة عليها. ولا خسارة فى حذفه: مسار
+      // التحويل أعلاه لا يكتب هذه القيمة للفواتير أصلاً.
       client.from('bills')
-        .update({ display_currency: null, display_total: null, display_subtotal: null, display_paid: null, display_rate: null, exchange_rate_used: 1 })
+        .update({ display_currency: null, display_total: null, display_subtotal: null, display_rate: null, exchange_rate_used: 1 })
         .eq('company_id', companyId),
 
       client.from('payments')

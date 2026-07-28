@@ -1,133 +1,195 @@
 #!/usr/bin/env node
 /**
- * v3.74.830 — لا مسار يكتب عموداً لا وجود له فى الجدول.
- *
- * **الحادثة**: تعديل أمر إنتاج معتمد كان يفشل دائماً بخطأ 500:
+ * check-phantom-columns.js
+ * ---------------------------------------------------------------------------
+ * v3.74.830 — **الحادثة الأصلية**: تعديل أمر إنتاج معتمد كان يفشل دائماً:
  *     Could not find the 'cycle_no' column of
  *     'manufacturing_production_orders' in the schema cache
- * ثلاثة مسارات (أوامر الإنتاج · نسخ قوائم المواد · نسخ المسارات) كانت
- * تكتب `cycle_no` على جداولها — وهو عمود يعيش فى `approval_history` وحده.
- * أى أن دورة «عدّل ⇒ يعود للاعتماد» **لم تعمل ولا مرة** فى المديولات الثلاثة.
+ * ثلاثة مسارات كانت تكتب `cycle_no` على جداولها — وهو عمود يعيش فى
+ * `approval_history` وحده. أى أن دورة «عدّل ⇒ يعود للاعتماد» **لم تعمل ولا
+ * مرة**. ولم يظهر إلا وقت التشغيل، وفقط إذا كان السجل **معتمداً** — أى فى
+ * الحالة الأقل تكراراً أثناء التطوير.
  *
- * لماذا لم يُكتشف؟ لأن الخطأ لا يظهر إلا وقت التشغيل، وفقط إذا كان السجل
- * **معتمداً** — أى فى الحالة الأقل تكراراً أثناء التطوير.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * v3.74.863 — **أُعيدت كتابة الأداة، ولم يُنقَص دَينٌ واحد.**
  *
- * يفحص هذا السكربت كل `.from("<table>").update({...})` فى مسارات الـAPI،
- * ويقارن المفاتيح المكتوبة بأعمدة الجدول كما يعرفها snapshot المخطط
- * (`supabase/schema/schema.sql`) — فيمسك العمود الوهمى قبل أن يمسكه المستخدم.
+ * كانت تُبلّغ عن **٥١** كتابة. وبالتدقيق واحدةً واحدة تبيّن أن الغالبية
+ * الساحقة **إنذاراتٌ كاذبة**، بثلاثة عيوبٍ مستقلة فى الأداة نفسها:
  *
- * ملاحظة: التحليل نصّى ومحافظ — يتجاهل ما لا يستطيع تحليله بثقة بدل
- * إطلاق إنذار كاذب.
+ *  ١) **نافذةٌ تتخطّى حدود الجُملة** (٢٦ إنذاراً): كانت تقبل حتى ٤٠٠ حرفٍ بين
+ *     `.from(x)` و`.update({`، فتلتقط جدولاً وتُلصق به مفاتيح تحديثٍ لجدولٍ
+ *     آخر. مثاله الفاضح: `accounting-period-lock.ts` **يقرأ** `company_members`
+ *     ثم **يُحدِّث** `accounting_periods` — فنُسبت أعمدة القفل إلى جدول
+ *     الأعضاء، وكأن قفل الفترات المحاسبية مكسور. **وهو سليمٌ تماماً.**
+ *
+ *  ٢) **لا تفرّق بين مستويات الكائن** (١٢ إنذاراً من ملفٍ واحد):
+ *     `last_dispatch_summary: { mode, actor_id, … }` مفاتيحُه الداخلية تُكتب
+ *     كلها داخل عمود `jsonb` واحد، فعُدَّت أعمدةً وهمية.
+ *
+ *  ٣) **تقارن بلقطة مخطَّطٍ تتأخر عن القاعدة** (٣ إنذارات): أعمدة
+ *     `management_approved_*` أُضيفت فى ٨١٤ وظلّت تظهر «وهمية». وقد كان
+ *     التعليق القديم فى هذا الملف يعترف بذلك ويطلب من القارئ التحقق يدوياً —
+ *     أى أن الأداة كانت تعلم أنها تكذب أحياناً، ولم يُصلَح السبب.
+ *
+ * ⇒ **وحارسٌ تسعةُ أعشار بلاغاته ضجيج أسوأ من لا حارس**: يُدرّب قارئه على
+ *   تجاهل رقمٍ ثابت، فيمرّ العطب الحقيقى وسط الضجيج دون أن يراه أحد. وهو نفس
+ *   درس ٨٥٩ حين أعطى فحصٌ صرفىٌّ ٢١ إنذاراً كاذباً فحُذف واستُبدل بقياس الأثر.
+ *
+ * **المنهج الجديد:**
+ *   • أقرب `.from(` فعلاً — لا يُسمح بأى `.from(` داخل الفجوة.
+ *   • مُحلِّلٌ يوازن الأقواس فيأخذ **مفاتيح المستوى الأعلى وحدها**.
+ *   • الأعمدة تُقرأ من **القاعدة الحيّة** لا من لقطة قد تتأخر.
+ *
+ * Usage: node scripts/check-phantom-columns.js [--require-db] [--list]
+ * ---------------------------------------------------------------------------
  */
+require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"] })
+
 const fs = require("fs")
 const path = require("path")
 
+const requireDb = process.argv.includes("--require-db")
+const verbose = process.argv.includes("--list")
 const root = path.resolve(__dirname, "..")
-const schemaPath = path.join(root, "supabase", "schema", "schema.sql")
+const url = process.env.PRODUCTION_SUPABASE_DB_URL
 
-if (!fs.existsSync(schemaPath)) {
-  console.log("+ Schema snapshot not found - skipping phantom-column check.")
+/**
+ * خط الأساس — يُشدّ ولا يُرخى.
+ *
+ * السجل الصادق لهذا الرقم:
+ *   ٨٤٦: ٥٦ ← ٥٥   (`customer_credits.remaining_amount`)
+ *   ٨٤٩: ٥٥ ← ٥١   (زوال كود الاشتراك الميت)
+ *   ٨٦٣: أُعيد القياس بأداةٍ سليمة فظهر أن الحقيقى **أربعة** لا ٥١، ثم
+ *        أُصلحت الأربعة جميعاً فى نفس الإصدار ⇒ **صفر**.
+ *        **الأداة هى التى كانت تكذب؛ والدَّين الحقيقى صغيرٌ وقد زال.**
+ */
+const BASELINE = Number(process.env.PHANTOM_COLUMN_BASELINE ?? 0)
+
+if (!url) {
+  const msg = "PRODUCTION_SUPABASE_DB_URL is not set - cannot read the live schema."
+  if (requireDb) { console.error(`X ${msg}`); process.exit(1) }
+  console.log(`! ${msg} Skipping (pass --require-db to make this fatal).`)
   process.exit(0)
 }
 
-// ── 1. أعمدة كل جدول من snapshot المخطط ──────────────────────────────
-const schema = fs.readFileSync(schemaPath, "utf8")
-const tableColumns = new Map()
+let Client
+try { ({ Client } = require("pg")) } catch {
+  console.error("X npm install pg --save-dev"); process.exit(1)
+}
 
-const createRe = /CREATE TABLE (?:IF NOT EXISTS )?(?:"?public"?\.)?"?([a-z0-9_]+)"?\s*\(([\s\S]*?)\n\);/gi
-for (const m of schema.matchAll(createRe)) {
-  const table = m[1]
-  const body = m[2]
-  const cols = new Set()
-  for (const line of body.split("\n")) {
-    const t = line.trim()
-    if (!t || /^(CONSTRAINT|PRIMARY KEY|FOREIGN KEY|UNIQUE|CHECK|EXCLUDE)\b/i.test(t)) continue
-    const cm = t.match(/^"?([a-z0-9_]+)"?\s+/i)
-    if (cm) cols.add(cm[1])
+/**
+ * مفاتيح المستوى الأعلى فى كائنٍ حرفى، بموازنة الأقواس.
+ * `{ a: 1, b: { c: 2 }, d: [ { e: 3 } ] }`  ⇒  a, b, d
+ * ويُتجاهَل النشر `...x` لأنه لا يُسمّى عموداً بعينه.
+ */
+function topLevelKeys(objBody) {
+  const keys = []
+  let depth = 0
+  let expectKey = true
+  let i = 0
+  while (i < objBody.length) {
+    const ch = objBody[i]
+    if (ch === "{" || ch === "[" || ch === "(") { depth++; i++; continue }
+    if (ch === "}" || ch === "]" || ch === ")") { depth--; i++; continue }
+    if (ch === "," && depth === 0) { expectKey = true; i++; continue }
+    if (depth === 0 && expectKey && !/\s/.test(ch)) {
+      const rest = objBody.slice(i)
+      if (rest.startsWith("...")) { expectKey = false; i += 3; continue }
+      const m = rest.match(/^(["'`]?)([A-Za-z_][\w$]*)\1\s*(:|,|$)/)
+      if (m) keys.push(m[2])
+      expectKey = false
+      i += m ? Math.max(m[0].length - 1, 1) : 1
+      continue
+    }
+    i++
   }
-  if (cols.size > 0) tableColumns.set(table, cols)
+  return keys
 }
 
-if (tableColumns.size === 0) {
-  console.log("+ Could not parse any table from the snapshot - skipping.")
-  process.exit(0)
+/** يقصّ الكائن الأول ابتداءً من `{` عند `openIndex`، بموازنة الأقواس. */
+function sliceObject(src, openIndex) {
+  let depth = 0
+  for (let i = openIndex; i < src.length; i++) {
+    const c = src[i]
+    if (c === "{") depth++
+    else if (c === "}") { depth--; if (depth === 0) return src.slice(openIndex + 1, i) }
+  }
+  return null
 }
 
-// ── 2. مسح مسارات الـAPI بحثاً عن كائنات تُكتب على جدول معروف ─────────
-const offenders = []
-
+const files = []
 function walk(dir) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, entry.name)
-    if (entry.isDirectory()) { walk(p); continue }
-    if (!/\.ts$/.test(entry.name)) continue
-    scan(p)
+  if (!fs.existsSync(dir)) return
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) walk(p)
+    else if (/\.ts$/.test(e.name)) files.push(p)
   }
 }
+walk(path.join(root, "app/api"))
+walk(path.join(root, "lib"))
 
-function scan(file) {
-  const src = fs.readFileSync(file, "utf8")
-  // .from("table") ... .update({ ...keys })  — داخل نافذة قريبة
-  const re = /\.from\(\s*["'`]([a-z0-9_]+)["'`]\s*\)([\s\S]{0,400}?)\.update\(\s*\{([\s\S]{0,900}?)\}\s*\)/g
-  for (const m of src.matchAll(re)) {
-    const table = m[1]
-    const cols = tableColumns.get(table)
-    if (!cols) continue
-    const objBody = m[3]
-    // مفاتيح على شكل  key:  فى بداية سطر — نتجاهل التداخل العميق والسبريد
-    for (const km of objBody.matchAll(/(?:^|[\n,{])\s*([a-z][a-z0-9_]*)\s*:/g)) {
-      const key = km[1]
-      if (cols.has(key)) continue
-      // تجاهل الكلمات المفتاحية الشائعة داخل التعبيرات
-      if (["ascending", "count", "returning", "head", "onConflict"].includes(key)) continue
-      offenders.push({ file: path.relative(root, file), table, column: key })
+;(async () => {
+  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
+  await client.connect()
+  const tableColumns = new Map()
+  try {
+    const { rows } = await client.query(
+      `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`
+    )
+    for (const r of rows) {
+      if (!tableColumns.has(r.table_name)) tableColumns.set(r.table_name, new Set())
+      tableColumns.get(r.table_name).add(r.column_name)
+    }
+  } finally { await client.end() }
+
+  const offenders = []
+
+  // ⚠️ الفجوة **لا تحتمل** `.from(` آخر: وإلا نُسبت المفاتيح لجدولٍ سابق —
+  //    وهو العيب الذى أنتج وحده ٢٦ إنذاراً كاذباً.
+  const RE = /\.from\(\s*["'`]([a-z0-9_]+)["'`]\s*\)((?:(?!\.from\()[\s\S]){0,300}?)\.update\(\s*\{/g
+
+  for (const file of files) {
+    const src = fs.readFileSync(file, "utf8")
+    for (const m of src.matchAll(RE)) {
+      const table = m[1]
+      const cols = tableColumns.get(table)
+      if (!cols) continue
+      const openIndex = m.index + m[0].length - 1
+      const body = sliceObject(src, openIndex)
+      if (body === null) continue
+      for (const key of topLevelKeys(body)) {
+        if (cols.has(key)) continue
+        offenders.push({ file: path.relative(root, file).replace(/\\/g, "/"), table, column: key })
+      }
     }
   }
-}
 
-for (const dir of ["app/api", "lib"]) {
-  const abs = path.join(root, dir)
-  if (fs.existsSync(abs)) walk(abs)
-}
-
-// خط أساس — نفس منهج check-unchecked-writes: الدين الموروث يُسجَّل، وأى
-// كتابة **جديدة** لعمود وهمى تكسر البناء فوراً.
-//
-// تنبيه على دقة الأداة: المرجع هو snapshot المخطط، وقد يتأخر عن القاعدة
-// بعد هجرة حديثة (مثال: management_approved_* أُضيفت فى 814 وتظهر هنا
-// زائفةً حتى يُحدَّث الـsnapshot). لذلك الرقم «سقف لا يُتجاوز» لا قائمة
-// أخطاء مؤكدة — والتحقق من كل بند يكون بمقارنته بالقاعدة الحية.
-// ٨٤٦: ٥٦ ← ٥٥ — كتابة `remaining_amount` على `customer_credits` وهى عمود
-// لا وجود له، فكان الإدراج يفشل بالكامل ولا يُسجَّل رصيد دائن صافٍ للعميل قط.
-// ٨٤٩: ٥٥ ← ٥١ — سقطت أربع كتابات مع إزالة نسختَى الاشتراك الميتتين
-// (`companies.max_users/monthly_cost/subscription_plan` وما معها). لم تُصلَح
-// كتابةً كتابةً: زال الكود الذى كان يكتبها أصلاً بعد التأكد أن لا مستورد له
-// ولا مستدعى ولا شاشة، وأن ميزة بديلة صحيحة تعمل مكانه.
-const BASELINE = 51
-
-if (offenders.length === 0) {
-  console.log(`+ No route writes a column its table does not have (${tableColumns.size} tables checked).`)
-  process.exit(0)
-}
-
-console.log(`Found: ${offenders.length}   Baseline: ${BASELINE}`)
-
-if (offenders.length > BASELINE) {
-  const extra = offenders.length - BASELINE
-  console.error(`\nX ${extra} NEW write(s) target a column that does not exist on the table:\n`)
-  for (const o of offenders) {
-    console.error(`    ${o.table}.${o.column}`)
-    console.error(`      ${o.file}`)
+  if (verbose) {
+    for (const o of offenders) console.log(`  - ${o.table}.${o.column}\n      ${o.file}`)
   }
-  console.error("\n  These fail at RUNTIME with a PostgREST schema-cache error, and only")
-  console.error("  on the code path that sets them - often the rarest one.")
-  process.exit(1)
-}
 
-if (offenders.length < BASELINE) {
-  console.log(`\n+ ${BASELINE - offenders.length} fewer than the baseline.`)
-  console.log(`  Lower BASELINE to ${offenders.length} in ${path.basename(__filename)} so the debt cannot return.`)
-} else {
-  console.log(`\n+ No new phantom-column writes. ${offenders.length} pre-existing ones remain - tracked, not approved.`)
-}
-process.exit(0)
+  console.log(`Found: ${offenders.length}   Baseline: ${BASELINE}   (${tableColumns.size} live tables)`)
+
+  if (offenders.length > BASELINE) {
+    console.error(`\nX ${offenders.length - BASELINE} NEW write(s) target a column that does not exist:\n`)
+    for (const o of offenders) console.error(`    ${o.table}.${o.column}\n      ${o.file}`)
+    console.error(
+      "\n  These fail at RUNTIME with a PostgREST schema-cache error, and the WHOLE\n" +
+        "  statement fails - not merely that one column. They surface only on the code\n" +
+        "  path that sets them, which is often the rarest one."
+    )
+    process.exit(1)
+  }
+
+  if (offenders.length < BASELINE) {
+    console.log(`\n+ ${BASELINE - offenders.length} fewer than the baseline.`)
+    console.log(`  Lower BASELINE to ${offenders.length} so the ground won cannot be given back.`)
+    process.exit(0)
+  }
+
+  console.log(`\n+ No new phantom-column writes. ${BASELINE} pre-existing one(s) remain - tracked, not approved.`)
+})().catch((e) => {
+  console.error(`X check-phantom-columns failed: ${e.message}`)
+  process.exit(1)
+})

@@ -336,6 +336,14 @@ jobs:
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
 
+      # 🔴 v3.74.863 — أُعيدت كتابة هذا الحارس: كان يُبلّغ عن ٥١ كتابة، تسعةُ
+      # أعشارها إنذاراتٌ كاذبة (نافذة تتخطّى الجُملة · مفاتيح jsonb متداخلة ·
+      # لقطة مخطَّطٍ متأخرة). صار يقرأ **القاعدة الحيّة** ويوازن الأقواس.
+      - name: No write targets a column that does not exist
+        run: npm run check:phantom-columns
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+
       - name: Run AI governance audit
         run: npm run governance:audit:ci
 

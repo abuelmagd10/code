@@ -330,9 +330,14 @@ export async function POST(
       // shipment (e.g. stock shortage). The Bosta shipment exists; the
       // local approval doesn't. Mark the shipment with the error and
       // bubble up — the caller can show the shortages modal as today.
+      // v3.74.863 — 🔴 كان يكتب `error_message` وهو عمود **لا وجود له** على
+      // `shipments`. والنتيجة أن الجملة كلها تُرفض: فلا يُسجَّل الخطأ، **ولا
+      // تُعلَّم الشحنة ملغاة أصلاً**. أى أن الشحنة تبقى «قائمة» فى النظام
+      // بينما اعتمادها فشل — وهو بالضبط عكس ما أراده هذا السطر.
+      // العمود الصحيح موجود بالفعل: `last_api_error`.
       await admin
         .from("shipments")
-        .update({ status: "cancelled", error_message: svcError?.message || "approval_failed" })
+        .update({ status: "cancelled", last_api_error: svcError?.message || "approval_failed" })
         .eq("id", shipmentRow.id)
 
       if (svcError instanceof SalesInvoiceWarehouseCommandError) {
