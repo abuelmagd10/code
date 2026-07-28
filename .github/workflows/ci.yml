@@ -194,6 +194,16 @@ jobs:
       - name: Verify the lockfile matches package.json
         run: npm run check:lockfile
 
+      # v3.74.867 — اللقطة تطابق القاعدة الحيّة. الحارس القائم
+      # (check-schema-snapshot-fresh) يعترف بأنه لا يرى ما أُضيف للقاعدة
+      # وغاب عن الملف — وهو الاتجاه الذى فقدنا فيه أربعة جداول كاملة.
+      - name: Check the schema snapshot matches the database
+        run: npm run check:schema-snapshot-db
+
+      # ويجب أن يُرى وهو يرفض، وأن يُسمّى ما زُرع له.
+      - name: Prove the snapshot/database guard refuses
+        run: npm run check:schema-snapshot-db:selftest
+
       # v3.74.830 — لا كتابة **جديدة** لعمود لا وجود له فى جدوله. الديون
       # الموروثة على خط أساس (56)، وأى واحدة جديدة تكسر البناء.
       - name: Check for phantom column writes

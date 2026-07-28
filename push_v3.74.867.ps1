@@ -8,131 +8,113 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.866 - the OLD script is removed, never this one. Three releases in a
+# v3.74.867 - the OLD script is removed, never this one. Three releases in a
 # row a chained string-replace turned this line into self-deletion (861, 865,
 # 866). A replacement whose output can match its own next pattern is not a
 # replacement, it is a loop. This line is now written by hand.
-if (Test-Path -LiteralPath "push_v3.74.865.ps1") { Remove-Item -LiteralPath "push_v3.74.865.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.866.ps1") { Remove-Item -LiteralPath "push_v3.74.866.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.866"') {
-    Write-Host "+ 3.74.866" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.867"') {
+    Write-Host "+ 3.74.867" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.866]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.866]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.867]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.867]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$approve = "app/api/journal-entries/[id]/approve/route.ts"
-$reject  = "app/api/journal-entries/[id]/reject/route.ts"
-$inbox   = "app/approvals/page.tsx"
+$snap    = "supabase/schema/schema.sql"
+$guard   = "scripts/check-schema-snapshot-matches-db.js"
+$selft   = "scripts/selftest-schema-snapshot-matches-db.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $approve, $reject, $inbox, "push_v3.74.866.ps1")
+           $snap, $guard, $selft, "package.json", ".github/workflows/ci.yml",
+           "push_v3.74.867.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. rejection must exist, demand a reason, and NOT kill the draft -------
-# Owner decision: rejection returns the entry to its author. The status stays
-# draft, the record lives in the audit trail, the author gets told why.
-$rj = Get-Content -LiteralPath $reject -Raw
-if ($rj -notmatch "reason_required") {
-    Write-Host "X a journal entry can be rejected with no reason" -ForegroundColor Red
-    Write-Host "  The author needs to know what to correct." -ForegroundColor Red
-    exit 1
-}
-if ($rj -cmatch "is_deleted: true" -or $rj -cmatch [regex]::Escape('status: "rejected"')) {
-    Write-Host "X rejection deletes or re-statuses the entry - it must only return it" -ForegroundColor Red
-    exit 1
-}
-if ($rj -notmatch "manual_journal_rejected") {
-    Write-Host "X the rejection leaves no audit record - then it never happened" -ForegroundColor Red
-    exit 1
-}
-if ($rj -notmatch "audit_write_failed") {
-    Write-Host "X the rejection proceeds even if its own audit record failed to write" -ForegroundColor Red
-    Write-Host "  Here the audit row IS the action. If it is lost, the next approver" -ForegroundColor Red
-    Write-Host "  sees an entry that was never rejected, and posts it." -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ rejection returns the draft, demands a reason, and records itself" -ForegroundColor Green
-
-# -- 2. whoever cannot say yes cannot say no -------------------------------
-# If the two matrices ever diverged, someone with no power to approve would
-# gain the power to block.
-$ap = Get-Content -LiteralPath $approve -Raw
-foreach ($needle in @("general_manager", "accountant")) {
-    if ($rj -notmatch $needle) {
-        Write-Host "X the reject matrix does not mirror the approve matrix ($needle)" -ForegroundColor Red
-        exit 1
+# -- 1. the four tables that lived only in production ----------------------
+# One of them, journal_entry_lines_orphan_archive, I created myself in 860 -
+# two days before writing the rule that a new object lives in two places.
+# A rule with no guard is not a rule, it is an intention.
+$sn = Get-Content -LiteralPath $snap -Raw
+foreach ($t in @("casual_workers", "production_labour_payments",
+                 "production_labour_payment_lines", "journal_entry_lines_orphan_archive")) {
+    if ($sn -cnotmatch "CREATE TABLE IF NOT EXISTS public\.$t \(") {
+        Write-Host "X the snapshot still has no $t block" -ForegroundColor Red; exit 1
     }
 }
-if ($rj -notmatch "self_rejection") {
-    Write-Host "X a user can reject his own draft through the inbox" -ForegroundColor Red; exit 1
-}
-if ($ap -notmatch "self_approval") {
-    Write-Host "X the approve route lost its separation of duties" -ForegroundColor Red; exit 1
-}
-Write-Host "+ approve and reject share one matrix, both with separation of duties" -ForegroundColor Green
+Write-Host "+ the four production-only tables are in the snapshot" -ForegroundColor Green
 
-# -- 3. the inbox integration must be complete -----------------------------
-# The approvals page has no central card registry; a type is wired by hand in
-# sixteen places. Forgetting totalPending alone hides the whole section when
-# it is the only pending type.
-$ib = Get-Content -LiteralPath $inbox -Raw
-$wiring = @{
-    "interface"      = "interface PendingJournalEntry"
-    "tab key"        = '|"je"'
-    "role matrix"    = '"misc","je"]'
-    "visible tabs"   = '"misc","je"] as const'
-    "history map"    = 'journal_entry: "je"'
-    "state"          = "setJournalEntries"
-    "tab button"     = 'canShow("je")'
-    "history chip"   = 'canShowHistory("journal_entry")'
-    "card section"   = 'activeTab === "je"'
-    "pending count"  = "+ journalEntries.length"
-    "approve call"   = "/approve"
-    "reject call"    = "/reject"
+# -- 2. the snapshot must not have shrunk ----------------------------------
+# A truncated export that still "succeeds" is worse than a hard failure: it
+# becomes the trusted baseline while under-reporting what production holds.
+$tables   = ([regex]::Matches($sn, "(?m)^CREATE TABLE")).Count
+$policies = ([regex]::Matches($sn, "(?m)^CREATE POLICY")).Count
+$cons     = ([regex]::Matches($sn, "ADD CONSTRAINT")).Count
+Write-Host "  snapshot: $tables tables / $policies policies / $cons constraints" -ForegroundColor DarkGray
+if ($tables -lt 253)   { Write-Host "X table count fell below 253"      -ForegroundColor Red; exit 1 }
+if ($policies -lt 790) { Write-Host "X policy count fell below 790"     -ForegroundColor Red; exit 1 }
+if ($cons -lt 1820)    { Write-Host "X constraint count fell below 1820" -ForegroundColor Red; exit 1 }
+Write-Host "+ the snapshot grew, it did not shrink" -ForegroundColor Green
+
+# -- 3. the guard must compare against the LIVE database -------------------
+# The existing snapshot guard states in its own header that it cannot see a
+# thing ADDED to the database and missing from the file. That is the exact
+# direction in which four whole tables were lost.
+$gc = Get-Content -LiteralPath $guard -Raw
+if ($gc -notmatch "information_schema.columns") {
+    Write-Host "X the new guard does not read the live schema" -ForegroundColor Red; exit 1
 }
-foreach ($k in $wiring.Keys) {
-    if ($ib -notmatch [regex]::Escape($wiring[$k])) {
-        Write-Host "X the approvals inbox is missing its $k wiring" -ForegroundColor Red; exit 1
+if ($gc -notmatch "SCHEMA_SNAPSHOT_PATH") {
+    Write-Host "X the guard cannot be pointed at a temp copy - the selftest would have to edit the real file" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the guard reads the live database and can be redirected safely" -ForegroundColor Green
+
+# -- 4. the selftest must name what it planted -----------------------------
+# Measured only by exit code, a guard can be satisfied by breaking it (865).
+$sc = Get-Content -LiteralPath $selft -Raw
+if ($sc -notmatch "needle") {
+    Write-Host "X the selftest would read a crash as a refusal" -ForegroundColor Red; exit 1
+}
+if ($sc -notmatch "the real snapshot changed during the selftest") {
+    Write-Host "X the selftest does not verify it left the real snapshot untouched" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the selftest names its probes and guarantees it touched nothing" -ForegroundColor Green
+
+# -- 5. wired into npm and CI, not only into this script -------------------
+$pkg = Get-Content -LiteralPath "package.json" -Raw
+$ci  = Get-Content -LiteralPath ".github/workflows/ci.yml" -Raw
+foreach ($pair in @(@($pkg, "package.json"), @($ci, ".github/workflows/ci.yml"))) {
+    if ($pair[0] -notmatch "check:schema-snapshot-db") {
+        Write-Host "X $($pair[1]) does not run the new guard" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ approvals inbox wired in every place a card type needs" -ForegroundColor Green
-
-# -- 4. never offer a button the server will refuse ------------------------
-if ($ib -notmatch "creator_role") {
-    Write-Host "X the card does not read the creator role, so it cannot mirror the matrix" -ForegroundColor Red
-    Write-Host "  Offering a button that returns 403 lies to the user." -ForegroundColor Red
-    exit 1
-}
-if ($ib -notmatch "canDecideJe") {
-    Write-Host "X the decision buttons are not gated" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the card offers only the decision the server will accept" -ForegroundColor Green
-
-# -- 5. a journal entry must not be able to reach handleApprove ------------
-# PendingItem is that function's input type and its endpoint chain ends in a
-# manufacturing fallback. A journal entry reaching it would POST to a
-# material-issue URL, silently.
-if ($ib -cmatch "\|\s*PendingJournalEntry") {
-    Write-Host "X PendingJournalEntry was added to PendingItem" -ForegroundColor Red
-    Write-Host "  handleApprove would then accept it and POST to a material-issue URL." -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ a journal entry cannot reach the manufacturing approve chain" -ForegroundColor Green
+Write-Host "+ the guard runs in npm and in CI, not only here" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.865.ps1" 2>$null
+git add -u -- "push_v3.74.866.ps1" 2>$null
+
+Write-Host "Proving the snapshot/database guard refuses..." -ForegroundColor Cyan
+node scripts/selftest-schema-snapshot-matches-db.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the snapshot guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking the snapshot matches the live database..." -ForegroundColor Cyan
+node scripts/check-schema-snapshot-matches-db.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X the snapshot disagrees with the database" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking the snapshot does not resurrect a dropped function..." -ForegroundColor Cyan
+node scripts/check-schema-snapshot-fresh.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the snapshot still describes something a migration removed" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the phantom-column guard refuses insert AND upsert..." -ForegroundColor Cyan
 node scripts/selftest-phantom-columns.js
@@ -274,54 +256,66 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_866.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_867.txt"
     $msgLines = @(
-        'feat(approvals): v3.74.866 - approvals are requested from the inbox, not the document screen',
+        'fix(schema): v3.74.867 - a rule with no guard is not a rule, it is an intention',
         '',
-        '865 made the manual journal entry creatable for the first time and left',
-        'its cycle half-working: a draft could be created and nobody could approve',
-        'it from the UI. The easy fix was a button on the journal entry screen.',
+        'In 865 I wrote the rule down: a new column lives in two places, the',
+        'database and the snapshot, and both travel in one commit. Then instead of',
+        'assuming I knew how far behind the snapshot was, I measured it.',
         '',
-        'The owner refused that and set a general rule instead: approval is',
-        'requested from the approvals inbox, with its own card and its own record',
-        'card, like every other approval. That is the better answer - an approver',
-        'should not have to chase documents across screens to find what is waiting.',
+        'Seven columns, as expected. And four whole tables that existed only in',
+        'production: casual_workers, production_labour_payments,',
+        'production_labour_payment_lines, and journal_entry_lines_orphan_archive.',
         '',
-        'Rejection needed a decision of its own, because journal_entries has no',
-        '"rejected" status and no reason column. The owner chose: the entry goes',
-        'back to its author. The status stays draft so nobody loses work, the',
-        'rejection and its reason live in the audit trail, and the author is',
-        'notified. No third status was added to the ledger table, because a new',
-        'status there forces every existing report and check to understand it -',
-        'an expensive price for something the audit trail already carries.',
+        'I created that last one myself, by hand, in v3.74.860 - two days before',
+        'writing the rule it breaks. So the rule was already broken, at the scale',
+        'of an entire table, by the person who then wrote it down. A rule with no',
+        'guard is not a rule. It is an intention, and I am the proof.',
         '',
-        'Worth noticing how the releases stack: the audit trail only started',
-        'working yesterday in 865, when its columns turned out to be phantom. That',
-        'fix is what makes this design possible at all.',
+        'A missing table is not a documentation gap. The snapshot carries 794 RLS',
+        'policies, 523 triggers, 1827 constraints and every function grant. A table',
+        'absent from it is a table whose entire security model is absent from the',
+        'repository, and nothing reported it.',
         '',
-        'Whoever cannot say yes cannot say no. The reject route mirrors the approve',
-        'matrix exactly - owner posts directly, a GM entry is decided by the owner,',
-        'an accountant entry by either - with the same absolute separation of',
-        'duties. Had the two matrices diverged, someone with no power to approve',
-        'would have gained the power to block.',
+        'The existing guard says why, in its own header:',
         '',
-        'Two details I want on the record.',
+        '    It cannot detect a function ADDED to the database and missing from',
+        '    the snapshot - that needs a live connection.',
         '',
-        'The card reads the CREATOR role and applies the matrix before rendering,',
-        'so a general manager is never shown an approve button on his own entry -',
-        'he is shown the reason instead. Offering a button that returns 403 lies to',
-        'the user; the UI should mirror the governance, not discover it.',
+        'That sentence has been sitting there since 759, and the breach happened in',
+        'exactly the direction it names. Worth generalising: read every guard header',
+        'for the phrase "does not check X" - that is a map of the next gaps.',
         '',
-        'PendingJournalEntry is deliberately kept OUT of the PendingItem union.',
-        'That union is the input type of handleApprove, whose endpoint chain ends',
-        'in a manufacturing fallback - a journal entry reaching it would silently',
-        'POST to a material-issue URL. Widening a type to accept what must never',
-        'reach it makes the mistake pass the checker instead of stopping it.',
+        'So check-schema-snapshot-matches-db.js compares the file against the live',
+        'database: the set of tables, and each table column names and order, by md5.',
+        'Not types or defaults - the generator writes those and comparing them',
+        'textually produces noise, and a guard whose alarms are mostly noise is',
+        'worse than none (863).',
         '',
-        'The approvals page has no central card registry: a type is wired by hand',
-        'in sixteen places. Forgetting totalPending alone hides the entire section',
-        'whenever it is the only pending type - so the release script checks all',
-        'of them.'
+        'Snapshot fingerprint and live fingerprint now agree exactly:',
+        '03331982d1067e34cd0e634308722e2a.',
+        '',
+        'The regeneration diff is fully accounted for: four tables added, and the',
+        'eleven policy changes are the v3.74.857 lockdown itself - the service_role',
+        'blanket policies and the old pending_companies rules that release replaced.',
+        'No table was dropped and no policy went missing unexplained.',
+        '',
+        'One thing I noticed and chased. Three of the newly-included tables carry',
+        'SELECT policies targeting PUBLIC, which includes anon, and anon does hold',
+        'a SELECT grant on them - the shape 857 was about. My first test showed anon',
+        'seeing zero rows and proved nothing, because the tables are empty: that is',
+        '"nothing to see", not "the policy refused". So I planted a row in each',
+        'inside a rolled-back transaction and ran it again. Planted 1/1/1, anon sees',
+        '0/0/0. The policies scope on auth.uid(), which is null for anon.',
+        '',
+        'Two production check constraints refused my probe rows along the way',
+        '(chk_plp_paid_needs_account, chk_plpl_one_person). Both were right.',
+        '',
+        'The selftest never touches the real 1.5 MB tracked file: it works on a temp',
+        'copy through SCHEMA_SNAPSHOT_PATH and verifies in finally that the original',
+        'is byte-identical. It also requires each positive trap to find its own',
+        'planted name in the output, so a crash cannot be read as a refusal (865).'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -330,5 +324,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.866 pushed - approvals are requested from the inbox, not the document screen" -ForegroundColor Green
+    Write-Host "`n+ v3.74.867 pushed - a rule with no guard is not a rule, it is an intention" -ForegroundColor Green
 }

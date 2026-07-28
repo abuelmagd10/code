@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-07-20T14:36:19.249Z
--- Tables: 249 | Policies: 797 | Triggers: 501 | Constraints: 1795
+-- Generated: 2026-07-28T12:33:23.104Z
+-- Tables: 253 | Policies: 794 | Triggers: 523 | Constraints: 1827
 -- =====================================================================
 
 
@@ -835,6 +835,20 @@ CREATE TABLE IF NOT EXISTS public.capital_contributions (
   original_amount numeric
 );
 
+CREATE TABLE IF NOT EXISTS public.casual_workers (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  company_id uuid NOT NULL,
+  branch_id uuid,
+  name text NOT NULL,
+  phone text,
+  national_id text,
+  is_active boolean DEFAULT true NOT NULL,
+  notes text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS public.chart_of_accounts (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
   company_id uuid NOT NULL,
@@ -949,7 +963,8 @@ CREATE TABLE IF NOT EXISTS public.commission_plans (
   handle_returns text DEFAULT 'auto_reverse'::text,
   description text,
   effective_from date,
-  effective_to date
+  effective_to date,
+  updated_at timestamp with time zone DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS public.commission_rules (
@@ -983,7 +998,8 @@ CREATE TABLE IF NOT EXISTS public.commission_runs (
   approved_at timestamp with time zone,
   posted_at timestamp with time zone,
   paid_at timestamp with time zone,
-  notes text
+  notes text,
+  payroll_run_id uuid
 );
 
 CREATE TABLE IF NOT EXISTS public.companies (
@@ -2007,7 +2023,10 @@ CREATE TABLE IF NOT EXISTS public.expenses (
   last_status_changed_at timestamp with time zone,
   source_ip text,
   device_info text,
-  paid_amount numeric(15,2)
+  paid_amount numeric(15,2),
+  tax_amount numeric(15,2) DEFAULT 0 NOT NULL,
+  tax_rate numeric(6,3) DEFAULT 0 NOT NULL,
+  tax_account_id uuid
 );
 
 CREATE TABLE IF NOT EXISTS public.fifo_cost_lots (
@@ -2044,7 +2063,8 @@ CREATE TABLE IF NOT EXISTS public.fifo_lot_consumptions (
   total_cost numeric NOT NULL,
   consumption_date date DEFAULT CURRENT_DATE NOT NULL,
   notes text,
-  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  updated_at timestamp with time zone DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS public.financial_operation_log (
@@ -2194,7 +2214,11 @@ CREATE TABLE IF NOT EXISTS public.fixed_assets (
   barcode text,
   employee_id uuid,
   location_details text,
-  last_depreciation_date date
+  last_depreciation_date date,
+  acquisition_source text,
+  source_bill_id uuid,
+  acquisition_payment_account_id uuid,
+  acquisition_journal_entry_id uuid
 );
 
 CREATE TABLE IF NOT EXISTS public.global_currencies (
@@ -2766,6 +2790,30 @@ CREATE TABLE IF NOT EXISTS public.journal_entry_lines (
   branch_id uuid
 );
 
+CREATE TABLE IF NOT EXISTS public.journal_entry_lines_orphan_archive (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  journal_entry_id uuid NOT NULL,
+  account_id uuid NOT NULL,
+  debit_amount numeric(15,2) DEFAULT 0,
+  credit_amount numeric(15,2) DEFAULT 0,
+  description text,
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  original_debit numeric(18,2),
+  original_credit numeric(18,2),
+  display_debit numeric(18,2),
+  display_credit numeric(18,2),
+  display_rate numeric(18,6),
+  original_currency character varying(10),
+  exchange_rate_used numeric(18,8) DEFAULT 1,
+  display_currency character varying(10),
+  exchange_rate_id uuid,
+  cost_center_id uuid,
+  branch_id uuid,
+  archived_at timestamp with time zone DEFAULT now() NOT NULL,
+  archived_by text DEFAULT 'v3.74.860'::text NOT NULL,
+  archive_reason text DEFAULT 'سطرٌ بلا قيدٍ أب وبلا حساب — بقايا حذفٍ جماعى سابق. أُرشف بقرار المالك.'::text NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS public.legal_entities (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
   entity_code text NOT NULL,
@@ -2886,7 +2934,10 @@ CREATE TABLE IF NOT EXISTS public.manufacturing_material_issue_approvals (
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL,
   issue_type text DEFAULT 'full'::text,
-  warehouse_approval_notes text
+  warehouse_approval_notes text,
+  management_approved_by uuid,
+  management_approved_at timestamp with time zone,
+  management_approved_notes text
 );
 
 CREATE TABLE IF NOT EXISTS public.manufacturing_product_receive_approvals (
@@ -3082,7 +3133,9 @@ CREATE TABLE IF NOT EXISTS public.manufacturing_work_centers (
   variable_overhead_rate numeric(15,4) DEFAULT 0 NOT NULL,
   fixed_overhead_rate numeric(15,4) DEFAULT 0 NOT NULL,
   cost_rate_uom text DEFAULT 'per_hour'::text NOT NULL,
-  cost_rates_effective_from timestamp with time zone
+  cost_rates_effective_from timestamp with time zone,
+  overhead_absorption_base text DEFAULT 'machine_hours'::text NOT NULL,
+  labour_staffing_model text DEFAULT 'mixed'::text NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.matching_exceptions (
@@ -3534,6 +3587,50 @@ CREATE TABLE IF NOT EXISTS public.product_bundle_items (
   notes text,
   created_by uuid,
   updated_by uuid,
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.production_labour_payment_lines (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  company_id uuid NOT NULL,
+  payment_id uuid NOT NULL,
+  casual_worker_id uuid,
+  employee_id uuid,
+  hours numeric(10,2) DEFAULT 0 NOT NULL,
+  amount numeric(15,2) DEFAULT 0 NOT NULL,
+  notes text,
+  created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.production_labour_payments (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  company_id uuid NOT NULL,
+  branch_id uuid NOT NULL,
+  production_order_id uuid NOT NULL,
+  work_center_id uuid,
+  cost_center_id uuid,
+  payment_no text,
+  period_from date NOT NULL,
+  period_to date NOT NULL,
+  labour_type text NOT NULL,
+  payment_mode text DEFAULT 'paid'::text NOT NULL,
+  payment_account_id uuid,
+  total_amount numeric(15,2) DEFAULT 0 NOT NULL,
+  estimated_amount numeric(15,2) DEFAULT 0 NOT NULL,
+  status text DEFAULT 'draft'::text NOT NULL,
+  notes text,
+  submitted_by uuid,
+  submitted_at timestamp with time zone,
+  approved_by uuid,
+  approved_at timestamp with time zone,
+  rejected_by uuid,
+  rejected_at timestamp with time zone,
+  rejection_reason text,
+  paid_by uuid,
+  paid_at timestamp with time zone,
+  journal_entry_id uuid,
+  created_by uuid,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -4559,7 +4656,9 @@ CREATE TABLE IF NOT EXISTS public.user_bonuses (
   parent_bonus_id uuid,
   sales_return_request_id uuid,
   source text,
-  booking_id uuid
+  booking_id uuid,
+  journal_entry_id uuid,
+  accrued_at timestamp with time zone
 );
 
 CREATE TABLE IF NOT EXISTS public.user_branch_access (
@@ -5046,6 +5145,10 @@ ALTER TABLE public.capital_contributions ADD CONSTRAINT capital_contributions_pk
 ALTER TABLE public.capital_contributions ADD CONSTRAINT capital_contributions_reversal_journal_entry_id_fkey FOREIGN KEY (reversal_journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL;
 ALTER TABLE public.capital_contributions ADD CONSTRAINT capital_contributions_reversed_by_fkey FOREIGN KEY (reversed_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE public.capital_contributions ADD CONSTRAINT capital_contributions_shareholder_id_fkey FOREIGN KEY (shareholder_id) REFERENCES shareholders(id) ON DELETE CASCADE;
+ALTER TABLE public.casual_workers ADD CONSTRAINT casual_workers_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id);
+ALTER TABLE public.casual_workers ADD CONSTRAINT casual_workers_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE public.casual_workers ADD CONSTRAINT casual_workers_pkey PRIMARY KEY (id);
+ALTER TABLE public.casual_workers ADD CONSTRAINT chk_casual_worker_name_not_blank CHECK ((btrim(name) <> ''::text));
 ALTER TABLE public.chart_of_accounts ADD CONSTRAINT chart_of_accounts_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL;
 ALTER TABLE public.chart_of_accounts ADD CONSTRAINT chart_of_accounts_company_id_account_code_key UNIQUE (company_id, account_code);
 ALTER TABLE public.chart_of_accounts ADD CONSTRAINT chart_of_accounts_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
@@ -5100,6 +5203,7 @@ ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_created_by_fke
 ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id);
 ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_paid_by_fkey FOREIGN KEY (paid_by) REFERENCES auth.users(id);
 ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_payment_journal_id_fkey FOREIGN KEY (payment_journal_id) REFERENCES journal_entries(id);
+ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_payroll_run_id_fkey FOREIGN KEY (payroll_run_id) REFERENCES payroll_runs(id) ON DELETE SET NULL;
 ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_pkey PRIMARY KEY (id);
 ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_posted_by_fkey FOREIGN KEY (posted_by) REFERENCES auth.users(id);
 ALTER TABLE public.commission_runs ADD CONSTRAINT commission_runs_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES auth.users(id);
@@ -5469,6 +5573,7 @@ ALTER TABLE public.expenses ADD CONSTRAINT expenses_payment_account_id_fkey FORE
 ALTER TABLE public.expenses ADD CONSTRAINT expenses_pkey PRIMARY KEY (id);
 ALTER TABLE public.expenses ADD CONSTRAINT expenses_rejected_by_fkey FOREIGN KEY (rejected_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE public.expenses ADD CONSTRAINT expenses_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'pending_approval'::character varying, 'approved'::character varying, 'rejected'::character varying, 'paid'::character varying, 'cancelled'::character varying])::text[])));
+ALTER TABLE public.expenses ADD CONSTRAINT expenses_tax_amount_check CHECK (((tax_amount >= (0)::numeric) AND (tax_amount <= amount)));
 ALTER TABLE public.expenses ADD CONSTRAINT expenses_unique_number UNIQUE (company_id, expense_number);
 ALTER TABLE public.expenses ADD CONSTRAINT expenses_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL;
 ALTER TABLE public.fifo_cost_lots ADD CONSTRAINT chk_quantities CHECK (((remaining_quantity >= (0)::numeric) AND (remaining_quantity <= original_quantity)));
@@ -5524,6 +5629,7 @@ ALTER TABLE public.fiscal_year_closings ADD CONSTRAINT fiscal_year_closings_pkey
 ALTER TABLE public.fiscal_year_closings ADD CONSTRAINT fiscal_year_closings_retained_earnings_account_id_fkey FOREIGN KEY (retained_earnings_account_id) REFERENCES chart_of_accounts(id);
 ALTER TABLE public.fiscal_year_closings ADD CONSTRAINT fiscal_year_closings_status_check CHECK ((status = ANY (ARRAY['posted'::text, 'reversed'::text])));
 ALTER TABLE public.fixed_assets ADD CONSTRAINT fixed_assets_accumulated_depreciation_account_id_fkey FOREIGN KEY (accumulated_depreciation_account_id) REFERENCES chart_of_accounts(id) ON DELETE RESTRICT;
+ALTER TABLE public.fixed_assets ADD CONSTRAINT fixed_assets_acquisition_source_check CHECK (((acquisition_source IS NULL) OR (acquisition_source = ANY (ARRAY['bill'::text, 'direct'::text]))));
 ALTER TABLE public.fixed_assets ADD CONSTRAINT fixed_assets_asset_account_id_fkey FOREIGN KEY (asset_account_id) REFERENCES chart_of_accounts(id) ON DELETE RESTRICT;
 ALTER TABLE public.fixed_assets ADD CONSTRAINT fixed_assets_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL;
 ALTER TABLE public.fixed_assets ADD CONSTRAINT fixed_assets_category_id_fkey FOREIGN KEY (category_id) REFERENCES asset_categories(id) ON DELETE RESTRICT;
@@ -5819,7 +5925,7 @@ ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufac
 ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufacturing_material_issue_approvals_production_order_id_fkey FOREIGN KEY (production_order_id) REFERENCES manufacturing_production_orders(id) ON DELETE CASCADE;
 ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufacturing_material_issue_approvals_rejected_by_fkey FOREIGN KEY (rejected_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufacturing_material_issue_approvals_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE RESTRICT;
-ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufacturing_material_issue_approvals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])));
+ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufacturing_material_issue_approvals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'management_approved'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])));
 ALTER TABLE public.manufacturing_material_issue_approvals ADD CONSTRAINT manufacturing_material_issue_approvals_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE RESTRICT;
 ALTER TABLE public.manufacturing_product_receive_approvals ADD CONSTRAINT manufacturing_product_receive_approval_production_order_id_fkey FOREIGN KEY (production_order_id) REFERENCES manufacturing_production_orders(id) ON DELETE CASCADE;
 ALTER TABLE public.manufacturing_product_receive_approvals ADD CONSTRAINT manufacturing_product_receive_approvals_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id) ON DELETE SET NULL;
@@ -5922,6 +6028,8 @@ ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT chk_mfg_work_center
 ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT chk_mfg_work_centers_setup_minutes_nonnegative CHECK ((default_setup_time_minutes >= (0)::numeric));
 ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT chk_mfg_work_centers_status CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'blocked'::text])));
 ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT chk_mfg_work_centers_type CHECK ((work_center_type = ANY (ARRAY['machine'::text, 'production_line'::text, 'labor_group'::text])));
+ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT chk_mwc_labour_staffing_model CHECK ((labour_staffing_model = ANY (ARRAY['casual'::text, 'salaried'::text, 'mixed'::text])));
+ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT chk_mwc_overhead_absorption_base CHECK ((overhead_absorption_base = ANY (ARRAY['machine_hours'::text, 'labour_hours'::text])));
 ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT manufacturing_work_centers_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT;
 ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT manufacturing_work_centers_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE public.manufacturing_work_centers ADD CONSTRAINT manufacturing_work_centers_cost_center_id_fkey FOREIGN KEY (cost_center_id) REFERENCES cost_centers(id) ON DELETE SET NULL;
@@ -6090,6 +6198,7 @@ ALTER TABLE public.payroll_runs ADD CONSTRAINT payroll_runs_pkey PRIMARY KEY (id
 ALTER TABLE public.payslips ADD CONSTRAINT payslips_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE public.payslips ADD CONSTRAINT payslips_payroll_run_id_fkey FOREIGN KEY (payroll_run_id) REFERENCES payroll_runs(id) ON DELETE CASCADE;
 ALTER TABLE public.payslips ADD CONSTRAINT payslips_pkey PRIMARY KEY (id);
+ALTER TABLE public.pending_companies ADD CONSTRAINT pending_companies_email_shape CHECK (((user_email = lower(user_email)) AND (user_email ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'::text)));
 ALTER TABLE public.pending_companies ADD CONSTRAINT pending_companies_pkey PRIMARY KEY (id);
 ALTER TABLE public.pending_companies ADD CONSTRAINT pending_companies_user_email_key UNIQUE (user_email);
 ALTER TABLE public.permission_sharing ADD CONSTRAINT permission_sharing_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE;
@@ -6120,6 +6229,28 @@ ALTER TABLE public.product_bundle_items ADD CONSTRAINT product_bundle_items_comp
 ALTER TABLE public.product_bundle_items ADD CONSTRAINT product_bundle_items_parent_product_id_fkey FOREIGN KEY (parent_product_id) REFERENCES products(id) ON DELETE CASCADE;
 ALTER TABLE public.product_bundle_items ADD CONSTRAINT product_bundle_items_pkey PRIMARY KEY (id);
 ALTER TABLE public.product_bundle_items ADD CONSTRAINT uq_pbi_parent_child UNIQUE (parent_product_id, child_product_id);
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT chk_plpl_amount_not_negative CHECK ((amount >= (0)::numeric));
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT chk_plpl_hours_not_negative CHECK ((hours >= (0)::numeric));
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT chk_plpl_one_person CHECK ((((casual_worker_id IS NOT NULL) AND (employee_id IS NULL)) OR ((casual_worker_id IS NULL) AND (employee_id IS NOT NULL))));
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT production_labour_payment_lines_casual_worker_id_fkey FOREIGN KEY (casual_worker_id) REFERENCES casual_workers(id);
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT production_labour_payment_lines_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT production_labour_payment_lines_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES employees(id);
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT production_labour_payment_lines_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES production_labour_payments(id) ON DELETE CASCADE;
+ALTER TABLE public.production_labour_payment_lines ADD CONSTRAINT production_labour_payment_lines_pkey PRIMARY KEY (id);
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT chk_plp_casual_is_always_paid CHECK ((NOT ((labour_type = 'casual'::text) AND (payment_mode = 'hours_only'::text))));
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT chk_plp_labour_type CHECK ((labour_type = ANY (ARRAY['casual'::text, 'employee'::text])));
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT chk_plp_paid_needs_account CHECK ((((payment_mode = 'paid'::text) AND (payment_account_id IS NOT NULL) AND (total_amount >= (0)::numeric)) OR ((payment_mode = 'hours_only'::text) AND (payment_account_id IS NULL) AND (total_amount = (0)::numeric))));
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT chk_plp_payment_mode CHECK ((payment_mode = ANY (ARRAY['paid'::text, 'hours_only'::text])));
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT chk_plp_period CHECK ((period_to >= period_from));
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT chk_plp_status CHECK ((status = ANY (ARRAY['draft'::text, 'pending_approval'::text, 'approved'::text, 'rejected'::text, 'paid'::text, 'cancelled'::text])));
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id);
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_cost_center_id_fkey FOREIGN KEY (cost_center_id) REFERENCES cost_centers(id);
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id);
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_payment_account_id_fkey FOREIGN KEY (payment_account_id) REFERENCES chart_of_accounts(id);
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_pkey PRIMARY KEY (id);
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_production_order_id_fkey FOREIGN KEY (production_order_id) REFERENCES manufacturing_production_orders(id) ON DELETE RESTRICT;
+ALTER TABLE public.production_labour_payments ADD CONSTRAINT production_labour_payments_work_center_id_fkey FOREIGN KEY (work_center_id) REFERENCES manufacturing_work_centers(id);
 ALTER TABLE public.production_order_issue_events ADD CONSTRAINT chk_po_issue_events_issue_mode CHECK ((issue_mode = 'manual'::text));
 ALTER TABLE public.production_order_issue_events ADD CONSTRAINT production_order_issue_events_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT;
 ALTER TABLE public.production_order_issue_events ADD CONSTRAINT production_order_issue_events_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
@@ -6739,6 +6870,7 @@ CREATE INDEX idx_commission_ledger_credit_note ON public.commission_ledger USING
 CREATE INDEX idx_commission_ledger_run ON public.commission_ledger USING btree (commission_run_id) WHERE (commission_run_id IS NOT NULL);
 CREATE INDEX idx_commission_ledger_status ON public.commission_ledger USING btree (company_id, status);
 CREATE INDEX idx_commission_runs_company ON public.commission_runs USING btree (company_id);
+CREATE INDEX idx_commission_runs_payroll_run ON public.commission_runs USING btree (payroll_run_id) WHERE (payroll_run_id IS NOT NULL);
 CREATE INDEX idx_commission_runs_period ON public.commission_runs USING btree (company_id, period_start, period_end);
 CREATE INDEX idx_commission_runs_status ON public.commission_runs USING btree (company_id, status);
 CREATE INDEX idx_companies_id_user ON public.companies USING btree (id, user_id);
@@ -7018,6 +7150,7 @@ CREATE INDEX idx_journal_entries_company_status_date ON public.journal_entries U
 CREATE INDEX idx_journal_entries_company_type ON public.journal_entries USING btree (company_id, reference_type);
 CREATE INDEX idx_journal_entries_cost_center ON public.journal_entries USING btree (cost_center_id);
 CREATE INDEX idx_journal_entries_cost_center_id ON public.journal_entries USING btree (cost_center_id);
+CREATE INDEX idx_journal_entries_created_by ON public.journal_entries USING btree (company_id, created_by) WHERE (created_by IS NOT NULL);
 CREATE INDEX idx_journal_entries_date ON public.journal_entries USING btree (entry_date);
 CREATE INDEX idx_journal_entries_description ON public.journal_entries USING btree (description);
 CREATE INDEX idx_journal_entries_entry_date ON public.journal_entries USING btree (entry_date);
@@ -7379,7 +7512,12 @@ CREATE INDEX idx_write_offs_company ON public.inventory_write_offs USING btree (
 CREATE INDEX idx_write_offs_company_reason ON public.inventory_write_offs USING btree (company_id, reason);
 CREATE INDEX idx_write_offs_date ON public.inventory_write_offs USING btree (company_id, write_off_date);
 CREATE INDEX idx_write_offs_status ON public.inventory_write_offs USING btree (company_id, status);
+CREATE INDEX ix_casual_workers_company ON public.casual_workers USING btree (company_id, is_active);
 CREATE INDEX ix_discount_approvals_supersedes ON public.discount_approvals USING btree (supersedes_approval_id) WHERE (supersedes_approval_id IS NOT NULL);
+CREATE INDEX ix_plp_branch ON public.production_labour_payments USING btree (company_id, branch_id, status);
+CREATE INDEX ix_plp_company ON public.production_labour_payments USING btree (company_id, status);
+CREATE INDEX ix_plp_order ON public.production_labour_payments USING btree (production_order_id);
+CREATE INDEX ix_plpl_payment ON public.production_labour_payment_lines USING btree (payment_id);
 CREATE INDEX ix_vpcr_company_status ON public.vendor_payment_correction_requests USING btree (company_id, status);
 CREATE INDEX ix_vpcr_original_payment ON public.vendor_payment_correction_requests USING btree (original_payment_id);
 CREATE INDEX ix_vpcr_supplier ON public.vendor_payment_correction_requests USING btree (supplier_id);
@@ -7392,6 +7530,10 @@ CREATE INDEX service_products_company_idx ON public.service_products USING btree
 CREATE INDEX service_products_product_idx ON public.service_products USING btree (product_id);
 CREATE INDEX service_products_service_idx ON public.service_products USING btree (service_id);
 CREATE UNIQUE INDEX uniq_notifications_active_event_key ON public.notifications USING btree (company_id, event_key) WHERE ((event_key IS NOT NULL) AND ((status)::text = 'unread'::text));
+CREATE UNIQUE INDEX uniq_open_sales_return_request_per_invoice ON public.sales_return_requests USING btree (invoice_id) WHERE (status = ANY (ARRAY['pending'::text, 'pending_approval_level_1'::text, 'pending_warehouse_approval'::text, 'approved'::text]));
+CREATE UNIQUE INDEX uq_casual_worker_identity ON public.casual_workers USING btree (company_id, lower(btrim(name)), COALESCE(btrim(phone), ''::text));
+CREATE UNIQUE INDEX uq_plpl_casual ON public.production_labour_payment_lines USING btree (payment_id, casual_worker_id) WHERE (casual_worker_id IS NOT NULL);
+CREATE UNIQUE INDEX uq_plpl_employee ON public.production_labour_payment_lines USING btree (payment_id, employee_id) WHERE (employee_id IS NOT NULL);
 CREATE UNIQUE INDEX uq_rate_limits_identifier_route ON public.api_rate_limits USING btree (identifier, route);
 CREATE UNIQUE INDEX user_bonuses_clawback_idempotency_uniq ON public.user_bonuses USING btree (parent_bonus_id, sales_return_request_id) WHERE ((parent_bonus_id IS NOT NULL) AND (sales_return_request_id IS NOT NULL));
 CREATE INDEX user_bonuses_parent_bonus_id_idx ON public.user_bonuses USING btree (parent_bonus_id);
@@ -7439,6 +7581,7 @@ CREATE TRIGGER trg_bills_auto_set_creator BEFORE INSERT ON public.bills FOR EACH
 CREATE TRIGGER trg_bills_force_reapproval_on_edit BEFORE UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION bills_force_reapproval_on_edit();
 CREATE TRIGGER trg_block_bill_delete_pending BEFORE DELETE ON public.bills FOR EACH ROW EXECUTE FUNCTION block_bill_delete_with_pending();
 CREATE TRIGGER trg_block_bill_immutable_edits BEFORE UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION block_bill_immutable_edits();
+CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION block_manual_adjustment_trg();
 CREATE TRIGGER trg_check_bill_returned_amount BEFORE INSERT OR UPDATE OF returned_amount ON public.bills FOR EACH ROW EXECUTE FUNCTION check_bill_returned_amount();
 CREATE TRIGGER trg_check_bill_shipping_provider_branch BEFORE INSERT OR UPDATE OF shipping_provider_id, branch_id ON public.bills FOR EACH ROW EXECUTE FUNCTION check_shipping_provider_branch();
 CREATE TRIGGER trg_prevent_bill_modification_trigger BEFORE UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION trg_prevent_bill_modification();
@@ -7460,14 +7603,18 @@ CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_
 CREATE TRIGGER trg_branch_shipping_provider_same_company BEFORE INSERT OR UPDATE OF branch_id, shipping_provider_id ON public.branch_shipping_providers FOR EACH ROW EXECUTE FUNCTION check_branch_shipping_provider_same_company();
 CREATE TRIGGER branches_outlet_lifecycle AFTER INSERT OR UPDATE ON public.branches FOR EACH ROW EXECUTE FUNCTION branch_outlet_lifecycle();
 CREATE TRIGGER trg_create_default_cost_center AFTER INSERT ON public.branches FOR EACH ROW EXECUTE FUNCTION create_default_cost_center_for_branch();
+CREATE TRIGGER trg_sync_shareholder_percentages AFTER INSERT OR DELETE OR UPDATE ON public.capital_contributions FOR EACH ROW EXECUTE FUNCTION sync_shareholder_percentages();
 CREATE TRIGGER audit_chart_of_accounts AFTER INSERT OR DELETE OR UPDATE ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_coa_cycle_check BEFORE INSERT OR UPDATE OF parent_id ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION check_account_cycle();
 CREATE TRIGGER trg_coa_protection BEFORE DELETE OR UPDATE ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION prevent_critical_account_changes();
 CREATE TRIGGER trg_validate_normal_balance BEFORE INSERT OR UPDATE ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION fn_validate_normal_balance();
 CREATE TRIGGER trg_update_cogs_transactions_updated_at BEFORE UPDATE ON public.cogs_transactions FOR EACH ROW EXECUTE FUNCTION update_cogs_transactions_updated_at();
 CREATE TRIGGER trg_update_commission_advance_timestamp BEFORE UPDATE ON public.commission_advance_payments FOR EACH ROW EXECUTE FUNCTION update_commission_advance_timestamp();
+CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.commission_plans FOR EACH ROW EXECUTE FUNCTION fn_touch_updated_at();
+CREATE TRIGGER trg_cmr_payroll_link_write_once BEFORE UPDATE OF payroll_run_id ON public.commission_runs FOR EACH ROW EXECUTE FUNCTION cmr_payroll_link_is_write_once();
 CREATE TRIGGER companies_subscription_status_transitions BEFORE UPDATE OF subscription_status ON public.companies FOR EACH ROW EXECUTE FUNCTION companies_subscription_status_transitions_trg();
 CREATE TRIGGER trg_auto_seed_role_permissions_on_company_insert AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION trg_auto_seed_role_permissions();
+CREATE TRIGGER trg_companies_manufacturing_accounts_guard BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION mfg_guard_company_manufacturing_accounts();
 CREATE TRIGGER trg_company_after_insert_seed_accounts AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION trg_seed_company_accounts();
 CREATE TRIGGER trg_company_defaults AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION auto_create_company_defaults();
 CREATE TRIGGER trg_copy_permissions_on_company_create AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION trigger_copy_permissions_on_company_create();
@@ -7550,15 +7697,17 @@ CREATE TRIGGER trg_block_expense_delete BEFORE DELETE ON public.expenses FOR EAC
 CREATE TRIGGER trg_block_expense_immutable_edits BEFORE UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION block_expense_immutable_edits();
 CREATE TRIGGER trg_enforce_branch_isolation_expenses BEFORE INSERT OR UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION enforce_branch_isolation();
 CREATE TRIGGER trg_expense_account_type_guard BEFORE INSERT OR UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION expense_account_type_guard();
-CREATE TRIGGER trg_expense_paid_requires_journal BEFORE UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION expense_paid_requires_journal_guard();
+CREATE TRIGGER trg_expense_paid_requires_journal BEFORE INSERT OR UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION expense_paid_requires_journal_guard();
 CREATE TRIGGER trg_expense_sod_guard BEFORE INSERT OR UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION expense_sod_guard();
 CREATE TRIGGER trg_expenses_auto_paid_on_journal BEFORE INSERT OR UPDATE OF journal_entry_id, status ON public.expenses FOR EACH ROW EXECUTE FUNCTION expenses_mark_paid_when_journal_added();
 CREATE TRIGGER trigger_auto_generate_expense_number BEFORE INSERT ON public.expenses FOR EACH ROW EXECUTE FUNCTION auto_generate_expense_number();
 CREATE TRIGGER fifo_lot_auto_expiry_trg BEFORE INSERT ON public.fifo_cost_lots FOR EACH ROW EXECUTE FUNCTION auto_stamp_lot_expiry();
+CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.fifo_lot_consumptions FOR EACH ROW EXECUTE FUNCTION fn_touch_updated_at();
 CREATE TRIGGER trg_notification_outbox_financial_trace AFTER INSERT ON public.financial_operation_traces FOR EACH ROW EXECUTE FUNCTION notification_outbox_from_financial_trace();
 CREATE TRIGGER trg_notification_outbox_replay_commit_intent AFTER INSERT ON public.financial_replay_commit_intents FOR EACH ROW EXECUTE FUNCTION notification_outbox_from_replay_commit_intent();
 CREATE TRIGGER trg_notification_outbox_replay_execution AFTER INSERT ON public.financial_replay_executions FOR EACH ROW EXECUTE FUNCTION notification_outbox_from_replay_execution();
 CREATE TRIGGER audit_fixed_assets AFTER INSERT OR DELETE OR UPDATE ON public.fixed_assets FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+CREATE TRIGGER trg_asset_activation_requires_capitalisation BEFORE UPDATE OF status ON public.fixed_assets FOR EACH ROW EXECUTE FUNCTION fn_guard_asset_activation_requires_capitalisation();
 CREATE TRIGGER trg_update_asset_book_value BEFORE INSERT OR UPDATE ON public.fixed_assets FOR EACH ROW EXECUTE FUNCTION update_asset_book_value();
 CREATE TRIGGER trg_update_grn_totals AFTER INSERT OR DELETE OR UPDATE ON public.goods_receipt_items FOR EACH ROW EXECUTE FUNCTION update_grn_totals();
 CREATE TRIGGER trg_auto_generate_grn_number BEFORE INSERT ON public.goods_receipts FOR EACH ROW WHEN (((new.grn_number IS NULL) OR (new.grn_number = ''::text))) EXECUTE FUNCTION auto_generate_grn_number();
@@ -7599,6 +7748,7 @@ CREATE TRIGGER trg_prevent_inventory_for_cancelled BEFORE INSERT ON public.inven
 CREATE TRIGGER trg_prevent_inventory_on_draft BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION prevent_inventory_on_draft_invoice();
 CREATE TRIGGER trg_prevent_linked_inv_mod BEFORE DELETE OR UPDATE ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION prevent_linked_inventory_modification();
 CREATE TRIGGER trg_prevent_negative_branch_inventory BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION prevent_negative_branch_inventory();
+CREATE TRIGGER trg_set_purchase_movement_landed_cost BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION fn_set_purchase_movement_landed_cost();
 CREATE TRIGGER trg_sync_product_qty AFTER INSERT OR DELETE OR UPDATE ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION sync_product_quantity_on_hand();
 CREATE TRIGGER trigger_auto_generate_transfer_number BEFORE INSERT ON public.inventory_transfers FOR EACH ROW EXECUTE FUNCTION auto_generate_transfer_number();
 CREATE TRIGGER trg_validate_write_off_items BEFORE INSERT OR UPDATE ON public.inventory_write_off_items FOR EACH ROW EXECUTE FUNCTION validate_write_off_items();
@@ -7627,18 +7777,16 @@ CREATE TRIGGER notif_done_invoice_posted AFTER UPDATE ON public.invoices FOR EAC
 CREATE TRIGGER refunds_cancel_on_invoice_delete BEFORE DELETE ON public.invoices FOR EACH ROW EXECUTE FUNCTION cancel_refund_requests_on_invoice_delete();
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER transactional_document_delete_gate BEFORE DELETE ON public.invoices FOR EACH ROW EXECUTE FUNCTION transactional_document_delete_gate_trg();
-CREATE TRIGGER trg_accrual_invoice AFTER UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION accrual_invoice_accounting();
-CREATE TRIGGER trg_accrual_invoices AFTER UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION accrual_accounting_engine();
 CREATE TRIGGER trg_auto_approve_service_only_invoice AFTER INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_approve_service_only_invoice_trg();
 CREATE TRIGGER trg_auto_branch_invoices BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_set_invoice_branch();
 CREATE TRIGGER trg_auto_create_credit_from_invoice_overpay AFTER INSERT OR UPDATE OF paid_amount, total_amount ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_create_credit_from_invoice_overpay();
 CREATE TRIGGER trg_auto_invoice_status BEFORE UPDATE OF paid_amount ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_update_document_status();
 CREATE TRIGGER trg_block_invoice_delete_pending BEFORE DELETE ON public.invoices FOR EACH ROW EXECUTE FUNCTION block_invoice_delete_with_pending();
 CREATE TRIGGER trg_block_invoice_immutable_edits BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION block_invoice_immutable_edits();
+CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION block_manual_adjustment_trg();
 CREATE TRIGGER trg_check_invoice_shipping_provider_branch BEFORE INSERT OR UPDATE OF shipping_provider_id, branch_id ON public.invoices FOR EACH ROW EXECUTE FUNCTION check_shipping_provider_branch();
 CREATE TRIGGER trg_ensure_invoice_created_by BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION ensure_invoice_created_by();
 CREATE TRIGGER trg_invoice_cancellation_reversal AFTER UPDATE OF status ON public.invoices FOR EACH ROW WHEN (((old.status = 'sent'::text) AND (new.status = 'cancelled'::text))) EXECUTE FUNCTION handle_invoice_cancellation_reversal();
-CREATE TRIGGER trg_invoice_sent_accrual AFTER UPDATE OF status ON public.invoices FOR EACH ROW WHEN (((old.status = 'draft'::text) AND (new.status = 'sent'::text))) EXECUTE FUNCTION handle_invoice_sent_accrual();
 CREATE TRIGGER trg_invoices_auto_set_creator BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_prevent_invoice_closed_period BEFORE INSERT OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION prevent_invoice_in_closed_period();
 CREATE TRIGGER trg_prevent_invoice_edit_after_journal BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION prevent_invoice_edit_after_journal();
@@ -7680,6 +7828,7 @@ CREATE TRIGGER trg_check_journal_balance_delete AFTER DELETE ON public.journal_e
 CREATE TRIGGER trg_check_journal_balance_insert AFTER INSERT ON public.journal_entry_lines FOR EACH ROW EXECUTE FUNCTION check_journal_entry_balance();
 CREATE TRIGGER trg_check_journal_balance_update AFTER UPDATE ON public.journal_entry_lines FOR EACH ROW EXECUTE FUNCTION check_journal_entry_balance();
 CREATE CONSTRAINT TRIGGER trg_enforce_journal_balance AFTER INSERT OR DELETE OR UPDATE ON public.journal_entry_lines DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION enforce_journal_entry_balance();
+CREATE TRIGGER trg_no_root_account_posting BEFORE INSERT ON public.journal_entry_lines FOR EACH ROW EXECUTE FUNCTION fn_guard_no_root_account_posting();
 CREATE TRIGGER trg_period_lock_lines BEFORE INSERT OR DELETE OR UPDATE ON public.journal_entry_lines FOR EACH ROW EXECUTE FUNCTION enforce_period_lock_lines();
 CREATE TRIGGER trg_posted_entry_lines_no_edit BEFORE INSERT OR DELETE OR UPDATE ON public.journal_entry_lines FOR EACH ROW EXECUTE FUNCTION enforce_posted_entry_lines_no_edit();
 CREATE TRIGGER trg_prevent_posted_je_lines_delete BEFORE DELETE ON public.journal_entry_lines FOR EACH ROW EXECUTE FUNCTION prevent_posted_je_lines_deletion();
@@ -7694,6 +7843,9 @@ CREATE TRIGGER trg_manufacturing_bom_line_substitutes_validate_context BEFORE IN
 CREATE TRIGGER trg_manufacturing_bom_lines_parent_editability BEFORE INSERT OR DELETE OR UPDATE ON public.manufacturing_bom_lines FOR EACH ROW EXECUTE FUNCTION mb_guard_bom_line_parent_editability();
 CREATE TRIGGER trg_manufacturing_bom_lines_set_updated_at BEFORE UPDATE ON public.manufacturing_bom_lines FOR EACH ROW EXECUTE FUNCTION mb_set_updated_at();
 CREATE TRIGGER trg_manufacturing_bom_lines_validate_context BEFORE INSERT OR UPDATE ON public.manufacturing_bom_lines FOR EACH ROW EXECUTE FUNCTION mb_trg_validate_bom_line_context();
+CREATE TRIGGER bom_version_branch_manager_notify AFTER INSERT OR UPDATE OF status ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION bom_version_branch_manager_notify_trg();
+CREATE TRIGGER bom_version_notify_approval AFTER INSERT OR UPDATE OF status ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION bom_version_notify_approval_trg();
+CREATE TRIGGER bom_version_notify_decision AFTER UPDATE OF status ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION manufacturing_notify_decision_trg('status', 'قائمة المواد', 'version_no');
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER trg_manufacturing_bom_versions_delete_guard BEFORE DELETE ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION mb_guard_bom_version_deleteability();
 CREATE TRIGGER trg_manufacturing_bom_versions_effective_window_validate BEFORE INSERT OR UPDATE ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION mb_trg_validate_bom_version_effective_window();
@@ -7714,6 +7866,7 @@ CREATE TRIGGER trg_manufacturing_production_order_operations_validate_context BE
 CREATE TRIGGER trg_manufacturing_production_order_operations_write_scope BEFORE INSERT OR DELETE OR UPDATE ON public.manufacturing_production_order_operations FOR EACH ROW EXECUTE FUNCTION mpo_guard_production_order_operation_write_scope();
 CREATE TRIGGER production_order_branch_manager_notify AFTER INSERT OR UPDATE OF approval_status ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION production_order_branch_manager_notify_trg();
 CREATE TRIGGER production_order_notify_approval AFTER INSERT OR UPDATE OF approval_status ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION production_order_notify_approval_trg();
+CREATE TRIGGER production_order_notify_decision AFTER UPDATE OF approval_status ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION manufacturing_notify_decision_trg('approval_status', 'أمر الإنتاج', 'order_no');
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER trg_block_production_order_delete_with_mmia BEFORE DELETE ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION block_production_order_delete_with_mmia();
 CREATE TRIGGER trg_manufacturing_production_orders_approval_guard BEFORE UPDATE ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION mpo_guard_production_order_approval_transition();
@@ -7728,6 +7881,7 @@ CREATE TRIGGER trg_manufacturing_routing_operations_set_updated_at BEFORE UPDATE
 CREATE TRIGGER trg_manufacturing_routing_operations_validate_context BEFORE INSERT OR UPDATE ON public.manufacturing_routing_operations FOR EACH ROW EXECUTE FUNCTION mr_trg_validate_routing_operation_context();
 CREATE TRIGGER routing_version_branch_manager_notify AFTER INSERT OR UPDATE OF approval_status ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION routing_version_branch_manager_notify_trg();
 CREATE TRIGGER routing_version_notify_approval AFTER INSERT OR UPDATE OF approval_status ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION routing_version_notify_approval_trg();
+CREATE TRIGGER routing_version_notify_decision AFTER UPDATE OF approval_status ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION manufacturing_notify_decision_trg('approval_status', 'مسار التصنيع', 'version_no');
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER trg_manufacturing_routing_versions_approval_guard BEFORE UPDATE ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION mr_guard_routing_version_approval_transition();
 CREATE TRIGGER trg_manufacturing_routing_versions_set_updated_at BEFORE UPDATE ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION mr_set_updated_at();
@@ -7739,6 +7893,7 @@ CREATE TRIGGER trg_manufacturing_work_centers_identity_immutable BEFORE UPDATE O
 CREATE TRIGGER trg_manufacturing_work_centers_set_updated_at BEFORE UPDATE ON public.manufacturing_work_centers FOR EACH ROW EXECUTE FUNCTION mwc_set_updated_at();
 CREATE TRIGGER trg_manufacturing_work_centers_status_transition_guard BEFORE UPDATE ON public.manufacturing_work_centers FOR EACH ROW EXECUTE FUNCTION mwc_guard_work_center_status_transition();
 CREATE TRIGGER trg_manufacturing_work_centers_validate_context BEFORE INSERT OR UPDATE ON public.manufacturing_work_centers FOR EACH ROW EXECUTE FUNCTION mwc_trg_validate_work_center_context();
+CREATE TRIGGER trg_work_centre_cost_centre_required BEFORE INSERT OR UPDATE ON public.manufacturing_work_centers FOR EACH ROW EXECUTE FUNCTION mwc_guard_work_centre_cost_centre();
 CREATE TRIGGER trg_mrp_demand_rows_validate_context BEFORE INSERT OR UPDATE ON public.mrp_demand_rows FOR EACH ROW EXECUTE FUNCTION mrp_trg_validate_demand_row_context();
 CREATE TRIGGER trg_mrp_demand_rows_write_scope BEFORE INSERT OR DELETE OR UPDATE ON public.mrp_demand_rows FOR EACH ROW EXECUTE FUNCTION mrp_guard_run_row_write_scope();
 CREATE TRIGGER trg_mrp_net_rows_validate_context BEFORE INSERT OR UPDATE ON public.mrp_net_rows FOR EACH ROW EXECUTE FUNCTION mrp_trg_validate_net_row_context();
@@ -7775,6 +7930,7 @@ CREATE TRIGGER sync_legacy_payment_unallocated_trigger BEFORE INSERT OR UPDATE O
 CREATE TRIGGER trg_auto_create_credit_from_overpayment AFTER INSERT OR UPDATE OF unallocated_amount ON public.payments FOR EACH ROW EXECUTE FUNCTION auto_create_credit_from_overpayment();
 CREATE TRIGGER trg_auto_create_payment_journal_ins AFTER INSERT ON public.payments FOR EACH ROW WHEN (((new.journal_entry_id IS NULL) AND (COALESCE(new.status, 'approved'::text) <> ALL (ARRAY['draft'::text, 'pending_approval'::text, 'rejected'::text])))) EXECUTE FUNCTION auto_create_payment_journal();
 CREATE TRIGGER trg_auto_create_payment_journal_upd AFTER UPDATE OF status ON public.payments FOR EACH ROW WHEN (((new.journal_entry_id IS NULL) AND (new.status = ANY (ARRAY['approved'::text, 'posted'::text, 'paid'::text, 'partially_paid'::text])) AND ((old.status IS NULL) OR (old.status <> ALL (ARRAY['approved'::text, 'posted'::text, 'paid'::text, 'partially_paid'::text]))))) EXECUTE FUNCTION auto_create_payment_journal();
+CREATE TRIGGER trg_payment_requires_revenue_je BEFORE INSERT OR UPDATE OF invoice_id ON public.payments FOR EACH ROW EXECUTE FUNCTION payment_requires_revenue_je_trg();
 CREATE TRIGGER trg_payments_auto_set_creator BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_payments_autolink BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION auto_link_payment_to_journal();
 CREATE TRIGGER trg_payments_bills_delete AFTER DELETE ON public.payments FOR EACH ROW EXECUTE FUNCTION recalc_bill_on_payment_change();
@@ -7791,6 +7947,8 @@ CREATE TRIGGER trg_reopen_advances_on_payroll_delete BEFORE DELETE ON public.pay
 CREATE TRIGGER bdl_trg_company_match BEFORE INSERT OR UPDATE ON public.product_bundle_items FOR EACH ROW EXECUTE FUNCTION bdl_validate_company_match();
 CREATE TRIGGER bdl_trg_no_recursion BEFORE INSERT OR UPDATE ON public.product_bundle_items FOR EACH ROW EXECUTE FUNCTION bdl_no_recursion();
 CREATE TRIGGER bdl_trg_set_updated_at BEFORE UPDATE ON public.product_bundle_items FOR EACH ROW EXECUTE FUNCTION bdl_set_updated_at();
+CREATE TRIGGER trg_plpl_no_cash_to_salaried AFTER INSERT OR UPDATE ON public.production_labour_payment_lines FOR EACH ROW EXECUTE FUNCTION plw_assert_no_cash_to_salaried_employee();
+CREATE TRIGGER trg_plp_no_cash_to_salaried AFTER UPDATE OF payment_mode ON public.production_labour_payments FOR EACH ROW EXECUTE FUNCTION plw_assert_no_cash_to_salaried_employee();
 CREATE TRIGGER trg_production_order_issue_events_immutability BEFORE DELETE OR UPDATE ON public.production_order_issue_events FOR EACH ROW EXECUTE FUNCTION mpoe_guard_issue_event_immutability();
 CREATE TRIGGER trg_production_order_issue_events_insert_guard BEFORE INSERT ON public.production_order_issue_events FOR EACH ROW EXECUTE FUNCTION mpoe_guard_issue_event_insert();
 CREATE TRIGGER trg_production_order_issue_events_validate_context BEFORE INSERT ON public.production_order_issue_events FOR EACH ROW EXECUTE FUNCTION mpoe_trg_validate_issue_event_context();
@@ -7798,6 +7956,7 @@ CREATE TRIGGER trg_production_issue_post_je AFTER INSERT ON public.production_or
 CREATE TRIGGER trg_production_order_issue_lines_immutability BEFORE DELETE OR UPDATE ON public.production_order_issue_lines FOR EACH ROW EXECUTE FUNCTION mpoe_guard_issue_line_immutability();
 CREATE TRIGGER trg_production_order_issue_lines_insert_guard BEFORE INSERT ON public.production_order_issue_lines FOR EACH ROW EXECUTE FUNCTION mpoe_guard_issue_line_insert();
 CREATE TRIGGER trg_production_order_issue_lines_validate_context BEFORE INSERT ON public.production_order_issue_lines FOR EACH ROW EXECUTE FUNCTION mpoe_trg_validate_issue_line_context();
+CREATE TRIGGER trg_refresh_material_requirement_issue_tracking AFTER INSERT ON public.production_order_issue_lines FOR EACH ROW EXECUTE FUNCTION refresh_material_requirement_issue_tracking();
 CREATE TRIGGER trg_production_order_material_requirements_immutability BEFORE DELETE OR UPDATE ON public.production_order_material_requirements FOR EACH ROW EXECUTE FUNCTION mpoe_guard_material_requirement_immutability();
 CREATE TRIGGER trg_production_order_material_requirements_insert_guard BEFORE INSERT ON public.production_order_material_requirements FOR EACH ROW EXECUTE FUNCTION mpoe_guard_material_requirement_insert();
 CREATE TRIGGER trg_production_order_material_requirements_validate_context BEFORE INSERT ON public.production_order_material_requirements FOR EACH ROW EXECUTE FUNCTION mpoe_trg_validate_material_requirement_context();
@@ -7807,12 +7966,12 @@ CREATE TRIGGER trg_production_order_receipt_events_validate_context BEFORE INSER
 CREATE TRIGGER trg_production_order_receipt_lines_immutability BEFORE DELETE OR UPDATE ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION mpoe_guard_receipt_line_immutability();
 CREATE TRIGGER trg_production_order_receipt_lines_insert_guard BEFORE INSERT ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION mpoe_guard_receipt_line_insert();
 CREATE TRIGGER trg_production_order_receipt_lines_validate_context BEFORE INSERT ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION mpoe_trg_validate_receipt_line_context();
-CREATE TRIGGER trg_production_receipt_post_je AFTER INSERT ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION post_production_receipt_journal_entry();
 CREATE TRIGGER audit_products AFTER INSERT OR DELETE OR UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_products_price_changes AFTER UPDATE ON public.products FOR EACH ROW WHEN (((old.unit_price IS DISTINCT FROM new.unit_price) OR (old.cost_price IS DISTINCT FROM new.cost_price))) EXECUTE FUNCTION audit_price_changes();
 CREATE TRIGGER svc_trg_sync_from_product AFTER UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION svc_sync_from_product();
 CREATE TRIGGER trg_auto_generate_product_sku BEFORE INSERT ON public.products FOR EACH ROW EXECUTE FUNCTION auto_generate_product_sku();
 CREATE TRIGGER trg_check_inventory_sync_products AFTER UPDATE ON public.products FOR EACH ROW WHEN (((old.quantity_on_hand <> new.quantity_on_hand) OR (old.cost_price <> new.cost_price))) EXECUTE FUNCTION check_inventory_balance_sync();
+CREATE TRIGGER trg_product_accounts_not_root BEFORE INSERT OR UPDATE OF income_account_id, expense_account_id ON public.products FOR EACH ROW EXECUTE FUNCTION fn_guard_product_accounts_not_root();
 CREATE TRIGGER ensure_po_isolation BEFORE INSERT OR UPDATE ON public.purchase_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER ensure_po_item_branch_isolation BEFORE INSERT OR UPDATE ON public.purchase_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER po_item_protect_approved BEFORE INSERT OR DELETE OR UPDATE ON public.purchase_order_items FOR EACH ROW EXECUTE FUNCTION po_item_protect_approved_trg();
@@ -7825,6 +7984,7 @@ CREATE TRIGGER po_protect_approved BEFORE UPDATE ON public.purchase_orders FOR E
 CREATE TRIGGER po_request_discount_approval AFTER INSERT OR UPDATE OF discount_value, discount_type, status ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION po_request_discount_approval_trg();
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER transactional_document_delete_gate BEFORE DELETE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION transactional_document_delete_gate_trg();
+CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION block_manual_adjustment_trg();
 CREATE TRIGGER trg_purchase_orders_auto_set_creator BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_sync_purchase_order_to_bill AFTER UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION sync_purchase_order_to_bill_safe();
 CREATE TRIGGER trigger_auto_generate_po_number BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION auto_generate_po_number();
@@ -7846,6 +8006,7 @@ CREATE CONSTRAINT TRIGGER trg_recurring_template_balance AFTER INSERT OR DELETE 
 CREATE TRIGGER ensure_so_isolation BEFORE INSERT OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER ensure_so_item_branch_isolation BEFORE INSERT OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER so_item_request_discount_approval AFTER INSERT OR DELETE OR UPDATE OF quantity, unit_price, discount_percent ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION so_item_evaluate_discount_trg();
+CREATE TRIGGER trg_so_items_mirror_to_invoice AFTER INSERT OR DELETE OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION so_items_mirror_to_invoice_trg();
 CREATE TRIGGER audit_sales_orders AFTER INSERT OR DELETE OR UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER enforce_governance_sales_orders BEFORE INSERT OR UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION check_governance_scope();
 CREATE TRIGGER so_branch_manager_notify AFTER INSERT OR UPDATE OF status ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION so_branch_manager_notify_trg();
@@ -7854,6 +8015,7 @@ CREATE TRIGGER so_request_discount_approval AFTER INSERT OR UPDATE OF discount_v
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER transactional_document_delete_gate BEFORE DELETE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION transactional_document_delete_gate_trg();
 CREATE TRIGGER trg_auto_branch_sales_orders BEFORE INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION auto_set_sales_order_branch();
+CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION block_manual_adjustment_trg();
 CREATE TRIGGER trg_check_sales_order_shipping_provider_branch BEFORE INSERT OR UPDATE OF shipping_provider_id, branch_id ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION check_shipping_provider_branch();
 CREATE TRIGGER trg_ensure_sales_order_created_by BEFORE INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION ensure_sales_order_created_by();
 CREATE TRIGGER trg_sales_orders_auto_set_creator BEFORE INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
@@ -7880,6 +8042,7 @@ CREATE TRIGGER svc_trg_validate_product_catalog BEFORE INSERT OR UPDATE OF produ
 CREATE TRIGGER trg_services_guard_code BEFORE UPDATE ON public.services FOR EACH ROW WHEN ((new.service_code IS DISTINCT FROM old.service_code)) EXECUTE FUNCTION svc_guard_service_code_immutable();
 CREATE TRIGGER trg_services_set_updated_at BEFORE UPDATE ON public.services FOR EACH ROW EXECUTE FUNCTION svc_set_updated_at();
 CREATE TRIGGER audit_shareholders AFTER INSERT OR DELETE OR UPDATE ON public.shareholders FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+CREATE TRIGGER trg_provision_shareholder_accounts AFTER INSERT ON public.shareholders FOR EACH ROW EXECUTE FUNCTION provision_shareholder_accounts();
 CREATE TRIGGER shipping_providers_protect_outlets BEFORE DELETE ON public.shipping_providers FOR EACH ROW EXECUTE FUNCTION protect_branch_outlets();
 CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION update_subscriptions_updated_at();
 CREATE TRIGGER supplier_debit_credits_updated_at BEFORE UPDATE ON public.supplier_debit_credits FOR EACH ROW EXECUTE FUNCTION update_supplier_debit_credits_updated_at();
@@ -7897,6 +8060,7 @@ CREATE TRIGGER ensure_vc_item_branch_isolation BEFORE INSERT OR UPDATE ON public
 CREATE TRIGGER trg_auto_inventory_vendor_credit_item AFTER INSERT ON public.vendor_credit_items FOR EACH ROW EXECUTE FUNCTION auto_inventory_for_vendor_credit();
 CREATE TRIGGER audit_vendor_credits AFTER INSERT OR DELETE OR UPDATE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_auto_journal_vendor_credit BEFORE INSERT ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION auto_journal_for_vendor_credit();
+CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION block_manual_adjustment_trg();
 CREATE TRIGGER trg_fill_vendor_credit_fx BEFORE INSERT ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION fill_vendor_credit_fx_from_source();
 CREATE TRIGGER trg_update_vendor_credit_status BEFORE INSERT OR UPDATE OF applied_amount ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION update_vendor_credit_status();
 CREATE TRIGGER trigger_prevent_vendor_credit_deletion BEFORE DELETE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION prevent_vendor_credit_deletion();
@@ -7951,6 +8115,7 @@ ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budget_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.capital_contributions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.casual_workers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chart_of_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chart_of_accounts_template ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cogs_transactions ENABLE ROW LEVEL SECURITY;
@@ -8053,6 +8218,7 @@ ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jobs_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.journal_entry_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_entry_lines_orphan_archive ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.legal_entities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lot_number_counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.manufacturing_bom_line_substitutes ENABLE ROW LEVEL SECURITY;
@@ -8092,6 +8258,8 @@ ALTER TABLE public.permission_sharing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.permission_transfers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_bundle_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.production_labour_payment_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.production_labour_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_order_issue_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_order_issue_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_order_material_requirements ENABLE ROW LEVEL SECURITY;
@@ -8213,11 +8381,9 @@ CREATE POLICY ai_tool_audit_select_reviewer ON public.ai_tool_audit AS PERMISSIV
 CREATE POLICY ai_tool_audit_select_self ON public.ai_tool_audit AS PERMISSIVE FOR SELECT TO public USING (((user_id = auth.uid()) AND (company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid())))));
-CREATE POLICY rate_limits_service_role ON public.api_rate_limits AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY app_events_company_insert ON public.app_events AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
 CREATE POLICY app_events_company_select ON public.app_events AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
 CREATE POLICY app_events_no_update ON public.app_events AS PERMISSIVE FOR UPDATE TO public USING (false);
-CREATE POLICY app_events_service_role ON public.app_events AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY approval_history_insert ON public.approval_history AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY approval_history_select ON public.approval_history AS PERMISSIVE FOR SELECT TO authenticated USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY "Users can view approval requests for their company" ON public.approval_requests AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
@@ -8288,7 +8454,7 @@ CREATE POLICY "Manager Read Shifts" ON public.attendance_shifts AS PERMISSIVE FO
 CREATE POLICY audit_logs_delete ON public.audit_logs AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = audit_logs.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = 'owner'::text)))));
-CREATE POLICY audit_logs_insert ON public.audit_logs AS PERMISSIVE FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY audit_logs_insert ON public.audit_logs AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (fn_user_company_access(company_id));
 CREATE POLICY audit_logs_no_update ON public.audit_logs AS PERMISSIVE FOR UPDATE TO public USING (false);
 CREATE POLICY audit_logs_select ON public.audit_logs AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
@@ -8481,6 +8647,9 @@ CREATE POLICY capital_contributions_owner_select ON public.capital_contributions
   WHERE (companies.user_id = auth.uid()))));
 CREATE POLICY capital_contributions_select ON public.capital_contributions AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY capital_contributions_update ON public.capital_contributions AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
+CREATE POLICY casual_workers_select ON public.casual_workers AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT cm.company_id
+   FROM company_members cm
+  WHERE (cm.user_id = auth.uid()))));
 CREATE POLICY chart_accounts_owner_dml ON public.chart_of_accounts AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT companies.id
@@ -9330,7 +9499,6 @@ CREATE POLICY invoices_update_branch_isolation ON public.invoices AS PERMISSIVE 
 CREATE POLICY jobs_queue_company_select ON public.jobs_queue AS PERMISSIVE FOR SELECT TO public USING (((company_id IS NULL) OR (company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids))));
 CREATE POLICY jobs_queue_no_user_insert ON public.jobs_queue AS PERMISSIVE FOR INSERT TO public WITH CHECK (false);
 CREATE POLICY jobs_queue_no_user_update ON public.jobs_queue AS PERMISSIVE FOR UPDATE TO public USING (false);
-CREATE POLICY service_role_full_access_jobs ON public.jobs_queue AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY journal_entries_delete ON public.journal_entries AS PERMISSIVE FOR DELETE TO public USING (can_delete_data(company_id));
 CREATE POLICY journal_entries_delete_branch_isolation ON public.journal_entries AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY journal_entries_insert ON public.journal_entries AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
@@ -9600,7 +9768,6 @@ UNION
  SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY service_role_can_insert_escalations ON public.notification_escalations AS PERMISSIVE FOR INSERT TO public WITH CHECK (true);
 CREATE POLICY notification_outbox_events_select ON public.notification_outbox_events AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = notification_outbox_events.tenant_id) AND (cm.user_id = auth.uid())))));
@@ -9630,7 +9797,8 @@ CREATE POLICY "Users can view their own notifications" ON public.notifications A
    FROM company_members cm2
   WHERE ((cm2.user_id = auth.uid()) AND (cm2.company_id = notifications.company_id)))))));
 CREATE POLICY onboarding_company_read ON public.onboarding_progress AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
-CREATE POLICY onboarding_service_write ON public.onboarding_progress AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
+CREATE POLICY onboarding_member_insert ON public.onboarding_progress AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (fn_user_company_access(company_id));
+CREATE POLICY onboarding_member_update ON public.onboarding_progress AS PERMISSIVE FOR UPDATE TO authenticated USING (fn_user_company_access(company_id)) WITH CHECK (fn_user_company_access(company_id));
 CREATE POLICY page_guides_admin_write ON public.page_guides AS PERMISSIVE FOR ALL TO public USING ((auth.role() = 'service_role'::text));
 CREATE POLICY page_guides_select_authenticated ON public.page_guides AS PERMISSIVE FOR SELECT TO public USING ((auth.role() = 'authenticated'::text));
 CREATE POLICY payment_alloc_delete ON public.payment_allocations AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
@@ -9684,9 +9852,9 @@ CREATE POLICY payslips_delete ON public.payslips AS PERMISSIVE FOR DELETE TO pub
 CREATE POLICY payslips_insert ON public.payslips AS PERMISSIVE FOR INSERT TO public WITH CHECK (is_owner_or_admin(company_id));
 CREATE POLICY payslips_select ON public.payslips AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY payslips_update ON public.payslips AS PERMISSIVE FOR UPDATE TO public USING (is_owner_or_admin(company_id));
-CREATE POLICY "Anyone can insert pending company" ON public.pending_companies AS PERMISSIVE FOR INSERT TO public WITH CHECK (true);
-CREATE POLICY "Users can delete their pending company" ON public.pending_companies AS PERMISSIVE FOR DELETE TO public USING (true);
-CREATE POLICY "Users can read their pending company" ON public.pending_companies AS PERMISSIVE FOR SELECT TO public USING (true);
+CREATE POLICY pending_companies_owner_delete ON public.pending_companies AS PERMISSIVE FOR DELETE TO authenticated USING ((user_email = lower(COALESCE((auth.jwt() ->> 'email'::text), ''::text))));
+CREATE POLICY pending_companies_owner_select ON public.pending_companies AS PERMISSIVE FOR SELECT TO authenticated USING ((user_email = lower(COALESCE((auth.jwt() ->> 'email'::text), ''::text))));
+CREATE POLICY pending_companies_signup_insert ON public.pending_companies AS PERMISSIVE FOR INSERT TO anon, authenticated WITH CHECK (true);
 CREATE POLICY permission_sharing_delete ON public.permission_sharing AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = permission_sharing.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -9735,6 +9903,16 @@ CREATE POLICY pbi_owner_select ON public.product_bundle_items AS PERMISSIVE FOR 
   WHERE (companies.user_id = auth.uid()))));
 CREATE POLICY pbi_select ON public.product_bundle_items AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY pbi_update ON public.product_bundle_items AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id)) WITH CHECK (can_modify_data(company_id));
+CREATE POLICY plpl_select ON public.production_labour_payment_lines AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM production_labour_payments p
+  WHERE (p.id = production_labour_payment_lines.payment_id))));
+CREATE POLICY plp_select ON public.production_labour_payments AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT cm.company_id
+   FROM company_members cm
+  WHERE (cm.user_id = auth.uid()))) AND ((EXISTS ( SELECT 1
+   FROM companies c
+  WHERE ((c.id = production_labour_payments.company_id) AND (c.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM company_members cm
+  WHERE ((cm.company_id = production_labour_payments.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text])) OR (cm.branch_id = production_labour_payments.branch_id))))))));
 CREATE POLICY production_order_issue_events_delete_branch_isolation ON public.production_order_issue_events AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id) AND (EXISTS ( SELECT 1
    FROM manufacturing_production_orders o
   WHERE ((o.id = production_order_issue_events.production_order_id) AND (o.company_id = production_order_issue_events.company_id) AND (o.branch_id = production_order_issue_events.branch_id))))));
@@ -10308,7 +10486,6 @@ CREATE POLICY webhook_logs_select ON public.shipping_webhook_logs AS PERMISSIVE 
   WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY plans_public_read ON public.subscription_plans AS PERMISSIVE FOR SELECT TO public USING (true);
 CREATE POLICY subscriptions_company_read ON public.subscriptions AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
-CREATE POLICY subscriptions_service_write ON public.subscriptions AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY supplier_debit_credits_delete ON public.supplier_debit_credits AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = supplier_debit_credits.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -10340,7 +10517,6 @@ CREATE POLICY system_events_select ON public.system_events AS PERMISSIVE FOR SEL
 CREATE POLICY integrity_alerts_company_access ON public.system_integrity_alerts AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = system_integrity_alerts.company_id) AND (cm.user_id = auth.uid())))));
-CREATE POLICY system_logs_service_role ON public.system_logs AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY tax_codes_delete ON public.tax_codes AS PERMISSIVE FOR DELETE TO public USING (is_owner_or_admin(company_id));
 CREATE POLICY tax_codes_insert ON public.tax_codes AS PERMISSIVE FOR INSERT TO public WITH CHECK (is_owner_or_admin(company_id));
 CREATE POLICY tax_codes_select ON public.tax_codes AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
@@ -10375,7 +10551,6 @@ CREATE POLICY third_party_inventory_update_governance ON public.third_party_inve
    FROM company_members cm
   WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR ((cm.role = ANY (ARRAY['manager'::text, 'accountant'::text, 'store_manager'::text])) AND (cm.branch_id = third_party_inventory.branch_id)))))));
 CREATE POLICY usage_metrics_company_read ON public.usage_metrics AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
-CREATE POLICY usage_metrics_service_write ON public.usage_metrics AS PERMISSIVE FOR ALL TO public USING (true) WITH CHECK (true);
 CREATE POLICY user_bonuses_delete ON public.user_bonuses AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -10629,6 +10804,9 @@ REVOKE ALL ON FUNCTION public.approve_customer_debit_note(p_debit_note_id uuid, 
 GRANT EXECUTE ON FUNCTION public.approve_customer_debit_note(p_debit_note_id uuid, p_approved_by uuid, p_notes text) TO anon;
 GRANT EXECUTE ON FUNCTION public.approve_customer_debit_note(p_debit_note_id uuid, p_approved_by uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.approve_customer_debit_note(p_debit_note_id uuid, p_approved_by uuid, p_notes text) TO service_role;
+REVOKE ALL ON FUNCTION public.approve_expense_atomic(p_expense_id uuid, p_company_id uuid, p_actor_id uuid, p_expense_account_id uuid, p_payment_account_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.approve_expense_atomic(p_expense_id uuid, p_company_id uuid, p_actor_id uuid, p_expense_account_id uuid, p_payment_account_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_expense_atomic(p_expense_id uuid, p_company_id uuid, p_actor_id uuid, p_expense_account_id uuid, p_payment_account_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.approve_manufacturing_bom_version_atomic(p_company_id uuid, p_bom_version_id uuid, p_approved_by uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.approve_manufacturing_bom_version_atomic(p_company_id uuid, p_bom_version_id uuid, p_approved_by uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.approve_manufacturing_bom_version_atomic(p_company_id uuid, p_bom_version_id uuid, p_approved_by uuid) TO service_role;
@@ -10867,6 +11045,10 @@ REVOKE ALL ON FUNCTION public.audit_trigger_function() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.audit_trigger_function() TO anon;
 GRANT EXECUTE ON FUNCTION public.audit_trigger_function() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.audit_trigger_function() TO service_role;
+REVOKE ALL ON FUNCTION public.auth_email_state(p_email text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auth_email_state(p_email text) TO anon;
+GRANT EXECUTE ON FUNCTION public.auth_email_state(p_email text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.auth_email_state(p_email text) TO service_role;
 REVOKE ALL ON FUNCTION public.auto_approve_service_only_invoice_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auto_approve_service_only_invoice_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.auto_approve_service_only_invoice_trg() TO authenticated;
@@ -11166,14 +11348,29 @@ REVOKE ALL ON FUNCTION public.block_invoice_immutable_edits() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.block_invoice_immutable_edits() TO anon;
 GRANT EXECUTE ON FUNCTION public.block_invoice_immutable_edits() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.block_invoice_immutable_edits() TO service_role;
+REVOKE ALL ON FUNCTION public.block_manual_adjustment_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.block_manual_adjustment_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.block_manual_adjustment_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.block_manual_adjustment_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.block_production_order_delete_with_mmia() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.block_production_order_delete_with_mmia() TO anon;
 GRANT EXECUTE ON FUNCTION public.block_production_order_delete_with_mmia() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.block_production_order_delete_with_mmia() TO service_role;
+REVOKE ALL ON FUNCTION public.bom_version_branch_manager_notify_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.bom_version_branch_manager_notify_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.bom_version_branch_manager_notify_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.bom_version_branch_manager_notify_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.bom_version_notify_approval_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.bom_version_notify_approval_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.bom_version_notify_approval_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.bom_version_notify_approval_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.booking_mandatory_custody_gate(p_booking_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.booking_mandatory_custody_gate(p_booking_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.booking_mandatory_custody_gate(p_booking_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.branch_outlet_lifecycle() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.branch_outlet_lifecycle() TO anon;
 GRANT EXECUTE ON FUNCTION public.branch_outlet_lifecycle() TO authenticated;
@@ -11507,6 +11704,11 @@ GRANT EXECUTE ON FUNCTION public.close_fiscal_period(p_company_id uuid, p_year s
 REVOKE ALL ON FUNCTION public.close_manufacturing_production_order_reservations_atomic(p_company_id uuid, p_production_order_id uuid, p_updated_by uuid, p_mode text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.close_manufacturing_production_order_reservations_atomic(p_company_id uuid, p_production_order_id uuid, p_updated_by uuid, p_mode text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.close_manufacturing_production_order_reservations_atomic(p_company_id uuid, p_production_order_id uuid, p_updated_by uuid, p_mode text) TO service_role;
+REVOKE ALL ON FUNCTION public.cmr_payroll_link_is_write_once() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cmr_payroll_link_is_write_once() TO service_role;
+REVOKE ALL ON FUNCTION public.commission_attach_to_payroll_atomic(p_company_id uuid, p_commission_run_id uuid, p_payroll_run_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.commission_attach_to_payroll_atomic(p_company_id uuid, p_commission_run_id uuid, p_payroll_run_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.commission_attach_to_payroll_atomic(p_company_id uuid, p_commission_run_id uuid, p_payroll_run_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.companies_subscription_status_transitions_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.companies_subscription_status_transitions_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.companies_subscription_status_transitions_trg() TO authenticated;
@@ -11570,6 +11772,8 @@ GRANT EXECUTE ON FUNCTION public.count_unbalanced_entries(p_company_id uuid) TO 
 REVOKE ALL ON FUNCTION public.create_audit_log(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_audit_log(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_audit_log(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.create_audit_log_internal(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_audit_log_internal(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) TO service_role;
 REVOKE ALL ON FUNCTION public.create_auto_invoice_from_sales_order(p_sales_order_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_auto_invoice_from_sales_order(p_sales_order_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_auto_invoice_from_sales_order(p_sales_order_id uuid) TO service_role;
@@ -11879,6 +12083,9 @@ REVOKE ALL ON FUNCTION public.expense_account_type_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.expense_account_type_guard() TO anon;
 GRANT EXECUTE ON FUNCTION public.expense_account_type_guard() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.expense_account_type_guard() TO service_role;
+REVOKE ALL ON FUNCTION public.expense_actor_may_approve(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.expense_actor_may_approve(p_company_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.expense_actor_may_approve(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.expense_paid_requires_journal_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.expense_paid_requires_journal_guard() TO anon;
 GRANT EXECUTE ON FUNCTION public.expense_paid_requires_journal_guard() TO authenticated;
@@ -11951,6 +12158,18 @@ REVOKE ALL ON FUNCTION public.fn_fifo_on_purchase_return() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_fifo_on_purchase_return() TO anon;
 GRANT EXECUTE ON FUNCTION public.fn_fifo_on_purchase_return() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_fifo_on_purchase_return() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_guard_asset_activation_requires_capitalisation() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_guard_asset_activation_requires_capitalisation() TO anon;
+GRANT EXECUTE ON FUNCTION public.fn_guard_asset_activation_requires_capitalisation() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_guard_asset_activation_requires_capitalisation() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_guard_no_root_account_posting() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_guard_no_root_account_posting() TO anon;
+GRANT EXECUTE ON FUNCTION public.fn_guard_no_root_account_posting() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_guard_no_root_account_posting() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_guard_product_accounts_not_root() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_guard_product_accounts_not_root() TO anon;
+GRANT EXECUTE ON FUNCTION public.fn_guard_product_accounts_not_root() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_guard_product_accounts_not_root() TO service_role;
 REVOKE ALL ON FUNCTION public.fn_post_booking_custody_out(p_withdrawal_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_post_booking_custody_out(p_withdrawal_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_post_booking_custody_out(p_withdrawal_id uuid) TO service_role;
@@ -11971,6 +12190,13 @@ REVOKE ALL ON FUNCTION public.fn_request_booking_custody_return(p_withdrawal_id 
 GRANT EXECUTE ON FUNCTION public.fn_request_booking_custody_return(p_withdrawal_id uuid, p_reason text) TO anon;
 GRANT EXECUTE ON FUNCTION public.fn_request_booking_custody_return(p_withdrawal_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_request_booking_custody_return(p_withdrawal_id uuid, p_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_set_purchase_movement_landed_cost() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_set_purchase_movement_landed_cost() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_touch_updated_at() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_touch_updated_at() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_user_company_access(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_user_company_access(p_company_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_user_company_access(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_user_company_ids() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_user_company_ids() TO anon;
 GRANT EXECUTE ON FUNCTION public.fn_user_company_ids() TO authenticated;
@@ -11979,6 +12205,10 @@ REVOKE ALL ON FUNCTION public.fn_validate_normal_balance() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_validate_normal_balance() TO anon;
 GRANT EXECUTE ON FUNCTION public.fn_validate_normal_balance() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_validate_normal_balance() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_void_pending_booking_withdrawals(p_booking_id uuid, p_context text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_void_pending_booking_withdrawals(p_booking_id uuid, p_context text) TO anon;
+GRANT EXECUTE ON FUNCTION public.fn_void_pending_booking_withdrawals(p_booking_id uuid, p_context text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_void_pending_booking_withdrawals(p_booking_id uuid, p_context text) TO service_role;
 REVOKE ALL ON FUNCTION public.force_delete_all_depreciation_schedules(p_asset_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.force_delete_all_depreciation_schedules(p_asset_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.force_delete_all_depreciation_schedules(p_asset_id uuid) TO service_role;
@@ -12140,7 +12370,6 @@ REVOKE ALL ON FUNCTION public.get_income_statement(p_company_id uuid, p_start_da
 GRANT EXECUTE ON FUNCTION public.get_income_statement(p_company_id uuid, p_start_date date, p_end_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_income_statement(p_company_id uuid, p_start_date date, p_end_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_inventory_reservation_balances() FROM PUBLIC;
@@ -12868,6 +13097,10 @@ REVOKE ALL ON FUNCTION public.lock_purchase_return_on_status() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.lock_purchase_return_on_status() TO anon;
 GRANT EXECUTE ON FUNCTION public.lock_purchase_return_on_status() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lock_purchase_return_on_status() TO service_role;
+REVOKE ALL ON FUNCTION public.manufacturing_notify_decision_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.manufacturing_notify_decision_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.manufacturing_notify_decision_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.manufacturing_notify_decision_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.mark_notification_as_read(p_notification_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mark_notification_as_read(p_notification_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_notification_as_read(p_notification_id uuid, p_user_id uuid) TO service_role;
@@ -12958,6 +13191,10 @@ REVOKE ALL ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p
 GRANT EXECUTE ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.mfg_guard_company_manufacturing_accounts() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mfg_guard_company_manufacturing_accounts() TO anon;
+GRANT EXECUTE ON FUNCTION public.mfg_guard_company_manufacturing_accounts() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mfg_guard_company_manufacturing_accounts() TO service_role;
 REVOKE ALL ON FUNCTION public.migrate_existing_purchases_to_fifo() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.migrate_existing_purchases_to_fifo() TO anon;
 GRANT EXECUTE ON FUNCTION public.migrate_existing_purchases_to_fifo() TO authenticated;
@@ -13126,10 +13363,15 @@ REVOKE ALL ON FUNCTION public.mpoe_assert_material_requirements_snapshot_frozen(
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_material_requirements_snapshot_frozen(p_production_order_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_material_requirements_snapshot_frozen(p_production_order_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_material_requirements_snapshot_frozen(p_production_order_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.mpoe_assert_materials_issued_before_receipt(p_production_order_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mpoe_assert_materials_issued_before_receipt(p_production_order_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.mpoe_assert_order_execution_open(p_production_order_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_order_execution_open(p_production_order_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_order_execution_open(p_production_order_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_order_execution_open(p_production_order_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.mpoe_assert_order_routing_is_costable(p_production_order_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mpoe_assert_order_routing_is_costable(p_production_order_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mpoe_assert_order_routing_is_costable(p_production_order_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.mpoe_assert_receipt_event_mutation_forbidden(p_receipt_event_id uuid, p_operation text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_receipt_event_mutation_forbidden(p_receipt_event_id uuid, p_operation text) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_assert_receipt_event_mutation_forbidden(p_receipt_event_id uuid, p_operation text) TO authenticated;
@@ -13146,6 +13388,10 @@ REVOKE ALL ON FUNCTION public.mpoe_compute_open_reservation_status(p_requested_q
 GRANT EXECUTE ON FUNCTION public.mpoe_compute_open_reservation_status(p_requested_qty numeric, p_reserved_qty numeric, p_consumed_qty numeric, p_released_qty numeric) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_compute_open_reservation_status(p_requested_qty numeric, p_reserved_qty numeric, p_consumed_qty numeric, p_released_qty numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpoe_compute_open_reservation_status(p_requested_qty numeric, p_reserved_qty numeric, p_consumed_qty numeric, p_released_qty numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.mpoe_guard_issue_event_immutability() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mpoe_guard_issue_event_immutability() TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_guard_issue_event_immutability() TO authenticated;
@@ -13272,6 +13518,9 @@ REVOKE ALL ON FUNCTION public.mpoe_validate_warehouse_cost_center_source(p_compa
 GRANT EXECUTE ON FUNCTION public.mpoe_validate_warehouse_cost_center_source(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_context text) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_validate_warehouse_cost_center_source(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_context text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpoe_validate_warehouse_cost_center_source(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_context text) TO service_role;
+REVOKE ALL ON FUNCTION public.mr_assert_routing_operations_costable(p_routing_version_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mr_assert_routing_operations_costable(p_routing_version_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mr_assert_routing_operations_costable(p_routing_version_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.mr_assert_routing_version_operational(p_routing_version_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mr_assert_routing_version_operational(p_routing_version_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.mr_assert_routing_version_operational(p_routing_version_id uuid) TO authenticated;
@@ -13492,6 +13741,10 @@ REVOKE ALL ON FUNCTION public.mwc_guard_work_center_status_transition() FROM PUB
 GRANT EXECUTE ON FUNCTION public.mwc_guard_work_center_status_transition() TO anon;
 GRANT EXECUTE ON FUNCTION public.mwc_guard_work_center_status_transition() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mwc_guard_work_center_status_transition() TO service_role;
+REVOKE ALL ON FUNCTION public.mwc_guard_work_centre_cost_centre() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mwc_guard_work_centre_cost_centre() TO anon;
+GRANT EXECUTE ON FUNCTION public.mwc_guard_work_centre_cost_centre() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mwc_guard_work_centre_cost_centre() TO service_role;
 REVOKE ALL ON FUNCTION public.mwc_is_work_center_blocked(p_status text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mwc_is_work_center_blocked(p_status text) TO anon;
 GRANT EXECUTE ON FUNCTION public.mwc_is_work_center_blocked(p_status text) TO authenticated;
@@ -13596,6 +13849,10 @@ REVOKE ALL ON FUNCTION public.payment_customer_branch_manager_notify_trg() FROM 
 GRANT EXECUTE ON FUNCTION public.payment_customer_branch_manager_notify_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.payment_customer_branch_manager_notify_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.payment_customer_branch_manager_notify_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.payment_requires_revenue_je_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.payment_supplier_approval_insert_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_supplier_approval_insert_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.payment_supplier_approval_insert_trg() TO authenticated;
@@ -13611,6 +13868,30 @@ GRANT EXECUTE ON FUNCTION public.payment_supplier_notify_approval_trg() TO servi
 REVOKE ALL ON FUNCTION public.perform_annual_closing_atomic(p_company_id uuid, p_fiscal_year integer, p_closing_date date, p_retained_earnings_account_id uuid, p_user_id uuid, p_notes text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.perform_annual_closing_atomic(p_company_id uuid, p_fiscal_year integer, p_closing_date date, p_retained_earnings_account_id uuid, p_user_id uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.perform_annual_closing_atomic(p_company_id uuid, p_fiscal_year integer, p_closing_date date, p_retained_earnings_account_id uuid, p_user_id uuid, p_notes text) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_approve_labour_payment(p_company_id uuid, p_payment_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_approve_labour_payment(p_company_id uuid, p_payment_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.plw_approve_labour_payment(p_company_id uuid, p_payment_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_assert_no_cash_to_salaried_employee() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_assert_no_cash_to_salaried_employee() TO service_role;
+REVOKE ALL ON FUNCTION public.plw_caller_role(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_caller_role(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_create_labour_payment(p_company_id uuid, p_production_order_id uuid, p_period_from date, p_period_to date, p_labour_type text, p_payment_mode text, p_payment_account_id uuid, p_lines jsonb, p_notes text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_create_labour_payment(p_company_id uuid, p_production_order_id uuid, p_period_from date, p_period_to date, p_labour_type text, p_payment_mode text, p_payment_account_id uuid, p_lines jsonb, p_notes text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.plw_create_labour_payment(p_company_id uuid, p_production_order_id uuid, p_period_from date, p_period_to date, p_labour_type text, p_payment_mode text, p_payment_account_id uuid, p_lines jsonb, p_notes text) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_next_payment_no(p_company_id uuid, p_date date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_next_payment_no(p_company_id uuid, p_date date) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_pay_labour_payment(p_company_id uuid, p_payment_id uuid, p_payment_date date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_pay_labour_payment(p_company_id uuid, p_payment_id uuid, p_payment_date date) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.plw_pay_labour_payment(p_company_id uuid, p_payment_id uuid, p_payment_date date) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_reject_labour_payment(p_company_id uuid, p_payment_id uuid, p_reason text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_reject_labour_payment(p_company_id uuid, p_payment_id uuid, p_reason text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.plw_reject_labour_payment(p_company_id uuid, p_payment_id uuid, p_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_submit_labour_payment(p_company_id uuid, p_payment_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_submit_labour_payment(p_company_id uuid, p_payment_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.plw_submit_labour_payment(p_company_id uuid, p_payment_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.plw_upsert_casual_worker(p_company_id uuid, p_name text, p_phone text, p_national_id text, p_branch_id uuid, p_worker_id uuid, p_is_active boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.plw_upsert_casual_worker(p_company_id uuid, p_name text, p_phone text, p_national_id text, p_branch_id uuid, p_worker_id uuid, p_is_active boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.plw_upsert_casual_worker(p_company_id uuid, p_name text, p_phone text, p_national_id text, p_branch_id uuid, p_worker_id uuid, p_is_active boolean) TO service_role;
 REVOKE ALL ON FUNCTION public.po_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.po_branch_manager_notify_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.po_branch_manager_notify_trg() TO authenticated;
@@ -13654,6 +13935,10 @@ GRANT EXECUTE ON FUNCTION public.post_bank_voucher(p_request_id uuid, p_posted_b
 REVOKE ALL ON FUNCTION public.post_bill_receipt_atomic(p_company_id uuid, p_bill_id uuid, p_bill_update jsonb, p_journal_entry jsonb, p_inventory_transactions jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.post_bill_receipt_atomic(p_company_id uuid, p_bill_id uuid, p_bill_update jsonb, p_journal_entry jsonb, p_inventory_transactions jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.post_bill_receipt_atomic(p_company_id uuid, p_bill_id uuid, p_bill_update jsonb, p_journal_entry jsonb, p_inventory_transactions jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.post_bonus_accrual_atomic(p_bonus_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.post_bonus_accrual_atomic(p_bonus_id uuid, p_user_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.post_bonus_accrual_atomic(p_bonus_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.post_bonus_accrual_atomic(p_bonus_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.post_commission_atomic(p_commission_id uuid, p_expense_account_id uuid, p_payable_account_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.post_commission_atomic(p_commission_id uuid, p_expense_account_id uuid, p_payable_account_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.post_commission_atomic(p_commission_id uuid, p_expense_account_id uuid, p_payable_account_id uuid, p_user_id uuid) TO service_role;
@@ -13663,6 +13948,13 @@ GRANT EXECUTE ON FUNCTION public.post_commission_run_atomic(p_commission_run_id 
 REVOKE ALL ON FUNCTION public.post_depreciation(p_schedule_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.post_depreciation(p_schedule_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.post_depreciation(p_schedule_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.post_expense_atomic(p_expense_id uuid, p_company_id uuid, p_actor_id uuid, p_expense_account_id uuid, p_payment_account_id uuid, p_payment_reference text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.post_expense_atomic(p_expense_id uuid, p_company_id uuid, p_actor_id uuid, p_expense_account_id uuid, p_payment_account_id uuid, p_payment_reference text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.post_expense_atomic(p_expense_id uuid, p_company_id uuid, p_actor_id uuid, p_expense_account_id uuid, p_payment_account_id uuid, p_payment_reference text) TO service_role;
+REVOKE ALL ON FUNCTION public.post_fixed_asset_acquisition_atomic(p_asset_id uuid, p_payment_account_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.post_fixed_asset_acquisition_atomic(p_asset_id uuid, p_payment_account_id uuid, p_user_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.post_fixed_asset_acquisition_atomic(p_asset_id uuid, p_payment_account_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.post_fixed_asset_acquisition_atomic(p_asset_id uuid, p_payment_account_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.post_invoice_atomic_v2(p_company_id uuid, p_invoice_id uuid, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_update_source jsonb, p_effective_date date, p_actor_id uuid, p_idempotency_key text, p_request_hash text, p_trace_metadata jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.post_invoice_atomic_v2(p_company_id uuid, p_invoice_id uuid, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_update_source jsonb, p_effective_date date, p_actor_id uuid, p_idempotency_key text, p_request_hash text, p_trace_metadata jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.post_invoice_atomic_v2(p_company_id uuid, p_invoice_id uuid, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_update_source jsonb, p_effective_date date, p_actor_id uuid, p_idempotency_key text, p_request_hash text, p_trace_metadata jsonb) TO service_role;
@@ -13882,6 +14174,10 @@ REVOKE ALL ON FUNCTION public.protect_paid_invoice_revenue_je() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.protect_paid_invoice_revenue_je() TO anon;
 GRANT EXECUTE ON FUNCTION public.protect_paid_invoice_revenue_je() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.protect_paid_invoice_revenue_je() TO service_role;
+REVOKE ALL ON FUNCTION public.provision_shareholder_accounts() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.provision_shareholder_accounts() TO anon;
+GRANT EXECUTE ON FUNCTION public.provision_shareholder_accounts() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.provision_shareholder_accounts() TO service_role;
 REVOKE ALL ON FUNCTION public.purchase_return_approval_insert_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.purchase_return_approval_insert_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.purchase_return_approval_insert_trg() TO authenticated;
@@ -13992,6 +14288,10 @@ REVOKE ALL ON FUNCTION public.refresh_gl_monthly_summary() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_monthly_summary() TO anon;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_monthly_summary() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_monthly_summary() TO service_role;
+REVOKE ALL ON FUNCTION public.refresh_material_requirement_issue_tracking() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.refresh_material_requirement_issue_tracking() TO anon;
+GRANT EXECUTE ON FUNCTION public.refresh_material_requirement_issue_tracking() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_material_requirement_issue_tracking() TO service_role;
 REVOKE ALL ON FUNCTION public.regenerate_asset_schedules(p_asset_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.regenerate_asset_schedules(p_asset_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.regenerate_asset_schedules(p_asset_id uuid) TO service_role;
@@ -14002,6 +14302,10 @@ REVOKE ALL ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount 
 GRANT EXECUTE ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid, p_payment_account_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid, p_payment_account_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid, p_payment_account_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid, p_payment_account_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.reject_bank_voucher(p_request_id uuid, p_rejected_by uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reject_bank_voucher(p_request_id uuid, p_rejected_by uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reject_bank_voucher(p_request_id uuid, p_rejected_by uuid, p_reason text) TO service_role;
@@ -14009,6 +14313,9 @@ REVOKE ALL ON FUNCTION public.reject_customer_debit_note(p_debit_note_id uuid, p
 GRANT EXECUTE ON FUNCTION public.reject_customer_debit_note(p_debit_note_id uuid, p_rejected_by uuid, p_rejection_reason text) TO anon;
 GRANT EXECUTE ON FUNCTION public.reject_customer_debit_note(p_debit_note_id uuid, p_rejected_by uuid, p_rejection_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reject_customer_debit_note(p_debit_note_id uuid, p_rejected_by uuid, p_rejection_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.reject_expense_atomic(p_expense_id uuid, p_company_id uuid, p_reason text, p_actor_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reject_expense_atomic(p_expense_id uuid, p_company_id uuid, p_reason text, p_actor_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reject_expense_atomic(p_expense_id uuid, p_company_id uuid, p_reason text, p_actor_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.reject_manufacturing_bom_version_atomic(p_company_id uuid, p_bom_version_id uuid, p_rejected_by uuid, p_rejection_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reject_manufacturing_bom_version_atomic(p_company_id uuid, p_bom_version_id uuid, p_rejected_by uuid, p_rejection_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reject_manufacturing_bom_version_atomic(p_company_id uuid, p_bom_version_id uuid, p_rejected_by uuid, p_rejection_reason text) TO service_role;
@@ -14264,6 +14571,10 @@ REVOKE ALL ON FUNCTION public.so_item_evaluate_discount_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.so_item_evaluate_discount_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.so_item_evaluate_discount_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.so_item_evaluate_discount_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.so_items_mirror_to_invoice_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.so_items_mirror_to_invoice_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.so_items_mirror_to_invoice_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.so_items_mirror_to_invoice_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.so_request_discount_approval_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.so_request_discount_approval_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.so_request_discount_approval_trg() TO authenticated;
@@ -14540,6 +14851,10 @@ REVOKE ALL ON FUNCTION public.sync_sales_order_to_invoice_safe() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.sync_sales_order_to_invoice_safe() TO anon;
 GRANT EXECUTE ON FUNCTION public.sync_sales_order_to_invoice_safe() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_sales_order_to_invoice_safe() TO service_role;
+REVOKE ALL ON FUNCTION public.sync_shareholder_percentages() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.sync_shareholder_percentages() TO anon;
+GRANT EXECUTE ON FUNCTION public.sync_shareholder_percentages() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_shareholder_percentages() TO service_role;
 REVOKE ALL ON FUNCTION public.system_audit_log_insert(p_user_id uuid, p_company_id uuid, p_action text, p_entity_type text, p_entity_id text, p_before_snapshot jsonb, p_after_snapshot jsonb, p_metadata jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.system_audit_log_insert(p_user_id uuid, p_company_id uuid, p_action text, p_entity_type text, p_entity_id text, p_before_snapshot jsonb, p_after_snapshot jsonb, p_metadata jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.test_accounting_period_lock() FROM PUBLIC;
@@ -15001,11 +15316,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ai
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ai_tool_audit TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ai_tool_audit TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ai_tool_audit TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.api_rate_limits TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.api_rate_limits TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.api_rate_limits TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.app_events TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.app_events TO authenticated;
+GRANT INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.app_events TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.app_events TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.approval_history TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.approval_history TO authenticated;
@@ -15040,8 +15352,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.at
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.attendance_shifts TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.attendance_shifts TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.attendance_shifts TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.audit_logs TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.audit_logs TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.audit_logs TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.audit_logs TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.audit_snapshots TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.audit_snapshots TO authenticated;
@@ -15115,6 +15426,9 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.bu
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.capital_contributions TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.capital_contributions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.capital_contributions TO service_role;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.casual_workers TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.casual_workers TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.casual_workers TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.chart_of_accounts TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.chart_of_accounts TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.chart_of_accounts TO service_role;
@@ -15223,7 +15537,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.co
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.cost_centers TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.cost_centers TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.cost_centers TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.country_vat_rates TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.country_vat_rates TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.country_vat_rates TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.country_vat_rates TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.credit_notes TO anon;
@@ -15352,7 +15666,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.fi
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.fixed_assets TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.fixed_assets TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.fixed_assets TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.global_currencies TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.global_currencies TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.global_currencies TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.global_currencies TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.goods_receipt_items TO anon;
@@ -15364,7 +15678,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.go
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.idempotency_keys TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.idempotency_keys TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.idempotency_keys TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.integrity_check_definitions TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.integrity_check_definitions TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.integrity_check_definitions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.integrity_check_definitions TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.intercompany_accounts TO anon;
@@ -15430,8 +15744,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.in
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.invoices TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.invoices TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.invoices TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.jobs_queue TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.jobs_queue TO authenticated;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.jobs_queue TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.jobs_queue TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.journal_entries TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.journal_entries TO authenticated;
@@ -15439,6 +15752,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.jo
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.journal_entry_lines TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.journal_entry_lines TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.journal_entry_lines TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.journal_entry_lines_orphan_archive TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.legal_entities TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.legal_entities TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.legal_entities TO service_role;
@@ -15499,8 +15813,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.mr
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.mrp_supply_rows TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.mrp_supply_rows TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.mrp_supply_rows TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notification_escalations TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notification_escalations TO authenticated;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.notification_escalations TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notification_escalations TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notification_outbox_events TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notification_outbox_events TO authenticated;
@@ -15511,8 +15824,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.no
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notifications TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notifications TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notifications TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.onboarding_progress TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.onboarding_progress TO authenticated;
+GRANT INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.onboarding_progress TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.onboarding_progress TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.page_guides TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.page_guides TO authenticated;
@@ -15541,8 +15853,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pa
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.payslips TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.payslips TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.payslips TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pending_companies TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pending_companies TO authenticated;
+GRANT INSERT ON public.pending_companies TO anon;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.pending_companies TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pending_companies TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permission_sharing TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permission_sharing TO authenticated;
@@ -15550,12 +15862,18 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pe
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permission_transfers TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permission_transfers TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permission_transfers TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permissions TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.permissions TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permissions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.permissions TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.product_bundle_items TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.product_bundle_items TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.product_bundle_items TO service_role;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.production_labour_payment_lines TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.production_labour_payment_lines TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_labour_payment_lines TO service_role;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.production_labour_payments TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.production_labour_payments TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_labour_payments TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_order_issue_events TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_order_issue_events TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_order_issue_events TO service_role;
@@ -15616,10 +15934,10 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.re
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.restore_queue TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.restore_queue TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.restore_queue TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.role_default_permissions TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.role_default_permissions TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.role_default_permissions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.role_default_permissions TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.roles TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.roles TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.roles TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.roles TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.sales_order_items TO anon;
@@ -15673,11 +15991,10 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.sh
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.shipping_webhook_logs TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.shipping_webhook_logs TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.shipping_webhook_logs TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.subscription_plans TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.subscription_plans TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.subscription_plans TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.subscription_plans TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.subscriptions TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.subscriptions TO authenticated;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.subscriptions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.subscriptions TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.supplier_debit_credits TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.supplier_debit_credits TO authenticated;
@@ -15694,8 +16011,6 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.sy
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.system_integrity_alerts TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.system_integrity_alerts TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.system_integrity_alerts TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.system_logs TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.system_logs TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.system_logs TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.tax_codes TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.tax_codes TO authenticated;
@@ -15703,8 +16018,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ta
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.third_party_inventory TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.third_party_inventory TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.third_party_inventory TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.usage_metrics TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.usage_metrics TO authenticated;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.usage_metrics TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.usage_metrics TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.user_bonuses TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.user_bonuses TO authenticated;
@@ -15829,7 +16143,7 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ve
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.vendor_refund_requests TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.vendor_refund_requests TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.vendor_refund_requests TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.volume_discount_tiers TO anon;
+GRANT REFERENCES, SELECT, TRIGGER, TRUNCATE ON public.volume_discount_tiers TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.volume_discount_tiers TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.volume_discount_tiers TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.warehouses TO anon;

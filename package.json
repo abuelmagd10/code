@@ -53,6 +53,8 @@
     "test:period-closing": "npx tsx scripts/test-period-closing.ts",
     "inventory:audit": "node scripts/inventory-audit.js",
     "check:scripts-tracked": "node scripts/check-referenced-scripts-tracked.js",
+    "check:schema-snapshot-db": "node scripts/check-schema-snapshot-matches-db.js",
+    "check:schema-snapshot-db:selftest": "node scripts/selftest-schema-snapshot-matches-db.js",
     "check:phantom-columns": "node scripts/check-phantom-columns.js",
     "check:phantom-columns:selftest": "node scripts/selftest-phantom-columns.js",
     "check:phantom-selects": "node scripts/check-phantom-selects.js",
