@@ -8,139 +8,97 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.874 - the OLD script is removed, never this one. Three releases in a
+# v3.74.875 - the OLD script is removed, never this one. Three releases in a
 # row a chained string-replace turned this line into self-deletion (861, 865,
 # 866). A replacement whose output can match its own next pattern is not a
 # replacement, it is a loop. This line is now written by hand.
-if (Test-Path -LiteralPath "push_v3.74.873.ps1") { Remove-Item -LiteralPath "push_v3.74.873.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.874.ps1") { Remove-Item -LiteralPath "push_v3.74.874.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.874"') {
-    Write-Host "+ 3.74.874" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.875"') {
+    Write-Host "+ 3.74.875" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.874]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.874]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.875]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.875]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$so    = "app/sales-orders/page.tsx"
-$po    = "app/purchase-orders/page.tsx"
-$cash  = "lib/sales-return-cash-disbursement.ts"
-$vou   = "lib/services/customer-voucher-command.service.ts"
-$cpay  = "lib/services/customer-payment-command.service.ts"
-$brw   = "lib/services/bill-receipt-workflow.service.ts"
-$inv   = "app/invoices/[id]/page.tsx"
-$bedit = "app/bills/[id]/edit/page.tsx"
-$ccs   = "lib/currency-conversion-system.ts"
+$tomb  = "app/api/fix-inventory/route.ts"
+$gone1 = "app/api/restore-invoice/route.ts"
+$gone2 = "app/api/auto-fix-remaining-payments/route.ts"
+$gone3 = "app/admin/auto-fix-payments/page.tsx"
 $uw    = "scripts/check-unchecked-writes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $so, $po, $cash, $vou, $cpay, $brw, $inv, $bedit, $ccs, $uw,
-           "push_v3.74.874.ps1")
+           $tomb, $uw, "push_v3.74.875.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. a financial document must not be deleted unchecked ----------------
-# Both order pages deleted the linked draft invoice/bill WITHOUT checking,
-# then deleted the order itself (checked). A silent failure on the first
-# left the order gone and the invoice orphaned - a document with no source,
-# still counted in customer/supplier balances and in every report.
-$soc = Get-Content -LiteralPath $so -Raw
-$poc = Get-Content -LiteralPath $po -Raw
-if ($soc -cmatch [regex]::Escape('await supabase.from("invoices").delete()')) {
-    Write-Host "X the sales-order page still deletes its invoice unchecked" -ForegroundColor Red; exit 1
+# -- 1. the button goes before the endpoint -------------------------------
+# A dangerous endpoint with no button needs intent to reach. A dangerous
+# button needs one misclick.
+foreach ($f in @($gone1, $gone2, $gone3)) {
+    if (Test-Path -LiteralPath $f) { Write-Host "X $f is still on disk" -ForegroundColor Red; exit 1 }
+    $t = git ls-files -- $f
+    if ($t) { Write-Host "X $f is still tracked by git" -ForegroundColor Red; exit 1 }
 }
-if ($poc -cmatch [regex]::Escape('await supabase.from("bills").delete()')) {
-    Write-Host "X the purchase-order page still deletes its bill unchecked" -ForegroundColor Red; exit 1
-}
-foreach ($pair in @(@($soc, "تعذّر حذف الفاتورة المرتبطة"), @($poc, "تعذّر حذف فاتورة الشراء المرتبطة"))) {
-    if ($pair[0] -notmatch [regex]::Escape($pair[1])) {
-        Write-Host "X a cascade delete can still lose the order and keep the document" -ForegroundColor Red
-        exit 1
-    }
-}
-Write-Host "+ no financial document is deleted without checking the result" -ForegroundColor Green
+Write-Host "+ the admin button and the two unreferenced tools are gone" -ForegroundColor Green
 
-# -- 2. cash left the till, so the receivable must move -------------------
-$cc = Get-Content -LiteralPath $cash -Raw
-if ($cc -notmatch "CASH_REFUND_PAID_AMOUNT_UPDATE_FAILED") {
-    Write-Host "X a cash refund can still leave receivables overstated in silence" -ForegroundColor Red; exit 1
+# -- 2. fix-inventory keeps a headstone, not a deletion -------------------
+# Two integration tests and two CI steps point at this route. The project's
+# own convention (v3.74.773) is to leave a file that explains itself and
+# preserves the security contract: auth is checked FIRST, so an anonymous
+# caller still gets 401 rather than 410.
+$tb = Get-Content -LiteralPath $tomb -Raw
+if ($tb -notmatch "retired") {
+    Write-Host "X fix-inventory was not retired" -ForegroundColor Red; exit 1
 }
-Write-Host "+ a cash refund cannot silently leave the receivable overstated" -ForegroundColor Green
+if ($tb -match "createClient") {
+    Write-Host "X fix-inventory still opens a database client - the body was not removed" -ForegroundColor Red
+    exit 1
+}
+$authIdx = $tb.IndexOf("requireOwnerOrAdmin(request)")
+$goneIdx = $tb.IndexOf("status: 410")
+if ($authIdx -lt 0 -or $goneIdx -lt 0 -or $authIdx -gt $goneIdx) {
+    Write-Host "X the 401-before-410 security contract is not preserved" -ForegroundColor Red
+    Write-Host "  tests/integration/api-security.test.ts expects 401 for an anonymous caller." -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ fix-inventory is a headstone that still answers 401 before 410" -ForegroundColor Green
 
-# -- 3. rollback paths report, never throw --------------------------------
-# ⚠️ The first version of this check scanned 200 characters AFTER the marker
-# for the word "throw", and it fired on bill-receipt-workflow - wrongly. The
-# throw it found was the USER-FACING error that follows the rollback on
-# purpose ("this bill went back for approval"), not a throw out of the
-# rollback itself. A window that wide cannot tell the two apart.
-#
-# So the question is asked precisely instead: is this marker the argument of
-# a throw, or of a console.error? Look BACKWARD a short distance - if the
-# marker is preceded by `throw new Error(` it is being raised; if by
-# `console.error(` it is being reported. Nothing after it matters.
-foreach ($pair in @(@($vou,  "VOUCHER_ROLLBACK_INVOICE_RESTORE_FAILED"),
-                    @($cpay, "PAYMENT_ROLLBACK_VOID_FAILED"),
-                    @($brw,  "BILL_RECEIPT_ROLLBACK_FAILED"))) {
-    $t = Get-Content -LiteralPath $pair[0] -Raw
-    $i = $t.IndexOf($pair[1])
-    if ($i -lt 0) {
-        Write-Host "X $($pair[0]) still unwinds in silence ($($pair[1]))" -ForegroundColor Red; exit 1
-    }
-    $from = [Math]::Max(0, $i - 60)
-    $before = $t.Substring($from, $i - $from)
-    if ($before -match "throw new Error\(") {
-        Write-Host "X $($pair[0]) RAISES its rollback failure - it would mask the original error" -ForegroundColor Red
-        exit 1
-    }
-    if ($before -notmatch "console\.(error|warn)\(") {
-        Write-Host "X $($pair[0]): $($pair[1]) is neither logged nor recognisably reported" -ForegroundColor Red
-        exit 1
-    }
+# -- 3. CI must still pass its own greps on the headstone -----------------
+# Two CI steps fail the build if fix-inventory uses NextResponse.json for an
+# error ON ONE LINE. The headstone spreads the call over several lines, the
+# same shape repair-invoice has carried since 773 - but assert it rather
+# than assume it.
+$flat = (Get-Content -LiteralPath $tomb) | Where-Object { $_ -match "NextResponse\.json.*error" }
+if ($flat) {
+    Write-Host "X the headstone trips the CI NextResponse.json check" -ForegroundColor Red
+    exit 1
 }
-Write-Host "+ every rollback reports with its ids and masks nothing" -ForegroundColor Green
+Write-Host "+ the headstone passes the CI error-shape greps" -ForegroundColor Green
 
-# -- 4. a snapshot that cannot be recomputed must stop the operation ------
-# The pre-conversion amounts have no other source once the conversion runs.
-$cs = Get-Content -LiteralPath $ccs -Raw
-if ($cs -notmatch "CURRENCY_ORIGINAL_SNAPSHOT_FAILED") {
-    Write-Host "X a currency conversion can still lose the original amounts silently" -ForegroundColor Red; exit 1
-}
-if ($cs -notmatch "CURRENCY_RESET_LINES_FAILED") {
-    Write-Host "X the currency reset can still report success having done nothing" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the irreversible snapshot stops the operation instead of logging" -ForegroundColor Green
-
-# -- 5. the stale-status writes no longer pretend to be caught ------------
-foreach ($pair in @(@($bedit, "BILL_STATUS_RECOMPUTE_FAILED"),
-                    @($inv,   "INVOICE_CUSTOMER_SNAPSHOT_BACKFILL_FAILED"))) {
-    $t = Get-Content -LiteralPath $pair[0] -Raw
-    if ($t -notmatch $pair[1]) {
-        Write-Host "X $($pair[0]) is missing $($pair[1])" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ try/catch around supabase no longer stands in for a real check" -ForegroundColor Green
-
-# -- 6. ground won must be pinned down ------------------------------------
+# -- 4. ground won must be pinned down ------------------------------------
 $uwc = Get-Content -LiteralPath $uw -Raw
-if ($uwc -notmatch "const BASELINE = 211;") {
-    Write-Host "X the unchecked-writes baseline is not 211" -ForegroundColor Red; exit 1
+if ($uwc -notmatch "const BASELINE = 201;") {
+    Write-Host "X the unchecked-writes baseline is not 201" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline tightened 224 -> 211" -ForegroundColor Green
+Write-Host "+ unchecked-writes baseline tightened 211 -> 201" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.873.ps1" 2>$null
+git rm -q --cached -- $gone1 $gone2 $gone3 2>$null
+git add -u -- "push_v3.74.874.ps1" 2>$null
 
-# -- 7. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.873.ps1")
+# -- 5. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.874.ps1", $gone1, $gone2, $gone3)
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -311,46 +269,57 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_874.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_875.txt"
     $msgLines = @(
-        'fix(money): v3.74.874 - the order is deleted and its invoice survives',
+        'chore(tools): v3.74.875 - a button that deletes two healthy payments and reports success',
         '',
-        'Asked to order the remaining work by importance, I measured it instead of',
-        'ranking by count. Of 224 unchecked writes, 21 touch money, and only 10 of',
-        'those sit on a path people actually use - the rest are in repair tools no',
-        'page calls, or inside a dead function. The count alone would have ordered',
-        'the work wrong.',
+        'The most dangerous of the three repair tools was the one wired to a page.',
         '',
-        'The sharpest one: both order pages delete the linked draft invoice or bill',
-        'WITHOUT checking, then delete the order itself, checked. If the first fails',
-        'quietly - an RLS policy, a foreign key, anything - the order is gone and the',
-        'invoice remains: a document with no source, still counted in customer and',
-        'supplier balances and in every report that reads them. In any cascading',
-        'delete, check every level and stop at the first failure. A partial delete is',
-        'worse than none.',
+        'auto-fix-remaining-payments treats every NEGATIVE payment as corrupt data',
+        'and either deletes it or converts it to a sales return. Production holds two',
+        'negative payments. Both are correct, both carry a journal entry, and the',
+        'system created both itself: a pre-shipment refund reversal, and a supplier',
+        'payment correction - through the very paths we have been hardening.',
         '',
-        'The rest, each with what it was hiding:',
+        'A negative payment is no longer corruption. It is how a reversal is',
+        'recorded. The tool is not broken; it was built for a data shape that no',
+        'longer exists. Before running any repair tool, ask whether the definition it',
+        'was built on still holds.',
         '',
-        '  cash refund       cash left the till and paid_amount was not reduced,',
-        '                    so receivables stayed overstated',
-        '  voucher rollback  the invoice stayed settled by money never booked',
-        '  payment rollback  a phantom payment survived the failure that created it',
-        '  receipt rollback  a bill looked "sent to the warehouse" while it had gone',
-        '                    back to the approvals queue',
-        '  bill status       stayed "sent" after being paid, so it would be chased',
-        '                    for money already received',
-        '  currency reset    reported success having changed nothing',
-        '  currency snapshot the pre-conversion amounts were lost, and there is no',
-        '                    second source for them - so that one throws rather than',
-        '                    logs. Whatever cannot be recomputed later does not',
-        '                    belong on a path that records and moves on.',
+        'Pressed today it would HARD-delete both - not soft-void - leaving their',
+        'journal entries orphaned, and then report success, because the delete and',
+        'the invoice update discard their results. It would also create a sales',
+        'return with no journal entry, no COGS and no FIFO: a document the books',
+        'know nothing about.',
         '',
-        'Four of the ten sat inside try/catch. supabase-js RETURNS { error } and',
-        'never throws, so the catch could not fire and the result was dropped. That',
-        'is the fifth release in which this exact shape has turned up: every try',
-        'around a supabase call is a broken promise until error is read.',
+        'The other two I measured before judging:',
         '',
-        'Zero unchecked money writes remain on any live path. 224 -> 211.'
+        '    restore-invoice   rebuilds an invoice from an orphaned journal entry.',
+        '                      Orphaned entries in production: 0.',
+        '    fix-inventory     repairs missing stock movements. Genuine cases: 0.',
+        '                      The single candidate is a SERVICE invoice - one',
+        '                      service line, no products. No goods, nothing to move.',
+        '                      The endpoint excluded services in eight places, so it',
+        '                      knew that too.',
+        '',
+        'Both also collide with protections added after they were written:',
+        'restore-invoice updates reference_id on a POSTED entry, fix-inventory',
+        'deletes a posted COGS entry and its lines. The database refuses both, and',
+        'because the writes are unchecked the refusal is swallowed and success is',
+        'announced. Any tool older than the guard around it has to be re-read, not',
+        'left alone.',
+        '',
+        'Retired following the projects own convention from 773: leave a headstone',
+        'where something points at the route, delete outright where nothing does.',
+        'fix-inventory keeps a file that explains itself and checks auth FIRST, so an',
+        'anonymous caller still gets 401 rather than 410 - that contract is what the',
+        'integration tests assert. restore-invoice and auto-fix-remaining-payments',
+        'had zero references and are gone.',
+        '',
+        'The admin page went with the endpoint. A dangerous endpoint with no button',
+        'needs intent to reach; a dangerous button needs one misclick.',
+        '',
+        '211 -> 201.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -359,5 +328,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.874 pushed - the order is deleted and its invoice survives" -ForegroundColor Green
+    Write-Host "`n+ v3.74.875 pushed - a button that deletes two healthy payments and reports success" -ForegroundColor Green
 }
