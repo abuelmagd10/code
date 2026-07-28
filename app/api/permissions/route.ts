@@ -197,16 +197,23 @@ export async function POST(request: Request) {
       if (error) throw error
       result = { action: "share", count: data?.length || 0, data }
 
-      // تسجيل في Audit Log
-      await supabase.from("audit_logs").insert({
+      // v3.74.865 — أعمدة وهمية (`action_type`/`resource_type`/`resource_id`/
+      // `description`) كانت تُسقط الإدراج كاملاً ⇒ **مشاركة الصلاحيات بين
+      // الموظفين لم تُسجَّل قط**. وهذا أثرٌ رقابىٌّ لا يجوز أن يغيب.
+      const { error: auditError } = await supabase.from("audit_logs").insert({
         company_id,
         user_id: user.id,
-        action_type: "permission_share",
-        resource_type: "permissions",
-        resource_id: data?.[0]?.id || null,
-        description: `مشاركة صلاحيات ${resource_type || 'all'} من ${grantor_user_id} إلى ${grantee_user_ids?.length || 0} موظف`,
+        action: "permission_share",
+        entity: "permissions",
+        entity_id: data?.[0]?.id || null,
+        reason: `مشاركة صلاحيات ${resource_type || 'all'} من ${grantor_user_id} إلى ${grantee_user_ids?.length || 0} موظف`,
         new_data: { grantor_user_id, grantee_user_ids, resource_type, can_view, can_edit, can_delete }
       })
+      if (auditError) {
+        console.error(
+          `AUDIT_LOG_WRITE_FAILED: permission_share grantor=${grantor_user_id} company=${company_id} — ${auditError.message}`
+        )
+      }
     }
 
     return NextResponse.json({ success: true, result })

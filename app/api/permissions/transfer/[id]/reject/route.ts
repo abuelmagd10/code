@@ -125,15 +125,23 @@ export async function POST(
       referenceId: transferId,
     })
 
-    await supabase.from("audit_logs").insert({
+    // v3.74.865 — أعمدة وهمية كانت تُسقط الإدراج كاملاً ⇒ **رفض نقل
+    // الملكية لم يُسجَّل قط**. ولاحظ أن الحقل المحلّى `reason` (سبب الرفض)
+    // يُكتب فى عمود `reason` نفسه — فلا لبس.
+    const { error: auditError } = await supabase.from("audit_logs").insert({
       company_id: transfer.company_id,
       user_id: user.id,
-      action_type: "permission_transfer_rejected",
-      resource_type: "permissions",
-      resource_id: transferId,
-      description: `رُفض نَقل ملكية (${transfer.resource_type}) — السَّبَب: ${reason}${singleOwnerExemption ? ' — رَفض ذاتى (المالك الوَحيد)' : ''}`,
+      action: "permission_transfer_rejected",
+      entity: "permissions",
+      entity_id: transferId,
+      reason: `رُفض نَقل ملكية (${transfer.resource_type}) — السَّبَب: ${reason}${singleOwnerExemption ? ' — رَفض ذاتى (المالك الوَحيد)' : ''}`,
       new_data: { reason },
     })
+    if (auditError) {
+      console.error(
+        `AUDIT_LOG_WRITE_FAILED: permission_transfer_rejected transfer=${transferId} company=${transfer.company_id} — ${auditError.message}`
+      )
+    }
 
     // v3.74.23 — Notify the submitter their transfer request was rejected
     // along with the reason. Without this they'd only see the status flip

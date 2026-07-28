@@ -1286,11 +1286,28 @@ export default function SettingsPage() {
         })
       }
 
-      // Update company currency
-      await supabase
+      // ⚠️ v3.74.865 — كان هنا `currency` وهو **عمودٌ لا وجود له** فى
+      // `companies`؛ الحقيقى `base_currency` (وهو ما يستعمله باقى الملف،
+      // كسطر ١٠٠٤ و١٠٨١). فكان التحديث يفشل كاملاً **بينما تُحدَّث الشاشة
+      // والـlocalStorage والكوكى بنجاح** ⇒ تعرض الواجهة عملةً جديدة
+      // والقاعدة ما زالت على القديمة. وهو أسوأ من فشلٍ ظاهر: انقسامٌ صامت
+      // بين ما يراه المستخدم وما تحسب عليه الدفاتر.
+      const { error: currencyUpdateError } = await supabase
         .from('companies')
-        .update({ currency: pendingCurrency })
+        .update({ base_currency: pendingCurrency })
         .eq('id', companyId)
+
+      if (currencyUpdateError) {
+        console.error(
+          `COMPANY_BASE_CURRENCY_UPDATE_FAILED: company=${companyId} → ${pendingCurrency} — ${currencyUpdateError.message}`
+        )
+        alert(
+          language === 'en'
+            ? `Failed to change the base currency: ${currencyUpdateError.message}`
+            : `تعذّر تغيير عملة الشركة: ${currencyUpdateError.message}`
+        )
+        return
+      }
 
       // Update local state and storage
       setCurrency(pendingCurrency)

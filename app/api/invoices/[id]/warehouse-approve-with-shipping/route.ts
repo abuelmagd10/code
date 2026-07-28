@@ -247,9 +247,17 @@ export async function POST(
     const { data: shipmentRow, error: shipmentErr } = await admin
       .from("shipments")
       .insert({
+        // ⚠️ v3.74.865 — ثلاثة أعمدة وهمية كانت هنا تُسقط الإدراج كاملاً:
+        //     `branch_id`   ⇐ لا وجود له فى `shipments` (الفرع يُستدل من الفاتورة)
+        //     `cod_amount`  ⇐ لا وجود له (المستحق يُقرأ من الفاتورة نفسها)
+        //     `provider_response` ⇐ اسمه الحقيقى `api_response`
+        //
+        // والأثر أخطر من مجرّد فقد صف: النداء إلى شركة الشحن يسبق هذا
+        // الإدراج ويكون قد **نجح وتكلّف بالفعل**. والتعليق تحت `shipmentErr`
+        // يصف مساره بأنه «نادرٌ للغاية» — وهو فى الحقيقة **المسار الوحيد**:
+        // كل شحنةٍ أُنشئت لدى المزوّد لم تُحفظ عندنا قط.
         company_id: companyId,
         invoice_id: invoiceId,
-        branch_id: invoice.branch_id,
         shipping_provider_id: provider.id,
         shipment_number,
         tracking_number: apiResult.tracking_number || null,
@@ -262,16 +270,22 @@ export async function POST(
         recipient_address: customer.address,
         recipient_city: customer.city,
         recipient_country: customer.country || "Egypt",
-        cod_amount: createReq.shipment.cod_amount || 0,
         api_attempts: 1,
-        provider_response: apiResult.raw_response || null,
+        api_response: apiResult.raw_response || null,
+        // المبلغ المستحق عند الاستلام يبقى محفوظاً داخل `api_response`
+        // ضمن ما أُرسل للمزوّد، ويُقرأ الرصيد الحىّ من الفاتورة — فلا
+        // نُنشئ نسخةً ثانية من رقمٍ مالىٍّ قد تتعارض مع أصلها.
       })
       .select("id")
       .single()
 
     if (shipmentErr) {
-      // Extremely rare path — the provider succeeded but we failed to
-      // save the shipment. We don't try to reverse the provider call.
+      // ⚠️ v3.74.865 — كان هذا المسار موصوفاً بأنه «نادرٌ للغاية»، وكان
+      // **المسار الوحيد** بسبب ثلاثة أعمدة وهمية أعلاه. صُحّحت، فعاد
+      // الوصف صادقاً. والتصنيف يُتحقَّق منه لا يُنقَل.
+      //
+      // The provider succeeded but we failed to save the shipment.
+      // We don't try to reverse the provider call.
       // Surface a 500 so the user knows to NOT click again (the row in
       // Bosta already exists).
       return NextResponse.json({

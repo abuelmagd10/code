@@ -138,15 +138,23 @@ export async function POST(request: Request) {
       }
 
       // Audit log — the REQUEST was filed (not yet executed)
-      await supabase.from("audit_logs").insert({
+      // v3.74.865 — أعمدة وهمية (`action_type`/`resource_type`/`resource_id`/
+      // `description`) كانت تُسقط الإدراج كاملاً ⇒ **طلبات نقل الملكية لم
+      // تُسجَّل فى أثر التدقيق قط**. أسماؤها الحقيقية أدناه.
+      const { error: auditError } = await supabase.from("audit_logs").insert({
         company_id,
         user_id: user.id,
-        action_type: "permission_transfer_requested",
-        resource_type: "permissions",
-        resource_id: transfer.id,
-        description: `طُلِب نَقل ملكية (${resource_type}) من ${from_user_id} إلى ${toUserId} — بانتظار اعتماد`,
+        action: "permission_transfer_requested",
+        entity: "permissions",
+        entity_id: transfer.id,
+        reason: `طُلِب نَقل ملكية (${resource_type}) من ${from_user_id} إلى ${toUserId} — بانتظار اعتماد`,
         new_data: { from_user_id, to_user_id: toUserId, resource_type, branch_id: branch_id || null }
       })
+      if (auditError) {
+        console.error(
+          `AUDIT_LOG_WRITE_FAILED: permission_transfer_requested transfer=${transfer.id} company=${company_id} — ${auditError.message}`
+        )
+      }
 
       // v3.74.66 — Two-eye rule. Previously we inserted one notification
       // per *role* (assigned_to_role), which meant the submitter (if a

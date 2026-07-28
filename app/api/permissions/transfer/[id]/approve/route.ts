@@ -149,15 +149,23 @@ export async function POST(
     }
 
     // Audit
-    await supabase.from("audit_logs").insert({
+    // v3.74.865 — أعمدة وهمية كانت تُسقط الإدراج كاملاً ⇒ **اعتماد نقل
+    // الملكية لم يُسجَّل قط**، وهو من أخطر ما يجب أن يُسجَّل: مَن سلَّم
+    // صلاحياتِ مَن إلى مَن، ومتى، وبأى نطاق.
+    const { error: auditError } = await supabase.from("audit_logs").insert({
       company_id: transfer.company_id,
       user_id: user.id,
-      action_type: "permission_transfer_approved",
-      resource_type: "permissions",
-      resource_id: transferId,
-      description: `اعتُمد نَقل ملكية (${transfer.resource_type}) بنَطاق "${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'}" — نُفِّذ ${(execResult as any)?.records_transferred || 0} سجل${singleOwnerExemption ? ' — اعتماد ذاتى (المالك الوَحيد)' : ''}`,
+      action: "permission_transfer_approved",
+      entity: "permissions",
+      entity_id: transferId,
+      reason: `اعتُمد نَقل ملكية (${transfer.resource_type}) بنَطاق "${mode === 'snapshot' ? 'مُسَجَّل' : 'حالى'}" — نُفِّذ ${(execResult as any)?.records_transferred || 0} سجل${singleOwnerExemption ? ' — اعتماد ذاتى (المالك الوَحيد)' : ''}`,
       new_data: { ...(execResult as any), single_owner_exemption: singleOwnerExemption },
     })
+    if (auditError) {
+      console.error(
+        `AUDIT_LOG_WRITE_FAILED: permission_transfer_approved transfer=${transferId} company=${transfer.company_id} — ${auditError.message}`
+      )
+    }
 
     // v3.74.23 — Notify the originator (the submitter who filed this
     // transfer request) that their request was approved and executed.

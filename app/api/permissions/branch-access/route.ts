@@ -165,14 +165,24 @@ async function _legacyPOST(request: Request) {
 
     if (error) throw error
 
-    await supabase.from("audit_logs").insert({
+    // v3.74.865 — `action_type` و`resource_type` و`description` أعمدةٌ وهمية؛
+    // أسماؤها الحقيقية `action` و`entity` و`reason`. فكان الإدراج يفشل كاملاً
+    // ⇒ **منح صلاحيات الفروع لم يُسجَّل فى أثر التدقيق ولا مرة**، وهو من
+    // أخطر ما يجب تسجيله: مَن أعطى مَن حقَّ الوصول إلى أى فرع.
+    const { error: auditError } = await supabase.from("audit_logs").insert({
       company_id,
       user_id: user.id,
-      action_type: replace_existing ? "update" : "create",
-      resource_type: "user_branch_access",
-      description: `${replace_existing ? 'تحديث' : 'إضافة'} وصول ${branch_ids.length} فرع للموظف ${user_id}`,
+      action: replace_existing ? "branch_access_updated" : "branch_access_granted",
+      entity: "user_branch_access",
+      entity_id: user_id,
+      reason: `${replace_existing ? 'تحديث' : 'إضافة'} وصول ${branch_ids.length} فرع للموظف ${user_id}`,
       new_data: { user_id, branch_ids, primary_branch_id }
     })
+    if (auditError) {
+      console.error(
+        `AUDIT_LOG_WRITE_FAILED: branch_access target_user=${user_id} company=${company_id} — ${auditError.message}`
+      )
+    }
 
     return NextResponse.json({ success: true, data })
   } catch (error: any) {

@@ -117,16 +117,22 @@ function sliceObject(src, openIndex) {
   return null
 }
 
+const seenFiles = new Set()
 const files = []
 function walk(dir) {
   if (!fs.existsSync(dir)) return
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name)
-    if (e.isDirectory()) walk(p)
-    else if (/\.ts$/.test(e.name)) files.push(p)
+    if (e.isDirectory()) { walk(p); continue }
+    // v3.74.865 — أُضيف `.tsx`: صفحات الواجهة تكتب إلى الجداول مباشرةً
+    // عبر عميل المتصفح، وكانت خارج مدى الحارس بالكامل.
+    if (!/\.tsx?$/.test(e.name)) continue
+    if (seenFiles.has(p)) continue
+    seenFiles.add(p)
+    files.push(p)
   }
 }
-walk(path.join(root, "app/api"))
+walk(path.join(root, "app"))
 walk(path.join(root, "lib"))
 
 ;(async () => {
@@ -147,7 +153,15 @@ walk(path.join(root, "lib"))
 
   // ⚠️ الفجوة **لا تحتمل** `.from(` آخر: وإلا نُسبت المفاتيح لجدولٍ سابق —
   //    وهو العيب الذى أنتج وحده ٢٦ إنذاراً كاذباً.
-  const RE = /\.from\(\s*["'`]([a-z0-9_]+)["'`]\s*\)((?:(?!\.from\()[\s\S]){0,300}?)\.update\(\s*\{/g
+  //
+  // v3.74.865 — أُضيف `insert` و`upsert` إلى `update`.
+  //
+  // **ولمَ كان غيابهما أخطر من وجود العيوب الثلاثة السابقة؟** لأن التعديل
+  // على عمودٍ وهمى يُفقد تحديثاً، أما **الإضافة** على عمودٍ وهمى فتُفقد
+  // **السجل كله**. وقد أثبت القياس ١٤ عموداً وهمياً حقيقياً فى مساحةٍ لم
+  // يكن يمرّ عليها حارس، منها ما عطّل القيد اليدوى وإغلاق الفترة وحفظ
+  // الشحنات وأربعة مواضع أثر تدقيق — سنواتٍ بلا أن يلاحظها أحد.
+  const RE = /\.from\(\s*["'`]([a-z0-9_]+)["'`]\s*\)((?:(?!\.from\()[\s\S]){0,300}?)\.(update|insert|upsert)\(\s*\{/g
 
   for (const file of files) {
     const src = fs.readFileSync(file, "utf8")
@@ -160,24 +174,31 @@ walk(path.join(root, "lib"))
       if (body === null) continue
       for (const key of topLevelKeys(body)) {
         if (cols.has(key)) continue
-        offenders.push({ file: path.relative(root, file).replace(/\\/g, "/"), table, column: key })
+        offenders.push({
+          file: path.relative(root, file).replace(/\\/g, "/"),
+          table,
+          column: key,
+          op: m[3],
+        })
       }
     }
   }
 
   if (verbose) {
-    for (const o of offenders) console.log(`  - ${o.table}.${o.column}\n      ${o.file}`)
+    for (const o of offenders) console.log(`  - ${o.table}.${o.column} (${o.op})\n      ${o.file}`)
   }
 
   console.log(`Found: ${offenders.length}   Baseline: ${BASELINE}   (${tableColumns.size} live tables)`)
 
   if (offenders.length > BASELINE) {
     console.error(`\nX ${offenders.length - BASELINE} NEW write(s) target a column that does not exist:\n`)
-    for (const o of offenders) console.error(`    ${o.table}.${o.column}\n      ${o.file}`)
+    for (const o of offenders) console.error(`    ${o.table}.${o.column}  (${o.op})\n      ${o.file}`)
     console.error(
       "\n  These fail at RUNTIME with a PostgREST schema-cache error, and the WHOLE\n" +
         "  statement fails - not merely that one column. They surface only on the code\n" +
-        "  path that sets them, which is often the rarest one."
+        "  path that sets them, which is often the rarest one.\n" +
+        "\n  On an INSERT this means the ROW IS NEVER CREATED - the feature is dead,\n" +
+        "  silently, for as long as the phantom column stays there."
     )
     process.exit(1)
   }

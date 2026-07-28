@@ -147,7 +147,10 @@ async function getSystemAccounts(
         company_id: companyId,
         account_code: "3300",
         account_name: "صافي ربح/خسارة الفترة",
-        account_name_en: "Net Income / Loss",
+        // v3.74.865 — `account_name_en` عمودٌ **لا وجود له** فى
+        // `chart_of_accounts` (لا اسم إنجليزىّ فى الجدول أصلاً). فكان
+        // إنشاء حساب «ملخّص الدخل» يفشل كاملاً ⇒ **إغلاق الفترة يتعطّل**
+        // لأى شركةٍ لا تملك الحساب ٣٣٠٠ مسبقاً.
         account_type: "equity",
         normal_balance: "credit",
         sub_type: "income_summary",

@@ -652,15 +652,22 @@ export async function POST(request: NextRequest) {
     // 5️⃣ إضافة سجل تدقيق (Enterprise Requirement)
     const { data: { user } } = await supabase.auth.getUser()
     if (user && governance.companyId) {
-      await supabase.from("audit_logs").insert({
+      // v3.74.865 — `entity_type` و`new_values` وهميّان (الحقيقيّان `entity`
+      // و`new_data`) ⇒ **إنشاء أمر الشراء لم يُسجَّل فى أثر التدقيق قط**.
+      const { error: auditError } = await supabase.from("audit_logs").insert({
         company_id: governance.companyId,
         user_id: user.id,
         action: "po_created",
-        entity_type: "purchase_order",
+        entity: "purchase_order",
         entity_id: newOrder.id,
-        new_values: newOrder,
+        new_data: newOrder,
         created_at: new Date().toISOString()
       })
+      if (auditError) {
+        console.error(
+          `AUDIT_LOG_WRITE_FAILED: po_created order=${newOrder.id} company=${governance.companyId} — ${auditError.message}`
+        )
+      }
     }
 
     if (!canCreateLinkedBill) {

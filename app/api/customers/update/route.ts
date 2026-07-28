@@ -131,21 +131,28 @@ export async function POST(request: NextRequest) {
 
     // 🔐 إذا كان المستخدم مسموح له بتغيير الحوكمة، نسجل ذلك في Audit Log
     if (governanceFieldsInRequest.length > 0 && isGovernanceAdmin) {
-      try {
-        await db.from("audit_logs").insert({
+      // v3.74.865 — كانت الأعمدة `entity_type` و`old_values` و`new_values`
+      // **وهمية**؛ أسماؤها الحقيقية `entity` و`old_data` و`new_data`. فكان
+      // الإدراج يفشل كاملاً ⇒ **تغييرات الحوكمة على العملاء لم تُسجَّل قط**.
+      //
+      // وسكت العطبُ سكوتاً مزدوجاً: `try/catch` حول استدعاءٍ **لا يرمى**
+      // (supabase-js يُرجع `{ error }` ولا يرفع استثناءً)، فلا الـcatch
+      // يعمل ولا النتيجة تُفحص. ⇒ صار الخطأ يُقرأ من `error` صراحةً.
+      {
+        const { error: auditError } = await db.from("audit_logs").insert({
           company_id: companyId,
           user_id: user.id,
           action: "customer_governance_changed",
-          entity_type: "customer",
+          entity: "customer",
           entity_id: customerId,
-          old_values: {
+          old_data: {
             customer_id: customerId,
             customer_name: customer.name,
             branch_id: customer.branch_id,
             cost_center_id: customer.cost_center_id,
             warehouse_id: customer.warehouse_id
           },
-          new_values: {
+          new_data: {
             customer_id: customerId,
             customer_name: customer.name,
             branch_id: updateData.branch_id ?? customer.branch_id,
@@ -160,8 +167,11 @@ export async function POST(request: NextRequest) {
             reason: "Governance admin override"
           }
         })
-      } catch (auditError) {
-        console.error("Failed to log governance change to audit_logs:", auditError)
+        if (auditError) {
+          console.error(
+            `AUDIT_LOG_WRITE_FAILED: customer_governance_changed customer=${customerId} company=${companyId} — ${auditError.message}`
+          )
+        }
       }
     }
 
@@ -268,19 +278,20 @@ export async function POST(request: NextRequest) {
       }
 
       // تسجيل في audit_logs
-      try {
-        await db.from("audit_logs").insert({
+      // v3.74.865 — نفس العطب: أعمدة وهمية + try/catch حول ما لا يرمى.
+      {
+        const { error: auditError } = await db.from("audit_logs").insert({
           company_id: companyId,
           user_id: user.id,
           action: "customer_address_updated",
-          entity_type: "customer",
+          entity: "customer",
           entity_id: customerId,
-          old_values: {
+          old_data: {
             customer_id: customerId,
             customer_name: customer.name,
             ...oldAddressData
           },
-          new_values: {
+          new_data: {
             customer_id: customerId,
             customer_name: customer.name,
             ...newAddressData
@@ -292,9 +303,12 @@ export async function POST(request: NextRequest) {
             is_address_only: isAddressOnlyUpdate
           }
         })
-      } catch (auditError) {
-        console.error("Failed to log address update to audit_logs:", auditError)
-        // نستمر حتى لو فشل التسجيل في Audit Log
+        if (auditError) {
+          console.error(
+            `AUDIT_LOG_WRITE_FAILED: customer_address_updated customer=${customerId} company=${companyId} — ${auditError.message}`
+          )
+          // نستمر: فشل التسجيل لا يُبطل تعديلاً نجح — لكنه لم يعد صامتاً.
+        }
       }
     }
 

@@ -564,17 +564,24 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
       if (updateError) throw updateError
 
-      // تسجيل في Audit Log
-      await supabase.from("audit_logs").insert({
+      // v3.74.865 — `entity_type`/`old_values`/`new_values` أعمدةٌ وهمية
+      // (الحقيقية `entity`/`old_data`/`new_data`) ⇒ **اعتماد تحويل المخزون
+      // لم يُسجَّل فى أثر التدقيق قط**، وهو قرارٌ يُحرِّك بضاعةً بين مخزنين.
+      const { error: auditApproveError } = await supabase.from("audit_logs").insert({
         company_id: companyId,
         user_id: user.id,
         action: 'transfer_approved',
-        entity_type: 'stock_transfer',
+        entity: 'stock_transfer',
         entity_id: transfer.id,
-        old_values: { status: 'pending_approval' },
-        new_values: { status: 'pending', approved_by: user.id },
+        old_data: { status: 'pending_approval' },
+        new_data: { status: 'pending', approved_by: user.id },
         metadata: { transfer_number: transfer.transfer_number, approved_at: new Date().toISOString() }
       })
+      if (auditApproveError) {
+        console.error(
+          `AUDIT_LOG_WRITE_FAILED: transfer_approved transfer=${transfer.id} company=${companyId} — ${auditApproveError.message}`
+        )
+      }
 
       // إرسال إشعار للمحاسب المنشئ
       try {
@@ -615,16 +622,22 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       if (updateError) throw updateError
 
       // تسجيل في Audit Log
-      await supabase.from("audit_logs").insert({
+      // v3.74.865 — نفس الأعمدة الوهمية ⇒ الرفض لم يُسجَّل قط.
+      const { error: auditRejectError } = await supabase.from("audit_logs").insert({
         company_id: companyId,
         user_id: user.id,
         action: 'transfer_rejected',
-        entity_type: 'stock_transfer',
+        entity: 'stock_transfer',
         entity_id: transfer.id,
-        old_values: { status: 'pending_approval' },
-        new_values: { status: 'draft', rejected_by: user.id, rejection_reason: reason },
+        old_data: { status: 'pending_approval' },
+        new_data: { status: 'draft', rejected_by: user.id, rejection_reason: reason },
         metadata: { transfer_number: transfer.transfer_number, rejected_at: new Date().toISOString() }
       })
+      if (auditRejectError) {
+        console.error(
+          `AUDIT_LOG_WRITE_FAILED: transfer_rejected transfer=${transfer.id} company=${companyId} — ${auditRejectError.message}`
+        )
+      }
 
       // إرسال إشعار للمحاسب المنشئ
       // ⚠️ لا نرسل branch_id لأن الإشعار شخصي (assigned_to_user)
@@ -670,16 +683,22 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       if (updateError) throw updateError
 
       // تسجيل في Audit Log
-      await supabase.from("audit_logs").insert({
+      // v3.74.865 — نفس الأعمدة الوهمية ⇒ إعادة التقديم لم تُسجَّل قط.
+      const { error: auditResubmitError } = await supabase.from("audit_logs").insert({
         company_id: companyId,
         user_id: user.id,
         action: 'transfer_resubmitted',
-        entity_type: 'stock_transfer',
+        entity: 'stock_transfer',
         entity_id: transfer.id,
-        old_values: { status: 'draft' },
-        new_values: { status: 'pending_approval' },
+        old_data: { status: 'draft' },
+        new_data: { status: 'pending_approval' },
         metadata: { transfer_number: transfer.transfer_number, resubmitted_at: new Date().toISOString() }
       })
+      if (auditResubmitError) {
+        console.error(
+          `AUDIT_LOG_WRITE_FAILED: transfer_resubmitted transfer=${transfer.id} company=${companyId} — ${auditResubmitError.message}`
+        )
+      }
 
       // إرسال إشعار للإدارة
       try {

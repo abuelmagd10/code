@@ -2741,7 +2741,8 @@ CREATE TABLE IF NOT EXISTS public.journal_entries (
   posted_at timestamp with time zone,
   posted_by uuid,
   is_closing_entry boolean DEFAULT false,
-  reversal_of_entry_id uuid
+  reversal_of_entry_id uuid,
+  created_by uuid
 );
 
 CREATE TABLE IF NOT EXISTS public.journal_entry_lines (

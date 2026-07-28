@@ -438,8 +438,20 @@ export async function createFXGainLossEntry(
   fxLossAccountId: string,
   relatedAccountId: string,
   description: string,
-  baseCurrency: string
+  baseCurrency: string,
+  /**
+   * v3.74.865 — **مطلوب**: `journal_entries.branch_id` عمودٌ NOT NULL.
+   * وهو فرع المستند المسبِّب لفرق الصرف (الفاتورة أو الدفعة)، لا فرعاً
+   * افتراضياً — لأن فرق الصرف يتبع الواقعة التى ولّدته.
+   *
+   * وجُعل وسيطاً إلزامياً عن عمد: الدالة اليوم **بلا مستدعٍ**، فأول من
+   * يستدعيها لن يستطيع إغفال الفرع.
+   */
+  branchId: string
 ): Promise<{ success: boolean; entryId?: string; error?: string }> {
+  if (!branchId) {
+    return { success: false, error: "FX_ENTRY_BRANCH_REQUIRED: فرع المستند مطلوب لقيد فروق الصرف" }
+  }
   if (!fxResult.hasGainLoss) {
     return { success: true }
   }
@@ -457,7 +469,15 @@ export async function createFXGainLossEntry(
         description: `${description} - ${isGain ? 'ربح' : 'خسارة'} فروق صرف`,
         reference_type: 'fx_gain_loss',
         reference_id: referenceId,
-        is_approved: true
+        // v3.74.865 — كان هنا `is_approved: true`، **وهو عمودٌ لا وجود له**
+        // فى `journal_entries`. وسطر ٨١٨ من هذا الملف نفسه يقول صراحةً
+        // «الجدول لا يملك is_approved»، وسطر ١٢٢٣ يكرّرها — بينما هذا
+        // السطر يكتبه. فكان PostgREST يرفض الإدراج كاملاً.
+        // وفرق الصرف واقعةٌ محقَّقة لا قرارَ فيها، فيُرحَّل فوراً
+        // (قرار المالك، ٢٦ يوليو ٢٠٢٦).
+        branch_id: branchId,
+        status: 'posted',
+        posted_at: new Date().toISOString()
       })
       .select()
       .single()

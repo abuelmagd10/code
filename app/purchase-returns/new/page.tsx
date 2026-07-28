@@ -1278,19 +1278,27 @@ export default function NewPurchaseReturnPage() {
       // ===================== 🔍 Audit Log: purchase_return_created =====================
       if (purchaseReturnId && companyId && currentUserId) {
         try {
-          await supabase.from('audit_logs').insert({
+          // v3.74.865 — `entity_type`/`new_values` وهميّان ⇒ **إنشاء مرتجع
+          // المشتريات لم يُسجَّل قط**. والـ`catch` لم يكن ليعمل أصلاً لأن
+          // supabase-js يُرجع `{ error }` ولا يرمى.
+          const { error: auditErrorRes } = await supabase.from('audit_logs').insert({
             company_id: companyId,
             user_id: currentUserId,
             action: 'purchase_return_created',
-            entity_type: 'purchase_return',
+            entity: 'purchase_return',
             entity_id: purchaseReturnId,
-            new_values: {
+            new_data: {
               return_number: form.return_number,
               supplier_id: form.supplier_id,
               total_amount: finalBaseTotal,
               status: 'pending_approval',
             },
           })
+          if (auditErrorRes) {
+            console.error(
+              `AUDIT_LOG_WRITE_FAILED: purchase_return_created return=${purchaseReturnId} company=${companyId} — ${auditErrorRes.message}`
+            )
+          }
         } catch (auditErr) {
           console.warn('Audit log failed (non-critical):', auditErr)
         }

@@ -7,7 +7,10 @@
  * ✅ يتم إنشاء Vendor Credit فقط للـ Credit Return (settlement_method = 'credit')
  * ❌ لا يتم إنشاء Vendor Credit عند مرتجع فاتورة Received أو Draft
  * ❌ لا يتم إنشاء Vendor Credit للـ Cash Refund أو Bank Refund
- * ✅ يجب ربط الإشعار بـ: company_id, branch_id, cost_center_id, warehouse_id, supplier_id, source_purchase_invoice_id, source_purchase_return_id
+ * ✅ يجب ربط الإشعار بـ: company_id, branch_id, cost_center_id, supplier_id, source_purchase_invoice_id, source_purchase_return_id
+ *    (v3.74.865 — حُذف `warehouse_id` من هذه القائمة: لا عمود بهذا الاسم فى
+ *     `vendor_credits`، وكانت العلامة ✅ تصف ربطاً لم يقم قط. والمخزن يُستدل
+ *     عليه من المرتجع المصدر.)
  * ✅ يتم إنشاء قيد محاسبي عكسي صحيح
  * ✅ الحالة الأولية: open
  * ✅ لا يتم تعديل الفاتورة الأصلية (audit-locked)
@@ -132,7 +135,11 @@ export async function createVendorCreditForReturn(
         journal_entry_id: journalEntryId,
         branch_id: branchId,
         cost_center_id: costCenterId,
-        warehouse_id: warehouseId,
+        // v3.74.865 — `warehouse_id` عمودٌ **لا وجود له** فى `vendor_credits`،
+        // فكان الإدراج يفشل كاملاً. والتعليق فى رأس هذا الملف يُدرج المخزن
+        // ضمن ما «يجب ربط الإشعار به» بعلامة ✅ — **وهو ربطٌ لم يقم قط**.
+        // (والدالة اليوم بلا مستدعٍ، فلم يظهر العطب تشغيلياً.)
+        // والمخزن مستخلَصٌ من المرتجع المصدر عبر `source_purchase_return_id`.
         notes: `إشعار دائن تلقائي من مرتجع المشتريات ${returnNumber}`,
         // Multi-currency support
         original_currency: currency,

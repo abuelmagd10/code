@@ -51,7 +51,35 @@ export type ManualJournalResult = {
   eventType: typeof MANUAL_JOURNAL_CREATE_EVENT | typeof MANUAL_JOURNAL_UPDATE_EVENT
 }
 
-const MANUAL_JOURNAL_ROLES = new Set(["owner", "admin", "manager", "general_manager", "accountant"])
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * v3.74.865 — حوكمة القيد اليدوى (قرار المالك، ٢٦ يوليو ٢٠٢٦)
+ *
+ *   المالك          ⇐ يقيّد ويُرحَّل قيده مباشرة، بلا اعتماد.
+ *   المدير العام    ⇐ يقيّد لأى فرع، ويبقى القيد مسودَّة حتى **يعتمده المالك**.
+ *   محاسب الفرع     ⇐ يقيّد **لفرعه وحده**، ويعتمده المالك أو المدير العام.
+ *   ما عدا هؤلاء    ⇐ ممنوع.
+ *
+ * وكان القائم قبل هذا الإصدار يخالف القاعدة فى ثلاثة مواضع:
+ *   ١) `MANUAL_JOURNAL_ROLES` تسمح لـ`admin` و`manager` — ولا حقّ لهما.
+ *   ٢) `PRIVILEGED_POST_ROLES` ترحّل قيد المدير العام مباشرة بلا اعتماد.
+ *   ٣) لا تحقُّق إطلاقاً من أن محاسب الفرع يقيّد على فرعه هو.
+ *
+ * ولم يظهر شىء من ذلك عملياً لسببٍ أبسط: **الإنشاء نفسه كان يفشل دائماً**
+ * (العمود الوهمى `created_by`)، فلم يبلغ التنفيذُ هذه الشروط قط.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+const MANUAL_JOURNAL_ROLES = new Set(["owner", "general_manager", "accountant"])
+
+/** مَن يُرحَّل قيده فور إنشائه بلا اعتماد ثانٍ — المالك وحده. */
+const SELF_POST_ROLES = new Set(["owner"])
+
+/** مَن يقتصر تقييده على فرعه المسجَّل فى عضويته. */
+const BRANCH_SCOPED_ROLES = new Set(["accountant"])
+
+/** مَن يملك اعتماد مسودَّةٍ أنشأها غيره. */
+export const MANUAL_JOURNAL_APPROVER_ROLES = new Set(["owner", "general_manager"])
+
 const normalizeRole = (role: string | null | undefined) => String(role || "").trim().toLowerCase()
 const duplicateTrace = (message?: string | null) =>
   !!message && (message.includes("duplicate key value violates unique constraint") || message.includes("idx_financial_operation_traces_idempotency"))
@@ -66,6 +94,7 @@ export class ManualJournalCommandService {
   ): Promise<ManualJournalResult> {
     this.assertActorCanPost(actor)
     const prepared = await this.prepareCommand(command)
+    this.assertBranchScope(actor, prepared.branchId)
     const existingTrace = await this.findTraceByIdempotency(command.companyId, MANUAL_JOURNAL_CREATE_EVENT, options.idempotencyKey)
     if (existingTrace) return this.cachedResult(existingTrace, MANUAL_JOURNAL_CREATE_EVENT, options.requestHash)
 
@@ -91,13 +120,9 @@ export class ManualJournalCommandService {
         }),
       })
 
-      // v3.74.567 — SoD for manual JEs. Owner / general_manager may
-      // still post directly; other roles (admin, manager, accountant)
-      // are downgraded to draft and must be posted by a privileged
-      // second user via a follow-up UPDATE (which the immutable-fields
-      // trigger permits for status-only transitions).
-      const PRIVILEGED_POST_ROLES = new Set(["owner", "general_manager"])
-      const initialStatus = PRIVILEGED_POST_ROLES.has(String(actor.actorRole || "").toLowerCase())
+      // v3.74.865 — المالك وحده يُرحَّل قيده مباشرة. وما عداه يبقى مسودَّة
+      // حتى يعتمدها مُعتمِدٌ مخوَّل عبر `/api/journal-entries/[id]/approve`.
+      const initialStatus = SELF_POST_ROLES.has(normalizeRole(actor.actorRole))
         ? "posted"
         : "draft"
       const { data: entry, error: entryError } = await this.adminSupabase
@@ -111,7 +136,13 @@ export class ManualJournalCommandService {
           branch_id: prepared.branchId,
           cost_center_id: prepared.costCenterId,
           status: initialStatus,
+          // v3.74.865 — `created_by` أُضيف فى ترحيل هذا الإصدار. وكان يُكتب
+          // هنا منذ نشأة الخدمة وهو **غير موجود**، فكان PostgREST يرفض
+          // الإدراج كاملاً قبل أن يُصدر SQL ⇒ صفر قيد يدوى فى الإنتاج.
           created_by: actor.actorId,
+          // مَن رحَّل ≠ مَن أنشأ. ولا يُملأ إلا عند ترحيلٍ فعلى.
+          posted_by: initialStatus === "posted" ? actor.actorId : null,
+          posted_at: initialStatus === "posted" ? new Date().toISOString() : null,
         })
         .select("id")
         .single()
@@ -277,6 +308,25 @@ export class ManualJournalCommandService {
   private assertActorCanPost(actor: ManualJournalActor) {
     if (!MANUAL_JOURNAL_ROLES.has(normalizeRole(actor.actorRole))) {
       throw new Error("You do not have permission to post manual journals")
+    }
+  }
+
+  /**
+   * v3.74.865 — محاسب الفرع يقيّد على فرعه وحده.
+   *
+   * ويُرفض أيضاً إن لم يكن لعضويته فرعٌ مسجَّل: فمحاسبٌ بلا فرع لا يمكن
+   * التحقق من نطاقه، و**العجز عن التحقق ليس إذناً**. (درس ٨٥٧: سياسةٌ
+   * متساهلة واحدة تُلغى كل ما جاورها.)
+   */
+  private assertBranchScope(actor: ManualJournalActor, branchId: string | null) {
+    if (!BRANCH_SCOPED_ROLES.has(normalizeRole(actor.actorRole))) return
+
+    const actorBranch = String(actor.actorBranchId || "").trim()
+    if (!actorBranch) {
+      throw new Error("MANUAL_JOURNAL_BRANCH_SCOPE: محاسب بلا فرع مسجَّل لا يمكنه إنشاء قيد يدوى")
+    }
+    if (String(branchId || "").trim() !== actorBranch) {
+      throw new Error("MANUAL_JOURNAL_BRANCH_SCOPE: محاسب الفرع لا يقيّد إلا على فرعه")
     }
   }
 

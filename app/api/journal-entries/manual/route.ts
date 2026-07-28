@@ -22,11 +22,18 @@ export async function POST(request: NextRequest) {
   const { context, errorResponse } = await apiGuard(request)
   if (errorResponse || !context) return errorResponse
 
-  // 🔒 قرار المالك: القيود اليدوية (إنشاء/تعديل) مقصورة على المالك والمدير العام فقط.
-  const role = context.member?.role
-  if (role !== "owner" && role !== "general_manager") {
+  // 🔒 v3.74.865 — قرار المالك (٢٦ يوليو ٢٠٢٦):
+  //     المالك       ⇐ يقيّد ويُرحَّل قيده مباشرة.
+  //     المدير العام ⇐ يقيّد لأى فرع، ويعتمده المالك.
+  //     محاسب الفرع  ⇐ يقيّد لفرعه وحده، ويعتمده المالك أو المدير العام.
+  //
+  // ونطاق الفرع لا يُفحص هنا بل فى `assertBranchScope` داخل الخدمة، لأن
+  // الفرع المقصود لا يُعرف إلا بعد `prepareCommand` — ولأن **الخدمة هى
+  // الحدّ الذى يجب أن يصمد** حتى لو استُدعيت من مسارٍ آخر لاحقاً.
+  const role = String(context.member?.role || "").trim().toLowerCase()
+  if (role !== "owner" && role !== "general_manager" && role !== "accountant") {
     return NextResponse.json(
-      { error: "forbidden", message: "القيود اليدوية متاحة للمالك والمدير العام فقط" },
+      { error: "forbidden", message: "القيود اليدوية متاحة للمالك والمدير العام ومحاسب الفرع فقط" },
       { status: 403 }
     )
   }
