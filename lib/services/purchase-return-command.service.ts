@@ -420,11 +420,16 @@ export class PurchaseReturnCommandService {
         throw new Error(response.error.message || "Failed to confirm purchase return delivery")
       }
 
-      await this.adminSupabase
+      // v3.74.890 — يُفحص: التسليم أُكِّد فى القاعدة؛ فشل ختم «مَن أكّد»
+      // يفقد أثر التدقيق بصمت — يُسجَّل بصوت ولا يُفشِل عمليةً تمت.
+      const { error: confirmStampErr } = await this.adminSupabase
         .from("purchase_returns")
         .update({ confirmed_by: actor.actorId, confirmed_at: new Date().toISOString() })
         .eq("id", purchaseReturnId)
         .is("confirmed_by", null)
+      if (confirmStampErr) {
+        console.error(`[purchase-return] delivery confirmed but confirmed_by stamp failed for ${purchaseReturnId}: ${confirmStampErr.message}`)
+      }
     }
 
     const refreshed = await this.loadPurchaseReturn(purchaseReturnId)

@@ -336,10 +336,19 @@ export async function createInvoiceForPayment(
   }
 
   // ── 6. Update row with pdf_url (we store the storage path; signed URL is generated on demand) ──
-  await admin
+  // v3.74.890 — يُفحص: ملفٌ رُفع وصفٌّ لم يُربط = فاتورة بلا PDF للأبد.
+  const { error: pdfLinkErr } = await admin
     .from('billing_invoices')
     .update({ pdf_url: pdfPath })
     .eq('id', invoiceRow.id)
+  if (pdfLinkErr) {
+    return {
+      success: false,
+      invoiceId: invoiceRow.id,
+      invoiceNumber: invoiceRow.invoice_number,
+      error: `pdf uploaded but row link failed: ${pdfLinkErr.message}`,
+    }
+  }
 
   return {
     success: true,
@@ -443,10 +452,14 @@ export async function regenerateInvoicePdf(invoiceId: string): Promise<InvoiceRe
     return { success: false, error: `pdf_upload_failed: ${uploadErr.message}` }
   }
 
-  await admin
+  // v3.74.890 — يُفحص (المرآة الثانية لنفس الربط).
+  const { error: pdfRelinkErr } = await admin
     .from('billing_invoices')
     .update({ pdf_url: pdfPath, updated_at: new Date().toISOString() })
     .eq('id', invoiceId)
+  if (pdfRelinkErr) {
+    return { success: false, error: `pdf uploaded but row link failed: ${pdfRelinkErr.message}` }
+  }
 
   return {
     success: true,

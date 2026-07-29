@@ -120,7 +120,11 @@ export async function buildMrpRun(
     }
   } catch (err: any) {
     // Failure semantics v1: delete the run entirely → no partial state
-    await admin.from("mrp_runs").delete().eq("id", runId)
+    // v3.74.890 — يُفحص: لو فشل الحذف بقيت تشغيلة MRP نصفية تبدو مكتملة.
+    const { error: runDelErr } = await admin.from("mrp_runs").delete().eq("id", runId)
+    if (runDelErr) {
+      console.error(`[mrp-run-builder] ROLLBACK_INCOMPLETE: run ${runId} survived a failed build: ${runDelErr.message}`)
+    }
     throw err
   }
 }

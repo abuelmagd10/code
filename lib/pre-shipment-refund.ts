@@ -405,11 +405,19 @@ export async function executePreShipmentRefund(
 
     // 9. If cancelling, also cancel the linked sales order so the
     //    operations side stops chasing it.
+    // v3.74.890 — يُفحص (نمط 888): الاسترداد نُفِّذ؛ فشلٌ صامت يُبقى
+    // أمر البيع «قائماً» فتطارده العمليات وهو ملغى.
     if (params.mode === "cancel_invoice" && invoice.sales_order_id) {
-      await admin
+      const { error: soCancelErr } = await admin
         .from("sales_orders")
         .update({ status: "cancelled" })
         .eq("id", invoice.sales_order_id)
+      if (soCancelErr) {
+        return {
+          success: false,
+          error: `Refund posted and invoice cancelled, but the linked sales order could not be cancelled: ${soCancelErr.message}. Cancel it manually — do NOT refund again.`,
+        }
+      }
     }
 
     return {

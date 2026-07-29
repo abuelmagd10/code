@@ -290,10 +290,13 @@ export async function handlePaymentSuccess(payload: PaymobWebhookPayload): Promi
 export async function handlePaymentFailed(companyId: string): Promise<void> {
   const admin = getAdminClient()
 
-  await admin
+  // v3.74.890 — يُفحص ويُرمى: هذه الكتابة هى وظيفة الدالة كلها؛ فشلها
+  // الصامت يُبقى شركةً متعثرة السداد كاملة الصلاحيات.
+  const { error } = await admin
     .from('companies')
     .update({ subscription_status: 'past_due' })
     .eq('id', companyId)
+  if (error) throw new Error(`Failed to mark company ${companyId} past_due: ${error.message}`)
 
   try {
     await writeAuditLog(admin, {
@@ -315,10 +318,12 @@ export async function cancelSubscription(
 ): Promise<void> {
   const admin = getAdminClient()
 
-  await admin
+  // v3.74.890 — يُفحص ويُرمى (وظيفة الدالة نفسها).
+  const { error } = await admin
     .from('companies')
     .update({ subscription_status: 'canceled' })
     .eq('id', companyId)
+  if (error) throw new Error(`Failed to cancel subscription for company ${companyId}: ${error.message}`)
 
   try {
     await writeAuditLog(admin, {
@@ -337,7 +342,8 @@ export async function cancelSubscription(
 export async function reactivateSubscription(companyId: string): Promise<void> {
   const admin = getAdminClient()
 
-  await admin
+  // v3.74.890 — يُفحص ويُرمى: فشلٌ صامت هنا يعنى عميلاً دفع وبقى محجوباً.
+  const { error: reactivateErr } = await admin
     .from('companies')
     .update({
       subscription_status: 'active',
@@ -345,6 +351,7 @@ export async function reactivateSubscription(companyId: string): Promise<void> {
       current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     })
     .eq('id', companyId)
+  if (reactivateErr) throw new Error(`Failed to reactivate subscription for company ${companyId}: ${reactivateErr.message}`)
 }
 
 // ─────────────────────────────────────────

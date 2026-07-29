@@ -865,7 +865,9 @@ export class BillReceiptWorkflowService {
       }
     }
 
-    await this.adminSupabase
+    // v3.74.890 — يُفحص: فشلٌ صامت يترك أمر الشراء بحالة تخالف واقع
+    // الفوترة بعد استلامٍ اكتمل فعلاً.
+    const { error: poSyncErr } = await this.adminSupabase
       .from("purchase_orders")
       .update({
         status: newStatus,
@@ -873,6 +875,9 @@ export class BillReceiptWorkflowService {
       })
       .eq("company_id", companyId)
       .eq("id", purchaseOrderId)
+    if (poSyncErr) {
+      console.error(`[bill-receipt-workflow] PO ${purchaseOrderId} status sync failed after receipt: ${poSyncErr.message}`)
+    }
   }
 
   private async createTrace(params: {

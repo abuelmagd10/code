@@ -318,7 +318,9 @@ export async function clearThirdPartyInventory(
           newStatus = "partial"
         }
 
-        await supabase
+        // v3.74.890 — يُفحص: كمية مخلَّصة لا تُحفظ = بضاعة الغير تُخلَّص
+        // مرتين من نفس الرصيد.
+        const { error: clearErr } = await supabase
           .from("third_party_inventory")
           .update({
             cleared_quantity: newClearedQuantity,
@@ -327,6 +329,7 @@ export async function clearThirdPartyInventory(
             updated_at: new Date().toISOString(),
           })
           .eq("id", item.id)
+        if (clearErr) throw new Error(`third_party_inventory clearance update failed for ${item.id}: ${clearErr.message}`)
       }
     }
 

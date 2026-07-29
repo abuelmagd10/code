@@ -269,11 +269,16 @@ export async function createDefaultChartOfAccounts(
       .filter(u => u.accountId && u.parentId)
 
     // Update parent_id for each account
+    // v3.74.890 — يُفحص: شجرة حسابات بلا آباء تكسر التقارير الهرمية
+    // فى كل شركة جديدة — بصمت.
     for (const update of updates) {
-      await supabase
+      const { error: parentErr } = await supabase
         .from('chart_of_accounts')
         .update({ parent_id: update.parentId })
         .eq('id', update.accountId)
+      if (parentErr) {
+        return { success: false, error: `Failed to link account hierarchy: ${parentErr.message}` }
+      }
     }
 
     return {

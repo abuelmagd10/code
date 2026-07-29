@@ -157,7 +157,9 @@ async function processBatches(supabase: any, queueId: string, data: Record<strin
  */
 async function updateQueueStatus(queueId: string, status: QueueStatus, report?: any) {
   const supabase = await createClient()
-  await supabase
+  // v3.74.890 — يُفحص: حالة استعادةٍ لا تُحفظ تُبقى الطلب «قيد التنفيذ»
+  // للأبد أمام من ينتظره.
+  const { error } = await supabase
     .from('restore_queue')
     .update({
       status,
@@ -165,6 +167,7 @@ async function updateQueueStatus(queueId: string, status: QueueStatus, report?: 
       report: report || undefined
     })
     .eq('id', queueId)
+  if (error) console.error(`[restore] queue ${queueId} status '${status}' NOT saved:`, error.message)
 }
 
 /**

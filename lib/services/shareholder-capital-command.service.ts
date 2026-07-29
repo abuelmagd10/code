@@ -193,7 +193,12 @@ export class ShareholderCapitalCommandService {
         await rollbackJournalEntry(this.adminSupabase as any, journalEntryId, "shareholder capital")
       }
       if (contributionId) {
-        await this.adminSupabase.from("capital_contributions").delete().eq("id", contributionId)
+        // v3.74.890 — يُفحص: خط الدفاع الأخير لا يفشل بصمت (درس 758) —
+        // مساهمة يتيمة بلا قيد تُسمّى فى السجل.
+        const { error: contribDelErr } = await this.adminSupabase.from("capital_contributions").delete().eq("id", contributionId)
+        if (contribDelErr) {
+          console.error(`[shareholder-capital] ROLLBACK_INCOMPLETE: contribution ${contributionId} survived a failed operation: ${contribDelErr.message}`)
+        }
       }
       if (traceId) {
         await purgeTrace(this.adminSupabase, traceId, "shareholder-capital-command.service")

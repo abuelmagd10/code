@@ -155,10 +155,17 @@ export async function processUnhandledEvents(
     let success = true
 
     // Increment attempt count first
-    await supabase
+    // v3.74.890 — يُفحص: عدّادٌ لا يزيد أبداً يعنى حدثاً معطوباً يُعاد
+    // للأبد بلا سقف محاولات. لو تعذّر حتى تسجيل المحاولة يُتخطى الحدث.
+    const { error: attemptErr } = await supabase
       .from('app_events')
       .update({ processing_attempts: (event.processing_attempts ?? 0) + 1 })
       .eq('id', event.id)
+    if (attemptErr) {
+      console.error(`[EventBus] could not record attempt for event ${event.id} — skipping this cycle:`, attemptErr.message)
+      errors++
+      continue
+    }
 
     for (const listener of listeners) {
       try {
@@ -171,10 +178,17 @@ export async function processUnhandledEvents(
     }
 
     if (success) {
-      await supabase
+      // v3.74.890 — يُفحص: وسمٌ ساقط بصمت = مستمعون يُنفَّذون مرتين
+      // للحدث نفسه فى الدورة التالية.
+      const { error: doneErr } = await supabase
         .from('app_events')
         .update({ processed_at: new Date().toISOString() })
         .eq('id', event.id)
+      if (doneErr) {
+        console.error(`[EventBus] event ${event.id} PROCESSED but not marked — listeners WILL re-run:`, doneErr.message)
+        errors++
+        continue
+      }
       processed++
     }
   }

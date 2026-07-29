@@ -163,10 +163,12 @@ export async function completeJob(
   supabase: SupabaseClient,
   jobId: string
 ): Promise<void> {
-  await supabase
+  // v3.74.890 — يُفحص: مهمة أُنجزت ولم تُوسم = تُنفَّذ ثانيةً.
+  const { error } = await supabase
     .from('jobs_queue')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', jobId)
+  if (error) console.error(`[jobs-queue] job ${jobId} DONE but not marked completed — it WILL re-run:`, error.message)
 }
 
 /**
@@ -189,7 +191,9 @@ export async function failJob(
   const newAttempts = (job.attempts || 0) + 1
   const shouldRetry = newAttempts < (job.max_attempts || 3)
 
-  await supabase
+  // v3.74.890 — يُفحص: فشلٌ صامت هنا يُبقى المهمة «processing» عالقة
+  // بلا إعادة جدولة ولا وسم فشل.
+  const { error: failMarkErr } = await supabase
     .from('jobs_queue')
     .update({
       status: shouldRetry ? 'pending' : 'failed',
@@ -201,6 +205,7 @@ export async function failJob(
         : undefined,
     })
     .eq('id', jobId)
+  if (failMarkErr) console.error(`[jobs-queue] job ${jobId} failed AND could not be rescheduled/marked:`, failMarkErr.message)
 }
 
 /**
@@ -225,9 +230,11 @@ export async function cancelJob(
   supabase: SupabaseClient,
   jobId: string
 ): Promise<void> {
-  await supabase
+  // v3.74.890 — يُفحص: إلغاءٌ ساقط بصمت يعنى مهمةً «ملغاة» ستعمل.
+  const { error } = await supabase
     .from('jobs_queue')
     .update({ status: 'cancelled' })
     .eq('id', jobId)
     .eq('status', 'pending')
+  if (error) console.error(`[jobs-queue] job ${jobId} cancel failed — it may still run:`, error.message)
 }

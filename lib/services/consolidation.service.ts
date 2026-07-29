@@ -451,11 +451,16 @@ export class ConsolidationService {
   }
 
   private async snapshot(runId: string, snapshotType: string, snapshotKey: string, payload: Record<string, unknown>, createdBy?: string | null) {
-    await this.adminSupabase.from("consolidation_run_snapshots").upsert({ consolidation_run_id: runId, snapshot_type: snapshotType, snapshot_key: snapshotKey, snapshot_hash: hash(payload), snapshot_payload: payload, created_by: createdBy || null }, { onConflict: "consolidation_run_id,snapshot_type,snapshot_key" })
+    // v3.74.890 — يُفحص: اللقطة دليل التوحيد؛ سقوطها الصامت يترك تشغيلة
+    // بلا إثبات (درس 867: اللقطة تطابق القاعدة — إن وُجدت أصلاً).
+    const { error } = await this.adminSupabase.from("consolidation_run_snapshots").upsert({ consolidation_run_id: runId, snapshot_type: snapshotType, snapshot_key: snapshotKey, snapshot_hash: hash(payload), snapshot_payload: payload, created_by: createdBy || null }, { onConflict: "consolidation_run_id,snapshot_type,snapshot_key" })
+    if (error) console.error(`[consolidation] snapshot ${snapshotType}/${snapshotKey} for run ${runId} NOT saved:`, error.message)
   }
 
   private async check(runId: string, checkName: string, checkScope: string, status: "passed" | "warning" | "failed", details: Record<string, unknown>) {
-    await this.adminSupabase.from("consolidation_run_checks").insert({ consolidation_run_id: runId, check_name: checkName, check_scope: checkScope, status, details })
+    // v3.74.890 — يُفحص: فحصٌ لم يُسجَّل يُقرأ لاحقاً وكأنه لم يفشل.
+    const { error } = await this.adminSupabase.from("consolidation_run_checks").insert({ consolidation_run_id: runId, check_name: checkName, check_scope: checkScope, status, details })
+    if (error) console.error(`[consolidation] check ${checkName} (${status}) for run ${runId} NOT recorded:`, error.message)
   }
 
   private async runStatementSanityChecks(runId: string, translationLines: any[]) {

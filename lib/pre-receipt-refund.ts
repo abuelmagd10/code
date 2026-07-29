@@ -390,11 +390,19 @@ export async function executePreReceiptRefund(
     }
 
     // 9. If cancelling, also cancel the linked purchase order.
+    // v3.74.890 — يُفحص (نمط 888): الاسترداد نُفِّذ؛ فشلٌ صامت هنا يُبقى
+    // أمر الشراء «قائماً» فتطارده العمليات وهو ملغى.
     if (params.mode === "cancel_bill" && bill.purchase_order_id) {
-      await admin
+      const { error: poCancelErr } = await admin
         .from("purchase_orders")
         .update({ status: "cancelled" })
         .eq("id", bill.purchase_order_id)
+      if (poCancelErr) {
+        return {
+          success: false,
+          error: `Refund posted and bill cancelled, but the linked purchase order could not be cancelled: ${poCancelErr.message}. Cancel it manually — do NOT refund again.`,
+        }
+      }
     }
 
     return {

@@ -97,14 +97,18 @@ export async function processAttendanceJob(job: QueueJob): Promise<void> {
     }
 
     // تعليم الـ Raw Logs بأنها معالجة
+    // v3.74.890 — يُفحص ويُرمى: فشلٌ صامت = إعادة معالجة نفس البصمات فى
+    // التشغيلة التالية ⇒ سجلات مكررة. الرمى يجعل المهمة تفشل بصوت ويُعاد
+    // تشغيلها كاملة (المعالجة نفسها upsert فالإعادة آمنة).
     const processedIds = rawLogs.map(l => l.employee_id);
-    await supabase
+    const { error: markErr } = await supabase
         .from('attendance_raw_logs')
         .update({ is_processed: true })
         .eq('company_id', company_id)
         .eq('branch_id', branch_id)
         .gte('log_time', `${date}T00:00:00Z`)
         .lte('log_time', `${date}T23:59:59Z`);
+    if (markErr) throw new Error('Failed to mark raw logs processed: ' + markErr.message);
 
     console.log(`[ATTENDANCE_JOB] ✅ Built ${attendanceRecords.length} attendance records for ${date}`);
 }

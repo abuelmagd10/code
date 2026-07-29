@@ -97,7 +97,9 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
                         // Calculate Lateness based on shift
                         const { lateMins } = calculateInMetrics(logTime, dayDate, shift);
 
-                        await supabase.from('attendance_records').insert({
+                        // v3.74.890 — يُفحص: لو فشل الإدراج ثم وُسم السجل
+                        // «معالجاً» ضاعت بصمة الحضور نهائياً بصمت.
+                        const { error: recInsErr } = await supabase.from('attendance_records').insert({
                             company_id: log.company_id,
                             employee_id: log.employee_id,
                             day_date: dayDate,
@@ -106,6 +108,7 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
                             status: 'present',
                             late_minutes: lateMins
                         });
+                        if (recInsErr) throw new Error(`attendance_records insert failed: ${recInsErr.message}`);
                         await markLogProcessed(log.id);
                     }
                 }
@@ -125,7 +128,9 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
                             shift
                         );
 
-                        await supabase.from('attendance_records')
+                        // v3.74.890 — يُفحص: انصرافٌ لم يُحفظ + سجلٌ وُسم
+                        // «معالجاً» = يوم عمل بلا ساعات إلى الأبد.
+                        const { error: recUpdErr } = await supabase.from('attendance_records')
                             .update({
                                 check_out: logTime.toISOString().split('T')[1],
                                 working_hours: workingHours,
@@ -133,6 +138,7 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
                                 early_leave_minutes: earlyLeaveMins
                             })
                             .eq('id', currentRecord.id);
+                        if (recUpdErr) throw new Error(`attendance_records update failed: ${recUpdErr.message}`);
 
                         await markLogProcessed(log.id);
                     }
@@ -152,21 +158,25 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
 }
 
 // Helper to mark a log as successfully processed
+// v3.74.890 — يُفحص: فشل الوسم الصامت يعنى إعادة معالجة نفس البصمة فى
+// الدورة التالية ⇒ سجلات حضور مكررة/شاذة.
 async function markLogProcessed(logId: string) {
-    await supabase.from('attendance_raw_logs').update({
+    const { error } = await supabase.from('attendance_raw_logs').update({
         is_processed: true,
         processed_at: new Date().toISOString()
     }).eq('id', logId);
+    if (error) console.error(`[attendance-engine] failed to mark raw log ${logId} processed — it WILL be reprocessed:`, error.message);
 }
 
 // Helper to flag errors without losing the log
 async function markAnomaly(logId: string, reason: string) {
-    await supabase.from('attendance_raw_logs').update({
+    const { error } = await supabase.from('attendance_raw_logs').update({
         is_processed: true, // We processed it, but it's anomalous
         processed_at: new Date().toISOString(),
         anomaly_flag: true,
         anomaly_reason: reason
     }).eq('id', logId);
+    if (error) console.error(`[attendance-engine] failed to flag anomaly on raw log ${logId}:`, error.message);
 }
 
 // --- Attendance Calculation Engine Operations ---

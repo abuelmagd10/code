@@ -6,72 +6,74 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.889 - the OLD script is removed, never this one. Five times a chained
+# v3.74.890 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.888.ps1") { Remove-Item -LiteralPath "push_v3.74.888.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.889.ps1") { Remove-Item -LiteralPath "push_v3.74.889.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.889"') {
-    Write-Host "+ 3.74.889" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.890"') {
+    Write-Host "+ 3.74.890" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.889]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.889]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.890]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.890]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 $screens = @(
-    "app/settings/users/page.tsx",
-    "app/settings/exchange-rates/page.tsx",
-    "app/inventory-transfers/[id]/page.tsx",
-    "app/api/sync-currency/route.ts",
-    "app/api/services/[id]/staff/route.ts",
-    "app/api/permissions/branch-access/route.ts",
-    "app/api/hr/attendance/devices/route.ts",
-    "app/api/fixed-assets/[id]/route.ts",
-    "app/api/fixed-assets/[id]/depreciation/route.ts",
-    "app/api/cron/backup-daily/route.ts",
-    "app/api/company-logo/route.ts",
-    "app/api/commissions/plans/route.ts",
-    "app/api/bonuses/reverse/route.ts",
-    "app/api/bonuses/attach-to-payroll/route.ts",
-    "app/api/biometric/device/sync/route.ts",
-    "app/api/billing/seats/route.ts",
-    "app/api/ai/chat/route.ts"
+    "lib/attendance-processing-engine.ts",
+    "lib/currency-conversion-system.ts",
+    "lib/default-chart-of-accounts.ts",
+    "lib/event-bus.ts",
+    "lib/jobs-queue.ts",
+    "lib/logger.ts",
+    "lib/pre-receipt-refund.ts",
+    "lib/pre-shipment-refund.ts",
+    "lib/third-party-inventory.ts",
+    "lib/services/bill-receipt-workflow.service.ts",
+    "lib/services/consolidation.service.ts",
+    "lib/services/purchase-return-command.service.ts",
+    "lib/services/shareholder-capital-command.service.ts",
+    "lib/manufacturing/mrp-run-builder.ts",
+    "lib/core/queue/jobs/process-attendance-job.ts",
+    "lib/billing/invoice-generator.ts",
+    "lib/billing/subscription-service.ts",
+    "lib/backup/restore-utils.ts"
 )
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            "scripts/check-unchecked-writes.js",
-           "push_v3.74.889.ps1") + $screens
+           "push_v3.74.890.ps1") + $screens
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the misc fixes are present (anchor on what MUST exist) ------------
+# -- 1. the final-batch fixes are present (anchor on what MUST exist) -----
 $anchors = @{
-    "app/settings/users/page.tsx"                    = @('revokeErr', 'revokeOneErr')
-    "app/settings/exchange-rates/page.tsx"           = @('delErr')
-    "app/inventory-transfers/[id]/page.tsx"          = @('qtySentErr', 'cancelErr')
-    "app/api/sync-currency/route.ts"                 = @('prefErr')
-    "app/api/services/[id]/staff/route.ts"           = @('clearPrimaryErr')
-    "app/api/permissions/branch-access/route.ts"     = @('revokeErr')
-    "app/api/hr/attendance/devices/route.ts"         = @('failedMappings')
-    "app/api/fixed-assets/[id]/route.ts"             = @('schedDelErr')
-    "app/api/fixed-assets/[id]/depreciation/route.ts" = @('restoreErr', 'outerRestoreErr')
-    "app/api/cron/backup-daily/route.ts"             = @('stampErr')
-    "app/api/company-logo/route.ts"                  = @('logoErr')
-    "app/api/commissions/plans/route.ts"             = @('rulesDelErr')
-    "app/api/bonuses/reverse/route.ts"               = @('slipErr')
-    "app/api/bonuses/attach-to-payroll/route.ts"     = @('slipErr')
-    "app/api/biometric/device/sync/route.ts"         = @('syncStampErr')
-    "app/api/billing/seats/route.ts"                 = @('couponErr')
-    "app/api/ai/chat/route.ts"                       = @('convStampErr')
+    "lib/attendance-processing-engine.ts"              = @('recInsErr', 'recUpdErr')
+    "lib/currency-conversion-system.ts"                = @('origErr')
+    "lib/default-chart-of-accounts.ts"                 = @('parentErr')
+    "lib/event-bus.ts"                                 = @('attemptErr', 'doneErr')
+    "lib/jobs-queue.ts"                                = @('failMarkErr')
+    "lib/logger.ts"                                    = @('logInsErr')
+    "lib/pre-receipt-refund.ts"                        = @('poCancelErr')
+    "lib/pre-shipment-refund.ts"                       = @('soCancelErr')
+    "lib/third-party-inventory.ts"                     = @('clearErr')
+    "lib/services/bill-receipt-workflow.service.ts"    = @('poSyncErr')
+    "lib/services/consolidation.service.ts"            = @('NOT saved')
+    "lib/services/purchase-return-command.service.ts"  = @('confirmStampErr')
+    "lib/services/shareholder-capital-command.service.ts" = @('contribDelErr')
+    "lib/manufacturing/mrp-run-builder.ts"             = @('runDelErr')
+    "lib/core/queue/jobs/process-attendance-job.ts"    = @('markErr')
+    "lib/billing/invoice-generator.ts"                 = @('pdfLinkErr', 'pdfRelinkErr')
+    "lib/billing/subscription-service.ts"              = @('reactivateErr')
+    "lib/backup/restore-utils.ts"                      = @('NOT saved')
 }
 foreach ($f in $anchors.Keys) {
     $c = Get-Content -LiteralPath $f -Raw
@@ -81,30 +83,30 @@ foreach ($f in $anchors.Keys) {
         }
     }
 }
-Write-Host "+ all 17 files carry their checked-write anchors" -ForegroundColor Green
+Write-Host "+ all 18 lib files carry their checked-write anchors" -ForegroundColor Green
 
-# -- 2. app/ is completely clean of unchecked writes ----------------------
-$appLeft = node scripts/check-unchecked-writes.js --list 2>$null | Select-String -Pattern "^app/"
-if ($appLeft) {
-    Write-Host "X app/ still contains unchecked writes:" -ForegroundColor Red
-    $appLeft | ForEach-Object { Write-Host "   $_" }
+# -- 2. the debt is ZERO everywhere ---------------------------------------
+$left = node scripts/check-unchecked-writes.js --list 2>$null
+if ($left) {
+    Write-Host "X unchecked writes remain:" -ForegroundColor Red
+    $left | Select-Object -First 10 | ForEach-Object { Write-Host "   $_" }
     exit 1
 }
-Write-Host "+ ZERO unchecked writes remain under app/" -ForegroundColor Green
+Write-Host "+ ZERO unchecked writes remain in the entire project" -ForegroundColor Green
 
-# -- 3. the baseline is 28 ------------------------------------------------
+# -- 3. the baseline is 0 -------------------------------------------------
 $c = Get-Content -LiteralPath "scripts/check-unchecked-writes.js" -Raw
-if ($c -notmatch 'const BASELINE = 28') {
-    Write-Host "X check-unchecked-writes BASELINE must be 28 (48 minus the 20 closed sites)" -ForegroundColor Red; exit 1
+if ($c -notmatch 'const BASELINE = 0') {
+    Write-Host "X check-unchecked-writes BASELINE must be 0 - the debt is closed" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline ratcheted to 28" -ForegroundColor Green
+Write-Host "+ unchecked-writes baseline ratcheted to ZERO - the shape is now forbidden" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.888.ps1" 2>$null
+git add -u -- "push_v3.74.889.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.888.ps1")
+$expected = @($files) + @("push_v3.74.889.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -281,7 +283,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.888.ps1" 2>$null
+git add -u -- "push_v3.74.889.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -300,39 +302,40 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_889.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_890.txt"
     $msgLines = @(
-        'fix(ui-integrity): v3.74.889 - 20 misc silent writes checked; app/ is now CLEAN (48 -> 28)',
+        'fix(integrity): v3.74.890 - the unchecked-writes debt is CLOSED: 213 at birth, zero today (28 -> 0)',
         '',
-        'Fifth impact-ranked batch, finishing everything a user touches.',
-        'Zero unchecked writes remain under app/ - the whole remaining',
-        'debt (28) is background lib/ code.',
+        'Sixth and final impact-ranked batch: the 28 background lib/ sites.',
+        'Every write in the project now reads its result, and the guard',
+        'no longer counts the shape - it forbids it (BASELINE = 0).',
         '',
-        '  - BRANCH-ACCESS REVOCATION (3 sites): deactivating',
-        '    user_branch_access in the users screen (two paths) and the',
-        '    replace API was unchecked - a silent failure kept an access',
-        '    that was supposed to be revoked, showing "removed" and then',
-        '    coming back. Security writes are now treated like money:',
-        '    stop and surface.',
-        '  - PAYSLIP AMOUNTS: bonus attach/reverse updated',
-        '    sales_bonus/net_salary blind - an "attached" bonus with the',
-        '    old net, or a reversed bonus with the payslip unchanged.',
-        '  - DEPRECIATION ROLLBACKS: two restore-to-posted paths were the',
-        '    last unchecked writes of the 758 rollback work -',
-        '    ROLLBACK_INCOMPLETE now names its schedule ids.',
-        '  - REPLACE SHAPES: commission rules (delete-then-insert =>',
-        '    doubled rules), primary service staff (two primaries),',
-        '    transfer item quantities, and transfer cancel after the',
-        '    quantities were already returned ("do not cancel again").',
-        '  - ROUTE PURPOSES: company logo (uploaded but never linked),',
-        '    currency sync, exchange-rate delete (vanished then came',
-        '    back), depreciation schedules before asset delete, biometric',
-        '    employee mappings (failures named in the response).',
-        '  - NON-CRITICAL STAMPS, checked and logged: backup stamp (the',
-        '    753 lesson: a nightly cron "succeeding" with no trace),',
-        '    biometric sync stamp, coupon use counter, AI chat ordering.',
+        '  - POST-REFUND CANCELS (the 888 shape in lib/): cancelling the',
+        '    linked PO/SO after an executed refund now fails loudly with',
+        '    "cancel it manually - do NOT refund again".',
+        '  - PROCESSING MARKS ARE THE DEDUP SHIELD: event-bus (a processed',
+        '    event left unmarked re-runs its listeners; an attempt counter',
+        '    that never increments retries a poisoned event forever - now',
+        '    skipped), jobs-queue (done-but-will-rerun, failed-but-stuck,',
+        '    cancelled-but-will-run), and attendance in BOTH engines (a',
+        '    punch marked processed with no record = a lost workday; the',
+        '    reverse = a punch counted twice).',
+        '  - SUBSCRIPTION STATUS THROWS: the write IS the function -',
+        '    a past-due company keeping full access, or a customer who',
+        '    PAID and stayed blocked, can no longer happen in silence.',
+        '  - the original-price snapshot before currency conversion throws',
+        '    (the 874 lesson: what cannot be recomputed is not left to a',
+        '    log-and-continue path).',
+        '  - rollbacks name their victims: ROLLBACK_INCOMPLETE with ids in',
+        '    capital contributions and MRP runs; the default chart aborts',
+        '    company creation if parent linking fails; third-party goods',
+        '    cannot be cleared twice; a billing PDF uploaded but unlinked',
+        '    is reported; consolidation complains about lost snapshots and',
+        '    checks; restore_queue cannot stay "processing" forever; and',
+        '    the logger itself falls back to the console when system_logs',
+        '    rejects it.',
         '',
-        'check-unchecked-writes BASELINE 48 -> 28.'
+        'check-unchecked-writes BASELINE 28 -> 0. From 213 to zero.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -341,5 +344,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.889 pushed - the surface is clean: nothing a user touches writes blind any more" -ForegroundColor Green
+    Write-Host "`n+ v3.74.890 pushed - 213 at birth, zero today: every write in this project reads its result" -ForegroundColor Green
 }

@@ -732,10 +732,14 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
     if (products) {
       for (const p of products) {
         if (!p.original_unit_price || !p.original_currency) {
-          await client.from('products').update({
+          // v3.74.890 — يُفحص ويُرمى (درس 874: اللقطة التى لا تُعاد):
+          // حفظ السعر الأصلى قبل التحويل لقطةٌ لا مصدر لها بعده —
+          // فشلها الصامت يُفقد الأصل نهائياً.
+          const { error: origErr } = await client.from('products').update({
             original_unit_price: p.original_unit_price || p.unit_price,
             original_currency: p.original_currency || originalCurrency
           }).eq('id', p.id)
+          if (origErr) throw new Error(`Failed to snapshot original price for product ${p.id}: ${origErr.message}`)
         }
       }
     }

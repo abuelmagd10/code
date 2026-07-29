@@ -43,7 +43,9 @@ function writeLog(entry: LogEntry): void {
   ;(async () => {
     try {
       const supabase = createServiceClient()
-      await supabase.from('system_logs').insert({
+      // v3.74.890 — يُفحص: المُسجِّل الذى يفشل بصمت يُفقد الأثر مرتين —
+      // الحدث لم يُسجَّل ولا أحد علم. البديل الأخير: الكونسول.
+      const { error: logInsErr } = await supabase.from('system_logs').insert({
         level: entry.level,
         category: entry.category,
         message: entry.message,
@@ -57,6 +59,7 @@ function writeLog(entry: LogEntry): void {
         stack_trace: entry.stackTrace ?? null,
         metadata: entry.metadata ?? {},
       })
+      if (logInsErr) console.error('[logger] system_logs insert failed — falling back to console:', logInsErr.message, JSON.stringify(entry))
     } catch {
       // Logging must never crash the app — silently ignore
     }
