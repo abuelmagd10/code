@@ -94,19 +94,32 @@ export async function POST(req: NextRequest) {
         }
 
         // Update employee mappings if any
+        // v3.74.889 — يُفحص: ربطٌ ساقط بصمت = حضور موظفٍ لن يُلتقط أبداً
+        // من الجهاز، والشاشة تقول إن كل شىء تم.
+        const failedMappings: string[] = []
         if (employee_mappings && Array.isArray(employee_mappings)) {
             for (const map of employee_mappings) {
                 if (map.employee_id && map.biometric_id) {
-                    await admin
+                    const { error: mapErr } = await admin
                         .from('employees')
                         .update({ biometric_id: map.biometric_id })
                         .eq('company_id', companyId)
                         .eq('id', map.employee_id)
+                    if (mapErr) {
+                        console.error(`[hr/devices] biometric mapping failed for employee ${map.employee_id}:`, mapErr.message)
+                        failedMappings.push(map.employee_id)
+                    }
                 }
             }
         }
 
-        return apiSuccess({ device: newDevice, message: "Device created successfully" })
+        return apiSuccess({
+            device: newDevice,
+            message: failedMappings.length
+                ? `Device created, but ${failedMappings.length} employee mapping(s) failed — retry them from the device screen`
+                : "Device created successfully",
+            failed_mappings: failedMappings,
+        })
 
     } catch (e: any) {
         console.error("Error creating device:", e)

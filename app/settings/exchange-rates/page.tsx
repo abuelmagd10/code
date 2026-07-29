@@ -199,7 +199,10 @@ export default function ExchangeRatesPage() {
 
   const handleDeleteRate = async (id: string) => {
     try {
-      await supabase.from('exchange_rates').delete().eq('id', id)
+      // v3.74.889 — كان try/catch وهماً (supabase-js لا يرمى): الفشل كان
+      // يُخفى السعر من الشاشة ثم «يعود» بعد التحديث.
+      const { error: delErr } = await supabase.from('exchange_rates').delete().eq('id', id)
+      if (delErr) throw delErr
       setRates(rates.filter(r => r.id !== id))
       toast({ title: appLang === 'en' ? 'Deleted' : 'تم الحذف' })
     } catch (e: any) {

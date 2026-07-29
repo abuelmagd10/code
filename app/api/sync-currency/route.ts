@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
     // For invited users, force company currency
     if (!isOwner) {
       // Update user preference in database
-      await supabase
+      // v3.74.889 — يُفحص: هذه الكتابة هى غرض المسار كله؛ فشلها الصامت
+      // يُعيد نجاحاً وتفضيل العملة لم يتزامن.
+      const { error: prefErr } = await supabase
         .from('company_members')
         .update({
           preferred_currency: companyCurrency,
@@ -58,6 +60,9 @@ export async function POST(req: NextRequest) {
         })
         .eq('user_id', user.id)
         .eq('company_id', companyId)
+      if (prefErr) {
+        return NextResponse.json({ error: `تعذّر مزامنة تفضيل العملة: ${prefErr.message}` }, { status: 500 })
+      }
 
       return NextResponse.json({
         success: true,

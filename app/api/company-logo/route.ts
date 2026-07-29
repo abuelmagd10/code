@@ -32,7 +32,10 @@ export async function POST(req: Request) {
 
     const { data: pub } = supabase.storage.from("company-logos").getPublicUrl(path)
     const logoUrl = String((pub as any)?.publicUrl || "")
-    await supabase.from("companies").update({ logo_url: logoUrl }).eq("id", companyId)
+    // v3.74.889 — يُفحص: الملف رُفع فعلاً؛ فشلٌ صامت هنا يعنى شعاراً
+    // مرفوعاً لا تعرفه الشركة أبداً والشاشة تُعلن النجاح.
+    const { error: logoErr } = await supabase.from("companies").update({ logo_url: logoUrl }).eq("id", companyId)
+    if (logoErr) return NextResponse.json({ error: `رُفع الشعار لكن تعذّر ربطه بالشركة: ${logoErr.message}` }, { status: 500 })
     return NextResponse.json({ url: logoUrl })
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || "upload_failed") }, { status: 500 })

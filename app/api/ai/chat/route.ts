@@ -253,13 +253,15 @@ export async function POST(request: NextRequest) {
       console.warn("[AI_CHAT] Tool audit insert failed:", auditError.message)
     }
 
-    await supabase
+    // v3.74.889 — يُفحص (غير حاسم: ترتيب المحادثات فى الشريط الجانبى).
+    const { error: convStampErr } = await supabase
       .from("ai_conversations")
       .update({
         last_message_at: new Date().toISOString(),
         page_key: pageKey || null,
       })
       .eq("id", persistedConversationId)
+    if (convStampErr) console.warn("[AI_CHAT] conversation stamp failed (non-fatal):", convStampErr.message)
 
     return NextResponse.json({
       success: true,

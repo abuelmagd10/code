@@ -161,10 +161,14 @@ export async function POST(req: NextRequest) {
           .eq("code", pricing.couponApplied)
           .maybeSingle()
         const next = ((row as any)?.current_uses ?? 0) + 1
-        await sb
+        // v3.74.889 — يُفحص: عدّاد استخدام الكوبون؛ فشله الصامت = كوبون
+        // بلا حدٍّ فعلى. (الـcatch حوله لأخطاء الشبكة لا لأخطاء الكتابة —
+        // supabase-js لا يرمى.)
+        const { error: couponErr } = await sb
           .from("billing_coupons")
           .update({ current_uses: next })
           .eq("code", pricing.couponApplied)
+        if (couponErr) console.error(`[billing/seats] coupon use-counter update failed for ${pricing.couponApplied}:`, couponErr.message)
       } catch {}
       return apiSuccess({
         free_grant: true,

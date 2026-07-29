@@ -136,11 +136,16 @@ async function _legacyPOST(request: Request) {
     }
 
     if (replace_existing) {
-      await supabase
+      // v3.74.889 — 🔒 يُفحص: فشلٌ صامت يُبقى وصولاً قديماً كان طلبُ
+      // الاستبدال يقتضى سحبه — فيجمع المستخدم بين القديم والجديد.
+      const { error: revokeErr } = await supabase
         .from("user_branch_access")
         .update({ is_active: false })
         .eq("company_id", company_id)
         .eq("user_id", user_id)
+      if (revokeErr) {
+        return NextResponse.json({ error: `تعذّر سحب الوصول القديم قبل الاستبدال: ${revokeErr.message}` }, { status: 500 })
+      }
     }
 
     const accessRecords = branch_ids.map((branchId: string) => ({

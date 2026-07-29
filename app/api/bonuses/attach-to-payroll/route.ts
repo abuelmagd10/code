@@ -102,13 +102,21 @@ export async function POST(req: NextRequest) {
         const currentNet = Number(existingSlip.net_salary || 0)
         const newNet = currentNet + totalBonus
 
-        await client
+        // v3.74.889 — 🔴 يُفحص: البونصات وُسمت «مرفقة» بينما مبلغ الكشف
+        // لم يتغير — فيُصرف مرتبٌ ناقص البونص بلا أى إنذار.
+        const { error: slipErr } = await client
           .from("payslips")
           .update({ 
             sales_bonus: newSalesBonus,
             net_salary: newNet
           })
           .eq("id", existingSlip.id)
+        if (slipErr) {
+          return NextResponse.json({
+            success: false,
+            error: `تعذّر إضافة البونص لكشف المرتب: ${slipErr.message} — لم يكتمل الإرفاق؛ أعد المحاولة.`,
+          }, { status: 500 })
+        }
       }
     }
 

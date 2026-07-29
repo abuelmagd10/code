@@ -140,10 +140,15 @@ export async function DELETE(
     }
 
     // Delete depreciation schedules first
-    await supabase
+    // v3.74.889 — يُفحص ويُوقَف: لو فشل صامتاً ثم حُذف الأصل بقيت جداول
+    // يتيمة بلا أصل (نمط 874 فى الحذف المتسلسل).
+    const { error: schedDelErr } = await supabase
       .from('depreciation_schedules')
       .delete()
       .eq('asset_id', id)
+    if (schedDelErr) {
+      return NextResponse.json({ error: `تعذّر حذف جداول الإهلاك قبل حذف الأصل: ${schedDelErr.message}` }, { status: 500 })
+    }
 
     // Delete asset
     const { error } = await supabase

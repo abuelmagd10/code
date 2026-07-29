@@ -437,7 +437,9 @@ export async function POST(
             await rollbackJournalEntry(supabase as any, entryId, 'depreciation reversal (asset update)')
           }
           // إعادة الجداول إلى posted
-          await supabase
+          // v3.74.889 — يُفحص: هذا تراجُعٌ؛ فشله الصامت يترك جداول
+          // «ملغاة» بلا قيد عكسٍ قائم — فيُسمّى بالجداول فى السجل.
+          const { error: restoreErr } = await supabase
             .from('depreciation_schedules')
             .update({
               status: 'posted',
@@ -446,6 +448,9 @@ export async function POST(
               cancelled_at: null
             })
             .in('id', processedScheduleIds)
+          if (restoreErr) {
+            console.error(`[depreciation] ROLLBACK_INCOMPLETE: schedules [${processedScheduleIds.join(', ')}] still cancelled after asset-update failure: ${restoreErr.message}`)
+          }
           throw assetUpdateError
         }
 
@@ -483,8 +488,10 @@ export async function POST(
         }
         
         // إعادة الجداول المعالجة إلى posted (حتى لو كان عددها 0، لن يحدث ضرر)
+        // v3.74.889 — يُفحص: خط الدفاع الأخير لا يفشل بصمت (درس 758 نفسه
+        // الذى فُحصت به rollbackJournalEntry — وبقيت هذه الكتابة وحدها).
         if (processedScheduleIds.length > 0) {
-          await supabase
+          const { error: outerRestoreErr } = await supabase
             .from('depreciation_schedules')
             .update({
               status: 'posted',
@@ -493,6 +500,9 @@ export async function POST(
               cancelled_at: null
             })
             .in('id', processedScheduleIds)
+          if (outerRestoreErr) {
+            console.error(`[depreciation] ROLLBACK_INCOMPLETE: schedules [${processedScheduleIds.join(', ')}] still cancelled after outer failure: ${outerRestoreErr.message}`)
+          }
         }
         
         throw error

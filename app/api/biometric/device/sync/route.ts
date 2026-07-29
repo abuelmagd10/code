@@ -47,8 +47,10 @@ export async function POST(request: NextRequest) {
         // Simulate finding 0 new logs for the sync
         const simulatedLogsCount = 0;
 
-        // 3. Update Sync Timestamp
-        await supabase.from('biometric_devices').update({ last_sync_at: new Date().toISOString() }).eq('id', device.id);
+        // 3. Update Sync Timestamp — v3.74.889: يُفحص (غير حاسم لكن ختمٌ
+        // ساقط يجعل الجهاز يبدو «لم يُزامَن» أبداً).
+        const { error: syncStampErr } = await supabase.from('biometric_devices').update({ last_sync_at: new Date().toISOString() }).eq('id', device.id);
+        if (syncStampErr) console.error(`[biometric/sync] last_sync_at stamp failed for device ${device.id}:`, syncStampErr.message);
 
         return NextResponse.json({
             message: 'Sync command executed successfully',

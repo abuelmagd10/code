@@ -129,7 +129,9 @@ export async function GET(request: NextRequest) {
       }
 
       // 4. Stamp the company row
-      await admin
+      // v3.74.889 — يُفحص (درس 753: كرون «ناجح» كل ليلة بلا أثر): فشل
+      // الختم يعنى أن شاشة النسخ ستعرض «لم يعمل» رغم نسخةٍ ناجحة.
+      const { error: stampErr } = await admin
         .from("companies")
         .update({
           auto_backup_last_run_at: new Date().toISOString(),
@@ -137,6 +139,7 @@ export async function GET(request: NextRequest) {
           auto_backup_last_error: null,
         })
         .eq("id", companyId)
+      if (stampErr) console.error(`[backup-daily] backup succeeded but stamp failed for company ${companyId}:`, stampErr.message)
 
       // 5. Audit log
       await writeAuditLog(admin, {

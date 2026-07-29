@@ -136,10 +136,15 @@ export async function POST(request: Request) {
             }
 
             // Delete old rules
-            await supabase
+            // v3.74.889 — يُفحص: فشلٌ صامت + نجاح إدراج الجديدة = قواعد
+            // عمولة مزدوجة تُضاعف الحساب.
+            const { error: rulesDelErr } = await supabase
                 .from('commission_rules')
                 .delete()
                 .eq('plan_id', id);
+            if (rulesDelErr) {
+                return NextResponse.json({ error: `تعذّر استبدال قواعد الخطة: ${rulesDelErr.message}` }, { status: 500 });
+            }
         } else {
             // CREATE new plan
             const { data: newPlan, error: createError } = await supabase

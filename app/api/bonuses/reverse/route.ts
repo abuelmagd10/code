@@ -91,10 +91,18 @@ export async function POST(req: NextRequest) {
           const newSalesBonus = Math.max(0, Number(payslip.sales_bonus || 0) - Number(bonus.bonus_amount || 0))
           const newNet = Math.max(0, Number(payslip.net_salary || 0) - Number(bonus.bonus_amount || 0))
 
-          await client
+          // v3.74.889 — 🔴 يُفحص: مبلغٌ فى كشف مرتب؛ فشلٌ صامت يعكس
+          // البونص فى سجله ويُبقى المرتب بالمبلغ القديم.
+          const { error: slipErr } = await client
             .from("payslips")
             .update({ sales_bonus: newSalesBonus, net_salary: newNet })
             .eq("id", payslip.id)
+          if (slipErr) {
+            return NextResponse.json({
+              success: false,
+              error: `عُكست بونصات [${reversedBonuses.join(', ')}] لكن تعذّر تحديث كشف المرتب للبونص ${bonus.id}: ${slipErr.message} — راجع الكشف قبل الصرف.`,
+            }, { status: 500 })
+          }
         }
       }
 

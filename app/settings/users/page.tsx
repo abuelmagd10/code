@@ -1117,11 +1117,13 @@ export default function UsersSettingsPage() {
 
       // ✅ تحديث user_branch_access - فرع واحد فقط
       // حذف جميع الفروع القديمة أولاً
-      await supabase
+      // v3.74.889 — 🔒 يُفحص: فشلٌ صامت يُبقى وصولاً لفروعٍ كان يجب سحبه.
+      const { error: revokeErr } = await supabase
         .from("user_branch_access")
         .update({ is_active: false })
         .eq("company_id", companyId)
         .eq("user_id", editingMemberId)
+      if (revokeErr) throw revokeErr
 
       // إضافة الفرع الجديد كفرع أساسي
       // v3.74.329 — لو مسؤول حجز بدون فرع، نتخطى user_branch_access entry
@@ -3724,7 +3726,12 @@ export default function UsersSettingsPage() {
                               </div>
                             </div>
                             <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
-                              await supabase.from("user_branch_access").update({ is_active: false }).eq("id", uba.id)
+                              // v3.74.889 — 🔒 يُفحص: فشلٌ صامت يُبقى الوصول قائماً والشاشة تُعيد تحميله وكأنه أُزيل ثم «يعود».
+                              const { error: revokeOneErr } = await supabase.from("user_branch_access").update({ is_active: false }).eq("id", uba.id)
+                              if (revokeOneErr) {
+                                toast({ title: t('Failed to remove branch access', 'تعذّر إزالة وصول الفرع'), description: revokeOneErr.message, variant: 'destructive' })
+                                return
+                              }
                               loadPermissionData()
                             }}>
                               <X className="w-4 h-4" />

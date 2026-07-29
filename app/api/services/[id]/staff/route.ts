@@ -157,13 +157,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     // If setting as primary, clear existing primary first
+    // v3.74.889 — يُفحص: فشلٌ صامت + نجاح الإدراج التالى = موظفان
+    // «رئيسيان» لنفس الخدمة.
     if (body.is_primary) {
-      await supabase
+      const { error: clearPrimaryErr } = await supabase
         .from('service_staff')
         .update({ is_primary: false })
         .eq('service_id', serviceId)
         .eq('company_id', companyId)
         .eq('is_primary', true)
+      if (clearPrimaryErr) {
+        throw new BookingApiError(500, `تعذّر إلغاء «الرئيسى» السابق قبل التعيين: ${clearPrimaryErr.message}`)
+      }
     }
 
     // v3.74.346 — service_staff.branch_id is NOT NULL, and the table's

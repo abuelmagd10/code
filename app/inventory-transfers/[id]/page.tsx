@@ -479,11 +479,14 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       if (updateError) throw updateError
 
       // تحديث الكميات المرسلة
+      // v3.74.889 — يُفحص: فشلٌ صامت يترك بنداً بكمية مرسلة صفرية بينما
+      // حركات الخصم ستُسجَّل كاملة — فيختلّ حساب «فى الطريق».
       for (const item of transfer.items || []) {
-        await supabase
+        const { error: qtySentErr } = await supabase
           .from("inventory_transfer_items")
           .update({ quantity_sent: item.quantity_requested })
           .eq("id", item.id)
+        if (qtySentErr) throw qtySentErr
       }
 
       // إنشاء حركات خصم من المخزن المصدر
@@ -1117,7 +1120,9 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
       }
 
       // تحديث حالة النقل
-      await supabase
+      // v3.74.889 — يُفحص: الكميات أُرجعت فعلاً للمصدر؛ فشلٌ صامت هنا
+      // يُبقى النقل «قائماً» فى الشاشة فيُلغى ثانيةً بإرجاعٍ مكرر.
+      const { error: cancelErr } = await supabase
         .from("inventory_transfers")
         .update({
           status: 'cancelled',
@@ -1125,6 +1130,17 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
           updated_at: new Date().toISOString()
         })
         .eq("id", transfer.id)
+      if (cancelErr) {
+        toast({
+          title: appLang === 'en' ? 'Cancelled, but status not saved' : 'أُلغى، لكن الحالة لم تُحفظ',
+          description: appLang === 'en'
+            ? `Quantities were returned, but the transfer could not be marked cancelled (${cancelErr.message}). Do NOT cancel again — refresh and contact support.`
+            : `أُرجعت الكميات، لكن تعذّر وسم النقل «ملغى» (${cancelErr.message}). لا تُعِد الإلغاء — حدّث الصفحة وتواصل مع الدعم.`,
+          variant: 'destructive'
+        })
+        loadData()
+        return
+      }
 
       toast({
         title: appLang === 'en' ? 'Transfer Cancelled' : 'تم إلغاء النقل',
