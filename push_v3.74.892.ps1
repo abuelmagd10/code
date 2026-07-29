@@ -6,71 +6,61 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.891 - the OLD script is removed, never this one. Five times a chained
+# v3.74.892 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.890.ps1") { Remove-Item -LiteralPath "push_v3.74.890.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.891.ps1") { Remove-Item -LiteralPath "push_v3.74.891.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.891"') {
-    Write-Host "+ 3.74.891" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.892"') {
+    Write-Host "+ 3.74.892" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.891]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.891]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.892]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.892]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$mig = "supabase/migrations/20260729000002_v3_74_891_recurring_templates_rls.sql"
-$tooltips = "app/api/update-tooltips/route.ts"
-$deadA = "app/api/sync-so-0001/route.ts"
-$deadB = "app/api/onboarding/complete-step/route.ts"
+$guard = "scripts/check-anon-open-tables.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $mig, $tooltips, "push_v3.74.891.ps1")
+           $guard, "push_v3.74.892.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the dead unauthenticated routes are gone --------------------------
-foreach ($f in @($deadA, $deadB)) {
-    if (Test-Path -LiteralPath $f) {
-        Write-Host "X $f must be deleted - it was live with no authentication" -ForegroundColor Red; exit 1
-    }
+# -- 1. the guard carries both arms and the prove mode --------------------
+$c = Get-Content -LiteralPath $guard -Raw
+if ($c -notmatch 'SQL_RLS_OFF' -or $c -notmatch 'relrowsecurity') {
+    Write-Host "X the guard lost arm (b) - the no-RLS detection" -ForegroundColor Red; exit 1
 }
-Write-Host "+ sync-so-0001 and onboarding/complete-step are gone" -ForegroundColor Green
+if ($c -notmatch 'zz_probe_892_rls_off' -or $c -notmatch 'zz_probe_892_open_policy' -or
+    $c -notmatch 'DISABLE ROW LEVEL SECURITY') {
+    Write-Host "X the guard lost its --prove probes (or the explicit RLS disable that defeats ensure_rls)" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch [regex]::Escape("ALLOWED_RLS_OFF = new Map([])")) {
+    Write-Host "X ALLOWED_RLS_OFF must stay an EMPTY list - additions are decisions, not routine" -ForegroundColor Red; exit 1
+}
+Write-Host "+ guard has arm (a) + arm (b) + --prove, and the no-RLS exception list is empty" -ForegroundColor Green
 
-# -- 2. update-tooltips is gated on BOTH verbs ----------------------------
-$c = Get-Content -LiteralPath $tooltips -Raw
-if ($c -notmatch 'secureApiRequest' -or $c -notmatch 'ALLOWED_ROLES') {
-    Write-Host "X update-tooltips lost its auth gate" -ForegroundColor Red; exit 1
+# -- 2. the battery below actually calls --prove --------------------------
+$self = Get-Content -LiteralPath "push_v3.74.892.ps1" -Raw
+if ($self -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
+    Write-Host "X the push battery no longer proves the anon-open guard" -ForegroundColor Red; exit 1
 }
-if (([regex]::Matches($c, 'requireAdmin\(request\)')).Count -lt 2) {
-    Write-Host "X update-tooltips must gate BOTH GET and POST" -ForegroundColor Red; exit 1
-}
-Write-Host "+ update-tooltips gated behind auth + admin role on GET and POST" -ForegroundColor Green
-
-# -- 3. the RLS migration carries its teeth -------------------------------
-$c = Get-Content -LiteralPath $mig -Raw
-if (([regex]::Matches($c, 'ENABLE ROW LEVEL SECURITY')).Count -lt 2 -or
-    ([regex]::Matches($c, 'REVOKE ALL ON public\.recurring_journal_template')).Count -lt 2) {
-    Write-Host "X the RLS migration is missing enable/revoke statements" -ForegroundColor Red; exit 1
-}
-Write-Host "+ RLS enabled and anon revoked on both recurring-template tables" -ForegroundColor Green
+Write-Host "+ the battery plants both defects and watches the guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- $deadA 2>$null
-git add -u -- $deadB 2>$null
-git add -u -- "push_v3.74.890.ps1" 2>$null
+git add -u -- "push_v3.74.891.ps1" 2>$null
 
-# -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @($deadA, $deadB, "push_v3.74.890.ps1")
+# -- 3. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.891.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -170,8 +160,8 @@ Write-Host "Proving the raw-body guard refuses..." -ForegroundColor Cyan
 node scripts/selftest-request-body-written-raw.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X raw-body guard not seen refusing" -ForegroundColor Red; exit 1 }
 
-Write-Host "Checking no table is open to anonymous visitors..." -ForegroundColor Cyan
-node scripts/check-anon-open-tables.js --require-db
+Write-Host "Proving the anon-open guard refuses BOTH shapes, then checking (v3.74.892)..." -ForegroundColor Cyan
+node scripts/check-anon-open-tables.js --prove --require-db
 if ($LASTEXITCODE -ne 0) { Write-Host "X tables are open to anon" -ForegroundColor Red; exit 1 }
 
 Write-Host "Checking nobody is stranded without a company..." -ForegroundColor Cyan
@@ -247,7 +237,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.890.ps1" 2>$null
+git add -u -- "push_v3.74.891.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -266,43 +256,35 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_891.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_892.txt"
     $msgLines = @(
-        'fix(security): v3.74.891 - governance triage, security first: two tables were wide open to anon',
+        'fix(guard): v3.74.892 - the anon-open guard now sees ABSENT protection, not just broken protection',
         '',
-        'Impact-first triage of the 624 governance findings. The structural',
-        'families (pagination, N+1, large files, error shapes) are planned',
-        'batches; the 73 SECURITY findings were verified one by one now:',
+        'The 834 family again: in 891 two tables were wide open to anon',
+        'while this guard stayed green. Its single arm scanned pg_policy -',
+        'permissive open policies - and the two tables had NO RLS AT ALL,',
+        'so there were no policies to scan, no rows in its query, and',
+        'silence. A guard for broken locks does not see doors with no lock.',
         '',
-        '  - THE REAL ONE: recurring_journal_templates and its lines had',
-        '    NO RLS at all, with full PostgREST default grants to anon -',
-        '    read, write, delete, even TRUNCATE, for any visitor with no',
-        '    login. Only saving grace: zero rows - the feature is unused',
-        '    (the 819 lesson: zero rows is an opportunity). Migration',
-        '    20260729000002 enables RLS with the standard company',
-        '    isolation (get_user_company_ids) on the header, inheritance',
-        '    via the parent on the lines, revokes all anon grants, and',
-        '    drops TRUNCATE from authenticated. Proven on BOTH databases',
-        '    with three identities inside cancelled transactions: anon',
-        '    refused outright, a pure outsider sees zero and cannot',
-        '    insert, a member sees his template.',
-        '  - sync-so-0001: a live, unauthenticated one-off repair route',
-        '    that zeroes a sales order - zero references -> deleted.',
-        '  - onboarding/complete-step: unauthenticated, zero references',
-        '    -> deleted.',
-        '  - update-tooltips: ran a filesystem script with no auth; its',
-        '    only consumer is the settings screen -> now gated behind',
-        '    auth + admin role on both GET and POST.',
-        '  - the other 35 flagged routes: 16 authenticated via project',
-        '    wrappers the audit does not recognize, 6 retired tombstones,',
-        '    10 pre-login by design, 3 token-authenticated by design.',
-        '  - 5 dangerouslySetInnerHTML: all static in-repo content.',
-        '  - 3 RLS-without-policies tables: deliberate deny-all,',
-        '    server-only.',
+        '  - NEW ARM (b): any public table with relrowsecurity=false that',
+        '    is granted to anon OR to authenticated (without RLS, every',
+        '    logged-in user of every company crosses tenant boundaries) is',
+        '    an offender unless named in an exception list that is empty',
+        '    and should stay empty.',
+        '  - --prove MODE (the 845 lesson applied to the guard itself):',
+        '    plants both defects - a no-RLS table with an anon grant, and',
+        '    a USING(true) policy - inside a cancelled transaction, and',
+        '    fails the release if either arm stays silent about its own',
+        '    probe. Now part of the push battery.',
+        '  - SIDE DISCOVERY while proving: the ensure_rls event trigger',
+        '    (an earlier project defence) auto-enables RLS on every new',
+        '    table - the first probe came out protected against its will.',
+        '    The 891 tables predate it; the new arm catches the only',
+        '    remaining path (an explicit DISABLE). The probe now disables',
+        '    RLS explicitly to reproduce the historical state.',
         '',
-        'And a guard question recorded for a coming release: why did',
-        'check-anon-open-tables stay silent about two anon-open tables?',
-        'The 834 family again: the guard itself needs a witness.'
+        'Proven live: arm (b) reports zero today (post-891); the planted',
+        'probe was detected inside a cancelled transaction.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -311,5 +293,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.891 pushed - security findings are read one by one, and the one that was real is now locked" -ForegroundColor Green
+    Write-Host "`n+ v3.74.892 pushed - a guard for broken locks must also see the doors that never had one" -ForegroundColor Green
 }
