@@ -161,7 +161,12 @@ export async function POST(req: NextRequest) {
         const reserveResult = await reserveSeat(companyId, inviteId)
         if (!reserveResult.success) {
           // Rollback: delete the invitation we just created
-          await admin.from("company_invitations").delete().eq("id", inviteId)
+          // v3.74.886 — يُفحص: لو فشل الحذف بقيت دعوة معلقة بلا مقعد،
+          // تظهر للمدعو وتفشل عند قبولها بلا تفسير.
+          const { error: rollbackErr } = await admin.from("company_invitations").delete().eq("id", inviteId)
+          if (rollbackErr) {
+            console.error(`[send-invite] seat reservation failed AND invitation ${inviteId} cleanup failed — orphan invitation left:`, rollbackErr.message)
+          }
           return apiError(
             402,
             "تعذر حجز المقعد. لا توجد مقاعد متاحة.",

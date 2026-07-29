@@ -292,16 +292,20 @@ export default function OnboardingPage() {
       if (companyError) throw companyError
 
       // Create company_members entry for owner
-      try {
-        await supabase
-          .from('company_members')
-          .insert({
-            company_id: company.id,
-            user_id: user.id,
-            role: 'owner'
-          })
-      } catch (e) {
-        console.error('Error creating company member:', e)
+      // v3.74.886 — كان الفشل يُبتلع ويستمر المسار ⇒ مالكٌ بلا عضوية
+      // وشاشات مقفلة أمامه بلا سبب ظاهر (المستخدم «العالق» بعينه).
+      // supabase-js لا يرمى؛ يُرجع { error } — فالـtry/catch القديم لم
+      // يكن يلتقط شيئاً أصلاً. يُفحص ويُوقَف بالرسالة المرئية.
+      const { error: memberErr } = await supabase
+        .from('company_members')
+        .insert({
+          company_id: company.id,
+          user_id: user.id,
+          role: 'owner'
+        })
+      if (memberErr) {
+        console.error('Error creating company member:', memberErr)
+        throw new Error(memberErr.message || 'membership insert failed')
       }
 
       // Note: No need to create currencies - using global_currencies table now

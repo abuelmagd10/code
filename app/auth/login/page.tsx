@@ -315,7 +315,10 @@ export default function LoginPage() {
                 .from('company_members')
                 .insert({ company_id: (inv as any).company_id, user_id: user.id, role: (inv as any).role })
               if (!memErr) {
-                await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+                // v3.74.886 — يُفحص: فشله الصامت يُبقى الدعوة مفتوحة
+                // فتتكرر محاولة الانضمام فى كل تسجيل دخول.
+                const { error: accErr } = await supabase.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+                if (accErr) console.error('[login] auto-accept: invitation NOT flagged accepted:', accErr.message)
                 if (typeof window !== 'undefined') {
                   try { localStorage.setItem('active_company_id', String((inv as any).company_id || '')) } catch { }
                 }

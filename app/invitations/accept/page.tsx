@@ -126,7 +126,17 @@ function AcceptInvitationsContent() {
         .from("company_members")
         .insert(memberData)
       if (error) { toast({ title: "تعذر القبول", description: error.message, variant: "destructive" }); return }
-      await supabase.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+      // v3.74.886 — يُفحص: فشله الصامت يُبقى الدعوة معروضة فيضغطها
+      // المستخدم ثانيةً ويصطدم بخطأ «عضو بالفعل» بلا تفسير.
+      const { error: accFlagErr } = await supabase.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+      if (accFlagErr) {
+        console.error("invitation accepted-flag failed:", accFlagErr)
+        toast({
+          title: "انضممت بنجاح — لكن لم تُغلَق الدعوة",
+          description: `تعذّر وسم الدعوة كمقبولة (${accFlagErr.message}). إن ظهرت لك الدعوة مرة أخرى فتجاهلها.`,
+          variant: "destructive",
+        })
+      }
 
       // Set active company
       try {

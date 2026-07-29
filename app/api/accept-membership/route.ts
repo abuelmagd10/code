@@ -44,7 +44,12 @@ export async function POST(req: NextRequest) {
           .insert({ company_id: companyId, user_id: userId, role: (inv as any).role, email })
         if (insErr) continue
       }
-      await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+      // v3.74.886 — يُفحص: فشله الصامت يُبقى الدعوة مفتوحة فتتكرر
+      // المحاولة فى كل دخول.
+      const { error: accFlagErr } = await admin.from('company_invitations').update({ accepted: true }).eq('id', (inv as any).id)
+      if (accFlagErr) {
+        console.error('[accept-membership] membership ensured but invitation NOT flagged accepted:', accFlagErr.message)
+      }
       try { await writeAuditLog(admin, { action: 'invite_accepted', target_table: 'company_invitations', company_id: companyId, user_id: userId, new_data: { email, role: (inv as any).role } }, "accept-membership/route") } catch {}
       chosenCompanyId = chosenCompanyId || companyId
     }

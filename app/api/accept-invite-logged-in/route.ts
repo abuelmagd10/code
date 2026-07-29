@@ -121,8 +121,12 @@ export async function POST(req: NextRequest) {
       return internalError("خطأ في إضافة العضوية", memErr.message)
     }
 
-    // تحديث الدعوة كمقبولة
-    await admin.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+    // تحديث الدعوة كمقبولة — v3.74.886: يُفحص؛ فشله الصامت يُبقى الدعوة
+    // مفتوحة فيصطدم المستخدم لاحقاً بـ«أنت عضو بالفعل».
+    const { error: accFlagErr } = await admin.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+    if (accFlagErr) {
+      console.error("[accept-invite-logged-in] membership created but invitation NOT flagged accepted:", accFlagErr.message)
+    }
 
     return apiSuccess({ ok: true, email: inv.email, company_id: inv.company_id })
   } catch (e: any) {

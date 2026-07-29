@@ -6,56 +6,58 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.885 - the OLD script is removed, never this one. Five times a chained
+# v3.74.886 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.884.ps1") { Remove-Item -LiteralPath "push_v3.74.884.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.885.ps1") { Remove-Item -LiteralPath "push_v3.74.885.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.885"') {
-    Write-Host "+ 3.74.885" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.886"') {
+    Write-Host "+ 3.74.886" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.885]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.885]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.886]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.886]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 $screens = @(
-    "app/sales-orders/page.tsx",
-    "app/sales-orders/new/page.tsx",
-    "app/sales-orders/[id]/edit/page.tsx",
-    "app/purchase-orders/[id]/edit/page.tsx",
-    "app/bills/[id]/edit/page.tsx",
-    "app/bills/[id]/page.tsx",
-    "app/invoices/new/page.tsx",
-    "app/payments/page.tsx",
-    "app/estimates/page.tsx"
+    "app/onboarding/page.tsx",
+    "app/settings/page.tsx",
+    "app/invitations/accept/page.tsx",
+    "app/auth/login/page.tsx",
+    "app/auth/callback/page.tsx",
+    "app/api/accept-invite/route.ts",
+    "app/api/accept-invite-logged-in/route.ts",
+    "app/api/accept-membership/route.ts",
+    "app/api/send-invite/route.ts",
+    "app/api/company-members/link-employee/route.ts"
 )
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            "scripts/check-unchecked-writes.js",
-           "push_v3.74.885.ps1") + $screens
+           "push_v3.74.886.ps1") + $screens
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the sync-family fixes are present (anchor on what MUST exist) -----
+# -- 1. the membership/invitation fixes are present (anchor on what MUST exist)
 $anchors = @{
-    "app/sales-orders/page.tsx"                 = @('oldItemsErr', 'invItemsErr', 'soLinkErr')
-    "app/sales-orders/[id]/edit/page.tsx"       = @('delOldItemsErr', 'invHeadErr', 'invItemsDelErr', 'invItemsInsErr')
-    "app/purchase-orders/[id]/edit/page.tsx"    = @('delOldItemsErr', 'billHeadErr', 'billItemsDelErr', 'billItemsInsErr')
-    "app/bills/[id]/edit/page.tsx"              = @('poHeadErr', 'poItemsDelErr', 'poItemsInsErr', 'poStatusErr')
-    "app/bills/[id]/page.tsx"                   = @('poSyncErr')
-    "app/invoices/new/page.tsx"                 = @('soLinkErr')
-    "app/payments/page.tsx"                     = @('poStatusErr')
-    "app/estimates/page.tsx"                    = @('oldItemsErr', 'itemsDelErr')
-    "app/sales-orders/new/page.tsx"             = @('estConvErr')
+    "app/onboarding/page.tsx"                        = @('memberErr')
+    "app/settings/page.tsx"                          = @('ownerMemErr', 'selfHealErr', 'clearBaseErr', 'setBaseErr', 'newBaseErr', 'memEmailErr')
+    "app/invitations/accept/page.tsx"                = @('accFlagErr')
+    "app/auth/login/page.tsx"                        = @('accErr')
+    "app/auth/callback/page.tsx"                     = @('whCcErr', 'pcDelErr')
+    "app/api/accept-invite/route.ts"                 = @('accFlagErr')
+    "app/api/accept-invite-logged-in/route.ts"       = @('accFlagErr')
+    "app/api/accept-membership/route.ts"             = @('accFlagErr')
+    "app/api/send-invite/route.ts"                   = @('rollbackErr')
+    "app/api/company-members/link-employee/route.ts" = @('unlinkErr', 'dnErr')
 }
 foreach ($f in $anchors.Keys) {
     $c = Get-Content -LiteralPath $f -Raw
@@ -65,30 +67,31 @@ foreach ($f in $anchors.Keys) {
         }
     }
 }
-Write-Host "+ all 9 screens carry their checked-write anchors" -ForegroundColor Green
+Write-Host "+ all 10 files carry their checked-write anchors" -ForegroundColor Green
 
-# -- 2. no sync catch swallows in silence any more ------------------------
-foreach ($f in @("app/sales-orders/[id]/edit/page.tsx", "app/purchase-orders/[id]/edit/page.tsx", "app/bills/[id]/edit/page.tsx")) {
+# -- 2. the stranded-owner shape is dead: no empty catch swallows the owner
+#       membership insert any more
+foreach ($f in @("app/onboarding/page.tsx", "app/settings/page.tsx")) {
     $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match 'console\.warn\("Failed to sync') {
-        Write-Host "X $f still swallows a sync failure with console.warn" -ForegroundColor Red; exit 1
+    if ($c -match 'company_members[\s\S]{0,220}?role:\s*[''"]owner[''"][\s\S]{0,120}?\}\)\s*\r?\n?\s*\}\s*catch\s*\{\s*\}') {
+        Write-Host "X $f still swallows the owner membership insert in an empty catch" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ sync failures are surfaced to the user, not console.warn-ed" -ForegroundColor Green
+Write-Host "+ the stranded-owner empty-catch shape is gone" -ForegroundColor Green
 
-# -- 3. the baseline is 93 ------------------------------------------------
+# -- 3. the baseline is 76 ------------------------------------------------
 $c = Get-Content -LiteralPath "scripts/check-unchecked-writes.js" -Raw
-if ($c -notmatch 'const BASELINE = 93') {
-    Write-Host "X check-unchecked-writes BASELINE must be 93 (111 minus the 18 closed sites)" -ForegroundColor Red; exit 1
+if ($c -notmatch 'const BASELINE = 76') {
+    Write-Host "X check-unchecked-writes BASELINE must be 76 (93 minus the 17 closed sites)" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline ratcheted to 93" -ForegroundColor Green
+Write-Host "+ unchecked-writes baseline ratcheted to 76" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.884.ps1" 2>$null
+git add -u -- "push_v3.74.885.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.884.ps1")
+$expected = @($files) + @("push_v3.74.885.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -265,7 +268,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.884.ps1" 2>$null
+git add -u -- "push_v3.74.885.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -284,31 +287,37 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_885.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_886.txt"
     $msgLines = @(
-        'fix(ux-integrity): v3.74.885 - 18 silent document-sync writes are now checked (111 -> 93)',
+        'fix(onboarding-integrity): v3.74.886 - 17 silent membership/invitation writes are now checked (93 -> 76)',
         '',
-        'Triage of the unchecked-writes debt by CUSTOMER impact, not by count',
-        '(the 874 lesson). One family stood out: live screens that delete a',
-        'document''s items and re-insert them - or flag a document as',
-        'converted - without reading { error }. supabase-js does not throw,',
-        'so each failure surfaced to the customer as a broken document:',
+        'Second impact-ranked batch of the unchecked-writes debt: the family',
+        'every NEW customer touches first.',
         '',
-        '  - an invoice with zero items and zero totals (item copy failed',
-        '    after the header was created)',
-        '  - duplicated items (old-items delete failed, new insert succeeded)',
-        '  - a linked invoice/bill/PO silently diverging from its order',
-        '    (sync errors were console.warn-ed and swallowed)',
-        '  - double conversion (the order/estimate never got flagged as',
-        '    converted, so the user converts it again)',
+        '  - THE STRANDED OWNER: the owner membership insert after company',
+        '    creation (onboarding AND settings) sat inside a try/catch that',
+        '    catches nothing - supabase-js returns { error }, it does not',
+        '    throw. A failed insert walked on silently and the owner landed',
+        '    on a dashboard with every screen locked and no visible reason.',
+        '    The failure now stops the flow with a visible message.',
+        '  - THE INVITATION THAT NEVER CLOSES: accepted=true was unchecked',
+        '    in FIVE acceptance paths, so a failed flag left the invitation',
+        '    reusable and the user hitting "already a member" with no',
+        '    explanation.',
+        '  - TWO BASE CURRENCIES: all three steps of the base-currency',
+        '    switch were unchecked; one silent failure leaves conflicting',
+        '    is_base flags and every amount displayed wrong. Each step now',
+        '    checks and aborts loudly.',
+        '  - plus send-invite rollback, employee link/unlink, warehouse',
+        '    cost-center backfill, pending_companies cleanup (still',
+        '    non-fatal, but read and logged), and the membership email',
+        '    after a login-email change.',
         '',
-        'Nine screens, eighteen flagged sites, plus three sync writes the',
-        'guard had not flagged (the invoice/bill/PO header updates inside',
-        'the sync helpers). One shape everywhere: read { error }, stop the',
-        'chain before half-work, and tell the user - bilingually, naming',
-        'the document and the action to take. No success path changed.',
+        'Rule settled across the triage: a write that completes a core path',
+        'stops and surfaces; a non-critical flag/cleanup is checked and',
+        'logged loudly. No success path changed.',
         '',
-        'check-unchecked-writes BASELINE 111 -> 93.'
+        'check-unchecked-writes BASELINE 93 -> 76.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -317,5 +326,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.885 pushed - a write whose result nobody reads fails in the customer's hands, not in yours" -ForegroundColor Green
+    Write-Host "`n+ v3.74.886 pushed - the first thing a new customer touches must be the last thing that fails in silence" -ForegroundColor Green
 }

@@ -170,10 +170,13 @@ function CallbackInner() {
         defaultWarehouseId = existingWH.id
         // Ensure warehouse has cost_center_id set
         if (!existingWH.cost_center_id && defaultCostCenterId) {
-          await supabase
+          // v3.74.886 — يُفحص: فشله الصامت يترك المخزن بلا مركز تكلفة
+          // فتتعثر مستندات لاحقة بأخطاء حوكمة لا يفهمها المستخدم.
+          const { error: whCcErr } = await supabase
             .from('warehouses')
             .update({ cost_center_id: defaultCostCenterId })
             .eq('id', existingWH.id)
+          if (whCcErr) console.error('[auth/callback] warehouse cost_center backfill failed:', whCcErr.message)
         }
       } else {
         const { data: newWH, error: whError } = await supabase
@@ -266,14 +269,14 @@ function CallbackInner() {
     // بفرعها ومخزنها ومركز تكلفتها ودليل حساباتها. وقبل هذا السطر، كل تعثّر
     // يُبقى الاحتياطى سليماً فتنجح المحاولة التالية باسم الشركة الصحيح.
     if (userEmail) {
-      try {
-        await supabase
-          .from('pending_companies')
-          .delete()
-          .eq('user_email', userEmail.toLowerCase())
-      } catch {
-        // الحذف تنظيفٌ لا أكثر — فشله لا يمسّ شركةً أُنشئت بنجاح.
-      }
+      // v3.74.886 — الحذف تنظيفٌ لا أكثر، وفشله لا يمسّ شركةً أُنشئت
+      // بنجاح — لكنه يُقرأ ويُسجَّل، لا يُبتلع (supabase-js لا يرمى أصلاً
+      // فالـcatch القديم كان وهماً).
+      const { error: pcDelErr } = await supabase
+        .from('pending_companies')
+        .delete()
+        .eq('user_email', userEmail.toLowerCase())
+      if (pcDelErr) console.warn('[auth/callback] pending_companies cleanup failed (non-fatal):', pcDelErr.message)
     }
 
     return company.id

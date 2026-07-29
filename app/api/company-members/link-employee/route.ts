@@ -57,10 +57,14 @@ export async function POST(req: NextRequest) {
         previousEmployeeName = prevEmp?.full_name || null
       }
 
-      await admin
+      // v3.74.886 — يُفحص: كان الفشل الصامت يُعيد نجاحاً والربط باقٍ كما هو.
+      const { error: unlinkErr } = await admin
         .from("company_members")
         .update({ employee_id: null })
         .eq("id", member.id)
+      if (unlinkErr) {
+        return internalError("خطأ في إلغاء ربط الموظف", unlinkErr.message)
+      }
 
       // Restore display_name to username or email (remove employee name)
       if (previousEmployeeName) {
@@ -79,13 +83,15 @@ export async function POST(req: NextRequest) {
           } catch { }
         }
 
-        await admin
+        // v3.74.886 — يُفحص (غير حاسم: الاسم المعروض فقط، والربط أُلغى فعلاً).
+        const { error: dnErr } = await admin
           .from("user_profiles")
           .update({
             display_name: fallbackName || previousEmployeeName,
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", memberUserId)
+        if (dnErr) console.error("[link-employee] display_name restore failed (non-fatal):", dnErr.message)
       }
 
       return apiSuccess({ ok: true, unlinked: true })

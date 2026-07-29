@@ -745,9 +745,12 @@ export default function SettingsPage() {
                     setIsCompanyOwner(role === 'owner' || !memberData.invited_by)
                   } else {
                     // No membership - create as owner (first user)
-                    await supabase
+                    // v3.74.886 — يُفحص: فشله الصامت كان يوهم الشاشة أن
+                    // العضوية أُنشئت بينما القاعدة رفضتها.
+                    const { error: selfHealErr } = await supabase
                       .from("company_members")
                       .insert({ company_id: cid, user_id: user.id, role: "owner" })
+                    if (selfHealErr) console.error('[settings] owner membership self-heal failed:', selfHealErr.message)
                     setUserRole('owner')
                     setIsCompanyOwner(true)
                   }
@@ -1089,11 +1092,15 @@ export default function SettingsPage() {
         setCompanyId(data.id)
 
         // Create company member entry
-        try {
-          await supabase
-            .from("company_members")
-            .insert({ company_id: data.id, user_id: userId, role: "owner" })
-        } catch { }
+        // v3.74.886 — كان try/catch فارغاً وهو وهم: supabase-js لا يرمى.
+        // فشل عضوية المالك = مستخدم عالق ⇒ يُفحص ويُرفع للمعالج المرئى.
+        const { error: ownerMemErr } = await supabase
+          .from("company_members")
+          .insert({ company_id: data.id, user_id: userId, role: "owner" })
+        if (ownerMemErr) {
+          console.error('[settings] owner membership insert failed:', ownerMemErr)
+          throw new Error(ownerMemErr.message || 'membership insert failed')
+        }
 
         // No need to call updateBaseCurrency - base_currency is already in companies table
 
@@ -1254,10 +1261,13 @@ export default function SettingsPage() {
       }
 
       // Step 3: Update base currency in database
-      await supabase
+      // v3.74.886 — الخطوات الثلاث تُفحص: فشلٌ صامت فى أىٍّ منها يترك
+      // شركةً بعملتَى أساسٍ أو بلا عملة أساس، وكل المبالغ تُعرض خطأ.
+      const { error: clearBaseErr } = await supabase
         .from('currencies')
         .update({ is_base: false })
         .eq('company_id', companyId)
+      if (clearBaseErr) throw new Error(`فشل إلغاء عملة الأساس السابقة: ${clearBaseErr.message}`)
 
       // Set new currency as base
       const { data: existingCurrency } = await supabase
@@ -1268,14 +1278,15 @@ export default function SettingsPage() {
         .maybeSingle()
 
       if (existingCurrency) {
-        await supabase
+        const { error: setBaseErr } = await supabase
           .from('currencies')
           .update({ is_base: true, is_active: true })
           .eq('id', existingCurrency.id)
+        if (setBaseErr) throw new Error(`فشل تعيين عملة الأساس الجديدة: ${setBaseErr.message}`)
       } else {
         // Create new currency as base
         const currencyInfo = FALLBACK_CURRENCIES.find(c => c.code === pendingCurrency)
-        await supabase.from('currencies').insert({
+        const { error: newBaseErr } = await supabase.from('currencies').insert({
           company_id: companyId,
           code: pendingCurrency,
           name: currencyInfo?.name || pendingCurrency,
@@ -1285,6 +1296,7 @@ export default function SettingsPage() {
           is_active: true,
           is_base: true
         })
+        if (newBaseErr) throw new Error(`فشل إنشاء عملة الأساس الجديدة: ${newBaseErr.message}`)
       }
 
       // ⚠️ v3.74.865 — كان هنا `currency` وهو **عمودٌ لا وجود له** فى
@@ -1795,11 +1807,19 @@ export default function SettingsPage() {
                       const { error } = await supabase.auth.updateUser({ email: newEmail })
                       if (error) { toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Email' : 'البريد الإلكتروني', error.message || undefined); return }
                       if (companyId && userId) {
-                        await supabase
+                        // v3.74.886 — يُفحص: بريد الدخول تغيّر فعلاً؛ فشل
+                        // تحديث بريد العضوية يُقال بدل أن يتنافر البريدان بصمت.
+                        const { error: memEmailErr } = await supabase
                           .from('company_members')
                           .update({ email: newEmail })
                           .eq('company_id', companyId)
                           .eq('user_id', userId)
+                        if (memEmailErr) {
+                          toastActionError(toast, language === 'en' ? 'Update' : 'التحديث', language === 'en' ? 'Membership email' : 'بريد العضوية',
+                            language === 'en'
+                              ? `Login email was changed, but the membership email could not be updated: ${memEmailErr.message}`
+                              : `تغيّر بريد الدخول، لكن تعذّر تحديث بريد العضوية: ${memEmailErr.message}`)
+                        }
                       }
                       setIsUpdateEmailOpen(false)
                       setNewEmailField("")

@@ -74,7 +74,12 @@ export async function POST(req: NextRequest) {
       await activateSeat(inv.company_id, inv.id)
     } catch (seatErr) {
       console.error("[accept-invite] activateSeat non-blocking error:", seatErr)
-      await admin.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+      // v3.74.886 — كان غير مفحوص: لو فشل بقيت الدعوة مفتوحة قابلة
+      // لإعادة الاستعمال رغم إنشاء العضوية.
+      const { error: accFlagErr } = await admin.from("company_invitations").update({ accepted: true }).eq("id", inv.id)
+      if (accFlagErr) {
+        console.error("[accept-invite] membership created but invitation NOT flagged accepted:", accFlagErr.message)
+      }
     }
 
     // 6. Audit log
