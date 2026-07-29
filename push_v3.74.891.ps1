@@ -6,107 +6,71 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.890 - the OLD script is removed, never this one. Five times a chained
+# v3.74.891 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.889.ps1") { Remove-Item -LiteralPath "push_v3.74.889.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.890.ps1") { Remove-Item -LiteralPath "push_v3.74.890.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.890"') {
-    Write-Host "+ 3.74.890" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.891"') {
+    Write-Host "+ 3.74.891" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.890]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.890]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.891]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.891]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$screens = @(
-    "lib/attendance-processing-engine.ts",
-    "lib/currency-conversion-system.ts",
-    "lib/default-chart-of-accounts.ts",
-    "lib/event-bus.ts",
-    "lib/jobs-queue.ts",
-    "lib/logger.ts",
-    "lib/pre-receipt-refund.ts",
-    "lib/pre-shipment-refund.ts",
-    "lib/third-party-inventory.ts",
-    "lib/services/bill-receipt-workflow.service.ts",
-    "lib/services/consolidation.service.ts",
-    "lib/services/purchase-return-command.service.ts",
-    "lib/services/shareholder-capital-command.service.ts",
-    "lib/manufacturing/mrp-run-builder.ts",
-    "lib/core/queue/jobs/process-attendance-job.ts",
-    "lib/billing/invoice-generator.ts",
-    "lib/billing/subscription-service.ts",
-    "lib/backup/restore-utils.ts"
-)
+$mig = "supabase/migrations/20260729000002_v3_74_891_recurring_templates_rls.sql"
+$tooltips = "app/api/update-tooltips/route.ts"
+$deadA = "app/api/sync-so-0001/route.ts"
+$deadB = "app/api/onboarding/complete-step/route.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           "scripts/check-unchecked-writes.js",
-           "push_v3.74.890.ps1") + $screens
+           $mig, $tooltips, "push_v3.74.891.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the final-batch fixes are present (anchor on what MUST exist) -----
-$anchors = @{
-    "lib/attendance-processing-engine.ts"              = @('recInsErr', 'recUpdErr')
-    "lib/currency-conversion-system.ts"                = @('origErr')
-    "lib/default-chart-of-accounts.ts"                 = @('parentErr')
-    "lib/event-bus.ts"                                 = @('attemptErr', 'doneErr')
-    "lib/jobs-queue.ts"                                = @('failMarkErr')
-    "lib/logger.ts"                                    = @('logInsErr')
-    "lib/pre-receipt-refund.ts"                        = @('poCancelErr')
-    "lib/pre-shipment-refund.ts"                       = @('soCancelErr')
-    "lib/third-party-inventory.ts"                     = @('clearErr')
-    "lib/services/bill-receipt-workflow.service.ts"    = @('poSyncErr')
-    "lib/services/consolidation.service.ts"            = @('NOT saved')
-    "lib/services/purchase-return-command.service.ts"  = @('confirmStampErr')
-    "lib/services/shareholder-capital-command.service.ts" = @('contribDelErr')
-    "lib/manufacturing/mrp-run-builder.ts"             = @('runDelErr')
-    "lib/core/queue/jobs/process-attendance-job.ts"    = @('markErr')
-    "lib/billing/invoice-generator.ts"                 = @('pdfLinkErr', 'pdfRelinkErr')
-    "lib/billing/subscription-service.ts"              = @('reactivateErr')
-    "lib/backup/restore-utils.ts"                      = @('NOT saved')
-}
-foreach ($f in $anchors.Keys) {
-    $c = Get-Content -LiteralPath $f -Raw
-    foreach ($a in $anchors[$f]) {
-        if ($c -notmatch [regex]::Escape($a)) {
-            Write-Host "X $f lost its checked-write anchor '$a'" -ForegroundColor Red; exit 1
-        }
+# -- 1. the dead unauthenticated routes are gone --------------------------
+foreach ($f in @($deadA, $deadB)) {
+    if (Test-Path -LiteralPath $f) {
+        Write-Host "X $f must be deleted - it was live with no authentication" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ all 18 lib files carry their checked-write anchors" -ForegroundColor Green
+Write-Host "+ sync-so-0001 and onboarding/complete-step are gone" -ForegroundColor Green
 
-# -- 2. the debt is ZERO everywhere ---------------------------------------
-$left = node scripts/check-unchecked-writes.js --list 2>$null
-if ($left) {
-    Write-Host "X unchecked writes remain:" -ForegroundColor Red
-    $left | Select-Object -First 10 | ForEach-Object { Write-Host "   $_" }
-    exit 1
+# -- 2. update-tooltips is gated on BOTH verbs ----------------------------
+$c = Get-Content -LiteralPath $tooltips -Raw
+if ($c -notmatch 'secureApiRequest' -or $c -notmatch 'ALLOWED_ROLES') {
+    Write-Host "X update-tooltips lost its auth gate" -ForegroundColor Red; exit 1
 }
-Write-Host "+ ZERO unchecked writes remain in the entire project" -ForegroundColor Green
+if (([regex]::Matches($c, 'requireAdmin\(request\)')).Count -lt 2) {
+    Write-Host "X update-tooltips must gate BOTH GET and POST" -ForegroundColor Red; exit 1
+}
+Write-Host "+ update-tooltips gated behind auth + admin role on GET and POST" -ForegroundColor Green
 
-# -- 3. the baseline is 0 -------------------------------------------------
-$c = Get-Content -LiteralPath "scripts/check-unchecked-writes.js" -Raw
-if ($c -notmatch 'const BASELINE = 0') {
-    Write-Host "X check-unchecked-writes BASELINE must be 0 - the debt is closed" -ForegroundColor Red; exit 1
+# -- 3. the RLS migration carries its teeth -------------------------------
+$c = Get-Content -LiteralPath $mig -Raw
+if (([regex]::Matches($c, 'ENABLE ROW LEVEL SECURITY')).Count -lt 2 -or
+    ([regex]::Matches($c, 'REVOKE ALL ON public\.recurring_journal_template')).Count -lt 2) {
+    Write-Host "X the RLS migration is missing enable/revoke statements" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline ratcheted to ZERO - the shape is now forbidden" -ForegroundColor Green
+Write-Host "+ RLS enabled and anon revoked on both recurring-template tables" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.889.ps1" 2>$null
+git add -u -- $deadA 2>$null
+git add -u -- $deadB 2>$null
+git add -u -- "push_v3.74.890.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.889.ps1")
+$expected = @($files) + @($deadA, $deadB, "push_v3.74.890.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -283,7 +247,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.889.ps1" 2>$null
+git add -u -- "push_v3.74.890.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -302,40 +266,43 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_890.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_891.txt"
     $msgLines = @(
-        'fix(integrity): v3.74.890 - the unchecked-writes debt is CLOSED: 213 at birth, zero today (28 -> 0)',
+        'fix(security): v3.74.891 - governance triage, security first: two tables were wide open to anon',
         '',
-        'Sixth and final impact-ranked batch: the 28 background lib/ sites.',
-        'Every write in the project now reads its result, and the guard',
-        'no longer counts the shape - it forbids it (BASELINE = 0).',
+        'Impact-first triage of the 624 governance findings. The structural',
+        'families (pagination, N+1, large files, error shapes) are planned',
+        'batches; the 73 SECURITY findings were verified one by one now:',
         '',
-        '  - POST-REFUND CANCELS (the 888 shape in lib/): cancelling the',
-        '    linked PO/SO after an executed refund now fails loudly with',
-        '    "cancel it manually - do NOT refund again".',
-        '  - PROCESSING MARKS ARE THE DEDUP SHIELD: event-bus (a processed',
-        '    event left unmarked re-runs its listeners; an attempt counter',
-        '    that never increments retries a poisoned event forever - now',
-        '    skipped), jobs-queue (done-but-will-rerun, failed-but-stuck,',
-        '    cancelled-but-will-run), and attendance in BOTH engines (a',
-        '    punch marked processed with no record = a lost workday; the',
-        '    reverse = a punch counted twice).',
-        '  - SUBSCRIPTION STATUS THROWS: the write IS the function -',
-        '    a past-due company keeping full access, or a customer who',
-        '    PAID and stayed blocked, can no longer happen in silence.',
-        '  - the original-price snapshot before currency conversion throws',
-        '    (the 874 lesson: what cannot be recomputed is not left to a',
-        '    log-and-continue path).',
-        '  - rollbacks name their victims: ROLLBACK_INCOMPLETE with ids in',
-        '    capital contributions and MRP runs; the default chart aborts',
-        '    company creation if parent linking fails; third-party goods',
-        '    cannot be cleared twice; a billing PDF uploaded but unlinked',
-        '    is reported; consolidation complains about lost snapshots and',
-        '    checks; restore_queue cannot stay "processing" forever; and',
-        '    the logger itself falls back to the console when system_logs',
-        '    rejects it.',
+        '  - THE REAL ONE: recurring_journal_templates and its lines had',
+        '    NO RLS at all, with full PostgREST default grants to anon -',
+        '    read, write, delete, even TRUNCATE, for any visitor with no',
+        '    login. Only saving grace: zero rows - the feature is unused',
+        '    (the 819 lesson: zero rows is an opportunity). Migration',
+        '    20260729000002 enables RLS with the standard company',
+        '    isolation (get_user_company_ids) on the header, inheritance',
+        '    via the parent on the lines, revokes all anon grants, and',
+        '    drops TRUNCATE from authenticated. Proven on BOTH databases',
+        '    with three identities inside cancelled transactions: anon',
+        '    refused outright, a pure outsider sees zero and cannot',
+        '    insert, a member sees his template.',
+        '  - sync-so-0001: a live, unauthenticated one-off repair route',
+        '    that zeroes a sales order - zero references -> deleted.',
+        '  - onboarding/complete-step: unauthenticated, zero references',
+        '    -> deleted.',
+        '  - update-tooltips: ran a filesystem script with no auth; its',
+        '    only consumer is the settings screen -> now gated behind',
+        '    auth + admin role on both GET and POST.',
+        '  - the other 35 flagged routes: 16 authenticated via project',
+        '    wrappers the audit does not recognize, 6 retired tombstones,',
+        '    10 pre-login by design, 3 token-authenticated by design.',
+        '  - 5 dangerouslySetInnerHTML: all static in-repo content.',
+        '  - 3 RLS-without-policies tables: deliberate deny-all,',
+        '    server-only.',
         '',
-        'check-unchecked-writes BASELINE 28 -> 0. From 213 to zero.'
+        'And a guard question recorded for a coming release: why did',
+        'check-anon-open-tables stay silent about two anon-open tables?',
+        'The 834 family again: the guard itself needs a witness.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -344,5 +311,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.890 pushed - 213 at birth, zero today: every write in this project reads its result" -ForegroundColor Green
+    Write-Host "`n+ v3.74.891 pushed - security findings are read one by one, and the one that was real is now locked" -ForegroundColor Green
 }
