@@ -679,29 +679,14 @@ export default function ShareholdersPage() {
         return
       }
 
-      // Safe to delete now — also drop the auto-created capital account
-      // if it never received any entries (otherwise leave it alone).
-      const { data: sh } = await supabase
-        .from("shareholders")
-        .select("name, capital_account_id")
-        .eq("id", id)
-        .maybeSingle()
-
+      // v3.74.884 — كان المتصفح «ينظّف» حساب رأس المال بعد حذف الشريك بحذفٍ
+      // غير مفحوص، يرفضه حارس الحسابات فى كل مرة بصمت منذ 815 (الحسابات
+      // المُوفَّرة تلقائياً حسابات نظام) — فيبقى حسابان يتيمان لكل شريكٍ
+      // محذوف. الآن القاعدة تملك التنظيف وحدها (درس «مالك واحد»): مُشغِّل
+      // trg_cleanup_shareholder_accounts يحذف — فى نفس معاملة حذف الشريك —
+      // حسابَى رأس المال والمسحوبات إن كانا بلا قيود، ويترك ما عليه تاريخ.
       const { error } = await supabase.from("shareholders").delete().eq("id", id)
       if (error) throw error
-
-      if (sh?.capital_account_id) {
-        const { count: lineCount } = await supabase
-          .from("journal_entry_lines")
-          .select("id", { count: "exact", head: true })
-          .eq("account_id", sh.capital_account_id)
-        if ((lineCount || 0) === 0) {
-          await supabase
-            .from("chart_of_accounts")
-            .delete()
-            .eq("id", sh.capital_account_id)
-        }
-      }
 
       if (companyId) await loadShareholders(companyId)
       toastActionSuccess(toast, "الحذف", "المساهم")

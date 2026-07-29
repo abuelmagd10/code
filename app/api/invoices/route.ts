@@ -408,17 +408,7 @@ export async function POST(req: NextRequest) {
         warehouse_id: finalWarehouseId,
         created_by_user_id: user.id,
       }
-      const { data: newSO, error: soErr } = await supabase
-        .from('sales_orders').insert(soInsert).select('id').single()
-      if (soErr || !newSO?.id) {
-        return NextResponse.json({
-          success: false,
-          error: 'Failed to auto-create the linked sales order',
-          error_ar: 'فشل إنشاء أمر البيع المرتبط تلقائياً: ' + (soErr?.message || 'unknown'),
-        }, { status: 500 })
-      }
       const soItems = invoiceItems.map((it: any) => ({
-        sales_order_id: newSO.id,
         product_id: it.product_id,
         quantity: Number(it.quantity || 0),
         unit_price: Number(it.unit_price || 0),
@@ -431,19 +421,24 @@ export async function POST(req: NextRequest) {
         description: it.description || null,
         item_type: it.item_type || 'product',
       }))
-      if (soItems.length > 0) {
-        const { error: soItemsErr } = await supabase
-          .from('sales_order_items').insert(soItems)
-        if (soItemsErr) {
-          await supabase.from('sales_orders').delete().eq('id', newSO.id)
-          return NextResponse.json({
-            success: false,
-            error: 'Failed to auto-create sales order items',
-            error_ar: 'فشل إنشاء بنود أمر البيع: ' + soItemsErr.message,
-          }, { status: 500 })
-        }
+      // v3.74.884 — كان الرأس يُدرج ثم البنود، وعند فشل البنود «يُنظَّف»
+      // بحذف الرأس. وذلك التراجُع كان قد يُرفض: الأمر يُنشأ بحالة الفاتورة
+      // نفسها (قد تكون 'sent')، وبوابة transactional_document_delete_gate
+      // لا تسمح بالحذف إلا لمسودة ⇒ أمر بيعٍ بلا بنود يبقى فى التقارير.
+      // العلاج المُثبَت (882): معاملة واحدة فى القاعدة — أى فشلٍ يُرجع
+      // الرأس والبنود معاً بلا استئذانٍ من مُشغِّل.
+      const { data: soRpc, error: soErr } = await supabase.rpc('create_sales_order_atomic', {
+        p_so_data: soInsert,
+        p_so_items: soItems,
+      })
+      if (soErr || !soRpc?.success || !soRpc?.sales_order_id) {
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to auto-create the linked sales order',
+          error_ar: 'فشل إنشاء أمر البيع المرتبط تلقائياً: ' + (soErr?.message || soRpc?.error || 'unknown'),
+        }, { status: 500 })
       }
-      invoiceData.sales_order_id = newSO.id
+      invoiceData.sales_order_id = soRpc.sales_order_id
     }
 
     // 3️⃣ Call Atomic RPC (handles creation and synchronous accounting engine)

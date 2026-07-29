@@ -51,9 +51,16 @@ const url = process.env.PRODUCTION_SUPABASE_DB_URL
  * ما هو موجودٌ اليوم، لا ما هو مقبول. يهبط ولا يصعد.
  * v3.74.882 — ٦ ⇒ ٤: مسارا الاسترداد (قيود اليومية) وُحِّدا فى
  * `create_journal_entry_atomic` فلم يعد فيهما حذفٌ تعويضى أصلاً.
- * الأربعة الباقية: sales_orders ×٢ · invoices · chart_of_accounts.
+ * v3.74.884 — ٤ ⇒ ٠:
+ *   · أمر البيع التلقائى فى POST /api/invoices ⇒ `create_sales_order_atomic`
+ *     (معاملة واحدة، لا حذف تعويضى أصلاً).
+ *   · route.example.ts ⇒ كان ميتاً (ليس مساراً فى Next ولا يستورده أحد) فحُذف.
+ *   · حذف الفاتورة المرتبطة فى صفحة أوامر البيع ⇒ عبارة واحدة (FK cascade
+ *     للبنود) بدل التسلسل الذى قد يقف فى منتصفه.
+ *   · تنظيف حسابات الشريك ⇒ انتقل للقاعدة (trg_cleanup_shareholder_accounts)
+ *     فى نفس معاملة حذف الشريك.
  */
-const BASELINE = 4
+const BASELINE = 0
 
 const SCAN_DIRS = ["app", "lib", "components"]
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git", "dist", "build", "coverage"])

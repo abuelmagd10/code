@@ -68,7 +68,8 @@ const LEDGER_TABLES = [
 const NOT_A_LANDMINE = new Map([
   ["lib/currency-service.test.ts", "ملف اختبار"],
   ["lib/utils.test.ts", "ملف اختبار"],
-  ["app/api/sales-orders/route.example.ts", "مثالٌ توضيحى لا مسار"],
+  // v3.74.884: route.example.ts حُذف — كان ميتاً (ليس مساراً ولا يستورده أحد)
+  // وكان أحد مواضع check-impossible-rollback الأربعة.
 ])
 
 const WRITE_RE = /\.(insert|update|upsert|delete)\s*\(/

@@ -1594,20 +1594,12 @@ function SalesOrdersContent() {
       if (orderToDelete.invoice_id) {
         const linkedInvoice = linkedInvoices[orderToDelete.invoice_id];
         if (linkedInvoice && linkedInvoice.status === 'draft') {
-          // ⚠️ v3.74.874 — كان الحذفان بلا فحص، ثم يُحذف أمر البيع بعدهما.
-          // فلو فشل حذف الفاتورة صامتاً، حُذف الأمر وبقيت **فاتورةٌ يتيمة**
-          // بلا مصدر — ومحسوبةٌ فى أرصدة العملاء والتقارير.
-          // ⇒ يُفحص، ويُوقَف الحذف كلّه قبل أن يُفقد الأمر.
-          const { error: itemsErr } = await supabase
-            .from("invoice_items").delete().eq("invoice_id", orderToDelete.invoice_id);
-          if (itemsErr) {
-            throw new Error(
-              appLang === 'en'
-                ? `Could not delete the linked invoice items (${orderToDelete.invoice_id}): ${itemsErr.message}`
-                : `تعذّر حذف بنود الفاتورة المرتبطة (${orderToDelete.invoice_id}): ${itemsErr.message}`
-            );
-          }
-
+          // v3.74.884 — كان الحذف على خطوتين: بنود الفاتورة ثم رأسها. فلو
+          // نجحت الأولى ورُفضت الثانية (بوابة حذف المستندات قد ترفض إن لم
+          // تعد الفاتورة مسودةً على الخادم) بقيت فاتورةٌ بلا بنود — نصف عمل.
+          // العلاج: عبارة حذفٍ واحدة — FK البنود ON DELETE CASCADE، فالرفض
+          // يُبقى كل شىء والنجاح يُزيل كل شىء، ذرّياً. (874 أضاف الفحص؛
+          // 884 أزال التسلسل نفسه.)
           const { error: invErr } = await supabase
             .from("invoices").delete().eq("id", orderToDelete.invoice_id);
           if (invErr) {

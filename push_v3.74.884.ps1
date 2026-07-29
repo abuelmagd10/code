@@ -6,74 +6,106 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.883 - the OLD script is removed, never this one. Five times a chained
+# v3.74.884 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
-# A replacement whose output can match its own next pattern is a loop, not a
-# replacement. This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.882.ps1") { Remove-Item -LiteralPath "push_v3.74.882.ps1" -Force }
+# This line is written by hand, every release, without exception.
+if (Test-Path -LiteralPath "push_v3.74.883.ps1") { Remove-Item -LiteralPath "push_v3.74.883.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.883"') {
-    Write-Host "+ 3.74.883" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.884"') {
+    Write-Host "+ 3.74.884" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.883]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.883]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.884]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.884]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$manual = "lib/services/manual-journal-command.service.ts"
-$period = "lib/period-closing.ts"
-$deprec = "app/api/fixed-assets/[id]/depreciation/route.ts"
+$invRoute  = "app/api/invoices/route.ts"
+$soPage    = "app/sales-orders/page.tsx"
+$shPage    = "app/shareholders/page.tsx"
+$mig       = "supabase/migrations/20260729000001_v3_74_884_impossible_rollback_sites.sql"
+$example   = "app/api/sales-orders/route.example.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $manual, $period, $deprec, "push_v3.74.883.ps1")
+           $invRoute, $soPage, $shPage, $mig,
+           "scripts/check-impossible-rollback.js",
+           "scripts/check-ledger-landmines.js",
+           "scripts/check-unchecked-writes.js",
+           "push_v3.74.884.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. no path may give birth to a posted entry --------------------------
-# enforce_je_integrity refuses any INSERT born 'posted' (DIRECT_POST_BLOCKED).
-# The three paths below did exactly that and therefore could never run.
-foreach ($f in @($manual, $period, $deprec)) {
-    $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match 'status:\s*["'']posted["'']\s*,?\s*(//[^\r\n]*)?\r?\n[\s\S]{0,120}?\.insert\(' -or
-        $c -match '\.insert\(\{[\s\S]{0,600}?status:\s*["'']posted["'']') {
-        Write-Host "X $f still inserts a journal entry born posted" -ForegroundColor Red; exit 1
-    }
+# -- 1. the dead example file is gone, and nothing exempts it any more ----
+if (Test-Path -LiteralPath $example) {
+    Write-Host "X $example must be deleted - it was one of the four sites" -ForegroundColor Red; exit 1
 }
-Write-Host "+ no journal entry is born posted - all three paths insert draft first" -ForegroundColor Green
+$c = Get-Content -LiteralPath "scripts/check-ledger-landmines.js" -Raw
+if ($c -match 'route\.example\.ts",') {
+    Write-Host "X check-ledger-landmines.js still exempts the deleted example file" -ForegroundColor Red; exit 1
+}
+Write-Host "+ route.example.ts is gone and unexempted" -ForegroundColor Green
 
-# -- 2. each path posts AFTER its lines, and checks the result -----------
-$c = Get-Content -LiteralPath $manual -Raw
-if ($c -notmatch "Failed to post the owner's manual journal entry") {
-    Write-Host "X the owner's manual entry is no longer posted after lines" -ForegroundColor Red; exit 1
+# -- 2. the invoices route creates the auto-SO through ONE transaction ----
+# Anchor on what MUST exist (the 829 lesson), then on what must not.
+$c = Get-Content -LiteralPath $invRoute -Raw
+if ($c -notmatch "create_sales_order_atomic") {
+    Write-Host "X the invoices route no longer calls create_sales_order_atomic" -ForegroundColor Red; exit 1
 }
-$c = Get-Content -LiteralPath $period -Raw
-if ($c -notmatch [regex]::Escape("خطأ في ترحيل قيد الإقفال")) {
-    Write-Host "X the period-closing entry has no checked post step" -ForegroundColor Red; exit 1
+if ($c -match "from\('sales_orders'\)\s*\.delete\(" -or $c -match 'from\("sales_orders"\)\s*\.delete\(') {
+    Write-Host "X the invoices route still compensates by deleting sales_orders" -ForegroundColor Red; exit 1
 }
-$c = Get-Content -LiteralPath $deprec -Raw
-if ($c -notmatch "DEPRECIATION_REVERSAL_POST_FAILED") {
-    Write-Host "X the depreciation reversal has no checked post step" -ForegroundColor Red; exit 1
+Write-Host "+ auto-SO goes through the atomic RPC; no compensating delete" -ForegroundColor Green
+
+# -- 3. the linked-invoice delete is ONE statement (FK cascades items) ----
+$c = Get-Content -LiteralPath $soPage -Raw
+if ($c -notmatch 'from\("invoices"\)\.delete\(\)\.eq\("id", orderToDelete\.invoice_id\)') {
+    Write-Host "X the single linked-invoice delete is missing from the sales-orders page" -ForegroundColor Red; exit 1
 }
-if ($c -notmatch "status: 'draft'") {
-    Write-Host "X the depreciation reversal is still born with the default status - which is posted" -ForegroundColor Red; exit 1
+if ($c -match 'from\("invoice_items"\)\s*\.delete\(') {
+    Write-Host "X the sales-orders page still deletes invoice_items separately" -ForegroundColor Red; exit 1
 }
-Write-Host "+ all three paths post after their lines, and a failed post stops the chain" -ForegroundColor Green
+Write-Host "+ linked invoice is removed in one atomic statement" -ForegroundColor Green
+
+# -- 4. the browser no longer touches chart_of_accounts on shareholder delete
+$c = Get-Content -LiteralPath $shPage -Raw
+if ($c -match 'from\("chart_of_accounts"\)[\s\S]{0,80}?\.delete\(') {
+    Write-Host "X the shareholders page still deletes chart_of_accounts from the browser" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch 'trg_cleanup_shareholder_accounts') {
+    Write-Host "X the shareholders page lost the note that the DB owns the cleanup" -ForegroundColor Red; exit 1
+}
+Write-Host "+ shareholder-account cleanup is owned by the database alone" -ForegroundColor Green
+
+# -- 5. the migration carries both roots, and the baseline is zero --------
+$c = Get-Content -LiteralPath $mig -Raw
+if ($c -notmatch "create_sales_order_atomic" -or $c -notmatch "trg_cleanup_shareholder_accounts" -or
+    $c -notmatch "pg_trigger_depth") {
+    Write-Host "X the 884 migration is missing one of its three pieces" -ForegroundColor Red; exit 1
+}
+$c = Get-Content -LiteralPath "scripts/check-impossible-rollback.js" -Raw
+if ($c -notmatch 'const BASELINE = 0') {
+    Write-Host "X check-impossible-rollback BASELINE must be 0 now" -ForegroundColor Red; exit 1
+}
+$c = Get-Content -LiteralPath "scripts/check-unchecked-writes.js" -Raw
+if ($c -notmatch 'const BASELINE = 111') {
+    Write-Host "X check-unchecked-writes BASELINE must be 111 (113 minus the two closed sites)" -ForegroundColor Red; exit 1
+}
+Write-Host "+ migration complete; impossible-rollback baseline is ZERO, unchecked-writes 111" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.882.ps1" 2>$null
+git add -u -- $example 2>$null
+git add -u -- "push_v3.74.883.ps1" 2>$null
 
-# -- 3. nothing staged beyond this release (the 872 lesson) --------------
-# What a failed run staged stays staged. `git add -- $files` only adds.
-$expected = @($files) + @("push_v3.74.882.ps1")
+# -- 6. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @($example, "push_v3.74.883.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -95,15 +127,11 @@ Write-Host "Proving the impossible-rollback guard refuses (and stays silent)..."
 node scripts/selftest-impossible-rollback.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the impossible-rollback guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
-Write-Host "Counting compensating deletes a trigger can refuse..." -ForegroundColor Cyan
-# NO `| Select-Object -First N` here. -First STOPS the upstream pipeline, node
-# gets EPIPE while still writing its tracked-items list, its own error handler
-# exits 1, and the release calls a PASSING guard a failure. It printed
-# "+ No new impossible rollbacks" and was declared broken in the same breath.
-# `-Last N` is safe: it drains the stream. `-First N` on a live process is not.
-# => How a check is DISPLAYED must not change what it MEANS.
+Write-Host "Counting compensating deletes a trigger can refuse (want ZERO)..." -ForegroundColor Cyan
+# NO `| Select-Object -First N` here (883 lesson: -First kills the pipe, node
+# gets EPIPE, and a PASSING guard is declared a failure). -Last N drains.
 node scripts/check-impossible-rollback.js --require-db
-if ($LASTEXITCODE -ne 0) { Write-Host "X a new impossible rollback appeared" -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Host "X a compensating delete a trigger can refuse still exists" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the sub_type divergence guard refuses..." -ForegroundColor Cyan
 node scripts/selftest-subtype-tenant-divergence.js
@@ -254,7 +282,8 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.882.ps1" 2>$null
+git add -u -- $example 2>$null
+git add -u -- "push_v3.74.883.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -273,41 +302,44 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_883.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_884.txt"
     $msgLines = @(
-        'fix(ledger): v3.74.883 - three paths gave birth to posted entries; the guard refuses them all',
+        'fix(integrity): v3.74.884 - a rollback that can be refused is not a rollback: all four sites closed',
         '',
-        'enforce_je_integrity (871) refuses any journal entry INSERTed with',
-        'status=posted - DIRECT_POST_BLOCKED. Three paths did exactly that:',
+        'check-impossible-rollback (880) tracked four compensating/cleanup',
+        'deletes on trigger-guarded tables. Each could be refused mid-chain,',
+        'leaving half the work behind. BASELINE 4 -> 0.',
         '',
-        '  - the owner''s manual journal entry (the 865 governance flagship):',
-        '    status: "posted" at insert',
-        '  - the period-closing entry: status: "posted", explicitly',
-        '  - the depreciation reversal: no status at all - and the column',
-        '    DEFAULT is ''posted''',
+        '  1. POST /api/invoices auto-SO: header insert + items insert +',
+        '     compensating delete -> create_sales_order_atomic (one DB',
+        '     transaction, SECURITY INVOKER so the same RLS/governance/',
+        '     subscription gates apply). The old delete could be refused',
+        '     because the SO is born with the invoice status (may be sent),',
+        '     and the document delete gate only allows draft deletes.',
         '',
-        'All three could never run. Proven against production, rolled back;',
-        'zero depreciation_reversal entries in the database agree.',
+        '  2. Shareholders page: since 815 the provisioned partner accounts',
+        '     are is_system=TRUE, so the browser cleanup delete was refused',
+        '     silently EVERY time (unchecked write) - every deleted partner',
+        '     left two orphan system accounts. The DB now owns the cleanup:',
+        '     trg_cleanup_shareholder_accounts (AFTER DELETE) removes both',
+        '     accounts in the same transaction when they carry no entries;',
+        '     the account guard distinguishes a direct app delete (still',
+        '     refused for system accounts) from a system-initiated one',
+        '     (pg_trigger_depth() > 1).',
         '',
-        'The irony: the accountant''s entry (draft, awaiting approval) passed,',
-        'while the owner''s - the highest privilege - always failed, because the',
-        'higher privilege took the forbidden road. When a path is tested with',
-        'one role, test the role that takes the other branch too.',
+        '  3. Sales-orders page linked-invoice delete: two statements',
+        '     (items then header) could stop halfway -> one statement;',
+        '     invoice_items FK is ON DELETE CASCADE already.',
         '',
-        'The fix is the shape the guard itself permits: draft, then lines, then',
-        'post - and a failed post now throws instead of being swallowed, since a',
-        'closing or reversal entry left in draft closes and reverses nothing.',
-        'This also makes the rollbacks sound: deleting a draft works (881),',
-        'deleting a posted entry is refused out loud.',
+        '  4. route.example.ts: dead (not a Next route, imported by nobody,',
+        '     referenced only by its own exemption line) -> deleted, with',
+        '     the exemption.',
         '',
-        'And a plan reversed by measurement before execution: 883 was going to',
-        'convert the 756 helper to create_journal_entry_atomic. Measuring the',
-        'pattern showed draft-first-post-last is DELIBERATE (the 252 lesson) -',
-        'the atomic function posts immediately and would have broken it. Before',
-        'replacing a standing pattern, ask why it was built that way.',
-        '',
-        'Verified on production, rolled back: insert draft OK, balanced lines',
-        'OK, post-after-lines OK, draft rollback leaves zero rows.'
+        'Proven on BOTH databases inside cancelled transactions: partner',
+        'cleanup leaves zero accounts; direct system-account delete still',
+        'refused; atomic SO succeeds born-sent with items; a failing item',
+        'leaves zero orphan headers; and the call works under an',
+        'authenticated user identity (the 836 lesson), not just service_role.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -316,5 +348,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.883 pushed - the higher privilege took the forbidden road; read the guard before you route around it" -ForegroundColor Green
+    Write-Host "`n+ v3.74.884 pushed - a rollback that must ask permission is a plea, not a rollback" -ForegroundColor Green
 }
