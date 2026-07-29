@@ -111,7 +111,9 @@ export async function POST(
       if (!r.success) {
         return NextResponse.json({ error: r.error || "Pre-shipment refund failed" }, { status: 400 })
       }
-      await admin
+      // v3.74.888 — 🔴 يُفحص: الاسترداد نُفِّذ فعلاً (القيود مُرحَّلة)؛
+      // فشلٌ صامت يُبقى الطلب pending فيُنفَّذ ثانيةً.
+      const { error: execMarkErr } = await admin
         .from("customer_refund_requests")
         .update({
           status: 'executed',
@@ -120,6 +122,14 @@ export async function POST(
           reversal_journal_entry_id: r.revenueReversalJeId || r.paymentReversalJeIds?.[0] || null,
         })
         .eq("id", id)
+      if (execMarkErr) {
+        console.error("[customer-refund/execute] refund EXECUTED but request not marked executed:", execMarkErr.message)
+        return NextResponse.json({
+          success: false,
+          executed: true,
+          error: `الاسترداد نُفِّذ فعلاً لكن تعذّر وسم الطلب «منفَّذاً» (${execMarkErr.message}). لا تُعِد التنفيذ — تواصل مع الدعم لوسم الطلب.`,
+        }, { status: 500 })
+      }
       return NextResponse.json({
         success: true,
         message: "تم تنفيذ استرداد قبل الشحن",

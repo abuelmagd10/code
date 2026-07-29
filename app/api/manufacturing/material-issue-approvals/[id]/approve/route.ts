@@ -539,7 +539,10 @@ export async function POST(
         const lineStatus = newApprovedQty >= requiredQty
           ? "fully_issued" : newApprovedQty > 0 ? "partially_issued" : "pending"
 
-        await admin
+        // v3.74.888 — يُفحص: فشلٌ صامت يترك سطر المتطلبات بكمية معتمدة
+        // تخالف ما سيُصرف فعلاً — درس «العمود المشتق ليس مصدر حقيقة»
+        // لا يعفى من فحص الكتابة عليه.
+        const { error: reqUpdErr } = await admin
           .from("production_order_material_requirements")
           .update({
             approved_quantity: newApprovedQty,
@@ -549,6 +552,12 @@ export async function POST(
             approved_at: new Date().toISOString(),
           })
           .eq("id", item.requirement_id)
+        if (reqUpdErr) {
+          return NextResponse.json({
+            success: false,
+            error: `تعذّر تحديث سطر متطلبات المواد (${reqUpdErr.message}) — أُوقف الاعتماد قبل الصرف.`,
+          }, { status: 500 })
+        }
       }
     } else if (!isDetailedApproval && finalIssueType === "full" && (requirements || []).length > 0) {
       for (const mat of (requirements || [])) {
@@ -565,7 +574,8 @@ export async function POST(
           })
         }
 
-        await admin
+        // v3.74.888 — يُفحص (المرآة الكاملة للفرع التفصيلى أعلاه).
+        const { error: reqFullErr } = await admin
           .from("production_order_material_requirements")
           .update({
             approved_quantity: approvedQty,
@@ -575,6 +585,12 @@ export async function POST(
             approved_at: new Date().toISOString(),
           })
           .eq("id", (mat as any).id)
+        if (reqFullErr) {
+          return NextResponse.json({
+            success: false,
+            error: `تعذّر تحديث سطر متطلبات المواد (${reqFullErr.message}) — أُوقف الاعتماد قبل الصرف.`,
+          }, { status: 500 })
+        }
       }
     }
 
@@ -677,11 +693,21 @@ export async function POST(
     })
 
     // تحديث حالة الاعتماد في أمر الإنتاج
-    await admin
+    // v3.74.888 — يُفحص: المواد صُرفت فعلاً؛ فشلٌ صامت هنا يُبقى أمر
+    // الإنتاج «بانتظار الصرف» فى الشاشة ⇒ خطر طلب صرفٍ ثانٍ.
+    const { error: poStatusErr } = await admin
       .from("manufacturing_production_orders")
       .update({ material_issue_approval_status: approvalStatus })
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
+    if (poStatusErr) {
+      console.error("[material-issue/approve] materials ISSUED but production order status not updated:", poStatusErr.message)
+      return NextResponse.json({
+        success: false,
+        issued: true,
+        error: `صُرفت المواد فعلاً لكن تعذّر تحديث حالة أمر الإنتاج (${poStatusErr.message}). لا تطلب صرفاً جديداً — حدّث الصفحة وتواصل مع الدعم.`,
+      }, { status: 500 })
+    }
 
     // إشعار لمقدم الطلب
     const approvalMsg = finalIssueType === "full"

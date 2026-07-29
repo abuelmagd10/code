@@ -140,12 +140,20 @@ export async function POST(
 
     if (execErr) {
       // Rollback approval flag
-      await supabase
+      // v3.74.888 — يُفحص: فشل هذا الوسم يترك الطلب «معتمَداً» وهو لم
+      // يُنفَّذ — حالة مضللة تُقال فى السجل والاستجابة.
+      const { error: failMarkErr } = await supabase
         .from("permission_transfers")
         .update({ status: "failed", approved_by: null, approved_at: null })
         .eq("id", transferId)
+      if (failMarkErr) {
+        console.error(`[permission-transfer/approve] execute failed AND status rollback failed for ${transferId}:`, failMarkErr.message)
+      }
 
-      return NextResponse.json({ error: execErr.message }, { status: 500 })
+      return NextResponse.json({
+        error: execErr.message,
+        ...(failMarkErr ? { warning: `التنفيذ فشل وتعذّر أيضاً إرجاع حالة الطلب (${failMarkErr.message}) — قد يظهر «معتمَداً» وهو لم يُنفَّذ.` } : {}),
+      }, { status: 500 })
     }
 
     // Audit
@@ -172,8 +180,10 @@ export async function POST(
     // Without this the submitter would only learn the outcome by
     // refreshing the permission-transfers page. Failures swallowed —
     // the transfer is already committed; the notification is UX-only.
-    try {
-      await supabase.from("notifications").insert({
+    {
+      // v3.74.888 — كان try/catch وهماً (supabase-js لا يرمى): فشل
+      // الإشعار كان صامتاً تماماً. غير حاسم: يُفحص ويُسجَّل.
+      const { error: notifErr } = await supabase.from("notifications").insert({
         company_id: transfer.company_id,
         reference_type: "permission_transfer",
         reference_id: transferId,
@@ -187,8 +197,7 @@ export async function POST(
         event_key: `permission_transfer:${transferId}:approved:user:${transfer.transferred_by}`,
         status: "unread",
       })
-    } catch {
-      // non-critical
+      if (notifErr) console.error("[permission-transfer/approve] approval notification failed (non-fatal):", notifErr.message)
     }
 
     return NextResponse.json({

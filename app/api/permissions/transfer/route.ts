@@ -174,8 +174,9 @@ export async function POST(request: Request) {
           .filter((uid: string) => uid && uid !== user.id)
 
         for (const approverId of approverIds) {
-          try {
-            await supabase.from("notifications").insert({
+          {
+            // v3.74.888 — كان try/catch وهماً: يُفحص ويُسجَّل، ويُكمل بقية المعتمدين.
+            const { error: notifErr } = await supabase.from("notifications").insert({
               company_id,
               reference_type: "permission_transfer",
               reference_id: transfer.id,
@@ -191,8 +192,7 @@ export async function POST(request: Request) {
               // v3.74.588 — طلب نقل صلاحيات بانتظار اعتماد مسؤول ثانٍ (مرحلة طلب)
               kind: "action",
             })
-          } catch {
-            // per-approver failure is non-critical; keep notifying others.
+            if (notifErr) console.error(`[permissions/transfer] approver notification failed for ${approverId} (non-fatal):`, notifErr.message)
           }
         }
       } catch {

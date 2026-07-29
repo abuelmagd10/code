@@ -232,20 +232,35 @@ export async function POST(request: NextRequest) {
       const unitCost = item.quantity > 0 ? Number((fifoResult.totalCOGS / item.quantity).toFixed(4)) : 0
 
       // تحديث unit_cost و total_cost في inventory_write_off_items
-      await supabase
+      // v3.74.888 — 🔴 يُفحص: FIFO استُهلك فعلاً؛ فشلٌ صامت هنا يترك بند
+      // الإعدام بتكلفة صفرية تخالف القيد والدفعات.
+      const { error: itemCostErr } = await supabase
         .from('inventory_write_off_items')
         .update({
           unit_cost: unitCost,
           total_cost: fifoResult.totalCOGS
         })
         .eq('id', item.id)
+      if (itemCostErr) {
+        return NextResponse.json({
+          success: false,
+          error: `استُهلكت دفعات FIFO لكن تعذّر حفظ تكلفة البند (${itemCostErr.message}) — أوقفنا الاعتماد قبل القيد. تواصل مع الدعم قبل إعادة المحاولة.`,
+        }, { status: 500 })
+      }
     }
 
-    // تحديث total_cost في inventory_write_offs
-    await supabase
+    // تحديث total_cost في inventory_write_offs — v3.74.888: يُفحص
+    // (المجموع الذى سيقرأه القيد والتقارير).
+    const { error: totalCostErr } = await supabase
       .from('inventory_write_offs')
       .update({ total_cost: totalCOGS })
       .eq('id', writeOffId)
+    if (totalCostErr) {
+      return NextResponse.json({
+        success: false,
+        error: `تعذّر حفظ إجمالى تكلفة الإعدام (${totalCostErr.message}) — أوقفنا الاعتماد قبل القيد. تواصل مع الدعم قبل إعادة المحاولة.`,
+      }, { status: 500 })
+    }
 
     const nowIso = new Date().toISOString()
     // ✅ تحديث status إلى 'approved' قبل استدعاء createWriteOffJournal

@@ -54,7 +54,8 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Wrong source_type for this endpoint" }, { status: 400 })
     }
 
-    await admin
+    // v3.74.888 — يُفحص: فشلٌ صامت يُبقى الطلب pending والرافض يظن أنه رفض.
+    const { error: rejMarkErr } = await admin
       .from("customer_refund_requests")
       .update({
         status: "rejected",
@@ -64,6 +65,9 @@ export async function POST(
       })
       .eq("id", id)
       .eq("company_id", context.companyId)
+    if (rejMarkErr) {
+      return NextResponse.json({ success: false, error: `تعذّر وسم الطلب مرفوضاً: ${rejMarkErr.message}` }, { status: 500 })
+    }
 
     // Notify the requester.
     try {

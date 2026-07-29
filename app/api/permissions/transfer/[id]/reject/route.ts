@@ -147,8 +147,9 @@ export async function POST(
     // along with the reason. Without this they'd only see the status flip
     // by refreshing the permission-transfers page. Failures swallowed —
     // the rejection is committed; the notification is UX-only.
-    try {
-      await supabase.from("notifications").insert({
+    {
+      // v3.74.888 — كان try/catch وهماً: يُفحص ويُسجَّل (غير حاسم).
+      const { error: notifErr } = await supabase.from("notifications").insert({
         company_id: transfer.company_id,
         reference_type: "permission_transfer",
         reference_id: transferId,
@@ -162,8 +163,7 @@ export async function POST(
         event_key: `permission_transfer:${transferId}:rejected:user:${transfer.transferred_by}`,
         status: "unread",
       })
-    } catch {
-      // non-critical
+      if (notifErr) console.error("[permission-transfer/reject] rejection notification failed (non-fatal):", notifErr.message)
     }
 
     return NextResponse.json({ success: true, transfer_id: transferId })

@@ -6,48 +6,62 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.887 - the OLD script is removed, never this one. Five times a chained
+# v3.74.888 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.886.ps1") { Remove-Item -LiteralPath "push_v3.74.886.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.887.ps1") { Remove-Item -LiteralPath "push_v3.74.887.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.887"') {
-    Write-Host "+ 3.74.887" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.888"') {
+    Write-Host "+ 3.74.888" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.887]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.887]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.888]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.888]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 $screens = @(
-    "app/api/shipping/create/route.ts",
-    "app/api/shipping/track/route.ts",
-    "app/api/shipping/webhook/[provider]/route.ts",
-    "app/api/invoices/[id]/warehouse-approve-with-shipping/route.ts",
-    "app/invoices/[id]/page.tsx"
+    "app/api/customers/refund-requests/[id]/approve/route.ts",
+    "app/api/customers/refund-requests/[id]/reject/route.ts",
+    "app/api/customer-refund-requests/[id]/execute/route.ts",
+    "app/api/vendor-refund-requests/[id]/execute-pre-receipt/route.ts",
+    "app/api/permissions/transfer/[id]/approve/route.ts",
+    "app/api/permissions/transfer/[id]/reject/route.ts",
+    "app/api/permissions/transfer/route.ts",
+    "app/api/write-offs/approve/route.ts",
+    "app/api/manufacturing/material-issue-approvals/[id]/approve/route.ts",
+    "app/api/manufacturing/material-issue-approvals/[id]/reject/route.ts",
+    "app/api/manufacturing/production-orders/[id]/request-product-receive/route.ts",
+    "app/api/shareholders/contributions/[id]/reverse/route.ts"
 )
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            "scripts/check-unchecked-writes.js",
-           "push_v3.74.887.ps1") + $screens
+           "push_v3.74.888.ps1") + $screens
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the shipping fixes are present (anchor on what MUST exist) --------
+# -- 1. the approval fixes are present (anchor on what MUST exist) --------
 $anchors = @{
-    "app/api/shipping/create/route.ts"                                = @('pendingErr', 'createdErr', 'logErr', 'failMarkErr')
-    "app/api/shipping/track/route.ts"                                 = @('trackUpdErr', 'trackLogErr')
-    "app/api/shipping/webhook/[provider]/route.ts"                    = @('whUpdErr', 'whLogErr', 'whInsErr')
-    "app/api/invoices/[id]/warehouse-approve-with-shipping/route.ts"  = @('initLogErr', 'cancelMarkErr')
-    "app/invoices/[id]/page.tsx"                                      = @('manualTrackErr')
+    "app/api/customers/refund-requests/[id]/approve/route.ts"                     = @('execMarkErr')
+    "app/api/customers/refund-requests/[id]/reject/route.ts"                      = @('rejMarkErr')
+    "app/api/customer-refund-requests/[id]/execute/route.ts"                      = @('execMarkErr')
+    "app/api/vendor-refund-requests/[id]/execute-pre-receipt/route.ts"            = @('execMarkErr')
+    "app/api/permissions/transfer/[id]/approve/route.ts"                          = @('failMarkErr', 'notifErr')
+    "app/api/permissions/transfer/[id]/reject/route.ts"                           = @('notifErr')
+    "app/api/permissions/transfer/route.ts"                                       = @('notifErr')
+    "app/api/write-offs/approve/route.ts"                                         = @('itemCostErr', 'totalCostErr')
+    "app/api/manufacturing/material-issue-approvals/[id]/approve/route.ts"        = @('reqUpdErr', 'reqFullErr', 'poStatusErr')
+    "app/api/manufacturing/material-issue-approvals/[id]/reject/route.ts"         = @('rejStatusErr')
+    "app/api/manufacturing/production-orders/[id]/request-product-receive/route.ts" = @('rcvStatusErr')
+    "app/api/shareholders/contributions/[id]/reverse/route.ts"                    = @('revFlagErr')
 }
 foreach ($f in $anchors.Keys) {
     $c = Get-Content -LiteralPath $f -Raw
@@ -57,35 +71,34 @@ foreach ($f in $anchors.Keys) {
         }
     }
 }
-Write-Host "+ all 5 shipping files carry their checked-write anchors" -ForegroundColor Green
+Write-Host "+ all 12 approval routes carry their checked-write anchors" -ForegroundColor Green
 
-# -- 2. the duplicate-shipment message carries the provider number --------
-$c = Get-Content -LiteralPath "app/api/shipping/create/route.ts" -Raw
-if ($c -notmatch 'tracking_number \|\| result\.awb_number') {
-    Write-Host "X the created-at-provider failure message no longer names the tracking number" -ForegroundColor Red; exit 1
+# -- 2. an executed-but-unmarked failure says so explicitly ---------------
+foreach ($f in @(
+    "app/api/customers/refund-requests/[id]/approve/route.ts",
+    "app/api/customer-refund-requests/[id]/execute/route.ts",
+    "app/api/vendor-refund-requests/[id]/execute-pre-receipt/route.ts"
+)) {
+    $c = Get-Content -LiteralPath $f -Raw
+    if ($c -notmatch 'executed:\s*true') {
+        Write-Host "X $f no longer tells the operator the refund WAS executed" -ForegroundColor Red; exit 1
+    }
 }
-Write-Host "+ a created-at-provider save failure names the tracking number" -ForegroundColor Green
+Write-Host "+ executed-but-unmarked responses carry executed:true" -ForegroundColor Green
 
-# -- 3. the webhook answers non-200 when it cannot save -------------------
-$c = Get-Content -LiteralPath "app/api/shipping/webhook/[provider]/route.ts" -Raw
-if ($c -notmatch [regex]::Escape("{ status: 500 }")) {
-    Write-Host "X the webhook no longer returns non-200 on a failed shipment update" -ForegroundColor Red; exit 1
-}
-Write-Host "+ an unsaved webhook returns non-200 so the provider can redeliver" -ForegroundColor Green
-
-# -- 4. the baseline is 64 ------------------------------------------------
+# -- 3. the baseline is 48 ------------------------------------------------
 $c = Get-Content -LiteralPath "scripts/check-unchecked-writes.js" -Raw
-if ($c -notmatch 'const BASELINE = 64') {
-    Write-Host "X check-unchecked-writes BASELINE must be 64 (76 minus the 12 closed sites)" -ForegroundColor Red; exit 1
+if ($c -notmatch 'const BASELINE = 48') {
+    Write-Host "X check-unchecked-writes BASELINE must be 48 (64 minus the 16 closed sites)" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline ratcheted to 64" -ForegroundColor Green
+Write-Host "+ unchecked-writes baseline ratcheted to 48" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.886.ps1" 2>$null
+git add -u -- "push_v3.74.887.ps1" 2>$null
 
-# -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.886.ps1")
+# -- 4. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.887.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -262,7 +275,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.886.ps1" 2>$null
+git add -u -- "push_v3.74.887.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -281,39 +294,38 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_887.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_888.txt"
     $msgLines = @(
-        'fix(shipping-integrity): v3.74.887 - 12 silent shipping writes are now checked (76 -> 64)',
+        'fix(approval-integrity): v3.74.888 - money moved but status stayed pending: 16 double-execution writes checked (64 -> 48)',
         '',
-        'Third impact-ranked batch. Shipping crosses an external provider,',
-        'which gives silent failure a special property: what is lost cannot',
-        'be replayed.',
+        'Fourth impact-ranked batch, and the most financially dangerous',
+        'shape in the whole unchecked-writes debt: an operation EXECUTES',
+        '(entries posted, money moved, stock consumed) and then the status',
+        'flag after it is written blind. A silent flag failure leaves the',
+        'request "pending" on screen, and the operator executes it again.',
         '',
-        '  - THE DUPLICATE SHIPMENT: after the provider successfully',
-        '    created a shipment, the local update to status=created was',
-        '    unchecked. A silent failure left the row pending, the user',
-        '    retried, and the provider got a second shipment - and second',
-        '    fees. The failure now surfaces WITH the provider tracking',
-        '    number and an explicit "record it, do not recreate". The',
-        '    pre-call write is also checked first: if we cannot write to',
-        '    the shipment row, we do not call the provider at all.',
-        '  - THE WEBHOOK ARRIVES ONCE: the shipment update from a provider',
-        '    webhook was unchecked; a silent failure lost the status',
-        '    forever and froze tracking in the customer''s face. It now',
-        '    checks, logs into the webhook log, and returns non-200 so a',
-        '    retrying provider can redeliver.',
-        '  - track: fetched from the provider then saved blind - "fetched',
-        '    but not saved" is now a visible error, not a fake success.',
-        '    Manual shipments no longer announce success with no tracking',
-        '    number saved.',
-        '  - the 863 lesson completed: fixing the column name was not',
-        '    enough while the write itself stayed unchecked - a refused',
-        '    cancelled-mark after a failed approval left the shipment',
-        '    "alive" in silence.',
-        '  - status/webhook logs are non-critical: checked and logged',
-        '    loudly, never blocking.',
+        '  - DOUBLE REFUND: three execute endpoints (customer refund x2,',
+        '    vendor pre-receipt refund) marked executed unchecked. A',
+        '    failed mark now answers explicitly: "the refund WAS executed',
+        '    - do NOT execute again", with executed:true in the body.',
+        '  - DOUBLE REVERSAL: the is_reversed flag after a posted',
+        '    contribution reversal - same shape, same cure, with the',
+        '    journal entry id named in the message.',
+        '  - WRITE-OFF COSTS: item and total costs are written AFTER FIFO',
+        '    was consumed and BEFORE the journal entry - a silent failure',
+        '    left a zero-cost write-off contradicting the lots. Both now',
+        '    check and stop the approval before the entry.',
+        '  - MANUFACTURING: material requirement lines (both detailed and',
+        '    full branches), the production-order status after materials',
+        '    were actually issued ("do not request another issue"), after',
+        '    rejection, and after creating a product-receive request.',
+        '  - PERMISSION TRANSFERS: the failed-mark after a failed execute',
+        '    is checked (else the request shows "approved" while nothing',
+        '    ran - the response now carries that warning), and the three',
+        '    notification inserts left their phantom try/catch (supabase-js',
+        '    never throws) for a loud, non-blocking check.',
         '',
-        'check-unchecked-writes BASELINE 76 -> 64.'
+        'check-unchecked-writes BASELINE 64 -> 48.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -322,5 +334,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.887 pushed - what crosses an external provider cannot be replayed; check before you call, and speak when you cannot save" -ForegroundColor Green
+    Write-Host "`n+ v3.74.888 pushed - when the money moved and the flag did not, say so: executed, do not execute again" -ForegroundColor Green
 }

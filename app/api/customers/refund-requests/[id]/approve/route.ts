@@ -117,7 +117,10 @@ export async function POST(
     )
 
     // Mark the request row executed.
-    await admin
+    // v3.74.888 — 🔴 يُفحص: المال تحرّك فعلاً؛ فشلٌ صامت هنا يُبقى الطلب
+    // pending فيُنفَّذ ثانيةً ⇒ استرداد مزدوج. الفشل يُقال صراحةً مع
+    // تحذير «لا تُعِد التنفيذ».
+    const { error: execMarkErr } = await admin
       .from("customer_refund_requests")
       .update({
         status: "executed",
@@ -128,6 +131,14 @@ export async function POST(
       })
       .eq("id", id)
       .eq("company_id", context.companyId)
+    if (execMarkErr) {
+      console.error("[customer-refund/approve] refund EXECUTED but request not marked executed:", execMarkErr.message)
+      return NextResponse.json({
+        success: false,
+        executed: true,
+        error: `الاسترداد نُفِّذ فعلاً لكن تعذّر وسم الطلب «منفَّذاً» (${execMarkErr.message}). لا تُعِد التنفيذ — تواصل مع الدعم لوسم الطلب.`,
+      }, { status: 500 })
+    }
 
     // Notify the requester.
     try {

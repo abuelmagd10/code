@@ -138,11 +138,19 @@ export async function POST(
     })
 
     // ── 2. تحديث حالة أمر الإنتاج
-    await admin
+    // v3.74.888 — يُفحص: فشلٌ صامت يُبقى الأمر «بانتظار الصرف» بينما
+    // الطلب رُفض — حالتان متناقضتان أمام مسؤول التصنيع.
+    const { error: rejStatusErr } = await admin
       .from("manufacturing_production_orders")
       .update({ material_issue_approval_status: "rejected" })
       .eq("id", approval.production_order_id)
       .eq("company_id", companyId)
+    if (rejStatusErr) {
+      return NextResponse.json({
+        success: false,
+        error: `رُفض الطلب لكن تعذّر تحديث حالة أمر الإنتاج: ${rejStatusErr.message}`,
+      }, { status: 500 })
+    }
 
     // ── 3. جلب بيانات أمر الإنتاج (للمستودع والفرع)
     const { data: productionOrder } = await admin

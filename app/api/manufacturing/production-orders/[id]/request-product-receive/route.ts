@@ -148,11 +148,19 @@ export async function POST(
     if (insertError) throw insertError
 
     // تحديث حالة الاعتماد في أمر الإنتاج
-    await admin
+    // v3.74.888 — يُفحص: طلب الاستلام أُنشئ؛ فشلٌ صامت هنا يترك الزر
+    // متاحاً فيُنشأ طلبٌ ثانٍ لنفس الأمر.
+    const { error: rcvStatusErr } = await admin
       .from("manufacturing_production_orders")
       .update({ product_receive_approval_status: "pending" })
       .eq("id", id)
       .eq("company_id", companyId)
+    if (rcvStatusErr) {
+      return NextResponse.json({
+        success: false,
+        error: `أُنشئ طلب الاستلام لكن تعذّر تحديث حالة أمر الإنتاج (${rcvStatusErr.message}) — لا تُنشئ طلباً آخر؛ حدّث الصفحة.`,
+      }, { status: 500 })
+    }
 
     // إرسال إشعارات لمسؤولي المخزن — نستخدم admin.rpc مباشرةً لأن governance-layer يستخدم browser client
     const notifBase = {

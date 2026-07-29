@@ -186,8 +186,10 @@ export async function POST(
     }
 
     // 4. Flag the original contribution as reversed.
+    // v3.74.888 — 🔴 يُفحص: قيد العكس مُرحَّل فعلاً؛ فشلٌ صامت هنا يُبقى
+    // المساهمة «غير معكوسة» فى الشاشة فتُعكس ثانيةً بقيدٍ مكرر.
     const userId = context.user?.id || null
-    await supabase
+    const { error: revFlagErr } = await supabase
       .from("capital_contributions")
       .update({
         is_reversed: true,
@@ -197,6 +199,14 @@ export async function POST(
         reversal_reason: reason,
       })
       .eq("id", id)
+    if (revFlagErr) {
+      console.error("[contributions/reverse] reversal POSTED but contribution not flagged reversed:", revFlagErr.message)
+      return NextResponse.json({
+        success: false,
+        reversed: true,
+        error: `قيد العكس ${revJe.id} مُرحَّل فعلاً لكن تعذّر وسم المساهمة «معكوسة» (${revFlagErr.message}). لا تُعِد العكس — تواصل مع الدعم.`,
+      }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,
