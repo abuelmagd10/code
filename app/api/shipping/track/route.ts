@@ -85,14 +85,19 @@ export async function POST(request: NextRequest) {
         updateData.delivered_to = result.delivered_to
       }
 
-      await supabase
+      // v3.74.887 — يُفحص: فشلٌ صامت هنا يعنى أن العميل يرى حالة شحنةٍ
+      // متجمدة بينما التتبع لدى المزود تقدَّم فعلاً.
+      const { error: trackUpdErr } = await supabase
         .from('shipments')
         .update(updateData)
         .eq('id', shipment_id)
+      if (trackUpdErr) {
+        return internalError('جلبنا الحالة من شركة الشحن لكن تعذّر حفظها فى سجل الشحنة', trackUpdErr.message)
+      }
 
-      // إضافة سجل الحالة إذا تغيرت
+      // إضافة سجل الحالة إذا تغيرت — غير حاسم: يُفحص ويُسجَّل.
       if (result.current_status !== shipment.provider_status) {
-        await supabase.from('shipment_status_logs').insert({
+        const { error: trackLogErr } = await supabase.from('shipment_status_logs').insert({
           company_id: shipment.company_id,
           shipment_id: shipment_id,
           internal_status: internalStatus,
@@ -103,6 +108,7 @@ export async function POST(request: NextRequest) {
           raw_data: result.raw_response,
           created_by: user.id,
         })
+        if (trackLogErr) console.error('[shipping/track] status log insert failed (non-fatal):', trackLogErr.message)
       }
 
       return apiSuccess({

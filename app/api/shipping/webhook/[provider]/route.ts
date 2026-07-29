@@ -81,13 +81,22 @@ export async function POST(
       updateData.delivered_to = statusData.delivered_to
     }
 
-    await supabase
+    // v3.74.887 — يُفحص: المزود أرسل الحالة مرةً واحدة؛ فشلٌ صامت هنا
+    // يعنى ضياعها نهائياً (لا إعادة إرسال) وحالة الشحنة تتجمد أمام
+    // العميل. الفشل يُسجَّل فى سجل الـwebhook ويُرَدّ بغير 200 كى يعيد
+    // المزود المحاولة إن كان يدعم ذلك.
+    const { error: whUpdErr } = await supabase
       .from('shipments')
       .update(updateData)
       .eq('id', shipment.id)
+    if (whUpdErr) {
+      console.error('[shipping/webhook] shipment update failed:', whUpdErr.message)
+      await logWebhook(supabase, requestId, shipment.company_id, provider?.id || null, shipment.id, body, signature, signatureValid, `shipment update failed: ${whUpdErr.message}`)
+      return NextResponse.json({ error: 'shipment update failed' }, { status: 500 })
+    }
 
-    // إضافة سجل الحالة
-    await supabase.from('shipment_status_logs').insert({
+    // إضافة سجل الحالة — غير حاسم: يُفحص ويُسجَّل.
+    const { error: whLogErr } = await supabase.from('shipment_status_logs').insert({
       company_id: shipment.company_id,
       shipment_id: shipment.id,
       internal_status: internalStatus,
@@ -97,6 +106,7 @@ export async function POST(
       location: statusData.location,
       raw_data: body,
     })
+    if (whLogErr) console.error('[shipping/webhook] status log insert failed (non-fatal):', whLogErr.message)
 
     // تسجيل الـ Webhook
     await logWebhook(supabase, requestId, shipment.company_id, provider.id, shipment.id, body, signature, signatureValid, null)
@@ -178,7 +188,9 @@ async function logWebhook(
   signatureValid: boolean,
   errorMessage: string | null
 ) {
-  await supabase.from('shipping_webhook_logs').insert({
+  // v3.74.887 — يُفحص: هذا آخر شاهد على الـwebhook؛ إن سقط هو أيضاً
+  // فليُقل ذلك فى سجل الخادم على الأقل.
+  const { error: whInsErr } = await supabase.from('shipping_webhook_logs').insert({
     request_id: requestId,
     company_id: companyId,
     provider_id: providerId,
@@ -190,6 +202,7 @@ async function logWebhook(
     error_message: errorMessage,
     processed_at: errorMessage ? null : new Date().toISOString(),
   })
+  if (whInsErr) console.error(`[shipping/webhook] webhook log insert failed for ${requestId}:`, whInsErr.message)
 }
 
 // استخراج رقم التتبع حسب شركة الشحن

@@ -297,7 +297,8 @@ export async function POST(
     }
 
     // Log the initial status event so the timeline isn't empty.
-    await admin.from("shipment_status_logs").insert({
+    // v3.74.887 — يُفحص (غير حاسم: سجل زمنى فقط).
+    const { error: initLogErr } = await admin.from("shipment_status_logs").insert({
       company_id: companyId,
       shipment_id: shipmentRow.id,
       internal_status: "created",
@@ -305,6 +306,7 @@ export async function POST(
       source: "api_create",
       notes: `Created with ${provider.provider_name}`,
     }).select().maybeSingle()
+    if (initLogErr) console.error('[warehouse-approve-with-shipping] initial status log failed (non-fatal):', initLogErr.message)
 
     // ── Step 5: run the regular approval (inventory + COGS) ──────────
     const service = new SalesInvoiceWarehouseCommandService(supabase)
@@ -349,10 +351,16 @@ export async function POST(
       // تُعلَّم الشحنة ملغاة أصلاً**. أى أن الشحنة تبقى «قائمة» فى النظام
       // بينما اعتمادها فشل — وهو بالضبط عكس ما أراده هذا السطر.
       // العمود الصحيح موجود بالفعل: `last_api_error`.
-      await admin
+      // v3.74.887 — والدرس اكتمل: 863 صحّح اسم العمود، وبقيت الكتابة
+      // نفسها غير مفحوصة — فلو رُفضت لسببٍ آخر بقيت الشحنة «قائمة»
+      // بصمت. تُفحص وتُضاف للاستجابة كى يعرف المستخدم أن الشحنة لم تُلغَ.
+      const { error: cancelMarkErr } = await admin
         .from("shipments")
         .update({ status: "cancelled", last_api_error: svcError?.message || "approval_failed" })
         .eq("id", shipmentRow.id)
+      if (cancelMarkErr) {
+        console.error('[warehouse-approve-with-shipping] could not mark shipment cancelled:', cancelMarkErr.message)
+      }
 
       if (svcError instanceof SalesInvoiceWarehouseCommandError) {
         const payload: Record<string, any> = {

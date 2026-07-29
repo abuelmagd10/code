@@ -6,58 +6,48 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.886 - the OLD script is removed, never this one. Five times a chained
+# v3.74.887 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.885.ps1") { Remove-Item -LiteralPath "push_v3.74.885.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.886.ps1") { Remove-Item -LiteralPath "push_v3.74.886.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.886"') {
-    Write-Host "+ 3.74.886" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.887"') {
+    Write-Host "+ 3.74.887" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.886]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.886]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.887]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.887]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 $screens = @(
-    "app/onboarding/page.tsx",
-    "app/settings/page.tsx",
-    "app/invitations/accept/page.tsx",
-    "app/auth/login/page.tsx",
-    "app/auth/callback/page.tsx",
-    "app/api/accept-invite/route.ts",
-    "app/api/accept-invite-logged-in/route.ts",
-    "app/api/accept-membership/route.ts",
-    "app/api/send-invite/route.ts",
-    "app/api/company-members/link-employee/route.ts"
+    "app/api/shipping/create/route.ts",
+    "app/api/shipping/track/route.ts",
+    "app/api/shipping/webhook/[provider]/route.ts",
+    "app/api/invoices/[id]/warehouse-approve-with-shipping/route.ts",
+    "app/invoices/[id]/page.tsx"
 )
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            "scripts/check-unchecked-writes.js",
-           "push_v3.74.886.ps1") + $screens
+           "push_v3.74.887.ps1") + $screens
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the membership/invitation fixes are present (anchor on what MUST exist)
+# -- 1. the shipping fixes are present (anchor on what MUST exist) --------
 $anchors = @{
-    "app/onboarding/page.tsx"                        = @('memberErr')
-    "app/settings/page.tsx"                          = @('ownerMemErr', 'selfHealErr', 'clearBaseErr', 'setBaseErr', 'newBaseErr', 'memEmailErr')
-    "app/invitations/accept/page.tsx"                = @('accFlagErr')
-    "app/auth/login/page.tsx"                        = @('accErr')
-    "app/auth/callback/page.tsx"                     = @('whCcErr', 'pcDelErr')
-    "app/api/accept-invite/route.ts"                 = @('accFlagErr')
-    "app/api/accept-invite-logged-in/route.ts"       = @('accFlagErr')
-    "app/api/accept-membership/route.ts"             = @('accFlagErr')
-    "app/api/send-invite/route.ts"                   = @('rollbackErr')
-    "app/api/company-members/link-employee/route.ts" = @('unlinkErr', 'dnErr')
+    "app/api/shipping/create/route.ts"                                = @('pendingErr', 'createdErr', 'logErr', 'failMarkErr')
+    "app/api/shipping/track/route.ts"                                 = @('trackUpdErr', 'trackLogErr')
+    "app/api/shipping/webhook/[provider]/route.ts"                    = @('whUpdErr', 'whLogErr', 'whInsErr')
+    "app/api/invoices/[id]/warehouse-approve-with-shipping/route.ts"  = @('initLogErr', 'cancelMarkErr')
+    "app/invoices/[id]/page.tsx"                                      = @('manualTrackErr')
 }
 foreach ($f in $anchors.Keys) {
     $c = Get-Content -LiteralPath $f -Raw
@@ -67,31 +57,35 @@ foreach ($f in $anchors.Keys) {
         }
     }
 }
-Write-Host "+ all 10 files carry their checked-write anchors" -ForegroundColor Green
+Write-Host "+ all 5 shipping files carry their checked-write anchors" -ForegroundColor Green
 
-# -- 2. the stranded-owner shape is dead: no empty catch swallows the owner
-#       membership insert any more
-foreach ($f in @("app/onboarding/page.tsx", "app/settings/page.tsx")) {
-    $c = Get-Content -LiteralPath $f -Raw
-    if ($c -match 'company_members[\s\S]{0,220}?role:\s*[''"]owner[''"][\s\S]{0,120}?\}\)\s*\r?\n?\s*\}\s*catch\s*\{\s*\}') {
-        Write-Host "X $f still swallows the owner membership insert in an empty catch" -ForegroundColor Red; exit 1
-    }
+# -- 2. the duplicate-shipment message carries the provider number --------
+$c = Get-Content -LiteralPath "app/api/shipping/create/route.ts" -Raw
+if ($c -notmatch 'tracking_number \|\| result\.awb_number') {
+    Write-Host "X the created-at-provider failure message no longer names the tracking number" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the stranded-owner empty-catch shape is gone" -ForegroundColor Green
+Write-Host "+ a created-at-provider save failure names the tracking number" -ForegroundColor Green
 
-# -- 3. the baseline is 76 ------------------------------------------------
+# -- 3. the webhook answers non-200 when it cannot save -------------------
+$c = Get-Content -LiteralPath "app/api/shipping/webhook/[provider]/route.ts" -Raw
+if ($c -notmatch [regex]::Escape("{ status: 500 }")) {
+    Write-Host "X the webhook no longer returns non-200 on a failed shipment update" -ForegroundColor Red; exit 1
+}
+Write-Host "+ an unsaved webhook returns non-200 so the provider can redeliver" -ForegroundColor Green
+
+# -- 4. the baseline is 64 ------------------------------------------------
 $c = Get-Content -LiteralPath "scripts/check-unchecked-writes.js" -Raw
-if ($c -notmatch 'const BASELINE = 76') {
-    Write-Host "X check-unchecked-writes BASELINE must be 76 (93 minus the 17 closed sites)" -ForegroundColor Red; exit 1
+if ($c -notmatch 'const BASELINE = 64') {
+    Write-Host "X check-unchecked-writes BASELINE must be 64 (76 minus the 12 closed sites)" -ForegroundColor Red; exit 1
 }
-Write-Host "+ unchecked-writes baseline ratcheted to 76" -ForegroundColor Green
+Write-Host "+ unchecked-writes baseline ratcheted to 64" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.885.ps1" 2>$null
+git add -u -- "push_v3.74.886.ps1" 2>$null
 
-# -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.885.ps1")
+# -- 5. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.886.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -268,7 +262,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.885.ps1" 2>$null
+git add -u -- "push_v3.74.886.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -287,37 +281,39 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_886.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_887.txt"
     $msgLines = @(
-        'fix(onboarding-integrity): v3.74.886 - 17 silent membership/invitation writes are now checked (93 -> 76)',
+        'fix(shipping-integrity): v3.74.887 - 12 silent shipping writes are now checked (76 -> 64)',
         '',
-        'Second impact-ranked batch of the unchecked-writes debt: the family',
-        'every NEW customer touches first.',
+        'Third impact-ranked batch. Shipping crosses an external provider,',
+        'which gives silent failure a special property: what is lost cannot',
+        'be replayed.',
         '',
-        '  - THE STRANDED OWNER: the owner membership insert after company',
-        '    creation (onboarding AND settings) sat inside a try/catch that',
-        '    catches nothing - supabase-js returns { error }, it does not',
-        '    throw. A failed insert walked on silently and the owner landed',
-        '    on a dashboard with every screen locked and no visible reason.',
-        '    The failure now stops the flow with a visible message.',
-        '  - THE INVITATION THAT NEVER CLOSES: accepted=true was unchecked',
-        '    in FIVE acceptance paths, so a failed flag left the invitation',
-        '    reusable and the user hitting "already a member" with no',
-        '    explanation.',
-        '  - TWO BASE CURRENCIES: all three steps of the base-currency',
-        '    switch were unchecked; one silent failure leaves conflicting',
-        '    is_base flags and every amount displayed wrong. Each step now',
-        '    checks and aborts loudly.',
-        '  - plus send-invite rollback, employee link/unlink, warehouse',
-        '    cost-center backfill, pending_companies cleanup (still',
-        '    non-fatal, but read and logged), and the membership email',
-        '    after a login-email change.',
+        '  - THE DUPLICATE SHIPMENT: after the provider successfully',
+        '    created a shipment, the local update to status=created was',
+        '    unchecked. A silent failure left the row pending, the user',
+        '    retried, and the provider got a second shipment - and second',
+        '    fees. The failure now surfaces WITH the provider tracking',
+        '    number and an explicit "record it, do not recreate". The',
+        '    pre-call write is also checked first: if we cannot write to',
+        '    the shipment row, we do not call the provider at all.',
+        '  - THE WEBHOOK ARRIVES ONCE: the shipment update from a provider',
+        '    webhook was unchecked; a silent failure lost the status',
+        '    forever and froze tracking in the customer''s face. It now',
+        '    checks, logs into the webhook log, and returns non-200 so a',
+        '    retrying provider can redeliver.',
+        '  - track: fetched from the provider then saved blind - "fetched',
+        '    but not saved" is now a visible error, not a fake success.',
+        '    Manual shipments no longer announce success with no tracking',
+        '    number saved.',
+        '  - the 863 lesson completed: fixing the column name was not',
+        '    enough while the write itself stayed unchecked - a refused',
+        '    cancelled-mark after a failed approval left the shipment',
+        '    "alive" in silence.',
+        '  - status/webhook logs are non-critical: checked and logged',
+        '    loudly, never blocking.',
         '',
-        'Rule settled across the triage: a write that completes a core path',
-        'stops and surfaces; a non-critical flag/cleanup is checked and',
-        'logged loudly. No success path changed.',
-        '',
-        'check-unchecked-writes BASELINE 93 -> 76.'
+        'check-unchecked-writes BASELINE 76 -> 64.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -326,5 +322,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.886 pushed - the first thing a new customer touches must be the last thing that fails in silence" -ForegroundColor Green
+    Write-Host "`n+ v3.74.887 pushed - what crosses an external provider cannot be replayed; check before you call, and speak when you cannot save" -ForegroundColor Green
 }

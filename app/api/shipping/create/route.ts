@@ -57,10 +57,15 @@ export async function POST(request: NextRequest) {
     }
 
     // تحديث حالة الشحنة إلى "جاري الإنشاء"
-    await supabase
+    // v3.74.887 — يُفحص **قبل** نداء شركة الشحن: إن كنا لا نستطيع الكتابة
+    // على سجل الشحنة فلا نستدعى طرفاً خارجياً لن نستطيع حفظ نتيجته.
+    const { error: pendingErr } = await supabase
       .from('shipments')
       .update({ status: 'pending', api_attempts: (shipment.api_attempts || 0) + 1 })
       .eq('id', shipment_id)
+    if (pendingErr) {
+      return internalError('تعذّر تحديث سجل الشحنة قبل الإرسال لشركة الشحن — لم يُرسَل شىء', pendingErr.message)
+    }
 
     // إنشاء الـ Adapter
     const adapter = createShippingAdapter(provider)
@@ -95,7 +100,10 @@ export async function POST(request: NextRequest) {
 
     if (result.success) {
       // تحديث الشحنة بالبيانات من شركة الشحن
-      await supabase
+      // v3.74.887 — 🔴 الأخطر فى الملف: الشحنة أُنشئت فعلاً لدى شركة
+      // الشحن؛ فشلٌ صامت هنا يُبقى سجلنا pending فيعيد المستخدم الإنشاء
+      // ⇒ شحنة مكررة (ورسوم مكررة) لدى المزود. يُفحص ويُقال بالرقم.
+      const { error: createdErr } = await supabase
         .from('shipments')
         .update({
           status: 'created',
@@ -108,9 +116,16 @@ export async function POST(request: NextRequest) {
           last_api_error: null,
         })
         .eq('id', shipment_id)
+      if (createdErr) {
+        console.error('[shipping/create] shipment created at provider but local update failed:', createdErr.message)
+        return internalError(
+          `الشحنة أُنشئت لدى شركة الشحن برقم تتبع ${result.tracking_number || result.awb_number || '?'} لكن تعذّر حفظها محلياً. سجِّل الرقم ولا تُعِد الإنشاء.`,
+          createdErr.message
+        )
+      }
 
-      // إضافة سجل الحالة
-      await supabase.from('shipment_status_logs').insert({
+      // إضافة سجل الحالة — غير حاسم: يُفحص ويُسجَّل بصوت.
+      const { error: logErr } = await supabase.from('shipment_status_logs').insert({
         company_id: shipment.company_id,
         shipment_id: shipment_id,
         internal_status: 'created',
@@ -120,6 +135,7 @@ export async function POST(request: NextRequest) {
         raw_data: result.raw_response,
         created_by: user.id,
       })
+      if (logErr) console.error('[shipping/create] status log insert failed (non-fatal):', logErr.message)
 
       return apiSuccess({
         success: true,
@@ -129,8 +145,9 @@ export async function POST(request: NextRequest) {
         tracking_url: result.tracking_url,
       })
     } else {
-      // تسجيل الخطأ
-      await supabase
+      // تسجيل الخطأ — يُفحص: الاستجابة خطأٌ أصلاً، لكن سجلاً عالقاً على
+      // pending بلا last_api_error يُضلِّل من يُشخِّص لاحقاً.
+      const { error: failMarkErr } = await supabase
         .from('shipments')
         .update({
           status: 'failed',
@@ -138,6 +155,7 @@ export async function POST(request: NextRequest) {
           api_response: result.raw_response,
         })
         .eq('id', shipment_id)
+      if (failMarkErr) console.error('[shipping/create] could not mark shipment failed:', failMarkErr.message)
 
       return apiError(HTTP_STATUS.BAD_REQUEST, 'فشل إنشاء الشحنة', result.error?.message || 'Unknown error')
     }

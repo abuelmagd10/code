@@ -1707,14 +1707,21 @@ export default function InvoiceDetailPage() {
         }
       } else {
         // شحن يدوي - إنشاء رقم تتبع داخلي
+        // v3.74.887 — يُفحص: فشله الصامت يترك الشحنة pending بلا رقم
+        // تتبع بينما الشاشة تُعلن النجاح.
         const trackingNumber = `INT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
-        await supabase
+        const { error: manualTrackErr } = await supabase
           .from("shipments")
           .update({
             tracking_number: trackingNumber,
             status: "created",
           })
           .eq("id", newShipment.id)
+        if (manualTrackErr) {
+          throw new Error(appLang === 'en'
+            ? `Shipment saved but could not be marked created: ${manualTrackErr.message}`
+            : `حُفظت الشحنة لكن تعذّر وسمها «منشأة» برقم التتبع: ${manualTrackErr.message}`)
+        }
       }
 
       toastActionSuccess(toast, appLang === 'en' ? 'Create' : 'إنشاء', appLang === 'en' ? 'Shipment' : 'الشحنة')
