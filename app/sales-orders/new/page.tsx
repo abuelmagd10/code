@@ -892,14 +892,22 @@ export default function NewSalesOrderPage() {
       const soData = createJson.data
 
       // 🔗 Flip the source estimate to "converted" so it cannot be deleted/edited
+      // v3.74.885 — كان غير مفحوص وcatch يكتم: فشله الصامت يُبقى العرض
+      // قابلاً للتحويل ثانيةً بأمر بيعٍ مكرر.
       if (sourceEstimateId && soData?.id) {
-        try {
-          await supabase
-            .from("estimates")
-            .update({ status: "converted", converted_so_id: soData.id })
-            .eq("id", sourceEstimateId)
-        } catch (e) {
-          console.warn("Failed to mark source estimate as converted", e)
+        const { error: estConvErr } = await supabase
+          .from("estimates")
+          .update({ status: "converted", converted_so_id: soData.id })
+          .eq("id", sourceEstimateId)
+        if (estConvErr) {
+          console.error("Failed to mark source estimate as converted", estConvErr)
+          toast({
+            title: appLang === 'en' ? 'Estimate not marked as converted' : 'لم تُحدَّث حالة عرض السعر',
+            description: appLang === 'en'
+              ? `The sales order was created, but the source estimate could not be marked as converted (${estConvErr.message}). Do NOT convert this estimate again.`
+              : `أُنشئ أمر البيع، لكن تعذّر وسم عرض السعر بأنه «مُحوَّل» (${estConvErr.message}). لا تُعِد تحويل هذا العرض.`,
+            variant: 'destructive',
+          })
         }
       }
 

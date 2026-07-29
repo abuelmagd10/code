@@ -933,7 +933,9 @@ export default function BillViewPage() {
       }
 
       // تحديث أمر الشراء بالحالة والبيانات المالية من الفاتورة
-      await supabase
+      // v3.74.885 — كان غير مفحوص وcatch يكتم: أمر شراءٍ يعرض حالةً
+      // ومجاميع تخالف فاتورته بصمت. يُفحص ويُقال للمستخدم.
+      const { error: poSyncErr } = await supabase
         .from("purchase_orders")
         .update({
           status: newStatus,
@@ -945,10 +947,18 @@ export default function BillViewPage() {
           updated_at: new Date().toISOString()
         })
         .eq("id", poId)
+      if (poSyncErr) throw poSyncErr
 
       console.log(`✅ Updated linked PO ${poId} status to: ${newStatus} with financial data`)
-    } catch (err) {
-      console.warn("Failed to update linked PO status:", err)
+    } catch (err: any) {
+      console.error("Failed to update linked PO status:", err)
+      toast({
+        title: appLang === 'en' ? 'Linked purchase order not updated' : 'لم يُحدَّث أمر الشراء المرتبط',
+        description: appLang === 'en'
+          ? `The linked purchase order status/totals could not be updated (${err?.message || 'unknown error'}). Open the purchase order and verify it.`
+          : `تعذّر تحديث حالة/مجاميع أمر الشراء المرتبط (${err?.message || 'خطأ غير معروف'}). افتح أمر الشراء وتحقق منه.`,
+        variant: 'destructive',
+      })
     }
   }
 

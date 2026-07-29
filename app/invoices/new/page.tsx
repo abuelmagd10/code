@@ -919,12 +919,22 @@ export default function NewInvoicePage() {
 
         const invoiceId = result.data?.id
 
-        // 🔐 Update sales order link
+        // 🔐 Update sales order link — v3.74.885: كان غير مفحوص؛ فشله
+        // الصامت يُبقى الأمر «غير محوَّل» فيُحوَّل ثانيةً بفاتورة مكررة.
         if (finalSalesOrderId && invoiceId) {
-          await supabase
+          const { error: soLinkErr } = await supabase
             .from("sales_orders")
             .update({ status: "invoiced", invoice_id: invoiceId })
             .eq("id", finalSalesOrderId)
+          if (soLinkErr) {
+            toast({
+              title: appLang === 'en' ? 'Order not marked as invoiced' : 'لم تُحدَّث حالة أمر البيع',
+              description: appLang === 'en'
+                ? `The invoice was created, but the sales order could not be marked as invoiced (${soLinkErr.message}). Do NOT create another invoice for this order.`
+                : `أُنشئت الفاتورة، لكن تعذّر وسم أمر البيع بأنه «تم التحويل» (${soLinkErr.message}). لا تُنشئ فاتورة أخرى لهذا الأمر.`,
+              variant: 'destructive',
+            })
+          }
         }
 
         // ✅ إرسال إشعار للمحاسب (non-blocking)

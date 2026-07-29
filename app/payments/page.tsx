@@ -1699,15 +1699,24 @@ export default function PaymentsPage() {
         }
       }
 
-      // تحديث حالة أمر الشراء
-      await supabase
+      // تحديث حالة أمر الشراء — v3.74.885: كان غير مفحوص وcatch يكتم:
+      // أمر شراءٍ يعرض حالةً لا تطابق واقع الفوترة بصمت.
+      const { error: poStatusErr } = await supabase
         .from("purchase_orders")
         .update({ status: newStatus })
         .eq("id", poId)
+      if (poStatusErr) throw poStatusErr
 
       console.log(`✅ Updated linked PO ${poId} status to: ${newStatus}`)
-    } catch (err) {
-      console.warn("Failed to update linked PO status:", err)
+    } catch (err: any) {
+      console.error("Failed to update linked PO status:", err)
+      toast({
+        title: appLang === 'en' ? 'Linked purchase order not updated' : 'لم تُحدَّث حالة أمر الشراء المرتبط',
+        description: appLang === 'en'
+          ? `The payment was recorded, but the linked purchase order status could not be updated (${err?.message || 'unknown error'}). Open the purchase order and verify its status.`
+          : `سُجِّلت الدفعة، لكن تعذّر تحديث حالة أمر الشراء المرتبط (${err?.message || 'خطأ غير معروف'}). افتح أمر الشراء وتحقق من حالته.`,
+        variant: 'destructive',
+      })
     }
   }
 

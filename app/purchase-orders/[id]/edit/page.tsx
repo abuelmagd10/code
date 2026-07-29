@@ -452,8 +452,10 @@ export default function EditPurchaseOrderPage() {
 
       if (poError) throw poError
 
-      // Delete old items
-      await supabase.from("purchase_order_items").delete().eq("purchase_order_id", orderId)
+      // Delete old items — v3.74.885: كان غير مفحوص؛ فشله الصامت + نجاح
+      // الإدراج التالى = بنود مكرَّرة ومجاميع خاطئة.
+      const { error: delOldItemsErr } = await supabase.from("purchase_order_items").delete().eq("purchase_order_id", orderId)
+      if (delOldItemsErr) throw delOldItemsErr
 
       // Insert new items
       const itemsToInsert = poItems
@@ -492,9 +494,11 @@ export default function EditPurchaseOrderPage() {
             .eq("id", orderId)
             .single()
 
-          if (!poData?.bill_id) return 
+          if (!poData?.bill_id) return
 
-          await supabase
+          // v3.74.885 — كل كتابات المزامنة تُفحص؛ الفشل الصامت يترك فاتورة
+          // موردٍ تخالف أمرها.
+          const { error: billHeadErr } = await supabase
             .from("bills")
             .update({
               supplier_id: formData.supplier_id,
@@ -520,11 +524,13 @@ export default function EditPurchaseOrderPage() {
               warehouse_id: warehouseId || null,
             })
             .eq("id", poData.bill_id)
+          if (billHeadErr) throw billHeadErr
 
-          await supabase
+          const { error: billItemsDelErr } = await supabase
             .from("bill_items")
             .delete()
             .eq("bill_id", poData.bill_id)
+          if (billItemsDelErr) throw billItemsDelErr
 
           const invItems = itemsToInsert.map((it: any) => ({
             bill_id: poData.bill_id,
@@ -540,10 +546,19 @@ export default function EditPurchaseOrderPage() {
           }))
 
           if (invItems.length > 0) {
-            await supabase.from("bill_items").insert(invItems)
+            const { error: billItemsInsErr } = await supabase.from("bill_items").insert(invItems)
+            if (billItemsInsErr) throw billItemsInsErr
           }
-        } catch (syncErr) {
-          console.warn("Failed to sync linked bill:", syncErr)
+        } catch (syncErr: any) {
+          // v3.74.885 — كان console.warn فقط: فاتورة موردٍ تخالف أمرها بصمت.
+          console.error("Failed to sync linked bill:", syncErr)
+          toast({
+            title: appLang === 'en' ? 'Linked bill not synced' : 'لم تُزامَن فاتورة المورد المرتبطة',
+            description: appLang === 'en'
+              ? `The purchase order was updated, but its linked bill could not be updated to match (${syncErr?.message || 'unknown error'}). Open the bill and verify its items.`
+              : `حُدِّث أمر الشراء، لكن تعذّر تحديث فاتورة المورد المرتبطة لتطابقه (${syncErr?.message || 'خطأ غير معروف'}). افتح الفاتورة وتحقق من بنودها.`,
+            variant: 'destructive',
+          })
         }
       }
 

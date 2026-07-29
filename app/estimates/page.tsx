@@ -620,8 +620,14 @@ export default function EstimatesPage() {
         setLoading(false);
         return;
       }
-      // replace items
-      await supabase.from("estimate_items").delete().eq("estimate_id", editing.id);
+      // replace items — v3.74.885: كان الحذف غير مفحوص؛ فشله الصامت +
+      // نجاح الإدراج التالى = بنود مكرَّرة فى العرض.
+      const { error: oldItemsErr } = await supabase.from("estimate_items").delete().eq("estimate_id", editing.id);
+      if (oldItemsErr) {
+        toastActionError(toast, t("Update", "التحديث"), t("estimate", "العرض"), oldItemsErr.message || t("Could not replace the estimate items", "تعذر استبدال بنود العرض"));
+        setLoading(false);
+        return;
+      }
       estimateId = editing.id;
     } else {
       const { data, error } = await supabase.from("estimates").insert(payload).select("id").single();
@@ -746,7 +752,14 @@ export default function EstimatesPage() {
     setLoading(true);
     try {
       // First clear estimate_items (RLS allows this via parent join)
-      await supabase.from("estimate_items").delete().eq("estimate_id", estimate.id);
+      // v3.74.885 — يُفحص ويُوقَف: لو فشل صامتاً ثم حُذف العرض بقيت بنود
+      // يتيمة بلا أب (نمط 874 فى الحذف المتسلسل).
+      const { error: itemsDelErr } = await supabase.from("estimate_items").delete().eq("estimate_id", estimate.id);
+      if (itemsDelErr) {
+        toastActionError(toast, t("Delete", "الحذف"), t("estimate", "العرض"), itemsDelErr.message || t("Could not delete the estimate items", "تعذر حذف بنود العرض"));
+        setLoading(false);
+        return;
+      }
       const { error } = await supabase.from("estimates").delete().eq("id", estimate.id);
       if (error) {
         console.error("Delete estimate error:", error);

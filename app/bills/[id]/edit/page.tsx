@@ -733,8 +733,9 @@ export default function EditBillPage() {
 
           if (!billData?.purchase_order_id) return // لا يوجد أمر شراء مرتبط
 
-          // تحديث بيانات أمر الشراء الرئيسية
-          await supabase
+          // تحديث بيانات أمر الشراء الرئيسية — v3.74.885: كل كتابات
+          // المزامنة تُفحص؛ الفشل الصامت يترك أمر شراءٍ يخالف فاتورته.
+          const { error: poHeadErr } = await supabase
             .from("purchase_orders")
             .update({
               supplier_id: billData.supplier_id,
@@ -756,12 +757,14 @@ export default function EditBillPage() {
               updated_at: new Date().toISOString(),
             })
             .eq("id", billData.purchase_order_id)
+          if (poHeadErr) throw poHeadErr
 
           // حذف بنود أمر الشراء القديمة
-          await supabase
+          const { error: poItemsDelErr } = await supabase
             .from("purchase_order_items")
             .delete()
             .eq("purchase_order_id", billData.purchase_order_id)
+          if (poItemsDelErr) throw poItemsDelErr
 
           // إدراج البنود الجديدة من الفاتورة
           const poItems = items.map(it => ({
@@ -777,15 +780,24 @@ export default function EditBillPage() {
           }))
 
           if (poItems.length > 0) {
-            await supabase.from("purchase_order_items").insert(poItems)
+            const { error: poItemsInsErr } = await supabase.from("purchase_order_items").insert(poItems)
+            if (poItemsInsErr) throw poItemsInsErr
           }
 
           // === تحديث حالة أمر الشراء بناءً على الكميات المفوترة ===
           await updatePurchaseOrderStatus(billData.purchase_order_id)
 
           console.log("✅ Synced linked purchase order:", billData.purchase_order_id)
-        } catch (syncErr) {
-          console.warn("Failed to sync linked purchase order:", syncErr)
+        } catch (syncErr: any) {
+          // v3.74.885 — كان console.warn فقط: أمر شراءٍ يخالف فاتورته بصمت.
+          console.error("Failed to sync linked purchase order:", syncErr)
+          toast({
+            title: appLang === 'en' ? 'Linked purchase order not synced' : 'لم يُزامَن أمر الشراء المرتبط',
+            description: appLang === 'en'
+              ? `The bill was updated, but its linked purchase order could not be updated to match (${syncErr?.message || 'unknown error'}). Open the purchase order and verify its items.`
+              : `حُدِّثت الفاتورة، لكن تعذّر تحديث أمر الشراء المرتبط ليطابقها (${syncErr?.message || 'خطأ غير معروف'}). افتح أمر الشراء وتحقق من بنوده.`,
+            variant: 'destructive',
+          })
         }
       }
 
@@ -837,15 +849,18 @@ export default function EditBillPage() {
             }
           }
 
-          // تحديث حالة أمر الشراء
-          await supabase
+          // تحديث حالة أمر الشراء — v3.74.885: يُفحص ويُرفع للمُنادى
+          // (syncLinkedPurchaseOrder) الذى يُعلم المستخدم.
+          const { error: poStatusErr } = await supabase
             .from("purchase_orders")
             .update({ status: newStatus })
             .eq("id", poId)
+          if (poStatusErr) throw poStatusErr
 
           console.log(`✅ Updated PO status to: ${newStatus}`)
         } catch (err) {
-          console.warn("Failed to update PO status:", err)
+          console.error("Failed to update PO status:", err)
+          throw err
         }
       }
 

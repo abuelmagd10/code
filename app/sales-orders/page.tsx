@@ -1430,7 +1430,16 @@ function SalesOrdersContent() {
         setLoading(false);
         return;
       }
-      await supabase.from("sales_order_items").delete().eq("sales_order_id", editing.id);
+      // v3.74.885 — كان الحذف غير مفحوص: لو فشل صامتاً ثم نجح الإدراج
+      // خرجت البنود مكرَّرة أمام المستخدم. يُفحص ويُوقَف قبل أى إدراج.
+      const { error: oldItemsErr } = await supabase.from("sales_order_items").delete().eq("sales_order_id", editing.id);
+      if (oldItemsErr) {
+        toastActionError(toast, "التحديث", "أمر البيع", appLang === 'en'
+          ? `Could not replace the order items: ${oldItemsErr.message}`
+          : `تعذّر استبدال بنود أمر البيع: ${oldItemsErr.message}`);
+        setLoading(false);
+        return;
+      }
       soId = editing.id;
     } else {
       const response = await fetch(`/api/sales-orders`, {
@@ -1537,13 +1546,39 @@ function SalesOrdersContent() {
           line_total: i.line_total,
           returned_quantity: 0, // تهيئة الكمية المرتجعة
         }));
-        await supabase.from("invoice_items").insert(rows);
+        // v3.74.885 — كان الإدراج غير مفحوص: فشله الصامت يترك فاتورةً بلا
+        // بنود تظهر للعميل بمجاميع صفرية. يُفحص ويُوقَف التحويل بلا إعلان
+        // نجاحٍ كاذب — والمسودة الفارغة تُسمّى للمستخدم ليحذفها ويعيد.
+        const { error: invItemsErr } = await supabase.from("invoice_items").insert(rows);
+        if (invItemsErr) {
+          toast({
+            title: appLang === 'en' ? "Conversion incomplete" : "التحويل لم يكتمل",
+            description: appLang === 'en'
+              ? `The draft invoice was created but its items could not be copied (${invItemsErr.message}). Delete the empty draft invoice and convert again.`
+              : `أُنشئت مسودة الفاتورة لكن تعذّر نسخ بنودها (${invItemsErr.message}). احذف المسودة الفارغة وأعد التحويل.`,
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
       }
-      // تحديث أمر البيع: حالة invoiced + ربط الفاتورة
-      await supabase.from("sales_orders").update({
+      // تحديث أمر البيع: حالة invoiced + ربط الفاتورة — يُفحص، وإلا بقى
+      // الأمر «غير محوَّل» فى الشاشة ويُحوَّل مرة ثانية بفاتورة مكررة.
+      const { error: soLinkErr } = await supabase.from("sales_orders").update({
         status: "invoiced",
         invoice_id: inv.id
       }).eq("id", so.id);
+      if (soLinkErr) {
+        toast({
+          title: appLang === 'en' ? "Order not marked as invoiced" : "لم تُحدَّث حالة أمر البيع",
+          description: appLang === 'en'
+            ? `The invoice was created, but the order could not be marked as invoiced (${soLinkErr.message}). Refresh the page — do NOT convert this order again.`
+            : `أُنشئت الفاتورة، لكن تعذّر وسم الأمر بأنه «تم التحويل» (${soLinkErr.message}). حدّث الصفحة — ولا تُعِد تحويل هذا الأمر.`,
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
       toastActionSuccess(toast, appLang === 'en' ? "Converted" : "التحويل", appLang === 'en' ? "to invoice" : "إلى فاتورة");
       const { data: list } = await supabase
         .from("sales_orders")

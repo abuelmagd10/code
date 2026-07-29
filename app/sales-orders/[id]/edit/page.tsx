@@ -522,8 +522,10 @@ export default function EditSalesOrderPage() {
 
       if (soError) throw soError
 
-      // Delete old items
-      await supabase.from("sales_order_items").delete().eq("sales_order_id", orderId)
+      // Delete old items — v3.74.885: كان غير مفحوص؛ فشله الصامت + نجاح
+      // الإدراج التالى = بنود مكرَّرة ومجاميع خاطئة أمام المستخدم.
+      const { error: delOldItemsErr } = await supabase.from("sales_order_items").delete().eq("sales_order_id", orderId)
+      if (delOldItemsErr) throw delOldItemsErr
 
       // Insert new items
       const itemsToInsert = soItems
@@ -564,8 +566,9 @@ export default function EditSalesOrderPage() {
 
           if (!soData?.invoice_id) return // لا يوجد فاتورة مرتبطة
 
-          // تحديث بيانات الفاتورة الرئيسية
-          await supabase
+          // تحديث بيانات الفاتورة الرئيسية — v3.74.885: كل كتابات المزامنة
+          // تُفحص؛ الفشل الصامت هنا يترك فاتورةً تخالف أمرها أمام العميل.
+          const { error: invHeadErr } = await supabase
             .from("invoices")
             .update({
               customer_id: formData.customer_id,
@@ -591,12 +594,14 @@ export default function EditSalesOrderPage() {
               warehouse_id: warehouseId || null,
             })
             .eq("id", soData.invoice_id)
+          if (invHeadErr) throw invHeadErr
 
           // حذف بنود الفاتورة القديمة
-          await supabase
+          const { error: invItemsDelErr } = await supabase
             .from("invoice_items")
             .delete()
             .eq("invoice_id", soData.invoice_id)
+          if (invItemsDelErr) throw invItemsDelErr
 
           // إدراج البنود الجديدة من أمر البيع
           const invItems = itemsToInsert.map(it => ({
@@ -613,12 +618,22 @@ export default function EditSalesOrderPage() {
           }))
 
           if (invItems.length > 0) {
-            await supabase.from("invoice_items").insert(invItems)
+            const { error: invItemsInsErr } = await supabase.from("invoice_items").insert(invItems)
+            if (invItemsInsErr) throw invItemsInsErr
           }
 
           console.log("✅ Synced linked invoice:", soData.invoice_id)
-        } catch (syncErr) {
-          console.warn("Failed to sync linked invoice:", syncErr)
+        } catch (syncErr: any) {
+          // v3.74.885 — كان console.warn فقط: فاتورةٌ تخالف أمرها بصمت.
+          // الفشل يُقال للمستخدم بالاسم وبما يفعله.
+          console.error("Failed to sync linked invoice:", syncErr)
+          toast({
+            title: appLang === 'en' ? 'Linked invoice not synced' : 'لم تُزامَن الفاتورة المرتبطة',
+            description: appLang === 'en'
+              ? `The sales order was updated, but its linked invoice could not be updated to match (${syncErr?.message || 'unknown error'}). Open the invoice and verify its items before sending it.`
+              : `حُدِّث أمر البيع، لكن تعذّر تحديث الفاتورة المرتبطة لتطابقه (${syncErr?.message || 'خطأ غير معروف'}). افتح الفاتورة وتحقق من بنودها قبل إرسالها.`,
+            variant: 'destructive',
+          })
         }
       }
 
