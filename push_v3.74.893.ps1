@@ -6,61 +6,78 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.892 - the OLD script is removed, never this one. Five times a chained
+# v3.74.893 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.891.ps1") { Remove-Item -LiteralPath "push_v3.74.891.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.892.ps1") { Remove-Item -LiteralPath "push_v3.74.892.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.892"') {
-    Write-Host "+ 3.74.892" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.893"') {
+    Write-Host "+ 3.74.893" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.892]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.892]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.893]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.893]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$guard = "scripts/check-anon-open-tables.js"
+$guard = "scripts/check-je-default-status.js"
+$mig = "supabase/migrations/20260729000003_v3_74_893_cancel_write_off_direct_post.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $guard, "push_v3.74.892.ps1")
+           $guard, $mig, "push_v3.74.893.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the guard carries both arms and the prove mode --------------------
-$c = Get-Content -LiteralPath $guard -Raw
-if ($c -notmatch 'SQL_RLS_OFF' -or $c -notmatch 'relrowsecurity') {
-    Write-Host "X the guard lost arm (b) - the no-RLS detection" -ForegroundColor Red; exit 1
+# -- 1. the migration carries the trusted-context fix, status made explicit --
+$m = Get-Content -LiteralPath $mig -Raw
+if ($m -notmatch [regex]::Escape("set_config('app.allow_direct_post', 'true', true)") -or
+    $m -notmatch [regex]::Escape("set_config('app.allow_direct_post', 'false', true)")) {
+    Write-Host "X the migration lost the trusted-context grant/restore pair" -ForegroundColor Red; exit 1
 }
-if ($c -notmatch 'zz_probe_892_rls_off' -or $c -notmatch 'zz_probe_892_open_policy' -or
-    $c -notmatch 'DISABLE ROW LEVEL SECURITY') {
-    Write-Host "X the guard lost its --prove probes (or the explicit RLS disable that defeats ensure_rls)" -ForegroundColor Red; exit 1
+if ($m -notmatch "cost_center_id, status" -or $m -notmatch "'write_off_reversal'") {
+    Write-Host "X the migration no longer states status explicitly in the reversal insert" -ForegroundColor Red; exit 1
 }
-if ($c -notmatch [regex]::Escape("ALLOWED_RLS_OFF = new Map([])")) {
-    Write-Host "X ALLOWED_RLS_OFF must stay an EMPTY list - additions are decisions, not routine" -ForegroundColor Red; exit 1
+if ($m -notmatch [regex]::Escape("REVOKE EXECUTE ON FUNCTION public.cancel_approved_write_off(uuid, uuid, text) FROM PUBLIC")) {
+    Write-Host "X the migration lost the 844 lesson (REVOKE from PUBLIC after CREATE OR REPLACE)" -ForegroundColor Red; exit 1
 }
-Write-Host "+ guard has arm (a) + arm (b) + --prove, and the no-RLS exception list is empty" -ForegroundColor Green
+Write-Host "+ migration grants the trusted context around the reversal only, states status, re-pins grants" -ForegroundColor Green
 
-# -- 2. the battery below actually calls --prove --------------------------
-$self = Get-Content -LiteralPath "push_v3.74.892.ps1" -Raw
+# -- 2. the guard pins the measured set and proves itself ------------------
+$c = Get-Content -LiteralPath $guard -Raw
+if ($c -notmatch 'MEASURED_LEGACY' -or $c -notmatch 'zz_probe_893_je_default') {
+    Write-Host "X the je-default guard lost its pinned list or its --prove probe" -ForegroundColor Red; exit 1
+}
+if ($c -match '"cancel_approved_write_off"') {
+    Write-Host "X cancel_approved_write_off is FIXED (893) and must NOT be in the pinned list" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch '"auto_create_cogs_journal"' -or $c -notmatch '"update_bill_on_credit_application"') {
+    Write-Host "X the pinned list lost a measured legacy name - additions are forbidden, silent removals too" -ForegroundColor Red; exit 1
+}
+Write-Host "+ guard pins the 9 measured names, excludes the fixed one, and carries --prove" -ForegroundColor Green
+
+# -- 3. the battery below actually proves the new guard --------------------
+$self = Get-Content -LiteralPath "push_v3.74.893.ps1" -Raw
+if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
+    Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
+}
 if ($self -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the anon-open guard" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the battery plants both defects and watches the guard refuse, every release" -ForegroundColor Green
+Write-Host "+ the battery plants a status-omitting function and watches the guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.891.ps1" 2>$null
+git add -u -- "push_v3.74.892.ps1" 2>$null
 
-# -- 3. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.891.ps1")
+# -- 4. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.892.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -164,6 +181,10 @@ Write-Host "Proving the anon-open guard refuses BOTH shapes, then checking (v3.7
 node scripts/check-anon-open-tables.js --prove --require-db
 if ($LASTEXITCODE -ne 0) { Write-Host "X tables are open to anon" -ForegroundColor Red; exit 1 }
 
+Write-Host "Proving the je-default guard refuses a planted omitting function, then checking (v3.74.893)..." -ForegroundColor Cyan
+node scripts/check-je-default-status.js --prove --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X a new function relies on the journal_entries.status default" -ForegroundColor Red; exit 1 }
+
 Write-Host "Checking nobody is stranded without a company..." -ForegroundColor Cyan
 node scripts/check-users-without-company.js --require-db
 if ($LASTEXITCODE -ne 0) { Write-Host "X stranded-user check failed" -ForegroundColor Red; exit 1 }
@@ -237,7 +258,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.891.ps1" 2>$null
+git add -u -- "push_v3.74.892.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -256,35 +277,47 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_892.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_893.txt"
     $msgLines = @(
-        'fix(guard): v3.74.892 - the anon-open guard now sees ABSENT protection, not just broken protection',
+        'fix(accounting): v3.74.893 - the status-default candidate measured, settled, and it exposed a live broken path',
         '',
-        'The 834 family again: in 891 two tables were wide open to anon',
-        'while this guard stayed green. Its single arm scanned pg_policy -',
-        'permissive open policies - and the two tables had NO RLS AT ALL,',
-        'so there were no policies to scan, no rows in its query, and',
-        'silence. A guard for broken locks does not see doors with no lock.',
+        'Handover item 4 (lesson 883): flip journal_entries.status default',
+        'from posted to draft? Measured before touching anything:',
         '',
-        '  - NEW ARM (b): any public table with relrowsecurity=false that',
-        '    is granted to anon OR to authenticated (without RLS, every',
-        '    logged-in user of every company crosses tenant boundaries) is',
-        '    an offender unless named in an exception list that is empty',
-        '    and should stay empty.',
-        '  - --prove MODE (the 845 lesson applied to the guard itself):',
-        '    plants both defects - a no-RLS table with an anon grant, and',
-        '    a USING(true) policy - inside a cancelled transaction, and',
-        '    fails the release if either arm stays silent about its own',
-        '    probe. Now part of the push battery.',
-        '  - SIDE DISCOVERY while proving: the ensure_rls event trigger',
-        '    (an earlier project defence) auto-enables RLS on every new',
-        '    table - the first probe came out protected against its will.',
-        '    The 891 tables predate it; the new arm catches the only',
-        '    remaining path (an explicit DISABLE). The probe now disables',
-        '    RLS explicitly to reproduce the historical state.',
+        '  - TS code: every insert states status explicitly - zero reliance.',
+        '  - DB functions: 74 greedy LIKE matches, 7 false positives, and',
+        '    11 INSERT sites in 10 functions that DO rely on the default -',
+        '    none of which ever promotes the entry afterwards.',
         '',
-        'Proven live: arm (b) reports zero today (post-891); the planted',
-        'probe was detected inside a cancelled transaction.'
+        'VERDICT: the default stays posted. The busiest live path',
+        '(auto_create_cogs_journal - a COGS entry for every sale) relies on',
+        'it under a trusted app.allow_direct_post context; flipping would',
+        'have turned every COGS entry into a silent draft outside the books.',
+        'The forbidden shape is the SILENT reliance itself, so:',
+        '',
+        '  - FIXED: cancel_approved_write_off - the cancel-approved-write-off',
+        '    button never worked since enforce_je_integrity was born: its',
+        '    reversal entry is born posted via the default with no trusted',
+        '    context => DIRECT_POST_BLOCKED raw in the customer face (zero',
+        '    write_off_reversal entries in production confirm it). Proven',
+        '    refused first inside a cancelled transaction, then fixed by',
+        '    migration 20260729000003 (trusted context around the reversal',
+        '    only, status stated explicitly, grants re-pinned per 844),',
+        '    then proven working on BOTH databases: success=true, reversal',
+        '    posted with mirrored amounts, write-off cancelled, flag back',
+        '    to false - all rolled back.',
+        '  - DOCUMENTED, not blind-fixed: update_bill_on_credit_application',
+        '    (vendor-credit application trigger) is broken the same way AND',
+        '    deeper - its two lines debit and credit the SAME AP account',
+        '    (vc_liability declared, never filled): a zero net entry even if',
+        '    it ran. Needs accounting design first - next-release candidate.',
+        '  - NEW GUARD check-je-default-status.js: scans every public',
+        '    function for journal_entries INSERTs that omit status. The 9',
+        '    measured legacy names are pinned with reasons - additions',
+        '    forbidden, shrinking is the goal. --prove plants an omitting',
+        '    function in a cancelled transaction and fails if unseen (845).',
+        '    Verified live: probe detected, post-fix inventory = the 9',
+        '    pinned names exactly.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -293,5 +326,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.892 pushed - a guard for broken locks must also see the doors that never had one" -ForegroundColor Green
+    Write-Host "`n+ v3.74.893 pushed - measure who leans on a default before you move it; the measurement found a button that never worked" -ForegroundColor Green
 }
