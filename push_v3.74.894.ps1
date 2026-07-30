@@ -6,78 +6,83 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.893 - the OLD script is removed, never this one. Five times a chained
+# v3.74.894 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.892.ps1") { Remove-Item -LiteralPath "push_v3.74.892.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.893.ps1") { Remove-Item -LiteralPath "push_v3.74.893.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.893"') {
-    Write-Host "+ 3.74.893" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.894"') {
+    Write-Host "+ 3.74.894" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.893]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.893]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.894]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.894]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 $guard = "scripts/check-je-default-status.js"
-$mig = "supabase/migrations/20260729000003_v3_74_893_cancel_write_off_direct_post.sql"
+$mig = "supabase/migrations/20260729000004_v3_74_894_vendor_credit_application_journal.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $guard, $mig, "push_v3.74.893.ps1")
+           $guard, $mig, "push_v3.74.894.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the migration carries the trusted-context fix, status made explicit --
+# -- 1. the migration carries the correct accounting design ----------------
 $m = Get-Content -LiteralPath $mig -Raw
-if ($m -notmatch [regex]::Escape("set_config('app.allow_direct_post', 'true', true)") -or
-    $m -notmatch [regex]::Escape("set_config('app.allow_direct_post', 'false', true)")) {
-    Write-Host "X the migration lost the trusted-context grant/restore pair" -ForegroundColor Red; exit 1
+if ($m -match "INSERT INTO journal_entries" -or $m -match "INSERT INTO public.journal_entries") {
+    Write-Host "X the migration re-introduced a DIRECT journal_entries insert - the atomic route is the law" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch "cost_center_id, status" -or $m -notmatch "'write_off_reversal'") {
-    Write-Host "X the migration no longer states status explicitly in the reversal insert" -ForegroundColor Red; exit 1
+if ($m -notmatch [regex]::Escape("create_journal_entry_atomic")) {
+    Write-Host "X the migration lost the atomic journal route" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch [regex]::Escape("REVOKE EXECUTE ON FUNCTION public.cancel_approved_write_off(uuid, uuid, text) FROM PUBLIC")) {
-    Write-Host "X the migration lost the 844 lesson (REVOKE from PUBLIC after CREATE OR REPLACE)" -ForegroundColor Red; exit 1
+if ($m -notmatch "VENDOR_CREDIT_OVERAPPLIED" -or $m -notmatch "VENDOR_CREDIT_APPLICATION_SUPPLIER_MISMATCH") {
+    Write-Host "X the migration lost the over-application / supplier-mismatch refusals" -ForegroundColor Red; exit 1
 }
-Write-Host "+ migration grants the trusted context around the reversal only, states status, re-pins grants" -ForegroundColor Green
+if ($m -notmatch "supplier_overpayment") {
+    Write-Host "X the migration lost the overpayment-vs-return distinction - the heart of the accounting design" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch [regex]::Escape("auto_journal_for_vendor_credit")) {
+    Write-Host "X the migration lost part (a) - pinning the creation-journal function on BOTH databases" -ForegroundColor Red; exit 1
+}
+Write-Host "+ migration: no journal at return-application, Dr AP / Cr advance at overpayment-application, loud refusals, both functions pinned" -ForegroundColor Green
 
-# -- 2. the guard pins the measured set and proves itself ------------------
+# -- 2. the guard's pinned list shrank to 8 and stays additions-forbidden --
 $c = Get-Content -LiteralPath $guard -Raw
 if ($c -notmatch 'MEASURED_LEGACY' -or $c -notmatch 'zz_probe_893_je_default') {
     Write-Host "X the je-default guard lost its pinned list or its --prove probe" -ForegroundColor Red; exit 1
 }
-if ($c -match '"cancel_approved_write_off"') {
-    Write-Host "X cancel_approved_write_off is FIXED (893) and must NOT be in the pinned list" -ForegroundColor Red; exit 1
+if ($c -match '"update_bill_on_credit_application"' -or $c -match '"cancel_approved_write_off"') {
+    Write-Host "X a FIXED function (893/894) crept back into the pinned list" -ForegroundColor Red; exit 1
 }
-if ($c -notmatch '"auto_create_cogs_journal"' -or $c -notmatch '"update_bill_on_credit_application"') {
-    Write-Host "X the pinned list lost a measured legacy name - additions are forbidden, silent removals too" -ForegroundColor Red; exit 1
+if ($c -notmatch '"auto_create_cogs_journal"' -or $c -notmatch '"record_payment"') {
+    Write-Host "X the pinned list lost a measured legacy name - silent removals hide unfixed reliance" -ForegroundColor Red; exit 1
 }
-Write-Host "+ guard pins the 9 measured names, excludes the fixed one, and carries --prove" -ForegroundColor Green
+Write-Host "+ guard list shrank 9 -> 8 (the 894 fix), additions still forbidden" -ForegroundColor Green
 
-# -- 3. the battery below actually proves the new guard --------------------
-$self = Get-Content -LiteralPath "push_v3.74.893.ps1" -Raw
+# -- 3. the battery below actually proves both guards ----------------------
+$self = Get-Content -LiteralPath "push_v3.74.894.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
 if ($self -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the anon-open guard" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the battery plants a status-omitting function and watches the guard refuse, every release" -ForegroundColor Green
+Write-Host "+ the battery still plants both probes and watches both guards refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.892.ps1" 2>$null
+git add -u -- "push_v3.74.893.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.892.ps1")
+$expected = @($files) + @("push_v3.74.893.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -258,7 +263,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.892.ps1" 2>$null
+git add -u -- "push_v3.74.893.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -277,47 +282,55 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_893.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_894.txt"
     $msgLines = @(
-        'fix(accounting): v3.74.893 - the status-default candidate measured, settled, and it exposed a live broken path',
+        'fix(accounting): v3.74.894 - the vendor-credit application cycle works for the first time, with the correct entries',
         '',
-        'Handover item 4 (lesson 883): flip journal_entries.status default',
-        'from posted to draft? Measured before touching anything:',
+        'The second live broken path exposed by the 893 measurement. The',
+        'vendor-credit screen inserts into vendor_credit_applications and',
+        'the update_bill_on_credit_application trigger fires - broken three',
+        'ways at once, so the feature never succeeded (zero rows in both',
+        'tables on production):',
         '',
-        '  - TS code: every insert states status explicitly - zero reliance.',
-        '  - DB functions: 74 greedy LIKE matches, 7 false positives, and',
-        '    11 INSERT sites in 10 functions that DO rely on the default -',
-        '    none of which ever promotes the entry afterwards.',
+        '  1. its entry is born posted via the column default with no',
+        '     trusted context => DIRECT_POST_BLOCKED raw in the customer',
+        '     face (proven refused on production inside a cancelled',
+        '     transaction before fixing);',
+        '  2. even if it ran, both lines debit AND credit the same AP',
+        '     account (vc_liability declared, never filled) - a zero net',
+        '     entry;',
+        '  3. deepest: the CREATION journal already debits AP for the full',
+        '     credit (Dr AP / Cr Inventory + input VAT), so any AP entry at',
+        '     application time is a double reduction.',
         '',
-        'VERDICT: the default stays posted. The busiest live path',
-        '(auto_create_cogs_journal - a COGS entry for every sale) relies on',
-        'it under a trusted app.allow_direct_post context; flipping would',
-        'have turned every COGS entry into a silent draft outside the books.',
-        'The forbidden shape is the SILENT reliance itself, so:',
+        'THE ACCOUNTING DESIGN (read from the creation entry, not patched):',
+        '  - return-based credit: AP was reduced at creation => application',
+        '    is subledger allocation only - NO journal entry at all;',
+        '  - overpayment credit (supplier_overpayment): creation parked the',
+        '    value in the supplier-advance asset => application consumes it:',
+        '    Dr AP / Cr supplier-advance via create_journal_entry_atomic.',
         '',
-        '  - FIXED: cancel_approved_write_off - the cancel-approved-write-off',
-        '    button never worked since enforce_je_integrity was born: its',
-        '    reversal entry is born posted via the default with no trusted',
-        '    context => DIRECT_POST_BLOCKED raw in the customer face (zero',
-        '    write_off_reversal entries in production confirm it). Proven',
-        '    refused first inside a cancelled transaction, then fixed by',
-        '    migration 20260729000003 (trusted context around the reversal',
-        '    only, status stated explicitly, grants re-pinned per 844),',
-        '    then proven working on BOTH databases: success=true, reversal',
-        '    posted with mirrored amounts, write-off cancelled, flag back',
-        '    to false - all rolled back.',
-        '  - DOCUMENTED, not blind-fixed: update_bill_on_credit_application',
-        '    (vendor-credit application trigger) is broken the same way AND',
-        '    deeper - its two lines debit and credit the SAME AP account',
-        '    (vc_liability declared, never filled): a zero net entry even if',
-        '    it ran. Needs accounting design first - next-release candidate.',
-        '  - NEW GUARD check-je-default-status.js: scans every public',
-        '    function for journal_entries INSERTs that omit status. The 9',
-        '    measured legacy names are pinned with reasons - additions',
-        '    forbidden, shrinking is the goal. --prove plants an omitting',
-        '    function in a cancelled transaction and fails if unseen (845).',
-        '    Verified live: probe detected, post-fix inventory = the 9',
-        '    pinned names exactly.'
+        'Loud refusals added (the 884-890 doctrine): over-application',
+        '(VENDOR_CREDIT_OVERAPPLIED), company/supplier mismatch, and the',
+        'silent skip on a missing AP account is gone.',
+        '',
+        'DISCOVERED WHILE PROVING - deeper drift than 893 recorded: both',
+        'databases have the creation trigger, but the FUNCTION BODY drifted:',
+        'production has the modern atomic version, the test database an old',
+        'direct-insert one - so even CREATING a vendor credit failed there',
+        '(proven in a cancelled transaction). Migration 20260729000004 pins',
+        'the production version verbatim on BOTH databases. (It escaped the',
+        '893 LIKE census because it does not insert directly - record',
+        'corrected.)',
+        '',
+        'Proven on BOTH databases (synthetic scenarios, all rolled back):',
+        'pre-fix application refused; post-fix: creation Dr_AP=10/Cr_INV=10',
+        'posted; return-application succeeds with ZERO application entries',
+        'and applied_amount=6.00; over-application refused (11.00 > 10.00);',
+        'overpayment-application posts Dr_AP=8.00 / Cr_ADV=8.00.',
+        '',
+        'Guard: check-je-default-status pinned list shrank 9 -> 8 - the',
+        'shrinkage the guard was built to measure.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -326,5 +339,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.893 pushed - measure who leans on a default before you move it; the measurement found a button that never worked" -ForegroundColor Green
+    Write-Host "`n+ v3.74.894 pushed - the right entry was written at creation all along; the fix was teaching the application to write none" -ForegroundColor Green
 }

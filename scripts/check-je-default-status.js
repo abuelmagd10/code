@@ -14,8 +14,9 @@
  *     **مكسوران أصلاً** لأنهما يولّدان posted بلا سياق موثوق فيرفضهما
  *     حارس `enforce_je_integrity`:
  *       - `cancel_approved_write_off` (أُصلح فى 893 — خرج من القائمة)
- *       - `update_bill_on_credit_application` (عيبٌ موثَّق أعمق: سطوره
- *         تدين وتُدائن حساب AP نفسه — ينتظر تصميماً محاسبياً).
+ *       - `update_bill_on_credit_application` (أُصلح فى 894 بالتصميم
+ *         المحاسبى الصحيح — صار يقيّد عبر الدالة الذرّية عند الحاجة
+ *         فقط، وخرج من القائمة. القائمة انكمشت 9→8).
  *   * **القرار**: الافتراضى يبقى `posted`. قلبه إلى `draft` كان سيحوّل
  *     قيود COGS الحية إلى مسودّات صامتة خارج الدفاتر — إفسادٌ صامت
  *     للمسار الأهم. والاعتماد الصامت نفسه هو الشكل الممنوع: كل INSERT
@@ -50,7 +51,6 @@ const MEASURED_LEGACY = new Map([
   ["reclassify_account_safe", "أداة إصلاح إدارية — تُستدعى يدوياً فقط"],
   ["record_payment", "قديم — خلفه create_*_payment_entry الذرّية؛ لا مستدعى TS"],
   ["register_asset_addition", "قديم — خلفه post_fixed_asset_acquisition_atomic؛ لا مستدعى TS"],
-  ["update_bill_on_credit_application", "حى مكسور موثَّق: trigger تطبيق إشعار دائن المورد — يولد posted بلا سياق موثوق (DIRECT_POST_BLOCKED) وسطوره تدين وتُدائن AP نفسه؛ ينتظر تصميماً محاسبياً"],
 ])
 
 if (!url) {
