@@ -10,7 +10,7 @@ import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { ArrowRight, FileCheck } from "lucide-react"
+import { ArrowRight, FileCheck, Pencil } from "lucide-react"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { useCallback } from "react"
@@ -38,6 +38,8 @@ type VendorCredit = {
   reference_type?: string | null
   branch_id?: string | null
   cost_center_id?: string | null
+  // v3.74.904 — المرفوض يعدّله منشئه وحده، فالمنشئ يُقرأ لا يُفترض.
+  created_by_user_id?: string | null
 }
 
 type Supplier = { id: string; name: string }
@@ -74,12 +76,18 @@ export default function VendorCreditViewPage() {
   const [sourceBill, setSourceBill] = useState<any>(null)
   const [branch, setBranch] = useState<any>(null)
   const [costCenter, setCostCenter] = useState<any>(null)
+  // v3.74.904 — هوية القارئ لازمة لسؤال «هل هو المنشئ؟» (زر التعديل عند الرفض)
+  const [myUserId, setMyUserId] = useState<string | null>(null)
 
   // v3.74.60 — تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => loadData() })
 
   const loadData = useCallback(async () => {
     if (!id) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      setMyUserId(user?.id || null)
+    } catch { setMyUserId(null) }
     const { data: vc } = await supabase.from("vendor_credits").select("*").eq("id", id).single()
     if (vc) {
       setCredit(vc as any)
@@ -392,6 +400,36 @@ export default function VendorCreditViewPage() {
               <div>{appLang === 'en' ? 'Applied:' : 'المطبّق:'} {Number(credit.applied_amount || 0).toFixed(2)} | {appLang === 'en' ? 'Remaining:' : 'المتبقي:'} {remaining.toFixed(2)}</div>
               <div>{appLang === 'en' ? 'Status:' : 'الحالة:'} {credit.status}</div>
             </div>
+
+            {/* v3.74.904 — الرفض لا يكون طريقاً مسدوداً: المنشئ يعدّل ويعيد
+                الإرسال (نمط نقل المخزون المعتمد فى المشروع). القاعدة هى
+                الحَكم — update_vendor_credit_with_items ترفض غير المنشئ
+                وغير المرفوض — والواجهة تصدُق فلا تعرض زراً سيُرفض. */}
+            {credit.status === 'rejected' && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 space-y-2">
+                <p className="font-semibold text-red-800 dark:text-red-200 text-sm">
+                  {appLang === 'en' ? 'This credit note was rejected' : 'رُفض هذا الإشعار الدائن'}
+                </p>
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  {appLang === 'en'
+                    ? 'The rejection reason is recorded in the notes below. As its creator you can edit it and resubmit it for approval.'
+                    : 'سبب الرفض مسجَّل فى الملاحظات أدناه. وبصفتك منشئه يمكنك تعديله وإعادة إرساله للاعتماد.'}
+                </p>
+                {credit.notes && (
+                  <p className="text-xs whitespace-pre-line text-gray-700 dark:text-gray-300 bg-white/60 dark:bg-slate-900/40 rounded p-2">
+                    {credit.notes}
+                  </p>
+                )}
+                {!!myUserId && String(credit.created_by_user_id || "") === String(myUserId) && (
+                  <Link href={`/vendor-credits/${credit.id}/edit`}>
+                    <Button size="sm" className="flex items-center gap-1.5">
+                      <Pencil className="w-3.5 h-3.5" />
+                      {appLang === 'en' ? 'Edit and resubmit' : 'تعديل وإعادة الإرسال'}
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               {/* v3.74.900 — لا زر تطبيقٍ لإشعارٍ غير مرحَّل: القاعدة ترفضه

@@ -6,68 +6,90 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.903 - the OLD script is removed, never this one. Five times a chained
+# v3.74.904 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.902.ps1") { Remove-Item -LiteralPath "push_v3.74.902.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.903.ps1") { Remove-Item -LiteralPath "push_v3.74.903.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.903"') {
-    Write-Host "+ 3.74.903" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.904"') {
+    Write-Host "+ 3.74.904" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.903]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.903]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.904]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.904]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$routing   = "lib/notification-routing.ts"
-$sidebar   = "components/sidebar.tsx"
-$migration = "supabase/migrations/20260730000003_v3_74_903_vendor_credit_badge_and_routing.sql"
+$vcEdit    = "app/vendor-credits/[id]/edit/page.tsx"
+$vcDetail  = "app/vendor-credits/[id]/page.tsx"
+$vcList    = "app/vendor-credits/page.tsx"
+$migration = "supabase/migrations/20260730000004_v3_74_904_vendor_credit_edit_resubmit.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $routing, $sidebar, $migration, "push_v3.74.903.ps1")
+           $vcEdit, $vcDetail, $vcList, $migration, "push_v3.74.904.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the notification button routes: all three vendor-credit types mapped -
-$r = Get-Content -LiteralPath $routing -Raw
-if ($r -notmatch [regex]::Escape("'vendor_credit_pending': (id)")) {
-    Write-Host "X vendor_credit_pending has no route - the button goes silent again" -ForegroundColor Red; exit 1
+# -- 1. the edit screen resubmits through the atomic RPC, not raw writes -----
+$e = Get-Content -LiteralPath $vcEdit -Raw
+if ($e -notmatch [regex]::Escape('rpc("update_vendor_credit_with_items"')) {
+    Write-Host "X the edit screen does not go through the atomic resubmit RPC" -ForegroundColor Red; exit 1
 }
-if ($r -notmatch [regex]::Escape("'vendor_credit_approved': (id)")) {
-    Write-Host "X vendor_credit_approved has no route" -ForegroundColor Red; exit 1
+if ($e -match [regex]::Escape('.from("vendor_credits").update(')) {
+    Write-Host "X the edit screen writes vendor_credits directly - the matrix would be bypassed" -ForegroundColor Red; exit 1
 }
-if ($r -notmatch [regex]::Escape("'vendor_credit_rejected': (id)")) {
-    Write-Host "X vendor_credit_rejected has no route" -ForegroundColor Red; exit 1
+if ($e -notmatch [regex]::Escape("disabled={branchLocked}")) {
+    Write-Host "X the 901 branch lock is missing from the edit screen" -ForegroundColor Red; exit 1
 }
-Write-Host "+ routing map knows all three vendor-credit notification types" -ForegroundColor Green
+if ($e -match [regex]::Escape("اختر الحساب")) {
+    Write-Host "X the dead account picker (902) came back on the edit screen" -ForegroundColor Red; exit 1
+}
+Write-Host "+ edit screen: atomic RPC only, branch lock kept, no field asked for and ignored" -ForegroundColor Green
 
-# -- 2. the sidebar counts pending vendor credits like every other approval --
-$s = Get-Content -LiteralPath $sidebar -Raw
-if ($s -notmatch [regex]::Escape('"vendor_credit_pending",')) {
-    Write-Host "X the sidebar badge no longer counts pending vendor credits" -ForegroundColor Red; exit 1
+# -- 2. the creator gets a way back from a rejection ------------------------
+$d = Get-Content -LiteralPath $vcDetail -Raw
+if ($d -notmatch [regex]::Escape('/edit`}')) {
+    Write-Host "X the detail page offers no edit route for a rejected credit" -ForegroundColor Red; exit 1
 }
-Write-Host "+ sidebar badge sums vendor_credit_pending" -ForegroundColor Green
+if ($d -notmatch [regex]::Escape("created_by_user_id")) {
+    Write-Host "X the detail page does not check the creator - anyone would see the edit button" -ForegroundColor Red; exit 1
+}
+Write-Host "+ detail page: rejection card and an edit button gated on the creator" -ForegroundColor Green
 
-# -- 3. the migration carries the badge function with the new key -----------
+# -- 3. the list stops calling a pending/rejected credit "open" -------------
+$l = Get-Content -LiteralPath $vcList -Raw
+if ($l -notmatch [regex]::Escape("pending_approval: {")) {
+    Write-Host "X the list has no badge for pending_approval - it would read as open" -ForegroundColor Red; exit 1
+}
+if ($l -notmatch [regex]::Escape("rejected: {")) {
+    Write-Host "X the list has no badge for rejected - it would read as open" -ForegroundColor Red; exit 1
+}
+if ($l -match [regex]::Escape("config[status] || config.open")) {
+    Write-Host "X the silent fallback is back: an unknown status is dressed as open" -ForegroundColor Red; exit 1
+}
+Write-Host "+ list page: matrix states are named, and an unknown status is not dressed as open" -ForegroundColor Green
+
+# -- 4. the migration carries the resubmit function and its refusals --------
 $m = Get-Content -LiteralPath $migration -Raw
-if ($m -notmatch [regex]::Escape("get_user_approval_badges")) {
-    Write-Host "X migration does not define get_user_approval_badges" -ForegroundColor Red; exit 1
+if ($m -notmatch [regex]::Escape("update_vendor_credit_with_items")) {
+    Write-Host "X migration does not define update_vendor_credit_with_items" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch [regex]::Escape("vendor_credit_pending")) {
-    Write-Host "X migration lacks the vendor_credit_pending badge key" -ForegroundColor Red; exit 1
+foreach ($guard in @("NOT_CREATOR", "NOT_REJECTED", "ALREADY_POSTED", "ALREADY_APPLIED", "VENDOR_CREDIT_BRANCH_SCOPE")) {
+    if ($m -notmatch [regex]::Escape($guard)) {
+        Write-Host "X migration lost the $guard refusal" -ForegroundColor Red; exit 1
+    }
 }
-Write-Host "+ migration defines the badge function with the vendor_credit_pending key" -ForegroundColor Green
+Write-Host "+ migration defines the resubmit RPC with every refusal it was proven on" -ForegroundColor Green
 
-# -- 4. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.903.ps1" -Raw
+# -- 5. the battery below still proves both standing guards ----------------
+$self = Get-Content -LiteralPath "push_v3.74.904.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -78,10 +100,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.902.ps1" 2>$null
+git add -u -- "push_v3.74.903.ps1" 2>$null
 
-# -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.902.ps1")
+# -- 6. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.903.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -262,7 +284,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.902.ps1" 2>$null
+git add -u -- "push_v3.74.903.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -281,32 +303,52 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_903.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_904.txt"
     $msgLines = @(
-        'fix(notifications): v3.74.903 - the first live matrix notification could not be followed; now it routes and it counts',
+        'feat(vendor-credits): v3.74.904 - a rejected credit was a dead document; its creator can now edit and resubmit it',
         '',
-        'The accountant-created credit CR-51543 went pending_approval and',
-        'the owner notification arrived exactly as the 900 matrix intended',
-        '- and then the owner found two delivery gaps: the open-reference',
-        'button did nothing, and the sidebar approvals badge showed no',
-        'count like every other approval type.',
+        'The live matrix cycle closed end to end: the branch accountant',
+        'created CR-51543, the owner was notified, the owner rejected it',
+        'with a reason, and the creator was notified. Then the owner asked',
+        'for what every other approval flow in this project already has -',
+        'an edit button for the creator on rejection. Until this release a',
+        'rejected credit could not be edited, applied, or resubmitted: the',
+        'only way forward was a brand new credit, leaving the rejected one',
+        'as a truncated record.',
         '',
-        'Causes: (a) the three new notification types had no entry in the',
-        'lib/notification-routing.ts map, and an unmapped type makes the',
-        'button silently a no-op; (b) get_user_approval_badges predates',
-        'the matrix and never counted pending vendor credits.',
+        'Database: one atomic update_vendor_credit_with_items. The CREATOR',
+        'alone may edit (NOT_CREATOR), from status rejected only',
+        '(NOT_REJECTED), with no posted entry (ALREADY_POSTED) and nothing',
+        'applied (ALREADY_APPLIED). Identity is immune - credit number,',
+        'company, creator, journal link, bill, sources and applied amount',
+        'are not touched; the edit corrects content, it does not swap the',
+        'document. Columns are named, never passed through. The 865 matrix',
+        'is then re-judged with the creator role at resubmit time: owner',
+        'posts immediately, GM waits on the owner, branch accountant is',
+        'confined to their branch (BRANCH_SCOPE) and waits on owner or GM.',
+        'Items are replaced while journal_entry_id is still NULL, so no',
+        'inventory movement is born for a standalone credit (897 design).',
+        'A fresh approver notification carries a per-resubmit event key and',
+        'the previous pending one is archived, so no inbox holds two.',
+        'Proven by cancelled transactions on test, byte-identical on both',
+        'databases (md5 30ca888f...): not_creator=NOT_CREATOR,',
+        'edit_pending=NOT_REJECTED, branch=SCOPE_REFUSED, resubmit lands',
+        'pending_approval with je=NULL / total 30.00 / 1 item / 1 new',
+        'notification / 1 archived, approve posts it, edit_open refuses.',
         '',
-        'Fixes: vendor_credit_pending routes to the approvals inbox on the',
-        'vendor-credits tab (/approvals?tab=vc); approved/rejected route',
-        'to the credit page so the creator sees the decision. The badge',
-        'function gains a vendor_credit_pending key counted for owner and',
-        'general manager ONLY (the matrix audience, verbatim) excluding',
-        'credits the user created - segregation of duties: nothing is',
-        'counted for someone who holds no decision over it. Applied to',
-        'both databases with byte parity (md5 58a108df...) and a live',
-        'check: the owner badge on the test company returned 1, which is',
-        'CR-51543 itself. The sidebar sums the new key into the approvals',
-        'count.'
+        'UI: a new /vendor-credits/[id]/edit screen inheriting every',
+        'settled decision (901 branch lock, no 902 account column, no 788',
+        'adjustment box), with the credit number shown read-only and an',
+        'explicit refusal - not a doomed form - for anyone not entitled.',
+        'The detail page gains a rejection card with the reason and an',
+        'edit button gated on the creator.',
+        '',
+        'And a silent lie fixed on the way: the list page rendered',
+        'pending_approval and rejected with the OPEN badge, because the',
+        'fallback dressed every unknown status as open - a credit awaiting',
+        'approval read as a live one. Both matrix states now have badges',
+        'and filter options, an unknown status shows its raw name, and the',
+        'creator can reach the edit screen straight from the list.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -315,5 +357,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.903 pushed - a notification you cannot follow and a count you cannot see are both silence" -ForegroundColor Green
+    Write-Host "`n+ v3.74.904 pushed - a refusal that leaves no way forward is not governance, it is a dead end" -ForegroundColor Green
 }

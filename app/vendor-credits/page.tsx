@@ -8,7 +8,7 @@ import { ERPPageHeader } from "@/components/erp-page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
-import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye, Plus } from "lucide-react"
+import { FileCheck, FileText, AlertCircle, CheckCircle, Clock, Eye, Plus, Pencil } from "lucide-react"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { usePagination } from "@/lib/pagination"
 import { DataPagination } from "@/components/data-pagination"
@@ -30,6 +30,9 @@ type VendorCredit = {
   applied_amount: number
   status: string
   created_by: string
+  // v3.74.904 — منشئ المصفوفة (900) هو created_by_user_id — وعليه يُبنى حقُّ
+  // التعديل بعد الرفض، لا على created_by القديم الذى قد يكون فارغاً.
+  created_by_user_id?: string | null
   branch_id?: string
   cost_center_id?: string
   source_purchase_return_id?: string
@@ -97,7 +100,11 @@ export default function VendorCreditsPage() {
 
   // Status options - memoized to prevent hydration issues
   const statusOptions = useMemo(() => [
+    // v3.74.904 — حالتا المصفوفة (900) كانتا غائبتين عن الفلتر فلا تُصفّى.
+    { value: "pending_approval", label: appLang === 'en' ? "Awaiting approval" : "بانتظار الاعتماد" },
+    { value: "rejected", label: appLang === 'en' ? "Rejected" : "مرفوض" },
     { value: "open", label: appLang === 'en' ? "Open" : "مفتوح" },
+    { value: "partially_applied", label: appLang === 'en' ? "Partially applied" : "مطبّق جزئياً" },
     { value: "applied", label: appLang === 'en' ? "Applied" : "مطبّق" },
     { value: "closed", label: appLang === 'en' ? "Closed" : "مغلق" },
   ], [appLang])
@@ -209,7 +216,7 @@ export default function VendorCreditsPage() {
 
     let creditsQuery = supabase
       .from("vendor_credits")
-      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, branch_id, cost_center_id, source_purchase_return_id, branches(name)")
+      .select("id, supplier_id, credit_number, credit_date, total_amount, applied_amount, status, created_by, created_by_user_id, branch_id, cost_center_id, source_purchase_return_id, branches(name)")
       .eq("company_id", visibilityRules.companyId)
 
     // 🔐 تطبيق فلترة الفروع حسب الصلاحيات
@@ -340,11 +347,20 @@ export default function VendorCreditsPage() {
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
+      // v3.74.904 — حالتا المصفوفة (900) لم تكونا فى الخريطة، والافتراضى كان
+      // «مفتوح» — فكان المعلّق والمرفوض يظهران فى القائمة كإشعارٍ نافذ. الحالة
+      // المجهولة تُعرض باسمها الخام لا بحالةٍ لطيفةٍ كاذبة.
+      pending_approval: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-300', label: { ar: 'بانتظار الاعتماد', en: 'Awaiting approval' } },
+      rejected: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', label: { ar: 'مرفوض', en: 'Rejected' } },
       open: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: { ar: 'مفتوح', en: 'Open' } },
+      partially_applied: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', label: { ar: 'مطبّق جزئياً', en: 'Partially applied' } },
       applied: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', label: { ar: 'مطبّق', en: 'Applied' } },
       closed: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: { ar: 'مغلق', en: 'Closed' } },
     }
-    const c = config[status] || config.open
+    const c = config[status]
+    if (!c) {
+      return <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">{status}</span>
+    }
     return <span className={`px-2 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label[appLang]}</span>
   }
 
@@ -435,14 +451,26 @@ export default function VendorCreditsPage() {
       type: 'actions',
       align: 'right',
       format: (_, row) => (
-        <Link href={`/vendor-credits/${row.id}`}>
-          <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
-            <Eye className="h-4 w-4 text-gray-500" />
-          </Button>
-        </Link>
+        <div className="flex items-center justify-end gap-1">
+          <Link href={`/vendor-credits/${row.id}`}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'View' : 'عرض'}>
+              <Eye className="h-4 w-4 text-gray-500" />
+            </Button>
+          </Link>
+          {/* v3.74.904 — المرفوض يعدّله منشئه ويعيد إرساله (القاعدة هى الحَكم:
+              update_vendor_credit_with_items ترفض غير المنشئ وغير المرفوض). */}
+          {row.status === 'rejected' && !!currentUserId
+            && String(row.created_by_user_id || "") === String(currentUserId) && (
+            <Link href={`/vendor-credits/${row.id}/edit`}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" title={appLang === 'en' ? 'Edit and resubmit' : 'تعديل وإعادة الإرسال'}>
+                <Pencil className="h-4 w-4 text-red-600 dark:text-red-400" />
+              </Button>
+            </Link>
+          )}
+        </div>
       )
     },
-  ], [appLang, currencySymbol, suppliers])
+  ], [appLang, currencySymbol, suppliers, currentUserId])
 
   if (loading) return <div className="flex min-h-screen"><main className="flex-1 md:mr-64 p-8">{appLang === 'en' ? 'Loading...' : 'جاري التحميل...'}</main></div>
 
