@@ -155,7 +155,12 @@ export default function VendorCreditViewPage() {
       .select("id, bill_number, total_amount, paid_amount, status")
       .eq("supplier_id", credit.supplier_id)
       .eq("company_id", credit.company_id)
-      .in("status", ["draft", "sent", "partially_paid"]) // لا تعرض الفواتير المسددة كلياً
+      // v3.74.898 — «لا توجد فواتير بمبالغ متبقية» رغم فاتورة received غير
+      // مدفوعة (اختبار المالك الحى 30/7: BILL-0006 بحالة received لم تظهر).
+      // الفلتر كان يغفل received/pending/overdue — وreceived هى الحالة
+      // الطبيعية لمعظم الفواتير بعد الاستلام المخزنى. القائمة القياسية
+      // لغير المسدَّد كما فى lib/fx-revaluation (سطر ٤٤٨).
+      .in("status", ["draft", "sent", "received", "pending", "overdue", "partially_paid"]) // لا تعرض الفواتير المسددة كلياً
       .order("bill_date", { ascending: false })
     const rows = (data || []).map((b: any) => ({
       ...b,
