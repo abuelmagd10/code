@@ -6,49 +6,68 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.902 - the OLD script is removed, never this one. Five times a chained
+# v3.74.903 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.901.ps1") { Remove-Item -LiteralPath "push_v3.74.901.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.902.ps1") { Remove-Item -LiteralPath "push_v3.74.902.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.902"') {
-    Write-Host "+ 3.74.902" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.903"') {
+    Write-Host "+ 3.74.903" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.902]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.902]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.903]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.903]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$vcNew = "app/vendor-credits/new/page.tsx"
+$routing   = "lib/notification-routing.ts"
+$sidebar   = "components/sidebar.tsx"
+$migration = "supabase/migrations/20260730000003_v3_74_903_vendor_credit_badge_and_routing.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $vcNew, "push_v3.74.902.ps1")
+           $routing, $sidebar, $migration, "push_v3.74.903.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the dead account column stays hidden, the 901 lock stays -----------
-$n = Get-Content -LiteralPath $vcNew -Raw
-if ($n -match [regex]::Escape("اختر الحساب")) {
-    Write-Host "X the unused account picker is back on the vendor-credit screen" -ForegroundColor Red; exit 1
+# -- 1. the notification button routes: all three vendor-credit types mapped -
+$r = Get-Content -LiteralPath $routing -Raw
+if ($r -notmatch [regex]::Escape("'vendor_credit_pending': (id)")) {
+    Write-Host "X vendor_credit_pending has no route - the button goes silent again" -ForegroundColor Red; exit 1
 }
-if ($n -notmatch [regex]::Escape("v3.74.902")) {
-    Write-Host "X the hiding comment (why the column was removed) is gone" -ForegroundColor Red; exit 1
+if ($r -notmatch [regex]::Escape("'vendor_credit_approved': (id)")) {
+    Write-Host "X vendor_credit_approved has no route" -ForegroundColor Red; exit 1
 }
-if ($n -notmatch [regex]::Escape("disabled={branchLocked}")) {
-    Write-Host "X the 901 branch lock regressed" -ForegroundColor Red; exit 1
+if ($r -notmatch [regex]::Escape("'vendor_credit_rejected': (id)")) {
+    Write-Host "X vendor_credit_rejected has no route" -ForegroundColor Red; exit 1
 }
-Write-Host "+ create screen: no field is asked for and then ignored; branch lock intact" -ForegroundColor Green
+Write-Host "+ routing map knows all three vendor-credit notification types" -ForegroundColor Green
 
-# -- 2. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.902.ps1" -Raw
+# -- 2. the sidebar counts pending vendor credits like every other approval --
+$s = Get-Content -LiteralPath $sidebar -Raw
+if ($s -notmatch [regex]::Escape('"vendor_credit_pending",')) {
+    Write-Host "X the sidebar badge no longer counts pending vendor credits" -ForegroundColor Red; exit 1
+}
+Write-Host "+ sidebar badge sums vendor_credit_pending" -ForegroundColor Green
+
+# -- 3. the migration carries the badge function with the new key -----------
+$m = Get-Content -LiteralPath $migration -Raw
+if ($m -notmatch [regex]::Escape("get_user_approval_badges")) {
+    Write-Host "X migration does not define get_user_approval_badges" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch [regex]::Escape("vendor_credit_pending")) {
+    Write-Host "X migration lacks the vendor_credit_pending badge key" -ForegroundColor Red; exit 1
+}
+Write-Host "+ migration defines the badge function with the vendor_credit_pending key" -ForegroundColor Green
+
+# -- 4. the battery below still proves both standing guards ----------------
+$self = Get-Content -LiteralPath "push_v3.74.903.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -59,10 +78,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.901.ps1" 2>$null
+git add -u -- "push_v3.74.902.ps1" 2>$null
 
-# -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.901.ps1")
+# -- 5. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.902.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -243,7 +262,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.901.ps1" 2>$null
+git add -u -- "push_v3.74.902.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -262,26 +281,32 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_902.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_903.txt"
     $msgLines = @(
-        'fix(ui): v3.74.902 - the per-item account picker on the vendor-credit screen asked and ignored; hidden',
+        'fix(notifications): v3.74.903 - the first live matrix notification could not be followed; now it routes and it counts',
         '',
-        'The owner live question - "what do I pick in the account column?" -',
-        'exposed a field that is saved and consumed by NOTHING on this',
-        'path: vendor_credit_post_journal builds the entry from the credit',
-        'HEADER alone (standalone => Dr AP / Cr 5130 purchase discounts +',
-        'Cr 1160 for tax; return-born => Cr inventory) and never reads the',
-        'item accounts - only the purchase-return flows do, and they do',
-        'not pass through this screen. A field that is asked for and then',
-        'ignored confused even the owner.',
+        'The accountant-created credit CR-51543 went pending_approval and',
+        'the owner notification arrived exactly as the 900 matrix intended',
+        '- and then the owner found two delivery gaps: the open-reference',
+        'button did nothing, and the sidebar approvals badge showed no',
+        'count like every other approval type.',
         '',
-        'Two options were offered: hide the column, or wire it in as a',
-        'per-item credit-side split. OWNER DECISION: hide - the accounts',
-        'are governed by the settled 897 design, not by user choice, and',
-        'free-account routing from a purchase-adjustment document is an',
-        'invitation to misuse. The column (header + cell) is hidden with',
-        'a comment recording why; vendor_credit_items.account_id stays',
-        '(the return flows consume it).'
+        'Causes: (a) the three new notification types had no entry in the',
+        'lib/notification-routing.ts map, and an unmapped type makes the',
+        'button silently a no-op; (b) get_user_approval_badges predates',
+        'the matrix and never counted pending vendor credits.',
+        '',
+        'Fixes: vendor_credit_pending routes to the approvals inbox on the',
+        'vendor-credits tab (/approvals?tab=vc); approved/rejected route',
+        'to the credit page so the creator sees the decision. The badge',
+        'function gains a vendor_credit_pending key counted for owner and',
+        'general manager ONLY (the matrix audience, verbatim) excluding',
+        'credits the user created - segregation of duties: nothing is',
+        'counted for someone who holds no decision over it. Applied to',
+        'both databases with byte parity (md5 58a108df...) and a live',
+        'check: the owner badge on the test company returned 1, which is',
+        'CR-51543 itself. The sidebar sums the new key into the approvals',
+        'count.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -290,5 +315,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.902 pushed - a field that is asked for and then ignored is a small lie on every line" -ForegroundColor Green
+    Write-Host "`n+ v3.74.903 pushed - a notification you cannot follow and a count you cannot see are both silence" -ForegroundColor Green
 }

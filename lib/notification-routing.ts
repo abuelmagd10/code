@@ -22,6 +22,9 @@ export type ReferenceType =
   | 'payment'
   | 'customer_debit_note'
   | 'vendor_credit'
+  | 'vendor_credit_pending'
+  | 'vendor_credit_approved'
+  | 'vendor_credit_rejected'
   | 'customer_credit_refund'
   | 'supplier_debit_receipt'
   | 'customer_voucher'
@@ -105,6 +108,13 @@ const REFERENCE_TYPE_TO_ROUTE: Record<string, (id: string, eventKey?: string, ca
   'purchase_approval': (id) => `/bills/${id}`, // ✅ إضافة route لموافقات المشتريات
   'purchase_return': (id) => `/purchase-returns/${id}`, // ✅ صفحة تفاصيل المرتجع
   'vendor_credit': (id) => `/vendor-credits?highlight=${id}`,
+  // v3.74.903 — أنواع مصفوفة اعتماد الإشعار الدائن (900): «فتح المرجع» كان
+  // صامتاً لأن الأنواع الثلاثة غابت عن الخريطة. إخطار «بانتظار الاعتماد»
+  // يذهب لتبويب الإشعارات فى صندوق الموافقات (القرار من الصندوق — بقرار
+  // المالك)، وإخطارا القرار يذهبان لصفحة الإشعار نفسه.
+  'vendor_credit_pending': (id) => `/approvals?tab=vc&highlight=${id}`,
+  'vendor_credit_approved': (id) => `/vendor-credits/${id}`,
+  'vendor_credit_rejected': (id) => `/vendor-credits/${id}`,
   'supplier_debit_receipt': (id) => `/suppliers?highlight=receipt-${id}`,
   'vendor_refund_request': (id) => `/suppliers?tab=refunds&highlight=${id}`, // ✅ طلب استرداد سلفة مورد
   // v3.74.106 - notifications for the payment-correction workflow + the regular

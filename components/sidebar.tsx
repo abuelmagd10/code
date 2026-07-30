@@ -212,6 +212,8 @@ export function Sidebar() {
         "bank_voucher_request",
         "customer_debit_note",
         "permission_transfer",
+        // v3.74.903 — إشعارات دائنة بانتظار اعتماد مصفوفة 900 (تبويب vc)
+        "vendor_credit_pending",
       ])
 
 
