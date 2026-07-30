@@ -428,7 +428,10 @@ export default function NewVendorCreditPage() {
                     <tr className="text-gray-600">
                       <th className="text-right p-2">المنتج</th>
                       <th className="text-right p-2">الوصف</th>
-                      <th className="text-right p-2">الحساب</th>
+                      {/* v3.74.902 — عمود «الحساب» أُخفى بقرار المالك: كان يُحفظ ولا
+                          يُستخدم — قيد الإشعار تحكمه دالة الترحيل تلقائياً (مستقل ⇒
+                          دائن 5130 خصم المشتريات؛ من مرتجع ⇒ دائن المخزون) — فكان
+                          حقلاً يُطلب ويُهمَل، يربك ولا يفيد. */}
                       <th className="text-right p-2">الكمية</th>
                       <th className="text-right p-2">سعر الوحدة</th>
                       <th className="text-right p-2">خصم%</th>
@@ -466,12 +469,7 @@ export default function NewVendorCreditPage() {
                           />
                         </td>
                         <td className="p-2"><Input value={it.description} onChange={(e) => updateItem(idx, { description: e.target.value })} /></td>
-                        <td className="p-2">
-                          <select className="w-full border rounded px-2 py-1" value={it.account_id || ""} onChange={(e) => updateItem(idx, { account_id: e.target.value || null })}>
-                            <option value="">اختر الحساب</option>
-                            {accounts.map(a => (<option key={a.id} value={a.id}>{a.account_code || ""} {a.account_name}</option>))}
-                          </select>
-                        </td>
+
                         <td className="p-2"><NumericInput min={0} step="1" value={it.quantity} onChange={(val) => updateItem(idx, { quantity: Math.round(val) })} /></td>
                         <td className="p-2"><NumericInput min={0} step="0.01" value={it.unit_price} onChange={(val) => updateItem(idx, { unit_price: val })} decimalPlaces={2} /></td>
                         <td className="p-2"><NumericInput min={0} step="0.01" value={it.discount_percent} onChange={(val) => updateItem(idx, { discount_percent: val })} decimalPlaces={2} /></td>
