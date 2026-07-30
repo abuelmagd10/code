@@ -72,6 +72,10 @@ export default function NewVendorCreditPage() {
   // Branch and Cost Center
   const [branchId, setBranchId] = useState<string | null>(null)
   const [costCenterId, setCostCenterId] = useState<string | null>(null)
+  // v3.74.901 — قرار المالك: الفرع ومركز التكلفة لا يغيّرهما إلا المالك أو
+  // المدير العام؛ المرتبط بفرعٍ يُقفَل على فرعه ومركزه الافتراضى (القاعدة
+  // ترفض غير ذلك أصلاً — BRANCH_SCOPE — والواجهة تصدُق فلا تعرض خياراً يُرفض).
+  const [branchLocked, setBranchLocked] = useState(false)
 
   // Multi-currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -120,6 +124,30 @@ export default function NewVendorCreditPage() {
       const userBranchIdVC = isOwnerVC ? null : (memberDataVC?.branch_id || null)
       const normalizedRoleVC = String(roleVC).trim().toLowerCase().replace(/\s+/g, '_')
       const isAdminVC = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRoleVC)
+
+      // v3.74.901 — قفل الفرع/مركز التكلفة لغير المالك والمدير العام
+      if (!isAdminVC && userBranchIdVC) {
+        setBranchId(userBranchIdVC)
+        try {
+          const { data: brRow } = await supabase
+            .from("branches")
+            .select("default_cost_center_id")
+            .eq("id", userBranchIdVC)
+            .maybeSingle()
+          if (brRow?.default_cost_center_id) {
+            setCostCenterId(brRow.default_cost_center_id)
+          } else {
+            const { data: ccRows } = await supabase
+              .from("cost_centers")
+              .select("id")
+              .eq("company_id", loadedCompanyId)
+              .eq("branch_id", userBranchIdVC)
+              .limit(1)
+            if (ccRows && ccRows[0]) setCostCenterId(ccRows[0].id)
+          }
+        } catch { /* القاعدة سترفض إدراجاً خارج الفرع على أى حال */ }
+        setBranchLocked(true)
+      }
 
       let suppQueryVC = supabase.from("suppliers").select("id, name").eq("company_id", loadedCompanyId)
       if (!isAdminVC && userBranchIdVC) {
@@ -385,7 +413,13 @@ export default function NewVendorCreditPage() {
                   lang="ar"
                   showLabels={true}
                   showWarehouse={false}
+                  disabled={branchLocked}
                 />
+                {branchLocked && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    🔒 الفرع ومركز التكلفة مثبَّتان على فرعك — تغييرهما للمالك والمدير العام فقط
+                  </p>
+                )}
               </div>
 
               <div className="overflow-x-auto">

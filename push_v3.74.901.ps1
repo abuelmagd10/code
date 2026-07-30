@@ -6,77 +6,49 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.900 - the OLD script is removed, never this one. Five times a chained
+# v3.74.901 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.899.ps1") { Remove-Item -LiteralPath "push_v3.74.899.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.900.ps1") { Remove-Item -LiteralPath "push_v3.74.900.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.900"') {
-    Write-Host "+ 3.74.900" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.901"') {
+    Write-Host "+ 3.74.901" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.900]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.900]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.901]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.901]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$inbox = "app/approvals/page.tsx"
-$vcDetail = "app/vendor-credits/[id]/page.tsx"
 $vcNew = "app/vendor-credits/new/page.tsx"
-$mig = "supabase/migrations/20260730000002_v3_74_900_vendor_credit_approval_matrix.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $inbox, $vcDetail, $vcNew, $mig, "push_v3.74.900.ps1")
+           $vcNew, "push_v3.74.901.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the migration carries the 865 matrix, whole ------------------------
-$m = Get-Content -LiteralPath $mig -Raw
-foreach ($needle in @("pending_approval", "approve_vendor_credit", "SELF_APPROVAL",
-                      "VENDOR_CREDIT_BRANCH_SCOPE", "VENDOR_CREDIT_NOT_POSTED",
-                      "vendor_credit_post_journal", "VENDOR_CREDIT_ROLE_FORBIDDEN")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the matrix migration lost: $needle" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ migration: matrix + segregation + branch scope + apply-guard + shared posting core" -ForegroundColor Green
-
-# -- 2. the approvals inbox owns the decision, with its record -------------
-$c = Get-Content -LiteralPath $inbox -Raw
-if ($c -notmatch [regex]::Escape('supabase.rpc("approve_vendor_credit"')) {
-    Write-Host "X the inbox lost its approve action" -ForegroundColor Red; exit 1
-}
-if ($c -notmatch [regex]::Escape('supabase.rpc("reject_vendor_credit"')) {
-    Write-Host "X the inbox lost its reject action" -ForegroundColor Red; exit 1
-}
-if ($c -notmatch [regex]::Escape('"vendor_credit_approved", "vendor_credit_rejected"')) {
-    Write-Host "X the inbox record lost its vendor-credit decision source" -ForegroundColor Red; exit 1
-}
-if ($c -notmatch [regex]::Escape('activeTab === "vc"')) {
-    Write-Host "X the vendor-credits tab is gone from the inbox" -ForegroundColor Red; exit 1
-}
-Write-Host "+ inbox: vc tab + rpc actions + decision record, mirroring the 865 je section" -ForegroundColor Green
-
-# -- 3. the credit screens tell the truth ----------------------------------
-$d = Get-Content -LiteralPath $vcDetail -Raw
-if ($d -notmatch [regex]::Escape('credit.status !== ''pending_approval'' && credit.status !== ''rejected''')) {
-    Write-Host "X the apply button no longer hides for unposted credits" -ForegroundColor Red; exit 1
-}
+# -- 1. branch-bound creators get a locked branch + cost center ------------
 $n = Get-Content -LiteralPath $vcNew -Raw
-if ($n -notmatch [regex]::Escape('createdVc?.status === ''pending_approval''')) {
-    Write-Host "X the create screen no longer tells the author the credit is pending" -ForegroundColor Red; exit 1
+if ($n -notmatch [regex]::Escape("disabled={branchLocked}")) {
+    Write-Host "X the branch/cost-center selector is no longer locked for branch-bound roles" -ForegroundColor Red; exit 1
 }
-Write-Host "+ screens: honest pending toast, status badges, no lying apply button" -ForegroundColor Green
+if ($n -notmatch [regex]::Escape("setBranchId(userBranchIdVC)")) {
+    Write-Host "X the locked branch is no longer forced to the member branch" -ForegroundColor Red; exit 1
+}
+if ($n -notmatch [regex]::Escape("default_cost_center_id")) {
+    Write-Host "X the locked cost center no longer defaults from the branch" -ForegroundColor Red; exit 1
+}
+Write-Host "+ create screen: branch-bound roles locked to their branch and its default cost center" -ForegroundColor Green
 
-# -- 4. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.900.ps1" -Raw
+# -- 2. the battery below still proves both standing guards ----------------
+$self = Get-Content -LiteralPath "push_v3.74.901.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -87,10 +59,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.899.ps1" 2>$null
+git add -u -- "push_v3.74.900.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.899.ps1")
+$expected = @($files) + @("push_v3.74.900.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -271,7 +243,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.899.ps1" 2>$null
+git add -u -- "push_v3.74.900.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -290,46 +262,25 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_900.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_901.txt"
     $msgLines = @(
-        'feat(governance): v3.74.900 - the 865 approval matrix now governs vendor credits, decided from the unified inbox',
+        'fix(ui): v3.74.901 - branch-bound creators are locked to their branch on the vendor-credit screen',
         '',
-        'Owner note M4, verbatim: today a vendor credit is created and its',
-        'journal posts immediately by ANY role, even a branch accountant -',
-        'violating the matrix arbitrated for manual journals (865). Remedy,',
-        'in the owner words: the same matrix, decided from the approvals',
-        'inbox, with its record.',
+        'Live owner note: the create screen let ANY author change the',
+        'branch and cost center. Owner decision: only the owner and the',
+        'general manager may change them; anyone bound to a branch keeps',
+        'their branch and its cost center, locked.',
         '',
-        'DB LAYER (migration 20260730000002, both databases = the file by',
-        'checksum on all seven functions):',
-        '  - owner creates => posts immediately; GM => pending, owner',
-        '    approves; branch accountant (own branch only, no registered',
-        '    branch = refused) => pending, owner or GM approves; every',
-        '    other role refused; absolute separation of duties.',
-        '  - posting logic extracted to vendor_credit_post_journal(row) -',
-        '    the 897 body verbatim - shared by owner-posting and approval.',
-        '  - approve/reject_vendor_credit: atomic on pending status, rank +',
-        '    segregation checks, creator notified with the reason.',
-        '  - creation records its author from auth.uid(); applying an',
-        '    unposted credit is refused (VENDOR_CREDIT_NOT_POSTED).',
-        '  - CAUGHT BY THE PROOF ITSELF: the legacy status recompute',
-        '    trigger ran alphabetically after the matrix and rewrote',
-        '    pending_approval back to open in the same insert - tamed.',
-        'Proven with nine scenarios in a cancelled transaction: pending',
-        'without journal + notification, branch scope refusal, role',
-        'refusal, apply-pending refusal, rank refusal, GM approves',
-        'accountant credit (Dr AP 20 / Cr 5130 20), self-approval refusal,',
-        'owner approves GM credit, owner immediate post, reject with',
-        'reason kept and notified.',
+        'The database already refused the escape (the 900 matrix:',
+        'VENDOR_CREDIT_BRANCH_SCOPE, proven) - but the screen offered a',
+        'choice the database would then reject with a raw error. Defence',
+        'existed; honesty did not.',
         '',
-        'INBOX (the owner requirement): a vendor-credits tab in the',
-        'approvals inbox mirroring the 865 manual-journals section - the',
-        'card offers only the action the server will accept, rejection',
-        'demands a reason, and the record tab lists every decision (the',
-        'decision notifications are the source: decider, author, time,',
-        'reason). The create screen says created-awaiting-approval',
-        'honestly, the details page carries pending/rejected badges and',
-        'hides the apply button for unposted credits.'
+        'FIX: for a branch-bound non-admin the screen pins the branch and',
+        'its default cost center (branches.default_cost_center_id, else',
+        'the branch first center), disables both selectors, and says so:',
+        'pinned to your branch - changing them is for the owner and the',
+        'general manager only. The database stays the final judge.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -338,5 +289,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.900 pushed - the matrix that governs the pen must govern every pen" -ForegroundColor Green
+    Write-Host "`n+ v3.74.901 pushed - a screen must not offer what the database will refuse" -ForegroundColor Green
 }
