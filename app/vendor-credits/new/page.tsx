@@ -218,7 +218,9 @@ export default function NewVendorCreditPage() {
       // ⇒ **ما لا يصحّ أن يوجد نصفه لا يُكتب على خطوتين.**
       const rows = items.map(it => ({
         product_id: it.product_id,
-        description: it.description,
+        // v3.74.899 — وصفٌ فارغ مع منتجٍ مختار ⇒ يُحفظ باسم المنتج، حتى لا
+        // يولد البند بلا اسمٍ فى التفاصيل والتقارير.
+        description: it.description || products.find(pp => pp.id === it.product_id)?.name || "",
         quantity: it.quantity,
         unit_price: it.unit_price,
         tax_rate: it.tax_rate,

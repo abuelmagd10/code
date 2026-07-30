@@ -85,7 +85,11 @@ export default function VendorCreditViewPage() {
       setCredit(vc as any)
       const { data: sup } = await supabase.from("suppliers").select("id, name").eq("id", vc.supplier_id).single()
       setSupplier(sup as any)
-      const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total").eq("vendor_credit_id", id)
+      // v3.74.899 — البند كان يظهر بلا اسم: الوصف يُحفظ فارغاً حين يكتفى
+      // المستخدم باختيار المنتج، والصفحة كانت تعرض الوصف وحده بلا جلب اسم
+      // المنتج (ملاحظة المالك الحية 30/7 على CR-59190). يُجلب اسم المنتج
+      // ويُعرض عند فراغ الوصف.
+      const { data: rows } = await supabase.from("vendor_credit_items").select("id, description, quantity, unit_price, discount_percent, tax_rate, line_total, products(name)").eq("vendor_credit_id", id)
       setItems((rows || []) as any)
 
       // جلب معلومات المرتجع المرتبط
@@ -357,7 +361,7 @@ export default function VendorCreditViewPage() {
                 <tbody>
                   {items.map(it => (
                     <tr key={it.id} className="border-t">
-                      <td className="p-2">{it.description}</td>
+                      <td className="p-2">{it.description || (it as any).products?.name || "—"}</td>
                       <td className="p-2 text-right">{it.quantity}</td>
                       <td className="p-2 text-right">{Number(it.unit_price || 0).toFixed(2)}</td>
                       <td className="p-2 text-right">{Number(it.discount_percent || 0).toFixed(2)}</td>

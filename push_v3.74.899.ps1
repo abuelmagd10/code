@@ -6,43 +6,57 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.898 - the OLD script is removed, never this one. Five times a chained
+# v3.74.899 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.897.ps1") { Remove-Item -LiteralPath "push_v3.74.897.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.898.ps1") { Remove-Item -LiteralPath "push_v3.74.898.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.898"') {
-    Write-Host "+ 3.74.898" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.899"') {
+    Write-Host "+ 3.74.899" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.898]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.898]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.899]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.899]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$fix = "app/vendor-credits/[id]/page.tsx"
+$fixDetail = "app/vendor-credits/[id]/page.tsx"
+$fixNew = "app/vendor-credits/new/page.tsx"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $fix, "push_v3.74.898.ps1")
+           $fixDetail, $fixNew, "push_v3.74.899.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the apply dialog sees every unpaid bill status ---------------------
-$c = Get-Content -LiteralPath $fix -Raw
-if ($c -notmatch [regex]::Escape('.in("status", ["draft", "sent", "received", "pending", "overdue", "partially_paid"])')) {
-    Write-Host "X the apply-dialog filter regressed - received/pending/overdue bills would vanish again" -ForegroundColor Red; exit 1
+# -- 1a. the details page joins the product name and falls back to it ------
+$c = Get-Content -LiteralPath $fixDetail -Raw
+if ($c -notmatch [regex]::Escape("products(name)")) {
+    Write-Host "X the item query lost the products(name) join - old items would show nameless again" -ForegroundColor Red; exit 1
 }
-Write-Host "+ apply dialog lists every unpaid bill status (the fx-revaluation canonical set)" -ForegroundColor Green
+if ($c -notmatch [regex]::Escape('it.description || (it as any).products?.name')) {
+    Write-Host "X the description cell lost its product-name fallback" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch [regex]::Escape('.in("status", ["draft", "sent", "received", "pending", "overdue", "partially_paid"])')) {
+    Write-Host "X the 898 apply-dialog filter regressed" -ForegroundColor Red; exit 1
+}
+Write-Host "+ details page: product-name join + fallback, and the 898 filter intact" -ForegroundColor Green
+
+# -- 1b. the create screen defaults a blank description to the product name -
+$n = Get-Content -LiteralPath $fixNew -Raw
+if ($n -notmatch [regex]::Escape('it.description || products.find(pp => pp.id === it.product_id)?.name')) {
+    Write-Host "X the create screen would save nameless items again" -ForegroundColor Red; exit 1
+}
+Write-Host "+ create screen: blank description saves as the product name" -ForegroundColor Green
 
 # -- 2. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.898.ps1" -Raw
+$self = Get-Content -LiteralPath "push_v3.74.899.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -53,10 +67,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.897.ps1" 2>$null
+git add -u -- "push_v3.74.898.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.897.ps1")
+$expected = @($files) + @("push_v3.74.898.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -237,7 +251,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.897.ps1" 2>$null
+git add -u -- "push_v3.74.898.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -256,26 +270,27 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_898.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_899.txt"
     $msgLines = @(
-        'fix(ui): v3.74.898 - the credit-apply dialog was blind to received bills',
+        'fix(ui): v3.74.899 - vendor-credit items showed no name at all',
         '',
-        'Live test, the very next step after 897: the owner created an',
-        'unpaid purchase bill BILL-0006 (40.00, same supplier as credit',
-        'CR-59190) and the apply dialog said "no bills with remaining',
-        'amounts for this supplier".',
+        'Live owner note on CR-59190: the items table rendered quantity,',
+        'price and total - and an EMPTY description column. Two layers:',
         '',
-        'ROOT: the dialog filtered status IN (draft, sent, partially_paid)',
-        '- missing received, the natural state of most bills after',
-        'warehouse receipt (and missing pending/overdue too). The apply',
-        'feature opened in 894 was effectively hidden from most real',
-        'bills.',
+        '  1. SAVE: the create screen stores the description as typed;',
+        '     picking a product and leaving the text blank (the common',
+        '     case) births a nameless item row.',
+        '  2. RENDER: the details page selected description only - it',
+        '     never joined the product name, so even an item linked to a',
+        '     named product showed blank.',
         '',
-        'FIX: the filter now uses the canonical unpaid set already used',
-        'by lib/fx-revaluation.ts line 448: draft, sent, received,',
-        'pending, overdue, partially_paid - only fully-paid bills stay',
-        'excluded, and the remaining>0 post-filter is unchanged. A sweep',
-        'confirmed no other copy of the narrow filter exists. tsc clean.'
+        'FIX on both layers: the create screen saves a blank description',
+        'as the product name; the details page joins products(name) and',
+        'renders description -> product name -> em-dash, so legacy rows',
+        'display too. Plus a documented backfill: every item with a blank',
+        'description and a known product got its product name (hit the',
+        'CR-59190 item). Descriptive metadata only - no journal touched.',
+        'tsc clean on both pages.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -284,5 +299,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.898 pushed - a feature the picker cannot see is a feature the customer does not have" -ForegroundColor Green
+    Write-Host "`n+ v3.74.899 pushed - a line the customer cannot name is a line the customer cannot trust" -ForegroundColor Green
 }
