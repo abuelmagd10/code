@@ -192,6 +192,11 @@ export async function getDailyIncomeByBranch(
       byBranchCashOut.set(branchId, (byBranchCashOut.get(branchId) ?? 0) + credit)
     } else if (bankAccountIds.has(accountId)) {
       byBranchBank.set(branchId, (byBranchBank.get(branchId) ?? 0) + net)
+      // v3.74.895 — «وارد البنك» لم يُجمَع قط منذ إدخال شطر وارد/صادر (549):
+      // فرع النقد يجمع الثلاثة (صافى/وارد/صادر) وفرع البنك جمع الصافى
+      // والصادر فقط ⇒ bankIn ظل صفراً دائماً فى بطاقة الدخل اليومى،
+      // وtotalIn ناقصٌ كل إيداعات البنك. سطر واحد كان غائباً:
+      byBranchBankIn.set(branchId, (byBranchBankIn.get(branchId) ?? 0) + debit)
       byBranchBankOut.set(branchId, (byBranchBankOut.get(branchId) ?? 0) + credit)
     }
   }

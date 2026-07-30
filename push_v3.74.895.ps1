@@ -6,69 +6,47 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.894 - the OLD script is removed, never this one. Five times a chained
+# v3.74.895 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.893.ps1") { Remove-Item -LiteralPath "push_v3.74.893.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.894.ps1") { Remove-Item -LiteralPath "push_v3.74.894.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.894"') {
-    Write-Host "+ 3.74.894" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.895"') {
+    Write-Host "+ 3.74.895" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.894]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.894]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.895]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.895]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$guard = "scripts/check-je-default-status.js"
-$mig = "supabase/migrations/20260729000004_v3_74_894_vendor_credit_application_journal.sql"
+$fix = "lib/dashboard-daily-income.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $guard, $mig, "push_v3.74.894.ps1")
+           $fix, "push_v3.74.895.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the migration carries the correct accounting design ----------------
-$m = Get-Content -LiteralPath $mig -Raw
-if ($m -match "INSERT INTO journal_entries" -or $m -match "INSERT INTO public.journal_entries") {
-    Write-Host "X the migration re-introduced a DIRECT journal_entries insert - the atomic route is the law" -ForegroundColor Red; exit 1
+# -- 1. the bank branch of the grouping loop now sums all THREE sides ------
+$c = Get-Content -LiteralPath $fix -Raw
+if ($c -notmatch [regex]::Escape("byBranchBankIn.set(branchId, (byBranchBankIn.get(branchId) ?? 0) + debit)")) {
+    Write-Host "X the bankIn line is gone again - the daily-income card would show zero bank inflow" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch [regex]::Escape("create_journal_entry_atomic")) {
-    Write-Host "X the migration lost the atomic journal route" -ForegroundColor Red; exit 1
+$bankBranch = [regex]::Match($c, "else if \(bankAccountIds[\s\S]*?\n    \}").Value
+if (-not ($bankBranch -match "byBranchBank\.set" -and $bankBranch -match "byBranchBankIn\.set" -and $bankBranch -match "byBranchBankOut\.set")) {
+    Write-Host "X the bank branch lost one of its three sums (net/in/out) - asymmetry with the cash branch is the 549 defect" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch "VENDOR_CREDIT_OVERAPPLIED" -or $m -notmatch "VENDOR_CREDIT_APPLICATION_SUPPLIER_MISMATCH") {
-    Write-Host "X the migration lost the over-application / supplier-mismatch refusals" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch "supplier_overpayment") {
-    Write-Host "X the migration lost the overpayment-vs-return distinction - the heart of the accounting design" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("auto_journal_for_vendor_credit")) {
-    Write-Host "X the migration lost part (a) - pinning the creation-journal function on BOTH databases" -ForegroundColor Red; exit 1
-}
-Write-Host "+ migration: no journal at return-application, Dr AP / Cr advance at overpayment-application, loud refusals, both functions pinned" -ForegroundColor Green
+Write-Host "+ bank branch sums net + inflow + outflow, symmetric with the cash branch" -ForegroundColor Green
 
-# -- 2. the guard's pinned list shrank to 8 and stays additions-forbidden --
-$c = Get-Content -LiteralPath $guard -Raw
-if ($c -notmatch 'MEASURED_LEGACY' -or $c -notmatch 'zz_probe_893_je_default') {
-    Write-Host "X the je-default guard lost its pinned list or its --prove probe" -ForegroundColor Red; exit 1
-}
-if ($c -match '"update_bill_on_credit_application"' -or $c -match '"cancel_approved_write_off"') {
-    Write-Host "X a FIXED function (893/894) crept back into the pinned list" -ForegroundColor Red; exit 1
-}
-if ($c -notmatch '"auto_create_cogs_journal"' -or $c -notmatch '"record_payment"') {
-    Write-Host "X the pinned list lost a measured legacy name - silent removals hide unfixed reliance" -ForegroundColor Red; exit 1
-}
-Write-Host "+ guard list shrank 9 -> 8 (the 894 fix), additions still forbidden" -ForegroundColor Green
-
-# -- 3. the battery below actually proves both guards ----------------------
-$self = Get-Content -LiteralPath "push_v3.74.894.ps1" -Raw
+# -- 2. the battery below still proves both standing guards ----------------
+$self = Get-Content -LiteralPath "push_v3.74.895.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -79,10 +57,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.893.ps1" 2>$null
+git add -u -- "push_v3.74.894.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.893.ps1")
+$expected = @($files) + @("push_v3.74.894.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -263,7 +241,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.893.ps1" 2>$null
+git add -u -- "push_v3.74.894.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -282,55 +260,36 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_894.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_895.txt"
     $msgLines = @(
-        'fix(accounting): v3.74.894 - the vendor-credit application cycle works for the first time, with the correct entries',
+        'fix(dashboard): v3.74.895 - bank inflow on the daily-income card was ALWAYS zero; plus the live-route perf triage',
         '',
-        'The second live broken path exposed by the 893 measurement. The',
-        'vendor-credit screen inserts into vendor_credit_applications and',
-        'the update_bill_on_credit_application trigger fires - broken three',
-        'ways at once, so the feature never succeeded (zero rows in both',
-        'tables on production):',
+        'Caught while triaging the structural performance batch by LIVE',
+        'traffic (Vercel production logs, 7 days) as the handover',
+        'prescribed - hottest routes first, not the static list first.',
         '',
-        '  1. its entry is born posted via the column default with no',
-        '     trusted context => DIRECT_POST_BLOCKED raw in the customer',
-        '     face (proven refused on production inside a cancelled',
-        '     transaction before fixing);',
-        '  2. even if it ran, both lines debit AND credit the same AP',
-        '     account (vc_liability declared, never filled) - a zero net',
-        '     entry;',
-        '  3. deepest: the CREATION journal already debits AP for the full',
-        '     credit (Dr AP / Cr Inventory + input VAT), so any AP entry at',
-        '     application time is a double reduction.',
+        'THE BUG: since the in/out split was introduced (v3.74.549), the',
+        'grouping loop in lib/dashboard-daily-income.ts was asymmetric:',
+        'the cash branch sums all three (net/in/out), the bank branch',
+        'summed only net and out - byBranchBankIn was declared and never',
+        'filled. The card renders bankIn directly and folds it into',
+        'totalIn, so bank inflow showed ZERO every single day and total',
+        'inflow was missing every bank deposit. Net and outflow were',
+        'correct, which is why it stayed quiet since 549. One missing',
+        'line, now symmetric with the cash branch. tsc clean.',
         '',
-        'THE ACCOUNTING DESIGN (read from the creation entry, not patched):',
-        '  - return-based credit: AP was reduced at creation => application',
-        '    is subledger allocation only - NO journal entry at all;',
-        '  - overpayment credit (supplier_overpayment): creation parked the',
-        '    value in the supplier-advance asset => application consumes it:',
-        '    Dr AP / Cr supplier-advance via create_journal_entry_atomic.',
-        '',
-        'Loud refusals added (the 884-890 doctrine): over-application',
-        '(VENDOR_CREDIT_OVERAPPLIED), company/supplier mismatch, and the',
-        'silent skip on a missing AP account is gone.',
-        '',
-        'DISCOVERED WHILE PROVING - deeper drift than 893 recorded: both',
-        'databases have the creation trigger, but the FUNCTION BODY drifted:',
-        'production has the modern atomic version, the test database an old',
-        'direct-insert one - so even CREATING a vendor credit failed there',
-        '(proven in a cancelled transaction). Migration 20260729000004 pins',
-        'the production version verbatim on BOTH databases. (It escaped the',
-        '893 LIKE census because it does not insert directly - record',
-        'corrected.)',
-        '',
-        'Proven on BOTH databases (synthetic scenarios, all rolled back):',
-        'pre-fix application refused; post-fix: creation Dr_AP=10/Cr_INV=10',
-        'posted; return-application succeeds with ZERO application entries',
-        'and applied_amount=6.00; over-application refused (11.00 > 10.00);',
-        'overpayment-application posts Dr_AP=8.00 / Cr_ADV=8.00.',
-        '',
-        'Guard: check-je-default-status pinned list shrank 9 -> 8 - the',
-        'shrinkage the guard was built to measure.'
+        'THE TRIAGE (the methodological finding worth recording): the',
+        'static performance flags on the actually-hot routes are nearly',
+        'all false positives -',
+        '  - /api/sidebar/approval-badges (hottest, every page load):',
+        '    already one batched RPC;',
+        '  - /api/ai/alerts: one RPC, output capped at 20;',
+        '  - /api/aging-ar-gl (flagged HIGH N+1): already batched with',
+        '    .in() + Promise.all - the flag was an in-memory .find loop;',
+        '  - lib/dashboard-daily-income.ts (flagged N+1): no DB call in',
+        '    any loop - but the careful read caught the real bankIn bug.',
+        'The remaining flagged routes are cold by live measurement:',
+        'picked up file-by-file as they are touched, not as a campaign.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -339,5 +298,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.894 pushed - the right entry was written at creation all along; the fix was teaching the application to write none" -ForegroundColor Green
+    Write-Host "`n+ v3.74.895 pushed - triage by what the traffic says, and read carefully: the false positives hid one real zero on the dashboard" -ForegroundColor Green
 }
