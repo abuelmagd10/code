@@ -1046,7 +1046,8 @@ CREATE TABLE IF NOT EXISTS public.companies (
   past_due_at timestamp with time zone,
   reminder_7d_sent_at timestamp with time zone,
   reminder_3d_sent_at timestamp with time zone,
-  reminder_1d_sent_at timestamp with time zone
+  reminder_1d_sent_at timestamp with time zone,
+  purchase_cost_visibility text DEFAULT 'restricted'::text NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.company_ai_settings (
