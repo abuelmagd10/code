@@ -6,47 +6,74 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.895 - the OLD script is removed, never this one. Five times a chained
+# v3.74.897 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.894.ps1") { Remove-Item -LiteralPath "push_v3.74.894.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.896.ps1") { Remove-Item -LiteralPath "push_v3.74.896.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.895"') {
-    Write-Host "+ 3.74.895" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.897"') {
+    Write-Host "+ 3.74.897" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.895]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.895]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.897]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.897]" -ForegroundColor Red; exit 1
 }
-Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
+if ($cl -notmatch [regex]::Escape("[3.74.896]")) {
+    Write-Host "X CHANGELOG lost the [3.74.896] heading - this push carries BOTH releases" -ForegroundColor Red; exit 1
+}
+Write-Host "+ CHANGELOG carries both headings: [3.74.897] and the never-pushed [3.74.896]" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$fix = "lib/dashboard-daily-income.ts"
+# v3.74.897 carries the 896 files too: the ledger-integrity guard blocked the
+# 896 push the minute the live defect opened the gap, so 896 was never
+# committed. One commit now carries both, and the CHANGELOG holds both headings.
+$fix896 = "app/api/vat-input/route.ts"
+$mig896 = "supabase/migrations/20260729000005_v3_74_896_align_post_expense_atomic.sql"
+$mig = "supabase/migrations/20260730000001_v3_74_897_standalone_vendor_credit_no_inventory.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $fix, "push_v3.74.895.ps1")
+           $fix896, $mig896, $mig, "push_v3.74.897.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the bank branch of the grouping loop now sums all THREE sides ------
-$c = Get-Content -LiteralPath $fix -Raw
-if ($c -notmatch [regex]::Escape("byBranchBankIn.set(branchId, (byBranchBankIn.get(branchId) ?? 0) + debit)")) {
-    Write-Host "X the bankIn line is gone again - the daily-income card would show zero bank inflow" -ForegroundColor Red; exit 1
+# -- 1a. (896) the input-VAT report reads expense journals too -------------
+$c = Get-Content -LiteralPath $fix896 -Raw
+if ($c -notmatch [regex]::Escape('.in("reference_type", ["bill", "expense"])')) {
+    Write-Host "X the report filter regressed to bills-only - expense input VAT would vanish from the report again" -ForegroundColor Red; exit 1
 }
-$bankBranch = [regex]::Match($c, "else if \(bankAccountIds[\s\S]*?\n    \}").Value
-if (-not ($bankBranch -match "byBranchBank\.set" -and $bankBranch -match "byBranchBankIn\.set" -and $bankBranch -match "byBranchBankOut\.set")) {
-    Write-Host "X the bank branch lost one of its three sums (net/in/out) - asymmetry with the cash branch is the 549 defect" -ForegroundColor Red; exit 1
+if ($c -notmatch [regex]::Escape('entry.reference_type === "expense"')) {
+    Write-Host "X the expense-row branch is gone - expense entries would be silently skipped" -ForegroundColor Red; exit 1
 }
-Write-Host "+ bank branch sums net + inflow + outflow, symmetric with the cash branch" -ForegroundColor Green
+Write-Host "+ (896) input-VAT report reads bill AND expense journals, with expense rows rendered" -ForegroundColor Green
+
+# -- 1b. (896) the alignment migration matches what M5 proved --------------
+$m6 = Get-Content -LiteralPath $mig896 -Raw
+if ($m6 -notmatch [regex]::Escape("post_expense_atomic") -or $m6 -notmatch "vat_input") {
+    Write-Host "X the alignment migration lost its function or the VAT-account lookup" -ForegroundColor Red; exit 1
+}
+Write-Host "+ (896) alignment migration pins the production post_expense_atomic on both databases" -ForegroundColor Green
+
+# -- 1c. (897) the migration distinguishes goods-moved from standalone -----
+$m = Get-Content -LiteralPath $mig -Raw
+if ($m -notmatch "v_goods_moved" -or $m -notmatch "bill_return" -or $m -notmatch "source_purchase_return_id") {
+    Write-Host "X the goods-moved distinction is gone - standalone credits would hit inventory again" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch "purchase_discounts" -or $m -notmatch "VENDOR_CREDIT_NO_DISCOUNT_ACCOUNT") {
+    Write-Host "X the standalone branch lost its discount-account routing or its loud refusal" -ForegroundColor Red; exit 1
+}
+if ($m -match "INSERT INTO journal_entries" -or $m -match "INSERT INTO public.journal_entries") {
+    Write-Host "X the migration re-introduced a DIRECT journal_entries insert - the atomic route is the law" -ForegroundColor Red; exit 1
+}
+Write-Host "+ (897) migration: goods moved => inventory, standalone => purchase discount, loud refusals, atomic route" -ForegroundColor Green
 
 # -- 2. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.895.ps1" -Raw
+$self = Get-Content -LiteralPath "push_v3.74.897.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -57,10 +84,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.894.ps1" 2>$null
+git add -u -- "push_v3.74.896.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.894.ps1")
+$expected = @($files) + @("push_v3.74.896.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -241,7 +268,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.894.ps1" 2>$null
+git add -u -- "push_v3.74.896.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -260,36 +287,43 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_895.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_897.txt"
     $msgLines = @(
-        'fix(dashboard): v3.74.895 - bank inflow on the daily-income card was ALWAYS zero; plus the live-route perf triage',
+        'fix(accounting): v3.74.897 - a standalone vendor credit is a price adjustment, not a goods movement',
         '',
-        'Caught while triaging the structural performance batch by LIVE',
-        'traffic (Vercel production logs, 7 days) as the handover',
-        'prescribed - hottest routes first, not the static list first.',
+        'LIVE INCIDENT, caught mid-push: while the owner was testing from',
+        'the UI, a standalone vendor credit CR-59190 (20.00) from the',
+        'vendor-credits screen posted Dr AP / Cr INVENTORY 20.00 - with no',
+        'goods movement and no FIFO consumption (the screen path,',
+        'create_vendor_credit_with_items, never touches stock). GL and',
+        'FIFO divorced by exactly the credit amount, and the ledger-',
+        'integrity guard STOPPED the 896 push the same minute:',
+        'ledger 53677.77 vs FIFO 53697.769. (The owner other test bill,',
+        'JE-000070, was perfectly paired: inventory 40 = FIFO lot 40.)',
         '',
-        'THE BUG: since the in/out split was introduced (v3.74.549), the',
-        'grouping loop in lib/dashboard-daily-income.ts was asymmetric:',
-        'the cash branch sums all three (net/in/out), the bank branch',
-        'summed only net and out - byBranchBankIn was declared and never',
-        'filled. The card renders bankIn directly and folds it into',
-        'totalIn, so bank inflow showed ZERO every single day and total',
-        'inflow was missing every bank deposit. Net and outflow were',
-        'correct, which is why it stayed quiet since 549. One missing',
-        'line, now symmetric with the cash branch. tsc clean.',
+        'ROOT: the return branch of auto_journal_for_vendor_credit assumes',
+        'goods came back - true only for credits born from a return flow',
+        '(those arrive with journal_entry_id already set and skip the',
+        'trigger, or carry source_purchase_return_id / bill_return).',
         '',
-        'THE TRIAGE (the methodological finding worth recording): the',
-        'static performance flags on the actually-hot routes are nearly',
-        'all false positives -',
-        '  - /api/sidebar/approval-badges (hottest, every page load):',
-        '    already one batched RPC;',
-        '  - /api/ai/alerts: one RPC, output capped at 20;',
-        '  - /api/aging-ar-gl (flagged HIGH N+1): already batched with',
-        '    .in() + Promise.all - the flag was an in-memory .find loop;',
-        '  - lib/dashboard-daily-income.ts (flagged N+1): no DB call in',
-        '    any loop - but the careful read caught the real bankIn bug.',
-        'The remaining flagged routes are cold by live measurement:',
-        'picked up file-by-file as they are touched, not as a campaign.'
+        'THE FIX (migration 20260730000001, both DBs, checksums = file):',
+        '  - goods moved (linked return / bill_return): Cr Inventory,',
+        '    original behavior preserved verbatim;',
+        '  - standalone credit: Cr 5130 purchase discounts earned',
+        '    (sub_type purchase_discounts, then purchase_returns, then',
+        '    by name - else a loud VENDOR_CREDIT_NO_DISCOUNT_ACCOUNT).',
+        'Proven in a cancelled transaction: standalone 20.00 =>',
+        'Dr_AP=20/Cr_DISC=20/Cr_INV=0 with GL inventory delta 0.00;',
+        'bill_return 7.00 => Cr_INV=7 - old behavior intact.',
+        '',
+        'DATA REPAIR (the proper tool, documented): reclassification',
+        'entry JE-000071 via create_journal_entry_atomic (Dr inventory',
+        '1140 20.00 / Cr 5130 20.00) - never editing a posted entry.',
+        'After: ledger inventory 53697.77 vs FIFO 53697.769 - the 0.001',
+        'residue is the two-decimal representation limit; trial balance',
+        '0.00. The defence line worked end-to-end in production for the',
+        'first time: defect -> guard blocks the release -> numeric',
+        'diagnosis -> system fix -> data repair.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -298,5 +332,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.895 pushed - triage by what the traffic says, and read carefully: the false positives hid one real zero on the dashboard" -ForegroundColor Green
+    Write-Host "`n+ v3.74.897 pushed - the guard that blocks your own release is the guard that is working" -ForegroundColor Green
 }

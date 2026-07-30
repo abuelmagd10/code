@@ -102,7 +102,12 @@ export async function GET(req: NextRequest) {
       .is("deleted_at", null) // ✅ استثناء القيود المحذوفة (deleted_at)
       .gte("entry_date", from)
       .lte("entry_date", to)
-      .eq("reference_type", "bill") // ✅ فقط قيود الفواتير
+      // v3.74.896 — م٥ من الاختبار الحى: ضريبة مدخلات المصروفات تُقيَّد فى
+      // 1160 منذ 820 (post_expense_atomic)، لكن هذا التقرير كان يقرأ قيود
+      // الفواتير فقط ⇒ حق الخصم يظهر فى الدفاتر ويغيب عن التقرير (أُثبت
+      // بمعاملة ملغاة: قيد مصروف بضريبة 14.00 مرحَّلة إلى 1160 وعدّه
+      // التقرير صفراً). صار يقرأ قيود الفواتير والمصروفات معاً.
+      .in("reference_type", ["bill", "expense"])
       .order("entry_date")
 
     const { data: entries, error: entriesError } = await entriesQuery
@@ -148,8 +153,10 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب سطور VAT: ${vatLinesError.message}`)
     }
 
-    // ✅ جلب بيانات الفواتير المرتبطة
-    const billIds = Array.from(new Set(entries.map((e: any) => e.reference_id).filter(Boolean)))
+    // ✅ جلب بيانات الفواتير المرتبطة (قيود الفواتير فقط — قيود المصروفات لها جلبها أدناه)
+    const billEntries = entries.filter((e: any) => e.reference_type === "bill")
+    const expenseEntries = entries.filter((e: any) => e.reference_type === "expense")
+    const billIds = Array.from(new Set(billEntries.map((e: any) => e.reference_id).filter(Boolean)))
     
     let billsQuery = supabase
       .from("bills")
@@ -173,6 +180,21 @@ export async function GET(req: NextRequest) {
       return serverError(`خطأ في جلب الفواتير: ${billsError.message}`)
     }
 
+    // v3.74.896 — بيانات المصروفات المرتبطة بقيود المصروفات
+    const expenseIds = Array.from(new Set(expenseEntries.map((e: any) => e.reference_id).filter(Boolean)))
+    let expensesById = new Map<string, any>()
+    if (expenseIds.length > 0) {
+      const { data: expRows, error: expErr } = await supabase
+        .from("expenses")
+        .select("id, expense_number, description, expense_date, status, amount, tax_amount")
+        .eq("company_id", companyId)
+        .in("id", expenseIds)
+      if (expErr) {
+        return serverError(`خطأ في جلب المصروفات: ${expErr.message}`)
+      }
+      expensesById = new Map((expRows || []).map((x: any) => [x.id, x]))
+    }
+
     // ✅ إنشاء map للقيود
     const entryMap = new Map(entries.map((e: any) => [e.id, e]))
     const billMap = new Map((bills || []).map((bill: any) => [bill.id, bill]))
@@ -189,6 +211,30 @@ export async function GET(req: NextRequest) {
     const billRows: any[] = []
 
     for (const entry of entries) {
+      // v3.74.896 — صف مصروف: بالسند ووصفه، والحالة دائماً paid (لا يصل
+      // المصروف إلى قيدٍ مرحَّل إلا مدفوعاً — post_expense_atomic). تُعرض
+      // فقط المصروفات التى حملت ضريبةً فعلاً حتى لا يمتلئ التقرير بصفوف صفرية.
+      if (entry.reference_type === "expense") {
+        const exp = expensesById.get(entry.reference_id)
+        if (!exp) continue
+        if (status !== "all" && status !== "paid") continue
+        const expVat = vatByEntry.get(entry.id) || 0
+        if (expVat <= 0) continue
+        const expGross = Number(exp.amount || 0)
+        billRows.push({
+          id: exp.id,
+          bill_number: exp.expense_number || "",
+          supplier_id: "",
+          supplier_name: `مصروف — ${exp.description || ""}`,
+          bill_date: exp.expense_date || entry.entry_date || "",
+          status: "paid",
+          subtotal: Number((expGross - Number(exp.tax_amount || 0)).toFixed(2)),
+          tax_amount: expVat,
+          total_amount: expGross
+        })
+        continue
+      }
+
       const billId = entry.reference_id
       const bill = billMap.get(billId)
 
