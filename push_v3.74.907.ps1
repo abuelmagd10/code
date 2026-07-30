@@ -6,95 +6,83 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.906 - the OLD script is removed, never this one. Five times a chained
+# v3.74.907 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.905.ps1") { Remove-Item -LiteralPath "push_v3.74.905.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.906.ps1") { Remove-Item -LiteralPath "push_v3.74.906.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.906"') {
-    Write-Host "+ 3.74.906" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.907"') {
+    Write-Host "+ 3.74.907" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.906]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.906]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.907]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.907]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260730000005_v3_74_906_purchase_cost_visibility_rule.sql"
-$snapshot  = "supabase/schema/schema.sql"
+$migration = "supabase/migrations/20260730000006_v3_74_907_vendor_credit_residual_and_ap_check.sql"
 
+# لا لقطة فى قائمة هذا الإصدار: لم يتغير جدولٌ ولا عمود - دالّتان وقيدُ
+# تصحيح. وإدراج ملفٍ لم يتغير يجعل الحارس يمرّ على فراغ.
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, $snapshot, "push_v3.74.906.ps1")
+           $migration, "push_v3.74.907.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the rule, the read path and the owner-only switch all exist --------
+# -- 1. both halves of this release are in the file ------------------------
 $m = Get-Content -LiteralPath $migration -Raw
-foreach ($fn in @("can_view_purchase_cost", "product_costs", "set_purchase_cost_visibility")) {
+foreach ($fn in @("vendor_credit_post_journal", "ic_ap_balance")) {
     if ($m -notmatch [regex]::Escape($fn)) {
         Write-Host "X the migration lost $fn" -ForegroundColor Red; exit 1
     }
 }
-# the three modes the owner decided on, by name
-foreach ($mode in @("'open'", "'restricted'", "'strict'")) {
-    if ($m -notmatch [regex]::Escape($mode)) {
-        Write-Host "X visibility mode $mode is gone from the rule" -ForegroundColor Red; exit 1
-    }
+Write-Host "+ the migration carries the posting rule and the checker" -ForegroundColor Green
+
+# -- 2. the entry equals the document, and the old formula is gone ---------
+# The defect was literal: AP was debited with subtotal + tax_amount, so a
+# credit carrying shipping posted 21.22 against a 26.22 document. Balanced
+# in itself, unequal to its own paper - which is why the balance guard let
+# it through. If that formula ever returns as the AP debit, this refuses.
+if ($m -match [regex]::Escape("'debit_amount',  p_vc.subtotal + COALESCE(p_vc.tax_amount, 0)")) {
+    Write-Host "X the AP debit went back to subtotal+tax - shipping would vanish again" -ForegroundColor Red; exit 1
 }
-# and the parts of the rule that carry the decision itself
-foreach ($needle in @("'owner', 'general_manager'", "'accountant', 'purchasing_officer'", "p_created_by = v_actor", "OWNER_ONLY")) {
+foreach ($needle in @("VENDOR_CREDIT_JE_NOT_DOCUMENT",
+                      "VENDOR_CREDIT_GOODS_RESIDUAL_UNPROVEN",
+                      "v_residual := ROUND(COALESCE(p_vc.total_amount, 0)")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the rule no longer reads as the owner decided it" -ForegroundColor Red; exit 1
+        Write-Host "X the document-equals-entry rule is not in the migration" -ForegroundColor Red; exit 1
     }
 }
-# product cost is measured by role alone - no creator exception (owner decision)
-if ($m -notmatch [regex]::Escape("can_view_purchase_cost(p.company_id, NULL)")) {
-    Write-Host "X product cost stopped being role-only - a creator exception crept back in" -ForegroundColor Red; exit 1
-}
-# nothing reaches these functions anonymously
-foreach ($needle in @("public.can_view_purchase_cost(uuid, uuid) FROM anon",
-                      "public.product_costs(uuid[]) FROM anon",
-                      "public.set_purchase_cost_visibility(uuid, text) FROM anon")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X a cost function is left reachable by anonymous callers" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ the cost rule is defined once, carries the owner decision, and is closed to anon" -ForegroundColor Green
+Write-Host "+ the entry must equal the document, and the old formula cannot return" -ForegroundColor Green
 
-# -- 2. the snapshot knows the new column (the battery compares them) ------
-$sn = Get-Content -LiteralPath $snapshot -Raw
-if ($sn -notmatch [regex]::Escape("purchase_cost_visibility text DEFAULT 'restricted'::text NOT NULL")) {
-    Write-Host "X the schema snapshot does not carry the new companies column" -ForegroundColor Red; exit 1
+# -- 3. the checker subtracts unapplied credits ---------------------------
+# An approved credit that is not yet applied leaves a LEGITIMATE debit in
+# AP. Without this term the checker screams at an innocent book - and a
+# guard that cries wolf teaches people to ignore it.
+if ($m -notmatch [regex]::Escape("v_bill_net - v_credit_unapplied")) {
+    Write-Host "X ic_ap_balance stopped subtracting unapplied vendor credits" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the schema snapshot carries the visibility column" -ForegroundColor Green
+Write-Host "+ the AP checker knows an unapplied credit is not a discrepancy" -ForegroundColor Green
 
-# -- 2b. the old CHECK is dropped BEFORE the values are corrected ---------
-# Applying it the other way round is not theory: the first apply died with
-# 23514 because the old constraint refused the new value as it was written.
-$iDrop = $m.IndexOf("DROP CONSTRAINT IF EXISTS companies_purchase_cost_visibility_check")
-$iUpd  = $m.IndexOf("SET purchase_cost_visibility = 'restricted'")
-if ($iDrop -lt 0 -or $iUpd -lt 0 -or $iDrop -gt $iUpd) {
-    Write-Host "X the old CHECK must be dropped before the values are corrected (23514)" -ForegroundColor Red; exit 1
+# -- 3b. the repair posts once, and never twice ---------------------------
+# It is a data correction inside a migration: re-running the migration must
+# not double the ledger. It skips any credit that already carries one.
+$iRef  = $m.IndexOf("vendor_credit_residual_correction")
+$iSkip = $m.IndexOf("CONTINUE WHEN EXISTS")
+if ($iRef -lt 0 -or $iSkip -lt 0) {
+    Write-Host "X the residual correction is missing or is not idempotent" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the migration drops the old check before rewriting the values" -ForegroundColor Green
-
-# -- 3. this release claims no hiding it did not do -----------------------
-# 906 states the rule; the REVOKE lands later, AFTER the 11 select(*) sites
-# on products are cleared. A REVOKE here would break live screens.
-if ($m -match [regex]::Escape("REVOKE SELECT (cost_price")) {
-    Write-Host "X 906 must not revoke the column - 11 select(*) sites still read it" -ForegroundColor Red; exit 1
-}
-Write-Host "+ 906 states the rule without pretending to enforce it yet" -ForegroundColor Green
+Write-Host "+ the correction is posted by a named entry, once and only once" -ForegroundColor Green
 
 # -- 4. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.906.ps1" -Raw
+$self = Get-Content -LiteralPath "push_v3.74.907.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -105,10 +93,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.905.ps1" 2>$null
+git add -u -- "push_v3.74.906.ps1" 2>$null
 
 # -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.905.ps1")
+$expected = @($files) + @("push_v3.74.906.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -289,7 +277,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.905.ps1" 2>$null
+git add -u -- "push_v3.74.906.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -308,76 +296,55 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_906.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_907.txt"
     $msgLines = @(
-        'feat(security): v3.74.906 - the purchase-cost visibility rule, written once before it is enforced anywhere',
+        'fix(accounting): v3.74.907 - a vendor credit posts what its own document says, and the AP checker stops accusing the innocent',
         '',
-        'A real customer asked to hide purchase prices from his users and',
-        'was advised to buy on the main branch and transfer the stock to',
-        'the selling branch. Measured against production, that advice',
-        'hides nothing: impersonating a plain staff member of one branch',
-        'read the cost of 12 products (max 200.00), 6 purchase bills, 11',
-        'bill lines (max unit price 50.00) and 39 inventory movements.',
-        'The reason is structural - products_select is',
-        'is_company_member(company_id) with no branch or role condition,',
-        'and the cost lives on the PRODUCT, not on the document, so moving',
-        'stock between branches never touches it. Worse, the branch',
-        'isolation policies on bills and inventory_transactions are',
-        'written but neutralised: multiple PERMISSIVE policies are OR-ed,',
-        'and the any-member policy beside them wins.',
+        'The integrity screen reported AP debit by 1.22 with no bill',
+        'outstanding. That number was two errors partly cancelling, which',
+        'is the worst kind of number.',
         '',
-        'OWNER DECISION, and then its correction. First: only the creator',
-        'sees a purchase price, owner and general manager excepted. Then,',
-        'once it was put to him that an accountant closes no books, checks',
-        'no inventory valuation and reconciles no COGS without cost - and',
-        'usually did not create the purchase bills - the rule became',
-        'per-company, its default audience grew to include the accountant',
-        'and the purchasing officer (who negotiates, as settled in 905),',
-        'and product cost lost the creator exception (the person who',
-        'created a product may be a salesperson, and its cost changes with',
-        'purchases that are none of their doing).',
+        'The real defect: vendor_credit_post_journal built the AP debit as',
+        'subtotal + tax_amount and nothing else, so SHIPPING and ADJUSTMENT',
+        'were silently dropped. Credit CR-51543 totals 26.22 (18.00 items',
+        '+ 5.00 shipping + 3.22 tax) and posted 21.22. The entry balanced',
+        'in itself - which is exactly why the balance guard passed it - but',
+        'it did not equal its own document. Header maths was verified',
+        'correct: the 10% discount is in the subtotal and the tax is on',
+        'items plus shipping. Only the entry was wrong.',
         '',
-        'companies.purchase_cost_visibility, checked and defaulted:',
-        '  open       - every company member (old behaviour)',
-        '  restricted - owner + GM + accountant + purchasing officer + the',
-        '               document creator  [DEFAULT]',
-        '  strict     - owner + GM + the document creator',
-        'Product cost, FIFO layers and valuation are measured by role',
-        'alone, since none of them has a creator at all - products carries',
-        'no creator column, which was measured, not assumed.',
+        'The second half: ic_ap_balance compared AP to outstanding bills',
+        'while ignoring UNAPPLIED vendor credits. An approved credit not',
+        'yet applied leaves a legitimate debit in AP, so a perfectly posted',
+        'book would have been accused of 6.22. 1.22 = 6.22 legitimate minus',
+        '5.00 missing.',
         '',
-        'The rule is defined exactly once - can_view_purchase_cost',
-        '(company_id, created_by) - so it cannot drift into ten',
-        'contradicting copies; product_costs(ids) is the authorised read',
-        'path that will replace reading the column; and',
-        'set_purchase_cost_visibility is OWNER-ONLY, because whoever sees',
-        'the cost does not get to decide who sees it, and a setting nobody',
-        'can change is a dead setting.',
+        'OWNER DECISION. Shipping and adjustment on a credit with NO goods',
+        'movement go to purchase discounts (5130), on its own named line -',
+        'no goods moved, so inventory and FIFO are not touched, which is',
+        'the 897 lesson already written in that function. A credit WITH',
+        'goods movement that carries shipping is now REFUSED by name until',
+        'its FIFO effect is proven: bills capitalise shipping into',
+        'inventory and the return layers already carry it, so reversing it',
+        'here could reverse it twice. No document of that shape exists.',
         '',
-        'Proven by cancelled transactions on test, byte-identical on',
-        'production (b5dc5f77a1 / 691dc8892c / 755177731b): under the',
-        'default the purchasing officer and the accountant each see 8',
-        'product costs, while the store manager and a sales staff member',
-        'see 0 and keep only their own document; under strict both drop to',
-        '0 and keep their own; under open the staff member sees 8. The',
-        'switch refuses the accountant with OWNER_ONLY, refuses a stale',
-        'mode name with BAD_MODE, and the owner write actually lands.',
-        'Anonymous is false in every mode.',
+        'Proven on test by cancelled transactions, byte-identical on both',
+        'databases (d7407096ac / aac6a9d11a): a standalone credit of 26.22',
+        'with 5.00 shipping now debits AP by exactly 26.22 and carries a',
+        'named 5.00 shipping line; the checker stays SILENT while that',
+        'credit is unapplied; the old 21.22 shape reproduces the alarm with',
+        'difference -5.00 - the number now points straight at the missing',
+        'shipping; the correction entry silences it; a goods-moved credit',
+        'with shipping is refused by name; and one without shipping still',
+        'posts 20.52 against a 20.52 document with 18.00 credited to',
+        'inventory.',
         '',
-        'One defect caught by the first apply and now guarded in the push',
-        'script: the migration corrected the values before dropping the old',
-        'CHECK, so the old constraint refused the new value as it was being',
-        'written (23514). The constraint is dropped first.',
-        '',
-        'What this release deliberately does NOT do: hide anything. The',
-        'REVOKE on the cost columns lands only after the 11 measured',
-        'select(*) sites on products are converted to named columns (5 of',
-        'them are manufacturing API routes running on the user session,',
-        'not service_role, so they would break). Shipping a hide that is',
-        'not a hide would be the same theatre this project just removed',
-        'from the purchase-order footer. Operational note: once the hide',
-        'does land, the default restricts existing companies too - anyone',
-        'wanting the old behaviour sets their company to open.'
+        'The ledger was repaired, not adjusted: JE-000073 (DR 2110 5.00 /',
+        'CR 5130 5.00) completes CR-51543 as a dated, attributed entry. The',
+        'migration finds any credit whose posted entry differs from its own',
+        'total, and skips any that already carries a correction, so',
+        're-running it cannot double a book. All five production companies',
+        'now report zero AP discrepancies.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -386,5 +353,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.906 pushed - the rule is written once; the enforcement comes next, and it will be real" -ForegroundColor Green
+    Write-Host "`n+ v3.74.907 pushed - the entry equals its document, and the checker no longer accuses the innocent" -ForegroundColor Green
 }
