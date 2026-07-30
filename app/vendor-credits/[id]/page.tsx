@@ -247,6 +247,16 @@ export default function VendorCreditViewPage() {
                     ? 'View credit note details and apply it to outstanding supplier bills'
                     : 'عرض تفاصيل الإشعار الدائن وتطبيقه على فواتير المورد المستحقة'}
                 </p>
+                {credit.status === 'pending_approval' && (
+                  <p className="text-xs font-medium text-yellow-600 dark:text-yellow-400 mt-1">
+                    {appLang === 'en' ? '⏳ Awaiting approval (865 matrix) — approve from the Approvals inbox' : '⏳ بانتظار الاعتماد (مصفوفة 865) — يُعتمد من صندوق الموافقات'}
+                  </p>
+                )}
+                {credit.status === 'rejected' && (
+                  <p className="text-xs font-medium text-red-600 dark:text-red-400 mt-1">
+                    {appLang === 'en' ? '⛔ Rejected — see the reason in the notes' : '⛔ مرفوض — السبب فى الملاحظات'}
+                  </p>
+                )}
                 {credit.status === 'open' && (
                   <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">
                     {appLang === 'en' ? '✅ Credit available for use' : '✅ الإشعار متاح للاستخدام'}
@@ -384,7 +394,11 @@ export default function VendorCreditViewPage() {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button onClick={openApplyDialog}>{appLang === 'en' ? 'Apply to Supplier Bill' : 'تطبيق على فاتورة مورد'}</Button>
+              {/* v3.74.900 — لا زر تطبيقٍ لإشعارٍ غير مرحَّل: القاعدة ترفضه
+                  أصلاً (VENDOR_CREDIT_NOT_POSTED) — والواجهة تصدُق فقط. */}
+              {credit.status !== 'pending_approval' && credit.status !== 'rejected' && remaining > 0 && (
+                <Button onClick={openApplyDialog}>{appLang === 'en' ? 'Apply to Supplier Bill' : 'تطبيق على فاتورة مورد'}</Button>
+              )}
             </div>
           </CardContent>
         </Card>

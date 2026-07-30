@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   CheckCircle2, XCircle, Clock, Layers, GitMerge,
   RefreshCw, AlertCircle, ChevronDown, ChevronUp, Factory, Package,
-  Percent, Wallet, BookOpen,
+  Percent, Wallet, BookOpen, Receipt,
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
@@ -189,6 +189,22 @@ interface PendingJournalEntry {
   creator_role: string | null
   requested_at: string
   type: "journal_entry"
+}
+
+// v3.74.900 — vendor credits pending the 865 matrix approval. Mirrors
+// PendingJournalEntry: creator_role resolved so the card offers only the
+// action the server (approve_vendor_credit) will actually accept.
+interface PendingVendorCredit {
+  id: string
+  credit_number: string | null
+  supplier_name: string | null
+  total_amount: number
+  notes: string | null
+  branch_name: string | null
+  created_by: string | null
+  creator_role: string | null
+  requested_at: string
+  type: "vendor_credit"
 }
 
 // v3.74.488 — manufacturing product receive pending approval.
@@ -860,7 +876,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
 // covers every approval flow (discounts + BOM versions + material
 // issues so far). Each loader normalizes its source rows into this
 // shape so the renderer + filter is one piece of code, not five.
-type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "booking_custody_return" | "misc" | "journal_entry"
+type HistoryCategory = "discount" | "bom_version" | "material_issue" | "routing_version" | "production_order" | "product_receive" | "supplier_payment" | "purchase_return" | "sales_return_request" | "customer_refund" | "vendor_payment_correction" | "dispatch" | "goods_receipt" | "write_off" | "inventory_transfer" | "booking_stock_withdrawal" | "booking_custody_return" | "misc" | "journal_entry" | "vendor_credit"
 
 interface UnifiedHistoryEntry {
   id: string
@@ -1123,7 +1139,7 @@ function ApprovalsContent() {
   // v3.74.486 — Role-scoped tab visibility. Each role only sees the
   // tabs relevant to the workflows they participate in. Owner / admin /
   // general_manager see everything.
-  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"bcr"|"misc"|"je"
+  type TabKey = "bom"|"routing"|"po"|"mi"|"pr"|"disc"|"pay"|"pret"|"sret"|"cref"|"vcor"|"disp"|"recv"|"wo"|"tr"|"bwd"|"bcr"|"misc"|"je"|"vc"
   const roleTabs: Record<string, ReadonlyArray<TabKey>> = {
     // Warehouse: dispatch, receipt, write-offs, transfers, sales-return
     // warehouse stage, AND pending mfg product receive (v3.74.488).
@@ -1132,7 +1148,7 @@ function ApprovalsContent() {
     store_manager:      ["recv","disp","bwd","bcr","wo","tr","sret","pr","pret"],
     warehouse_manager:  ["recv","disp","bwd","bcr","wo","tr","sret","pr","pret"],
     // Accountant: payments, purchase returns, discounts, sales returns, refunds, corrections, misc
-    accountant:         ["pay","pret","disc","sret","cref","vcor","misc","je"],
+    accountant:         ["pay","pret","disc","sret","cref","vcor","misc","je","vc"],
     // Purchasing officer: purchase returns, discounts (PO-related), misc (purchase requests)
     purchasing_officer: ["pret","disc","misc"],
     // Manufacturing officer: BOM/routing/production/material issue/product receive
@@ -1149,7 +1165,7 @@ function ApprovalsContent() {
   const isOwnerOrGm = !!myRole && ["owner","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
-      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je"] as const)
+      ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","vc"] as const)
       : (roleTabs[myRole] ?? [])
   const canShow = (t: TabKey) => visibleTabs.includes(t)
   // v3.74.487 — Mirror the tab visibility onto the history filter row.
@@ -1175,6 +1191,7 @@ function ApprovalsContent() {
     booking_custody_return: "bcr",
     misc: "misc",
     journal_entry: "je",              // v3.74.866
+    vendor_credit: "vc",              // v3.74.900
   }
   const canShowHistory = (c: HistoryCategory) => {
     const tabKey = historyCategoryToTab[c]
@@ -1195,8 +1212,9 @@ function ApprovalsContent() {
   const [bookingCustodyReturns, setBookingCustodyReturns] = useState<PendingCustodyReturn[]>([])
   // v3.74.866 — draft manual journal entries awaiting approval (je tab).
   const [journalEntries, setJournalEntries] = useState<PendingJournalEntry[]>([])
+  const [vendorCredits, setVendorCredits] = useState<PendingVendorCredit[]>([])
   // v3.74.434 → v3.74.435 — unified history feed for all approval flows.
-  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "bcr" | "misc" | "je" | "history">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "bom" | "routing" | "po" | "mi" | "pr" | "disc" | "pay" | "pret" | "sret" | "cref" | "vcor" | "disp" | "recv" | "wo" | "tr" | "bwd" | "bcr" | "misc" | "je" | "vc" | "history">("all")
   // v3.74.484 — honor ?tab=... from notification routing so warehouse
   // manager clicking a dispatch/receipt notification lands on the
   // matching tab.
@@ -1204,7 +1222,7 @@ function ApprovalsContent() {
     if (typeof window === "undefined") return
     const params = new URLSearchParams(window.location.search)
     const initialTab = params.get("tab")
-    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","history"] as const
+    const valid = ["all","bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","vc","history"] as const
     if (initialTab && (valid as readonly string[]).includes(initialTab)) {
       setActiveTab(initialTab as any)
     }
@@ -2184,6 +2202,51 @@ function ApprovalsContent() {
           type: "journal_entry" as const,
         })))
       } catch { setJournalEntries([]) }
+
+      // v3.74.900 — vendor credits pending the 865 matrix approval.
+      // Mirrors the manual-journal block above: resolve each creator's
+      // role so the card offers only the action approve_vendor_credit
+      // will actually accept (a GM's credit needs the owner).
+      try {
+        const { data: vcs } = await supabase
+          .from("vendor_credits")
+          .select(`
+            id, credit_number, total_amount, notes, credit_date, created_at,
+            branch_id, created_by_user_id, branches(name), suppliers(name)
+          `)
+          .eq("company_id", cid)
+          .eq("status", "pending_approval")
+          .order("created_at", { ascending: true })
+          .limit(100)
+
+        const vcCreatorIds = Array.from(
+          new Set((vcs || []).map((v: any) => v.created_by_user_id).filter(Boolean).map(String))
+        )
+        const vcRoleById = new Map<string, string>()
+        if (vcCreatorIds.length > 0) {
+          const { data: mem } = await supabase
+            .from("company_members")
+            .select("user_id, role")
+            .eq("company_id", cid)
+            .in("user_id", vcCreatorIds)
+          for (const m of (mem || []) as any[]) {
+            vcRoleById.set(String(m.user_id), String(m.role || "").toLowerCase())
+          }
+        }
+
+        setVendorCredits((vcs || []).map((v: any) => ({
+          id: v.id,
+          credit_number: v.credit_number ?? null,
+          supplier_name: v.suppliers?.name ?? null,
+          total_amount: Number(v.total_amount || 0),
+          notes: v.notes ?? null,
+          branch_name: v.branches?.name ?? null,
+          created_by: v.created_by_user_id ?? null,
+          creator_role: v.created_by_user_id ? (vcRoleById.get(String(v.created_by_user_id)) ?? null) : null,
+          requested_at: v.created_at,
+          type: "vendor_credit" as const,
+        })))
+      } catch { setVendorCredits([]) }
 
       // v3.74.479 — inventory write-offs (approve requires account
       // selection → link to details page).
@@ -3182,6 +3245,53 @@ function ApprovalsContent() {
         }
       } catch { /* keep going */ }
 
+      // ── v3.74.900 — vendor credit decision record ──────────────────────
+      // The decision itself is the source: approve_vendor_credit /
+      // reject_vendor_credit write a notification whose created_by is the
+      // DECIDER, assigned_to_user is the creator, created_at the decision
+      // time - exactly what a record needs, with no third status stamped
+      // onto the credit for approvals (an approved credit simply becomes
+      // 'open' with its journal).
+      try {
+        const { data: vcDecisions } = await supabase
+          .from("notifications")
+          .select("id, reference_type, reference_id, created_by, assigned_to_user, message, branch_id, created_at")
+          .eq("company_id", cid)
+          .in("reference_type", ["vendor_credit_approved", "vendor_credit_rejected"])
+          .order("created_at", { ascending: false })
+          .limit(50)
+        const vcIds = Array.from(new Set((vcDecisions || []).map((n: any) => n.reference_id).filter(Boolean)))
+        const vcById = new Map<string, any>()
+        if (vcIds.length > 0) {
+          const { data: vcRows } = await supabase
+            .from("vendor_credits")
+            .select("id, credit_number, total_amount")
+            .in("id", vcIds)
+          for (const v of (vcRows || []) as any[]) vcById.set(String(v.id), v)
+        }
+        for (const n of (vcDecisions || []) as any[]) {
+          const vc = vcById.get(String(n.reference_id))
+          merged.push({
+            id: `vc-${n.id}`,
+            category: "vendor_credit",
+            branch_id: n.branch_id ?? null,
+            warehouse_id: null,
+            doc_label: `إشعار دائن · ${vc?.credit_number ?? String(n.reference_id || "").slice(0, 8)}`,
+            doc_href: `/vendor-credits/${n.reference_id}`,
+            party_label: null,
+            value_label: vc ? `${Number(vc.total_amount || 0).toFixed(2)}` : null,
+            status: (n.reference_type === "vendor_credit_approved" ? "approved" : "rejected") as any,
+            requested_by_email: null,
+            requested_by_id: n.assigned_to_user ?? null,
+            requested_at: n.created_at,
+            decided_by_email: null,
+            decided_by_id: n.created_by ?? null,
+            decided_at: n.created_at,
+            decision_note: n.reference_type === "vendor_credit_rejected" ? (n.message ?? null) : null,
+          })
+        }
+      } catch { /* keep going */ }
+
       try {
         const { data: wos } = await supabase
           .from("inventory_write_offs")
@@ -3542,7 +3652,7 @@ function ApprovalsContent() {
     }
   }
 
-  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length + bookingCustodyReturns.length + journalEntries.length
+  const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length + bookingCustodyReturns.length + journalEntries.length + vendorCredits.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
   const fmtMoney = (n: number) => {
     try {
@@ -4033,6 +4143,11 @@ function ApprovalsContent() {
                 <BookOpen className="w-3.5 h-3.5" />{t("القيود اليدوية", "Manual Journals")} ({journalEntries.length})
               </Button>
             )}
+            {canShow("vc") && (
+              <Button size="sm" variant={activeTab === "vc" ? "default" : "outline"} onClick={() => setActiveTab("vc")} className="gap-1">
+                <Receipt className="w-3.5 h-3.5" />{t("الإشعارات الدائنة", "Vendor Credits")} ({vendorCredits.length})
+              </Button>
+            )}
             {/* v3.74.434 → v3.74.435 — unified history tab */}
             <Button size="sm" variant={activeTab === "history" ? "default" : "outline"} onClick={() => setActiveTab("history")} className="gap-1">
               {/* v3.74.696 — count the SCOPED feed (role + branch/warehouse),
@@ -4183,6 +4298,11 @@ function ApprovalsContent() {
                 {canShowHistory("journal_entry") && (
                   <Button size="sm" variant={historyFilter === "journal_entry" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("journal_entry")}>
                     <BookOpen className="w-3 h-3" />{t("القيود اليدوية", "Manual Journals")} ({historyScoped.filter(h => h.category === "journal_entry").length})
+                  </Button>
+                )}
+                {canShowHistory("vendor_credit") && (
+                  <Button size="sm" variant={historyFilter === "vendor_credit" ? "default" : "outline"} className="text-xs h-7 gap-1" onClick={() => setHistoryFilter("vendor_credit")}>
+                    <Receipt className="w-3 h-3" />{t("الإشعارات الدائنة", "Vendor Credits")} ({historyScoped.filter(h => h.category === "vendor_credit").length})
                   </Button>
                 )}
                 {canShowHistory("write_off") && (
@@ -4758,6 +4878,145 @@ function ApprovalsContent() {
                                   }}
                                 >
                                   {t("تأكيد الردّ", "Confirm return")}
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
+                                  {t("إلغاء", "Cancel")}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* v3.74.900 — vendor credits pending the 865 matrix (approval only
+                  from this unified inbox, by the owner's decision). */}
+              {(activeTab === "all" || activeTab === "vc") && vendorCredits.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                    <Receipt className="w-4 h-4" />{t("اعتمادات الإشعارات الدائنة", "Vendor Credit Approvals")}
+                  </h2>
+                  {vendorCredits.map(v => {
+                    // Mirror approve_vendor_credit exactly:
+                    //   creator = general_manager -> owner only
+                    //   creator = accountant      -> owner or general_manager
+                    // plus absolute separation of duties.
+                    const vcCreatorRole = String(v.creator_role || "")
+                    const vcRankOk = vcCreatorRole === "accountant" ? isOwnerOrGm : myRole === "owner"
+                    const vcNotMine = !!myUserId && String(v.created_by || "") !== String(myUserId)
+                    const canDecideVc = vcRankOk && vcNotMine
+                    return (
+                      <Card key={v.id} className="border-l-4 border-l-teal-500">
+                        <CardContent className="py-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className="p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg shrink-0">
+                                <Receipt className="w-4 h-4 text-teal-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm">
+                                  {t("إشعار دائن", "Vendor Credit")} · {v.credit_number ?? v.id.slice(0, 6)}
+                                </p>
+                                <p className="text-xs mt-1">
+                                  <span className="font-semibold text-teal-700 dark:text-teal-300">
+                                    {t("القيمة", "Amount")}: {fmtMoney(v.total_amount)}
+                                  </span>
+                                </p>
+                                {v.supplier_name && <p className="text-xs text-muted-foreground mt-1">🏭 {v.supplier_name}</p>}
+                                {v.branch_name && <p className="text-xs text-muted-foreground mt-1">🏢 {v.branch_name}</p>}
+                                {v.notes && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">📝 {v.notes}</p>}
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  📅 {t("قُدِّم", "Submitted")} {fmtDate(v.requested_at)}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground mt-1 italic">
+                                  ℹ️ {t("عند الاعتماد: يُرحَّل قيد الإشعار فوراً (مدين موردين / دائن خصم مشتريات للمستقل) ويصير قابلاً للتطبيق على الفواتير. وعند الرفض: يبقى بلا أى أثر دفترى مع السبب",
+                                        "On approval the credit's journal posts immediately and it becomes applicable to bills. On rejection it keeps no ledger trace, with the reason")}
+                                </p>
+                                {!canDecideVc && (
+                                  <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                                    {!vcNotMine
+                                      ? t("لا يجوز اعتماد إشعارٍ أنشأته بنفسك", "You cannot approve a credit you created")
+                                      : t("إشعار المدير العام يعتمده المالك", "A general manager's credit is approved by the owner")}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 text-xs">
+                                <Clock className="w-3 h-3 me-1" />{t("انتظار اعتماد", "Pending Approval")}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {canDecideVc && (
+                            <div className="flex gap-2 mt-3 flex-wrap">
+                              <Button
+                                size="sm"
+                                className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                                disabled={runningId === v.id}
+                                onClick={async () => {
+                                  try {
+                                    setRunningId(v.id)
+                                    const { data: r, error } = await supabase.rpc("approve_vendor_credit", { p_credit_id: v.id })
+                                    if (error) throw new Error(error.message)
+                                    if (!r?.success) throw new Error(String(r?.error || t("تعذّر الاعتماد", "Approve failed")))
+                                    toast({ title: t("تم الاعتماد", "Approved"), description: t("رُحِّل قيد الإشعار", "Credit journal posted") })
+                                    await load()
+                                  } catch (err: any) {
+                                    toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(err?.message ?? err) })
+                                  } finally { setRunningId(null) }
+                                }}
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />{t("اعتماد وترحيل", "Approve & Post")}
+                              </Button>
+
+                              {rejectId !== v.id && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1 text-red-600 border-red-300 hover:bg-red-50 text-xs"
+                                  disabled={runningId === v.id}
+                                  onClick={() => { setRejectId(v.id); setRejectType(null); setRejectReason("") }}
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />{t("رفض", "Reject")}
+                                </Button>
+                              )}
+                            </div>
+                          )}
+
+                          {canDecideVc && rejectId === v.id && (
+                            <div className="mt-3 space-y-2">
+                              <Textarea
+                                value={rejectReason}
+                                onChange={(ev) => setRejectReason(ev.target.value)}
+                                placeholder={t("سبب الرفض — يصل للمُنشئ", "Reason - the author sees this")}
+                                className="text-xs"
+                                rows={2}
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="text-xs"
+                                  disabled={rejectReason.trim().length < 3 || runningId === v.id}
+                                  onClick={async () => {
+                                    try {
+                                      setRunningId(v.id)
+                                      const { data: r, error } = await supabase.rpc("reject_vendor_credit", { p_credit_id: v.id, p_reason: rejectReason.trim() })
+                                      if (error) throw new Error(error.message)
+                                      if (!r?.success) throw new Error(String(r?.error || t("تعذّر الرفض", "Reject failed")))
+                                      toast({ title: t("رُفض الإشعار", "Rejected"), description: t("أُخطر المُنشئ بالسبب", "The author was notified") })
+                                      setRejectId(null); setRejectReason("")
+                                      await load()
+                                    } catch (err: any) {
+                                      toast({ variant: "destructive", title: t("خطأ", "Error"), description: String(err?.message ?? err) })
+                                    } finally { setRunningId(null) }
+                                  }}
+                                >
+                                  {t("تأكيد الرفض", "Confirm reject")}
                                 </Button>
                                 <Button size="sm" variant="outline" className="text-xs" onClick={() => { setRejectId(null); setRejectReason("") }}>
                                   {t("إلغاء", "Cancel")}

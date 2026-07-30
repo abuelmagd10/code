@@ -6,57 +6,77 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.899 - the OLD script is removed, never this one. Five times a chained
+# v3.74.900 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.898.ps1") { Remove-Item -LiteralPath "push_v3.74.898.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.899.ps1") { Remove-Item -LiteralPath "push_v3.74.899.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.899"') {
-    Write-Host "+ 3.74.899" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.900"') {
+    Write-Host "+ 3.74.900" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.899]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.899]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.900]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.900]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$fixDetail = "app/vendor-credits/[id]/page.tsx"
-$fixNew = "app/vendor-credits/new/page.tsx"
+$inbox = "app/approvals/page.tsx"
+$vcDetail = "app/vendor-credits/[id]/page.tsx"
+$vcNew = "app/vendor-credits/new/page.tsx"
+$mig = "supabase/migrations/20260730000002_v3_74_900_vendor_credit_approval_matrix.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $fixDetail, $fixNew, "push_v3.74.899.ps1")
+           $inbox, $vcDetail, $vcNew, $mig, "push_v3.74.900.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1a. the details page joins the product name and falls back to it ------
-$c = Get-Content -LiteralPath $fixDetail -Raw
-if ($c -notmatch [regex]::Escape("products(name)")) {
-    Write-Host "X the item query lost the products(name) join - old items would show nameless again" -ForegroundColor Red; exit 1
+# -- 1. the migration carries the 865 matrix, whole ------------------------
+$m = Get-Content -LiteralPath $mig -Raw
+foreach ($needle in @("pending_approval", "approve_vendor_credit", "SELF_APPROVAL",
+                      "VENDOR_CREDIT_BRANCH_SCOPE", "VENDOR_CREDIT_NOT_POSTED",
+                      "vendor_credit_post_journal", "VENDOR_CREDIT_ROLE_FORBIDDEN")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the matrix migration lost: $needle" -ForegroundColor Red; exit 1
+    }
 }
-if ($c -notmatch [regex]::Escape('it.description || (it as any).products?.name')) {
-    Write-Host "X the description cell lost its product-name fallback" -ForegroundColor Red; exit 1
-}
-if ($c -notmatch [regex]::Escape('.in("status", ["draft", "sent", "received", "pending", "overdue", "partially_paid"])')) {
-    Write-Host "X the 898 apply-dialog filter regressed" -ForegroundColor Red; exit 1
-}
-Write-Host "+ details page: product-name join + fallback, and the 898 filter intact" -ForegroundColor Green
+Write-Host "+ migration: matrix + segregation + branch scope + apply-guard + shared posting core" -ForegroundColor Green
 
-# -- 1b. the create screen defaults a blank description to the product name -
-$n = Get-Content -LiteralPath $fixNew -Raw
-if ($n -notmatch [regex]::Escape('it.description || products.find(pp => pp.id === it.product_id)?.name')) {
-    Write-Host "X the create screen would save nameless items again" -ForegroundColor Red; exit 1
+# -- 2. the approvals inbox owns the decision, with its record -------------
+$c = Get-Content -LiteralPath $inbox -Raw
+if ($c -notmatch [regex]::Escape('supabase.rpc("approve_vendor_credit"')) {
+    Write-Host "X the inbox lost its approve action" -ForegroundColor Red; exit 1
 }
-Write-Host "+ create screen: blank description saves as the product name" -ForegroundColor Green
+if ($c -notmatch [regex]::Escape('supabase.rpc("reject_vendor_credit"')) {
+    Write-Host "X the inbox lost its reject action" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch [regex]::Escape('"vendor_credit_approved", "vendor_credit_rejected"')) {
+    Write-Host "X the inbox record lost its vendor-credit decision source" -ForegroundColor Red; exit 1
+}
+if ($c -notmatch [regex]::Escape('activeTab === "vc"')) {
+    Write-Host "X the vendor-credits tab is gone from the inbox" -ForegroundColor Red; exit 1
+}
+Write-Host "+ inbox: vc tab + rpc actions + decision record, mirroring the 865 je section" -ForegroundColor Green
 
-# -- 2. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.899.ps1" -Raw
+# -- 3. the credit screens tell the truth ----------------------------------
+$d = Get-Content -LiteralPath $vcDetail -Raw
+if ($d -notmatch [regex]::Escape('credit.status !== ''pending_approval'' && credit.status !== ''rejected''')) {
+    Write-Host "X the apply button no longer hides for unposted credits" -ForegroundColor Red; exit 1
+}
+$n = Get-Content -LiteralPath $vcNew -Raw
+if ($n -notmatch [regex]::Escape('createdVc?.status === ''pending_approval''')) {
+    Write-Host "X the create screen no longer tells the author the credit is pending" -ForegroundColor Red; exit 1
+}
+Write-Host "+ screens: honest pending toast, status badges, no lying apply button" -ForegroundColor Green
+
+# -- 4. the battery below still proves both standing guards ----------------
+$self = Get-Content -LiteralPath "push_v3.74.900.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -67,10 +87,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.898.ps1" 2>$null
+git add -u -- "push_v3.74.899.ps1" 2>$null
 
 # -- 4. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.898.ps1")
+$expected = @($files) + @("push_v3.74.899.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -251,7 +271,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.898.ps1" 2>$null
+git add -u -- "push_v3.74.899.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -270,27 +290,46 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_899.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_900.txt"
     $msgLines = @(
-        'fix(ui): v3.74.899 - vendor-credit items showed no name at all',
+        'feat(governance): v3.74.900 - the 865 approval matrix now governs vendor credits, decided from the unified inbox',
         '',
-        'Live owner note on CR-59190: the items table rendered quantity,',
-        'price and total - and an EMPTY description column. Two layers:',
+        'Owner note M4, verbatim: today a vendor credit is created and its',
+        'journal posts immediately by ANY role, even a branch accountant -',
+        'violating the matrix arbitrated for manual journals (865). Remedy,',
+        'in the owner words: the same matrix, decided from the approvals',
+        'inbox, with its record.',
         '',
-        '  1. SAVE: the create screen stores the description as typed;',
-        '     picking a product and leaving the text blank (the common',
-        '     case) births a nameless item row.',
-        '  2. RENDER: the details page selected description only - it',
-        '     never joined the product name, so even an item linked to a',
-        '     named product showed blank.',
+        'DB LAYER (migration 20260730000002, both databases = the file by',
+        'checksum on all seven functions):',
+        '  - owner creates => posts immediately; GM => pending, owner',
+        '    approves; branch accountant (own branch only, no registered',
+        '    branch = refused) => pending, owner or GM approves; every',
+        '    other role refused; absolute separation of duties.',
+        '  - posting logic extracted to vendor_credit_post_journal(row) -',
+        '    the 897 body verbatim - shared by owner-posting and approval.',
+        '  - approve/reject_vendor_credit: atomic on pending status, rank +',
+        '    segregation checks, creator notified with the reason.',
+        '  - creation records its author from auth.uid(); applying an',
+        '    unposted credit is refused (VENDOR_CREDIT_NOT_POSTED).',
+        '  - CAUGHT BY THE PROOF ITSELF: the legacy status recompute',
+        '    trigger ran alphabetically after the matrix and rewrote',
+        '    pending_approval back to open in the same insert - tamed.',
+        'Proven with nine scenarios in a cancelled transaction: pending',
+        'without journal + notification, branch scope refusal, role',
+        'refusal, apply-pending refusal, rank refusal, GM approves',
+        'accountant credit (Dr AP 20 / Cr 5130 20), self-approval refusal,',
+        'owner approves GM credit, owner immediate post, reject with',
+        'reason kept and notified.',
         '',
-        'FIX on both layers: the create screen saves a blank description',
-        'as the product name; the details page joins products(name) and',
-        'renders description -> product name -> em-dash, so legacy rows',
-        'display too. Plus a documented backfill: every item with a blank',
-        'description and a known product got its product name (hit the',
-        'CR-59190 item). Descriptive metadata only - no journal touched.',
-        'tsc clean on both pages.'
+        'INBOX (the owner requirement): a vendor-credits tab in the',
+        'approvals inbox mirroring the 865 manual-journals section - the',
+        'card offers only the action the server will accept, rejection',
+        'demands a reason, and the record tab lists every decision (the',
+        'decision notifications are the source: decider, author, time,',
+        'reason). The create screen says created-awaiting-approval',
+        'honestly, the details page carries pending/rejected badges and',
+        'hides the apply button for unposted credits.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -299,5 +338,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.899 pushed - a line the customer cannot name is a line the customer cannot trust" -ForegroundColor Green
+    Write-Host "`n+ v3.74.900 pushed - the matrix that governs the pen must govern every pen" -ForegroundColor Green
 }

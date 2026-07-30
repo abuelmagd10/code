@@ -287,7 +287,18 @@ export default function NewVendorCreditPage() {
         // لا نوقف العملية إذا فشل إنشاء الإشعار
       }
 
-      toastActionSuccess(toast, "الإنشاء", "الإشعار الدائن")
+      // v3.74.900 — مصفوفة 865: غير المالك يولد إشعاره بانتظار الاعتماد —
+      // يُقال له ذلك صدقاً بدل «أُنشئ» الموهمة بالنفاذ الفورى.
+      const { data: createdVc } = await supabase
+        .from("vendor_credits").select("status").eq("id", vc.id).single()
+      if (createdVc?.status === 'pending_approval') {
+        toast({
+          title: "أُنشئ بانتظار الاعتماد",
+          description: "قيد الإشعار لن يُرحَّل إلا بعد الاعتماد من صندوق الموافقات (مصفوفة 865)",
+        })
+      } else {
+        toastActionSuccess(toast, "الإنشاء", "الإشعار الدائن")
+      }
       router.push(`/vendor-credits/${vc.id}`)
     } catch (err) {
       console.error("Error saving vendor credit", err)
