@@ -6,90 +6,97 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.904 - the OLD script is removed, never this one. Five times a chained
+# v3.74.905 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.903.ps1") { Remove-Item -LiteralPath "push_v3.74.903.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.904.ps1") { Remove-Item -LiteralPath "push_v3.74.904.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.904"') {
-    Write-Host "+ 3.74.904" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.905"') {
+    Write-Host "+ 3.74.905" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.904]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.904]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.905]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.905]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$vcEdit    = "app/vendor-credits/[id]/edit/page.tsx"
-$vcDetail  = "app/vendor-credits/[id]/page.tsx"
-$vcList    = "app/vendor-credits/page.tsx"
-$migration = "supabase/migrations/20260730000004_v3_74_904_vendor_credit_edit_resubmit.sql"
+$poList  = "app/purchase-orders/page.tsx"
+$poApi   = "app/api/v2/purchase-orders/route.ts"
+$valid   = "lib/validation.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $vcEdit, $vcDetail, $vcList, $migration, "push_v3.74.904.ps1")
+           $poList, $poApi, $valid, "push_v3.74.905.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. the edit screen resubmits through the atomic RPC, not raw writes -----
-$e = Get-Content -LiteralPath $vcEdit -Raw
-if ($e -notmatch [regex]::Escape('rpc("update_vendor_credit_with_items"')) {
-    Write-Host "X the edit screen does not go through the atomic resubmit RPC" -ForegroundColor Red; exit 1
+# -- 1. the API sends every field the list actually reads ------------------
+$apiRaw = Get-Content -LiteralPath $poApi -Raw
+$sel = [regex]::Match($apiRaw, 'const PO_SELECT = `([^`]*)`')
+if (-not $sel.Success) {
+    Write-Host "X could not find the PO_SELECT template - the shipping check cannot run" -ForegroundColor Red; exit 1
 }
-if ($e -match [regex]::Escape('.from("vendor_credits").update(')) {
-    Write-Host "X the edit screen writes vendor_credits directly - the matrix would be bypassed" -ForegroundColor Red; exit 1
-}
-if ($e -notmatch [regex]::Escape("disabled={branchLocked}")) {
-    Write-Host "X the 901 branch lock is missing from the edit screen" -ForegroundColor Red; exit 1
-}
-if ($e -match [regex]::Escape("اختر الحساب")) {
-    Write-Host "X the dead account picker (902) came back on the edit screen" -ForegroundColor Red; exit 1
-}
-Write-Host "+ edit screen: atomic RPC only, branch lock kept, no field asked for and ignored" -ForegroundColor Green
-
-# -- 2. the creator gets a way back from a rejection ------------------------
-$d = Get-Content -LiteralPath $vcDetail -Raw
-if ($d -notmatch [regex]::Escape('/edit`}')) {
-    Write-Host "X the detail page offers no edit route for a rejected credit" -ForegroundColor Red; exit 1
-}
-if ($d -notmatch [regex]::Escape("created_by_user_id")) {
-    Write-Host "X the detail page does not check the creator - anyone would see the edit button" -ForegroundColor Red; exit 1
-}
-Write-Host "+ detail page: rejection card and an edit button gated on the creator" -ForegroundColor Green
-
-# -- 3. the list stops calling a pending/rejected credit "open" -------------
-$l = Get-Content -LiteralPath $vcList -Raw
-if ($l -notmatch [regex]::Escape("pending_approval: {")) {
-    Write-Host "X the list has no badge for pending_approval - it would read as open" -ForegroundColor Red; exit 1
-}
-if ($l -notmatch [regex]::Escape("rejected: {")) {
-    Write-Host "X the list has no badge for rejected - it would read as open" -ForegroundColor Red; exit 1
-}
-if ($l -match [regex]::Escape("config[status] || config.open")) {
-    Write-Host "X the silent fallback is back: an unknown status is dressed as open" -ForegroundColor Red; exit 1
-}
-Write-Host "+ list page: matrix states are named, and an unknown status is not dressed as open" -ForegroundColor Green
-
-# -- 4. the migration carries the resubmit function and its refusals --------
-$m = Get-Content -LiteralPath $migration -Raw
-if ($m -notmatch [regex]::Escape("update_vendor_credit_with_items")) {
-    Write-Host "X migration does not define update_vendor_credit_with_items" -ForegroundColor Red; exit 1
-}
-foreach ($guard in @("NOT_CREATOR", "NOT_REJECTED", "ALREADY_POSTED", "ALREADY_APPLIED", "VENDOR_CREDIT_BRANCH_SCOPE")) {
-    if ($m -notmatch [regex]::Escape($guard)) {
-        Write-Host "X migration lost the $guard refusal" -ForegroundColor Red; exit 1
+$selBody = $sel.Groups[1].Value
+foreach ($col in @("shipping", "shipping_provider_id", "total_amount")) {
+    if ($selBody -notmatch [regex]::Escape($col)) {
+        Write-Host "X PO_SELECT no longer sends $col - the list column would read blank" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ migration defines the resubmit RPC with every refusal it was proven on" -ForegroundColor Green
+# A SQL comment inside a PostgREST select is parsed as a COLUMN NAME and the
+# whole request 400s. This bit once, while adding the shipping fields.
+if ($selBody -match "--") {
+    Write-Host "X a SQL comment is inside the PostgREST select - it is read as a column" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the purchase-order API sends the shipping fields, and its select carries no comment" -ForegroundColor Green
+
+# -- 2. the cache hit still loads what the cache does not hold -------------
+$lst = Get-Content -LiteralPath $poList -Raw
+if ($lst -notmatch [regex]::Escape("loadPageDependencies(cached.orders)")) {
+    Write-Host "X a cache hit no longer loads items/bills - the products column goes blank again" -ForegroundColor Red; exit 1
+}
+if ($lst -notmatch [regex]::Escape("loadPageDependencies(newOrders)")) {
+    Write-Host "X the fresh fetch path no longer loads its dependencies" -ForegroundColor Red; exit 1
+}
+Write-Host "+ both fetch paths load the page dependencies the cache does not hold" -ForegroundColor Green
+
+# -- 3. a withheld price reads as withheld, and its total is not leaked ----
+if ($lst -match [regex]::Escape("if (!canViewPrices) return '-'")) {
+    Write-Host "X a withheld price is shown as '-' again - indistinguishable from missing data" -ForegroundColor Red; exit 1
+}
+if ($lst -notmatch [regex]::Escape("if (!canViewPrices) return '***'")) {
+    Write-Host "X the withheld-price marker is gone from the total column" -ForegroundColor Red; exit 1
+}
+if ($lst -notmatch [regex]::Escape("canViewPrices")) {
+    Write-Host "X the footer no longer knows who may see prices" -ForegroundColor Red; exit 1
+}
+$footer = [regex]::Match($lst, "Total Value:[\s\S]{0,600}")
+if ($footer.Success -and ($footer.Value -notmatch [regex]::Escape("canViewPrices"))) {
+    Write-Host "X the footer prints the grand total to someone whose lines are hidden" -ForegroundColor Red; exit 1
+}
+Write-Host "+ withheld prices read as withheld, and the footer does not leak their sum" -ForegroundColor Green
+
+# -- 4. the purchasing officer is a known role, not a silent staff ---------
+$vd = Get-Content -LiteralPath $valid -Raw
+if ($vd -notmatch [regex]::Escape("purchasing_officer: {")) {
+    Write-Host "X purchasing_officer fell out of the purchase-order permission map" -ForegroundColor Red; exit 1
+}
+$po = [regex]::Match($vd, "purchasing_officer: \{[^}]*\}")
+if (-not $po.Success -or ($po.Value -notmatch [regex]::Escape("canViewPrice: true"))) {
+    Write-Host "X the owner decision (purchasing officer sees purchase prices) was reverted" -ForegroundColor Red; exit 1
+}
+if ($vd -notmatch [regex]::Escape("PURCHASE_ORDER_ROLE_PERMISSIONS.staff")) {
+    Write-Host "X the most-restrictive fallback for an unknown role is gone" -ForegroundColor Red; exit 1
+}
+Write-Host "+ purchasing officer is named in the permission map; unknown roles still fall to the strictest" -ForegroundColor Green
 
 # -- 5. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.904.ps1" -Raw
+$self = Get-Content -LiteralPath "push_v3.74.905.ps1" -Raw
 if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -100,10 +107,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.903.ps1" 2>$null
+git add -u -- "push_v3.74.904.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.903.ps1")
+$expected = @($files) + @("push_v3.74.904.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -284,7 +291,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.903.ps1" 2>$null
+git add -u -- "push_v3.74.904.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -303,52 +310,49 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_904.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_905.txt"
     $msgLines = @(
-        'feat(vendor-credits): v3.74.904 - a rejected credit was a dead document; its creator can now edit and resubmit it',
+        'fix(purchase-orders): v3.74.905 - three blank columns in the list, three unrelated causes',
         '',
-        'The live matrix cycle closed end to end: the branch accountant',
-        'created CR-51543, the owner was notified, the owner rejected it',
-        'with a reason, and the creator was notified. Then the owner asked',
-        'for what every other approval flow in this project already has -',
-        'an edit button for the creator on rejection. Until this release a',
-        'rejected credit could not be edited, applied, or resubmitted: the',
-        'only way forward was a brand new credit, leaving the rejected one',
-        'as a truncated record.',
+        'The owner reported "the data is missing" on the purchase-order',
+        'list: Products, Total and Shipping all showed "-" while the footer',
+        'printed Total Value 359.10 - which is exactly the sum of the six',
+        'orders in the database. So nothing was lost on write; three',
+        'independent display defects were measured:',
         '',
-        'Database: one atomic update_vendor_credit_with_items. The CREATOR',
-        'alone may edit (NOT_CREATOR), from status rejected only',
-        '(NOT_REJECTED), with no posted entry (ALREADY_POSTED) and nothing',
-        'applied (ALREADY_APPLIED). Identity is immune - credit number,',
-        'company, creator, journal link, bill, sources and applied amount',
-        'are not touched; the edit corrects content, it does not swap the',
-        'document. Columns are named, never passed through. The 865 matrix',
-        'is then re-judged with the creator role at resubmit time: owner',
-        'posts immediately, GM waits on the owner, branch accountant is',
-        'confined to their branch (BRANCH_SCOPE) and waits on owner or GM.',
-        'Items are replaced while journal_entry_id is still NULL, so no',
-        'inventory movement is born for a standalone credit (897 design).',
-        'A fresh approver notification carries a per-resubmit event key and',
-        'the previous pending one is archived, so no inbox holds two.',
-        'Proven by cancelled transactions on test, byte-identical on both',
-        'databases (md5 30ca888f...): not_creator=NOT_CREATOR,',
-        'edit_pending=NOT_REJECTED, branch=SCOPE_REFUSED, resubmit lands',
-        'pending_approval with je=NULL / total 30.00 / 1 item / 1 new',
-        'notification / 1 archived, approve posts it, edit_open refuses.',
+        '1. SHIPPING read a field the API never sent. The column reads',
+        '   shipping_provider_id and /api/v2/purchase-orders selected',
+        '   neither it nor the shipping cost, so the cell was blank even',
+        '   for orders that HAVE a provider (PO-0005, PO-0007) or a cost',
+        '   (5, 1, 2 on PO-0002..4). The fields are now selected; the cell',
+        '   shows the provider, else the cost, else an honest dash.',
         '',
-        'UI: a new /vendor-credits/[id]/edit screen inheriting every',
-        'settled decision (901 branch lock, no 902 account column, no 788',
-        'adjustment box), with the credit number shown read-only and an',
-        'explicit refusal - not a doomed form - for anyone not entitled.',
-        'The detail page gains a rejection card with the reason and an',
-        'edit button gated on the creator.',
+        '2. PRODUCTS went blank on a cache hit. fetchOrders returned early',
+        '   from the page cache, which holds only {orders, totalCount},',
+        '   without loading items, linked bills or returned quantities -',
+        '   so orderItems stayed empty and every products cell rendered',
+        '   "-", taking the paid/returned detail down with it. The loader',
+        '   is extracted as loadPageDependencies and called on BOTH paths.',
         '',
-        'And a silent lie fixed on the way: the list page rendered',
-        'pending_approval and rejected with the OPEN badge, because the',
-        'fallback dressed every unknown status as open - a credit awaiting',
-        'approval read as a live one. Both matrix states now have badges',
-        'and filter options, an unknown status shows its raw name, and the',
-        'creator can reach the edit screen straight from the list.'
+        '3. TOTAL was withheld from the purchasing officer, because',
+        '   PURCHASE_ORDER_ROLE_PERMISSIONS never listed the role and any',
+        '   unlisted role silently falls back to staff (canViewPrice',
+        '   false). The role whose whole job is purchasing could not see a',
+        '   purchase price. OWNER DECISION: the purchasing officer sees',
+        '   prices - now listed explicitly (create/edit/send/receive/view',
+        '   price/view all). Store manager and manufacturing officer stay',
+        '   without prices, and an unknown role still falls to the',
+        '   strictest entry, which is deliberate.',
+        '',
+        'Two more things fixed on the way. The protection was theatre: the',
+        'line prices were hidden and then the grand total was printed to',
+        'the same user - whoever is denied the parts is denied the sum, so',
+        'the footer now shows *** for them. And withheld now reads as',
+        'withheld: *** instead of "-", the same language the detail page',
+        'already used, because "-" reads as missing data, not as denied.',
+        'Finally the column memo did not depend on canViewPrices or',
+        'shippingProviders, both loaded after first paint, so the columns',
+        'could be computed once from stale state; both are now declared.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -357,5 +361,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.904 pushed - a refusal that leaves no way forward is not governance, it is a dead end" -ForegroundColor Green
+    Write-Host "`n+ v3.74.905 pushed - an empty cell is a claim about the data; three of them were lying differently" -ForegroundColor Green
 }

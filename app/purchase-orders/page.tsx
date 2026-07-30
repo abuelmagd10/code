@@ -231,6 +231,62 @@ export default function PurchaseOrdersPage() {
   // v3.74.57 - تَحديث تِلقائى عِندَ العَودَة للنّافِذَة/التَّبويب
   useAutoRefresh({ onRefresh: () => fetchOrders(currentPage, pageSize) })
 
+  // v3.74.905 — توابع الصفحة (البنود، الفواتير المرتبطة، الكميات المرتجعة)
+  // كانت مكتوبةً داخل مسار الجلب وحده، فمسار «إصابة الكاش» كان يعرض الأوامر
+  // ويعود مبكراً بلا تحميلها — فيبقى `orderItems` فارغاً ويظهر عمود المنتجات
+  // «-» فى كل سطر (ملاحظة المالك الحية 30/7)، وتختفى تفاصيل المدفوع/المرتجع.
+  // الكاش يحفظ جزءاً من الحالة، فلا يجوز أن يُعامل كأنه كلها.
+  const loadPageDependencies = useCallback(async (newOrders: PurchaseOrder[]) => {
+    // تحميل الفواتير المرتبطة بالصفحة الحالية فقط
+    const billIds = newOrders.filter((o) => o.bill_id).map((o) => o.bill_id as string);
+    if (billIds.length > 0) {
+      const { data: bills } = await supabase
+        .from("bills")
+        .select("id, status, total_amount, paid_amount, returned_amount, return_status")
+        .in("id", billIds);
+      const billMap: Record<string, LinkedBill> = {};
+      (bills || []).forEach((b: any) => {
+        billMap[b.id] = { id: b.id, status: b.status, total_amount: b.total_amount || 0, paid_amount: b.paid_amount || 0, returned_amount: b.returned_amount || 0, return_status: b.return_status };
+      });
+      setLinkedBills(billMap);
+    } else {
+      setLinkedBills({});
+    }
+
+    // تحميل بنود أوامر الشراء للصفحة الحالية فقط
+    const orderIds = newOrders.map((o) => o.id);
+    if (orderIds.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("purchase_order_items")
+        .select("purchase_order_id, quantity, product_id")
+        .in("purchase_order_id", orderIds);
+      const productIds = [...new Set((itemsData || []).map((i: any) => i.product_id).filter(Boolean))];
+      let productNames: Record<string, string> = {};
+      if (productIds.length > 0) {
+        const { data: productsData } = await supabase.from("products").select("id, name").in("id", productIds);
+        productNames = (productsData || []).reduce((acc: Record<string, string>, p: any) => { acc[p.id] = p.name; return acc; }, {});
+      }
+      const itemsWithNames = (itemsData || []).map((item: any) => ({ ...item, product_name: item.product_id ? productNames[item.product_id] : null }));
+      setOrderItems(itemsWithNames);
+
+      // تحميل الكميات المرتجعة للصفحة الحالية فقط
+      if (billIds.length > 0) {
+        const { data: billItemsData } = await supabase
+          .from("bill_items")
+          .select("bill_id, product_id, returned_quantity")
+          .in("bill_id", billIds)
+          .gt("returned_quantity", 0);
+        const returnedQty: ReturnedQuantity[] = (billItemsData || []).map((item: any) => ({ bill_id: item.bill_id || '', product_id: item.product_id || '', quantity: item.returned_quantity || 0 })).filter((r: ReturnedQuantity) => r.bill_id && r.product_id && r.quantity > 0);
+        setReturnedQuantities(returnedQty);
+      } else {
+        setReturnedQuantities([]);
+      }
+    } else {
+      setOrderItems([]);
+      setReturnedQuantities([]);
+    }
+  }, [supabase]);
+
   const fetchOrders = useCallback(async (page: number, size: number) => {
     // إلغاء الطلب السابق
     if (fetchAbortRef.current) fetchAbortRef.current.abort();
@@ -259,6 +315,9 @@ export default function PurchaseOrdersPage() {
         setOrders(cached.orders)
         setTotalCount(cached.totalCount)
         setServerLoading(false)
+        // v3.74.905 — الكاش يحفظ الأوامر وحدها؛ توابعها تُجلب على أى حال
+        // وإلا ظهر عمود المنتجات «-» وذهبت تفاصيل المدفوع/المرتجع.
+        await loadPageDependencies(cached.orders)
         return
       }
 
@@ -309,61 +368,14 @@ export default function PurchaseOrdersPage() {
         )
       }
 
-      // تحميل الفواتير المرتبطة بالصفحة الحالية فقط
-      const billIds = newOrders.filter((o) => o.bill_id).map((o) => o.bill_id as string);
-      if (billIds.length > 0) {
-        const { data: bills } = await supabase
-          .from("bills")
-          .select("id, status, total_amount, paid_amount, returned_amount, return_status")
-          .in("id", billIds);
-        const billMap: Record<string, LinkedBill> = {};
-        (bills || []).forEach((b: any) => {
-          billMap[b.id] = { id: b.id, status: b.status, total_amount: b.total_amount || 0, paid_amount: b.paid_amount || 0, returned_amount: b.returned_amount || 0, return_status: b.return_status };
-        });
-        setLinkedBills(billMap);
-      } else {
-        setLinkedBills({});
-      }
-
-      // تحميل بنود أوامر الشراء للصفحة الحالية فقط
-      const orderIds = newOrders.map((o) => o.id);
-      if (orderIds.length > 0) {
-        const { data: itemsData } = await supabase
-          .from("purchase_order_items")
-          .select("purchase_order_id, quantity, product_id")
-          .in("purchase_order_id", orderIds);
-        const productIds = [...new Set((itemsData || []).map((i: any) => i.product_id).filter(Boolean))];
-        let productNames: Record<string, string> = {};
-        if (productIds.length > 0) {
-          const { data: productsData } = await supabase.from("products").select("id, name").in("id", productIds);
-          productNames = (productsData || []).reduce((acc: Record<string, string>, p: any) => { acc[p.id] = p.name; return acc; }, {});
-        }
-        const itemsWithNames = (itemsData || []).map((item: any) => ({ ...item, product_name: item.product_id ? productNames[item.product_id] : null }));
-        setOrderItems(itemsWithNames);
-
-        // تحميل الكميات المرتجعة للصفحة الحالية فقط
-        if (billIds.length > 0) {
-          const { data: billItemsData } = await supabase
-            .from("bill_items")
-            .select("bill_id, product_id, returned_quantity")
-            .in("bill_id", billIds)
-            .gt("returned_quantity", 0);
-          const returnedQty: ReturnedQuantity[] = (billItemsData || []).map((item: any) => ({ bill_id: item.bill_id || '', product_id: item.product_id || '', quantity: item.returned_quantity || 0 })).filter((r: ReturnedQuantity) => r.bill_id && r.product_id && r.quantity > 0);
-          setReturnedQuantities(returnedQty);
-        } else {
-          setReturnedQuantities([]);
-        }
-      } else {
-        setOrderItems([]);
-        setReturnedQuantities([]);
-      }
+      await loadPageDependencies(newOrders);
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
       console.error('[PO List v2] Fetch error:', err);
     } finally {
       setServerLoading(false);
     }
-  }, [supabase, searchTerm, filterStatuses, filterSuppliers, dateFrom, dateTo, branchFilter]);
+  }, [supabase, searchTerm, filterStatuses, filterSuppliers, dateFrom, dateTo, branchFilter, loadPageDependencies]);
 
   // ⚡ جلب الصفحة الأولى عند تغيير الفلاتر
   useEffect(() => {
@@ -644,8 +656,10 @@ export default function PurchaseOrdersPage() {
       type: 'currency',
       align: 'right',
       format: (_, row) => {
-        // 🔐 ERP Access Control: إخفاء الإجمالي للموظفين
-        if (!canViewPrices) return '-';
+        // 🔐 ERP Access Control: إخفاء الإجمالي لمن لا يرى أسعار الشراء.
+        // v3.74.905 — كانت «-» فتُقرأ نقصَ بيانات لا منعَ صلاحية (ملاحظة
+        // المالك الحية 30/7). «***» هى نفس لغة صفحة التفاصيل: محجوبٌ لا ناقص.
+        if (!canViewPrices) return '***';
         const total = row.total_amount || 0;
         const symbol = currencySymbols[row.currency || 'SAR'] || row.currency || 'SAR';
         const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
@@ -705,9 +719,23 @@ export default function PurchaseOrdersPage() {
       align: 'center',
       hidden: 'lg',
       format: (_, row) => {
+        // v3.74.905 — العمود كان يقرأ `shipping_provider_id` وواجهة
+        // /api/v2/purchase-orders لا ترسله (ولا ترسل تكلفة الشحن) — فكان
+        // «-» فى كل سطر ولو كان للأمر شركة شحنٍ وتكلفة. أُضيفت الحقول
+        // للـ select، وهنا: اسم الشركة إن وُجدت، وإلا التكلفة إن كانت،
+        // والتكلفة مالٌ فتُحجب عمَّن لا يرى الأسعار.
         const providerId = (row as any).shipping_provider_id;
-        if (!providerId) return '-';
-        return shippingProviders.find(p => p.id === providerId)?.provider_name || '-';
+        if (providerId) {
+          return shippingProviders.find(p => p.id === providerId)?.provider_name
+            || (appLang === 'en' ? 'Provider' : 'شركة شحن');
+        }
+        const shippingCost = Number((row as any).shipping || 0);
+        if (shippingCost > 0) {
+          if (!canViewPrices) return '***';
+          const symbol = currencySymbols[row.currency || 'EGP'] || row.currency || '';
+          return `${symbol}${shippingCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+        }
+        return '-';
       }
     },
     {
@@ -821,7 +849,10 @@ export default function PurchaseOrdersPage() {
         );
       }
     }
-  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite, orderItems, returnedQuantities]);
+  // v3.74.905 — `canViewPrices` و`shippingProviders` يُحمَّلان بعد أول رسم،
+  // ولم يكونا فى قائمة الاعتماد: فالأعمدة كانت قد تُحسب مرة بحالةٍ قديمة
+  // (سعرٌ محجوب لمن يملك رؤيته، أو شركة شحنٍ بلا اسم). تُذكر صراحةً.
+  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite, orderItems, returnedQuantities, canViewPrices, shippingProviders]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
@@ -1140,11 +1171,16 @@ export default function PurchaseOrdersPage() {
                               </span>
                             </td>
                             <td className="px-3 py-4">
+                              {/* v3.74.905 — الحماية كانت مسرحية: تُحجب أسعار
+                                  السطور عمَّن لا يراها ثم يُطبع لهم المجموع
+                                  كاملاً هنا. مَن حُجب عنه الجزء يُحجب عنه الكل. */}
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center justify-between gap-4">
                                   <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
                                   <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                    {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {canViewPrices
+                                      ? totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : '***'}
                                   </span>
                                 </div>
                               </div>

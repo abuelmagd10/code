@@ -43,6 +43,10 @@ const DEFAULT_PAGE_SIZE = 20
  * الـ select المستخدم في جلب أوامر الشراء (مع العلاقات الأساسية فقط)
  * تم تقليل الـ select لجلب البيانات الضرورية فقط (Performance Optimization)
  */
+// v3.74.905 — حقول الشحن (shipping / shipping_provider_id / shipping_method)
+// أُضيفت لأن شاشة القائمة تعرض عمود «الشحن» منها ولم تكن تُرسل إطلاقاً، فكان
+// العمود «-» فى كل سطر ولو كان للأمر شركة شحنٍ وتكلفة (ملاحظة المالك 30/7).
+// تنبيه: لا تُكتب تعليقات داخل نص select — PostgREST يقرؤها أسماء أعمدة.
 const PO_SELECT = `
   id,
   company_id,
@@ -54,6 +58,9 @@ const PO_SELECT = `
   tax_amount,
   total_amount,
   total,
+  shipping,
+  shipping_provider_id,
+  shipping_method,
   status,
   notes,
   currency,

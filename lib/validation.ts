@@ -1676,6 +1676,19 @@ export type PurchaseOrderStatus = 'draft' | 'sent' | 'received' | 'billed' | 'pa
  * * الموظف يمكنه استلام البضاعة فقط للطلبات التي أنشأها
  */
 export const PURCHASE_ORDER_ROLE_PERMISSIONS = {
+  // v3.74.905 — قرار المالك بعد ملاحظته الحية (30/7): مسئول المشتريات كان
+  // غائباً عن هذه الخريطة، فيسقط تلقائياً إلى صلاحيات `staff` ولا يرى سعر
+  // الشراء — والدور الذى يفاوض المورد ويكتب أمر الشراء لا يُحجب عنه سعره.
+  // (مدير المخزن ومسئول التصنيع يبقيان بلا أسعار، وأى دورٍ مجهول يبقى على
+  //  الأشد تحفظاً: `staff` هى الافتراضى وهذا مقصود.)
+  purchasing_officer: {
+    canCreateDraft: true,
+    canEditDraft: true,
+    canSend: true,
+    canReceive: true,
+    canViewPrice: true,
+    canViewAllOrders: true
+  },
   staff: {
     canCreateDraft: true,
     canEditDraft: true,      // فقط المسودات التي أنشأها
