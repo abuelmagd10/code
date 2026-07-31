@@ -47,8 +47,13 @@ try { ({ Client } = require("pg")) } catch {
   console.error("X npm install pg --save-dev"); process.exit(1)
 }
 
-/** الرؤوس: جداولٌ تحمل `branch_id` بنفسها. */
-const HEADS = ["bills", "invoices", "journal_entries", "payments"]
+/**
+ * الرؤوس: جداولٌ تحمل `branch_id` بنفسها.
+ * v3.74.921 — أُضيف `purchase_orders`: أُغلق عزلُه فى ذلك الإصدار، ويُقاس
+ * هنا كى لا يعود. وكل جدولٍ يُغلق من قائمة التسعة عشر يُضاف إلى هذا
+ * السطر فى نفس دفعته — وإلا فقد أُغلق بلا حارس.
+ */
+const HEADS = ["bills", "invoices", "journal_entries", "payments", "purchase_orders"]
 
 /** والأبناء: فرعُهم فرعُ أبيهم، وفيهم يعيش السعر. */
 const CHILDREN = [

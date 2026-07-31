@@ -6,70 +6,62 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.920 - the OLD script is removed, never this one. Five times a chained
+# v3.74.921 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.919.ps1") { Remove-Item -LiteralPath "push_v3.74.919.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.920.ps1") { Remove-Item -LiteralPath "push_v3.74.920.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.920"') {
-    Write-Host "+ 3.74.920" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.921"') {
+    Write-Host "+ 3.74.921" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.920]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.920]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.921]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.921]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$usersPage    = "app/settings/users/page.tsx"
-$settingsPage = "app/settings/page.tsx"
+$migration = "supabase/migrations/20260731000010_v3_74_921_purchase_orders_branch_isolation.sql"
+$guard     = "scripts/check-branch-isolation-holes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $usersPage, $settingsPage,
-           "push_v3.74.920.ps1")
+           $migration, $guard,
+           "push_v3.74.921.ps1")
 
-$u = Get-Content -LiteralPath $usersPage -Raw
-$g = Get-Content -LiteralPath $settingsPage -Raw
+$m = Get-Content -LiteralPath $migration -Raw
+$g = Get-Content -LiteralPath $guard -Raw
 
-# -- 1. it MOVED - it was not copied -------------------------------------
-# A move that leaves a copy behind produces two handles for one rule. The
-# forgotten one is the one somebody reads.
-if ($u -notmatch [regex]::Escape("<PurchaseCostVisibilityCard language={appLang} />")) {
-    Write-Host "X the purchase-cost card is not mounted on the users page" -ForegroundColor Red; exit 1
-}
-if ($g -match [regex]::Escape("PurchaseCostVisibilityCard")) {
-    Write-Host "X the card is STILL on the general settings page - a move that copies leaves two handles" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the purchase-cost card lives on the users page, and only there" -ForegroundColor Green
-
-# -- 2. exactly one mount in the whole application ------------------------
-$mounts = (Get-ChildItem -Path "app" -Recurse -Filter *.tsx |
-           Select-String -Pattern "<PurchaseCostVisibilityCard" -SimpleMatch).Count
-if ($mounts -ne 1) {
-    Write-Host "X the card is mounted $mounts time(s) - exactly one handle is allowed" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ exactly one mount in the whole application" -ForegroundColor Green
-
-# -- 3. a move of place, never of rule ------------------------------------
-# The audience rule lives in the database (can_view_purchase_cost). A
-# relocation must not carry it: the file list itself is asserted to hold no
-# migration, and check 6 below refuses anything staged outside that list.
-foreach ($f in $files) {
-    if ($f -like "supabase/migrations/*") {
-        Write-Host "X a migration is part of a UI relocation - the rule must not move with the card ($f)" -ForegroundColor Red
-        exit 1
+# -- 1. one policy replaces three, and it is the SAME rule ---------------
+# Three permissive company-wide policies stood on this table and no branch
+# policy at all. Leaving even one of them beside the new rule recreates the
+# 917 trap: permissive policies are OR-ed.
+foreach ($needle in @("DROP POLICY IF EXISTS purchase_orders_access_members",
+                      "DROP POLICY IF EXISTS purchase_orders_select_members",
+                      "DROP POLICY IF EXISTS purchase_orders_select ")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X a company-wide policy survives beside the new rule ($needle)" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the audience rule in the database is untouched: this moves a place, not a rule" -ForegroundColor Green
+if ($m -notmatch [regex]::Escape("public.can_access_record_branch(company_id, branch_id)")) {
+    Write-Host "X the new policy does not use the branch rule agreed in 917" -ForegroundColor Red; exit 1
+}
+Write-Host "+ one branch-scoped policy replaces three company-wide ones" -ForegroundColor Green
+
+# -- 2. a table closed WITHOUT a guard is a table that reopens quietly ---
+# Every table closed off the list of nineteen must join the impersonation
+# guard in the SAME release. This is the rule for every one that follows.
+if ($g -notmatch [regex]::Escape('"purchase_orders"')) {
+    Write-Host "X purchase_orders was closed but never added to the impersonation guard" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the newly closed table joined the guard in the same release" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.920.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.921.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -89,10 +81,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.919.ps1" 2>$null
+git add -u -- "push_v3.74.920.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.919.ps1")
+$expected = @($files) + @("push_v3.74.920.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -325,7 +317,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.919.ps1" 2>$null
+git add -u -- "push_v3.74.920.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -345,35 +337,54 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_920.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_921.txt"
     $msgLines = @(
-        'refactor(settings): v3.74.920 - purchase-cost visibility moves to the users page',
+        'feat(security): v3.74.921 - purchase orders are isolated by branch',
         '',
-        'OWNER REQUEST: move the purchase-cost visibility card - with its three',
-        'modes (open, restricted by default, strict) - out of the general',
-        'settings page and into the USERS page under settings.',
+        'First of the nineteen tables measured in 917. Chosen first because it',
+        'sits closest to the work in hand and because the purchase price lives',
+        'in its lines.',
         '',
-        'And it is the right home. This is not a general setting, it is an',
-        'AUDIENCE rule: who gets to see the number. Its audience is written in',
-        'roles - owner, general manager, accountant, purchasing officer, branch',
-        'manager. Reading it beside Role Permissions puts the question and its',
-        'answer in one place, instead of the rule living on one page and the',
-        'people it governs on another.',
+        'MEASURED FIRST. In the database: three permissive read policies, all',
+        'three company-wide, and NO branch policy at all - unlike the four in',
+        '917 where isolation was written and disabled by the OR, here it was',
+        'never written. By impersonation on production: every member saw all 8',
+        'orders, two of them belonging to the Nasr City branch - including the',
+        'sales clerk and the store keeper.',
         '',
-        'Mounted in /settings/users inside the Role Permissions tab, under the',
-        'subscribed-modules card, separated by a rule above and below.',
+        'And 917 had left a HALF-OPEN door: a main-branch employee could see',
+        'the HEADER of a Nasr City order - supplier, total 986.10, status - and',
+        'ZERO lines. He opened a document with no items, reading the big number',
+        'without seeing what it was made of. Half a door is worse than either',
+        'state.',
         '',
-        'NOTHING in behaviour changes. The three modes are as they were, the',
-        'database rule (can_view_purchase_cost) is untouched, and the card',
-        'still hides itself from anyone who is not the owner. This moves a',
-        'place, not a rule - and the push refuses to stage any migration in a',
-        'relocation release, so the rule cannot travel with the card by',
-        'accident.',
+        'In the application the two main screens already filter by branch - the',
+        'orders screen through getAccessFilter, and the order-status report',
+        'scopes non-management to their own branch - and their notion of',
+        'management is exactly the audience of the database rule. So closing it',
+        'matches what the screens already do, and turns the code filter from',
+        'the only protection into a second layer. Of the eight other paths that',
+        'read the table, seven run on the user session (being scoped to his',
+        'branch is correct - the MRP planner already filters by branch) and one',
+        'runs on the service key, which policies do not touch.',
         '',
-        'The push also checks the card is mounted EXACTLY ONCE in the whole',
-        'application and that the old page no longer references it: a move that',
-        'leaves a copy behind produces two handles for one rule, and the',
-        'forgotten handle is the one somebody reads.'
+        'The rule is not a new one: can_access_record_branch, exactly as agreed',
+        'in 917. And ONE policy replaces the three - a second permissive policy',
+        'is what produced the 917 trap in the first place, so none is left',
+        'behind even if its text reads correctly today.',
+        '',
+        'Proven by impersonation. On test: a branch member 3 of 4 with zero',
+        'from other branches, the owner 4, and a company-wide member (no branch',
+        'on his membership) 4 - the rule does not lock him out. On production',
+        'after applying: every branch member 6 of 8 with ZERO from other',
+        'branches, the owner still 8, and the half-open door is shut - the Nasr',
+        'City order now reads header 0, lines 0 for a main-branch employee.',
+        '',
+        'The guard grew with it: check-branch-isolation-holes.js now measures',
+        'purchase_orders by impersonation alongside the four. And a rule is',
+        'written into its head for every table that follows: a table closed off',
+        'the list of nineteen joins this guard in the SAME release - a table',
+        'closed without a guard is a table that reopens quietly.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -382,5 +393,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.920 pushed - the purchase-cost audience is read where the roles are read" -ForegroundColor Green
+    Write-Host "`n+ v3.74.921 pushed - purchase orders belong to their branch: 1 of 19 closed, and guarded" -ForegroundColor Green
 }
