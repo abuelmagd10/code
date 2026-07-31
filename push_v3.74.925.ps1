@@ -6,97 +6,85 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.924 - the OLD script is removed, never this one. Five times a chained
+# v3.74.925 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.923.ps1") { Remove-Item -LiteralPath "push_v3.74.923.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.924.ps1") { Remove-Item -LiteralPath "push_v3.74.924.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.924"') {
-    Write-Host "+ 3.74.924" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.925"') {
+    Write-Host "+ 3.74.925" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.924]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.924]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.925]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.925]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000013_v3_74_924_purchase_returns_branch_isolation.sql"
+$migration = "supabase/migrations/20260731000014_v3_74_925_sales_returns_branch_isolation.sql"
 $guard     = "scripts/check-branch-isolation-holes.js"
 $trap      = "scripts/selftest-branch-isolation-holes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            $migration, $guard, $trap,
-           "push_v3.74.924.ps1")
+           "push_v3.74.925.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. all three company-wide policies are gone -------------------------
-foreach ($needle in @("DROP POLICY IF EXISTS purchase_returns_select",
-                      "DROP POLICY IF EXISTS purchase_return_items_select",
-                      "DROP POLICY IF EXISTS company_members_read_prwa")) {
+# -- 1. both company-wide policies are gone ------------------------------
+foreach ($needle in @("DROP POLICY IF EXISTS srr_select",
+                      "DROP POLICY IF EXISTS sales_returns_select")) {
     if ($m -notmatch [regex]::Escape($needle)) {
         Write-Host "X a company-wide policy survives beside the new rule ($needle)" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ one read policy on each of the three tables" -ForegroundColor Green
+if ($m -notmatch [regex]::Escape("public.can_access_record_branch(company_id, branch_id)")) {
+    Write-Host "X the new policy does not use the branch rule agreed in 917" -ForegroundColor Red; exit 1
+}
+# The old srr policy asked company_members only, so the registered owner saw
+# nothing he owns. get_user_company_ids covers both.
+if ($m -notmatch [regex]::Escape("company_id IN (SELECT get_user_company_ids())")) {
+    Write-Host "X the registered owner is still forgotten by the read rule" -ForegroundColor Red; exit 1
+}
+Write-Host "+ one read policy on each table, and the registered owner is no longer forgotten" -ForegroundColor Green
 
-# -- 2. the multi-warehouse case is ACTUALLY handled ---------------------
-# This is the whole point of the release. A multi-warehouse return carries
-# branch_id = NULL on purpose, and can_access_record_branch passes a
-# branchless record to EVERYONE by its declared design. Copying the 921
-# rule here would have left the door wide open AND made it look shut.
-# So the migration must reason about allocations, not just branch_id.
-if ($m -notmatch [regex]::Escape("purchase_return_warehouse_allocations a")) {
-    Write-Host "X the branchless (multi-warehouse) return is not reasoned about" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("current_user_is_branch_unbounded")) {
-    Write-Host "X the branch-unbounded caller is not distinguished - a NULL branch would pass to all" -ForegroundColor Red
+# -- 2. the 924 question was asked, and its answer written down ----------
+# What does "no branch" MEAN in this table? In 924 it meant a document SHARED
+# between branches, so it had to be split. Here it means company-level data,
+# so the ordinary rule applies. Copying without asking is what 924 nearly did.
+if ($m -notmatch [regex]::Escape("invoice.branch_id || member?.branch_id || null")) {
+    Write-Host "X the migration does not record WHY a NULL branch is company-level here" -ForegroundColor Red
     exit 1
 }
-foreach ($fn in @("can_access_purchase_return(p_return_id uuid)",
-                  "can_access_purchase_return_item(p_item_id uuid)")) {
-    if ($m -notmatch [regex]::Escape($fn)) {
-        Write-Host "X a rule function is missing from the migration ($fn)" -ForegroundColor Red; exit 1
-    }
-}
-# 915 lesson: an isolation function reading as the CALLER returns NULL for a
-# row hidden from him, and NULL then means "no branch" - so it passes what it
-# exists to refuse. All three must be SECURITY DEFINER.
-$definerCount = ([regex]::Matches($m, "STABLE SECURITY DEFINER")).Count
-if ($definerCount -lt 3) {
-    Write-Host "X a rule function is not SECURITY DEFINER (found $definerCount of 3) - the 915 trap" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the multi-warehouse return is split by allocation, and every rule reads as definer" -ForegroundColor Green
+Write-Host "+ the meaning of a NULL branch was measured in the code, not assumed" -ForegroundColor Green
 
 # -- 3. a table closed WITHOUT a guard is a table that reopens quietly ---
-foreach ($needle in @('"purchase_returns"', '"purchase_return_warehouse_allocations"',
-                      'child: "purchase_return_items"')) {
+foreach ($needle in @('"sales_return_requests"', '"sales_returns"',
+                      'child: "sales_return_items"')) {
     if ($g -notmatch [regex]::Escape($needle)) {
         Write-Host "X a newly closed table never joined the impersonation guard ($needle)" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ all three newly closed tables joined the guard in the same release" -ForegroundColor Green
+Write-Host "+ both newly closed tables and their lines joined the guard" -ForegroundColor Green
 
 # -- 4. and the guard must be SEEN measuring the new head ----------------
-if ($t -notmatch [regex]::Escape("purchase_returns_company_wide")) {
+if ($t -notmatch [regex]::Escape("srr_company_wide")) {
     Write-Host "X the trap never plants a leak on the newly closed table" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("- purchase_returns:")) {
-    Write-Host "X the trap does not require the guard to NAME purchase_returns" -ForegroundColor Red; exit 1
+if ($t -notmatch [regex]::Escape("- sales_return_requests:")) {
+    Write-Host "X the trap does not require the guard to NAME sales_return_requests" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the guard is proven measuring the new head, not merely listing it" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.924.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.925.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -116,10 +104,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.923.ps1" 2>$null
+git add -u -- "push_v3.74.924.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.923.ps1")
+$expected = @($files) + @("push_v3.74.924.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -141,7 +129,7 @@ Write-Host "Proving an unposted cross-branch transfer is refused (TEST database 
 node scripts/selftest-transfer-journal.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the transfer-journal mechanism was not proven" -ForegroundColor Red; exit 1 }
 
-Write-Host "Proving the branch-isolation guard catches the real leak - now on SIX shapes (TEST only)..." -ForegroundColor Cyan
+Write-Host "Proving the branch-isolation guard catches the real leak - now on SEVEN shapes (TEST only)..." -ForegroundColor Cyan
 node scripts/selftest-branch-isolation-holes.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the branch-isolation guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
@@ -352,7 +340,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.923.ps1" 2>$null
+git add -u -- "push_v3.74.924.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -373,69 +361,59 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_924.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_925.txt"
     $msgLines = @(
-        'feat(security): v3.74.924 - purchase returns are isolated by branch, and so are their warehouse allocations',
+        'feat(security): v3.74.925 - sales return requests and sales returns are isolated by branch',
         '',
-        'Fourth of the nineteen, and the first one no earlier fix could be',
-        'copied onto.',
+        'Fifth of the nineteen, and its neighbour with it, as in 924.',
         '',
-        'THE LEAK, wider than anything before it. One company-wide read policy',
-        'and no branch rule at all. By impersonation on production, ALL SEVEN',
-        'roles saw both Nasr City returns AND their lines: accountant, manager,',
-        'manufacturing officer, purchasing officer, store keeper, staff. No',
-        'exception, not even a half-open door.',
+        'MEASURED FIRST. sales_return_requests had one company-wide read policy',
+        'and no branch rule. By impersonation on production, ALL SEVEN roles saw',
+        'the Nasr City return request.',
         '',
-        'And unit_price lives in those lines - the very number the whole 906 to',
-        '916 programme was built to hide. This was a back door onto the hidden',
-        'figure, not merely a leaked document.',
+        'And the row itself is a witness to what came before: the request was',
+        'raised by the MAIN BRANCH ACCOUNTANT against a NASR CITY invoice. He',
+        'saw an invoice of a branch that is not his and asked to return it. That',
+        'door was shut in 917 - this row is its residue in the data.',
         '',
-        'THE SHAPE THAT BLOCKED THE COPY. The project builds a MULTI-WAREHOUSE',
-        'return and sets branch_id = NULL on its head ON PURPOSE - written',
-        'plainly in the screen comment. With it comes a third table that was',
-        'never on the list of nineteen: purchase_return_warehouse_allocations,',
-        'which carries its OWN branch and an amount per warehouse, and whose',
-        'policy was also company-wide.',
+        'Its neighbour sales_returns - the return document itself, where the',
+        'amounts live - was never on the list of nineteen at all, and its policy',
+        'was is_company_member alone. Zero rows today, so the door is closed',
+        'before it opens. That is the second time a neighbour turned up outside',
+        'the list, after the warehouse-allocations table in 924. The list is not',
+        'a boundary.',
         '',
-        'So a multi-warehouse return has no branch; it has branches, in its',
-        'allocations. And can_access_record_branch passes a branchless record to',
-        'EVERYONE by its declared design - company-level data. Copying the 921',
-        'rule here would have left the door wide open AND MADE IT LOOK SHUT,',
-        'which is worse than leaving it visibly open.',
+        'THE 924 QUESTION WAS ASKED, and its answer differed. What does "no',
+        'branch" mean here? Measured in the code: a request takes its branch',
+        'from its INVOICE, failing that from the MEMBERSHIP of whoever raised',
+        'it, failing that NULL. So a NULL branch here is not a document shared',
+        'between branches - as it was for a multi-warehouse purchase return -',
+        'but company-level data with no branch at all. The ordinary rule',
+        'applies. That difference is exactly what blocked the copy in 924 and',
+        'permits it here, and it is why the question is asked of every table',
+        'rather than assumed.',
         '',
-        'On the data today: zero multi-warehouse returns, zero allocations. The',
-        'path exists in code and has not been used yet. The door is closed',
-        'before it opens, not after.',
+        'THE LINES WERE PROVEN BY PLANTING, not by counting an empty table.',
+        'sales_return_items asks about its head, so it SHOULD follow it - but',
+        '"should" is not a measurement, and production holds zero documents, so',
+        'there was nothing to measure. A Nasr City return with one line priced',
+        'at 500 was planted on test inside a rolled-back transaction: every',
+        'branch member saw ZERO requests and ZERO lines, the member with NO',
+        'branch on his membership saw both (as agreed in 917), and the owner and',
+        'registered owner saw both.',
         '',
-        'THE RULE, decided by the owner: HIS SHARE ALONE. A branch member sees',
-        'the multi-warehouse return if he has an allocation in his branch, and',
-        'sees only the lines and allocations belonging to his branch. Which is',
-        'exactly what the screen already does in getUserQty - so the judgement',
-        'moved into the database and the screen became the second layer.',
+        'On production after applying: all six branch members ZERO, the owner 1,',
+        'and the registered owner 1 - the old policy asked company_members only,',
+        'so it had been hiding from him what he owns.',
         '',
-        'Three functions carry it instead of one condition repeated in three',
-        'policies: current_user_is_branch_unbounded, can_access_purchase_return,',
-        'can_access_purchase_return_item. All SECURITY DEFINER, by the 915',
-        'lesson: an isolation function reading as the caller returns NULL for a',
-        'row hidden from him, and NULL then means no branch - so it passes what',
-        'it exists to refuse.',
+        'The guard grew to eleven heads and eight line tables, and a seventh',
+        'stage joined the trap.',
         '',
-        'PROVEN, and the planting is where the proof lives. On test the two',
-        'returns went to zero for every branch member. Then a multi-warehouse',
-        'return was PLANTED in a rolled-back transaction - head with no branch,',
-        'two allocations (main 100, Nasr 200), two lines with their prices. The',
-        'main-branch accountant and store keeper each saw the head, ONE OF TWO',
-        'lines and ONE OF TWO allocations. Their share, and not the other',
-        "branch's price. The owner saw two of two. The same measurement showed a",
-        'member with NO branch on his membership stays unbounded, as agreed in',
-        '917.',
-        '',
-        'On production after applying: all six branch members ZERO heads and',
-        'ZERO lines, the owner 2 and 2, the registered owner 2 and 2, and ONE',
-        'read policy on each of the three tables.',
-        '',
-        'The guard grew by two heads and one line table - nine heads, seven line',
-        'tables - and a sixth stage joined the trap.'
+        'One thing measured and left alone: 6 orphan rows in sales_return_items',
+        'on the test database, with no parent document. Nobody can read them',
+        'because their policy asks about a head that does not exist, but they',
+        'carry prices. Recorded in the handover, not touched in a security',
+        'release.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -444,5 +422,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.924 pushed - purchase returns belong to their branch, and a multi-warehouse return is split by allocation" -ForegroundColor Green
+    Write-Host "`n+ v3.74.925 pushed - sales return requests and returns belong to their branch: 5 of 19 closed" -ForegroundColor Green
 }
