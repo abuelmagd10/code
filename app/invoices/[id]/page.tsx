@@ -8,6 +8,7 @@
 
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect, useRef, useMemo, useTransition, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -887,8 +888,11 @@ export default function InvoiceDetailPage() {
 
         const { data: itemsData } = await supabase
           .from("invoice_items")
-          .select("*, products(name, sku, cost_price)")
+          .select("*, products(id, name, sku)")
           .eq("invoice_id", invoiceId)
+
+        // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+        await attachProductCosts(supabase, (itemsData || []).map((it: any) => it?.products).filter(Boolean))
 
         console.log("📦 Invoice items loaded:", itemsData?.map((item: InvoiceItem) => ({
           id: item.id,

@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import type React from "react"
 
 import { useEffect, useMemo, useState } from "react"
@@ -156,13 +157,14 @@ export default function NewVendorCreditPage() {
       const { data: sups } = await suppQueryVC
       setSuppliers((sups || []) as any)
 
-      let prodsQueryVC = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand, image_urls").eq("company_id", loadedCompanyId)
+      let prodsQueryVC = supabase.from("products").select("id, name, sku, item_type, quantity_on_hand, image_urls").eq("company_id", loadedCompanyId)
       if (!isAdminVC && userBranchIdVC) {
         prodsQueryVC = prodsQueryVC.or(`branch_id.eq.${userBranchIdVC},branch_id.is.null`)
       }
       const { data: prods } = await prodsQueryVC
       console.log('📦 [Vendor Credits] Loaded products:', prods?.length || 0, prods)
-      setProducts((prods || []) as any)
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+      setProducts((await attachProductCosts(supabase, (prods || []) as any[])) as any)
 
       const { data: accs } = await supabase.from("chart_of_accounts").select("id, account_code, account_name, account_type").eq("company_id", loadedCompanyId)
       setAccounts((accs || []) as any)

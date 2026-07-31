@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect, useMemo, useTransition, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1747,8 +1748,10 @@ export default function InvoicesPage() {
         if (prodIds.length > 0) {
           const { data: prods } = await supabase
             .from("products")
-            .select("id, name, cost_price")
+            .select("id, name")
             .in("id", prodIds)
+          // v3.74.909 — التكلفة من المسار المخوَّل وحده.
+          await attachProductCosts(supabase, (prods || []) as any[])
             ; (prods || []).forEach((p: any) => {
               prodMap[String(p.id)] = { name: String(p.name || ""), cost_price: Number(p.cost_price || 0) }
             })
@@ -1777,7 +1780,7 @@ export default function InvoicesPage() {
 
         const { data: tx } = await supabase
           .from("inventory_transactions")
-          .select("product_id, quantity_change, products(name, cost_price)")
+          .select("product_id, quantity_change, products(id, name)")
           .eq("company_id", invMeta?.company_id)
           .eq("branch_id", invMeta?.branch_id)
           .eq("warehouse_id", invMeta?.warehouse_id)
@@ -1785,6 +1788,9 @@ export default function InvoicesPage() {
           .eq("reference_id", inv.id)
           .eq("transaction_type", "sale")
         const txItems = Array.isArray(tx) ? tx : []
+        // v3.74.909 — التكلفة تُلحَق بالمنتجات المتداخلة من المسار المخوَّل،
+        // لا تُطلب داخل الربط: الربط سيسقط بخطأ صلاحية بعد السحب.
+        await attachProductCosts(supabase, txItems.map((t: any) => t?.products).filter(Boolean))
         items = txItems.map((t: any) => ({
           id: `${inv.id}-${String(t.product_id)}`,
           product_id: t.product_id,

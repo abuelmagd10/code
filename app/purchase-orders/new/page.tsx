@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import type React from "react"
 import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
@@ -289,12 +290,13 @@ export default function NewPurchaseOrderPage() {
         setSuppliers(suppData || [])
       }
 
-      let prodQuery = supabase.from("products").select("id, name, cost_price, sku, item_type, quantity_on_hand, image_urls").eq("company_id", companyId).order("name")
+      let prodQuery = supabase.from("products").select("id, name, sku, item_type, quantity_on_hand, image_urls").eq("company_id", companyId).order("name")
       if (!isCurrentUserAdmin && currentUserBranchId) {
         prodQuery = prodQuery.or(`branch_id.eq.${currentUserBranchId},branch_id.is.null`)
       }
       const { data: prodData } = await prodQuery
-      setProducts(prodData || [])
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+      setProducts(await attachProductCosts(supabase, (prodData || []) as any[]))
 
       const dbCurrencies = await getActiveCurrencies(supabase, companyId)
       if (dbCurrencies.length > 0) {

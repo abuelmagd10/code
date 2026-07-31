@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -73,13 +74,23 @@ export default function BomCostReportPage() {
           ),
           manufacturing_bom_lines(
             id, quantity_per, scrap_percent, issue_uom, is_optional,
-            products!manufacturing_bom_lines_component_product_id_fkey(name, sku, cost_price)
+            products!manufacturing_bom_lines_component_product_id_fkey(id, name, sku)
           )
         `)
         .eq("manufacturing_boms.company_id", companyId)
         .in("status", ["approved", "active"])
         .order("created_at", { ascending: false })
         .limit(200)
+
+      // v3.74.909 — تكلفة المكوّنات من المسار المخوَّل، لا من داخل الربط.
+      await attachProductCosts(
+        supabase,
+        (versions || []).flatMap((v: any) =>
+          (v.manufacturing_bom_lines || []).map((l: any) =>
+            Array.isArray(l.products) ? l.products[0] : l.products
+          )
+        ).filter(Boolean)
+      )
 
       const rows: BomRow[] = (versions || []).map((v: any) => {
         const bom = Array.isArray(v.manufacturing_boms) ? v.manufacturing_boms[0] : v.manufacturing_boms

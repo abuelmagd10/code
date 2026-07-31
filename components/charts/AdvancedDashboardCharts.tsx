@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { useEffect, useState, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -303,8 +304,12 @@ export default function AdvancedDashboardCharts({
 
     const { data: products } = await supabase
       .from('products')
-      .select('id, name, cost_price')
+      .select('id, name')
       .in('id', topProductIds)
+
+    // v3.74.909 — قيمة المخزون فى الرسم تُبنى على تكلفةٍ مخوَّلة؛ ومن لا
+    // يستحقها يرى صفراً صريحاً لا رقماً مسروقاً من الجدول.
+    await attachProductCosts(supabase, (products || []) as any[])
 
     const productMap = new Map((products || []).map((p: any) => [p.id, p]))
 

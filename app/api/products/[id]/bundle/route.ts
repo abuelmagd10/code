@@ -1,3 +1,4 @@
+import { attachProductCosts } from "@/lib/product-costs"
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { apiGuard, asyncAuditLog } from '@/lib/core'
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         is_optional, auto_deduct_inventory, price_handling,
         display_order, notes, created_at, updated_at,
         child:products!product_bundle_items_child_product_id_fkey (
-          id, name, sku, unit_price, cost_price, item_type, is_active
+          id, name, sku, unit_price, item_type, is_active
         )
       `)
       .eq('parent_product_id', parentId)
@@ -42,6 +43,12 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       .order('created_at', { ascending: true })
 
     if (error) throw error
+
+    // v3.74.909 — تكلفة الأصناف المكوِّنة من المسار المخوَّل وحده.
+    await attachProductCosts(
+      supabase,
+      ((data || []) as any[]).map((row: any) => (Array.isArray(row?.child) ? row.child[0] : row?.child)).filter(Boolean)
+    )
 
     return NextResponse.json({ success: true, items: data ?? [] })
   } catch (error) {

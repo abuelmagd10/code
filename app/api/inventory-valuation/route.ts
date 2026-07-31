@@ -20,6 +20,7 @@
  * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
  */
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
@@ -72,9 +73,12 @@ export async function GET(req: NextRequest) {
     // Only get products (exclude services from inventory valuation)
     const { data: products } = await supabase
       .from('products')
-      .select('id, sku, name, cost_price, item_type')
+      .select('id, sku, name, item_type')
       .eq('company_id', companyId)
       .or('item_type.is.null,item_type.eq.product')
+
+    // v3.74.909 — التكلفة من المسار المخوَّل وحده، لا من الجدول.
+    await attachProductCosts(supabase, (products || []) as any[])
 
     const costById: Record<string, number> = {}
     const nameById: Record<string, string> = {}

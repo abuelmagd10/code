@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { useEffect, useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -228,7 +229,7 @@ export default function NewPurchaseReturnPage() {
       // 🔐 Enterprise Governance: Filter suppliers and products by branch for non-admin users
       const isPrivilegedForSuppliers = PRIVILEGED_ROLES.includes(role.toLowerCase())
       let suppQuery = supabase.from("suppliers").select("id, name, phone").eq("company_id", loadedCompanyId)
-      let prodQuery = supabase.from("products").select("id, name, cost_price").eq("company_id", loadedCompanyId)
+      let prodQuery = supabase.from("products").select("id, name").eq("company_id", loadedCompanyId)
       if (!isPrivilegedForSuppliers && userBranchId) {
         suppQuery = suppQuery.eq("branch_id", userBranchId)
         prodQuery = prodQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`)
@@ -242,7 +243,8 @@ export default function NewPurchaseReturnPage() {
 
       setSuppliers((suppRes.data || []) as Supplier[])
       setBills((billRes.data || []) as Bill[])
-      setProducts((prodRes.data || []) as Product[])
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+      setProducts((await attachProductCosts(supabase, (prodRes.data || []) as any[])) as Product[])
 
       // ملاحظة: allWarehouses تُبنى ديناميكياً في useEffect الخاص بـ allWarehouseStocks
       // من خلال inventory_transactions مع join، لتجاوز RLS على جدول warehouses
@@ -282,13 +284,18 @@ export default function NewPurchaseReturnPage() {
           purchase_return_items(
             id, bill_item_id, product_id, quantity, unit_price,
             tax_rate, discount_percent, line_total,
-            products(name, cost_price)
+            products(id, name)
           )
         `)
         .eq('id', editReturnId)
         .single()
 
       if (!pr) return
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل لا من داخل الربط.
+      await attachProductCosts(
+        supabase,
+        ((pr as any)?.purchase_return_items || []).map((it: any) => it?.products).filter(Boolean)
+      )
       if (!['rejected', 'warehouse_rejected'].includes(pr.workflow_status)) {
         toast({ title: '⚠️ لا يمكن تعديل هذا المرتجع', description: 'يمكن التعديل فقط على المرتجعات المرفوضة', variant: 'destructive' })
         router.push('/purchase-returns')
@@ -482,10 +489,12 @@ export default function NewPurchaseReturnPage() {
     ; (async () => {
       const { data } = await supabase
         .from("bill_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity, products(name, cost_price)")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity, products(id, name)")
         .eq("bill_id", form.bill_id)
 
       const billItemsData = (data || []) as any[]
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+      await attachProductCosts(supabase, billItemsData.map((it: any) => it?.products).filter(Boolean))
       setBillItems(billItemsData)
 
       // v3.74.515 — نسبة الخصم العام للفاتورة: تقييم المرتجع يجب أن يعكس

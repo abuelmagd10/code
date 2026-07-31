@@ -1,3 +1,4 @@
+import { attachProductCosts } from "@/lib/product-costs"
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from('products')
-      .select('id, name, sku, unit_price, cost_price, item_type, branch_id, income_account_id, expense_account_id, is_active', { count: 'exact' })
+      .select('id, name, sku, unit_price, item_type, branch_id, income_account_id, expense_account_id, is_active', { count: 'exact' })
       .eq('company_id', companyId)
       .eq('is_active', true)
       .order('name')
@@ -44,6 +45,9 @@ export async function GET(req: Request) {
 
     const { data: products, error, count } = await query
     if (error) throw error
+
+    // v3.74.909 — التكلفة من المسار المخوَّل وحده، ولمن تسمح له القاعدة.
+    await attachProductCosts(supabase, (products || []) as any[])
 
     return NextResponse.json({ success: true, products: products ?? [], total: count ?? 0 })
   } catch (error) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { attachProductCosts } from "@/lib/product-costs"
 import { useEffect, useMemo, useState, useTransition, useCallback, useRef } from "react";
 import { useSupabase } from "@/lib/supabase/hooks";
 import { Button } from "@/components/ui/button";
@@ -214,12 +215,13 @@ export default function PurchaseOrdersPage() {
     ] = await Promise.all([
       suppQuery.order("name"),
       // ⚡ Lazy: نجلب فقط id, name للـ dropdown — بدون cost_price
-      supabase.from("products").select("id, name, cost_price, item_type").eq("company_id", companyId).order("name"),
+      supabase.from("products").select("id, name, item_type").eq("company_id", companyId).order("name"),
       supabase.from("shipping_providers").select("id, provider_name").order("provider_name"),
     ]);
 
     setSuppliers(supp || []);
-    setProducts(prod || []);
+    // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+    setProducts(await attachProductCosts(supabase, (prod || []) as any[]));
     setShippingProviders(providersData || []);
   }, [supabase]);
 

@@ -1,4 +1,5 @@
 "use client"
+import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { Button } from "@/components/ui/button"
@@ -380,7 +381,7 @@ export default function WriteOffsPage() {
       // Load products مع الفلترة حسب الفرع والمخزن
       let productsQuery = supabase
         .from("products")
-        .select("id, name, sku, cost_price, quantity_on_hand, item_type")
+        .select("id, name, sku, quantity_on_hand, item_type")
         .eq("company_id", cid)
         .eq("is_active", true)
         .neq("item_type", "service")
@@ -389,7 +390,8 @@ export default function WriteOffsPage() {
       // لا نحتاج لفلترة المنتجات هنا لأن الفلترة تتم على مستوى الإهلاكات
 
       const { data: prods } = await productsQuery
-      setProducts(prods || [])
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+      setProducts(await attachProductCosts(supabase, (prods || []) as any[]))
 
       // Load accounts
       const { data: accs } = await supabase

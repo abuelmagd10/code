@@ -1,5 +1,6 @@
 "use client"
 
+import { attachProductCosts } from "@/lib/product-costs"
 import type React from "react"
 
 import { useEffect, useMemo, useState } from "react"
@@ -350,9 +351,10 @@ export default function EditBillPage() {
 
       const { data: prods } = await supabase
         .from("products")
-        .select("id, name, cost_price, sku, item_type")
+        .select("id, name, sku, item_type")
         .eq("company_id", companyId)
-      setProducts(prods || [])
+      // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
+      setProducts(await attachProductCosts(supabase, (prods || []) as any[]))
     } catch (err) {
       console.error("Error loading bill for edit:", err)
     } finally { setIsLoading(false) }
