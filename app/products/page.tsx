@@ -1,5 +1,6 @@
 "use client"
 
+import { PRODUCT_COLUMNS_WITH_COST } from "@/lib/products-columns"
 import type React from "react"
 
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react"
@@ -444,7 +445,7 @@ export default function ProductsPage() {
       } else {
         const companyId = await ensureCompanyId(supabase)
         if (!companyId) return
-        const { data } = await supabase.from('products').select('*').eq('company_id', companyId)
+        const { data } = await supabase.from('products').select(PRODUCT_COLUMNS_WITH_COST).eq('company_id', companyId)
         setProducts(data || [])
       }
       // Load bundles map (non-blocking, non-critical)

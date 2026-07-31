@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import {
@@ -240,7 +241,7 @@ export async function loadRoutingVersionSnapshot(
       .order("operation_no"),
     supabase
       .from("products")
-      .select("*")
+      .select(PRODUCT_COLUMNS_NO_COST)
       .eq("id", routing.product_id)
       .maybeSingle(),
   ])

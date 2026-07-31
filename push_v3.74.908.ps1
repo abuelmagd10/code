@@ -6,97 +6,110 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.907 - the OLD script is removed, never this one. Five times a chained
+# v3.74.908 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.906.ps1") { Remove-Item -LiteralPath "push_v3.74.906.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.907.ps1") { Remove-Item -LiteralPath "push_v3.74.907.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.907"') {
-    Write-Host "+ 3.74.907" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.908"') {
+    Write-Host "+ 3.74.908" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.907]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.907]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.908]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.908]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260730000006_v3_74_907_vendor_credit_residual_and_ap_check.sql"
+# 908 لا يمسّ القاعدة إطلاقاً: لا هجرة ولا لقطة. كوده وحده يتغيّر - والحارس
+# الجديد هو ما يمنع عودة النجمة بعد أن أُزيلت.
+$columns = "lib/products-columns.ts"
+$guard   = "scripts/check-products-select-star.js"
+$prover  = "scripts/selftest-products-select-star.js"
 
-# لا لقطة فى قائمة هذا الإصدار: لم يتغير جدولٌ ولا عمود - دالّتان وقيدُ
-# تصحيح. وإدراج ملفٍ لم يتغير يجعل الحارس يمرّ على فراغ.
+$touched = @(
+    "app/api/manufacturing/boms/[id]/route.ts",
+    "app/api/manufacturing/boms/route.ts",
+    "app/api/manufacturing/production-orders/route.ts",
+    "app/api/manufacturing/routings/[id]/route.ts",
+    "app/api/manufacturing/routings/route.ts",
+    "app/api/products-list/route.ts",
+    "app/products/page.tsx",
+    "lib/manufacturing/bom-api.ts",
+    "lib/manufacturing/inventory-execution-api.ts",
+    "lib/manufacturing/production-order-api.ts",
+    "lib/manufacturing/routing-api.ts"
+)
+
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, "push_v3.74.907.ps1")
+           $columns, $guard, $prover) + $touched + @("push_v3.74.908.ps1")
 
 foreach ($f in $files) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
 }
 
-# -- 1. both halves of this release are in the file ------------------------
-$m = Get-Content -LiteralPath $migration -Raw
-foreach ($fn in @("vendor_credit_post_journal", "ic_ap_balance")) {
-    if ($m -notmatch [regex]::Escape($fn)) {
-        Write-Host "X the migration lost $fn" -ForegroundColor Red; exit 1
+# -- 1. every touched site names its columns, and none keeps a star --------
+# The star is not a style question here: the cost hide REVOKEs three columns,
+# and select("*") asks for every column including the revoked ones - so each
+# of these 12 sites would fail outright, five of them on the user session.
+foreach ($f in $touched) {
+    if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
+    $body = Get-Content -LiteralPath $f -Raw
+    if ($body -notmatch [regex]::Escape("@/lib/products-columns")) {
+        Write-Host "X $f no longer imports the named column list" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the migration carries the posting rule and the checker" -ForegroundColor Green
+Write-Host "+ all 11 touched files import the named column list" -ForegroundColor Green
 
-# -- 2. the entry equals the document, and the old formula is gone ---------
-# The defect was literal: AP was debited with subtotal + tax_amount, so a
-# credit carrying shipping posted 21.22 against a 26.22 document. Balanced
-# in itself, unequal to its own paper - which is why the balance guard let
-# it through. If that formula ever returns as the AP debit, this refuses.
-if ($m -match [regex]::Escape("'debit_amount',  p_vc.subtotal + COALESCE(p_vc.tax_amount, 0)")) {
-    Write-Host "X the AP debit went back to subtotal+tax - shipping would vanish again" -ForegroundColor Red; exit 1
-}
-foreach ($needle in @("VENDOR_CREDIT_JE_NOT_DOCUMENT",
-                      "VENDOR_CREDIT_GOODS_RESIDUAL_UNPROVEN",
-                      "v_residual := ROUND(COALESCE(p_vc.total_amount, 0)")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the document-equals-entry rule is not in the migration" -ForegroundColor Red; exit 1
+# -- 2. the two screens that show cost TODAY keep showing it ---------------
+# Dropping the cost columns here would have been a hide smuggled in early,
+# under cover of a cleanup. The hide is the next release, out loud.
+foreach ($f in @("app/api/products-list/route.ts", "app/products/page.tsx")) {
+    $body = Get-Content -LiteralPath $f -Raw
+    if ($body -notmatch [regex]::Escape("PRODUCT_COLUMNS_WITH_COST")) {
+        Write-Host "X $f stopped selecting cost - that is a hide, and this release hides nothing" -ForegroundColor Red
+        exit 1
     }
 }
-Write-Host "+ the entry must equal the document, and the old formula cannot return" -ForegroundColor Green
+Write-Host "+ the two cost-showing screens still ask for cost, by name" -ForegroundColor Green
 
-# -- 3. the checker subtracts unapplied credits ---------------------------
-# An approved credit that is not yet applied leaves a LEGITIMATE debit in
-# AP. Without this term the checker screams at an innocent book - and a
-# guard that cries wolf teaches people to ignore it.
-if ($m -notmatch [regex]::Escape("v_bill_net - v_credit_unapplied")) {
-    Write-Host "X ic_ap_balance stopped subtracting unapplied vendor credits" -ForegroundColor Red; exit 1
+# -- 3. the guard and its prover are both wired into this battery ----------
+$self = Get-Content -LiteralPath "push_v3.74.908.ps1" -Raw
+foreach ($needle in @("selftest-products-select-star.js", "check-products-select-star.js --require-db")) {
+    if ($self -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the new guard is not proven and checked in this battery" -ForegroundColor Red; exit 1
+    }
 }
-Write-Host "+ the AP checker knows an unapplied credit is not a discrepancy" -ForegroundColor Green
+Write-Host "+ the star guard is both proven and enforced, every release" -ForegroundColor Green
 
-# -- 3b. the repair posts once, and never twice ---------------------------
-# It is a data correction inside a migration: re-running the migration must
-# not double the ledger. It skips any credit that already carries one.
-$iRef  = $m.IndexOf("vendor_credit_residual_correction")
-$iSkip = $m.IndexOf("CONTINUE WHEN EXISTS")
-if ($iRef -lt 0 -or $iSkip -lt 0) {
-    Write-Host "X the residual correction is missing or is not idempotent" -ForegroundColor Red; exit 1
+# -- 3b. nothing is revoked in this release -------------------------------
+$cols = Get-Content -LiteralPath $columns -Raw
+if ($cols -match "REVOKE" -or $cols -notmatch [regex]::Escape("PRODUCT_COST_COLUMNS")) {
+    Write-Host "X 908 clears the ground; it does not hide. The REVOKE belongs to 909." -ForegroundColor Red
+    exit 1
 }
-Write-Host "+ the correction is posted by a named entry, once and only once" -ForegroundColor Green
+Write-Host "+ 908 clears the ground without pretending to hide anything" -ForegroundColor Green
 
 # -- 4. the battery below still proves both standing guards ----------------
-$self = Get-Content -LiteralPath "push_v3.74.907.ps1" -Raw
-if ($self -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
+$self2 = Get-Content -LiteralPath "push_v3.74.908.ps1" -Raw
+if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
-if ($self -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
+if ($self2 -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the anon-open guard" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the battery still plants both probes and watches both guards refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.906.ps1" 2>$null
+git add -u -- "push_v3.74.907.ps1" 2>$null
 
 # -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.906.ps1")
+$expected = @($files) + @("push_v3.74.907.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -105,6 +118,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the products-star guard refuses (and spares the innocent)..." -ForegroundColor Cyan
+node scripts/selftest-products-select-star.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the products-star guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking no select(*) on products, and that the named list matches the table..." -ForegroundColor Cyan
+node scripts/check-products-select-star.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X a star survives on products, or the named list drifted from the table" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the silent-cancel guard refuses - and reproducing the defect..." -ForegroundColor Cyan
 node scripts/selftest-trigger-silently-cancels-delete.js
@@ -277,7 +298,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.906.ps1" 2>$null
+git add -u -- "push_v3.74.907.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -296,55 +317,54 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_907.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_908.txt"
     $msgLines = @(
-        'fix(accounting): v3.74.907 - a vendor credit posts what its own document says, and the AP checker stops accusing the innocent',
+        'refactor(security): v3.74.908 - products is asked for by name, so the cost hide can be a permission change instead of a breakage',
         '',
-        'The integrity screen reported AP debit by 1.22 with no bill',
-        'outstanding. That number was two errors partly cancelling, which',
-        'is the worst kind of number.',
+        'Groundwork for the hide decided in 906, and nothing else: this',
+        'release hides NOTHING.',
         '',
-        'The real defect: vendor_credit_post_journal built the AP debit as',
-        'subtotal + tax_amount and nothing else, so SHIPPING and ADJUSTMENT',
-        'were silently dropped. Credit CR-51543 totals 26.22 (18.00 items',
-        '+ 5.00 shipping + 3.22 tax) and posted 21.22. The entry balanced',
-        'in itself - which is exactly why the balance guard passed it - but',
-        'it did not equal its own document. Header maths was verified',
-        'correct: the 10% discount is in the subtotal and the tax is on',
-        'items plus shipping. Only the entry was wrong.',
+        'Why it is needed: the real hide is REVOKE SELECT on three cost',
+        'columns of products. From that moment every select("*") on that',
+        'table fails outright, because a star asks for the revoked columns',
+        'too. Measured on the tree: 12 such sites, and five of them are',
+        'manufacturing API routes running on the USER session, not the',
+        'service-role key - so they would break for real, not in theory.',
         '',
-        'The second half: ic_ap_balance compared AP to outstanding bills',
-        'while ignoring UNAPPLIED vendor credits. An approved credit not',
-        'yet applied leaves a legitimate debit in AP, so a perfectly posted',
-        'book would have been accused of 6.22. 1.22 = 6.22 legitimate minus',
-        '5.00 missing.',
+        'What changed: lib/products-columns.ts holds two named lists.',
+        'PRODUCT_COLUMNS_NO_COST is every column except the three cost ones',
+        'and is used by the ten manufacturing sites - measured, not assumed:',
+        'cost_price appears zero times across app/manufacturing,',
+        'components/manufacturing, lib/manufacturing and',
+        'app/api/manufacturing. PRODUCT_COLUMNS_WITH_COST keeps cost and is',
+        'used by exactly the two places that display it today, the products',
+        'screen and /api/products-list; dropping cost there would have been',
+        'a hide smuggled in under cover of a cleanup, and the hide belongs',
+        'to the next release, out loud.',
         '',
-        'OWNER DECISION. Shipping and adjustment on a credit with NO goods',
-        'movement go to purchase discounts (5130), on its own named line -',
-        'no goods moved, so inventory and FIFO are not touched, which is',
-        'the 897 lesson already written in that function. A credit WITH',
-        'goods movement that carries shipping is now REFUSED by name until',
-        'its FIFO effect is proven: bills capitalise shipping into',
-        'inventory and the return layers already carry it, so reversing it',
-        'here could reverse it twice. No document of that shape exists.',
+        'The lists are all-but-cost rather than a shorter set on purpose: a',
+        'trimmed list drops a field some screen reads and turns it into a',
+        'silent undefined. This release preserves behaviour literally and',
+        'removes only the star.',
         '',
-        'Proven on test by cancelled transactions, byte-identical on both',
-        'databases (d7407096ac / aac6a9d11a): a standalone credit of 26.22',
-        'with 5.00 shipping now debits AP by exactly 26.22 and carries a',
-        'named 5.00 shipping line; the checker stays SILENT while that',
-        'credit is unapplied; the old 21.22 shape reproduces the alarm with',
-        'difference -5.00 - the number now points straight at the missing',
-        'shipping; the correction entry silences it; a goods-moved credit',
-        'with shipping is refused by name; and one without shipping still',
-        'posts 20.52 against a 20.52 document with 18.00 credited to',
-        'inventory.',
+        'The guard is the point. check-products-select-star.js refuses any',
+        'select("*") on products - including the joined shape',
+        'select("*, branch:branch_id(branch_name)") that products-list',
+        'actually used, which a naive check reads as innocent. It also',
+        'compares the named lists against the LIVE table, because a column',
+        'added to products tomorrow and forgotten here would vanish from',
+        'every screen in silence - the star protects against that today by',
+        'accident, and the guard inherits that protection instead of',
+        'dropping it.',
         '',
-        'The ledger was repaired, not adjusted: JE-000073 (DR 2110 5.00 /',
-        'CR 5130 5.00) completes CR-51543 as a dated, attributed entry. The',
-        'migration finds any credit whose posted entry differs from its own',
-        'total, and skips any that already carries a correction, so',
-        're-running it cannot double a book. All five production companies',
-        'now report zero AP discrepancies.'
+        'Two defects were caught by the prover before this was pushed, both',
+        'in the guard itself: it walked the tree with dirent types, so on a',
+        'filesystem that leaves d_type UNKNOWN it never descended and',
+        'printed a confident zero having scanned nothing; and it stripped',
+        'the opening quote of a select argument but not the closing one, so',
+        'the star read as *" and never matched. A guard that says zero',
+        'without looking is worse than no guard - which is exactly why the',
+        'prover exists.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -353,5 +373,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.907 pushed - the entry equals its document, and the checker no longer accuses the innocent" -ForegroundColor Green
+    Write-Host "`n+ v3.74.908 pushed - the ground is clear; the hide is next, and it will be a permission change" -ForegroundColor Green
 }

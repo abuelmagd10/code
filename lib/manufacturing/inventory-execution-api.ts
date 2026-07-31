@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import {
@@ -200,7 +201,7 @@ export async function loadProductionOrderInventoryExecutionSnapshot(
           .order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     productIds.length > 0
-      ? supabase.from("products").select("*").in("id", productIds)
+      ? supabase.from("products").select(PRODUCT_COLUMNS_NO_COST).in("id", productIds)
       : Promise.resolve({ data: [], error: null }),
   ])
 

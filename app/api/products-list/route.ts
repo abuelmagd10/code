@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_WITH_COST } from "@/lib/products-columns"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     // to resolve names (which showed "Unknown" for branch-scoped roles).
     let query = supabase
       .from("products")
-      .select("*, branch:branch_id(branch_name)")
+      .select(`${PRODUCT_COLUMNS_WITH_COST}, branch:branch_id(branch_name)`)
       .eq("company_id", companyId)
 
     // ✅ تطبيق فلتر الفرع فقط إذا كان موجوداً وكان member موجوداً

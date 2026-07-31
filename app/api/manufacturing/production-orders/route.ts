@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       { data: routingVersions, error: routingVersionsError },
     ] = await Promise.all([
       productIds.length > 0
-        ? supabase.from("products").select("*").in("id", productIds)
+        ? supabase.from("products").select(PRODUCT_COLUMNS_NO_COST).in("id", productIds)
         : Promise.resolve({ data: [], error: null }),
       bomIds.length > 0
         ? supabase.from("manufacturing_boms").select("*").in("id", bomIds)

@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
             .order("version_no", { ascending: false })
         : Promise.resolve({ data: [], error: null }),
       productIds.length > 0
-        ? supabase.from("products").select("*").in("id", productIds)
+        ? supabase.from("products").select(PRODUCT_COLUMNS_NO_COST).in("id", productIds)
         : Promise.resolve({ data: [], error: null }),
       // Phase 2: load BOM names for linked routings
       bomIds.length > 0

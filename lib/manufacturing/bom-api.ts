@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { NextRequest, NextResponse } from "next/server"
 import { z, type ZodTypeAny } from "zod"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
@@ -444,7 +445,7 @@ export async function assertManufacturableProduct(
 ) {
   const { data: product, error } = await supabase
     .from("products")
-    .select("*")
+    .select(PRODUCT_COLUMNS_NO_COST)
     .eq("id", params.productId)
     .eq("company_id", params.companyId)
     .maybeSingle()
@@ -819,7 +820,7 @@ export async function loadBomVersionSnapshot(
   if (productIds.length > 0) {
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("*")
+      .select(PRODUCT_COLUMNS_NO_COST)
       .in("id", productIds)
 
     if (productsError) throw productsError

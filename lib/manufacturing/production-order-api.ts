@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import {
@@ -233,7 +234,7 @@ export async function loadProductionOrderSnapshot(
     { data: materialRequirements, error: materialRequirementsError },
     { data: pendingMaterialApprovals, error: pendingMaterialApprovalsError },
   ] = await Promise.all([
-    supabase.from("products").select("*").eq("id", order.product_id).maybeSingle(),
+    supabase.from("products").select(PRODUCT_COLUMNS_NO_COST).eq("id", order.product_id).maybeSingle(),
     supabase.from("manufacturing_boms").select("*").eq("id", order.bom_id).maybeSingle(),
     supabase.from("manufacturing_bom_versions").select("*").eq("id", order.bom_version_id).maybeSingle(),
     supabase.from("manufacturing_routings").select("*").eq("id", order.routing_id).maybeSingle(),

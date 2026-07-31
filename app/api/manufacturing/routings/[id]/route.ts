@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import {
@@ -32,7 +33,7 @@ export async function GET(
         .eq("routing_id", id)
         .eq("company_id", companyId)
         .order("version_no", { ascending: false }),
-      supabase.from("products").select("*").eq("id", routing.product_id).maybeSingle(),
+      supabase.from("products").select(PRODUCT_COLUMNS_NO_COST).eq("id", routing.product_id).maybeSingle(),
       routing.bom_id
         ? supabase.from("manufacturing_boms").select("id, bom_code, bom_name, source_warehouse_id").eq("id", routing.bom_id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
