@@ -6,70 +6,85 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.912 - the OLD script is removed, never this one. Five times a chained
+# v3.74.913 - the OLD script(s) removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
 if (Test-Path -LiteralPath "push_v3.74.911.ps1") { Remove-Item -LiteralPath "push_v3.74.911.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.912.ps1") { Remove-Item -LiteralPath "push_v3.74.912.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.912"') {
-    Write-Host "+ 3.74.912" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.913"') {
+    Write-Host "+ 3.74.913" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.912]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.912]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.913]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.913]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 $guard   = "scripts/check-product-cost-direct-read.js"
 $columns = "lib/products-columns.ts"
-
-$broken = @("app/api/products-list/route.ts", "app/products/page.tsx")
+$page    = "app/products/page.tsx"
+$route   = "app/api/products/[id]/route.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $guard, $columns) + $broken + @("push_v3.74.912.ps1")
+           $guard, $columns, $page, $route,
+           "app/api/products-list/route.ts", "push_v3.74.913.ps1")
 
-# -- 1. the constant that emptied the screen is gone, everywhere -----------
-# A hidden column does not blank a field - it drops the WHOLE row. Asking
-# for cost inside a column list after the revoke returned zero products to
-# every user, owner included.
-foreach ($f in ($broken + @($columns))) {
+# -- 1. the cost-bearing column list is gone (912, folded in) --------------
+# القائمة المحذوفة: تُفحص فى الملفات الثلاثة (ومنها ملف القوائم نفسه)…
+foreach ($f in @($page, "app/api/products-list/route.ts", $columns)) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
     $body = Get-Content -LiteralPath $f -Raw
     $stripped = [regex]::Replace($body, "(?s)/\*.*?\*/", "")
     $stripped = [regex]::Replace($stripped, "(?m)^\s*//.*$", "")
     if ($stripped -match "PRODUCT_COLUMNS_WITH_COST") {
-        Write-Host "X $f still uses the cost-bearing column list" -ForegroundColor Red; exit 1
+        Write-Host "X $f still asks for the revoked columns inside a list" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the cost-bearing column list is gone from the code" -ForegroundColor Green
-
-# -- 2. both screens attach the cost through the authorised path ----------
-foreach ($f in $broken) {
+# …أما الإلحاق من المسار المخوَّل فيخصّ الشاشتين وحدهما: ملف القوائم يعرّف
+# أعمدةً ولا يقرأ شيئاً، ومطالبتُه بذلك خطأٌ فى الحارس لا فى الملف.
+foreach ($f in @($page, "app/api/products-list/route.ts")) {
     $body = Get-Content -LiteralPath $f -Raw
     if ($body -notmatch [regex]::Escape("attachProductCosts")) {
-        Write-Host "X $f no longer attaches cost from product_costs - it would show nothing" -ForegroundColor Red
-        exit 1
+        Write-Host "X $f no longer attaches cost through the authorised path" -ForegroundColor Red; exit 1
     }
 }
 Write-Host "+ the products screen and its API read cost through the authorised path" -ForegroundColor Green
 
-# -- 3. the guard now refuses a constant that carries cost ----------------
-# The hole was exact: the guard measured the TEXT of select(), and these two
-# passed a CONSTANT, so no column name was visible to it.
-$g = Get-Content -LiteralPath $guard -Raw
-if ($g -notmatch [regex]::Escape("carrying") -or $g -notmatch [regex]::Escape("export const")) {
-    Write-Host "X the guard still cannot see a cost column hidden inside a constant" -ForegroundColor Red
+# -- 2. a hidden cost renders as a dash, never crashes ---------------------
+# .toFixed() on a hidden cost threw, and the list error boundary swallowed
+# the whole screen for every non-owner.
+$body = Get-Content -LiteralPath $page -Raw
+if ($body -match "getDisplayPrice\([^)]*\)\s*\.\s*toFixed") {
+    Write-Host "X a price is formatted without handling a hidden (null) cost" -ForegroundColor Red; exit 1
+}
+if ($body -notmatch [regex]::Escape("formatPrice")) {
+    Write-Host "X the null-safe price formatter is gone" -ForegroundColor Red; exit 1
+}
+Write-Host "+ a hidden cost renders as a dash instead of throwing" -ForegroundColor Green
+
+# -- 3. and a hidden cost is never written back ---------------------------
+# The form opened at 0 for whoever could not see the cost, so saving a name
+# change wiped the real cost. Two guards: the screen omits the fields, and
+# the server drops them for anyone the 906 rule refuses.
+$routeBody = Get-Content -LiteralPath $route -Raw
+if ($routeBody -notmatch [regex]::Escape("can_view_purchase_cost")) {
+    Write-Host "X the update route no longer asks whether the caller may write cost" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the guard now reads the column lists themselves, not just select() text" -ForegroundColor Green
+if ($body -notmatch [regex]::Escape("editCostHidden")) {
+    Write-Host "X the form no longer tracks a hidden cost - it would save a zero over it" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ a hidden cost is neither shown nor written back (screen and server)" -ForegroundColor Green
 
 # -- 4. the battery below still proves both standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.912.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.913.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -81,9 +96,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
 git add -u -- "push_v3.74.911.ps1" 2>$null
+git add -u -- "push_v3.74.912.ps1" 2>$null
 
 # -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.911.ps1")
+$expected = @($files) + @("push_v3.74.911.ps1", "push_v3.74.912.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -289,6 +305,7 @@ if ($tscErr -eq 0) {
 
 git add -- $files 2>&1 | Out-Null
 git add -u -- "push_v3.74.911.ps1" 2>$null
+git add -u -- "push_v3.74.912.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -307,38 +324,38 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_912.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_913.txt"
     $msgLines = @(
-        'fix(products): v3.74.912 - the products screen came back; a revoked column does not blank a field, it drops the row',
+        'fix(products): v3.74.913 - the products screen survives a hidden cost, and a hidden cost can no longer be overwritten with zero',
         '',
-        'Reported minutes after 911 shipped: the products and services screen',
-        'was EMPTY for every user, owner included. My defect, and a plain',
-        'one.',
+        'Three defects from the hide, in one release. The first emptied the',
+        'screen, the second crashed it, and the third would have destroyed',
+        'data quietly.',
         '',
-        '909 converted fifteen display sites to the authorised path but',
-        'deliberately kept two - the products screen and /api/products-list -',
-        'asking for the cost columns by name, through a constant called',
-        'PRODUCT_COLUMNS_WITH_COST, because those two genuinely display cost',
-        'and hiding it there early would have been a hide smuggled in. The',
-        'plan was to convert them WITH the revoke. In 911 I revoked and',
-        'forgot them.',
+        'ONE - the screen was empty for everyone (912, folded in here). Two',
+        'sites still asked for the cost columns inside a column list, and a',
+        'revoked column does not come back empty: PostgREST fails the WHOLE',
+        'query, so the screen received zero rows. Both now use the authorised',
+        'path, the cost-bearing list is deleted, and the guard reads the',
+        'column lists themselves - the hole was that it only read the text',
+        'inside select(), and a constant hides its contents from that.',
         '',
-        'And the failure mode is worse than expected: a revoked column inside',
-        'a column list does not come back empty - PostgREST fails the WHOLE',
-        'query with permission denied, so the screen received zero rows, not',
-        'rows with a blank cost.',
+        'TWO - the screen then crashed for every non-owner: the cost cell',
+        'called .toFixed() on a cost that is now null for whoever may not see',
+        'it, and the list error boundary swallowed the page. Hidden costs',
+        'render as a dash. So does the inventory total value, which is itself',
+        'cost information: if a single cost is hidden, the total is hidden -',
+        'a partial sum would leak what the hide removed.',
         '',
-        'Both now select the non-cost columns and attach the cost through',
-        'product_costs, like the other fifteen. The constant is DELETED, not',
-        'left unused: nothing that names a cost column may exist to be passed',
-        'around again.',
+        'THREE, and the dangerous one - the edit form opened a hidden cost as',
+        '0, so a store manager renaming a product would SAVE zero over the',
+        'real purchase cost. A read restriction had opened a write hole. The',
+        'form no longer shows or sends the cost when it is hidden, and the',
+        'update route drops cost fields for any caller the 906 rule refuses -',
+        'server-side, because a crafted request bypasses the screen.',
         '',
-        'Why no guard caught it, and what changed: the read guard measured',
-        'the TEXT inside select(), and these two passed a constant - no',
-        'column name was visible to it, so it reported clean while the',
-        'screens were broken. It now also reads lib/products-columns.ts and',
-        'refuses any exported constant carrying a cost column. Proven by',
-        'planting one: refused by name, and the file restored byte for byte.'
+        'Measured while fixing: exactly one .toFixed on a cost value in the',
+        'whole tree, and no other screen formats a cost without a guard.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -347,5 +364,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.912 pushed - the products screen is back, and a column list can no longer carry a hidden column" -ForegroundColor Green
+    Write-Host "`n+ v3.74.913 pushed - the screen holds a hidden cost without breaking, and no one can overwrite it with a zero" -ForegroundColor Green
 }

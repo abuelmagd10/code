@@ -169,10 +169,28 @@ export async function PUT(
       return ErrorHandler.handle(ErrorHandler.validation(accountingValidation.errors.join(' ')))
     }
 
+    // v3.74.913 — **من لا يرى التكلفة لا يكتبها.**
+    //
+    // الحادثة: بعد حجب التكلفة (911) صار النموذج يفتح بصفرٍ لمن حُجبت عنه،
+    // فحفظُ اسم صنفٍ من مستخدمٍ غير مصرَّح له كان **يمسح تكلفته الحقيقية**
+    // ويكتب صفراً مكانها. حجبُ قراءةٍ فتح باب إتلافِ كتابة.
+    //
+    // والحارس هنا فى الخادم لا فى الشاشة: طلبٌ مُصاغٌ بيدٍ يتجاوز الواجهة،
+    // والقاعدة نفسها (906) هى الفاصل — لا الدور المخزَّن فى الواجهة.
+    const { data: maySeeCost } = await supabase.rpc("can_view_purchase_cost", {
+      p_company_id: companyId,
+      p_created_by: null,
+    })
+    const costFields = ["cost_price", "original_cost_price", "display_cost_price"]
+    const writable = pickWritableProductFields(body)
+    if (maySeeCost !== true) {
+      for (const f of costFields) delete (writable as any)[f]
+    }
+
     // Prepare data with enforced values
     const productData = {
       // v3.74.858 — الأعمدة بالاسم لا نسخ الجسم كما وصل. انظر التعليق أعلى الملف.
-      ...pickWritableProductFields(body),
+      ...writable,
       income_account_id: finalIncomeAccountId,
       expense_account_id: finalExpenseAccountId,
       branch_id: finalBranchId,

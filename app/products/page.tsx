@@ -222,6 +222,8 @@ export default function ProductsPage() {
   const [permUpdate, setPermUpdate] = useState(false)
   const [permDelete, setPermDelete] = useState(false)
   const [canViewCOGS, setCanViewCOGS] = useState(false) // صلاحية رؤية سعر التكلفة
+  // v3.74.913 — هل جاء هذا الصنف بتكلفةٍ محجوبة؟ (القاعدة فى الخادم، وهذه صداها)
+  const [editCostHidden, setEditCostHidden] = useState(false)
   const [userRole, setUserRole] = useState<string>("")
   const [userBranchId, setUserBranchId] = useState<string>("")
   const [userCostCenterId, setUserCostCenterId] = useState<string>("")
@@ -285,19 +287,25 @@ export default function ProductsPage() {
   const [pageSize, setPageSize] = useState(10)
 
   // Helper: Get display price (use converted if available)
-  const getDisplayPrice = (product: Product, field: 'unit' | 'cost'): number => {
+  // v3.74.913 — التكلفة قد تكون **محجوبة** (null) لمن لا تسمح له قاعدة 906،
+  // والدالة تُعيدها كما هى. وإعادةُ صفرٍ مكانها كذبٌ يبدو رقماً.
+  const getDisplayPrice = (product: Product, field: 'unit' | 'cost'): number | null => {
     if (field === 'unit') {
       if (product.display_currency === appCurrency && product.display_unit_price != null) {
         return product.display_unit_price
       }
-      return product.unit_price
+      return product.unit_price ?? null
     } else {
       if (product.display_currency === appCurrency && product.display_cost_price != null) {
         return product.display_cost_price
       }
-      return product.cost_price
+      return product.cost_price ?? null
     }
   }
+
+  /** «—» للمحجوب، ورقمٌ لمن يستحق. */
+  const formatPrice = (value: number | null): string =>
+    value == null ? '—' : `${value.toFixed(2)} ${currencySymbol}`
 
   useEffect(() => {
     // Listen for currency changes
@@ -651,10 +659,19 @@ export default function ProductsPage() {
         // Multi-currency support
         original_unit_price: formData.unit_price,
         original_cost_price: formData.cost_price,
+        // (يُنزع الحقلان أدناه إن كانت التكلفة محجوبة — v3.74.913)
         original_currency: systemCurrency,
         exchange_rate_used: 1,
         // v3.74.496: صور الصنف
         image_urls: finalImageUrls,
+      }
+
+      // v3.74.913 — تكلفةٌ محجوبة لا تُرسَل أصلاً: النموذج يفتحها صفراً،
+      // وإرسالها يمسح الأصل. (والخادم يُسقطها أيضاً — حارسان لا واحد.)
+      if (editCostHidden) {
+        delete (saveData as any).cost_price
+        delete (saveData as any).original_cost_price
+        delete (saveData as any).display_cost_price
       }
 
       // 🔐 Enterprise-Level: استخدام API endpoint مع Backend validation
@@ -703,6 +720,7 @@ export default function ProductsPage() {
 
       setIsDialogOpen(false)
       setEditingId(null)
+    setEditCostHidden(false)   // صنفٌ جديد: لا حجب موروثاً من صنفٍ سابق (913)
       resetFormData()
       loadProducts()
     } catch (error: any) {
@@ -728,6 +746,7 @@ export default function ProductsPage() {
   }
 
   const resetFormData = () => {
+    setEditCostHidden(false)   // v3.74.913 — لا يُورَّث حجبُ صنفٍ إلى نموذجٍ جديد
     // للأدوار العليا: prefill القيم إذا كانت موجودة (قابلة للتعديل)
 
     // محاولة ذكية لإيجاد مركز تكلفة/مستودع افتراضي للفرع إذا لم يكن للمستخدم واحد
@@ -771,6 +790,7 @@ export default function ProductsPage() {
   const handleEdit = (product: Product) => {
     // v3.74.645 — عند التعديل نحافظ على الرمز الحالي ولا نقترح رمزاً جديداً
     setSkuTouched(true)
+    setEditCostHidden(product.cost_price == null)
     // 🔐 Enterprise Logic: عند التعديل، للأدوار العادية نفرض القيم من بيانات المستخدم
     // v3.74.858 — 🔴 لا يُنسخ صفّ القائمة كما هو إلى النموذج.
     //
@@ -783,6 +803,8 @@ export default function ProductsPage() {
       name: product.name ?? "",
       description: product.description ?? "",
       unit_price: product.unit_price ?? 0,
+      // v3.74.913 — تكلفةٌ محجوبة تُفتح صفراً فى النموذج، وحفظُها يمسح
+      // الأصل. فتُحفظ الحالة، ويُستبعد الحقل من الحمولة عند الحفظ.
       cost_price: product.cost_price ?? 0,
       unit: product.unit ?? "piece",
       quantity_on_hand: product.quantity_on_hand ?? 0,
@@ -1069,7 +1091,7 @@ export default function ProductsPage() {
         header: appLang === 'en' ? 'Price' : 'السعر',
         type: 'currency',
         align: 'right',
-        format: (_, row) => `${getDisplayPrice(row, 'unit').toFixed(2)} ${currencySymbol}`
+        format: (_, row) => formatPrice(getDisplayPrice(row, 'unit'))
       },
       {
         key: 'cost',
@@ -1077,7 +1099,8 @@ export default function ProductsPage() {
         type: 'currency',
         align: 'right',
         hidden: 'lg',
-        format: (_, row) => `${getDisplayPrice(row, 'cost').toFixed(2)} ${currencySymbol}`
+        // عمود التكلفة: «—» لمن حُجبت عنه، لا صفر (v3.74.913)
+      format: (_, row) => formatPrice(getDisplayPrice(row, 'cost'))
       }
     ]
 
@@ -1492,7 +1515,14 @@ export default function ProductsPage() {
                         </div>
                         )}
                         {/* === إصلاح أمني: إخفاء سعر التكلفة للمستخدمين غير المصرح لهم === */}
-                        {canViewCOGS && (
+                        {canViewCOGS && editCostHidden && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3">
+                    <p className="text-xs text-amber-800 dark:text-amber-200 leading-5">
+                      تكلفة الشراء محجوبة عنك بقاعدة الشركة، فلن تُعرض هنا ولن تتغيّر عند الحفظ.
+                    </p>
+                  </div>
+                )}
+                {canViewCOGS && !editCostHidden && (
                           <div className="space-y-2">
                             <Label htmlFor="cost_price">{appLang === 'en' ? 'Cost Price' : 'سعر التكلفة'}</Label>
                             <NumericInput
@@ -1917,7 +1947,12 @@ export default function ProductsPage() {
                           const totalProducts = filteredProducts.length
                           const productsOnly = filteredProducts.filter(p => p.item_type === 'product' || !p.item_type)
                           const totalQuantity = productsOnly.reduce((sum, p) => sum + (p.quantity_on_hand || 0), 0)
-                          const totalValue = productsOnly.reduce((sum, p) => sum + (getDisplayPrice(p, 'cost') * (p.quantity_on_hand || 0)), 0)
+    // v3.74.913 — إجمالى قيمة المخزون **معلومة تكلفة بذاته**: من حُجبت عنه
+    // تكلفةُ صنفٍ واحد لا يُعطى مجموعاً يشى بها. `null` تُعرض «—».
+    const anyHidden = productsOnly.some((p) => getDisplayPrice(p, 'cost') == null)
+    const totalValue = anyHidden
+      ? null
+      : productsOnly.reduce((sum, p) => sum + ((getDisplayPrice(p, 'cost') as number) * (p.quantity_on_hand || 0)), 0)
 
                           return (
                             <tr>
@@ -1939,7 +1974,9 @@ export default function ProductsPage() {
                                       <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
                                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
                                         <span className="font-bold text-green-600 dark:text-green-400">
-                                          {currencySymbol}{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          {totalValue == null
+                                            ? '—'
+                                            : `${currencySymbol}${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                         </span>
                                       </div>
                                     </>
