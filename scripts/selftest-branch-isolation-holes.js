@@ -8,12 +8,13 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). أربع حالات:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). خمس حالات:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
  *   (ج) سياسةٌ متساهلةٌ على أوامر البيع (922)  ⇒ يُرفض ويُسمّى الجدول.
- *   (د) إعادة الحال                          ⇒ يصمت.
+ *   (د) سياسةٌ متساهلةٌ على عروض الأسعار (923) ⇒ يُرفض ويُسمّى الجدول.
+ *   (هـ) إعادة الحال                         ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -85,6 +86,7 @@ function runGuard() {
   const restore = async (client) => {
     await client.query("DROP POLICY IF EXISTS bills_select ON public.bills")
     await client.query("DROP POLICY IF EXISTS sales_orders_company_wide ON public.sales_orders")
+    await client.query("DROP POLICY IF EXISTS estimates_company_wide ON public.estimates")
     await client.query(billItemsFn)
   }
 
@@ -132,6 +134,14 @@ function runGuard() {
       /^\s+- sales_orders:/m
     )
 
+    await stage(
+      "سياسةٌ متساهلةٌ تعود بجوار عزل عروض الأسعار",
+      () => client.query(
+        "CREATE POLICY estimates_company_wide ON public.estimates FOR SELECT USING (public.is_company_member(company_id))"
+      ),
+      /^\s+- estimates:/m
+    )
+
     if (ok) {
       const r = runGuard()
       if (r.failed) {
@@ -148,6 +158,7 @@ function runGuard() {
   }
 
   if (!ok) process.exit(1)
-  console.log("+ the branch-isolation guard is proven to catch BOTH shapes of the real leak: a permissive")
-  console.log("  policy beside the isolation, and a child-row function that forgets the branch (test DB only).")
+  console.log("+ the branch-isolation guard is proven to catch every shape of the real leak: a permissive")
+  console.log("  policy beside the isolation on THREE different tables, and a child-row function that")
+  console.log("  forgets the branch - and to stay silent on the correct state (test DB only).")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })

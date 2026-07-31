@@ -6,85 +6,85 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.922 - the OLD script is removed, never this one. Five times a chained
+# v3.74.923 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.921.ps1") { Remove-Item -LiteralPath "push_v3.74.921.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.922.ps1") { Remove-Item -LiteralPath "push_v3.74.922.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.922"') {
-    Write-Host "+ 3.74.922" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.923"') {
+    Write-Host "+ 3.74.923" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.922]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.922]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.923]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.923]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000011_v3_74_922_sales_orders_branch_isolation.sql"
+$migration = "supabase/migrations/20260731000012_v3_74_923_estimates_branch_isolation.sql"
 $guard     = "scripts/check-branch-isolation-holes.js"
 $trap      = "scripts/selftest-branch-isolation-holes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            $migration, $guard, $trap,
-           "push_v3.74.922.ps1")
+           "push_v3.74.923.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. the dead permissive policy is REMOVED, not left to wake up -------
-# Its condition reads app.current_company_id, which no line in the project
-# sets - so it grants nothing today. But it is the 917 trap asleep: one
-# permissive policy beside the isolation and the whole split falls to the OR.
-if ($m -notmatch [regex]::Escape("DROP POLICY IF EXISTS sales_orders_company_isolation")) {
-    Write-Host "X the dead company-wide policy survives beside the new rule" -ForegroundColor Red; exit 1
+# -- 1. every permissive door on BOTH tables is removed ------------------
+# Three owner-only policies stood beside the read policy here. Each was
+# measured redundant - can_modify_data and can_delete_resource both start
+# with "registered owner => true", and the new read policy passes him
+# through 'company' visibility - and each was a second permissive door,
+# which is the exact shape that produced the 917 trap.
+foreach ($needle in @("DROP POLICY IF EXISTS estimates_owner_dml",
+                      "DROP POLICY IF EXISTS estimate_items_owner_dml",
+                      "DROP POLICY IF EXISTS estimate_items_owner_select",
+                      "DROP POLICY IF EXISTS estimates_select_v4")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X a permissive policy survives beside the new rule ($needle)" -ForegroundColor Red; exit 1
+    }
 }
-if ($m -notmatch [regex]::Escape("DROP POLICY IF EXISTS sales_orders_select_v4")) {
-    Write-Host "X the old select policy survives beside the new one" -ForegroundColor Red; exit 1
-}
-Write-Host "+ one read policy replaces two - nothing permissive is left behind" -ForegroundColor Green
+Write-Host "+ one read policy per table - nothing permissive is left behind" -ForegroundColor Green
 
 # -- 2. the branch rule is the SAME one, and it WRAPS the visibility -----
-# The visibility system is not replaced: it stays, and the branch question is
-# asked after it. Dropping either half is a regression - so both are measured.
 if ($m -notmatch [regex]::Escape("public.can_access_record_branch(company_id, branch_id)")) {
     Write-Host "X the new policy does not use the branch rule agreed in 917" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch [regex]::Escape("current_user_resource_visibility(company_id, 'sales_orders')")) {
+if ($m -notmatch [regex]::Escape("current_user_resource_visibility(company_id, 'estimates')")) {
     Write-Host "X the resource-visibility system was dropped instead of wrapped" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the visibility system survives, wrapped inside the branch rule" -ForegroundColor Green
 
 # -- 3. a table closed WITHOUT a guard is a table that reopens quietly ---
-if ($g -notmatch [regex]::Escape('"sales_orders"')) {
-    Write-Host "X sales_orders was closed but never added to the impersonation guard" -ForegroundColor Red
+if ($g -notmatch [regex]::Escape('"estimates"')) {
+    Write-Host "X estimates was closed but never added to the impersonation guard" -ForegroundColor Red
     exit 1
 }
-if ($g -notmatch [regex]::Escape('child: "sales_order_items"')) {
+if ($g -notmatch [regex]::Escape('child: "estimate_items"')) {
     Write-Host "X the line table was not added beside its head" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the newly closed table and its lines joined the guard in the same release" -ForegroundColor Green
 
 # -- 4. and the guard must be SEEN measuring the new head ----------------
-# 921 added a head to the list and said nothing more. A head on the list with
-# no other-branch row in its data passes in silence - it LOOKS guarded and is
-# not measured. So the trap plants a permissive policy on the new table and
-# watches the guard name it. This is the rule for every head that follows.
-if ($t -notmatch [regex]::Escape("sales_orders_company_wide")) {
+# The rule born in 922: a head on the list with no other-branch row in its
+# data passes in silence - it LOOKS guarded and is not measured.
+if ($t -notmatch [regex]::Escape("estimates_company_wide")) {
     Write-Host "X the trap never plants a leak on the newly closed table" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("- sales_orders:")) {
-    Write-Host "X the trap does not require the guard to NAME sales_orders" -ForegroundColor Red; exit 1
+if ($t -notmatch [regex]::Escape("- estimates:")) {
+    Write-Host "X the trap does not require the guard to NAME estimates" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the guard is proven measuring the new head, not merely listing it" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.922.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.923.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -104,10 +104,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.921.ps1" 2>$null
+git add -u -- "push_v3.74.922.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.921.ps1")
+$expected = @($files) + @("push_v3.74.922.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -129,7 +129,7 @@ Write-Host "Proving an unposted cross-branch transfer is refused (TEST database 
 node scripts/selftest-transfer-journal.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the transfer-journal mechanism was not proven" -ForegroundColor Red; exit 1 }
 
-Write-Host "Proving the branch-isolation guard catches the real leak - now on FOUR shapes (TEST only)..." -ForegroundColor Cyan
+Write-Host "Proving the branch-isolation guard catches the real leak - now on FIVE shapes (TEST only)..." -ForegroundColor Cyan
 node scripts/selftest-branch-isolation-holes.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the branch-isolation guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
@@ -340,7 +340,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.921.ps1" 2>$null
+git add -u -- "push_v3.74.922.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -361,69 +361,53 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_922.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_923.txt"
     $msgLines = @(
-        'feat(security): v3.74.922 - sales orders are isolated by branch',
+        'feat(security): v3.74.923 - estimates are isolated by branch',
         '',
-        'Second of the nineteen tables measured in 917, and shaped nothing like',
-        'the first. In 921 there were three company-wide policies and no branch',
-        'rule at all. Here a REAL visibility system was already in place -',
-        'sales_orders_select_v4 reads the role permission out of',
-        'company_role_permissions and decides: company, branch, own, shared. So',
-        'the work was not writing a rule; it was closing what crosses it.',
+        'Third of the nineteen tables measured in 917, and the mirror image of',
+        'the second. estimates carries the same visibility system sales orders',
+        'carry, and the same hole in it - so no new question was asked: the',
+        'decision taken in 922, the branch sits ABOVE authorship, was applied as',
+        'it stands.',
         '',
-        'MEASURED FIRST. By impersonation on production (4 orders: 3 main',
-        'branch, 1 Nasr City): accountant 0, manufacturing officer 0,',
-        'purchasing officer 0, store keeper 0, manager 3 with none from another',
-        'branch, owner 4, and the STAFF member 4 - one of them Nasr City.',
+        'MEASURED FIRST. By impersonation on production (2 estimates: 1 main',
+        'branch, 1 Nasr City): accountant 0, manufacturing officer 0, purchasing',
+        'officer 0, store keeper 0, manager 1 with none from another branch,',
+        'owner 2, registered owner 2 - and the STAFF member 1, which is the Nasr',
+        'City estimate, its line with it. He belongs to the MAIN branch and saw',
+        'it because he made it, not because the branch is his.',
         '',
-        'And the lines were already sound, unlike 917 and 921: the line policy',
-        'asks about its OWN HEAD, not about company membership, and the head is',
-        'protected. Of 192 lines in the whole database the company owner sees',
-        'exactly 4. There was no door to close there.',
+        'AND THREE REDUNDANT POLICIES - measured, not assumed. Unlike sales',
+        'orders, this table carried three permissive owner-only policies:',
+        'estimates_owner_dml, estimate_items_owner_dml and',
+        'estimate_items_owner_select. Each opens to the registered owner what is',
+        'already open to him elsewhere: can_modify_data and can_delete_resource',
+        'both begin with "registered owner => true", estimate_items_select lets',
+        'him through is_company_member, and the new read policy through',
+        "'company' visibility.",
         '',
-        'Writes already followed reads: editing the Nasr City order as the',
-        'manager, the accountant and the store keeper touched ZERO rows, and an',
-        'UPDATE with NO WHERE CLAUSE AT ALL as the manager touched 3 - his own',
-        'branch. Postgres applies the SELECT policy to the rows an UPDATE or',
-        'DELETE reads, so the read policy is the wall for writing too. Measured,',
-        'not assumed - and it will be measured again on every table that',
-        'follows.',
+        'Reading the texts was not enough. On test, inside a rolled-back',
+        'transaction, the three were dropped and then the registered owner:',
+        'created an estimate, created a line, read the line, updated the',
+        'estimate, updated the line, deleted the line, deleted the estimate -',
+        'seven of seven succeeded. In the same transaction the staff member lost',
+        'the Nasr City estimate and its line.',
         '',
-        'WHAT WAS OPEN. First, the "own documents" arm crosses the wall: a staff',
-        'member belonging to the MAIN branch created a sales order FOR NASR',
-        'CITY, and saw it because he made it, not because the branch is his.',
-        'The same arm carries has_shared_access outside the branch check - zero',
-        'active shares today, so a sleeping door rather than an open one. The',
-        'owner chose: the branch sits ABOVE authorship, not beside it.',
+        'They are removed because they are second permissive doors beside the',
+        'isolation - the exact shape that produced the 917 trap. A correct text',
+        'today is not a reason to keep one.',
         '',
-        'Second, a sleeping permissive policy: sales_orders_company_isolation',
-        'over EVERY order, conditioned on app.current_company_id - and not one',
-        'line in the whole project sets that variable, so it grants nothing',
-        'today. But it is the 917 trap asleep: one line setting it, one day, and',
-        'the entire split falls to the OR. Removed now rather than when it wakes',
-        'up.',
+        'PROVEN on production after applying: staff 1 to ZERO, head and line;',
+        'manager 1 unchanged; owner 2; registered owner 2 heads and 2 lines - he',
+        'lost nothing. And ONE read policy on each of the two tables, where',
+        'there were two and three.',
         '',
-        'THE RULE. The visibility system is untouched - company, branch, own,',
-        'shared - and all of it is wrapped inside one final question:',
-        'can_access_record_branch, exactly as agreed in 917 and 921. One policy',
-        'replaces two, so nothing permissive is left behind even when its text',
-        'is dead.',
-        '',
-        'PROVEN. On test, where the same case exists: the staff member saw the',
-        'Nasr City order, its line, and could edit it - now ZERO on all three,',
-        'while the owner keeps his order and the registered owner in companies',
-        'keeps his. On production after applying: staff 4 to 3 with ZERO from',
-        'other branches, manager 3 unchanged, owner 4, registered owner 4, and',
-        'ONE read policy on the table.',
-        '',
-        'AND THE GUARD IS NOW SEEN MEASURING, not merely listing. 921 added a',
-        'head to HEADS and said no more. A head on the list with no',
-        'other-branch row in its data passes in silence - it LOOKS guarded and',
-        'is not measured. So the trap now plants a permissive policy on',
-        'sales_orders and watches the guard NAME it, and sales_order_items',
-        'joined the line tables beside its head. Six heads, five line tables.',
-        'This is the rule for every head that follows.'
+        'The guard grew with it: estimates joined the heads and estimate_items',
+        'the lines - seven heads, six line tables - and a fifth stage joined the',
+        'trap, planting a permissive policy on estimates and watching the guard',
+        'NAME it, by the rule born in 922. And the closing line of the trap was',
+        'corrected with it: it said "BOTH shapes" and there are now five.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -432,5 +416,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.922 pushed - sales orders belong to their branch: 2 of 19 closed, and the guard is seen measuring" -ForegroundColor Green
+    Write-Host "`n+ v3.74.923 pushed - estimates belong to their branch: 3 of 19 closed, and three redundant doors are gone" -ForegroundColor Green
 }
