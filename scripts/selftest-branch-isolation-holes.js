@@ -8,7 +8,7 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). ثمانى حالات:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). تسع حالات:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
@@ -17,7 +17,8 @@
  *   (هـ) سياسةٌ متساهلةٌ على مرتجعات الشراء (924) ⇒ يُرفض ويُسمّى الجدول.
  *   (و) سياسةٌ متساهلةٌ على طلبات مرتجع البيع (925) ⇒ يُرفض ويُسمّى الجدول.
  *   (ز) ملاحظاتُ الحجز تعود لعضوية الشركة (926) ⇒ يُرفض ويُسمّى الجدول.
- *   (ح) إعادة الحال                          ⇒ يصمت.
+ *   (ح) الموردون يعودون لعضوية الشركة (927)   ⇒ يُرفض ويُسمّى الجدول.
+ *   (ط) إعادة الحال                          ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -93,6 +94,7 @@ function runGuard() {
     await client.query("DROP POLICY IF EXISTS purchase_returns_company_wide ON public.purchase_returns")
     await client.query("DROP POLICY IF EXISTS srr_company_wide ON public.sales_return_requests")
     await client.query("DROP POLICY IF EXISTS booking_notes_company_wide ON public.booking_notes")
+    await client.query("DROP POLICY IF EXISTS suppliers_company_wide ON public.suppliers")
     await client.query(billItemsFn)
   }
 
@@ -173,6 +175,14 @@ function runGuard() {
       /^\s+- booking_notes:/m
     )
 
+    await stage(
+      "الموردون يعودون إلى عضوية الشركة",
+      () => client.query(
+        "CREATE POLICY suppliers_company_wide ON public.suppliers FOR SELECT USING (public.is_company_member(company_id))"
+      ),
+      /^\s+- suppliers:/m
+    )
+
     if (ok) {
       const r = runGuard()
       if (r.failed) {
@@ -190,6 +200,6 @@ function runGuard() {
 
   if (!ok) process.exit(1)
   console.log("+ the branch-isolation guard is proven to catch every shape of the real leak: a permissive")
-  console.log("  policy beside the isolation on FIVE different tables, and a child-row function that")
+  console.log("  policy beside the isolation on every shape the guard covers, and a child-row function that")
   console.log("  forgets the branch - and to stay silent on the correct state (test DB only).")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })
