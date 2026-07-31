@@ -424,9 +424,10 @@ export default function NewSalesOrderPage() {
         // v3.74.815 — استبعاد المواد الخام من أصناف أمر البيع (نظير الفاتورة)
         .or("product_type.is.null,product_type.neq.raw_material")
 
-      if (!adminCheck && userBranchId) {
-        productsQuery = productsQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`)
-      }
+      // v3.74.915 — رُفعت فلترة الفرع: سياسة `products_select` تحكم الآن
+      // («منتجُ فرعى أو ما تحرّك فى فرعى»)، وهذه الفلترة كانت تُسقط
+      // المنقولَ إلى الفرع — فلا يُعرَض ولا يُباع. وكانت فى المقابل
+      // تُبقى المنتجَ **بلا فرع** ظاهراً، وقد قرّر المالك ألا يراه.
 
       const { data: productsData } = await productsQuery
 

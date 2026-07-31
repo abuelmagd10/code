@@ -6,90 +6,127 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.914 - the OLD script is removed, never this one. Five times a chained
+# v3.74.915 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.913.ps1") { Remove-Item -LiteralPath "push_v3.74.913.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.914.ps1") { Remove-Item -LiteralPath "push_v3.74.914.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.914"') {
-    Write-Host "+ 3.74.914" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.915"') {
+    Write-Host "+ 3.74.915" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.914]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.914]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.915]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.915]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000004_v3_74_914_cost_visibility_by_branch.sql"
-$route     = "app/api/products/[id]/route.ts"
+$migration = "supabase/migrations/20260731000005_v3_74_915_product_visibility_by_branch.sql"
+$screens   = @("app/api/products-list/route.ts", "app/estimates/page.tsx",
+               "app/sales-orders/new/page.tsx", "app/invoices/new/page.tsx")
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, $route, "push_v3.74.914.ps1")
+           $migration,
+           "scripts/check-products-branch-policy.js",
+           "scripts/selftest-products-branch-policy.js",
+           "push_v3.74.915.ps1") + $screens
 
-# -- 1. the rule now measures the branch, and the owner escapes it --------
+# -- 1. the policy has all three arms ------------------------------------
+# Drop any one of them and the release stops doing what the owner asked:
+# without (1) a company-wide member loses every product; without (2) a
+# branch member loses his own; without (3) he never sees what was moved to
+# him - which is the whole point, because a transfer moves quantity and
+# never touches the product card.
 $m = Get-Content -LiteralPath $migration -Raw
-foreach ($needle in @("p_product_branch_id", "p_scope_by_branch",
-                      "'accountant', 'purchasing_officer', 'manager'",
-                      "RETURN p_product_branch_id = v_member_branch")) {
+foreach ($needle in @("cm.branch_id IS NULL",
+                      "cm.branch_id = products.branch_id",
+                      "FROM inventory_transactions t")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the branch rule is not in the migration ($needle)" -ForegroundColor Red; exit 1
+        Write-Host "X the branch visibility rule is missing an arm ($needle)" -ForegroundColor Red; exit 1
     }
 }
-# the owner short-circuit MUST come before the branch test, or the owner
-# would be scoped to his own membership branch - and every member on
-# production carries one, the owner included.
-$iOwner  = $m.IndexOf("IF v_role IN ('owner', 'general_manager'")
-$iBranch = $m.IndexOf("IF p_scope_by_branch AND v_member_branch IS NOT NULL")
-if ($iOwner -lt 0 -or $iBranch -lt 0 -or $iOwner -gt $iBranch) {
-    Write-Host "X the owner/GM exemption must precede the branch restriction" -ForegroundColor Red; exit 1
-}
-Write-Host "+ cost visibility is measured by role AND branch, owner exempt" -ForegroundColor Green
+Write-Host "+ products_select scopes by branch AND by what moved into it" -ForegroundColor Green
 
-# -- 2. the old two-argument signature is dropped, not left beside it -----
-# Keeping both makes a two-argument call ambiguous (function is not
-# unique) - and the product update route calls it with two named args.
-$iDrop = $m.IndexOf("DROP FUNCTION IF EXISTS public.can_view_purchase_cost(uuid, uuid)")
-$iCreate = $m.IndexOf("CREATE OR REPLACE FUNCTION public.can_view_purchase_cost")
-if ($iDrop -lt 0 -or $iCreate -lt 0 -or $iDrop -gt $iCreate) {
-    Write-Host "X the old 2-arg signature must be dropped before the new one is created" -ForegroundColor Red
+# -- 2. the isolation trigger is SECURITY DEFINER ------------------------
+# MEASURED, not feared: as SECURITY INVOKER it reads products through the
+# caller's eyes, so after this release another branch's product returns
+# NULL - and NULL means "company product, no branch" in its own logic, so
+# it PASSES exactly what it exists to refuse. Proven on the test database:
+# PASSED as invoker, REFUSED as definer.
+if ($m -notmatch [regex]::Escape("SECURITY DEFINER")) {
+    Write-Host "X validate_product_branch_isolation must be SECURITY DEFINER or this release opens a hole" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ one signature only - no ambiguous call left behind" -ForegroundColor Green
-
-# -- 3. the authorised path passes the product branch ---------------------
-if ($m -notmatch [regex]::Escape("can_view_purchase_cost(p.company_id, NULL, p.branch_id, true)")) {
-    Write-Host "X product_costs no longer passes the product branch - the rule would be role-only" -ForegroundColor Red
+$iDef = $m.IndexOf("CREATE OR REPLACE FUNCTION public.validate_product_branch_isolation")
+$iSel = $m.IndexOf("DROP POLICY IF EXISTS products_select")
+if ($iDef -lt 0 -or $iSel -lt 0) {
+    Write-Host "X the migration must carry BOTH the policy and the trigger fix - never one alone" -ForegroundColor Red
     exit 1
 }
-# and the write guard is exactly as strict as the read rule
-$r = Get-Content -LiteralPath $route -Raw
-if ($r -notmatch [regex]::Escape("p_scope_by_branch: true")) {
-    Write-Host "X the update route checks cost rights without the branch - wider than the display rule" -ForegroundColor Red
+Write-Host "+ the policy and the SECURITY DEFINER fix travel together, in one migration" -ForegroundColor Green
+
+# -- 3. the sale-after-transfer exception is for SALES ONLY --------------
+if ($m -notmatch [regex]::Escape("IN ('invoice_items', 'sales_order_items')")) {
+    Write-Host "X the transfer exception no longer names the two sales tables" -ForegroundColor Red; exit 1
+}
+foreach ($buy in @("'bill_items'", "'purchase_order_items'", "'purchase_return_items'", "'vendor_credit_items'")) {
+    $exc = $m.Substring($m.IndexOf("IN ('invoice_items', 'sales_order_items')"))
+    $exc = $exc.Substring(0, [Math]::Min(600, $exc.Length))
+    if ($exc.Contains($buy)) {
+        Write-Host "X the purchase side crept into the sale-after-transfer exception ($buy)" -ForegroundColor Red
+        exit 1
+    }
+}
+if ($m -notmatch [regex]::Escape("t.quantity_change > 0")) {
+    Write-Host "X the exception no longer requires goods to have actually arrived in the branch" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ read and write are measured by the same rule, branch included" -ForegroundColor Green
+Write-Host "+ selling a transferred item is allowed only where stock actually arrived; buying is untouched" -ForegroundColor Green
 
-# -- 4. the battery below still proves both standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.914.ps1" -Raw
+# -- 4. no screen filters products by branch behind the policy's back ----
+# Every one of these said `branch_id = mine OR branch_id IS NULL`, which
+# BOTH dropped what was transferred in AND showed the branchless product
+# the owner asked to hide. A filter in code is forgotten in one screen and
+# bypassed by a direct call; the rule lives in the policy now.
+# The regex is deliberately narrow: these files DO filter customers and
+# estimates by branch, and rightly so. Only the PRODUCTS query is at issue.
+foreach ($s in $screens) {
+    $src = Get-Content -LiteralPath $s -Raw
+    if ($src -match '(productsQuery|prodQuery|prodsQuery)[A-Za-z]*\s*=\s*(productsQuery|prodQuery|prodsQuery)[A-Za-z]*\.or\(.{0,3}branch_id\.eq\.' -or
+        $src -match "\.eq\('branch_id', branchId\)") {
+        Write-Host "X $s filters products by branch again - it would hide what was transferred in" -ForegroundColor Red
+        exit 1
+    }
+    if ($src -notmatch [regex]::Escape("v3.74.915")) {
+        Write-Host "X $s carries no note saying why the branch filter is gone - the next hand will put it back" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ no product screen re-filters by branch, and each says why" -ForegroundColor Green
+
+# -- 5. the battery below still proves the standing guards ----------------
+$self2 = Get-Content -LiteralPath "push_v3.74.915.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
 if ($self2 -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the anon-open guard" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the battery still plants both probes and watches both guards refuse, every release" -ForegroundColor Green
+if ($self2 -notmatch [regex]::Escape("selftest-products-branch-policy.js")) {
+    Write-Host "X the new branch-visibility guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the battery plants its probes and watches every guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.913.ps1" 2>$null
+git add -u -- "push_v3.74.914.ps1" 2>$null
 
-# -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.913.ps1")
+# -- 6. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.914.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -98,6 +135,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the branch-visibility guard refuses all three reversions (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-products-branch-policy.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the branch-visibility guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking product visibility by branch is in force on the live database..." -ForegroundColor Cyan
+node scripts/check-products-branch-policy.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X the branch rule is not in force on the database" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the cost-grant guard refuses a re-grant (on the TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-product-cost-grant.js
@@ -294,7 +339,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.913.ps1" 2>$null
+git add -u -- "push_v3.74.914.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -302,6 +347,7 @@ if ($staged -match "backups/.*\.(sql|dump)$") {
 }
 if ($staged -match "\.env") { Write-Host "X an env file got staged - stop" -ForegroundColor Red; exit 1 }
 if ($staged -match "zz-probe") { Write-Host "X a self-test probe got staged - stop" -ForegroundColor Red; exit 1 }
+if ($staged -match "_to_delete") { Write-Host "X a scratch folder got staged - stop" -ForegroundColor Red; exit 1 }
 
 foreach ($f in $files) {
     $pending = git status --porcelain -- $f
@@ -313,57 +359,62 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_914.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_915.txt"
     $msgLines = @(
-        'feat(security): v3.74.914 - purchase cost is scoped to the branch, not just the role',
+        'feat(security): v3.74.915 - a branch member sees his branch products, and whatever arrived in his branch',
         '',
-        'OWNER DECISION, in his words: branch people - purchasing officer,',
-        'accountant and branch manager - may see the purchase cost of THEIR',
-        'branch products; a product with no branch belongs to the company,',
-        'and only the owner and general manager see its cost.',
+        'OWNER DECISION, in his words: a branchless product is not seen by',
+        'branch users at all and cannot be purchased by them; and after the',
+        'purchase is TRANSFERRED to a branch, they may sell it without seeing',
+        'its purchase cost.',
         '',
-        'Until now 906 measured the role alone, so an accountant sitting in',
-        'one branch read the cost of every branch. Now the rule asks two',
-        'questions: what is your role, and is this product yours.',
+        'His wording about the transfer is decisive: the product stays with no',
+        'branch change and only the quantity moves. So a naive rule - "you see',
+        'your branch products" - would hide from him the very thing that was',
+        'moved to him, and he could never sell it. The two measures diverge on',
+        'purpose: VISIBILITY is my branch product OR what moved in my branch;',
+        'COST is my branch product alone (914).',
         '',
-        'Three changes. The branch manager (manager) joins the default',
-        'audience - he was not in it. A member bound to a branch sees only',
-        'his own branch products; a company-wide member (no branch on his',
-        'membership) keeps no spatial limit. And a branchless product is',
-        'owner/GM only.',
+        'The rule now lives where it cannot be forgotten. products_select said',
+        'is_company_member(company_id) and nothing else - every member read',
+        'every product straight from the database - while the branch filter',
+        'lived in /api/products-list and nine other screens, each in its own',
+        'dialect. Four of them are removed here; the policy decides.',
         '',
-        'The owner and GM exemption comes BEFORE the branch test on purpose:',
-        'every member on production carries a branch on his membership row -',
-        'the owner included - so testing him by branch would have hidden the',
-        'other branches from the very person who owns them.',
+        'THE DANGEROUS PART, and why the trigger fix ships in the SAME',
+        'migration: validate_product_branch_isolation was SECURITY INVOKER. It',
+        'asks "which branch owns this product?" through the caller eyes. Once',
+        'visibility narrowed, another branch product came back NULL - and NULL',
+        'means "company product, no branch" in its own logic, so it PASSED.',
+        'Narrowing visibility alone would have UNDONE a standing accounting',
+        'guard while looking like it was tightening one. Measured on test in a',
+        'cancelled transaction: a branch staff member putting another branch',
+        'product on his own branch invoice - PASSED as invoker, REFUSED as',
+        'definer.',
         '',
-        'The branch condition applies only when a SPECIFIC product is being',
-        'asked about (p_scope_by_branch). The general question - may this',
-        'user see cost at all - stays role-only, or screens would hide',
-        'columns their user is entitled to.',
+        'Second fix: selling what was transferred in now passes - for the two',
+        'sales tables only, and only where goods actually ARRIVED in that',
+        'branch (a positive movement). The purchase side is untouched.',
         '',
-        'The old two-argument signature is dropped, not left beside the new',
-        'one: with defaults, a two-argument call would be ambiguous, and the',
-        'product update route calls it with exactly two named arguments -',
-        'its failure would read as "not entitled" and strip the cost from',
-        'the payload of someone who owns it.',
+        'Proven on test in cancelled transactions: before the transfer the sale',
+        'is refused; after a transfer_in it is allowed; the purchase side stays',
+        'refused even with the goods present. Staff sees 5 of 8, not the other',
+        'branch product, not the branchless one, sees what was moved to him',
+        'with cost 0, and the owner still sees 8.',
         '',
-        'Proven on test by cancelled transactions, 8 products across two',
-        'branches, 5 in the accountant branch: owner 8, accountant 5,',
-        'purchasing officer 5, branch manager 5, store manager 0, staff 0; a',
-        'branchless product gives 0 to the accountant and 1 to the owner;',
-        'open mode still returns all 8 to a plain staff member. Re-measured',
-        'on production inside a rolled-back transaction (the company sits in',
-        'strict mode, which the owner chose from the settings card): 12',
-        'products, 9 in that branch - owner 12, and accountant, purchasing',
-        'officer and branch manager 9 each.',
+        'Measured on production after applying: 12 products - owner 12, every',
+        'branch member 9. And before writing: ZERO branchless products, ZERO',
+        'document lines pointing at another branch product, ZERO transfers ever',
+        'issued. Nothing loses a row today; the gap is closed before the first',
+        'transfer.',
         '',
-        'What this release does NOT do: it does not change which products a',
-        'branch user SEES, and it does not restrict purchasing. Transferred',
-        'stock is already sellable without its cost, because a transfer',
-        'moves quantity and never touches the product card - measured, and',
-        'confirmed by the owner. Zero products have moved outside their',
-        'branch so far.'
+        'New guard check-products-branch-policy.js measures the LIVE database,',
+        'because this defect never appears in a file: it refuses a',
+        'membership-only policy, a PERMISSIVE policy sitting beside it (the',
+        'nastiest - permissive policies are OR-ed, so the rule stays written',
+        'and stops working), and a SECURITY INVOKER isolation trigger. Its',
+        'selftest plants all three on the test database, watches it refuse, and',
+        'restores the policy text read from the migration file itself.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -372,5 +423,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.914 pushed - cost is scoped to the branch; the owner still sees the whole company" -ForegroundColor Green
+    Write-Host "`n+ v3.74.915 pushed - the branch sees its own products and what arrived in it; and the isolation guard can see again" -ForegroundColor Green
 }

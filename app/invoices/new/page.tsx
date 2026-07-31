@@ -383,9 +383,10 @@ export default function NewInvoicePage() {
         // تكلفة الإنتاج. (الشرط يُبقى الأصناف القديمة بلا تصنيف.)
         .or("product_type.is.null,product_type.neq.raw_material")
 
-      if (!canOverride && context.branch_id) {
-        productsQuery = productsQuery.or(`branch_id.eq.${context.branch_id},branch_id.is.null`)
-      }
+      // v3.74.915 — رُفعت فلترة الفرع: سياسة `products_select` تحكم الآن
+      // («منتجُ فرعى أو ما تحرّك فى فرعى»)، وهذه الفلترة كانت تُسقط
+      // المنقولَ إلى الفرع — فلا يُعرَض ولا يُباع. وكانت فى المقابل
+      // تُبقى المنتجَ **بلا فرع** ظاهراً، وقد قرّر المالك ألا يراه.
 
       const { data: productsData } = await productsQuery
 

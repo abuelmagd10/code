@@ -31,21 +31,16 @@ export async function GET(req: NextRequest) {
       .select(`${PRODUCT_COLUMNS_NO_COST}, branch:branch_id(branch_name)`)
       .eq("company_id", companyId)
 
-    // ✅ تطبيق فلتر الفرع فقط إذا كان موجوداً وكان member موجوداً
-    // المنتجات قد تحتوي على branch_id (اختياري)، لذا نطبق الفلتر فقط إذا كان هناك branch و member
-    if (branchId && member) {
-      // v3.74.637 — company-wide roles see all products; every other role
-      // (incl. branch manager) is scoped to their own branch. Previously
-      // "manager" was treated as company-wide, so a branch manager saw all
-      // branches' products.
-      const userRole = member.role || "employee"
-      const canViewAll = ["owner", "admin", "general_manager"].includes(userRole)
-
-      if (!canViewAll) {
-        // جلب المنتجات المرتبطة بهذا الفرع فقط
-        query = query.eq('branch_id', branchId)
-      }
-    }
+    // v3.74.915 — لا فلترةَ فرعٍ هنا بعد اليوم. كانت هذه الأسطر تقول
+    // `branch_id = فرع العضو` لغير المالك/المشرف/المدير العام، وهى قاعدةٌ
+    // **أضيق مما طلبه المالك**: البضاعة المنقولة إلى فرعٍ تبقى بطاقتُها
+    // لفرعها الأصلى (النقل يحرّك الكمية ولا يمسّ البطاقة)، فكان المنقول
+    // **لا يظهر لمن استلمه** — فلا يبيعه، وهو نصّ الطلب.
+    //
+    // والقاعدة انتقلت إلى حيث لا تُنسى: سياسة الصفوف `products_select`
+    // تقول «منتجُ فرعى **أو** ما تحرّك فى فرعى»، وتُطبَّق على كل نداء
+    // للجدول لا على هذه الشاشة وحدها. وتَرْكُ الفلترة هنا كان يخالفها
+    // صامتاً.
 
     const productType = req.nextUrl.searchParams.get("product_type")
     if (productType) {

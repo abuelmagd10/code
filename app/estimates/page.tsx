@@ -419,9 +419,10 @@ export default function EstimatesPage() {
           .eq("is_active", true)
           .order("name");
 
-        if (!canOverrideBranch && userBranchId) {
-          productsQuery = productsQuery.or(`branch_id.eq.${userBranchId},branch_id.is.null`);
-        }
+        // v3.74.915 — رُفعت فلترة الفرع: سياسة `products_select` تحكم الآن
+        // («منتجُ فرعى أو ما تحرّك فى فرعى»)، وهذه الفلترة كانت تُسقط
+        // المنقولَ إلى الفرع — فلا يُعرَض ولا يُباع. وكانت فى المقابل
+        // تُبقى المنتجَ **بلا فرع** ظاهراً، وقد قرّر المالك ألا يراه.
 
         const { data: prod, error: prodErr } = await productsQuery;
         if (prodErr) {
