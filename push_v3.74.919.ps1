@@ -6,84 +6,71 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.918 - the OLD script is removed, never this one. Five times a chained
+# v3.74.919 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.917.ps1") { Remove-Item -LiteralPath "push_v3.74.917.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.918.ps1") { Remove-Item -LiteralPath "push_v3.74.918.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.918"') {
-    Write-Host "+ 3.74.918" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.919"') {
+    Write-Host "+ 3.74.919" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.918]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.918]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.919]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.919]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000008_v3_74_918_inventory_transfer_journal.sql"
-$ledger    = "scripts/check-ledger-integrity.js"
+$migration = "supabase/migrations/20260731000009_v3_74_919_transfer_journal_caller_identity.sql"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, $ledger,
-           "scripts/selftest-transfer-journal.js",
-           "push_v3.74.918.ps1")
+           $migration,
+           "scripts/check-exposed-definer-functions.js",
+           "scripts/selftest-exposed-definer-functions.js",
+           "push_v3.74.919.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
-$g = Get-Content -LiteralPath $ledger -Raw
 
-# -- 1. the mechanism, not a one-off entry -------------------------------
-# A hand-written entry for TRF-0001 would fix the past and leave tomorrow
-# exactly as it was: nothing in the code says a transfer needs an entry.
-if ($m -notmatch [regex]::Escape("CREATE TRIGGER trg_inventory_transfer_post_journal")) {
-    Write-Host "X the transfer posts no entry by itself - this is a painkiller, not a fix" -ForegroundColor Red
+# -- 1. BOTH cures, not one ----------------------------------------------
+# The dashboard check accepts either. Both are taken because each guards
+# what the other cannot: a revoked grant can come back with one migration,
+# and an identity check inside is worthless if the function is also
+# reachable by a caller from another company.
+if ($m -notmatch [regex]::Escape("PERFORM public.assert_company_access(v_in.company_id)")) {
+    Write-Host "X the function still writes to the ledger without asking who is calling" -ForegroundColor Red
     exit 1
 }
-if ($m -notmatch [regex]::Escape("WHEN (NEW.transaction_type = 'transfer_in')")) {
-    Write-Host "X the trigger no longer fires on receipt - posting on dispatch invents an entry for goods in transit" -ForegroundColor Red
+if ($m -notmatch [regex]::Escape("REVOKE EXECUTE ON FUNCTION public.inventory_transfer_post_journal(uuid) FROM authenticated")) {
+    Write-Host "X the function is still handed to end users - the application never calls it" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ every future transfer posts its own entry, at receipt" -ForegroundColor Green
-
-# -- 2. the past is repaired BY THE SAME function ------------------------
-# Not by a second hand and not by a literal entry: if the mechanism is
-# wrong, it must be wrong in both places at once, never in only one.
-if ($m -notmatch [regex]::Escape("v_entry := public.inventory_transfer_post_journal(r.id)")) {
-    Write-Host "X the repair block does not call the same function that guards the future" -ForegroundColor Red
+if ($m -notmatch [regex]::Escape("GRANT  EXECUTE ON FUNCTION public.inventory_transfer_post_journal(uuid) TO service_role")) {
+    Write-Host "X service_role lost execute - the trigger and the repair path would break" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the past is repaired by the very function that guards the future" -ForegroundColor Green
+Write-Host "+ the ledger writer asks who is calling AND is restricted to service_role" -ForegroundColor Green
 
-# -- 3. two branches, one account, and a refusal when cost is unknown ----
-foreach ($needle in @("'branch_id',      v_in.branch_id",
-                      "'branch_id',      v_out.branch_id",
-                      "TRANSFER_NO_COST_BASIS")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the transfer entry is not two-branch, or an uncosted transfer would pass ($needle)" -ForegroundColor Red
-        exit 1
-    }
-}
-Write-Host "+ the entry moves inventory between two branch dimensions, and refuses to post without a cost basis" -ForegroundColor Green
-
-# -- 4. the ledger guard measures the VALUE, not the presence -----------
-# An entry with the wrong amount does what a missing entry does, more
-# quietly. And the only remaining no-entry exception is written as a
-# MEASUREMENT (both legs in one branch), never as a name.
-if ($g -notmatch [regex]::Escape("every inventory-transfer entry equals the movement it posts")) {
-    Write-Host "X the ledger guard still only asks whether an entry exists" -ForegroundColor Red; exit 1
-}
-if ($g -notmatch [regex]::Escape("count(DISTINCT t2.branch_id)")) {
-    Write-Host "X the same-branch transfer exception is written by name, not by measurement" -ForegroundColor Red
+# -- 2. the check moves from the dashboard to the gate -------------------
+# The owner dashboard found this two hours AFTER the release shipped. A
+# dashboard is a report; a push is a gate. Every dashboard check deserves
+# a twin in the battery.
+$self1 = Get-Content -LiteralPath "push_v3.74.919.ps1" -Raw
+if ($self1 -notmatch [regex]::Escape("check-exposed-definer-functions.js --require-db")) {
+    Write-Host "X the definer-exposure check is not run against the live database in this battery" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the ledger guard measures the transfer entry value, and its only exception is measured" -ForegroundColor Green
+if ($self1 -notmatch [regex]::Escape("selftest-exposed-definer-functions.js")) {
+    Write-Host "X the definer-exposure guard is not proven refusing in this battery" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ what the dashboard caught after the fact is now a gate before the fact" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.918.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.919.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -103,10 +90,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.917.ps1" 2>$null
+git add -u -- "push_v3.74.918.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.917.ps1")
+$expected = @($files) + @("push_v3.74.918.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -115,6 +102,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving an exposed SECURITY DEFINER writer is refused (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-exposed-definer-functions.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the definer-exposure guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Auditing SECURITY DEFINER writers on the live database..." -ForegroundColor Cyan
+node scripts/check-exposed-definer-functions.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X a full-rights writer is reachable by end users" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving an unposted cross-branch transfer is refused (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-transfer-journal.js
@@ -331,7 +326,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.917.ps1" 2>$null
+git add -u -- "push_v3.74.918.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -351,71 +346,55 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_918.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_919.txt"
     $msgLines = @(
-        'feat(accounting): v3.74.918 - a stock transfer between branches now posts its journal entry',
+        'fix(security): v3.74.919 - the transfer-journal function now asks who is calling, and end users cannot call it',
         '',
-        'THE FIRST REAL TRANSFER IN THE HISTORY OF THE SYSTEM found it. The',
-        'owner moved 5 units from Nasr City to the Main branch (TRF-0001):',
-        'the quantity moved, the notification arrived, the store keeper',
-        'approved receipt - and NO entry was created. Not one line in the',
-        'whole codebase says a transfer needs one.',
+        'THE OWNER DASHBOARD found it two hours after 918 shipped: one',
+        'SECURITY DEFINER function writes with full rights and never checks',
+        'the caller - inventory_transfer_post_journal. It is correct, and the',
+        'function is MINE, from 918.',
         '',
-        'So inventory account 1140 still carried the full 865 under Nasr City',
-        'while half the goods were physically in the Main branch. Nasr City',
-        '866.91 and Main 295.86, where the truth is 434.41 and 728.36 -',
-        '432.50 sitting in the wrong branch. The COMPANY total was correct the',
-        'whole time, which is why every check that measures the total stayed',
-        'silent. The defect is in the DIMENSION, not the sum, and any report',
-        'comparing branches or cost centres was lying.',
+        'SECURITY DEFINER is required there: it writes a journal entry and',
+        'updates stock movements. What I got wrong was granting EXECUTE to',
+        'authenticated without asking who the caller is. Any signed-in user',
+        'could have called it with a receipt movement id belonging to ANOTHER',
+        'company and posted an entry in their books.',
         '',
-        'The bug is as old as the system and slept until first use: the number',
-        'of transfers ever executed was ZERO.',
+        'It was not exploited: no screen and no API route calls this function',
+        'at all - only the trigger and the repair block do (measured). But not',
+        'used is not the same as not possible. A door is closed because it is',
+        'open, not because somebody walked through it.',
         '',
-        'The owner set the rule for this repo, in his words: we are here to',
-        'solve the problem and make sure it does not repeat, at the root - we',
-        'do not hand out painkillers. So three parts, not one.',
+        'BOTH cures are taken, though the check accepts either. Least',
+        'privilege: EXECUTE revoked from authenticated, service_role only -',
+        'the application never calls it, and the trigger does not need the',
+        'grant because it is SECURITY DEFINER owned by postgres, so the inner',
+        'call is measured against the owner. And the question itself:',
+        'assert_company_access inside the function, in case a grant comes back',
+        'one day by hand or by migration. Neither breaks anything - the person',
+        'inserting the receipt is a member of the company, and the repair path',
+        'runs with no identity so the assert returns early by its own design.',
         '',
-        'MECHANISM: a trigger on inventory_transactions fires at transfer_in',
-        'only - a dispatch may never arrive, and posting there invents an',
-        'entry for goods in transit. It writes ONE entry with two lines on the',
-        'SAME account and TWO branch dimensions: debit the receiving branch,',
-        'credit the sending one, valued at the weighted-average FIFO cost. It',
-        'also writes unit_cost/total_cost on BOTH movement legs and links them',
-        'to the entry, so no leg is left orphaned in front of the guard - both',
-        'legs had a NULL unit cost, meaning the transfer carried no recorded',
-        'value at all.',
+        'Proven on test in a cancelled transaction, impersonating a real store',
+        'manager under the authenticated role: the TRIGGER still posted the',
+        'entry as usual (0.81 debit), and a DIRECT call was refused with',
+        'permission denied for function. The door is shut and the work still',
+        'runs. On production after applying: the dashboard check returns zero',
+        'alarms and the grants are postgres and service_role only.',
         '',
-        'THE PAST, by the same function: not a second hand and not a literal',
-        'entry. The repair block calls inventory_transfer_post_journal on every',
-        'unposted receipt. If the mechanism were wrong, it would be wrong in',
-        'both places at once, never in only one. Result on production:',
-        'JE-000075, two lines, 432.50 debit = 432.50 credit, and the branch',
-        'balances are now exactly the 434.41 / 728.36 predicted before the fix',
-        'was applied.',
+        'AND THE REAL LESSON: a dashboard is a report, a push is a gate. That',
+        'a security hole was found two hours AFTER shipping is a delay that is',
+        'not acceptable. So the check moved to the gate:',
+        'check-exposed-definer-functions.js measures the live database with the',
+        'same logic as the dashboard check. Its selftest plants a copy of the',
+        'very same mistake, watches the guard name it, and then watches BOTH',
+        'cures be accepted - so the guard measures neither the grant alone nor',
+        'the text alone, but their conjunction.',
         '',
-        'COST BASIS, and why this one: the weighted-average FIFO cost of the',
-        'product ACROSS THE COMPANY, because FIFO layers are not split by',
-        'branch here (consume_fifo_lots consumes by date with no regard to',
-        'branch), so there is no branch layer to move. It is also the exact',
-        'basis the branch inventory-valuation report already uses, so the',
-        'report and the ledger now agree instead of contradicting each other.',
-        'A transfer with no cost basis is REFUSED out loud: an uncosted',
-        'movement is precisely what is being fixed here.',
-        '',
-        'GUARD: the transfer exception is removed from the ledger-integrity',
-        'check, so any unposted transfer is now a loud error. Only one',
-        'exception remains and it is written as a MEASUREMENT, never a name:',
-        'a transfer whose two legs sit in the same branch (the condition',
-        'counts the distinct branches of both legs), because the ledger',
-        'dimension does not change. And a new check refuses any transfer entry',
-        'whose amount does not equal the movement it posts - a wrong amount',
-        'does what a missing entry does, more quietly.',
-        '',
-        'The selftest plants the defect that actually happened: it disables the',
-        'trigger, moves 5 units across two branches, watches the ledger guard',
-        'refuse, then calls the mechanism and verifies a balanced two-branch',
-        'entry of 432.50 - and cleans up everything it planted.'
+        'Measured after the fix: 29 definer functions write without an identity',
+        'check, and every single one is restricted to service_role. Zero',
+        'exposed to an end user.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -424,5 +403,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.918 pushed - a transfer moves the goods AND the books: 432.50 is back in the branch that holds it" -ForegroundColor Green
+    Write-Host "`n+ v3.74.919 pushed - the ledger writer asks who is calling, and what the dashboard caught late is now caught early" -ForegroundColor Green
 }
