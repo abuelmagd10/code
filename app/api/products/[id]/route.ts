@@ -77,7 +77,9 @@ export async function PUT(
 
     const { data: existingProduct, error: existingError } = await supabase
       .from("products")
-      .select("id, sku, item_type, product_type, income_account_id, expense_account_id")
+      // v3.74.914 — `branch_id` يُقرأ هنا لأن قاعدة التكلفة تُقاس بفرع
+      // المنتج، ولا داعى لاستعلامٍ ثانٍ للصف نفسه.
+      .select("id, sku, item_type, product_type, income_account_id, expense_account_id, branch_id")
       .eq("id", id)
       .eq("company_id", companyId)
       .maybeSingle()
@@ -177,9 +179,14 @@ export async function PUT(
     //
     // والحارس هنا فى الخادم لا فى الشاشة: طلبٌ مُصاغٌ بيدٍ يتجاوز الواجهة،
     // والقاعدة نفسها (906) هى الفاصل — لا الدور المخزَّن فى الواجهة.
+    // v3.74.914 — ويُسأل عن **هذا المنتج بعينه**: محاسبُ فرعٍ لا يرى تكلفة
+    // منتج فرعٍ آخر، فلا يكتبها كذلك. تمريرُ فرع المنتج يجعل حارس الخادم
+    // بنفس صرامة قاعدة العرض تماماً — لا أوسع منها. والصفّ محمَّلٌ أعلاه.
     const { data: maySeeCost } = await supabase.rpc("can_view_purchase_cost", {
       p_company_id: companyId,
       p_created_by: null,
+      p_product_branch_id: (existingProduct as any)?.branch_id ?? null,
+      p_scope_by_branch: true,
     })
     const costFields = ["cost_price", "original_cost_price", "display_cost_price"]
     const writable = pickWritableProductFields(body)

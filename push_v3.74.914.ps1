@@ -6,85 +6,76 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.913 - the OLD script(s) removed, never this one. Five times a chained
+# v3.74.914 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.911.ps1") { Remove-Item -LiteralPath "push_v3.74.911.ps1" -Force }
-if (Test-Path -LiteralPath "push_v3.74.912.ps1") { Remove-Item -LiteralPath "push_v3.74.912.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.913.ps1") { Remove-Item -LiteralPath "push_v3.74.913.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.913"') {
-    Write-Host "+ 3.74.913" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.914"') {
+    Write-Host "+ 3.74.914" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.913]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.913]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.914]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.914]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$guard   = "scripts/check-product-cost-direct-read.js"
-$columns = "lib/products-columns.ts"
-$page    = "app/products/page.tsx"
-$route   = "app/api/products/[id]/route.ts"
+$migration = "supabase/migrations/20260731000004_v3_74_914_cost_visibility_by_branch.sql"
+$route     = "app/api/products/[id]/route.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $guard, $columns, $page, $route,
-           "app/api/products-list/route.ts", "push_v3.74.913.ps1")
+           $migration, $route, "push_v3.74.914.ps1")
 
-# -- 1. the cost-bearing column list is gone (912, folded in) --------------
-# القائمة المحذوفة: تُفحص فى الملفات الثلاثة (ومنها ملف القوائم نفسه)…
-foreach ($f in @($page, "app/api/products-list/route.ts", $columns)) {
-    if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
-    $body = Get-Content -LiteralPath $f -Raw
-    $stripped = [regex]::Replace($body, "(?s)/\*.*?\*/", "")
-    $stripped = [regex]::Replace($stripped, "(?m)^\s*//.*$", "")
-    if ($stripped -match "PRODUCT_COLUMNS_WITH_COST") {
-        Write-Host "X $f still asks for the revoked columns inside a list" -ForegroundColor Red; exit 1
+# -- 1. the rule now measures the branch, and the owner escapes it --------
+$m = Get-Content -LiteralPath $migration -Raw
+foreach ($needle in @("p_product_branch_id", "p_scope_by_branch",
+                      "'accountant', 'purchasing_officer', 'manager'",
+                      "RETURN p_product_branch_id = v_member_branch")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the branch rule is not in the migration ($needle)" -ForegroundColor Red; exit 1
     }
 }
-# …أما الإلحاق من المسار المخوَّل فيخصّ الشاشتين وحدهما: ملف القوائم يعرّف
-# أعمدةً ولا يقرأ شيئاً، ومطالبتُه بذلك خطأٌ فى الحارس لا فى الملف.
-foreach ($f in @($page, "app/api/products-list/route.ts")) {
-    $body = Get-Content -LiteralPath $f -Raw
-    if ($body -notmatch [regex]::Escape("attachProductCosts")) {
-        Write-Host "X $f no longer attaches cost through the authorised path" -ForegroundColor Red; exit 1
-    }
+# the owner short-circuit MUST come before the branch test, or the owner
+# would be scoped to his own membership branch - and every member on
+# production carries one, the owner included.
+$iOwner  = $m.IndexOf("IF v_role IN ('owner', 'general_manager'")
+$iBranch = $m.IndexOf("IF p_scope_by_branch AND v_member_branch IS NOT NULL")
+if ($iOwner -lt 0 -or $iBranch -lt 0 -or $iOwner -gt $iBranch) {
+    Write-Host "X the owner/GM exemption must precede the branch restriction" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the products screen and its API read cost through the authorised path" -ForegroundColor Green
+Write-Host "+ cost visibility is measured by role AND branch, owner exempt" -ForegroundColor Green
 
-# -- 2. a hidden cost renders as a dash, never crashes ---------------------
-# .toFixed() on a hidden cost threw, and the list error boundary swallowed
-# the whole screen for every non-owner.
-$body = Get-Content -LiteralPath $page -Raw
-if ($body -match "getDisplayPrice\([^)]*\)\s*\.\s*toFixed") {
-    Write-Host "X a price is formatted without handling a hidden (null) cost" -ForegroundColor Red; exit 1
-}
-if ($body -notmatch [regex]::Escape("formatPrice")) {
-    Write-Host "X the null-safe price formatter is gone" -ForegroundColor Red; exit 1
-}
-Write-Host "+ a hidden cost renders as a dash instead of throwing" -ForegroundColor Green
-
-# -- 3. and a hidden cost is never written back ---------------------------
-# The form opened at 0 for whoever could not see the cost, so saving a name
-# change wiped the real cost. Two guards: the screen omits the fields, and
-# the server drops them for anyone the 906 rule refuses.
-$routeBody = Get-Content -LiteralPath $route -Raw
-if ($routeBody -notmatch [regex]::Escape("can_view_purchase_cost")) {
-    Write-Host "X the update route no longer asks whether the caller may write cost" -ForegroundColor Red
+# -- 2. the old two-argument signature is dropped, not left beside it -----
+# Keeping both makes a two-argument call ambiguous (function is not
+# unique) - and the product update route calls it with two named args.
+$iDrop = $m.IndexOf("DROP FUNCTION IF EXISTS public.can_view_purchase_cost(uuid, uuid)")
+$iCreate = $m.IndexOf("CREATE OR REPLACE FUNCTION public.can_view_purchase_cost")
+if ($iDrop -lt 0 -or $iCreate -lt 0 -or $iDrop -gt $iCreate) {
+    Write-Host "X the old 2-arg signature must be dropped before the new one is created" -ForegroundColor Red
     exit 1
 }
-if ($body -notmatch [regex]::Escape("editCostHidden")) {
-    Write-Host "X the form no longer tracks a hidden cost - it would save a zero over it" -ForegroundColor Red
+Write-Host "+ one signature only - no ambiguous call left behind" -ForegroundColor Green
+
+# -- 3. the authorised path passes the product branch ---------------------
+if ($m -notmatch [regex]::Escape("can_view_purchase_cost(p.company_id, NULL, p.branch_id, true)")) {
+    Write-Host "X product_costs no longer passes the product branch - the rule would be role-only" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ a hidden cost is neither shown nor written back (screen and server)" -ForegroundColor Green
+# and the write guard is exactly as strict as the read rule
+$r = Get-Content -LiteralPath $route -Raw
+if ($r -notmatch [regex]::Escape("p_scope_by_branch: true")) {
+    Write-Host "X the update route checks cost rights without the branch - wider than the display rule" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ read and write are measured by the same rule, branch included" -ForegroundColor Green
 
 # -- 4. the battery below still proves both standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.913.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.914.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -95,11 +86,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.911.ps1" 2>$null
-git add -u -- "push_v3.74.912.ps1" 2>$null
+git add -u -- "push_v3.74.913.ps1" 2>$null
 
 # -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.911.ps1", "push_v3.74.912.ps1")
+$expected = @($files) + @("push_v3.74.913.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -304,8 +294,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.911.ps1" 2>$null
-git add -u -- "push_v3.74.912.ps1" 2>$null
+git add -u -- "push_v3.74.913.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -324,38 +313,57 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_913.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_914.txt"
     $msgLines = @(
-        'fix(products): v3.74.913 - the products screen survives a hidden cost, and a hidden cost can no longer be overwritten with zero',
+        'feat(security): v3.74.914 - purchase cost is scoped to the branch, not just the role',
         '',
-        'Three defects from the hide, in one release. The first emptied the',
-        'screen, the second crashed it, and the third would have destroyed',
-        'data quietly.',
+        'OWNER DECISION, in his words: branch people - purchasing officer,',
+        'accountant and branch manager - may see the purchase cost of THEIR',
+        'branch products; a product with no branch belongs to the company,',
+        'and only the owner and general manager see its cost.',
         '',
-        'ONE - the screen was empty for everyone (912, folded in here). Two',
-        'sites still asked for the cost columns inside a column list, and a',
-        'revoked column does not come back empty: PostgREST fails the WHOLE',
-        'query, so the screen received zero rows. Both now use the authorised',
-        'path, the cost-bearing list is deleted, and the guard reads the',
-        'column lists themselves - the hole was that it only read the text',
-        'inside select(), and a constant hides its contents from that.',
+        'Until now 906 measured the role alone, so an accountant sitting in',
+        'one branch read the cost of every branch. Now the rule asks two',
+        'questions: what is your role, and is this product yours.',
         '',
-        'TWO - the screen then crashed for every non-owner: the cost cell',
-        'called .toFixed() on a cost that is now null for whoever may not see',
-        'it, and the list error boundary swallowed the page. Hidden costs',
-        'render as a dash. So does the inventory total value, which is itself',
-        'cost information: if a single cost is hidden, the total is hidden -',
-        'a partial sum would leak what the hide removed.',
+        'Three changes. The branch manager (manager) joins the default',
+        'audience - he was not in it. A member bound to a branch sees only',
+        'his own branch products; a company-wide member (no branch on his',
+        'membership) keeps no spatial limit. And a branchless product is',
+        'owner/GM only.',
         '',
-        'THREE, and the dangerous one - the edit form opened a hidden cost as',
-        '0, so a store manager renaming a product would SAVE zero over the',
-        'real purchase cost. A read restriction had opened a write hole. The',
-        'form no longer shows or sends the cost when it is hidden, and the',
-        'update route drops cost fields for any caller the 906 rule refuses -',
-        'server-side, because a crafted request bypasses the screen.',
+        'The owner and GM exemption comes BEFORE the branch test on purpose:',
+        'every member on production carries a branch on his membership row -',
+        'the owner included - so testing him by branch would have hidden the',
+        'other branches from the very person who owns them.',
         '',
-        'Measured while fixing: exactly one .toFixed on a cost value in the',
-        'whole tree, and no other screen formats a cost without a guard.'
+        'The branch condition applies only when a SPECIFIC product is being',
+        'asked about (p_scope_by_branch). The general question - may this',
+        'user see cost at all - stays role-only, or screens would hide',
+        'columns their user is entitled to.',
+        '',
+        'The old two-argument signature is dropped, not left beside the new',
+        'one: with defaults, a two-argument call would be ambiguous, and the',
+        'product update route calls it with exactly two named arguments -',
+        'its failure would read as "not entitled" and strip the cost from',
+        'the payload of someone who owns it.',
+        '',
+        'Proven on test by cancelled transactions, 8 products across two',
+        'branches, 5 in the accountant branch: owner 8, accountant 5,',
+        'purchasing officer 5, branch manager 5, store manager 0, staff 0; a',
+        'branchless product gives 0 to the accountant and 1 to the owner;',
+        'open mode still returns all 8 to a plain staff member. Re-measured',
+        'on production inside a rolled-back transaction (the company sits in',
+        'strict mode, which the owner chose from the settings card): 12',
+        'products, 9 in that branch - owner 12, and accountant, purchasing',
+        'officer and branch manager 9 each.',
+        '',
+        'What this release does NOT do: it does not change which products a',
+        'branch user SEES, and it does not restrict purchasing. Transferred',
+        'stock is already sellable without its cost, because a transfer',
+        'moves quantity and never touches the product card - measured, and',
+        'confirmed by the owner. Zero products have moved outside their',
+        'branch so far.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -364,5 +372,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.913 pushed - the screen holds a hidden cost without breaking, and no one can overwrite it with a zero" -ForegroundColor Green
+    Write-Host "`n+ v3.74.914 pushed - cost is scoped to the branch; the owner still sees the whole company" -ForegroundColor Green
 }
