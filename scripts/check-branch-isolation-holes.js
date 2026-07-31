@@ -51,8 +51,8 @@ try { ({ Client } = require("pg")) } catch {
  * الرؤوس: جداولٌ تحمل `branch_id` بنفسها.
  * v3.74.921 — أُضيف `purchase_orders`، و922 `sales_orders`، و923
  * `estimates`، و924 `purchase_returns` وجدولُ تخصيصات مخازنها، و925
- * `sales_return_requests` و`sales_returns`: أُغلق عزلُ كلٍّ فى إصداره
- * ويُقاس هنا كى لا يعود.
+ * `sales_return_requests` و`sales_returns`، و926 عائلةُ الحجوزات
+ * الثمانية: أُغلق عزلُ كلٍّ فى إصداره ويُقاس هنا كى لا يعود.
  * وكل جدولٍ يُغلق من قائمة التسعة عشر يُضاف إلى هذا السطر فى نفس
  * دفعته، ويُزرع له عطبٌ فى الفخّ فيُرى الحارس يسمّيه — وإلا فقد أُغلق
  * بلا حارس، أو حُرس بلا قياس.
@@ -60,7 +60,8 @@ try { ({ Client } = require("pg")) } catch {
 const HEADS = ["bills", "invoices", "journal_entries", "payments", "purchase_orders",
                "sales_orders", "estimates", "purchase_returns",
                "purchase_return_warehouse_allocations",
-               "sales_return_requests", "sales_returns"]
+               "sales_return_requests", "sales_returns",
+               "bookings", "booking_staff_assignments", "booking_stock_withdrawals"]
 
 /** والأبناء: فرعُهم فرعُ أبيهم، وفيهم يعيش السعر. */
 const CHILDREN = [
@@ -72,6 +73,10 @@ const CHILDREN = [
   { child: "estimate_items",       parent: "estimates",       fk: "estimate_id" },
   { child: "purchase_return_items", parent: "purchase_returns", fk: "purchase_return_id" },
   { child: "sales_return_items",   parent: "sales_returns",   fk: "sales_return_id" },
+  { child: "booking_notes",             parent: "bookings", fk: "booking_id" },
+  { child: "booking_status_history",    parent: "bookings", fk: "booking_id" },
+  { child: "booking_bundle_selections", parent: "bookings", fk: "booking_id" },
+  { child: "booking_extra_items",       parent: "bookings", fk: "booking_id" },
 ]
 
 ;(async () => {

@@ -8,7 +8,7 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). سبع حالات:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). ثمانى حالات:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
@@ -16,7 +16,8 @@
  *   (د) سياسةٌ متساهلةٌ على عروض الأسعار (923) ⇒ يُرفض ويُسمّى الجدول.
  *   (هـ) سياسةٌ متساهلةٌ على مرتجعات الشراء (924) ⇒ يُرفض ويُسمّى الجدول.
  *   (و) سياسةٌ متساهلةٌ على طلبات مرتجع البيع (925) ⇒ يُرفض ويُسمّى الجدول.
- *   (ز) إعادة الحال                          ⇒ يصمت.
+ *   (ز) ملاحظاتُ الحجز تعود لعضوية الشركة (926) ⇒ يُرفض ويُسمّى الجدول.
+ *   (ح) إعادة الحال                          ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -91,6 +92,7 @@ function runGuard() {
     await client.query("DROP POLICY IF EXISTS estimates_company_wide ON public.estimates")
     await client.query("DROP POLICY IF EXISTS purchase_returns_company_wide ON public.purchase_returns")
     await client.query("DROP POLICY IF EXISTS srr_company_wide ON public.sales_return_requests")
+    await client.query("DROP POLICY IF EXISTS booking_notes_company_wide ON public.booking_notes")
     await client.query(billItemsFn)
   }
 
@@ -160,6 +162,15 @@ function runGuard() {
         "CREATE POLICY srr_company_wide ON public.sales_return_requests FOR SELECT USING (public.is_company_member(company_id))"
       ),
       /^\s+- sales_return_requests:/m
+    )
+
+    // 926: البند الذى لا عمودَ فرعٍ فيه — يتبع أباه أو ينكشف بالكامل.
+    await stage(
+      "ملاحظاتُ الحجز تعود إلى عضوية الشركة",
+      () => client.query(
+        "CREATE POLICY booking_notes_company_wide ON public.booking_notes FOR SELECT USING (public.is_company_member(company_id))"
+      ),
+      /^\s+- booking_notes:/m
     )
 
     if (ok) {
