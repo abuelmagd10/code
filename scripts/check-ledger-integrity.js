@@ -66,14 +66,52 @@ const NO_ENTRY_IS_LEGITIMATE = [
   {
     table: "inventory_transactions",
     where: `transaction_type IN ('production_issue','production_receipt',
-                                'booking_custody_out','booking_custody_return')`,
+                                'booking_custody_out','booking_custody_return')
+            OR (transaction_type IN ('transfer_in','transfer_out')
+                AND (SELECT count(DISTINCT t2.branch_id)
+                       FROM public.inventory_transactions t2
+                      WHERE t2.reference_id = inventory_transactions.reference_id
+                        AND t2.product_id   = inventory_transactions.product_id
+                        AND t2.transaction_type IN ('transfer_in','transfer_out')) = 1)`,
     why:
       "حركات التصنيع تُقيَّد على مستوى أمر الإنتاج لا الحركة، وحركات العهدة " +
-      "لا تنقل ملكية. والدليل أن رصيد الأستاذ يطابق FIFO.",
+      "لا تنقل ملكية. والدليل أن رصيد الأستاذ يطابق FIFO. " +
+      "و**v3.74.918**: النقل بين الفروع يُقيَّد الآن تلقائياً (محفِّز " +
+      "trg_inventory_transfer_post_journal)، فالاستثناء الوحيد الباقى هو " +
+      "النقل داخل الفرع الواحد بين مخزنين — لا يتغيّر به بُعد الدفتر فلا " +
+      "قيد له. والشرط مكتوبٌ بالقياس (عدد فروع ساقَى النقل = 1) لا بالاسم، " +
+      "فلا يتسع لنقلٍ بين فرعين نسى قيدَه.",
   },
 ]
 
 const CHECKS = [
+  {
+    // v3.74.918 — لا يكفى أن يوجد قيدٌ للنقل: يجب أن يساوى ما تحرّك فعلاً.
+    // أول نقلٍ فى تاريخ النظام كشف أن النقل بلا قيدٍ أصلاً، فترك ٤٣٢٫٥٠
+    // فى غير فرعها. وقيدٌ بمبلغٍ خاطئ يفعل الشىء نفسه بهدوءٍ أكبر.
+    name: "قيمة قيد النقل تساوى قيمة الحركة",
+    en: "every inventory-transfer entry equals the movement it posts",
+    sql: `SELECT count(*)::int AS n
+            FROM public.inventory_transactions t
+            JOIN public.journal_entries e ON e.id = t.journal_entry_id
+           WHERE t.transaction_type = 'transfer_in'
+             AND e.reference_type = 'inventory_transfer'
+             AND coalesce(e.is_deleted, false) = false
+             AND abs(coalesce(t.total_cost, 0)
+                     - (SELECT coalesce(sum(l.debit_amount), 0)
+                          FROM public.journal_entry_lines l
+                         WHERE l.journal_entry_id = e.id)) > 0.01`,
+    detail: `SELECT string_agg(t.id::text, ', ') AS info
+               FROM public.inventory_transactions t
+               JOIN public.journal_entries e ON e.id = t.journal_entry_id
+              WHERE t.transaction_type = 'transfer_in'
+                AND e.reference_type = 'inventory_transfer'
+                AND coalesce(e.is_deleted, false) = false
+                AND abs(coalesce(t.total_cost, 0)
+                        - (SELECT coalesce(sum(l.debit_amount), 0)
+                             FROM public.journal_entry_lines l
+                            WHERE l.journal_entry_id = e.id)) > 0.01`,
+  },
   {
     name: "ميزان المراجعة (مدين − دائن)",
     en: "trial balance is zero",

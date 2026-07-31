@@ -6,88 +6,84 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.917 - the OLD script is removed, never this one. Five times a chained
+# v3.74.918 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.916.ps1") { Remove-Item -LiteralPath "push_v3.74.916.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.917.ps1") { Remove-Item -LiteralPath "push_v3.74.917.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.917"') {
-    Write-Host "+ 3.74.917" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.918"') {
+    Write-Host "+ 3.74.918" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.917]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.917]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.918]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.918]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000007_v3_74_917_branch_isolation_actually_works.sql"
+$migration = "supabase/migrations/20260731000008_v3_74_918_inventory_transfer_journal.sql"
+$ledger    = "scripts/check-ledger-integrity.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration,
-           "scripts/check-branch-isolation-holes.js",
-           "scripts/selftest-branch-isolation-holes.js",
-           "push_v3.74.917.ps1")
+           $migration, $ledger,
+           "scripts/selftest-transfer-journal.js",
+           "push_v3.74.918.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
+$g = Get-Content -LiteralPath $ledger -Raw
 
-# -- 1. every permissive policy that swallows the isolation is DROPPED ---
-# Permissive policies are OR-ed. One open policy beside a correct
-# branch-isolation policy means NO isolation - and it is worse than having
-# none, because a reader of the database sees the rule written and relaxes.
-foreach ($needle in @("DROP POLICY IF EXISTS bills_select",
-                      "DROP POLICY IF EXISTS invoices_select",
-                      "DROP POLICY IF EXISTS journal_entries_select",
-                      "DROP POLICY IF EXISTS payments_select",
-                      "DROP POLICY IF EXISTS purchase_order_items_select")) {
+# -- 1. the mechanism, not a one-off entry -------------------------------
+# A hand-written entry for TRF-0001 would fix the past and leave tomorrow
+# exactly as it was: nothing in the code says a transfer needs an entry.
+if ($m -notmatch [regex]::Escape("CREATE TRIGGER trg_inventory_transfer_post_journal")) {
+    Write-Host "X the transfer posts no entry by itself - this is a painkiller, not a fix" -ForegroundColor Red
+    exit 1
+}
+if ($m -notmatch [regex]::Escape("WHEN (NEW.transaction_type = 'transfer_in')")) {
+    Write-Host "X the trigger no longer fires on receipt - posting on dispatch invents an entry for goods in transit" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ every future transfer posts its own entry, at receipt" -ForegroundColor Green
+
+# -- 2. the past is repaired BY THE SAME function ------------------------
+# Not by a second hand and not by a literal entry: if the mechanism is
+# wrong, it must be wrong in both places at once, never in only one.
+if ($m -notmatch [regex]::Escape("v_entry := public.inventory_transfer_post_journal(r.id)")) {
+    Write-Host "X the repair block does not call the same function that guards the future" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the past is repaired by the very function that guards the future" -ForegroundColor Green
+
+# -- 3. two branches, one account, and a refusal when cost is unknown ----
+foreach ($needle in @("'branch_id',      v_in.branch_id",
+                      "'branch_id',      v_out.branch_id",
+                      "TRANSFER_NO_COST_BASIS")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X an open policy is left beside the isolation ($needle)" -ForegroundColor Red; exit 1
+        Write-Host "X the transfer entry is not two-branch, or an uncosted transfer would pass ($needle)" -ForegroundColor Red
+        exit 1
     }
 }
-Write-Host "+ every permissive policy that swallowed the branch isolation is dropped" -ForegroundColor Green
+Write-Host "+ the entry moves inventory between two branch dimensions, and refuses to post without a cost basis" -ForegroundColor Green
 
-# -- 2. and the CHILD rows ask about the branch too ----------------------
-# The price lives in the lines, not the header. Closing the header alone
-# leaves the purchase price readable by any member of the company - which
-# is exactly the back door that bypassed the whole cost hide (906-916).
-foreach ($fn in @("can_access_bill_items", "can_access_invoice_items",
-                  "can_access_journal_lines", "can_access_purchase_order_items")) {
-    if ($m -notmatch [regex]::Escape("FUNCTION public.$fn")) {
-        Write-Host "X $fn is not rewritten - the line rows stay company-wide" -ForegroundColor Red; exit 1
-    }
+# -- 4. the ledger guard measures the VALUE, not the presence -----------
+# An entry with the wrong amount does what a missing entry does, more
+# quietly. And the only remaining no-entry exception is written as a
+# MEASUREMENT (both legs in one branch), never as a name.
+if ($g -notmatch [regex]::Escape("every inventory-transfer entry equals the movement it posts")) {
+    Write-Host "X the ledger guard still only asks whether an entry exists" -ForegroundColor Red; exit 1
 }
-$calls = ([regex]::Matches($m, [regex]::Escape("RETURN public.can_access_record_branch("))).Count
-if ($calls -lt 4) {
-    Write-Host "X only $calls child function(s) ask about the branch - four are required" -ForegroundColor Red
+if ($g -notmatch [regex]::Escape("count(DISTINCT t2.branch_id)")) {
+    Write-Host "X the same-branch transfer exception is written by name, not by measurement" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ all four line-level paths are scoped by the branch of their parent document" -ForegroundColor Green
-
-# -- 3. a company-wide member is not locked out --------------------------
-# can_access_record_branch used to fall through to `v_user_branch_id =
-# p_branch_id`, and for a member with NO branch that is NULL = X => NULL =>
-# read as a refusal. It never showed because every member on production
-# carries a branch - it would have detonated the DAY isolation was turned
-# on, which is this release.
-if ($m -notmatch [regex]::Escape("IF v_user_branch_id IS NULL THEN")) {
-    Write-Host "X a company-wide member (no branch) would lose every branch document" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ a member with no branch on his membership keeps company-wide sight" -ForegroundColor Green
-
-# -- 4. the notification does not carry the number out of its branch -----
-if ($m -notmatch [regex]::Escape("v_company_wide_count")) {
-    Write-Host "X the bill notification still falls back to another branch's accountant" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the bill notification falls back to company-wide accountants, then owner/GM" -ForegroundColor Green
+Write-Host "+ the ledger guard measures the transfer entry value, and its only exception is measured" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.917.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.918.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -100,14 +96,17 @@ if ($self2 -notmatch [regex]::Escape("selftest-products-branch-policy.js")) {
 if ($self2 -notmatch [regex]::Escape("selftest-branch-isolation-holes.js")) {
     Write-Host "X the branch-isolation guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
 }
+if ($self2 -notmatch [regex]::Escape("selftest-transfer-journal.js")) {
+    Write-Host "X the transfer-journal mechanism is not proven in this battery" -ForegroundColor Red; exit 1
+}
 Write-Host "+ the battery plants its probes and watches every guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.916.ps1" 2>$null
+git add -u -- "push_v3.74.917.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.916.ps1")
+$expected = @($files) + @("push_v3.74.917.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -116,6 +115,10 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving an unposted cross-branch transfer is refused (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-transfer-journal.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the transfer-journal mechanism was not proven" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the branch-isolation guard catches the real leak (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-branch-isolation-holes.js
@@ -328,7 +331,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.916.ps1" 2>$null
+git add -u -- "push_v3.74.917.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -348,80 +351,71 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_917.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_918.txt"
     $msgLines = @(
-        'feat(security): v3.74.917 - branch isolation actually works (it was written and disabled)',
+        'feat(accounting): v3.74.918 - a stock transfer between branches now posts its journal entry',
         '',
-        'THE OWNER FOUND IT HIMSELF, by accident: a notification reached the',
-        'MAIN branch accountant about a purchase bill of the NASR CITY branch.',
-        'He opened it and read the supplier, the quantities and the UNIT PRICE',
-        'of 100. Confirmed on production by impersonating him: header 1,',
-        'lines 1, price 100.00.',
+        'THE FIRST REAL TRANSFER IN THE HISTORY OF THE SYSTEM found it. The',
+        'owner moved 5 units from Nasr City to the Main branch (TRF-0001):',
+        'the quantity moved, the notification arrived, the store keeper',
+        'approved receipt - and NO entry was created. Not one line in the',
+        'whole codebase says a transfer needs one.',
         '',
-        'Cause: the same trap guarded in 915, standing here for a long time.',
-        'bills carries TWO permissive SELECT policies - one correct, scoped by',
-        'branch, and one saying is_company_member(company_id). Permissive',
-        'policies are OR-ed, so the second swallows the first and the isolation',
-        'is ink. That is worse than having none, because a reader of the',
-        'database sees the rule written and relaxes.',
+        'So inventory account 1140 still carried the full 865 under Nasr City',
+        'while half the goods were physically in the Main branch. Nasr City',
+        '866.91 and Main 295.86, where the truth is 434.41 and 728.36 -',
+        '432.50 sitting in the wrong branch. The COMPANY total was correct the',
+        'whole time, which is why every check that measures the total stayed',
+        'silent. The defect is in the DIMENSION, not the sum, and any report',
+        'comparing branches or cost centres was lying.',
         '',
-        'And it was not bills alone. The same pairing sits on FOUR tables:',
-        'bills, invoices, JOURNAL ENTRIES and PAYMENTS.',
+        'The bug is as old as the system and slept until first use: the number',
+        'of transfers ever executed was ZERO.',
         '',
-        'The children were wider than the parents. can_access_bill_items,',
-        'can_access_invoice_items and can_access_journal_lines all read',
-        'company_id from the parent and then say is_company_member, with no',
-        'question about the branch. So closing the header leaves the line open',
-        '- and the PRICE lives in the line. That is the back door that',
-        'bypassed the entire cost hide of 906-916: the column was revoked from',
-        'the product card, and the same number was read off the bill line.',
+        'The owner set the rule for this repo, in his words: we are here to',
+        'solve the problem and make sure it does not repeat, at the root - we',
+        'do not hand out painkillers. So three parts, not one.',
         '',
-        'THE LESSON, and why the new guard measures EFFECT not TEXT: I first',
-        'wrote a sweep that read policy definitions, and it PASSED',
-        'purchase_order_items_select - its name suggests the owner, and its',
-        'first line is companies.user_id = auth.uid(). Then I measured the',
-        'effect and found a branch employee still reading another branch line',
-        'items: in its tail, cut off from my view, UNION SELECT',
-        'company_members.company_id - every member. Text deceives: a',
-        'reassuring name, a correct first line, and a tail that opens',
-        'everything.',
+        'MECHANISM: a trigger on inventory_transactions fires at transfer_in',
+        'only - a dispatch may never arrive, and posting there invents an',
+        'entry for goods in transit. It writes ONE entry with two lines on the',
+        'SAME account and TWO branch dimensions: debit the receiving branch,',
+        'credit the sending one, valued at the weighted-average FIFO cost. It',
+        'also writes unit_cost/total_cost on BOTH movement legs and links them',
+        'to the entry, so no leg is left orphaned in front of the guard - both',
+        'legs had a NULL unit cost, meaning the transfer carried no recorded',
+        'value at all.',
         '',
-        'A latent bug is closed with it: can_access_record_branch fell through',
-        'to v_user_branch_id = p_branch_id, and for a member with NO branch',
-        'that is NULL = X => NULL => read as a refusal, locking him out of',
-        'every branch document. It never showed because all 7 production',
-        'members carry a branch - it would have detonated the day isolation was',
-        'turned on, which is this release.',
+        'THE PAST, by the same function: not a second hand and not a literal',
+        'entry. The repair block calls inventory_transfer_post_journal on every',
+        'unposted receipt. If the mechanism were wrong, it would be wrong in',
+        'both places at once, never in only one. Result on production:',
+        'JE-000075, two lines, 432.50 debit = 432.50 credit, and the branch',
+        'balances are now exactly the 434.41 / 728.36 predicted before the fix',
+        'was applied.',
         '',
-        'The notification itself was a leak: its text carries the bill amount.',
-        'It looked for accountants of the bill branch and, finding none, fell',
-        'back to ALL accountants of the company. Nasr City has no accountant,',
-        'so it fell to the main branch one. The fallback is now company-wide',
-        'accountants, then owner/GM - never another branch accountant.',
+        'COST BASIS, and why this one: the weighted-average FIFO cost of the',
+        'product ACROSS THE COMPANY, because FIFO layers are not split by',
+        'branch here (consume_fifo_lots consumes by date with no regard to',
+        'branch), so there is no branch layer to move. It is also the exact',
+        'basis the branch inventory-valuation report already uses, so the',
+        'report and the ledger now agree instead of contradicting each other.',
+        'A transfer with no cost basis is REFUSED out loud: an uncosted',
+        'movement is precisely what is being fixed here.',
         '',
-        'Measured on production, before: every member saw 7 bills, 7 invoices,',
-        '75 journal entries, 19 payments - exactly what the owner sees. After:',
-        'every branch member 5 / 5 / 60 / 9, owner unchanged, and BILL-0007 for',
-        'the accountant is header 0, lines 0, no price.',
+        'GUARD: the transfer exception is removed from the ledger-integrity',
+        'check, so any unposted transfer is now a loud error. Only one',
+        'exception remains and it is written as a MEASUREMENT, never a name:',
+        'a transfer whose two legs sit in the same branch (the condition',
+        'counts the distinct branches of both legs), because the ledger',
+        'dimension does not change. And a new check refuses any transfer entry',
+        'whose amount does not equal the movement it posts - a wrong amount',
+        'does what a missing entry does, more quietly.',
         '',
-        'INTENDED CONSEQUENCE the owner approved explicitly: a branch',
-        'accountant no longer sees other branches journal entries or payments,',
-        'so his trial balance and financial reports are now his branch alone.',
-        '',
-        'The new guard impersonates a real branch-bound member on the LIVE',
-        'database and counts how many rows of ANOTHER branch he can read,',
-        'across four document tables and four line tables, inside a rolled-back',
-        'transaction. Zero, or the build stops. Its selftest plants the real',
-        'defect - the permissive policy, and the child function that forgets',
-        'the branch - and watches the guard name them.',
-        '',
-        'NOT DONE, and measured rather than assumed: the same impersonation',
-        'across every table shows a branch member still reads other branches',
-        'rows in 19 tables. Some are reference data by design; among the rest',
-        'are purchase orders, sales orders, estimates, returns, stock',
-        'movements, FIFO layers, COGS, suppliers and bookings. The owner chose',
-        'to close these four and their children now, and take the rest table',
-        'by table with its own measurement.'
+        'The selftest plants the defect that actually happened: it disables the',
+        'trigger, moves 5 units across two branches, watches the ledger guard',
+        'refuse, then calls the mechanism and verifies a balanced two-branch',
+        'entry of 432.50 - and cleans up everything it planted.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -430,5 +424,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.917 pushed - branch isolation is measured, not claimed: a branch member reads zero rows of another branch" -ForegroundColor Green
+    Write-Host "`n+ v3.74.918 pushed - a transfer moves the goods AND the books: 432.50 is back in the branch that holds it" -ForegroundColor Green
 }
