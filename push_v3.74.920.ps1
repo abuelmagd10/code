@@ -6,71 +6,70 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.919 - the OLD script is removed, never this one. Five times a chained
+# v3.74.920 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.918.ps1") { Remove-Item -LiteralPath "push_v3.74.918.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.919.ps1") { Remove-Item -LiteralPath "push_v3.74.919.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.919"') {
-    Write-Host "+ 3.74.919" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.920"') {
+    Write-Host "+ 3.74.920" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.919]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.919]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.920]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.920]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000009_v3_74_919_transfer_journal_caller_identity.sql"
+$usersPage    = "app/settings/users/page.tsx"
+$settingsPage = "app/settings/page.tsx"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration,
-           "scripts/check-exposed-definer-functions.js",
-           "scripts/selftest-exposed-definer-functions.js",
-           "push_v3.74.919.ps1")
+           $usersPage, $settingsPage,
+           "push_v3.74.920.ps1")
 
-$m = Get-Content -LiteralPath $migration -Raw
+$u = Get-Content -LiteralPath $usersPage -Raw
+$g = Get-Content -LiteralPath $settingsPage -Raw
 
-# -- 1. BOTH cures, not one ----------------------------------------------
-# The dashboard check accepts either. Both are taken because each guards
-# what the other cannot: a revoked grant can come back with one migration,
-# and an identity check inside is worthless if the function is also
-# reachable by a caller from another company.
-if ($m -notmatch [regex]::Escape("PERFORM public.assert_company_access(v_in.company_id)")) {
-    Write-Host "X the function still writes to the ledger without asking who is calling" -ForegroundColor Red
+# -- 1. it MOVED - it was not copied -------------------------------------
+# A move that leaves a copy behind produces two handles for one rule. The
+# forgotten one is the one somebody reads.
+if ($u -notmatch [regex]::Escape("<PurchaseCostVisibilityCard language={appLang} />")) {
+    Write-Host "X the purchase-cost card is not mounted on the users page" -ForegroundColor Red; exit 1
+}
+if ($g -match [regex]::Escape("PurchaseCostVisibilityCard")) {
+    Write-Host "X the card is STILL on the general settings page - a move that copies leaves two handles" -ForegroundColor Red
     exit 1
 }
-if ($m -notmatch [regex]::Escape("REVOKE EXECUTE ON FUNCTION public.inventory_transfer_post_journal(uuid) FROM authenticated")) {
-    Write-Host "X the function is still handed to end users - the application never calls it" -ForegroundColor Red
-    exit 1
-}
-if ($m -notmatch [regex]::Escape("GRANT  EXECUTE ON FUNCTION public.inventory_transfer_post_journal(uuid) TO service_role")) {
-    Write-Host "X service_role lost execute - the trigger and the repair path would break" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the ledger writer asks who is calling AND is restricted to service_role" -ForegroundColor Green
+Write-Host "+ the purchase-cost card lives on the users page, and only there" -ForegroundColor Green
 
-# -- 2. the check moves from the dashboard to the gate -------------------
-# The owner dashboard found this two hours AFTER the release shipped. A
-# dashboard is a report; a push is a gate. Every dashboard check deserves
-# a twin in the battery.
-$self1 = Get-Content -LiteralPath "push_v3.74.919.ps1" -Raw
-if ($self1 -notmatch [regex]::Escape("check-exposed-definer-functions.js --require-db")) {
-    Write-Host "X the definer-exposure check is not run against the live database in this battery" -ForegroundColor Red
+# -- 2. exactly one mount in the whole application ------------------------
+$mounts = (Get-ChildItem -Path "app" -Recurse -Filter *.tsx |
+           Select-String -Pattern "<PurchaseCostVisibilityCard" -SimpleMatch).Count
+if ($mounts -ne 1) {
+    Write-Host "X the card is mounted $mounts time(s) - exactly one handle is allowed" -ForegroundColor Red
     exit 1
 }
-if ($self1 -notmatch [regex]::Escape("selftest-exposed-definer-functions.js")) {
-    Write-Host "X the definer-exposure guard is not proven refusing in this battery" -ForegroundColor Red
-    exit 1
+Write-Host "+ exactly one mount in the whole application" -ForegroundColor Green
+
+# -- 3. a move of place, never of rule ------------------------------------
+# The audience rule lives in the database (can_view_purchase_cost). A
+# relocation must not carry it: the file list itself is asserted to hold no
+# migration, and check 6 below refuses anything staged outside that list.
+foreach ($f in $files) {
+    if ($f -like "supabase/migrations/*") {
+        Write-Host "X a migration is part of a UI relocation - the rule must not move with the card ($f)" -ForegroundColor Red
+        exit 1
+    }
 }
-Write-Host "+ what the dashboard caught after the fact is now a gate before the fact" -ForegroundColor Green
+Write-Host "+ the audience rule in the database is untouched: this moves a place, not a rule" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.919.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.920.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -90,10 +89,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.918.ps1" 2>$null
+git add -u -- "push_v3.74.919.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.918.ps1")
+$expected = @($files) + @("push_v3.74.919.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -326,7 +325,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.918.ps1" 2>$null
+git add -u -- "push_v3.74.919.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -346,55 +345,35 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_919.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_920.txt"
     $msgLines = @(
-        'fix(security): v3.74.919 - the transfer-journal function now asks who is calling, and end users cannot call it',
+        'refactor(settings): v3.74.920 - purchase-cost visibility moves to the users page',
         '',
-        'THE OWNER DASHBOARD found it two hours after 918 shipped: one',
-        'SECURITY DEFINER function writes with full rights and never checks',
-        'the caller - inventory_transfer_post_journal. It is correct, and the',
-        'function is MINE, from 918.',
+        'OWNER REQUEST: move the purchase-cost visibility card - with its three',
+        'modes (open, restricted by default, strict) - out of the general',
+        'settings page and into the USERS page under settings.',
         '',
-        'SECURITY DEFINER is required there: it writes a journal entry and',
-        'updates stock movements. What I got wrong was granting EXECUTE to',
-        'authenticated without asking who the caller is. Any signed-in user',
-        'could have called it with a receipt movement id belonging to ANOTHER',
-        'company and posted an entry in their books.',
+        'And it is the right home. This is not a general setting, it is an',
+        'AUDIENCE rule: who gets to see the number. Its audience is written in',
+        'roles - owner, general manager, accountant, purchasing officer, branch',
+        'manager. Reading it beside Role Permissions puts the question and its',
+        'answer in one place, instead of the rule living on one page and the',
+        'people it governs on another.',
         '',
-        'It was not exploited: no screen and no API route calls this function',
-        'at all - only the trigger and the repair block do (measured). But not',
-        'used is not the same as not possible. A door is closed because it is',
-        'open, not because somebody walked through it.',
+        'Mounted in /settings/users inside the Role Permissions tab, under the',
+        'subscribed-modules card, separated by a rule above and below.',
         '',
-        'BOTH cures are taken, though the check accepts either. Least',
-        'privilege: EXECUTE revoked from authenticated, service_role only -',
-        'the application never calls it, and the trigger does not need the',
-        'grant because it is SECURITY DEFINER owned by postgres, so the inner',
-        'call is measured against the owner. And the question itself:',
-        'assert_company_access inside the function, in case a grant comes back',
-        'one day by hand or by migration. Neither breaks anything - the person',
-        'inserting the receipt is a member of the company, and the repair path',
-        'runs with no identity so the assert returns early by its own design.',
+        'NOTHING in behaviour changes. The three modes are as they were, the',
+        'database rule (can_view_purchase_cost) is untouched, and the card',
+        'still hides itself from anyone who is not the owner. This moves a',
+        'place, not a rule - and the push refuses to stage any migration in a',
+        'relocation release, so the rule cannot travel with the card by',
+        'accident.',
         '',
-        'Proven on test in a cancelled transaction, impersonating a real store',
-        'manager under the authenticated role: the TRIGGER still posted the',
-        'entry as usual (0.81 debit), and a DIRECT call was refused with',
-        'permission denied for function. The door is shut and the work still',
-        'runs. On production after applying: the dashboard check returns zero',
-        'alarms and the grants are postgres and service_role only.',
-        '',
-        'AND THE REAL LESSON: a dashboard is a report, a push is a gate. That',
-        'a security hole was found two hours AFTER shipping is a delay that is',
-        'not acceptable. So the check moved to the gate:',
-        'check-exposed-definer-functions.js measures the live database with the',
-        'same logic as the dashboard check. Its selftest plants a copy of the',
-        'very same mistake, watches the guard name it, and then watches BOTH',
-        'cures be accepted - so the guard measures neither the grant alone nor',
-        'the text alone, but their conjunction.',
-        '',
-        'Measured after the fix: 29 definer functions write without an identity',
-        'check, and every single one is restricted to service_role. Zero',
-        'exposed to an end user.'
+        'The push also checks the card is mounted EXACTLY ONCE in the whole',
+        'application and that the old page no longer references it: a move that',
+        'leaves a copy behind produces two handles for one rule, and the',
+        'forgotten handle is the one somebody reads.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -403,5 +382,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.919 pushed - the ledger writer asks who is calling, and what the dashboard caught late is now caught early" -ForegroundColor Green
+    Write-Host "`n+ v3.74.920 pushed - the purchase-cost audience is read where the roles are read" -ForegroundColor Green
 }

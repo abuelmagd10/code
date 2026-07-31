@@ -22,6 +22,7 @@ import Link from "next/link"
 import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, UserCog, Lock, Check, X, AlertCircle, Loader2, RefreshCw, MapPin, Warehouse, ArrowRightLeft, Share2, Eye, Edit, GitBranch, Search, Copy, CreditCard, Calendar, UserCheck } from "lucide-react"
 import SeatStatusBanner from "@/components/billing/SeatStatusBanner"
 import { ModulesSubscriptionCard } from "@/components/settings/ModulesSubscriptionCard"
+import { PurchaseCostVisibilityCard } from "@/components/settings/PurchaseCostVisibilityCard"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string; employee_id?: string; employee_name?: string; employee_job_title?: string }
 type Employee = { id: string; full_name: string; job_title?: string; email?: string; department?: string }
@@ -2726,6 +2727,13 @@ export default function UsersSettingsPage() {
             <CardContent className="pt-5 space-y-4">
               {/* v3.74.260 — الوحدات المُشتَرَك بها (owner-only; self-hides) */}
               <ModulesSubscriptionCard />
+              <div className="border-t border-gray-100 dark:border-slate-800 my-2" />
+
+              {/* v3.74.920 — «رؤية تكلفة الشراء» نُقلت من صفحة الإعدادات العامة
+                  إلى هنا بطلب المالك. ومكانها الصحيح هذا التبويب: هى قاعدةُ
+                  **جمهور** — من يرى الرقم — لا إعدادٌ عام، فتُقرأ بجوار صلاحيات
+                  الأدوار التى تحكمها. والبطاقة تُخفى نفسها عمّن ليس مالكاً. */}
+              <PurchaseCostVisibilityCard language={appLang} />
               <div className="border-t border-gray-100 dark:border-slate-800 my-2" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">

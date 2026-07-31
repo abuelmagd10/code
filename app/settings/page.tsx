@@ -1,6 +1,5 @@
 "use client"
 
-import { PurchaseCostVisibilityCard } from "@/components/settings/PurchaseCostVisibilityCard"
 import { useEffect, useState, useRef } from "react"
 import { PassphraseDialog } from "@/components/backup/PassphraseDialog"
 import { BackupHistoryTable } from "@/components/backup/BackupHistoryTable"
@@ -1440,8 +1439,9 @@ export default function SettingsPage() {
           }
         />
 
-        {/* v3.74.909 — قرار 906 صار له مقبض: من يرى تكلفة الشراء. */}
-        <PurchaseCostVisibilityCard language={language} />
+        {/* v3.74.920 — بطاقة «رؤية تكلفة الشراء» انتقلت إلى
+            `/settings/users` (تبويب صلاحيات الأدوار) بطلب المالك: هى قاعدةُ
+            جمهورٍ تُقرأ مع الأدوار، لا إعدادٌ عام يُقرأ وحده. */}
 
         {/* روابط سريعة */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
