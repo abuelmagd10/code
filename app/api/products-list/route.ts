@@ -1,4 +1,5 @@
-import { PRODUCT_COLUMNS_WITH_COST } from "@/lib/products-columns"
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
+import { attachProductCosts } from "@/lib/product-costs"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     // to resolve names (which showed "Unknown" for branch-scoped roles).
     let query = supabase
       .from("products")
-      .select(`${PRODUCT_COLUMNS_WITH_COST}, branch:branch_id(branch_name)`)
+      .select(`${PRODUCT_COLUMNS_NO_COST}, branch:branch_id(branch_name)`)
       .eq("company_id", companyId)
 
     // ✅ تطبيق فلتر الفرع فقط إذا كان موجوداً وكان member موجوداً
@@ -64,6 +65,12 @@ export async function GET(req: NextRequest) {
       branch_name: p.branch?.branch_name ?? null,
       branch: undefined,
     }))
+
+    // v3.74.912 — التكلفة تُلحَق من المسار المخوَّل، ولمن تسمح له قاعدة 906.
+    // كانت تُطلب مع الأعمدة (`PRODUCT_COLUMNS_WITH_COST`)، فلمّا سُحبت
+    // الصلاحية فى 911 سقط الاستعلام كله — لا التكلفة وحدها — **ففرغت شاشة
+    // الأصناف عند الجميع**. عمودٌ واحدٌ محجوب يُسقط الصف كله، لا يُفرغه.
+    await attachProductCosts(supabase, flattened as any[])
 
     return NextResponse.json({
       success: true,

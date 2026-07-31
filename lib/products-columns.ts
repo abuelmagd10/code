@@ -20,12 +20,8 @@
  *                                 `cost_price` إطلاقاً (صفر إشارة فى
  *                                 `app/manufacturing` و`components/manufacturing`
  *                                 و`lib/manufacturing` و`app/api/manufacturing`).
- *   `PRODUCT_COLUMNS_WITH_COST` — القائمة كاملةً بأعمدة التكلفة.
- *                                 تستعملها شاشة الأصناف ومسار `products-list`
- *                                 وحدهما، لأنهما **يعرضان التكلفة اليوم**.
- *                                 وحذفها منهما هنا كان سيكون حجباً مُتسلِّلاً
- *                                 قبل أوانه — والإصدار التالى يحوّلهما إلى
- *                                 `product_costs(ids)` المخوَّل.
+ *   (وكانت هنا قائمةٌ ثانية بأعمدة التكلفة، حُذفت فى 912 — انظر أسفل
+ *    الملف: بقاؤها بعد الحجب أفرغ شاشة الأصناف عند الجميع.)
  *
  * ولماذا «كل الأعمدة إلا التكلفة» بدل قائمةٍ مختصرة؟ لأن الاختصار يحذف حقلاً
  * تستعمله شاشةٌ لم أقِسها، فيصير `undefined` صامتاً فى واجهةٍ لا تشتكى. وهذا
@@ -56,8 +52,13 @@ export const PRODUCT_COLUMNS_NO_COST =
   "id, company_id, sku, name, description, unit_price, unit, quantity_on_hand, reorder_level, is_active, created_at, updated_at, original_currency, original_unit_price, display_currency, display_unit_price, display_rate, exchange_rate_used, item_type, income_account_id, expense_account_id, cost_center, tax_code_id, selling_price, branch_id, warehouse_id, cost_center_id, track_inventory, product_type, image_urls, shelf_life_days, units_per_carton, requires_withdrawal_approval" as const
 
 /**
- * القائمة كاملةً — للموضعين اللذين يعرضان التكلفة اليوم.
- * يُحوَّلان إلى `product_costs(ids)` فى إصدار الحجب، فتختفى هذه القائمة معهما.
+ * ❌ حُذفت `PRODUCT_COLUMNS_WITH_COST` فى v3.74.912.
+ *
+ * كانت تُستعمل فى موضعين يعرضان التكلفة، على أن يُحوَّلا مع إصدار الحجب.
+ * وحين وقع الحجب فى 911 بقيا يطلبان أعمدة التكلفة — فسقط الاستعلام **كله**
+ * بخطأ صلاحية، لا التكلفة وحدها، **ففرغت شاشة الأصناف عند كل المستخدمين**.
+ *
+ * الدرس الذى دفعناه ثمنه: عمودٌ محجوبٌ داخل قائمةٍ **لا يُفرغ الحقل، بل
+ * يُسقط الصف كله**. ولذلك لا تعود هذه القائمة: التكلفة تُقرأ من
+ * `product_costs` عبر `lib/product-costs.ts`، ولا شىء غيره.
  */
-export const PRODUCT_COLUMNS_WITH_COST =
-  `${PRODUCT_COLUMNS_NO_COST}, cost_price, original_cost_price, display_cost_price` as const

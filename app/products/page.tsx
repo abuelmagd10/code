@@ -1,6 +1,7 @@
 "use client"
 
-import { PRODUCT_COLUMNS_WITH_COST } from "@/lib/products-columns"
+import { attachProductCosts } from "@/lib/product-costs"
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import type React from "react"
 
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react"
@@ -445,8 +446,9 @@ export default function ProductsPage() {
       } else {
         const companyId = await ensureCompanyId(supabase)
         if (!companyId) return
-        const { data } = await supabase.from('products').select(PRODUCT_COLUMNS_WITH_COST).eq('company_id', companyId)
-        setProducts(data || [])
+        const { data } = await supabase.from('products').select(PRODUCT_COLUMNS_NO_COST).eq('company_id', companyId)
+        // v3.74.912 — التكلفة من المسار المخوَّل (المسار الاحتياطى للشاشة).
+        setProducts(await attachProductCosts(supabase, (data || []) as any[]))
       }
       // Load bundles map (non-blocking, non-critical)
       fetch(`/api/products/bundles`, { cache: 'no-store' })

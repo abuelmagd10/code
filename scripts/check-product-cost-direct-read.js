@@ -76,6 +76,37 @@ function walk(dir, out = []) {
 
 const SELECT = /\.select\(\s*(['"`])([\s\S]{0,600}?)\1/g
 
+/**
+ * v3.74.912 — وقائمةُ أعمدةٍ تحمل التكلفة ممنوعةٌ هى الأخرى.
+ *
+ * الثغرة التى كلّفتنا شاشةً فارغة: كان الحجب يُقاس على **نصّ** `select`،
+ * وموضعان يمرّران **ثابتاً** اسمه `PRODUCT_COLUMNS_WITH_COST` — فلم يرَ
+ * الحارس فيه اسم عمودٍ فمرّ. ولمّا سُحبت الصلاحية سقط الاستعلام كله عند
+ * كل مستخدم.
+ *
+ * ⇒ لا يكفى منعُ ذكر العمود فى النصّ: يُمنع أن **يحمل أى ثابتٍ مُصدَّر**
+ *   اسم عمود تكلفة، فلا يوجد شىءٌ يُمرَّر ويُخفى ما فيه.
+ */
+{
+  const columnsFile = path.join(ROOT, "lib", "products-columns.ts")
+  if (fs.existsSync(columnsFile)) {
+    const src = stripComments(fs.readFileSync(columnsFile, "utf8"))
+    for (const m of src.matchAll(/export const (\w+)\s*=\s*([\s\S]{0,2000}?)(?:\n\n|$)/g)) {
+      const [, name, value] = m
+      if (name === "PRODUCT_COST_COLUMNS") continue   // تعريفُ الأعمدة المحجوبة نفسها
+      const named = COST.filter((c) => value.includes(c))
+      if (named.length > 0) {
+        console.error(
+          `X lib/products-columns.ts exports ${name} carrying ${named.join(", ")} - ` +
+          "any select given that constant asks for a revoked column, and the WHOLE query fails."
+        )
+        console.error("  A hidden column does not blank a field; it drops the entire row.")
+        process.exit(1)
+      }
+    }
+  }
+}
+
 const offenders = []
 const debts = []
 
