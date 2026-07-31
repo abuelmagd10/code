@@ -6,86 +6,90 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.910 - the OLD script is removed, never this one. Five times a chained
+# v3.74.911 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.909.ps1") { Remove-Item -LiteralPath "push_v3.74.909.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.910.ps1") { Remove-Item -LiteralPath "push_v3.74.910.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.910"') {
-    Write-Host "+ 3.74.910" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.911"') {
+    Write-Host "+ 3.74.911" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.910]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.910]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.911]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.911]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000002_v3_74_910_posting_cost_off_the_display_column.sql"
-$guard    = "scripts/check-product-cost-direct-read.js"
-$prover   = "scripts/selftest-product-cost-direct-read.js"
-
-$emptied = @(
-    "lib/accounting-transaction-service.ts",
-    "lib/third-party-inventory.ts",
-    "lib/currency-conversion-system.ts"
-)
+$migration = "supabase/migrations/20260731000003_v3_74_911_revoke_product_cost_select.sql"
+$guard    = "scripts/check-product-cost-grant.js"
+$prover   = "scripts/selftest-product-cost-grant.js"
+$columns  = "lib/products-columns.ts"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, $guard, $prover) + $emptied + @("push_v3.74.910.ps1")
+           $migration, $guard, $prover, "app/api/products/[id]/route.ts",
+           "push_v3.74.911.ps1")
 
-# -- 1. not one posting path reads the display column any more ------------
-foreach ($f in $emptied) {
-    if (-not (Test-Path -LiteralPath $f)) { Write-Host "X missing $f" -ForegroundColor Red; exit 1 }
-    $body = Get-Content -LiteralPath $f -Raw
-    if ($body -match "products\?\.cost_price" -or $body -match "products\(cost_price") {
-        Write-Host "X $f still reads product cost to compute with" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ no posting path reads products.cost_price any more" -ForegroundColor Green
-
-# -- 2. the invented cost is gone, and the fallback with it ---------------
-# 0.7 of the selling price was a number with no source, waiting to enter
-# the books the moment the cost column became unreadable.
-$tp = Get-Content -LiteralPath "lib/third-party-inventory.ts" -Raw
-if ($tp -match "unit_price \* 0\.7") {
-    Write-Host "X the invented 70%-of-price cost is back" -ForegroundColor Red; exit 1
-}
-if ($tp -notmatch [regex]::Escape("invoice_posted_unit_costs")) {
-    Write-Host "X third-party stock no longer costs itself from what was actually posted" -ForegroundColor Red; exit 1
-}
-$ats = Get-Content -LiteralPath "lib/accounting-transaction-service.ts" -Raw
-if ($ats -match "fallbackUnitCost") {
-    Write-Host "X the COGS cost fallback is back - a hidden cost would post as zero" -ForegroundColor Red; exit 1
-}
-Write-Host "+ no fallback cost and no invented cost: what FIFO cannot cost is refused" -ForegroundColor Green
-
-# -- 3. currency conversion multiplies inside the database ----------------
-$ccs = Get-Content -LiteralPath "lib/currency-conversion-system.ts" -Raw
-foreach ($fn in @("convert_product_display_prices", "snapshot_product_original_prices")) {
-    if ($ccs -notmatch [regex]::Escape($fn)) {
-        Write-Host "X currency conversion reads cost into the browser again" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ changing the display currency no longer pulls cost out of the database" -ForegroundColor Green
-
-# -- 3b. the debt list is empty, and this release does not revoke ---------
-$g = Get-Content -LiteralPath $guard -Raw
-if ($g -notmatch [regex]::Escape("const KNOWN_DEBT = new Set([])")) {
-    Write-Host "X the guard still carries a documented debt - 911 must not follow" -ForegroundColor Red; exit 1
-}
+# -- 1. the revoke is a revoke, not a decoration ---------------------------
+# In Postgres a table-wide SELECT grant swallows every column-level revoke.
+# Leaving it in place would have produced a hide that reads perfectly in the
+# migration and hides nothing at all.
 $m = Get-Content -LiteralPath $migration -Raw
-if ($m -match "REVOKE SELECT") {
-    Write-Host "X 910 clears the ledger's path; the REVOKE is 911, out loud" -ForegroundColor Red; exit 1
+$iRevoke = $m.IndexOf("REVOKE SELECT ON public.products FROM authenticated")
+$iGrant  = $m.IndexOf("ON public.products TO authenticated")
+if ($iRevoke -lt 0 -or $iGrant -lt 0 -or $iRevoke -gt $iGrant) {
+    Write-Host "X the table-wide SELECT must be revoked BEFORE the columns are granted" -ForegroundColor Red
+    exit 1
 }
-Write-Host "+ the debt list is empty and nothing is revoked yet" -ForegroundColor Green
+foreach ($col in @("cost_price", "original_cost_price", "display_cost_price")) {
+    if ($m -match "GRANT SELECT \([^)]*\b$col\b") {
+        Write-Host "X the migration grants $col back - that is the whole thing being hidden" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ the revoke precedes the column grant, and no cost column is granted" -ForegroundColor Green
+
+# -- 2. the granted list is the list the code names ------------------------
+$cols = Get-Content -LiteralPath $columns -Raw
+$named = [regex]::Match($cols, "PRODUCT_COLUMNS_NO_COST\s*=\s*[`"']([^`"']+)[`"']").Groups[1].Value
+if (-not $named) { Write-Host "X cannot read PRODUCT_COLUMNS_NO_COST" -ForegroundColor Red; exit 1 }
+foreach ($c in ($named -split ",")) {
+    $t = $c.Trim()
+    if ($t -and ($m -notmatch "(?m)^\s*$t,?\s*$")) {
+        Write-Host "X column $t is named in the code but not granted in the migration" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ every column the code names is granted by the migration" -ForegroundColor Green
+
+# -- 3. the one write path that would have broken --------------------------
+# .select() with no arguments asks for EVERY column - including the revoked
+# ones - so the product edit PUT would have failed for everyone, owner first.
+$route = Get-Content -LiteralPath "app/api/products/[id]/route.ts" -Raw
+if ($route -match "\.select\(\s*\)") {
+    Write-Host "X a bare .select() survives on products - it asks for the revoked columns" -ForegroundColor Red
+    exit 1
+}
+if ($route -notmatch [regex]::Escape("PRODUCT_COLUMNS_NO_COST")) {
+    Write-Host "X the product update no longer names its returned columns" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the product update returns named columns, not a star in disguise" -ForegroundColor Green
+
+# -- 3b. the guard and its prover are wired in -----------------------------
+$self = Get-Content -LiteralPath "push_v3.74.911.ps1" -Raw
+foreach ($needle in @("selftest-product-cost-grant.js", "check-product-cost-grant.js --require-db")) {
+    if ($self -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the grant guard is not proven and checked in this battery" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the grant guard is proven on the test database, then enforced on production" -ForegroundColor Green
 
 # -- 4. the battery below still proves both standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.910.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.911.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -96,10 +100,10 @@ Write-Host "+ the battery still plants both probes and watches both guards refus
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.909.ps1" 2>$null
+git add -u -- "push_v3.74.910.ps1" 2>$null
 
 # -- 5. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.909.ps1")
+$expected = @($files) + @("push_v3.74.910.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -108,6 +112,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the cost-grant guard refuses a re-grant (on the TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-product-cost-grant.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the grant guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking the purchase cost is actually revoked on the live database..." -ForegroundColor Cyan
+node scripts/check-product-cost-grant.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X the hide is not in force on the database" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the product-cost-read guard refuses (and keeps the debt visible)..." -ForegroundColor Cyan
 node scripts/selftest-product-cost-direct-read.js
@@ -296,7 +308,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.909.ps1" 2>$null
+git add -u -- "push_v3.74.910.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -315,43 +327,46 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_910.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_911.txt"
     $msgLines = @(
-        'fix(accounting): v3.74.910 - the ledger stops reading the display column, and two invented costs die with it',
+        'feat(security): v3.74.911 - the purchase cost is actually hidden now, and a guard watches the grant itself',
         '',
-        'The condition for the hide, and a correctness fix in its own right.',
+        'The first release since the 906 decision that hides anything. Every',
+        'one before it said so in its own commit message.',
         '',
-        'Measured on production first, not assumed: COGS rows that used the',
-        'fallback cost = ZERO since it was written. Products holding stock',
-        'with no FIFO layer = ZERO. And all 18 third-party inventory rows',
-        'carry exactly the FIFO cost that was posted - not one came from the',
-        '70%-of-price formula. So neither shortcut was saving anything; both',
-        'were bombs that had not gone off.',
+        'SELECT on cost_price, original_cost_price and display_cost_price is',
+        'revoked from authenticated (and from anon, as depth: every products',
+        'policy already requires auth.uid(), but a public-catalogue policy',
+        'added tomorrow would have leaked cost with it).',
         '',
-        'So they are not replaced with something cleverer - they are',
-        'removed. What FIFO cannot cost now stops and says so. A fabricated',
-        'number inside a ledger is worse than an operation that refuses out',
-        'loud - and after the revoke, that fallback would have posted COGS',
-        'of zero for exactly the people the hide targets.',
+        'The trap that makes or breaks this: in Postgres a table-wide SELECT',
+        'grant swallows every column-level revoke. Leaving it in place gives',
+        'a migration that reads like a hide and hides nothing. So the table',
+        'grant is revoked first, then the 33 non-cost columns are granted by',
+        'name - the same list lib/products-columns.ts has carried since 908.',
         '',
-        'Third-party stock now costs itself from invoice_posted_unit_costs:',
-        'what was actually posted for that invoice, whose source is the FIFO',
-        'layers. If a product has no posted cost, the transfer is refused',
-        'instead of inventing one. The function is SECURITY DEFINER and',
-        'checks membership OR registered ownership - is_company_member alone',
-        'returned nothing for an owner who has no company_members row, which',
-        'the proof caught before the push (lesson 836, again).',
+        'Because the grant is per ROLE, not per person, nobody reads those',
+        'columns any more - the owner included. Everyone reads what they are',
+        'entitled to through product_costs(ids), which applies the 906 rule.',
+        'Proven on production by SET ROLE authenticated with the owner JWT:',
+        'a direct read of cost_price is refused (permission denied for table',
+        'products), named columns still work, and the same owner gets 12',
+        'product costs through the authorised path. On test, a sales staff',
+        'member gets refused directly and receives 0 rows through the path.',
         '',
-        'Changing the display currency used to read cost_price for every',
-        'product of the company into the browser, multiply, and write back',
-        'row by row in hundreds of requests - a cost leak with nothing to do',
-        'with display, and a half-written state when some requests failed.',
-        'Both halves now run inside the database in one statement each.',
+        'One write path would have broken and was fixed first: the product',
+        'edit PUT ended in .select() with no arguments, which asks for every',
+        'column including the revoked ones - it would have failed for every',
+        'user, owner first. It now names its columns. That was the only such',
+        'site; filters and orderings by a cost column: none, measured.',
         '',
-        'The guard debt list is EMPTY and stays empty: every product-cost',
-        'read now goes through the authorised path. That was the owner-set',
-        'condition for revoking the SELECT grant, and it is met - the revoke',
-        'is 911, on its own, out loud.'
+        'check-product-cost-grant.js reads the LIVE grants every push: no',
+        'table-wide SELECT for authenticated or anon, no cost column granted,',
+        'the granted set equal to the list the code names, and service_role',
+        'left intact. Its prover works on the TEST database only and plants',
+        'both undo shapes - a re-granted cost column and a table-wide SELECT',
+        '- because this defect lives in a grant, not in a file: no line of',
+        'code changes when someone undoes it from a dashboard.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -360,5 +375,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.910 pushed - the ledger is off the display column and two invented costs are gone; the revoke is next" -ForegroundColor Green
+    Write-Host "`n+ v3.74.911 pushed - the purchase cost is hidden for real, and the grant itself is guarded" -ForegroundColor Green
 }

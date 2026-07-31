@@ -1,3 +1,4 @@
+import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
@@ -206,7 +207,10 @@ export async function PUT(
       .update(productData)
       .eq("id", id)
       .eq("company_id", companyId)
-      .select()
+      // v3.74.911 — `select()` بلا وسائط تطلب **كل** الأعمدة، ومنها
+      // المسحوبة، فتسقط الاستجابة بخطأ صلاحية للجميع — ومنهم المالك.
+      // الأعمدة تُسمّى، والتكلفة تُقرأ من `product_costs` لمن يستحق.
+      .select(PRODUCT_COLUMNS_NO_COST)
       .single()
 
     if (dbError) {
