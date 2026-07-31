@@ -95,7 +95,7 @@ export async function transferToThirdParty(
     // Get invoice items
     const { data: invoiceItems, error: itemsError } = await supabase
       .from("invoice_items")
-      .select("product_id, quantity, unit_price, products(cost_price, item_type)")
+      .select("product_id, quantity, unit_price, products(item_type)")
       .eq("invoice_id", invoiceId)
 
     if (itemsError) {
@@ -131,13 +131,43 @@ export async function transferToThirdParty(
       return true // Already transferred
     }
 
+    // v3.74.910 — تكلفة الوحدة من **ما رُحّل فعلاً** لهذه الفاتورة
+    // (`cogs_transactions` وأصلها طبقات FIFO)، لا من `products.cost_price`
+    // ولا من «٧٠٪ من سعر البيع» التى كانت هنا. تلك النسبة اختراعٌ لا سند
+    // له، وكانت ستدخل الدفاتر صامتةً لحظة سحب صلاحية قراءة التكلفة.
+    const { data: postedCosts, error: postedCostsError } = await supabase
+      .rpc("invoice_posted_unit_costs", { p_invoice_id: invoiceId })
+
+    if (postedCostsError) {
+      console.error("Error reading posted unit costs:", postedCostsError)
+      return false
+    }
+
+    const costByProduct = new Map<string, number>(
+      ((postedCosts as Array<{ product_id: string; unit_cost: number }>) || [])
+        .map((row) => [String(row.product_id), Number(row.unit_cost || 0)])
+    )
+
+    const uncosted = productItems
+      .map((item: any) => String(item.product_id))
+      .filter((pid: string) => !((costByProduct.get(pid) ?? 0) > 0))
+
+    if (uncosted.length > 0) {
+      // بضاعةٌ تخرج بلا تكلفةٍ مرحَّلة تصير رقماً مخترعاً فى المخزون.
+      console.error(
+        "THIRD_PARTY_COST_MISSING: no posted COGS for product(s) " + uncosted.join(", ") +
+        " on invoice " + invoiceId
+      )
+      return false
+    }
+
     // Create third-party inventory records
     const thirdPartyRecords = productItems.map((item: any) => ({
       company_id: companyId,
       invoice_id: invoiceId,
       product_id: item.product_id,
       quantity: parseFloat(String(item.quantity)) || 0,
-      unit_cost: parseFloat(String(item.products?.cost_price || item.unit_price * 0.7)) || 0,
+      unit_cost: costByProduct.get(String(item.product_id)) || 0,
       shipping_provider_id: shippingProviderId,
       status: "open",
       cleared_quantity: 0,

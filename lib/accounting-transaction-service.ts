@@ -530,7 +530,6 @@ export class AccountingTransactionService {
                     products!inner (
                         id,
                         name,
-                        cost_price,
                         item_type
                     )
                 `)
@@ -632,43 +631,21 @@ export class AccountingTransactionService {
                     itemTotalCost = Number(fifoResult.totalCOGS || 0)
                     unitCost = quantity > 0 ? Number((itemTotalCost / quantity).toFixed(4)) : 0
                 } else {
-                    const fallbackUnitCost = Number(item.product?.cost_price || 0)
-                    if (!enterpriseFinanceFlags.allowCostFallback || fallbackUnitCost <= 0) {
-                        throw new Error(fifoResult.error || `FIFO cost is required for product ${productId}`)
-                    }
-
-                    auditFlags.add('COST_FALLBACK_USED')
-                    unitCost = fallbackUnitCost
-                    itemTotalCost = Number((unitCost * quantity).toFixed(4))
-
-                    itemInventoryTransactions = [{
-                        company_id: params.companyId,
-                        branch_id: branchId,
-                        warehouse_id: warehouseId,
-                        cost_center_id: costCenterId,
-                        product_id: productId,
-                        transaction_type: 'sale',
-                        quantity_change: -quantity,
-                        reference_type: 'invoice',
-                        reference_id: params.invoiceId,
-                        notes: `Warehouse approval fallback cost for invoice ${invoice.invoice_number || params.invoiceId}`,
-                        transaction_date: invoice.invoice_date,
-                    }]
-
-                    itemCogsTransactions = [{
-                        company_id: params.companyId,
-                        branch_id: branchId,
-                        cost_center_id: costCenterId,
-                        warehouse_id: warehouseId,
-                        product_id: productId,
-                        source_type: 'invoice',
-                        source_id: params.invoiceId,
-                        quantity,
-                        unit_cost: unitCost,
-                        total_cost: itemTotalCost,
-                        transaction_date: invoice.invoice_date,
-                        notes: 'COST_FALLBACK_USED',
-                    }]
+                    // v3.74.910 — لا تكلفة احتياطية بعد اليوم.
+                    //
+                    // كان العجز عن تكلفة FIFO يُعالَج بـ`products.cost_price`
+                    // (بعلَمٍ `COST_FALLBACK_USED`). وقياسُ الإنتاج: **صفر**
+                    // صفٍّ استعمله منذ كُتب، و**صفر** منتجٍ له رصيدٌ بلا
+                    // طبقات. أى أنه لم يكن يُنقذ شيئاً — وكان سيصير، بعد
+                    // سحب الصلاحية، بابَ ترحيلٍ بتكلفة **صفر** لكل من لا
+                    // يرى التكلفة: أى للفئة التى حُجبت عنها بالضبط.
+                    //
+                    // فما عجز FIFO عن تكلفته يتوقف ويقول لماذا. ورقمٌ
+                    // مُختلَقٌ فى دفترٍ أسوأ من عمليةٍ تُرفض بصوتٍ عالٍ.
+                    throw new Error(
+                        fifoResult.error ||
+                        `FIFO cost is required for product ${productId} — no fallback cost is used any more (v3.74.910)`
+                    )
                 }
 
                 if (itemInventoryTransactions[0]) {

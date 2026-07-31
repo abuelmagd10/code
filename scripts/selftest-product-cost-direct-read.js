@@ -11,8 +11,8 @@
  *   (ج) نفس الملف بلا عمود تكلفة                  ⇒ لا يُبلَّغ عنه.
  *   (د) عمودٌ اسمه يشبهها (`unit_price`) وحده      ⇒ لا يُبلَّغ عنه.
  *
- * وحالةٌ خامسة: الدَّين المعلوم يبقى **مذكوراً بالاسم** فى المخرجات ولا
- * يُسقط الحارس — فالدَّين المعلن ليس عطباً جديداً، لكنه لا يُنسى أيضاً.
+ * وحالةٌ خامسة: الشجرة **بلا دَين** — وهو شرط السحب فى 911. كانت أربعة
+ * مواضع تقرأ التكلفة لتحسب بها، وأُفرغت كلها فى 910.
  *
  * Usage: node scripts/selftest-product-cost-direct-read.js
  * ---------------------------------------------------------------------------
@@ -89,17 +89,16 @@ try {
   if (ok) ok = expectSilence("أعمدةٌ بلا تكلفة (معكوس)", PROBE_CLEAN)
   if (ok) ok = expectSilence("سعر البيع وحده (معكوس)", PROBE_LOOKALIKE)
 
-  // (هـ) الدَّين المعلوم يُذكر بالاسم ولا يُسقط الحارس.
+  // (هـ) الشجرة نظيفة: لا دَين ولا بلاغ — وهذا ما فتح باب السحب فى 911.
   if (ok) {
     fs.rmSync(PROBE_DIR, { recursive: true, force: true })
     const r = runGuard()
-    const named = r.output.includes("lib/accounting-transaction-service.ts")
-    if (r.failed || !named) {
-      console.error("X the documented posting-path debt is either fatal or invisible - it must be neither.")
+    if (r.failed || /documented debt/.test(r.output)) {
+      console.error("X the tree still carries a posting-path cost read - the revoke must not follow.")
       console.error(r.output.split("\n").map((l) => `  ${l}`).join("\n"))
       ok = false
     } else {
-      console.log("+ الدَّين المعلوم: مذكورٌ بالاسم ولا يُسقط الدفع")
+      console.log("+ لا دَين باقياً: كل قراءةٍ للتكلفة تمرّ بالمسار المخوَّل")
     }
   }
 } finally {
@@ -108,4 +107,4 @@ try {
 
 if (!ok) process.exit(1)
 console.log("+ product-cost-read guard proven to refuse a direct read and a nested one, to spare clean")
-console.log("  selects, and to keep the measured posting debt visible without failing the push.")
+console.log("  selects and a unit_price lookalike, and to see a tree with no posting-path debt left.")

@@ -397,37 +397,23 @@ async function updatePaymentDisplayAmountsBulk(companyId: string, rate: number, 
 async function updateProductDisplayPricesBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
   const client = getClient()
 
-  const { data: products, error } = await client
-    .from('products')
-    .select('id, unit_price, cost_price, original_unit_price, original_cost_price')
-    .eq('company_id', companyId)
+  // v3.74.910 — الضرب يقع **داخل القاعدة**.
+  //
+  // كان هذا يقرأ `cost_price` لكل منتجات الشركة إلى المتصفح ليضربها ويكتب
+  // — أى أن تغيير عملة العرض كان باب تسريبٍ للتكلفة لا علاقة له بالعرض.
+  // وكان يكتب صفاً صفاً فى مئاتٍ من الطلبات، فينجح بعضها ويفشل بعض.
+  // الآن: جملةٌ واحدة، ولا تخرج التكلفة من القاعدة أصلاً.
+  const { data, error } = await client.rpc('convert_product_display_prices', {
+    p_company_id: companyId,
+    p_rate: rate,
+    p_currency: newCurrency
+  })
 
-  if (error || !products?.length) return 0
-
-  const updates = products.map(p => ({
-    id: p.id,
-    display_unit_price: convertAmount(p.original_unit_price || p.unit_price || 0, rate),
-    display_cost_price: convertAmount(p.original_cost_price || p.cost_price || 0, rate),
-    display_currency: newCurrency,
-    display_rate: rate,
-    exchange_rate_used: rate
-  }))
-
-  const batchSize = 100
-  for (let i = 0; i < updates.length; i += batchSize) {
-    const batch = updates.slice(i, i + batchSize)
-    await Promise.all(batch.map(upd =>
-      client.from('products').update({
-        display_unit_price: upd.display_unit_price,
-        display_cost_price: upd.display_cost_price,
-        display_currency: upd.display_currency,
-        display_rate: upd.display_rate,
-        exchange_rate_used: upd.exchange_rate_used
-      }).eq('id', upd.id)
-    ))
+  if (error) {
+    throw new Error(`CURRENCY_PRODUCT_CONVERSION_FAILED: ${error.message}`)
   }
 
-  return products.length
+  return Number(data || 0)
 }
 
 async function updateJournalDisplayAmountsBulk(companyId: string, rate: number, newCurrency: string): Promise<number> {
@@ -722,26 +708,16 @@ export async function initializeOriginalValues(companyId: string): Promise<{ suc
       }
     }
 
-    // Similar for other tables...
     // Products
-    const { data: products } = await client
-      .from('products')
-      .select('id, unit_price, cost_price, original_unit_price, original_currency')
-      .eq('company_id', companyId)
-
-    if (products) {
-      for (const p of products) {
-        if (!p.original_unit_price || !p.original_currency) {
-          // v3.74.890 — يُفحص ويُرمى (درس 874: اللقطة التى لا تُعاد):
-          // حفظ السعر الأصلى قبل التحويل لقطةٌ لا مصدر لها بعده —
-          // فشلها الصامت يُفقد الأصل نهائياً.
-          const { error: origErr } = await client.from('products').update({
-            original_unit_price: p.original_unit_price || p.unit_price,
-            original_currency: p.original_currency || originalCurrency
-          }).eq('id', p.id)
-          if (origErr) throw new Error(`Failed to snapshot original price for product ${p.id}: ${origErr.message}`)
-        }
-      }
+    // v3.74.910 — اللقطة فى جملةٍ واحدة داخل القاعدة: درس 874/890 يقول
+    // إن لقطةً لا مصدر لها بعدها لا يجوز أن تنجح بعضاً وتفشل بعضاً، ولا
+    // أن تُقرأ التكلفة إلى المتصفح لأجلها.
+    const { error: snapErr } = await client.rpc('snapshot_product_original_prices', {
+      p_company_id: companyId,
+      p_currency: originalCurrency
+    })
+    if (snapErr) {
+      throw new Error(`CURRENCY_ORIGINAL_SNAPSHOT_FAILED: products — ${snapErr.message}`)
     }
 
     return { success: true }
