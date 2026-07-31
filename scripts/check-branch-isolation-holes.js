@@ -49,11 +49,12 @@ try { ({ Client } = require("pg")) } catch {
 
 /**
  * الرؤوس: جداولٌ تحمل `branch_id` بنفسها.
- * v3.74.921 — أُضيف `purchase_orders`: أُغلق عزلُه فى ذلك الإصدار، ويُقاس
- * هنا كى لا يعود. وكل جدولٍ يُغلق من قائمة التسعة عشر يُضاف إلى هذا
- * السطر فى نفس دفعته — وإلا فقد أُغلق بلا حارس.
+ * v3.74.921 — أُضيف `purchase_orders`، و922 `sales_orders`: أُغلق عزلُ
+ * كلٍّ منهما فى إصداره، ويُقاسان هنا كى لا يعودا. وكل جدولٍ يُغلق من
+ * قائمة التسعة عشر يُضاف إلى هذا السطر فى نفس دفعته — وإلا فقد أُغلق
+ * بلا حارس.
  */
-const HEADS = ["bills", "invoices", "journal_entries", "payments", "purchase_orders"]
+const HEADS = ["bills", "invoices", "journal_entries", "payments", "purchase_orders", "sales_orders"]
 
 /** والأبناء: فرعُهم فرعُ أبيهم، وفيهم يعيش السعر. */
 const CHILDREN = [
@@ -61,6 +62,7 @@ const CHILDREN = [
   { child: "invoice_items",        parent: "invoices",        fk: "invoice_id" },
   { child: "journal_entry_lines",  parent: "journal_entries", fk: "journal_entry_id" },
   { child: "purchase_order_items", parent: "purchase_orders", fk: "purchase_order_id" },
+  { child: "sales_order_items",    parent: "sales_orders",    fk: "sales_order_id" },
 ]
 
 ;(async () => {

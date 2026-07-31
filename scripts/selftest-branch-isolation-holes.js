@@ -8,11 +8,12 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). ثلاث حالات:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). أربع حالات:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
- *   (ج) إعادة الحال                          ⇒ يصمت.
+ *   (ج) سياسةٌ متساهلةٌ على أوامر البيع (922)  ⇒ يُرفض ويُسمّى الجدول.
+ *   (د) إعادة الحال                          ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -83,6 +84,7 @@ function runGuard() {
 
   const restore = async (client) => {
     await client.query("DROP POLICY IF EXISTS bills_select ON public.bills")
+    await client.query("DROP POLICY IF EXISTS sales_orders_company_wide ON public.sales_orders")
     await client.query(billItemsFn)
   }
 
@@ -117,6 +119,17 @@ function runGuard() {
       "دالة بنود الفاتورة تعود «عضو الشركة» (باب السعر الخلفى)",
       () => client.query(CRIPPLED_BILL_ITEMS),
       /^\s+- bill_items:/m
+    )
+
+    // v3.74.922 — الرأس الجديد يُرى وهو يُقاس، لا يُدرَج فى قائمةٍ ويُصدَّق.
+    // فجدولٌ يُضاف إلى HEADS وليس فى بياناته صفٌّ لفرعٍ آخر يمرّ صامتاً،
+    // فيبدو محروساً وهو غير مقيس.
+    await stage(
+      "سياسةٌ متساهلةٌ تعود بجوار عزل أوامر البيع",
+      () => client.query(
+        "CREATE POLICY sales_orders_company_wide ON public.sales_orders FOR SELECT USING (public.is_company_member(company_id))"
+      ),
+      /^\s+- sales_orders:/m
     )
 
     if (ok) {
