@@ -52,8 +52,8 @@ try { ({ Client } = require("pg")) } catch {
  * v3.74.921 — أُضيف `purchase_orders`، و922 `sales_orders`، و923
  * `estimates`، و924 `purchase_returns` وجدولُ تخصيصات مخازنها، و925
  * `sales_return_requests` و`sales_returns`، و926 عائلةُ الحجوزات
- * الثمانية، و927 `suppliers`: أُغلق عزلُ كلٍّ فى إصداره ويُقاس هنا كى لا
- * يعود.
+ * الثمانية، و927 `suppliers`، و928 `third_party_inventory`: أُغلق عزلُ
+ * كلٍّ فى إصداره ويُقاس هنا كى لا يعود.
  * وكل جدولٍ يُغلق من قائمة التسعة عشر يُضاف إلى هذا السطر فى نفس
  * دفعته، ويُزرع له عطبٌ فى الفخّ فيُرى الحارس يسمّيه — وإلا فقد أُغلق
  * بلا حارس، أو حُرس بلا قياس.
@@ -63,7 +63,7 @@ const HEADS = ["bills", "invoices", "journal_entries", "payments", "purchase_ord
                "purchase_return_warehouse_allocations",
                "sales_return_requests", "sales_returns",
                "bookings", "booking_staff_assignments", "booking_stock_withdrawals",
-               "suppliers"]
+               "suppliers", "third_party_inventory"]
 
 /** والأبناء: فرعُهم فرعُ أبيهم، وفيهم يعيش السعر. */
 const CHILDREN = [

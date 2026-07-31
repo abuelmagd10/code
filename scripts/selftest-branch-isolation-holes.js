@@ -8,7 +8,7 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). تسع حالات:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). عشر حالات:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
@@ -18,7 +18,8 @@
  *   (و) سياسةٌ متساهلةٌ على طلبات مرتجع البيع (925) ⇒ يُرفض ويُسمّى الجدول.
  *   (ز) ملاحظاتُ الحجز تعود لعضوية الشركة (926) ⇒ يُرفض ويُسمّى الجدول.
  *   (ح) الموردون يعودون لعضوية الشركة (927)   ⇒ يُرفض ويُسمّى الجدول.
- *   (ط) إعادة الحال                          ⇒ يصمت.
+ *   (ط) متساهلةٌ تبتلع حوكمة الطرف الثالث (928) ⇒ يُرفض ويُسمّى الجدول.
+ *   (ى) إعادة الحال                          ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -95,6 +96,7 @@ function runGuard() {
     await client.query("DROP POLICY IF EXISTS srr_company_wide ON public.sales_return_requests")
     await client.query("DROP POLICY IF EXISTS booking_notes_company_wide ON public.booking_notes")
     await client.query("DROP POLICY IF EXISTS suppliers_company_wide ON public.suppliers")
+    await client.query("DROP POLICY IF EXISTS tpi_company_wide ON public.third_party_inventory")
     await client.query(billItemsFn)
   }
 
@@ -181,6 +183,15 @@ function runGuard() {
         "CREATE POLICY suppliers_company_wide ON public.suppliers FOR SELECT USING (public.is_company_member(company_id))"
       ),
       /^\s+- suppliers:/m
+    )
+
+    // 928: الشكل الأخبث — حوكمةٌ صحيحةٌ مكتوبة، وبجوارها متساهلةٌ تبتلعها.
+    await stage(
+      "سياسةٌ متساهلةٌ تبتلع حوكمة بضاعة الطرف الثالث",
+      () => client.query(
+        "CREATE POLICY tpi_company_wide ON public.third_party_inventory FOR SELECT USING (public.is_company_member(company_id))"
+      ),
+      /^\s+- third_party_inventory:/m
     )
 
     if (ok) {

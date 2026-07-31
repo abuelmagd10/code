@@ -6,76 +6,81 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.927 - the OLD script is removed, never this one. Five times a chained
+# v3.74.928 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.926.ps1") { Remove-Item -LiteralPath "push_v3.74.926.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.927.ps1") { Remove-Item -LiteralPath "push_v3.74.927.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.927"') {
-    Write-Host "+ 3.74.927" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.928"') {
+    Write-Host "+ 3.74.928" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.927]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.927]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.928]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.928]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000016_v3_74_927_suppliers_branch_isolation.sql"
+$migration = "supabase/migrations/20260731000017_v3_74_928_third_party_inventory_governance_actually_applies.sql"
 $guard     = "scripts/check-branch-isolation-holes.js"
 $trap      = "scripts/selftest-branch-isolation-holes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            $migration, $guard, $trap,
-           "push_v3.74.927.ps1")
+           "push_v3.74.928.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. the company-wide read policy and both owner doors are gone ------
-foreach ($needle in @("DROP POLICY IF EXISTS suppliers_select",
-                      "DROP POLICY IF EXISTS suppliers_owner_select",
-                      "DROP POLICY IF EXISTS suppliers_owner_dml")) {
+# -- 1. all four swallowing policies are gone ---------------------------
+# A carefully written governance policy stood here, and beside it a plain
+# company-wide one on SELECT, INSERT, UPDATE and DELETE. Permissive policies
+# are OR-ed, so the plain one swallowed the governance whole. This is the
+# nastiest shape yet: a reader of the text sees the governance and is
+# reassured, and never sees the line that cancels it.
+foreach ($needle in @("DROP POLICY IF EXISTS third_party_inventory_select ",
+                      "DROP POLICY IF EXISTS third_party_inventory_insert ",
+                      "DROP POLICY IF EXISTS third_party_inventory_update ",
+                      "DROP POLICY IF EXISTS third_party_inventory_delete ")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X a permissive policy survives beside the new rule ($needle)" -ForegroundColor Red; exit 1
+        Write-Host "X a swallowing company-wide policy survives ($needle)" -ForegroundColor Red; exit 1
     }
 }
-if ($m -notmatch [regex]::Escape("public.can_access_record_branch(company_id, branch_id)")) {
-    Write-Host "X the new policy does not use the branch rule agreed in 917" -ForegroundColor Red; exit 1
-}
-Write-Host "+ one read policy replaces three - nothing permissive is left behind" -ForegroundColor Green
+Write-Host "+ the four swallowing policies are gone - the governance can bite" -ForegroundColor Green
 
-# -- 2. the answer to the 924 question came from the WRITE rule ---------
-# The write side of this table already knew the branch: can_manage_supplier_row
-# is asked by insert, update and delete. So the meaning of a NULL branch was
-# read off the existing rule rather than invented. Third time in this series
-# that a rule was known in the project and not generalised.
-if ($m -notmatch [regex]::Escape("can_manage_supplier_row")) {
-    Write-Host "X the migration does not record that the write rule already knew the branch" -ForegroundColor Red
-    exit 1
+# -- 2. the governance itself is not rewritten, only completed ----------
+# Two arms the owner explicitly approved must survive verbatim: the main
+# warehouse keeper who oversees every branch, and the seller who follows his
+# own shipment. And the two gaps 917 requires must be added.
+foreach ($needle in @("w.is_main = true",
+                      "so.created_by_user_id = auth.uid()",
+                      "current_user_is_branch_unbounded(company_id)")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the governance was rewritten instead of completed ($needle)" -ForegroundColor Red
+        exit 1
+    }
 }
-Write-Host "+ the read follows the write rule that was already there" -ForegroundColor Green
+Write-Host "+ both approved cross-branch arms survive, and the 917 gaps are added" -ForegroundColor Green
 
 # -- 3. a table closed WITHOUT a guard is a table that reopens quietly ---
-if ($g -notmatch [regex]::Escape('"suppliers"')) {
-    Write-Host "X suppliers was closed but never added to the impersonation guard" -ForegroundColor Red; exit 1
+if ($g -notmatch [regex]::Escape('"third_party_inventory"')) {
+    Write-Host "X third_party_inventory was closed but never added to the guard" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("suppliers_company_wide")) {
-    Write-Host "X the trap never plants a leak on the newly closed table" -ForegroundColor Red; exit 1
+if ($t -notmatch [regex]::Escape("tpi_company_wide")) {
+    Write-Host "X the trap never plants the swallowing shape" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("- suppliers:")) {
-    Write-Host "X the trap does not require the guard to NAME suppliers" -ForegroundColor Red; exit 1
+if ($t -notmatch [regex]::Escape("- third_party_inventory:")) {
+    Write-Host "X the trap does not require the guard to NAME third_party_inventory" -ForegroundColor Red
+    exit 1
 }
-Write-Host "+ suppliers joined the guard and is proven measured, not merely listed" -ForegroundColor Green
+Write-Host "+ the swallowing shape itself is now planted and refused every release" -ForegroundColor Green
 
 # -- 4. no counted claim in the trap closing line -----------------------
-# It said "BOTH shapes" when there were five, and "FIVE tables" when there
-# were six. A number in prose that nothing measures is a comment that lies.
 if ($t -match "on (TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|BOTH) (different )?(tables|shapes)") {
     Write-Host "X the trap closing line counts tables again - it will drift next release" -ForegroundColor Red
     exit 1
@@ -83,7 +88,7 @@ if ($t -match "on (TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|BOTH) (different )?(
 Write-Host "+ the trap describes what it does instead of counting it" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.927.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.928.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -103,10 +108,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.926.ps1" 2>$null
+git add -u -- "push_v3.74.927.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.926.ps1")
+$expected = @($files) + @("push_v3.74.927.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -128,7 +133,7 @@ Write-Host "Proving an unposted cross-branch transfer is refused (TEST database 
 node scripts/selftest-transfer-journal.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the transfer-journal mechanism was not proven" -ForegroundColor Red; exit 1 }
 
-Write-Host "Proving the branch-isolation guard catches the real leak - now on NINE shapes (TEST only)..." -ForegroundColor Cyan
+Write-Host "Proving the branch-isolation guard catches the real leak - now on TEN shapes (TEST only)..." -ForegroundColor Cyan
 node scripts/selftest-branch-isolation-holes.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the branch-isolation guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
@@ -339,7 +344,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.926.ps1" 2>$null
+git add -u -- "push_v3.74.927.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -360,60 +365,68 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_927.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_928.txt"
     $msgLines = @(
-        'feat(security): v3.74.927 - suppliers are read within their branch',
+        'feat(security): v3.74.928 - the third-party inventory governance actually applies now',
         '',
-        'Seventh of the nineteen, and the first shared REFERENCE rather than a',
-        'document.',
+        'Eighth of the nineteen, and the 917 trap in its purest form.',
         '',
-        'MEASURED FIRST. By impersonation on production, ALL SEVEN roles saw',
-        'both Nasr City suppliers. The read policy was is_company_member and',
-        'nothing else.',
+        'Two permissive read policies stood side by side on this table. One,',
+        'third_party_inventory_select_governance, was written with care - it',
+        'knows the roles, the branches and the warehouses, and even carries an',
+        'arm for the main-warehouse keeper and one for the employee who created',
+        'the sales order. The other, third_party_inventory_select, was',
+        'company_id IN (company_members) and nothing else.',
         '',
-        'BUT THE WRITE SIDE HAD KNOWN THE BRANCH FOR A LONG TIME: insert, update',
-        'and delete all ask can_manage_supplier_row(company_id, branch_id) - a',
-        'function that knows both the branch and the roles, and says plainly',
-        'that general roles are unbounded, that manager, accountant and',
-        'purchasing officer get their own branch, and that nobody else writes at',
-        'all.',
+        'Permissive policies are OR-ed, so the plain one SWALLOWED THE',
+        'GOVERNANCE WHOLE. Measured on production: all seven roles saw all four',
+        'rows including the Nasr City one - and this table carries unit_cost and',
+        'total_cost.',
         '',
-        'That is the THIRD time in this series that a rule was known in the',
-        'project and never generalised: booking_payments in 926 was already',
-        'closed correctly, and here the write functions already knew the branch.',
-        'The read was forgotten in both. The lesson repeats: A RULE DOES NOT',
-        'SPREAD BY ITSELF - THE GUARD SPREADS IT. So the table is measured by',
-        'impersonation rather than trusted because "the rule exists somewhere".',
+        'The same doubling sat on INSERT, UPDATE and DELETE: precise governance,',
+        'and beside it a company-wide policy cancelling it. Any member could',
+        'edit another branch row, cost and all.',
         '',
-        'THE 924 QUESTION was answered by the write rule instead of invented.',
-        'What does a NULL branch mean here? The screen offers "no branch"',
-        'explicitly, and can_manage_supplier_row REFUSES to let a branch-bound',
-        'role edit a branchless supplier while allowing management. So a',
-        'branchless supplier is a COMPANY-LEVEL supplier: everyone reads it,',
-        'only management edits it. The read now follows what the write rule',
-        'already said.',
+        'THIS IS THE NASTIEST SHAPE SO FAR. It is the fourth time in this series',
+        'that a rule was known and not in force - after booking_payments in 926',
+        'and the supplier write functions in 927 - but the first where the rule',
+        'was written ON THE TABLE ITSELF and disabled by its neighbour. A reader',
+        'of the text sees the governance and is reassured, and never sees the',
+        'single line that cancels it. The lesson: A CORRECT POLICY ON A TABLE IS',
+        'NOT PROOF THAT IT IS IN FORCE.',
         '',
-        'TWO REDUNDANT POLICIES REMOVED, proven by planting. suppliers_owner',
-        '_select and suppliers_owner_dml open to the registered owner what is',
-        'already open to him. On test, inside a rolled-back transaction and with',
-        'both dropped, the registered owner created a supplier, read it, updated',
-        'it and deleted it - four of four. They are removed because they are',
-        'second permissive doors beside the isolation, the shape of the 917',
-        'trap.',
+        'THE RULE: no widening and no narrowing by me - what was written is put',
+        'into force. The four plain policies are dropped and the governance',
+        'stands. The owner was asked about its two cross-branch arms and',
+        'approved BOTH: the main-warehouse keeper oversees every branch (and',
+        'that arm is live - there is one store keeper and he is on the main',
+        'warehouse), and the seller follows his own shipment until it lands,',
+        'even across a branch. The second is a deliberate exception to the 922',
+        'rule: there it was "I made it", a claim about the past; here it is',
+        'following a live shipment.',
         '',
-        'PROVEN on production after applying: all six branch members see 1 of 3',
-        '- their own branch supplier - where they had seen all three; the owner',
-        '3; the registered owner 3; and ONE read policy on the table where there',
-        'were three.',
+        'And two gaps that 917 requires were added, which the governance never',
+        'saw: the REGISTERED OWNER who is not a member - it asked company_members',
+        'alone and so hid from him what he owns - and the MEMBER WITH NO BRANCH,',
+        'since every arm demanded a branch match and NULL matches nothing. Both',
+        'are covered by current_user_is_branch_unbounded, added in 924.',
         '',
-        'The guard grew to fifteen heads, and a ninth stage joined the trap.',
+        'PROVEN. On test: accountant, manager, staff and purchasing officer all',
+        'ZERO; the store keeper 1 by the supervision arm; the booking officer -',
+        'a member with NO branch - 1 by the added arm; the owner 1 and able to',
+        'edit. On production after applying: accountant, manager and staff see 3',
+        'of 4 with ZERO from Nasr City; the store keeper 4; owner and registered',
+        'owner 4; and editing a Nasr City row is left to the owner alone.',
         '',
-        'One small fix carried with it: the closing line of the trap counted the',
-        'tables it plants on, and drifted every release - it said "BOTH shapes"',
-        'when there were five and "FIVE tables" when there were six. The count',
-        'is removed and the description kept, and the push now refuses a counted',
-        'claim there. A number in prose that nothing measures is a comment that',
-        'lies.'
+        'ONE NARROWING, STATED PLAINLY: the manufacturing officer and the',
+        'purchasing officer used to see all four and now see ZERO - the',
+        'governance does not name them in any arm. That is what was written and',
+        'never enforced. If either genuinely needs this table, he is added to',
+        'the governance BY AN EXPLICIT DECISION, not by an open policy.',
+        '',
+        'The guard grew to sixteen heads, and a tenth stage joined the trap -',
+        'planting the swallowing shape itself: a permissive policy beside a',
+        'correct governance.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -422,5 +435,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.927 pushed - suppliers are read within their branch: 7 of 19 closed" -ForegroundColor Green
+    Write-Host "`n+ v3.74.928 pushed - the third-party governance bites at last: 8 of 19 closed" -ForegroundColor Green
 }
