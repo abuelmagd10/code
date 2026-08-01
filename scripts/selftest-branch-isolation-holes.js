@@ -8,7 +8,7 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). عشر حالات:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). إحدى عشرة حالة:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
@@ -19,7 +19,8 @@
  *   (ز) ملاحظاتُ الحجز تعود لعضوية الشركة (926) ⇒ يُرفض ويُسمّى الجدول.
  *   (ح) الموردون يعودون لعضوية الشركة (927)   ⇒ يُرفض ويُسمّى الجدول.
  *   (ط) متساهلةٌ تبتلع حوكمة الطرف الثالث (928) ⇒ يُرفض ويُسمّى الجدول.
- *   (ى) إعادة الحال                          ⇒ يصمت.
+ *   (ى) قيود التكلفة تعود لعضوية الشركة (929)  ⇒ يُرفض ويُسمّى الجدول.
+ *   (ك) إعادة الحال                          ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -97,6 +98,7 @@ function runGuard() {
     await client.query("DROP POLICY IF EXISTS booking_notes_company_wide ON public.booking_notes")
     await client.query("DROP POLICY IF EXISTS suppliers_company_wide ON public.suppliers")
     await client.query("DROP POLICY IF EXISTS tpi_company_wide ON public.third_party_inventory")
+    await client.query("DROP POLICY IF EXISTS cogs_company_wide ON public.cogs_transactions")
     await client.query(billItemsFn)
   }
 
@@ -192,6 +194,15 @@ function runGuard() {
         "CREATE POLICY tpi_company_wide ON public.third_party_inventory FOR SELECT USING (public.is_company_member(company_id))"
       ),
       /^\s+- third_party_inventory:/m
+    )
+
+    // 929: التكلفة عاريةً — لا فى بندِ مستند، فلا أبَ لها يحميها.
+    await stage(
+      "قيود التكلفة تعود إلى عضوية الشركة",
+      () => client.query(
+        "CREATE POLICY cogs_company_wide ON public.cogs_transactions FOR SELECT USING (public.is_company_member(company_id))"
+      ),
+      /^\s+- cogs_transactions:/m
     )
 
     if (ok) {

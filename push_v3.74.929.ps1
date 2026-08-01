@@ -6,89 +6,111 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.928 - the OLD script is removed, never this one. Five times a chained
+# v3.74.929 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.927.ps1") { Remove-Item -LiteralPath "push_v3.74.927.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.928.ps1") { Remove-Item -LiteralPath "push_v3.74.928.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.928"') {
-    Write-Host "+ 3.74.928" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.929"') {
+    Write-Host "+ 3.74.929" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.928]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.928]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.929]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.929]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000017_v3_74_928_third_party_inventory_governance_actually_applies.sql"
+$migration = "supabase/migrations/20260731000018_v3_74_929_movement_tables_branch_isolation.sql"
 $guard     = "scripts/check-branch-isolation-holes.js"
 $trap      = "scripts/selftest-branch-isolation-holes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            $migration, $guard, $trap,
-           "push_v3.74.928.ps1")
+           "push_v3.74.929.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. all four swallowing policies are gone ---------------------------
-# A carefully written governance policy stood here, and beside it a plain
-# company-wide one on SELECT, INSERT, UPDATE and DELETE. Permissive policies
-# are OR-ed, so the plain one swallowed the governance whole. This is the
-# nastiest shape yet: a reader of the text sees the governance and is
-# reassured, and never sees the line that cancels it.
-foreach ($needle in @("DROP POLICY IF EXISTS third_party_inventory_select ",
-                      "DROP POLICY IF EXISTS third_party_inventory_insert ",
-                      "DROP POLICY IF EXISTS third_party_inventory_update ",
-                      "DROP POLICY IF EXISTS third_party_inventory_delete ")) {
+# -- 1. the swallowing policies on inventory_transactions are gone ------
+foreach ($needle in @("DROP POLICY IF EXISTS inventory_company_isolation",
+                      "DROP POLICY IF EXISTS inventory_transactions_select_members",
+                      "DROP POLICY IF EXISTS inventory_transactions_update_members",
+                      "DROP POLICY IF EXISTS inventory_transactions_delete_members",
+                      "DROP POLICY IF EXISTS fifo_lots_company_isolation")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X a swallowing company-wide policy survives ($needle)" -ForegroundColor Red; exit 1
+        Write-Host "X a swallowing policy survives ($needle)" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the four swallowing policies are gone - the governance can bite" -ForegroundColor Green
+Write-Host "+ the branch isolation written on inventory_transactions can finally bite" -ForegroundColor Green
 
-# -- 2. the governance itself is not rewritten, only completed ----------
-# Two arms the owner explicitly approved must survive verbatim: the main
-# warehouse keeper who oversees every branch, and the seller who follows his
-# own shipment. And the two gaps 917 requires must be added.
-foreach ($needle in @("w.is_main = true",
-                      "so.created_by_user_id = auth.uid()",
-                      "current_user_is_branch_unbounded(company_id)")) {
+# -- 2. write access is NOT restored with FOR ALL (926 lesson) ----------
+if ($m -match "CREATE POLICY[^;]*FOR ALL") {
+    Write-Host "X write access was restored with FOR ALL - it would reopen the read" -ForegroundColor Red
+    exit 1
+}
+foreach ($needle in @("fifo_cost_lots_insert_company", "fifo_cost_lots_update_company",
+                      "fifo_cost_lots_delete_company")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the governance was rewritten instead of completed ($needle)" -ForegroundColor Red
+        Write-Host "X write access on the lots was dropped instead of split ($needle)" -ForegroundColor Red
         exit 1
     }
 }
-Write-Host "+ both approved cross-branch arms survive, and the 917 gaps are added" -ForegroundColor Green
+Write-Host "+ lot writes are split into INSERT/UPDATE/DELETE, not restored as ALL" -ForegroundColor Green
 
-# -- 3. a table closed WITHOUT a guard is a table that reopens quietly ---
-if ($g -notmatch [regex]::Escape('"third_party_inventory"')) {
-    Write-Host "X third_party_inventory was closed but never added to the guard" -ForegroundColor Red; exit 1
-}
-if ($t -notmatch [regex]::Escape("tpi_company_wide")) {
-    Write-Host "X the trap never plants the swallowing shape" -ForegroundColor Red; exit 1
-}
-if ($t -notmatch [regex]::Escape("- third_party_inventory:")) {
-    Write-Host "X the trap does not require the guard to NAME third_party_inventory" -ForegroundColor Red
+# -- 3. the two sleeping doors are shut, all three ways -----------------
+# They were SECURITY INVOKER, they FAILED OPEN (a warning, and an
+# understated cost returned), and they never asked which company. Isolating
+# the lots would have turned them from correct into silently wrong.
+if ($m -notmatch [regex]::Escape("FIFO_LOTS_INSUFFICIENT")) {
+    Write-Host "X the FIFO helpers still fail open - an understated cost would pass" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the swallowing shape itself is now planted and refused every release" -ForegroundColor Green
+if ($m -notmatch [regex]::Escape("AND company_id = v_company_id")) {
+    Write-Host "X the FIFO helpers still do not ask which company" -ForegroundColor Red; exit 1
+}
+$definerCount = ([regex]::Matches($m, "SECURITY DEFINER")).Count
+if ($definerCount -lt 2) {
+    Write-Host "X a FIFO helper is still SECURITY INVOKER - the 915 trap" -ForegroundColor Red; exit 1
+}
+Write-Host "+ both sleeping FIFO doors read as definer, scope by company, and fail loudly" -ForegroundColor Green
 
-# -- 4. no counted claim in the trap closing line -----------------------
+# -- 3b. and the cure itself is measured -------------------------------
+# Making them SECURITY DEFINER handed them to PUBLIC, which includes anon -
+# Postgres grants EXECUTE to PUBLIC on every CREATE FUNCTION. The battery
+# caught it before the push, not after. The cure is measured too.
+foreach ($needle in @("REVOKE ALL ON FUNCTION public.calculate_fifo_cogs",
+                      "REVOKE ALL ON FUNCTION public.calculate_fifo_cost")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the definer cure left the helpers open to PUBLIC/anon" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the cure was measured too - the helpers are service_role only" -ForegroundColor Green
+
+# -- 4. the three tables joined the guard, and the trap plants on cost --
+foreach ($needle in @('"inventory_transactions"', '"fifo_cost_lots"', '"cogs_transactions"')) {
+    if ($g -notmatch [regex]::Escape($needle)) {
+        Write-Host "X a newly closed table never joined the guard ($needle)" -ForegroundColor Red; exit 1
+    }
+}
+if ($t -notmatch [regex]::Escape("cogs_company_wide")) {
+    Write-Host "X the trap never plants a leak on the bare-cost table" -ForegroundColor Red; exit 1
+}
+if ($t -notmatch [regex]::Escape("- cogs_transactions:")) {
+    Write-Host "X the trap does not require the guard to NAME cogs_transactions" -ForegroundColor Red; exit 1
+}
 if ($t -match "on (TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|BOTH) (different )?(tables|shapes)") {
-    Write-Host "X the trap closing line counts tables again - it will drift next release" -ForegroundColor Red
-    exit 1
+    Write-Host "X the trap closing line counts tables again" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the trap describes what it does instead of counting it" -ForegroundColor Green
+Write-Host "+ the nineteen are closed, guarded, and the bare-cost table is planted on" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.928.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.929.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -108,10 +130,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.927.ps1" 2>$null
+git add -u -- "push_v3.74.928.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.927.ps1")
+$expected = @($files) + @("push_v3.74.928.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -133,7 +155,7 @@ Write-Host "Proving an unposted cross-branch transfer is refused (TEST database 
 node scripts/selftest-transfer-journal.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the transfer-journal mechanism was not proven" -ForegroundColor Red; exit 1 }
 
-Write-Host "Proving the branch-isolation guard catches the real leak - now on TEN shapes (TEST only)..." -ForegroundColor Cyan
+Write-Host "Proving the branch-isolation guard catches the real leak - now on ELEVEN shapes (TEST only)..." -ForegroundColor Cyan
 node scripts/selftest-branch-isolation-holes.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the branch-isolation guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
@@ -344,7 +366,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.927.ps1" 2>$null
+git add -u -- "push_v3.74.928.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -365,68 +387,64 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_928.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_929.txt"
     $msgLines = @(
-        'feat(security): v3.74.928 - the third-party inventory governance actually applies now',
+        'feat(security): v3.74.929 - the movement tables are isolated by branch, and two sleeping doors are shut',
         '',
-        'Eighth of the nineteen, and the 917 trap in its purest form.',
+        'The last three of the nineteen, and the ones where cost lives BARE -',
+        'not inside a document line with a parent to protect it.',
         '',
-        'Two permissive read policies stood side by side on this table. One,',
-        'third_party_inventory_select_governance, was written with care - it',
-        'knows the roles, the branches and the warehouses, and even carries an',
-        'arm for the main-warehouse keeper and one for the employee who created',
-        'the sales order. The other, third_party_inventory_select, was',
-        'company_id IN (company_members) and nothing else.',
+        'inventory_transactions carried a branch-isolation policy that is',
+        'entirely correct, and beside it a plain company-membership policy that',
+        'SWALLOWED IT - on select, update and delete alike - plus a third dead',
+        'policy on app.current_company_id, the same one removed in 922. Fifth',
+        'time a rule was known and not in force, second time it was written on',
+        'the table itself and disabled by its neighbour. No question to ask',
+        'here: the swallowing policies are dropped and the isolation stands as',
+        'written.',
         '',
-        'Permissive policies are OR-ed, so the plain one SWALLOWED THE',
-        'GOVERNANCE WHOLE. Measured on production: all seven roles saw all four',
-        'rows including the Nasr City one - and this table carries unit_cost and',
-        'total_cost.',
+        'fifo_cost_lots had one is_company_member policy covering read AND write,',
+        'and cogs_transactions a company-wide read. Both carry unit_cost. The',
+        'owner decided: read them within the branch - which completes the cost',
+        'hide of 906 to 916, since otherwise the number hidden on the product is',
+        'read straight off the lot. Lot writes were NOT restored with FOR ALL',
+        '(the 926 lesson) but split into insert, update and delete with their',
+        'old text word for word.',
         '',
-        'The same doubling sat on INSERT, UPDATE and DELETE: precise governance,',
-        'and beside it a company-wide policy cancelling it. Any member could',
-        'edit another branch row, cost and all.',
+        'AND THE EFFECT ON THE BOOKS IS ZERO - measured before writing. FIFO',
+        'consumption runs in consume_fifo_lots and the cost entry in the',
+        'auto_create_cogs_journal trigger, and BOTH ARE SECURITY DEFINER, so no',
+        'read policy touches them. Isolating the read does not move a single',
+        'number in the posting.',
         '',
-        'THIS IS THE NASTIEST SHAPE SO FAR. It is the fourth time in this series',
-        'that a rule was known and not in force - after booking_payments in 926',
-        'and the supplier write functions in 927 - but the first where the rule',
-        'was written ON THE TABLE ITSELF and disabled by its neighbour. A reader',
-        'of the text sees the governance and is reassured, and never sees the',
-        'single line that cancels it. The lesson: A CORRECT POLICY ON A TABLE IS',
-        'NOT PROOF THAT IT IS IN FORCE.',
+        'TWO SLEEPING DOORS, SHUT - and there is money behind them. ',
+        'calculate_fifo_cogs and calculate_fifo_cost were SECURITY INVOKER,',
+        'reading the lots with the privileges of whoever called them, and they',
+        'carried two defects. First, THEY FAILED OPEN: short of lots they',
+        'returned a SMALLER COST and raised only a warning - so called from a',
+        'user session after this isolation they would have produced an',
+        'understated cost in silence. Second, THEY NEVER ASKED WHICH COMPANY',
+        '(WHERE product_id = ... and nothing more) - what protected them was',
+        'RLS alone, so under the service key, which bypasses RLS, they would',
+        'have read another company lots.',
         '',
-        'THE RULE: no widening and no narrowing by me - what was written is put',
-        'into force. The four plain policies are dropped and the governance',
-        'stands. The owner was asked about its two cross-branch arms and',
-        'approved BOTH: the main-warehouse keeper oversees every branch (and',
-        'that arm is live - there is one store keeper and he is on the main',
-        'warehouse), and the seller follows his own shipment until it lands,',
-        'even across a branch. The second is a deliberate exception to the 922',
-        'rule: there it was "I made it", a claim about the past; here it is',
-        'following a live shipment.',
+        'They are asleep - no trigger calls them and no line in the application',
+        '(measured; the live trigger is another function). But ASLEEP IS NOT',
+        'IMPOSSIBLE, which is the sentence from 919. Both are now SECURITY',
+        'DEFINER so they read the truth rather than what is visible, both derive',
+        'the company from the product so no signature changes and no caller',
+        'breaks, and both raise FIFO_LOTS_INSUFFICIENT instead of letting a',
+        'short cost through.',
         '',
-        'And two gaps that 917 requires were added, which the governance never',
-        'saw: the REGISTERED OWNER who is not a member - it asked company_members',
-        'alone and so hid from him what he owns - and the MEMBER WITH NO BRANCH,',
-        'since every arm demanded a branch match and NULL matches nothing. Both',
-        'are covered by current_user_is_branch_unbounded, added in 924.',
+        'PROVEN on production after applying: every branch member sees 35',
+        'movements, 12 lots and 3 cost entries - ZERO of them from Nasr City -',
+        'while the owner and the registered owner see 42, 15 and 4.',
         '',
-        'PROVEN. On test: accountant, manager, staff and purchasing officer all',
-        'ZERO; the store keeper 1 by the supervision arm; the booking officer -',
-        'a member with NO branch - 1 by the added arm; the owner 1 and able to',
-        'edit. On production after applying: accountant, manager and staff see 3',
-        'of 4 with ZERO from Nasr City; the store keeper 4; owner and registered',
-        'owner 4; and editing a Nasr City row is left to the owner alone.',
-        '',
-        'ONE NARROWING, STATED PLAINLY: the manufacturing officer and the',
-        'purchasing officer used to see all four and now see ZERO - the',
-        'governance does not name them in any arm. That is what was written and',
-        'never enforced. If either genuinely needs this table, he is added to',
-        'the governance BY AN EXPLICIT DECISION, not by an open policy.',
-        '',
-        'The guard grew to sixteen heads, and a tenth stage joined the trap -',
-        'planting the swallowing shape itself: a permissive policy beside a',
-        'correct governance.'
+        'THE LIST OF NINETEEN IS NOW CLOSED. Nine releases, 921 to 929, and with',
+        'them SEVEN TABLES THAT WERE NEVER ON THE LIST, found by measuring: the',
+        'purchase-return warehouse allocations, sales_returns, and five of the',
+        'bookings family. The guard now measures nineteen heads and twelve line',
+        'tables, and the trap plants eleven distinct shapes of the leak.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -435,5 +453,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.928 pushed - the third-party governance bites at last: 8 of 19 closed" -ForegroundColor Green
+    Write-Host "`n+ v3.74.929 pushed - the movement tables belong to their branch: THE NINETEEN ARE CLOSED" -ForegroundColor Green
 }
