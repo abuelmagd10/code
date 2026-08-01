@@ -6,97 +6,121 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.932 - the OLD script is removed, never this one. Five times a chained
+# v3.74.933 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.931.ps1") { Remove-Item -LiteralPath "push_v3.74.931.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.932.ps1") { Remove-Item -LiteralPath "push_v3.74.932.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.932"') {
-    Write-Host "+ 3.74.932" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.933"') {
+    Write-Host "+ 3.74.933" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.932]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.932]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.933]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.933]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000021_v3_74_932_fifo_consumes_within_the_branch.sql"
-$guard     = "scripts/check-branch-isolation-holes.js"
-$trap      = "scripts/selftest-branch-isolation-holes.js"
+$migration = "supabase/migrations/20260731000022_v3_74_933_purchase_cost_authorised_path.sql"
+$guard     = "scripts/check-purchase-cost-masked-path.js"
+$trap      = "scripts/selftest-purchase-cost-masked-path.js"
 
-# v3.74.932 — اللقطة تُعاد لأن الهجرة **حذفت** توقيعين قديمين
-# (consume_fifo_lots/7 وcalculate_fifo_cogs/2). ولولا ذلك لأعاد بناءُ
-# المستودع إنشاءهما بمنحهما — وهو ما أمسكه فاحصُ اللقطة.
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           "supabase/schema/functions.sql", "supabase/schema/schema.sql",
            $migration, $guard, $trap,
-           "push_v3.74.932.ps1")
+           "supabase/schema/functions.sql",
+           "push_v3.74.933.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. the branch reaches the FIFO, and only as an OPTIONAL argument ----
-# An optional last parameter means an un-updated caller keeps working
-# instead of breaking. The rule itself: this branch, or a branchless legacy
-# lot - never another branch.
-if ($m -notmatch [regex]::Escape("p_branch_id uuid DEFAULT NULL")) {
-    Write-Host "X the branch is not an optional argument - an old caller would break" -ForegroundColor Red
-    exit 1
-}
-if ($m -notmatch [regex]::Escape("p_branch_id IS NULL OR branch_id = p_branch_id OR branch_id IS NULL")) {
-    Write-Host "X the lot selection does not scope to the branch" -ForegroundColor Red; exit 1
-}
-Write-Host "+ FIFO consumes within the branch, and the argument is optional" -ForegroundColor Green
-
-# -- 2. neither function may fail OPEN ----------------------------------
-# Both used to return a SMALLER cost with only a warning. An understated
-# cost that posts in silence is worse than a refusal.
-# NOTE: measured on the CODE, not the file - the migration quotes the old
-# RAISE WARNING in its header to explain the defect, and a guard that reads a
-# comment as code refuses the document that documents the bug. (930 lesson,
-# and it caught this very release on the first run.)
+# Measure on CODE only. Twice now a check fired on the migration header quoting
+# the very string it forbids (930 and 932). A comment is not an instruction.
 $mCode = ($m -split "`n" | Where-Object { $_ -notmatch "^\s*--" }) -join "`n"
-if ($mCode -match "RAISE WARNING") {
-    Write-Host "X a FIFO function still warns instead of refusing - cost would be understated" -ForegroundColor Red
+
+# -- 1. six masked views, every one of them reading as its CALLER -------
+# A view with its owner rights would step over every branch-isolation policy
+# built from 917 to 932 - while working perfectly and reporting nothing.
+$viewCount = ([regex]::Matches($mCode, [regex]::Escape("WITH (security_invoker = true)"))).Count
+if ($viewCount -ne 6) {
+    Write-Host "X expected 6 masked views with security_invoker, found $viewCount" -ForegroundColor Red
     exit 1
 }
-if (([regex]::Matches($m, [regex]::Escape("FIFO_LOTS_INSUFFICIENT"))).Count -lt 2) {
-    Write-Host "X a FIFO function does not refuse on a short lot" -ForegroundColor Red; exit 1
-}
-Write-Host "+ both FIFO functions refuse a short lot instead of understating the cost" -ForegroundColor Green
+Write-Host "+ six masked views, each reading with the rights of its caller" -ForegroundColor Green
 
-# -- 3. the callers are patched at the CALL SITE, and loudly -------------
-# Their bodies are not copied into the migration. The migration reads each
-# function from the database, adds the branch at the one call site, and
-# RAISES if that site is not there - so it can never patch blindly.
-foreach ($needle in @("refusing to patch blindly",
-                      "ABS(NEW.quantity_change), NEW.branch_id)",
-                      "v_anchor_date || ', NEW.branch_id'",
-                      "v_anchor || ', r.branch_id'")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the caller patch is missing or silent ($needle)" -ForegroundColor Red; exit 1
+# -- 2. and not one of them reads a money column from its own table -----
+# If it did, the money would be shown to everyone AND the view itself would
+# break the day the column is revoked in stage 3.
+#
+# Measured on the VIEW section only. The money functions read b.total_amount
+# by design - that is their whole job - so a check over the whole file would
+# fire on the cure instead of the disease.
+$viewStart = $mCode.IndexOf("CREATE VIEW")
+if ($viewStart -lt 0) { Write-Host "X no CREATE VIEW in the migration" -ForegroundColor Red; exit 1 }
+$mViews = $mCode.Substring($viewStart)
+foreach ($pair in @("m.unit_price", "m.line_total", "m.total_amount", "m.subtotal", "m.paid_amount")) {
+    if ($mViews -notmatch [regex]::Escape($pair)) {
+        Write-Host "X a masked view does not take $pair from the authorised path" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the callers are patched at the call site, and the patch refuses to guess" -ForegroundColor Green
-
-# -- 4. and the PUBLIC grant is revoked again (929 lesson) --------------
-# Every CREATE FUNCTION hands EXECUTE to PUBLIC, and PUBLIC includes anon.
-foreach ($needle in @("REVOKE ALL ON FUNCTION public.consume_fifo_lots",
-                      "REVOKE ALL ON FUNCTION public.calculate_fifo_cogs")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X a re-created FIFO function is left open to PUBLIC/anon" -ForegroundColor Red; exit 1
+foreach ($bad in @("b.unit_price", "b.line_total", "b.total_amount", "b.paid_amount", "b.subtotal")) {
+    if ($mViews -match [regex]::Escape($bad)) {
+        Write-Host "X a masked view reads $bad straight from its table - the hide is decoration" -ForegroundColor Red
+        exit 1
     }
 }
-Write-Host "+ the re-created functions are service_role only" -ForegroundColor Green
+Write-Host "+ no masked view reads a money column from its own table" -ForegroundColor Green
 
-# -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.932.ps1" -Raw
+# -- 3. the default privileges are revoked BEFORE the read is granted ---
+# This database hands ALL privileges to authenticated on every new view.
+# Measured while writing 933: the first cut granted INSERT/UPDATE/DELETE.
+$revokeCount = ([regex]::Matches($mCode, [regex]::Escape("FROM PUBLIC, anon, authenticated"))).Count
+if ($revokeCount -lt 6) {
+    Write-Host "X a masked view keeps the default ALL grant to authenticated ($revokeCount of 6 revoked)" -ForegroundColor Red
+    exit 1
+}
+if (([regex]::Matches($mCode, [regex]::Escape("REVOKE ALL    ON FUNCTION"))).Count -lt 8) {
+    Write-Host "X a new function is left open to PUBLIC - and PUBLIC includes anon (919/929)" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ what was not wanted is revoked first, on all six views and all eight functions" -ForegroundColor Green
+
+# -- 4. one rule, called from two places, never written twice -----------
+# The money function must ask the SAME question the row policy asks. If the
+# policy writes the condition by hand again, the rule has two copies and
+# changing one leaves the other open in silence.
+foreach ($needle in @("USING (public.can_access_bill(id))",
+                      "USING (public.can_access_purchase_order(id))",
+                      "public.can_access_bill(b.id)",
+                      "public.can_access_purchase_order(b.id)")) {
+    if ($mCode -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the visibility rule is not called from both places ($needle)" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ one visibility rule per head, called by the policy AND by the money function" -ForegroundColor Green
+
+# -- 5. the guard measures the effect, not the text ---------------------
+if ($g -notmatch [regex]::Escape("pg_depend")) {
+    Write-Host "X the guard reads the view text instead of measuring what it depends on" -ForegroundColor Red; exit 1
+}
+if ($g -notmatch [regex]::Escape("set_config")) {
+    Write-Host "X the guard does not impersonate anybody - it would measure nothing" -ForegroundColor Red; exit 1
+}
+if ($g -notmatch [regex]::Escape("scopedMoneyCount")) {
+    Write-Host "X the guard counts money outside the company it asked the rule about - false alarms by construction" -ForegroundColor Red
+    exit 1
+}
+if (([regex]::Matches($t, [regex]::Escape("await stage("))).Count -lt 6) {
+    Write-Host "X the trap plants fewer than six shapes" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the guard measures dependency and impersonation; the trap plants six shapes" -ForegroundColor Green
+
+# -- 6. the battery below still proves the standing guards ----------------
+$self2 = Get-Content -LiteralPath "push_v3.74.933.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -112,14 +136,23 @@ if ($self2 -notmatch [regex]::Escape("selftest-branch-isolation-holes.js")) {
 if ($self2 -notmatch [regex]::Escape("selftest-transfer-journal.js")) {
     Write-Host "X the transfer-journal mechanism is not proven in this battery" -ForegroundColor Red; exit 1
 }
+if ($self2 -notmatch [regex]::Escape("selftest-purchase-cost-masked-path.js")) {
+    Write-Host "X the masked-path guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
+}
 Write-Host "+ the battery plants its probes and watches every guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.931.ps1" 2>$null
+# The snapshot is a mirror of the database, and this release adds eight
+# functions to it. 932 lost a run to regenerating it by hand afterwards.
+Write-Host "Refreshing the function snapshot from the live database..." -ForegroundColor Cyan
+node scripts/dump-db-functions.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X could not refresh supabase/schema/functions.sql" -ForegroundColor Red; exit 1 }
 
-# -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.931.ps1")
+git add -- $files 2>&1 | Out-Null
+git add -u -- "push_v3.74.932.ps1" 2>$null
+
+# -- 7. nothing staged beyond this release (the 872 lesson) --------------
+$expected = @($files) + @("push_v3.74.932.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -128,6 +161,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the masked path refuses all six shapes (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-purchase-cost-masked-path.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the masked-path guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Measuring the purchase-cost masked path by impersonation on the live database..." -ForegroundColor Cyan
+node scripts/check-purchase-cost-masked-path.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X the masked path is not what the code assumes" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving an exposed SECURITY DEFINER writer is refused (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-exposed-definer-functions.js
@@ -141,7 +182,7 @@ Write-Host "Proving an unposted cross-branch transfer is refused (TEST database 
 node scripts/selftest-transfer-journal.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the transfer-journal mechanism was not proven" -ForegroundColor Red; exit 1 }
 
-Write-Host "Proving the branch-isolation guard catches the real leak - now on TWELVE shapes (TEST only)..." -ForegroundColor Cyan
+Write-Host "Proving the branch-isolation guard catches the real leak - on TWELVE shapes (TEST only)..." -ForegroundColor Cyan
 node scripts/selftest-branch-isolation-holes.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the branch-isolation guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
@@ -352,7 +393,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.931.ps1" 2>$null
+git add -u -- "push_v3.74.932.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -373,57 +414,80 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_932.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_933.txt"
     $msgLines = @(
-        'fix(accounting): v3.74.932 - FIFO is consumed within the branch that sold',
+        'feat(security): v3.74.933 - the authorised path for purchase prices is built first',
         '',
-        'THE FIRST RELEASE IN THIS SERIES THAT CHANGES AN ACCOUNTING NUMBER',
-        'rather than who may see one.',
+        'STAGE 1 OF 3, AND ITS EFFECT ON THE USER IS ZERO. Nothing reads the new',
+        'path yet, no column is revoked, no screen changes. That order is the',
+        '909 lesson taken literally: build the authorised path BEFORE removing',
+        'the column, never after, or the screens break on users between two',
+        'releases.',
         '',
-        'When a branch sold, the system looked for the OLDEST purchase layer of',
-        'that product filtered by company and product alone - never asking about',
-        'the branch. So if an older layer sat in the main branch, a Nasr City',
-        'sale took its cost from it: the selling branch profit came out wrong,',
-        'and the stock of a branch that sold nothing was drawn down.',
+        'THE OWNER DECIDED to hide the line price AND the document total',
+        'together. The reason is arithmetic, not taste: a one-line purchase',
+        'bill totalling 1000 for ten units states the purchase price by',
+        'division. Hiding the line alone is a hide that looks complete and is',
+        'not - worse than none, because whoever sees it trusts it.',
         '',
-        'WHY NOW: because the retrospective effect is ZERO, and measured. All 17',
-        'consumptions to date took their layer from the SAME branch as the',
-        'movement. No product holds an open layer in both branches - three in',
-        'the main branch, two in Nasr City. And every layer carries its branch,',
-        '16 of 16. The first product bought for both branches is where the',
-        'numbers start to mix, and from then on the fix would need old entries',
-        'corrected. Today it does not.',
+        'A MASKED VIEW, NOT A FUNCTION TO CALL - because the code was measured.',
+        '909 hid the product cost behind product_costs(ids). Here, 21 read',
+        'sites ask for select(*) across the six tables, and revoking a column',
+        'would fail every one of them with a privilege error - including the',
+        'accountant, who is allowed to see. A cure that breaks the accountant',
+        'is not a cure. So each table gets a view with the SAME columns, in the',
+        'SAME order, whose money comes from an authorised function instead of',
+        'the table. Whoever may not see reads NULL - not an error, not a lying',
+        'zero - and select(*) keeps working.',
         '',
-        'THE CURE IS TO PASS THE BRANCH, NOT TO INVENT IT. Both callers already',
-        'know it - the COGS trigger has NEW.branch_id and the service',
-        'consumption has r.branch_id. The parameter is OPTIONAL and last, so any',
-        'caller not yet updated keeps working instead of breaking. When it is',
-        'passed: layers of that branch, OR a branchless legacy layer - never',
-        'another branch.',
+        'THE VIEWS ARE security_invoker = true, so branch isolation still',
+        'applies as if the user read the table himself. A view with its owner',
+        'rights would have stepped over everything built from 917 to 932 in one',
+        'stroke, silently, while working perfectly. And no view reads a money',
+        'column from its table - so the views survive stage 3.',
         '',
-        'A THIRD DEFECT, in the LIVE function: consume_fifo_lots failed OPEN. If',
-        'the layers fell short it returned a SMALLER cost with a warning rather',
-        'than an error - the same defect as 929 but on the working path. The',
-        'owner decided: refuse loudly. Its effect today is zero, measured: every',
-        'product stock equals its layers exactly.',
+        'ONE RULE, CALLED FROM TWO PLACES. The money function has to ask "may he',
+        'see this document at all?", and being SECURITY DEFINER it does not get',
+        'the row policy for free. Writing the condition again would give the',
+        'rule two copies, and editing one would leave the other open in',
+        'silence. So the head rule was extracted - can_access_bill,',
+        'can_access_purchase_order - and the POLICY now calls it instead of',
+        'stating it.',
         '',
-        'A CORRECTION TO 929: calculate_fifo_cogs was described there as',
-        'ASLEEP. That was wrong - it is on the live path, called by the COGS',
-        'trigger on the modern branch. Turning its warning into an error was',
-        'therefore a change on a working path, and its effect is zero BY',
-        'MEASUREMENT rather than by luck. The rule recorded: no path is called',
-        'asleep until every caller is measured, not only the triggers.',
+        'PROVEN ROW BY ROW, not by counting: the old condition and the new',
+        'function were compared for EVERY row and EVERY member, on test and on',
+        'production before the switch - zero disagreements everywhere. Counts',
+        'after the switch are identical to before.',
         '',
-        'PROVEN BY PLANTING on test, with a product whose only open layer is in',
-        'the MAIN branch: consuming with that branch succeeded at 16.11, and',
-        'consuming the SAME product with the Nasr City branch was REFUSED with',
-        'FIFO_LOTS_INSUFFICIENT. Same product, same moment - the branch was the',
-        'only difference.',
+        'AND PROVEN BY IMPERSONATION ON PRODUCTION DATA. The company is in',
+        'strict mode, so every role reads all its rows and zero money, except',
+        'the purchasing officer who reads prices on 11 lines of orders HE wrote',
+        '- and nothing else. Switching the company to restricted inside a',
+        'rolled-back transaction, on the same rows in the same instant: the',
+        'accountant, the manager and the purchasing officer read 5 totals, 9',
+        'line prices and 6 order totals; the manufacturing officer, the',
+        'salesman and the store keeper read zero. Only the role differed.',
         '',
-        'AND THE CALLERS ARE PATCHED AT THE CALL SITE. Their bodies are not',
-        'copied into the migration. It reads each function from the database,',
-        'adds the branch at the single call site, and RAISES if that site is not',
-        'found - so it can never patch a function whose shape has changed.'
+        'A NEW LESSON, MEASURED WHILE WRITING THIS: ALTER DEFAULT PRIVILEGES on',
+        'this database grants ALL privileges to authenticated on every new view.',
+        'The first cut handed out INSERT, UPDATE, DELETE and TRUNCATE on all six',
+        'views - seen in role_table_grants right after creation. Hence REVOKE',
+        'ALL ... FROM PUBLIC, anon, authenticated BEFORE granting the read.',
+        'Rule ten: granting what we want is not enough - revoke what we did not',
+        'want first.',
+        '',
+        'AND THE GUARD PAID FOR ITS OWN LESSON BEFORE THE RELEASE SHIPPED. Its',
+        'first run refused the CORRECT state: it claimed the salesman read the',
+        'money of two bills he did not write. The guard was wrong, not the',
+        'hide. One test user is staff in one company and purchasing officer in',
+        'another; the rule was asked about the membership row company (no),',
+        'then the money was counted across ALL companies - so the amounts of',
+        'the company where he IS in the audience were counted against him.',
+        'Measured by impersonation before changing a line: the real salesman',
+        'reads his two bills and zero amounts. Rule eleven: the question and',
+        'the measurement must fall on the same scope - a false alarm by',
+        'construction is worse than none, because it teaches whoever reads it',
+        'to stop believing the guard.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -432,5 +496,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.932 pushed - FIFO is consumed within the branch that sold" -ForegroundColor Green
+    Write-Host "`n+ v3.74.933 pushed - the authorised path for purchase prices is built (stage 1 of 3)" -ForegroundColor Green
 }

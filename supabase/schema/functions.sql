@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-01T12:04:44.341Z
--- Routines: 1277
+-- Generated: 2026-08-01T16:00:53.306Z
+-- Routines: 1285
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -6789,6 +6789,28 @@ END; $function$
 ;
 
 -- ---------------------------------------------------------------
+-- bill_item_money(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.bill_item_money(p_id uuid)
+ RETURNS TABLE(unit_price numeric, line_total numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+         CASE WHEN t.ok THEN b.unit_price END,
+         CASE WHEN t.ok THEN b.line_total END
+  FROM public.bill_items b
+  JOIN public.bills h ON h.id = b.bill_id
+   CROSS JOIN LATERAL (
+     SELECT public.can_access_bill_items(b.bill_id)
+        AND public.can_view_purchase_cost(h.company_id, COALESCE(h.created_by_user_id, h.created_by), h.branch_id, TRUE) AS ok
+   ) t
+ WHERE b.id = p_id;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- bill_item_protect_posted_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.bill_item_protect_posted_trg()
@@ -6819,6 +6841,40 @@ BEGIN
   RAISE EXCEPTION 'لا يمكن تعديل بنود فاتورة منشورة. اعمل void للفاتورة أولاً.'
     USING ERRCODE = 'P0001';
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- bill_money(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.bill_money(p_id uuid)
+ RETURNS TABLE(subtotal numeric, tax_amount numeric, total_amount numeric, discount_value numeric, shipping numeric, adjustment numeric, paid_amount numeric, returned_amount numeric, base_currency_total numeric, original_total numeric, display_total numeric, display_subtotal numeric, original_subtotal numeric, original_tax_amount numeric, pre_receipt_refund_amount numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+         CASE WHEN t.ok THEN b.subtotal END,
+         CASE WHEN t.ok THEN b.tax_amount END,
+         CASE WHEN t.ok THEN b.total_amount END,
+         CASE WHEN t.ok THEN b.discount_value END,
+         CASE WHEN t.ok THEN b.shipping END,
+         CASE WHEN t.ok THEN b.adjustment END,
+         CASE WHEN t.ok THEN b.paid_amount END,
+         CASE WHEN t.ok THEN b.returned_amount END,
+         CASE WHEN t.ok THEN b.base_currency_total END,
+         CASE WHEN t.ok THEN b.original_total END,
+         CASE WHEN t.ok THEN b.display_total END,
+         CASE WHEN t.ok THEN b.display_subtotal END,
+         CASE WHEN t.ok THEN b.original_subtotal END,
+         CASE WHEN t.ok THEN b.original_tax_amount END,
+         CASE WHEN t.ok THEN b.pre_receipt_refund_amount END
+  FROM public.bills b
+   CROSS JOIN LATERAL (
+     SELECT public.can_access_bill(b.id)
+        AND public.can_view_purchase_cost(b.company_id, COALESCE(b.created_by_user_id, b.created_by), b.branch_id, TRUE) AS ok
+   ) t
+ WHERE b.id = p_id;
 $function$
 ;
 
@@ -8205,6 +8261,24 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- can_access_bill(p_bill_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_bill(p_bill_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.bills b
+     WHERE b.id = p_bill_id
+       AND b.company_id IN (SELECT public.get_user_company_ids())
+       AND public.can_access_record_branch(b.company_id, b.branch_id)
+  );
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- can_access_bill_items(p_bill_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_access_bill_items(p_bill_id uuid)
@@ -8351,6 +8425,24 @@ BEGIN
   SELECT company_id INTO v_company_id FROM purchase_orders WHERE id = p_purchase_order_id;
   RETURN is_company_member(v_company_id);
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_purchase_order(p_purchase_order_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_order(p_purchase_order_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.purchase_orders po
+     WHERE po.id = p_purchase_order_id
+       AND po.company_id IN (SELECT public.get_user_company_ids())
+       AND public.can_access_record_branch(po.company_id, po.branch_id)
+  );
 $function$
 ;
 
@@ -45937,6 +46029,56 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- purchase_order_item_money(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_order_item_money(p_id uuid)
+ RETURNS TABLE(unit_price numeric, line_total numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+         CASE WHEN t.ok THEN b.unit_price END,
+         CASE WHEN t.ok THEN b.line_total END
+  FROM public.purchase_order_items b
+  JOIN public.purchase_orders h ON h.id = b.purchase_order_id
+   CROSS JOIN LATERAL (
+     SELECT public.can_access_purchase_order_items(b.purchase_order_id)
+        AND public.can_view_purchase_cost(h.company_id, h.created_by_user_id, h.branch_id, TRUE) AS ok
+   ) t
+ WHERE b.id = p_id;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_order_money(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_order_money(p_id uuid)
+ RETURNS TABLE(subtotal numeric, tax_amount numeric, total_amount numeric, received_amount numeric, discount_value numeric, shipping numeric, total numeric, adjustment numeric, returned_amount numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+         CASE WHEN t.ok THEN b.subtotal END,
+         CASE WHEN t.ok THEN b.tax_amount END,
+         CASE WHEN t.ok THEN b.total_amount END,
+         CASE WHEN t.ok THEN b.received_amount END,
+         CASE WHEN t.ok THEN b.discount_value END,
+         CASE WHEN t.ok THEN b.shipping END,
+         CASE WHEN t.ok THEN b.total END,
+         CASE WHEN t.ok THEN b.adjustment END,
+         CASE WHEN t.ok THEN b.returned_amount END
+  FROM public.purchase_orders b
+   CROSS JOIN LATERAL (
+     SELECT public.can_access_purchase_order(b.id)
+        AND public.can_view_purchase_cost(b.company_id, b.created_by_user_id, b.branch_id, TRUE) AS ok
+   ) t
+ WHERE b.id = p_id;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- purchase_return_approval_insert_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.purchase_return_approval_insert_trg()
@@ -46034,6 +46176,54 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_return_item_money(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_return_item_money(p_id uuid)
+ RETURNS TABLE(unit_price numeric, line_total numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+         CASE WHEN t.ok THEN b.unit_price END,
+         CASE WHEN t.ok THEN b.line_total END
+  FROM public.purchase_return_items b
+  JOIN public.purchase_returns h ON h.id = b.purchase_return_id
+   CROSS JOIN LATERAL (
+     SELECT public.can_access_purchase_return_item(b.id)
+        AND public.can_view_purchase_cost(h.company_id, h.created_by, h.branch_id, TRUE) AS ok
+   ) t
+ WHERE b.id = p_id;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_return_money(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_return_money(p_id uuid)
+ RETURNS TABLE(subtotal numeric, tax_amount numeric, total_amount numeric, settlement_amount numeric, original_subtotal numeric, original_tax_amount numeric, original_total_amount numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+         CASE WHEN t.ok THEN b.subtotal END,
+         CASE WHEN t.ok THEN b.tax_amount END,
+         CASE WHEN t.ok THEN b.total_amount END,
+         CASE WHEN t.ok THEN b.settlement_amount END,
+         CASE WHEN t.ok THEN b.original_subtotal END,
+         CASE WHEN t.ok THEN b.original_tax_amount END,
+         CASE WHEN t.ok THEN b.original_total_amount END
+  FROM public.purchase_returns b
+   CROSS JOIN LATERAL (
+     SELECT public.can_access_purchase_return(b.id)
+        AND public.can_view_purchase_cost(b.company_id, b.created_by, b.branch_id, TRUE) AS ok
+   ) t
+ WHERE b.id = p_id;
 $function$
 ;
 
