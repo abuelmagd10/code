@@ -24,6 +24,7 @@ import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 import { computeDocumentTotals } from "@/lib/document-totals"
 import { validateFinancialTransaction, type UserContext } from "@/lib/validation"
 import { getActiveCompanyId } from "@/lib/company"
+import { fetchCanViewPurchaseCost } from "@/lib/purchase-money"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 
 interface Supplier { id: string; name: string }
@@ -176,6 +177,12 @@ export default function EditBillPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [existingBill, setExistingBill] = useState<Bill | null>(null)
 
+  // v3.74.936 — بوابةُ التكلفة: هذه الشاشةُ **تحسب المال وتكتبه**، فمن لا
+  // يقرأ المبالغَ لا يفتحها أصلاً. ولو فُتحت له لقرأ null مكان الأرقام ثم
+  // حفظ، **فكتب أصفاراً فوق مبالغَ حقيقية** — لا حجبٌ بل إتلاف. وهذا قرارُ
+  // المالك حرفياً: تُمنع شاشاتُ التحرير كلياً بلا لبس.
+  const [costGate, setCostGate] = useState<"checking" | "allowed" | "blocked">("checking")
+
   // Permissions
   const [canUpdate, setCanUpdate] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
@@ -294,13 +301,21 @@ export default function EditBillPage() {
 
       // 🔐 منع تداخل بيانات الشركات: يجب أن تنتمي الفاتورة للشركة النشطة الحالية
       const { data: billData } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("*, receipt_status, receipt_rejection_reason")
         .eq("id", id)
         .eq("company_id", companyId)
         .single()
       
       if (!billData) { setExistingBill(null); return }
+
+      // v3.74.936 — يُسأل عن **فرع هذه الفاتورة بعينها** (قاعدة 914): محاسبُ
+      // فرعٍ لا يرى مبالغَ فرعٍ آخر، فلا يحرّر مستندَه. والسؤالُ قبل ملء
+      // النموذج، فلا يُبنى نموذجٌ من أرقامٍ لن تُقرأ.
+      const mayEditMoney = await fetchCanViewPurchaseCost(
+        supabase, companyId, (billData as any).branch_id ?? null)
+      setCostGate(mayEditMoney ? "allowed" : "blocked")
+      if (!mayEditMoney) { setIsLoading(false); return }
       const resolvedGovernance = await resolveBillGovernanceForEdit(supabase, companyId, billData)
       const billWithResolvedGovernance = {
         ...billData,
@@ -336,7 +351,7 @@ export default function EditBillPage() {
       const provJson = await provRes.json().catch(() => ({ data: [] }))
       setShippingProviders(provJson.data || [])
 
-      const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
+      const { data: itemData } = await supabase.from("bill_items_masked").select("*").eq("bill_id", id)
       const loadedItems = (itemData || []).map((it: any) => ({
         product_id: it.product_id,
         quantity: it.quantity,
@@ -387,6 +402,18 @@ export default function EditBillPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // v3.74.936 — حارسٌ ثانٍ عند الحفظ: العرضُ قد يُتجاوز بنموذجٍ قديمٍ فى
+    // تبويبٍ مفتوح، والحفظُ هو ما يُتلف. فلا يكفى ألا تُعرض الشاشة.
+    if (costGate !== "allowed") {
+      toast({
+        title: appLang === 'en' ? "Not allowed" : "غير مسموح",
+        description: appLang === 'en'
+          ? "You are not allowed to see or change purchase amounts."
+          : "غير مصرَّح لك برؤية مبالغ الشراء ولا بتغييرها.",
+        variant: "destructive",
+      })
+      return
+    }
     if (!existingBill) { toast({ title: appLang === 'en' ? "Not found" : "غير موجود", description: appLang === 'en' ? "Bill not found" : "الفاتورة غير موجودة", variant: "destructive" }); return }
     if (!formData.supplier_id) { toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please select supplier" : "يرجى اختيار مورد", variant: "destructive" }); return }
     if (items.length === 0) { toast({ title: appLang === 'en' ? "Incomplete data" : "بيانات غير مكتملة", description: appLang === 'en' ? "Please add bill items" : "يرجى إضافة عناصر للفاتورة", variant: "destructive" }); return }
@@ -471,7 +498,7 @@ export default function EditBillPage() {
       if (hasAddedToInventory) {
         // جلب البنود الحالية لمقارنتها
         const { data: prevItems } = await supabase
-          .from("bill_items")
+          .from("bill_items_masked")
           .select("product_id, quantity")
           .eq("bill_id", existingBill.id)
 
@@ -609,7 +636,7 @@ export default function EditBillPage() {
       if (!needsApprovalRestart) {
         try {
           const { data: billFresh } = await supabase
-            .from("bills")
+            .from("bills_masked")
             .select("id, paid_amount, status")
             .eq("id", existingBill.id)
             .single()
@@ -728,7 +755,7 @@ export default function EditBillPage() {
         try {
           // جلب الفاتورة المحدثة للتحقق من وجود أمر شراء مرتبط
           const { data: billData } = await supabase
-            .from("bills")
+            .from("bills_masked")
             .select("purchase_order_id, supplier_id, bill_date, due_date, subtotal, tax_amount, total_amount, discount_type, discount_value, discount_position, tax_inclusive, shipping, shipping_tax_rate, adjustment, currency_code, exchange_rate")
             .eq("id", existingBill.id)
             .single()
@@ -808,13 +835,13 @@ export default function EditBillPage() {
         try {
           // جلب بنود أمر الشراء
           const { data: poItems } = await supabase
-            .from("purchase_order_items")
+            .from("purchase_order_items_masked")
             .select("product_id, quantity")
             .eq("purchase_order_id", poId)
 
           // جلب جميع الفواتير المرتبطة بأمر الشراء
           const { data: linkedBills } = await supabase
-            .from("bills")
+            .from("bills_masked")
             .select("id")
             .eq("purchase_order_id", poId)
 
@@ -824,7 +851,7 @@ export default function EditBillPage() {
           let billedQtyMap: Record<string, number> = {}
           if (billIds.length > 0) {
             const { data: billItems } = await supabase
-              .from("bill_items")
+              .from("bill_items_masked")
               .select("product_id, quantity")
               .in("bill_id", billIds)
 
@@ -912,6 +939,29 @@ export default function EditBillPage() {
 
   const totals = calculateTotals()
   const paidHint = useMemo(() => existingBill ? (appLang === 'en' ? `Bill #: ${existingBill.bill_number}` : `رقم الفاتورة: ${existingBill.bill_number}`) : "", [existingBill, appLang])
+
+  // v3.74.936 — بوابةُ التكلفة قبل بوابة الصلاحية: من لا يقرأ المبالغَ لا
+  // يرى نموذجاً نصفُ حقوله فارغ. رسالةٌ واضحةٌ خيرٌ من نموذجٍ كاذب.
+  if (costGate === "blocked") {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-4 md:p-8 pt-20 md:pt-8">
+          <Alert className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+            <AlertDescription className="text-amber-900 dark:text-amber-100 leading-6">
+              {appLang === 'en'
+                ? 'Editing a supplier bill means changing its amounts, and you are not allowed to see the purchase cost of this branch. You can still open the bill to read its items and quantities.'
+                : 'تعديلُ فاتورة الشراء تغييرٌ لمبالغها، وأنت غير مصرَّح لك برؤية تكلفة الشراء فى هذا الفرع. ويمكنك فتحُ الفاتورة لقراءة بنودها وكمياتها.'}
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4">
+            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/bills/${id}`)}>
+              {appLang === 'en' ? 'Open the bill' : 'فتح الفاتورة'}
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   // Permission check
   if (permChecked && !canUpdate) {

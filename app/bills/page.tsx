@@ -25,6 +25,10 @@ import {
 import Link from "next/link"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import {
+  fetchCanViewPurchaseCost, money, sumOrHidden,
+  HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN,
+} from "@/lib/purchase-money"
 import { canAction } from "@/lib/authz"
 import { Receipt, Plus, RotateCcw, Eye, Trash2, Pencil, Search, X, ShoppingCart, Package } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
@@ -206,28 +210,49 @@ export default function BillsPage() {
   // Helper: Get display amount (use converted if available)
   // يستخدم المدفوعات الفعلية من جدول payments كأولوية
   // ملاحظة: total_amount هو المبلغ الحالي بعد خصم المرتجعات
-  const getDisplayAmount = (bill: Bill, field: 'total' | 'paid' = 'total'): number => {
-    const returnedAmount = Number((bill as any).returned_amount || 0)
+  // v3.74.936 — يُعيد `null` حين يكون المبلغُ محجوباً، لا صفراً.
+  //
+  // كان يكتب `Number(x || 0)` فى كل فرع، وهذا مقبولٌ حين يكون الغائبُ
+  // معدوماً حقاً. أما بعد 933 فالغائبُ **محجوب**: المنفذُ المقنَّع يُعيد
+  // `null` لمن لا يملك رؤية التكلفة. فـ`|| 0` كانت ستكتب «0.00» مكان
+  // مبلغٍ موجود — **رقمٌ كاذبٌ يُصدَّق ويُبنى عليه**، وهو أسوأ من فراغٍ صادق.
+  const getDisplayAmount = (bill: Bill, field: 'total' | 'paid' = 'total'): number | null => {
+    const returnedRaw = (bill as any).returned_amount
 
     if (field === 'total') {
-      // حساب الإجمالي الصافي = الإجمالي الأصلي - قيمة المرتجعات
-      // display_total يستخدم فقط إذا كانت العملة مختلفة ومحولة
-      if (bill.display_currency === appCurrency && bill.display_total != null) {
-        return Math.max(0, Number(bill.display_total || 0) - returnedAmount)
-      }
-      // إرجاع الصافي بعد خصم المرتجعات
-      return Math.max(0, Number(bill.total_amount || 0) - returnedAmount)
+      const totalRaw = (bill.display_currency === appCurrency && bill.display_total != null)
+        ? bill.display_total
+        : bill.total_amount
+      // إجمالىٌّ محجوبٌ أو مرتجعٌ محجوب ⇒ الصافى محجوب. وطرحُ مجهولٍ من
+      // معلومٍ لا يُنتج معلوماً.
+      if (totalRaw == null || returnedRaw == null) return null
+      return Math.max(0, Number(totalRaw) - Number(returnedRaw))
     }
-    // For paid amount: استخدام المدفوعات الفعلية من جدول payments أولاً
+    // المدفوعُ يأتى من جدول `payments` أولاً، وهو ليس مبلغَ شراءٍ محجوباً.
     const actualPaid = paidByBill[bill.id] || 0
     if (actualPaid > 0) {
       return actualPaid
     }
-    // Fallback to stored paid_amount
     if (bill.display_currency === appCurrency && bill.display_paid != null) {
-      return Number(bill.display_paid || 0)
+      return Number(bill.display_paid)
     }
-    return Number(bill.paid_amount || 0)
+    return bill.paid_amount == null ? null : Number(bill.paid_amount)
+  }
+
+  // v3.74.936 — مجاميعُ البطاقات العلوية والتصدير.
+  //
+  // ⚠️ **مجموعٌ ينقصه بندٌ محجوبٌ رقمٌ خاطئٌ يبدو صحيحاً** — وهو أخطرُ من
+  // «—»، لأن لا شىءَ فى الشاشة يقول إنه ناقص. فإن كان فى القائمة فاتورةٌ
+  // واحدةٌ محجوبةُ المبلغ فالمجموعُ كلُّه محجوب.
+  const billsTotals = (list: Bill[]) => {
+    const totals = list.map((b) => getDisplayAmount(b, 'total'))
+    const paids = list.map((b) => getDisplayAmount(b, 'paid'))
+    const dues = list.map((b, i) => {
+      const t = totals[i]
+      const p = paids[i]
+      return (t === null || p === null) ? null : Math.max(0, t - p)
+    })
+    return { total: sumOrHidden(totals), paid: sumOrHidden(paids), due: sumOrHidden(dues) }
   }
 
   // Listen for currency changes
@@ -798,12 +823,16 @@ export default function BillsPage() {
       align: 'right',
       format: (_, row) => {
         const displayTotal = getDisplayAmount(row, 'total');
+        // v3.74.936 — «—» لا صفر، وتلميحٌ يشرح الفراغ فلا يُظنّ عطباً.
+        const hidden = displayTotal === null
         return (
-          <div>
-            <div>{displayTotal.toFixed(2)} {currencySymbol}</div>
-            {row.original_currency && row.original_currency !== appCurrency && row.original_total && (
+          <div title={hidden ? (appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR) : undefined}>
+            <div className={hidden ? 'text-gray-400 dark:text-gray-500' : undefined}>
+              {money(displayTotal)}{hidden ? '' : ` ${currencySymbol}`}
+            </div>
+            {!hidden && row.original_currency && row.original_currency !== appCurrency && row.original_total != null && (
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                ({row.original_total.toFixed(2)} {currencySymbols[row.original_currency] || row.original_currency})
+                ({money(row.original_total)} {currencySymbols[row.original_currency] || row.original_currency})
               </div>
             )}
           </div>
@@ -818,9 +847,13 @@ export default function BillsPage() {
       hidden: 'md',
       format: (_, row) => {
         const displayPaid = getDisplayAmount(row, 'paid');
+        const hidden = displayPaid === null
         return (
-          <span className="text-green-600 dark:text-green-400">
-            {displayPaid.toFixed(2)} {currencySymbol}
+          <span
+            className={hidden ? 'text-gray-400 dark:text-gray-500' : 'text-green-600 dark:text-green-400'}
+            title={hidden ? (appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR) : undefined}
+          >
+            {money(displayPaid)}{hidden ? '' : ` ${currencySymbol}`}
           </span>
         );
       }
@@ -834,7 +867,12 @@ export default function BillsPage() {
       format: (_, row) => {
         const displayTotal = getDisplayAmount(row, 'total');
         const displayPaid = getDisplayAmount(row, 'paid');
-        const remaining = Math.max(0, displayTotal - displayPaid);
+        // v3.74.936 — متبقٍّ من مجهولٍ مجهول. ولو حُسب بـ`|| 0` لظهر
+        // «المتبقى = المدفوع» وهو رقمٌ خاطئٌ يبدو سليماً.
+        const remaining = (displayTotal === null || displayPaid === null)
+          ? null
+          : Math.max(0, displayTotal - displayPaid);
+        const hidden = remaining === null
         // v3.74.175 — the "+سُلفَة" badge used to be sized as
         // max(0, paid - net_total). That over-counts cash refunds: when a
         // return is settled in cash, paid still equals total but the supplier
@@ -845,8 +883,13 @@ export default function BillsPage() {
         const openVcBalance = billOpenVcMap[row.id] || 0
         return (
           <div className="flex flex-col gap-1 items-end justify-center min-h-[44px]">
-            <span className={remaining > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-green-600 dark:text-green-400 font-semibold'}>
-              {remaining.toFixed(2)} {currencySymbol}
+            <span
+              className={hidden
+                ? 'text-gray-400 dark:text-gray-500'
+                : ((remaining as number) > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-green-600 dark:text-green-400 font-semibold')}
+              title={hidden ? (appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR) : undefined}
+            >
+              {money(remaining)}{hidden ? '' : ` ${currencySymbol}`}
             </span>
             {openVcBalance > 0 && (
               <span
@@ -1040,15 +1083,34 @@ export default function BillsPage() {
 
   const openPurchaseReturn = async (bill: Bill, mode: "partial" | "full") => {
     try {
-      setReturnMode(mode)
-      setReturnBillId(bill.id)
-      setReturnBillNumber(bill.bill_number)
       const companyId = await getActiveCompanyId(supabase)
       if (!companyId) return
 
+      // v3.74.936 — **هذه النافذةُ تحسب المال ثم تكتبه**: تضرب الكميةَ
+      // المرتجعة فى سعر البند وتُدرج المرتجعَ بالناتج. فمن لا يقرأ السعرَ
+      // كان سيُنشئ مستنداً بأصفار — لا حجبٌ بل إتلاف. فيُمنع الفعلُ من
+      // أوله، ويُقال له السببُ صراحةً بدل نافذةٍ فارغة.
+      // ويُسأل عن **فرع هذه الفاتورة** (قاعدة 914) لا عن الشركة عموماً.
+      const mayReadCost = await fetchCanViewPurchaseCost(
+        supabase, companyId, (bill as any).branch_id ?? null)
+      if (!mayReadCost) {
+        toast({
+          title: appLang === 'en' ? "Not allowed" : "غير مسموح",
+          description: appLang === 'en'
+            ? "A purchase return is built from the purchase prices, and you are not allowed to see them."
+            : "مرتجعُ الشراء يُبنى من أسعار الشراء، وأنت غير مصرَّح لك برؤيتها.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      setReturnMode(mode)
+      setReturnBillId(bill.id)
+      setReturnBillNumber(bill.bill_number)
+
       // Load bill items with returned_quantity
       const { data: items } = await supabase
-        .from("bill_items")
+        .from("bill_items_masked")
         .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity, products(name)")
         .eq("bill_id", bill.id)
       const rows = (items || []).map((it: any) => {
@@ -1104,10 +1166,25 @@ export default function BillsPage() {
       setReturnAccountId('')
 
       // Store bill financial details for display in form
-      const originalTotal = Number(bill.total_amount || 0)
-      const previouslyReturned = Number((bill as any).returned_amount || 0)
+      //
+      // v3.74.936 — البابُ فوق مغلقٌ على غير جمهور التكلفة، فالوصولُ إلى هنا
+      // يعنى أن المبالغَ مقروءة. ومع ذلك **لا يُترك `|| 0`**: لو ضعُف ذلك
+      // الحارسُ يوماً لكتب هذا السطرُ صفراً مكان مبلغٍ محجوب، ثم بُنى عليه
+      // مرتجعٌ بأصفار. فإن جاء محجوباً يُرفض الفعلُ صراحةً — لا يُحسب بصفر.
+      if (bill.total_amount == null || (bill as any).returned_amount == null || (bill as any).paid_amount == null) {
+        toast({
+          title: appLang === 'en' ? "Not allowed" : "غير مسموح",
+          description: appLang === 'en'
+            ? "This bill's amounts are hidden from you, so a return cannot be built from them."
+            : "مبالغُ هذه الفاتورة محجوبةٌ عنك، فلا يُبنى منها مرتجع.",
+          variant: "destructive",
+        })
+        return
+      }
+      const originalTotal = Number(bill.total_amount)
+      const previouslyReturned = Number((bill as any).returned_amount)
       const netTotal = Math.max(0, originalTotal - previouslyReturned)
-      const paidAmount = Number((bill as any).paid_amount || 0)
+      const paidAmount = Number((bill as any).paid_amount)
       const remainingAmount = Math.max(0, netTotal - paidAmount)
       let paymentStatus: 'unpaid' | 'partial' | 'paid' = 'unpaid'
       if (paidAmount >= netTotal) {
@@ -1167,7 +1244,7 @@ export default function BillsPage() {
 
       // Get bill data for governance
       const { data: billRow } = await supabase
-        .from('bills')
+        .from("bills_masked")
         .select('supplier_id, bill_number, branch_id, cost_center_id, warehouse_id')
         .eq('id', returnBillId)
         .single()
@@ -1327,7 +1404,7 @@ export default function BillsPage() {
                 </CardHeader>
                 <CardContent className="p-2 sm:p-4 pt-0">
                   <div className="text-sm sm:text-2xl font-bold truncate">
-                    {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0).toFixed(0)} {currencySymbol}
+                    {money(billsTotals(filteredBills).total, 0)} {currencySymbol}
                   </div>
                 </CardContent>
               </Card>
@@ -1337,7 +1414,7 @@ export default function BillsPage() {
                 </CardHeader>
                 <CardContent className="p-2 sm:p-4 pt-0">
                   <div className="text-sm sm:text-2xl font-bold truncate text-green-600">
-                    {filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0).toFixed(0)} {currencySymbol}
+                    {money(billsTotals(filteredBills).paid, 0)} {currencySymbol}
                   </div>
                 </CardContent>
               </Card>
@@ -1346,8 +1423,8 @@ export default function BillsPage() {
                   <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Remaining' : 'المتبقي'}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-2 sm:p-4 pt-0">
-                  <div className={`text-sm sm:text-2xl font-bold truncate ${filteredBills.reduce((sum, b) => sum + Math.max(0, getDisplayAmount(b, 'total') - getDisplayAmount(b, 'paid')), 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {filteredBills.reduce((sum, b) => sum + Math.max(0, getDisplayAmount(b, 'total') - getDisplayAmount(b, 'paid')), 0).toFixed(0)} {currencySymbol}
+                  <div className={`text-sm sm:text-2xl font-bold truncate ${(billsTotals(filteredBills).due ?? 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {money(billsTotals(filteredBills).due, 0)} {currencySymbol}
                   </div>
                 </CardContent>
               </Card>
@@ -1512,9 +1589,13 @@ export default function BillsPage() {
                       footer={{
                         render: () => {
                           const totalBills = filteredBills.length
-                          const totalAmount = filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'total'), 0)
-                          const totalPaid = filteredBills.reduce((sum, b) => sum + getDisplayAmount(b, 'paid'), 0)
-                          const totalDue = filteredBills.reduce((sum, b) => sum + Math.max(0, getDisplayAmount(b, 'total') - getDisplayAmount(b, 'paid')), 0)
+                          // v3.74.936 — مجموعٌ ينقصه محجوبٌ لا يُطبع رقماً.
+                          const t = billsTotals(filteredBills)
+                          const asMoney = (v: number | null) =>
+                            v === null ? money(v) : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          const totalAmount = asMoney(t.total)
+                          const totalPaid = asMoney(t.paid)
+                          const totalDue = asMoney(t.due)
 
                           return (
                             <tr>
@@ -1528,19 +1609,19 @@ export default function BillsPage() {
                                   <div className="flex items-center justify-between gap-4">
                                     <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total:' : 'الإجمالي:'}</span>
                                     <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                      {currencySymbol}{totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {t.total === null ? '' : currencySymbol}{totalAmount}
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between gap-4">
                                     <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Paid:' : 'المدفوع:'}</span>
                                     <span className="text-green-600 dark:text-green-400 font-semibold">
-                                      {currencySymbol}{totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {t.paid === null ? '' : currencySymbol}{totalPaid}
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between gap-4 border-t border-gray-300 dark:border-slate-600 pt-1 mt-1">
                                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{appLang === 'en' ? 'Due:' : 'المستحق:'}</span>
-                                    <span className={`font-bold ${totalDue >= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'}`}>
-                                      {currencySymbol}{totalDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    <span className={`font-bold ${(t.due ?? 0) >= 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'}`}>
+                                      {t.due === null ? '' : currencySymbol}{totalDue}
                                     </span>
                                   </div>
                                 </div>
