@@ -6,90 +6,97 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.931 - the OLD script is removed, never this one. Five times a chained
+# v3.74.932 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.930.ps1") { Remove-Item -LiteralPath "push_v3.74.930.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.931.ps1") { Remove-Item -LiteralPath "push_v3.74.931.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.931"') {
-    Write-Host "+ 3.74.931" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.932"') {
+    Write-Host "+ 3.74.932" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.931]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.931]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.932]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.932]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000020_v3_74_931_reference_tables_one_door.sql"
+$migration = "supabase/migrations/20260731000021_v3_74_932_fifo_consumes_within_the_branch.sql"
 $guard     = "scripts/check-branch-isolation-holes.js"
 $trap      = "scripts/selftest-branch-isolation-holes.js"
 
+# v3.74.932 — اللقطة تُعاد لأن الهجرة **حذفت** توقيعين قديمين
+# (consume_fifo_lots/7 وcalculate_fifo_cogs/2). ولولا ذلك لأعاد بناءُ
+# المستودع إنشاءهما بمنحهما — وهو ما أمسكه فاحصُ اللقطة.
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
+           "supabase/schema/functions.sql", "supabase/schema/schema.sql",
            $migration, $guard, $trap,
-           "push_v3.74.931.ps1")
+           "push_v3.74.932.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. one read door per reference table -------------------------------
-foreach ($needle in @("DROP POLICY IF EXISTS cost_centers_select_policy",
-                      "DROP POLICY IF EXISTS company_owner_initial_read_cost_centers",
-                      "DROP POLICY IF EXISTS company_owner_initial_read_warehouses",
-                      "DROP POLICY IF EXISTS warehouses_select_policy",
-                      "DROP POLICY IF EXISTS user_branch_access_select_policy",
-                      "DROP POLICY IF EXISTS chart_accounts_owner_select")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X a duplicate read policy survives ($needle)" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ the duplicate read policies are merged into one per table" -ForegroundColor Green
-
-# -- 2. the FOR ALL policies are SPLIT, not merely dropped --------------
-# An ALL policy covers SELECT too, so it stays a second door however tidy
-# the read policies become. And dropping it outright would take away a
-# write permission somebody has. It is rewritten as three write policies
-# with the SAME predicate - no widening, no narrowing. (926 lesson.)
-if ($m -match "CREATE POLICY[^;]*FOR ALL") {
-    Write-Host "X a FOR ALL policy was re-created - it would be a second read door" -ForegroundColor Red
+# -- 1. the branch reaches the FIFO, and only as an OPTIONAL argument ----
+# An optional last parameter means an un-updated caller keeps working
+# instead of breaking. The rule itself: this branch, or a branchless legacy
+# lot - never another branch.
+if ($m -notmatch [regex]::Escape("p_branch_id uuid DEFAULT NULL")) {
+    Write-Host "X the branch is not an optional argument - an old caller would break" -ForegroundColor Red
     exit 1
 }
-foreach ($needle in @("cost_centers_manage_insert", "cost_centers_manage_update",
-                      "cost_centers_manage_delete", "chart_of_accounts_owner_insert",
-                      "chart_of_accounts_owner_update", "chart_of_accounts_owner_delete")) {
-    if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X a write permission was dropped instead of split ($needle)" -ForegroundColor Red
-        exit 1
-    }
+if ($m -notmatch [regex]::Escape("p_branch_id IS NULL OR branch_id = p_branch_id OR branch_id IS NULL")) {
+    Write-Host "X the lot selection does not scope to the branch" -ForegroundColor Red; exit 1
 }
-Write-Host "+ both ALL policies became write-only, with their predicate word for word" -ForegroundColor Green
+Write-Host "+ FIFO consumes within the branch, and the argument is optional" -ForegroundColor Green
 
-# -- 3. the registered owner is no longer forgotten ---------------------
-if ($m -notmatch [regex]::Escape("b.company_id IN (SELECT get_user_company_ids())")) {
-    Write-Host "X branch_shipping_providers still forgets the registered owner" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the registered owner sees the shipping providers of what he owns" -ForegroundColor Green
-
-# -- 4. and the DECISION itself is guarded ------------------------------
-# These five stay company-wide BY CHOICE - names, not amounts, and read in
-# joins on every document. The guard now counts their read doors, so a
-# second policy on any of them fails the release.
-if ($g -notmatch [regex]::Escape("مراجع(أبوابٌ زائدة)")) {
-    Write-Host "X the guard does not count the read doors on the reference tables" -ForegroundColor Red
+# -- 2. neither function may fail OPEN ----------------------------------
+# Both used to return a SMALLER cost with only a warning. An understated
+# cost that posts in silence is worse than a refusal.
+# NOTE: measured on the CODE, not the file - the migration quotes the old
+# RAISE WARNING in its header to explain the defect, and a guard that reads a
+# comment as code refuses the document that documents the bug. (930 lesson,
+# and it caught this very release on the first run.)
+$mCode = ($m -split "`n" | Where-Object { $_ -notmatch "^\s*--" }) -join "`n"
+if ($mCode -match "RAISE WARNING") {
+    Write-Host "X a FIFO function still warns instead of refusing - cost would be understated" -ForegroundColor Red
     exit 1
 }
-if ($t -match "on (TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|BOTH) (different )?(tables|shapes)") {
-    Write-Host "X the trap closing line counts tables again" -ForegroundColor Red; exit 1
+if (([regex]::Matches($m, [regex]::Escape("FIFO_LOTS_INSUFFICIENT"))).Count -lt 2) {
+    Write-Host "X a FIFO function does not refuse on a short lot" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the decision is written in the migration AND measured every release" -ForegroundColor Green
+Write-Host "+ both FIFO functions refuse a short lot instead of understating the cost" -ForegroundColor Green
+
+# -- 3. the callers are patched at the CALL SITE, and loudly -------------
+# Their bodies are not copied into the migration. The migration reads each
+# function from the database, adds the branch at the one call site, and
+# RAISES if that site is not there - so it can never patch blindly.
+foreach ($needle in @("refusing to patch blindly",
+                      "ABS(NEW.quantity_change), NEW.branch_id)",
+                      "v_anchor_date || ', NEW.branch_id'",
+                      "v_anchor || ', r.branch_id'")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the caller patch is missing or silent ($needle)" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the callers are patched at the call site, and the patch refuses to guess" -ForegroundColor Green
+
+# -- 4. and the PUBLIC grant is revoked again (929 lesson) --------------
+# Every CREATE FUNCTION hands EXECUTE to PUBLIC, and PUBLIC includes anon.
+foreach ($needle in @("REVOKE ALL ON FUNCTION public.consume_fifo_lots",
+                      "REVOKE ALL ON FUNCTION public.calculate_fifo_cogs")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X a re-created FIFO function is left open to PUBLIC/anon" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the re-created functions are service_role only" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.931.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.932.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -109,10 +116,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.930.ps1" 2>$null
+git add -u -- "push_v3.74.931.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.930.ps1")
+$expected = @($files) + @("push_v3.74.931.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -345,7 +352,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.930.ps1" 2>$null
+git add -u -- "push_v3.74.931.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -366,60 +373,57 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_931.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_932.txt"
     $msgLines = @(
-        'refactor(security): v3.74.931 - one read door per reference table, and the decision written down',
+        'fix(accounting): v3.74.932 - FIFO is consumed within the branch that sold',
         '',
-        'THE DECISION FIRST: chart_of_accounts, cost_centers, warehouses,',
-        'branch_shipping_providers and user_branch_access stay COMPANY-WIDE, by',
-        'choice rather than by oversight, for three measured reasons.',
+        'THE FIRST RELEASE IN THIS SERIES THAT CHANGES AN ACCOUNTING NUMBER',
+        'rather than who may see one.',
         '',
-        'One: not one of them carries an amount. They are names and structure -',
-        'the account name, the cost centre, the warehouse, which carrier serves',
-        'which branch, who may enter which branch. The worst of it is the name',
-        '"Nasr City warehouse", and the branches themselves are on screen',
-        'anyway.',
+        'When a branch sold, the system looked for the OLDEST purchase layer of',
+        'that product filtered by company and product alone - never asking about',
+        'the branch. So if an older layer sat in the main branch, a Nasr City',
+        'sale took its cost from it: the selling branch profit came out wrong,',
+        'and the stock of a branch that sold nothing was drawn down.',
         '',
-        'Two: isolating the chart of accounts would be plainly wrong - 102',
-        'accounts and only THREE carry a branch. It is the single company chart',
-        'by nature, and its balances come from the journal entries, which have',
-        'been isolated since 917.',
+        'WHY NOW: because the retrospective effect is ZERO, and measured. All 17',
+        'consumptions to date took their layer from the SAME branch as the',
+        'movement. No product holds an open layer in both branches - three in',
+        'the main branch, two in Nasr City. And every layer carries its branch,',
+        '16 of 16. The first product bought for both branches is where the',
+        'numbers start to mix, and from then on the fix would need old entries',
+        'corrected. Today it does not.',
         '',
-        'Three: they are read in JOINS everywhere - the warehouse name on a',
-        'document, the cost centre on an entry. Isolating them would empty names',
-        'out of screens without closing any data.',
+        'THE CURE IS TO PASS THE BRANCH, NOT TO INVENT IT. Both callers already',
+        'know it - the COGS trigger has NEW.branch_id and the service',
+        'consumption has r.branch_id. The parameter is OPTIONAL and last, so any',
+        'caller not yet updated keeps working instead of breaking. When it is',
+        'passed: layers of that branch, OR a branchless legacy layer - never',
+        'another branch.',
         '',
-        'WHAT WAS ACTUALLY FIXED: the number of doors. cost_centers carried',
-        'THREE read policies, and warehouses, user_branch_access and',
-        'chart_of_accounts two each. None of them is a hole today - all say',
-        '"company member" or "registered owner", and is_company_member covers',
-        'both - but it is the same shape of adjacent permissive policies that',
-        'caught us in 921, 928, 929 and 930. ONCE THE POLICIES MULTIPLY,',
-        'TIGHTENING ONE MEANS NOTHING WHILE ANOTHER STAYS OPEN.',
+        'A THIRD DEFECT, in the LIVE function: consume_fifo_lots failed OPEN. If',
+        'the layers fell short it returned a SMALLER cost with a warning rather',
+        'than an error - the same defect as 929 but on the working path. The',
+        'owner decided: refuse loudly. Its effect today is zero, measured: every',
+        'product stock equals its layers exactly.',
         '',
-        'So the reads are merged into ONE policy per table, with the same rule',
-        'word for word: no widening and no narrowing.',
+        'A CORRECTION TO 929: calculate_fifo_cogs was described there as',
+        'ASLEEP. That was wrong - it is on the live path, called by the COGS',
+        'trigger on the modern branch. Turning its warning into an error was',
+        'therefore a change on a working path, and its effect is zero BY',
+        'MEASUREMENT rather than by luck. The rule recorded: no path is called',
+        'asleep until every caller is measured, not only the triggers.',
         '',
-        'And the two FOR ALL policies are SPLIT rather than dropped (the 926',
-        'lesson): an ALL policy covers SELECT too, so it remains a second door',
-        'however tidy the read policies become - while dropping it outright',
-        'would take away a write permission somebody holds. Each became three',
-        'write policies with its predicate unchanged.',
+        'PROVEN BY PLANTING on test, with a product whose only open layer is in',
+        'the MAIN branch: consuming with that branch succeeded at 16.11, and',
+        'consuming the SAME product with the Nasr City branch was REFUSED with',
+        'FIFO_LOTS_INSUFFICIENT. Same product, same moment - the branch was the',
+        'only difference.',
         '',
-        'One small correction rode along: branch_shipping_providers asked',
-        'company_members alone, hiding from the REGISTERED OWNER what he owns -',
-        'the same oversight corrected in 925 and 927. It now asks',
-        'get_user_company_ids.',
-        '',
-        'PROVEN on both databases by impersonation, for every role AND the',
-        'registered owner: the counts are identical before and after - 102',
-        'accounts, 2 cost centres, 2 warehouses, 11 access rows, 3 carriers.',
-        'Nobody lost anything. The only difference is that the doors are one',
-        'where they were two and three.',
-        '',
-        'AND THE DECISION IS GUARDED, not just documented: the guard now counts',
-        'the read doors on these five tables, so a second policy returning to',
-        'any of them fails the release and names the table.'
+        'AND THE CALLERS ARE PATCHED AT THE CALL SITE. Their bodies are not',
+        'copied into the migration. It reads each function from the database,',
+        'adds the branch at the single call site, and RAISES if that site is not',
+        'found - so it can never patch a function whose shape has changed.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -428,5 +432,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.931 pushed - one read door per reference table, and the decision is guarded" -ForegroundColor Green
+    Write-Host "`n+ v3.74.932 pushed - FIFO is consumed within the branch that sold" -ForegroundColor Green
 }

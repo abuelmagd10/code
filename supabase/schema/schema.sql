@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-07-28T18:10:50.719Z
--- Tables: 253 | Policies: 794 | Triggers: 522 | Constraints: 1827
+-- Generated: 2026-08-01T12:04:46.595Z
+-- Tables: 253 | Policies: 787 | Triggers: 524 | Constraints: 1828
 -- =====================================================================
 
 
@@ -561,9 +561,9 @@ CREATE TABLE IF NOT EXISTS public.bills (
   purchase_order_id uuid,
   shipping_method character varying(50),
   shipping_provider_id uuid,
-  branch_id uuid,
-  cost_center_id uuid,
-  warehouse_id uuid,
+  branch_id uuid NOT NULL,
+  cost_center_id uuid NOT NULL,
+  warehouse_id uuid NOT NULL,
   created_by_user_id uuid,
   approval_status text,
   approved_by uuid,
@@ -3856,9 +3856,9 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
   exchange_rate numeric DEFAULT 1,
   shipping_method character varying(50),
   shipping_provider_id uuid,
-  branch_id uuid,
-  cost_center_id uuid,
-  warehouse_id uuid,
+  branch_id uuid NOT NULL,
+  cost_center_id uuid NOT NULL,
+  warehouse_id uuid NOT NULL,
   returned_amount numeric DEFAULT 0,
   return_status text,
   created_by_user_id uuid,
@@ -5216,6 +5216,7 @@ ALTER TABLE public.companies ADD CONSTRAINT companies_fx_gain_account_id_fkey FO
 ALTER TABLE public.companies ADD CONSTRAINT companies_fx_loss_account_id_fkey FOREIGN KEY (fx_loss_account_id) REFERENCES chart_of_accounts(id) ON DELETE RESTRICT;
 ALTER TABLE public.companies ADD CONSTRAINT companies_manufacturing_overhead_account_id_fkey FOREIGN KEY (manufacturing_overhead_account_id) REFERENCES chart_of_accounts(id) ON DELETE RESTRICT;
 ALTER TABLE public.companies ADD CONSTRAINT companies_pkey PRIMARY KEY (id);
+ALTER TABLE public.companies ADD CONSTRAINT companies_purchase_cost_visibility_check CHECK ((purchase_cost_visibility = ANY (ARRAY['open'::text, 'restricted'::text, 'strict'::text])));
 ALTER TABLE public.companies ADD CONSTRAINT companies_rate_mode_check CHECK ((rate_mode = ANY (ARRAY['live'::text, 'manual'::text])));
 ALTER TABLE public.companies ADD CONSTRAINT companies_subscription_status_check CHECK ((subscription_status = ANY (ARRAY['free'::text, 'active'::text, 'past_due'::text, 'canceled'::text, 'payment_failed'::text])));
 ALTER TABLE public.companies ADD CONSTRAINT companies_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
@@ -7743,6 +7744,7 @@ CREATE TRIGGER trg_create_fifo_lot_on_purchase AFTER INSERT ON public.inventory_
 CREATE TRIGGER trg_fifo_on_purchase_return AFTER INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION fn_fifo_on_purchase_return();
 CREATE TRIGGER trg_inherit_branch_warehouse_inventory BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION inherit_branch_warehouse_for_inventory();
 CREATE TRIGGER trg_inventory_autolink BEFORE INSERT OR UPDATE ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION auto_link_inventory_to_journal();
+CREATE TRIGGER trg_inventory_transfer_post_journal AFTER INSERT ON public.inventory_transactions FOR EACH ROW WHEN ((new.transaction_type = 'transfer_in'::text)) EXECUTE FUNCTION inventory_transfer_post_journal_trg();
 CREATE TRIGGER trg_prevent_duplicate_inventory BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION prevent_duplicate_inventory_transactions();
 CREATE TRIGGER trg_prevent_inventory_closed_period BEFORE INSERT OR UPDATE ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION prevent_inventory_in_closed_period();
 CREATE TRIGGER trg_prevent_inventory_for_cancelled BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION prevent_inventory_for_cancelled();
@@ -8043,6 +8045,7 @@ CREATE TRIGGER svc_trg_validate_product_catalog BEFORE INSERT OR UPDATE OF produ
 CREATE TRIGGER trg_services_guard_code BEFORE UPDATE ON public.services FOR EACH ROW WHEN ((new.service_code IS DISTINCT FROM old.service_code)) EXECUTE FUNCTION svc_guard_service_code_immutable();
 CREATE TRIGGER trg_services_set_updated_at BEFORE UPDATE ON public.services FOR EACH ROW EXECUTE FUNCTION svc_set_updated_at();
 CREATE TRIGGER audit_shareholders AFTER INSERT OR DELETE OR UPDATE ON public.shareholders FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+CREATE TRIGGER trg_cleanup_shareholder_accounts AFTER DELETE ON public.shareholders FOR EACH ROW EXECUTE FUNCTION cleanup_shareholder_accounts();
 CREATE TRIGGER trg_provision_shareholder_accounts AFTER INSERT ON public.shareholders FOR EACH ROW EXECUTE FUNCTION provision_shareholder_accounts();
 CREATE TRIGGER shipping_providers_protect_outlets BEFORE DELETE ON public.shipping_providers FOR EACH ROW EXECUTE FUNCTION protect_branch_outlets();
 CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION update_subscriptions_updated_at();
@@ -8276,6 +8279,8 @@ ALTER TABLE public.purchase_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_return_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_return_warehouse_allocations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_returns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recurring_journal_template_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recurring_journal_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.restore_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.restore_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_default_permissions ENABLE ROW LEVEL SECURITY;
@@ -8523,7 +8528,6 @@ CREATE POLICY bills_owner_dml ON public.bills AS PERMISSIVE FOR ALL TO public US
 CREATE POLICY bills_owner_select ON public.bills AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY bills_select ON public.bills AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY bills_select_branch_isolation ON public.bills AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY bills_update ON public.bills AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY bills_update_branch_isolation ON public.bills AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
@@ -8536,23 +8540,37 @@ CREATE POLICY "Admin All Devices" ON public.biometric_devices AS PERMISSIVE FOR 
 CREATE POLICY "Manager Branch Devices" ON public.biometric_devices AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = biometric_devices.company_id) AND (cm.branch_id = biometric_devices.branch_id) AND (cm.user_id = auth.uid()) AND (cm.role = 'manager'::text)))));
-CREATE POLICY bbs_company_isolation ON public.booking_bundle_selections AS PERMISSIVE FOR ALL TO authenticated USING ((company_id IN ( SELECT company_members.company_id
+CREATE POLICY bbs_company_delete ON public.booking_bundle_selections AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
+   FROM company_members
+  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY bbs_company_insert ON public.booking_bundle_selections AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
+   FROM company_members
+  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY bbs_company_update ON public.booking_bundle_selections AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
-CREATE POLICY bei_company_isolation ON public.booking_extra_items AS PERMISSIVE FOR ALL TO authenticated USING ((company_id IN ( SELECT company_members.company_id
+CREATE POLICY booking_bundle_selections_select_branch_isolation ON public.booking_bundle_selections AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_booking(booking_id)));
+CREATE POLICY bei_company_delete ON public.booking_extra_items AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
+   FROM company_members
+  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY bei_company_insert ON public.booking_extra_items AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
+   FROM company_members
+  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY bei_company_update ON public.booking_extra_items AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY booking_extra_items_select_branch_isolation ON public.booking_extra_items AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_booking(booking_id)));
 CREATE POLICY booking_notes_delete ON public.booking_notes AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((user_id = auth.uid()) OR (EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = booking_notes.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))) OR (EXISTS ( SELECT 1
    FROM companies c
   WHERE ((c.id = booking_notes.company_id) AND (c.user_id = auth.uid())))))));
 CREATE POLICY booking_notes_insert ON public.booking_notes AS PERMISSIVE FOR INSERT TO public WITH CHECK (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND (user_id = auth.uid())));
-CREATE POLICY booking_notes_select ON public.booking_notes AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
+CREATE POLICY booking_notes_select_branch_isolation ON public.booking_notes AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_booking(booking_id)));
 CREATE POLICY booking_payments_booking_officer_select ON public.booking_payments AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = booking_payments.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = 'booking_officer'::text) AND ((cm.branch_id IS NULL) OR (booking_payments.branch_id = cm.branch_id) OR (booking_payments.branch_id IS NULL))))));
@@ -8562,19 +8580,15 @@ CREATE POLICY booking_payments_select ON public.booking_payments AS PERMISSIVE F
 CREATE POLICY booking_payments_update ON public.booking_payments AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY booking_staff_assignments_delete ON public.booking_staff_assignments AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY booking_staff_assignments_insert ON public.booking_staff_assignments AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
-CREATE POLICY booking_staff_assignments_select ON public.booking_staff_assignments AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
+CREATE POLICY booking_staff_assignments_select_branch_isolation ON public.booking_staff_assignments AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND (can_access_record_branch(company_id, branch_id) OR (user_id = auth.uid()))));
 CREATE POLICY booking_status_history_insert ON public.booking_status_history AS PERMISSIVE FOR INSERT TO public WITH CHECK (false);
 CREATE POLICY booking_status_history_select ON public.booking_status_history AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND (EXISTS ( SELECT 1
    FROM bookings b
   WHERE ((b.id = booking_status_history.booking_id) AND (b.company_id = booking_status_history.company_id))))));
-CREATE POLICY bsw_company_select ON public.booking_stock_withdrawals AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT cm.company_id
-   FROM company_members cm
-  WHERE (cm.user_id = auth.uid()))));
+CREATE POLICY booking_stock_withdrawals_select_branch_isolation ON public.booking_stock_withdrawals AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY bookings_delete ON public.bookings AS PERMISSIVE FOR DELETE TO public USING (false);
 CREATE POLICY bookings_insert ON public.bookings AS PERMISSIVE FOR INSERT TO public WITH CHECK (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
-CREATE POLICY bookings_select_v5 ON public.bookings AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((current_user_resource_visibility(company_id, 'bookings'::text) = 'company'::text) OR ((current_user_resource_visibility(company_id, 'bookings'::text) = 'branch'::text) AND ((branch_id IS NULL) OR (branch_id = current_user_branch_id(company_id)))) OR ((current_user_resource_visibility(company_id, 'bookings'::text) = 'own'::text) AND ((created_by_user_id = auth.uid()) OR (staff_user_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM booking_staff_assignments bsa
-  WHERE ((bsa.booking_id = bookings.id) AND (bsa.user_id = auth.uid())))) OR ((staff_user_id IS NULL) AND ((current_user_branch_id(company_id) IS NULL) OR (branch_id = current_user_branch_id(company_id)))))) OR has_shared_access(company_id, 'bookings'::text, created_by_user_id))));
+CREATE POLICY bookings_select_branch_isolation ON public.bookings AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_booking(id)));
 CREATE POLICY bookings_update_v2 ON public.bookings AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((current_user_resource_visibility(company_id, 'bookings'::text) = 'company'::text) OR ((current_user_resource_visibility(company_id, 'bookings'::text) = 'branch'::text) AND ((branch_id IS NULL) OR (branch_id = current_user_branch_id(company_id)))) OR ((current_user_resource_visibility(company_id, 'bookings'::text) = 'own'::text) AND ((created_by_user_id = auth.uid()) OR (staff_user_id = auth.uid()) OR ((staff_user_id IS NULL) AND ((current_user_branch_id(company_id) IS NULL) OR (branch_id = current_user_branch_id(company_id)))))))));
 CREATE POLICY branch_shipping_providers_delete ON public.branch_shipping_providers AS PERMISSIVE FOR DELETE TO public USING ((branch_id IN ( SELECT b.id
    FROM (branches b
@@ -8584,11 +8598,9 @@ CREATE POLICY branch_shipping_providers_insert ON public.branch_shipping_provide
    FROM (branches b
      JOIN company_members cm ON (((cm.company_id = b.company_id) AND (cm.user_id = auth.uid()))))
   WHERE ((b.company_id = cm.company_id) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'super_admin'::text, 'superadmin'::text, 'generalmanager'::text]))))));
-CREATE POLICY branch_shipping_providers_select ON public.branch_shipping_providers AS PERMISSIVE FOR SELECT TO public USING ((branch_id IN ( SELECT b.id
+CREATE POLICY branch_shipping_providers_select_company ON public.branch_shipping_providers AS PERMISSIVE FOR SELECT TO public USING ((branch_id IN ( SELECT b.id
    FROM branches b
-  WHERE (b.company_id IN ( SELECT company_members.company_id
-           FROM company_members
-          WHERE (company_members.user_id = auth.uid()))))));
+  WHERE (b.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)))));
 CREATE POLICY branch_shipping_providers_update ON public.branch_shipping_providers AS PERMISSIVE FOR UPDATE TO public USING ((branch_id IN ( SELECT b.id
    FROM (branches b
      JOIN company_members cm ON (((cm.company_id = b.company_id) AND (cm.user_id = auth.uid()))))
@@ -8650,16 +8662,19 @@ CREATE POLICY capital_contributions_update ON public.capital_contributions AS PE
 CREATE POLICY casual_workers_select ON public.casual_workers AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT cm.company_id
    FROM company_members cm
   WHERE (cm.user_id = auth.uid()))));
-CREATE POLICY chart_accounts_owner_dml ON public.chart_of_accounts AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY chart_accounts_owner_select ON public.chart_of_accounts AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid()))));
 CREATE POLICY chart_of_accounts_delete ON public.chart_of_accounts AS PERMISSIVE FOR DELETE TO public USING (is_owner_or_admin(company_id));
 CREATE POLICY chart_of_accounts_insert ON public.chart_of_accounts AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
+CREATE POLICY chart_of_accounts_owner_delete ON public.chart_of_accounts AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT c.id
+   FROM companies c
+  WHERE (c.user_id = auth.uid()))));
+CREATE POLICY chart_of_accounts_owner_insert ON public.chart_of_accounts AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT c.id
+   FROM companies c
+  WHERE (c.user_id = auth.uid()))));
+CREATE POLICY chart_of_accounts_owner_update ON public.chart_of_accounts AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT c.id
+   FROM companies c
+  WHERE (c.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT c.id
+   FROM companies c
+  WHERE (c.user_id = auth.uid()))));
 CREATE POLICY chart_of_accounts_select ON public.chart_of_accounts AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY chart_of_accounts_update ON public.chart_of_accounts AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY chart_of_accounts_template_read_all ON public.chart_of_accounts_template AS PERMISSIVE FOR SELECT TO public USING ((auth.uid() IS NOT NULL));
@@ -8671,9 +8686,7 @@ CREATE POLICY "No updates allowed on COGS" ON public.cogs_transactions AS PERMIS
 CREATE POLICY "Only admins can delete COGS" ON public.cogs_transactions AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
-CREATE POLICY "Users can view COGS for their companies" ON public.cogs_transactions AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY cogs_transactions_select_branch_isolation ON public.cogs_transactions AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY commission_advance_payments_company_isolation ON public.commission_advance_payments AS PERMISSIVE FOR ALL TO public USING (((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))) OR (company_id IN ( SELECT companies.id
@@ -8891,16 +8904,7 @@ CREATE POLICY consolidation_trial_balance_lines_manage ON public.consolidation_t
 CREATE POLICY consolidation_trial_balance_lines_select ON public.consolidation_trial_balance_lines AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM consolidation_runs cr
   WHERE ((cr.id = consolidation_trial_balance_lines.consolidation_run_id) AND (ic_user_can_access_company(cr.host_company_id) OR ic_user_can_access_consolidation_group(cr.consolidation_group_id))))));
-CREATE POLICY "Users can manage cost centers of their companies" ON public.cost_centers AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))));
-CREATE POLICY "Users can view cost centers of their companies" ON public.cost_centers AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY company_owner_initial_insert_cost_centers ON public.cost_centers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM companies c
-  WHERE ((c.id = cost_centers.company_id) AND (c.user_id = auth.uid())))));
-CREATE POLICY company_owner_initial_read_cost_centers ON public.cost_centers AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM companies c
   WHERE ((c.id = cost_centers.company_id) AND (c.user_id = auth.uid())))));
 CREATE POLICY cost_centers_delete_policy ON public.cost_centers AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
@@ -8909,9 +8913,16 @@ CREATE POLICY cost_centers_delete_policy ON public.cost_centers AS PERMISSIVE FO
 CREATE POLICY cost_centers_insert_policy ON public.cost_centers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = cost_centers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
-CREATE POLICY cost_centers_select_policy ON public.cost_centers AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+CREATE POLICY cost_centers_manage_delete ON public.cost_centers AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT cm.company_id
    FROM company_members cm
-  WHERE ((cm.company_id = cost_centers.company_id) AND (cm.user_id = auth.uid())))));
+  WHERE ((cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))));
+CREATE POLICY cost_centers_manage_insert ON public.cost_centers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT cm.company_id
+   FROM company_members cm
+  WHERE ((cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))));
+CREATE POLICY cost_centers_manage_update ON public.cost_centers AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT cm.company_id
+   FROM company_members cm
+  WHERE ((cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))));
+CREATE POLICY cost_centers_select_company ON public.cost_centers AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY cost_centers_update_policy ON public.cost_centers AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = cost_centers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -9096,20 +9107,6 @@ CREATE POLICY estimate_items_delete ON public.estimate_items AS PERMISSIVE FOR D
 CREATE POLICY estimate_items_insert ON public.estimate_items AS PERMISSIVE FOR INSERT TO public WITH CHECK ((estimate_id IN ( SELECT estimates.id
    FROM estimates
   WHERE can_modify_data(estimates.company_id))));
-CREATE POLICY estimate_items_owner_dml ON public.estimate_items AS PERMISSIVE FOR ALL TO public USING ((estimate_id IN ( SELECT estimates.id
-   FROM estimates
-  WHERE (estimates.company_id IN ( SELECT companies.id
-           FROM companies
-          WHERE (companies.user_id = auth.uid())))))) WITH CHECK ((estimate_id IN ( SELECT estimates.id
-   FROM estimates
-  WHERE (estimates.company_id IN ( SELECT companies.id
-           FROM companies
-          WHERE (companies.user_id = auth.uid()))))));
-CREATE POLICY estimate_items_owner_select ON public.estimate_items AS PERMISSIVE FOR SELECT TO public USING ((estimate_id IN ( SELECT estimates.id
-   FROM estimates
-  WHERE (estimates.company_id IN ( SELECT companies.id
-           FROM companies
-          WHERE (companies.user_id = auth.uid()))))));
 CREATE POLICY estimate_items_select ON public.estimate_items AS PERMISSIVE FOR SELECT TO public USING ((estimate_id IN ( SELECT estimates.id
    FROM estimates
   WHERE is_company_member(estimates.company_id))));
@@ -9120,12 +9117,7 @@ CREATE POLICY estimate_items_update ON public.estimate_items AS PERMISSIVE FOR U
   WHERE can_modify_data(estimates.company_id))));
 CREATE POLICY estimates_delete ON public.estimates AS PERMISSIVE FOR DELETE TO public USING (can_delete_resource(company_id, 'estimates'::text));
 CREATE POLICY estimates_insert ON public.estimates AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
-CREATE POLICY estimates_owner_dml ON public.estimates AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY estimates_select_v4 ON public.estimates AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((current_user_resource_visibility(company_id, 'estimates'::text) = 'company'::text) OR ((current_user_resource_visibility(company_id, 'estimates'::text) = 'branch'::text) AND ((branch_id IS NULL) OR (branch_id = current_user_branch_id(company_id)))) OR ((current_user_resource_visibility(company_id, 'estimates'::text) = 'own'::text) AND (created_by_user_id = auth.uid())) OR has_shared_access(company_id, 'estimates'::text, created_by_user_id))));
+CREATE POLICY estimates_select_branch_isolation ON public.estimates AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((current_user_resource_visibility(company_id, 'estimates'::text) = 'company'::text) OR ((current_user_resource_visibility(company_id, 'estimates'::text) = 'branch'::text) AND ((branch_id IS NULL) OR (branch_id = current_user_branch_id(company_id)))) OR ((current_user_resource_visibility(company_id, 'estimates'::text) = 'own'::text) AND (created_by_user_id = auth.uid())) OR has_shared_access(company_id, 'estimates'::text, created_by_user_id)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY estimates_update ON public.estimates AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id)) WITH CHECK (can_modify_data(company_id));
 CREATE POLICY "Users can insert exchange_rate_log for their companies" ON public.exchange_rate_log AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
@@ -9194,7 +9186,10 @@ CREATE POLICY expenses_update_policy ON public.expenses AS PERMISSIVE FOR UPDATE
   WHERE ((c.id = expenses.company_id) AND (c.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = expenses.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = 'admin'::text)))) OR ((created_by = auth.uid()) AND ((status)::text = ANY ((ARRAY['draft'::character varying, 'rejected'::character varying])::text[]))))));
-CREATE POLICY fifo_lots_company_isolation ON public.fifo_cost_lots AS PERMISSIVE FOR ALL TO public USING (is_company_member(company_id));
+CREATE POLICY fifo_cost_lots_delete_company ON public.fifo_cost_lots AS PERMISSIVE FOR DELETE TO public USING (is_company_member(company_id));
+CREATE POLICY fifo_cost_lots_insert_company ON public.fifo_cost_lots AS PERMISSIVE FOR INSERT TO public WITH CHECK (is_company_member(company_id));
+CREATE POLICY fifo_cost_lots_select_branch_isolation ON public.fifo_cost_lots AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
+CREATE POLICY fifo_cost_lots_update_company ON public.fifo_cost_lots AS PERMISSIVE FOR UPDATE TO public USING (is_company_member(company_id)) WITH CHECK (is_company_member(company_id));
 CREATE POLICY fifo_consumption_company_isolation ON public.fifo_lot_consumptions AS PERMISSIVE FOR ALL TO public USING (is_company_member(company_id));
 CREATE POLICY fin_log_company_access ON public.financial_operation_log AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
@@ -9380,23 +9375,13 @@ CREATE POLICY inventory_reservations_select_branch_isolation ON public.inventory
 CREATE POLICY inventory_reservations_update_branch_isolation ON public.inventory_reservations AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id) AND ((warehouse_id IS NULL) OR (EXISTS ( SELECT 1
    FROM warehouses w
   WHERE ((w.id = inventory_reservations.warehouse_id) AND (w.company_id = inventory_reservations.company_id) AND (w.branch_id = inventory_reservations.branch_id)))))));
-CREATE POLICY inventory_company_isolation ON public.inventory_transactions AS PERMISSIVE FOR ALL TO public USING ((company_id = (current_setting('app.current_company_id'::text, true))::uuid));
 CREATE POLICY inventory_transactions_delete_branch_isolation ON public.inventory_transactions AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
-CREATE POLICY inventory_transactions_delete_members ON public.inventory_transactions AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.company_id = inventory_transactions.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text]))))));
 CREATE POLICY inventory_transactions_insert_company_isolation ON public.inventory_transactions AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY inventory_transactions_insert_members ON public.inventory_transactions AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = inventory_transactions.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text, 'staff'::text, 'store_manager'::text]))))));
 CREATE POLICY inventory_transactions_select_branch_isolation ON public.inventory_transactions AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
-CREATE POLICY inventory_transactions_select_members ON public.inventory_transactions AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.company_id = inventory_transactions.company_id) AND (cm.user_id = auth.uid())))));
 CREATE POLICY inventory_transactions_update_branch_isolation ON public.inventory_transactions AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
-CREATE POLICY inventory_transactions_update_members ON public.inventory_transactions AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.company_id = inventory_transactions.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))));
 CREATE POLICY "Managers and accountants can create transfer items" ON public.inventory_transfer_items AS PERMISSIVE FOR INSERT TO public WITH CHECK ((transfer_id IN ( SELECT inventory_transfers.id
    FROM inventory_transfers
   WHERE (inventory_transfers.company_id IN ( SELECT company_members.company_id
@@ -9492,7 +9477,6 @@ CREATE POLICY invoices_owner_dml ON public.invoices AS PERMISSIVE FOR ALL TO pub
 CREATE POLICY invoices_owner_select ON public.invoices AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY invoices_select ON public.invoices AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY invoices_select_branch_isolation ON public.invoices AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY invoices_update ON public.invoices AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY invoices_update_branch_isolation ON public.invoices AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
@@ -9511,7 +9495,6 @@ CREATE POLICY journal_entries_owner_dml ON public.journal_entries AS PERMISSIVE 
 CREATE POLICY journal_entries_owner_select ON public.journal_entries AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY journal_entries_select ON public.journal_entries AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY journal_entries_select_branch_isolation ON public.journal_entries AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY journal_entries_update ON public.journal_entries AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY journal_entries_update_branch_isolation ON public.journal_entries AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
@@ -9778,24 +9761,20 @@ CREATE POLICY "System can insert notifications" ON public.notifications AS PERMI
 CREATE POLICY "Users can create notifications" ON public.notifications AS PERMISSIVE FOR INSERT TO public WITH CHECK (((company_id IN ( SELECT cm.company_id
    FROM company_members cm
   WHERE (cm.user_id = auth.uid()))) AND (created_by = auth.uid())));
-CREATE POLICY "Users can update their notifications" ON public.notifications AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT cm.company_id
+CREATE POLICY notifications_select_addressee_and_branch ON public.notifications AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((assigned_to_user = auth.uid()) OR (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE (cm.user_id = auth.uid()))) AND ((assigned_to_user = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.user_id = auth.uid()) AND (cm.company_id = notifications.company_id) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR (((notifications.assigned_to_role IS NULL) OR ((notifications.assigned_to_role)::text = cm.role)) AND ((cm.branch_id IS NULL) OR (cm.branch_id = cm.branch_id)) AND ((cm.warehouse_id IS NULL) OR (cm.warehouse_id = cm.warehouse_id))))))))));
-CREATE POLICY "Users can update their own notifications" ON public.notifications AS PERMISSIVE FOR UPDATE TO public USING (((assigned_to_user = auth.uid()) OR ((assigned_to_role)::text IN ( SELECT cm.role
-   FROM company_members cm
-  WHERE ((cm.user_id = auth.uid()) AND (cm.company_id = notifications.company_id))))));
-CREATE POLICY "Users can view their notifications" ON public.notifications AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT cm.company_id
-   FROM company_members cm
-  WHERE (cm.user_id = auth.uid()))) AND ((assigned_to_user = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.user_id = auth.uid()) AND (cm.company_id = notifications.company_id) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR (((notifications.assigned_to_role IS NULL) OR ((notifications.assigned_to_role)::text = cm.role)) AND ((cm.branch_id IS NULL) OR (cm.branch_id = cm.branch_id)) AND ((cm.warehouse_id IS NULL) OR (cm.warehouse_id = cm.warehouse_id))))))))));
-CREATE POLICY "Users can view their own notifications" ON public.notifications AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT cm.company_id
-   FROM company_members cm
-  WHERE (cm.user_id = auth.uid()))) AND ((assigned_to_user = auth.uid()) OR (assigned_to_user IS NULL) OR ((assigned_to_role)::text IN ( SELECT cm2.role
+  WHERE ((cm.company_id = notifications.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text]))))) OR (EXISTS ( SELECT 1
+   FROM companies c
+  WHERE ((c.id = notifications.company_id) AND (c.user_id = auth.uid())))) OR ((assigned_to_user IS NULL) AND ((assigned_to_role IS NULL) OR (EXISTS ( SELECT 1
    FROM company_members cm2
-  WHERE ((cm2.user_id = auth.uid()) AND (cm2.company_id = notifications.company_id)))))));
+  WHERE ((cm2.company_id = notifications.company_id) AND (cm2.user_id = auth.uid()) AND (cm2.role = (notifications.assigned_to_role)::text))))) AND can_access_record_branch(company_id, branch_id)))));
+CREATE POLICY notifications_update_addressee_and_branch ON public.notifications AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((assigned_to_user = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM company_members cm
+  WHERE ((cm.company_id = notifications.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text]))))) OR (EXISTS ( SELECT 1
+   FROM companies c
+  WHERE ((c.id = notifications.company_id) AND (c.user_id = auth.uid())))) OR ((assigned_to_user IS NULL) AND ((assigned_to_role IS NULL) OR (EXISTS ( SELECT 1
+   FROM company_members cm2
+  WHERE ((cm2.company_id = notifications.company_id) AND (cm2.user_id = auth.uid()) AND (cm2.role = (notifications.assigned_to_role)::text))))) AND can_access_record_branch(company_id, branch_id)))));
 CREATE POLICY onboarding_company_read ON public.onboarding_progress AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
 CREATE POLICY onboarding_member_insert ON public.onboarding_progress AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (fn_user_company_access(company_id));
 CREATE POLICY onboarding_member_update ON public.onboarding_progress AS PERMISSIVE FOR UPDATE TO authenticated USING (fn_user_company_access(company_id)) WITH CHECK (fn_user_company_access(company_id));
@@ -9822,7 +9801,6 @@ CREATE POLICY payments_owner_dml ON public.payments AS PERMISSIVE FOR ALL TO pub
 CREATE POLICY payments_owner_select ON public.payments AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY payments_select ON public.payments AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY payments_select_branch_isolation ON public.payments AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY payments_update ON public.payments AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY payments_update_branch_isolation ON public.payments AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id))) WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
@@ -10029,7 +10007,14 @@ CREATE POLICY products_owner_dml ON public.products AS PERMISSIVE FOR ALL TO pub
 CREATE POLICY products_owner_select ON public.products AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY products_select ON public.products AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
+CREATE POLICY products_select ON public.products AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((EXISTS ( SELECT 1
+   FROM company_members cm
+  WHERE ((cm.company_id = products.company_id) AND (cm.user_id = auth.uid()) AND ((cm.branch_id IS NULL) OR (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text])))))) OR (EXISTS ( SELECT 1
+   FROM company_members cm
+  WHERE ((cm.company_id = products.company_id) AND (cm.user_id = auth.uid()) AND (cm.branch_id IS NOT NULL) AND (cm.branch_id = products.branch_id)))) OR (EXISTS ( SELECT 1
+   FROM (inventory_transactions t
+     JOIN company_members cm ON (((cm.company_id = products.company_id) AND (cm.user_id = auth.uid()))))
+  WHERE ((t.product_id = products.id) AND (cm.branch_id IS NOT NULL) AND (t.branch_id = cm.branch_id)))))));
 CREATE POLICY products_update ON public.products AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY products_update_members ON public.products AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
@@ -10080,11 +10065,7 @@ CREATE POLICY profit_distributions_owner_select ON public.profit_distributions A
   WHERE (companies.user_id = auth.uid()))));
 CREATE POLICY profit_distributions_select ON public.profit_distributions AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY profit_distributions_update ON public.profit_distributions AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
-CREATE POLICY purchase_order_items_access_members ON public.purchase_order_items AS PERMISSIVE FOR SELECT TO public USING ((purchase_order_id IN ( SELECT po.id
-   FROM purchase_orders po
-  WHERE (EXISTS ( SELECT 1
-           FROM company_members cm
-          WHERE ((cm.company_id = po.company_id) AND (cm.user_id = auth.uid())))))));
+CREATE POLICY purchase_order_items_access_members ON public.purchase_order_items AS PERMISSIVE FOR SELECT TO public USING (can_access_purchase_order_items(purchase_order_id));
 CREATE POLICY purchase_order_items_delete ON public.purchase_order_items AS PERMISSIVE FOR DELETE TO public USING ((purchase_order_id IN ( SELECT purchase_orders.id
    FROM purchase_orders
   WHERE (purchase_orders.company_id IN ( SELECT companies.id
@@ -10113,15 +10094,6 @@ CREATE POLICY purchase_order_items_insert_members ON public.purchase_order_items
   WHERE (EXISTS ( SELECT 1
            FROM company_members cm
           WHERE ((cm.company_id = po.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))))));
-CREATE POLICY purchase_order_items_select ON public.purchase_order_items AS PERMISSIVE FOR SELECT TO public USING ((purchase_order_id IN ( SELECT purchase_orders.id
-   FROM purchase_orders
-  WHERE (purchase_orders.company_id IN ( SELECT companies.id
-           FROM companies
-          WHERE (companies.user_id = auth.uid())
-        UNION
-         SELECT company_members.company_id
-           FROM company_members
-          WHERE (company_members.user_id = auth.uid()))))));
 CREATE POLICY purchase_order_items_update ON public.purchase_order_items AS PERMISSIVE FOR UPDATE TO public USING ((purchase_order_id IN ( SELECT purchase_orders.id
    FROM purchase_orders
   WHERE (purchase_orders.company_id IN ( SELECT companies.id
@@ -10136,9 +10108,6 @@ CREATE POLICY purchase_order_items_update_members ON public.purchase_order_items
   WHERE (EXISTS ( SELECT 1
            FROM company_members cm
           WHERE ((cm.company_id = po.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))))));
-CREATE POLICY purchase_orders_access_members ON public.purchase_orders AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.company_id = purchase_orders.company_id) AND (cm.user_id = auth.uid())))));
 CREATE POLICY purchase_orders_delete ON public.purchase_orders AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid())
@@ -10159,16 +10128,7 @@ UNION
 CREATE POLICY purchase_orders_insert_members ON public.purchase_orders AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = purchase_orders.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))));
-CREATE POLICY purchase_orders_select ON public.purchase_orders AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid())
-UNION
- SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
-CREATE POLICY purchase_orders_select_members ON public.purchase_orders AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.company_id = purchase_orders.company_id) AND (cm.user_id = auth.uid())))));
+CREATE POLICY purchase_orders_select_branch_isolation ON public.purchase_orders AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY purchase_orders_update ON public.purchase_orders AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid())
@@ -10253,37 +10213,47 @@ CREATE POLICY purchase_return_items_insert ON public.purchase_return_items AS PE
   WHERE (purchase_returns.company_id IN ( SELECT company_members.company_id
            FROM company_members
           WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))))));
-CREATE POLICY purchase_return_items_select ON public.purchase_return_items AS PERMISSIVE FOR SELECT TO public USING ((purchase_return_id IN ( SELECT purchase_returns.id
-   FROM purchase_returns
-  WHERE (purchase_returns.company_id IN ( SELECT company_members.company_id
-           FROM company_members
-          WHERE (company_members.user_id = auth.uid()))))));
+CREATE POLICY purchase_return_items_select_branch_isolation ON public.purchase_return_items AS PERMISSIVE FOR SELECT TO public USING (can_access_purchase_return_item(id));
 CREATE POLICY purchase_return_items_update ON public.purchase_return_items AS PERMISSIVE FOR UPDATE TO public USING ((purchase_return_id IN ( SELECT purchase_returns.id
    FROM purchase_returns
   WHERE (purchase_returns.company_id IN ( SELECT company_members.company_id
            FROM company_members
           WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))))));
-CREATE POLICY company_members_read_prwa ON public.purchase_return_warehouse_allocations AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY privileged_insert_prwa ON public.purchase_return_warehouse_allocations AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY privileged_update_prwa ON public.purchase_return_warehouse_allocations AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY prwa_select_branch_isolation ON public.purchase_return_warehouse_allocations AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY purchase_returns_delete ON public.purchase_returns AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY purchase_returns_insert ON public.purchase_returns AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))));
-CREATE POLICY purchase_returns_select ON public.purchase_returns AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY purchase_returns_select_branch_isolation ON public.purchase_returns AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_purchase_return(id)));
 CREATE POLICY purchase_returns_update ON public.purchase_returns AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))));
+CREATE POLICY rjtl_delete_via_parent ON public.recurring_journal_template_lines AS PERMISSIVE FOR DELETE TO public USING ((template_id IN ( SELECT recurring_journal_templates.id
+   FROM recurring_journal_templates
+  WHERE (recurring_journal_templates.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)))));
+CREATE POLICY rjtl_insert_via_parent ON public.recurring_journal_template_lines AS PERMISSIVE FOR INSERT TO public WITH CHECK ((template_id IN ( SELECT recurring_journal_templates.id
+   FROM recurring_journal_templates
+  WHERE (recurring_journal_templates.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)))));
+CREATE POLICY rjtl_select_via_parent ON public.recurring_journal_template_lines AS PERMISSIVE FOR SELECT TO public USING ((template_id IN ( SELECT recurring_journal_templates.id
+   FROM recurring_journal_templates
+  WHERE (recurring_journal_templates.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)))));
+CREATE POLICY rjtl_update_via_parent ON public.recurring_journal_template_lines AS PERMISSIVE FOR UPDATE TO public USING ((template_id IN ( SELECT recurring_journal_templates.id
+   FROM recurring_journal_templates
+  WHERE (recurring_journal_templates.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids))))) WITH CHECK ((template_id IN ( SELECT recurring_journal_templates.id
+   FROM recurring_journal_templates
+  WHERE (recurring_journal_templates.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)))));
+CREATE POLICY rjt_delete_company_isolation ON public.recurring_journal_templates AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
+CREATE POLICY rjt_insert_company_isolation ON public.recurring_journal_templates AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
+CREATE POLICY rjt_select_company_isolation ON public.recurring_journal_templates AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
+CREATE POLICY rjt_update_company_isolation ON public.recurring_journal_templates AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids))) WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY restore_batches_all ON public.restore_batches AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
    FROM (restore_queue rq
      JOIN company_members cm ON ((cm.company_id = rq.company_id)))
@@ -10340,7 +10310,6 @@ CREATE POLICY sales_order_items_update_policy ON public.sales_order_items AS PER
          SELECT company_members.company_id
            FROM company_members
           WHERE (company_members.user_id = auth.uid()))))));
-CREATE POLICY sales_orders_company_isolation ON public.sales_orders AS PERMISSIVE FOR ALL TO public USING ((company_id = (current_setting('app.current_company_id'::text, true))::uuid));
 CREATE POLICY sales_orders_delete_policy ON public.sales_orders AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid())
@@ -10355,7 +10324,7 @@ UNION
  SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
-CREATE POLICY sales_orders_select_v4 ON public.sales_orders AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((current_user_resource_visibility(company_id, 'sales_orders'::text) = 'company'::text) OR ((current_user_resource_visibility(company_id, 'sales_orders'::text) = 'branch'::text) AND ((branch_id IS NULL) OR (branch_id = current_user_branch_id(company_id)))) OR ((current_user_resource_visibility(company_id, 'sales_orders'::text) = 'own'::text) AND (created_by_user_id = auth.uid())) OR has_shared_access(company_id, 'sales_orders'::text, created_by_user_id))));
+CREATE POLICY sales_orders_select_branch_isolation ON public.sales_orders AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((current_user_resource_visibility(company_id, 'sales_orders'::text) = 'company'::text) OR ((current_user_resource_visibility(company_id, 'sales_orders'::text) = 'branch'::text) AND ((branch_id IS NULL) OR (branch_id = current_user_branch_id(company_id)))) OR ((current_user_resource_visibility(company_id, 'sales_orders'::text) = 'own'::text) AND (created_by_user_id = auth.uid())) OR has_shared_access(company_id, 'sales_orders'::text, created_by_user_id)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY sales_orders_update_policy ON public.sales_orders AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid())
@@ -10391,10 +10360,8 @@ CREATE POLICY sales_return_items_update ON public.sales_return_items AS PERMISSI
           WHERE (companies.user_id = auth.uid()))) OR (sales_returns.company_id IN ( SELECT company_members.company_id
            FROM company_members
           WHERE (company_members.user_id = auth.uid())))))));
+CREATE POLICY sales_return_requests_select_branch_isolation ON public.sales_return_requests AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY srr_insert ON public.sales_return_requests AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
-CREATE POLICY srr_select ON public.sales_return_requests AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY srr_update ON public.sales_return_requests AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
@@ -10402,7 +10369,7 @@ CREATE POLICY srr_update ON public.sales_return_requests AS PERMISSIVE FOR UPDAT
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'manager'::text]))))));
 CREATE POLICY sales_returns_delete ON public.sales_returns AS PERMISSIVE FOR DELETE TO public USING (can_delete_data(company_id));
 CREATE POLICY sales_returns_insert ON public.sales_returns AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
-CREATE POLICY sales_returns_select ON public.sales_returns AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
+CREATE POLICY sales_returns_select_branch_isolation ON public.sales_returns AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY sales_returns_update ON public.sales_returns AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY seat_transactions_select ON public.seat_transactions AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
@@ -10502,15 +10469,7 @@ CREATE POLICY supplier_debit_credits_update ON public.supplier_debit_credits AS 
   WHERE ((cm.company_id = supplier_debit_credits.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'accountant'::text]))))));
 CREATE POLICY suppliers_delete ON public.suppliers AS PERMISSIVE FOR DELETE TO public USING (can_manage_supplier_row(company_id, branch_id));
 CREATE POLICY suppliers_insert ON public.suppliers AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_manage_supplier_row(company_id, branch_id));
-CREATE POLICY suppliers_owner_dml ON public.suppliers AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid())))) WITH CHECK ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY suppliers_owner_select ON public.suppliers AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT companies.id
-   FROM companies
-  WHERE (companies.user_id = auth.uid()))));
-CREATE POLICY suppliers_select ON public.suppliers AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
+CREATE POLICY suppliers_select_branch_isolation ON public.suppliers AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY suppliers_update ON public.suppliers AS PERMISSIVE FOR UPDATE TO public USING (can_manage_supplier_row(company_id, branch_id)) WITH CHECK (can_manage_supplier_row(company_id, branch_id));
 CREATE POLICY system_audit_log_select ON public.system_audit_log AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY system_events_select ON public.system_events AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
@@ -10521,32 +10480,20 @@ CREATE POLICY tax_codes_delete ON public.tax_codes AS PERMISSIVE FOR DELETE TO p
 CREATE POLICY tax_codes_insert ON public.tax_codes AS PERMISSIVE FOR INSERT TO public WITH CHECK (is_owner_or_admin(company_id));
 CREATE POLICY tax_codes_select ON public.tax_codes AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY tax_codes_update ON public.tax_codes AS PERMISSIVE FOR UPDATE TO public USING (is_owner_or_admin(company_id));
-CREATE POLICY third_party_inventory_delete ON public.third_party_inventory AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY third_party_inventory_delete_governance ON public.third_party_inventory AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
-CREATE POLICY third_party_inventory_insert ON public.third_party_inventory AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY third_party_inventory_insert_governance ON public.third_party_inventory AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'manager'::text, 'accountant'::text, 'staff'::text, 'sales'::text, 'store_manager'::text]))))));
-CREATE POLICY third_party_inventory_select ON public.third_party_inventory AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
-CREATE POLICY third_party_inventory_select_governance ON public.third_party_inventory AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+CREATE POLICY third_party_inventory_select_governance ON public.third_party_inventory AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND (current_user_is_branch_unbounded(company_id) OR (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR ((cm.role = 'store_manager'::text) AND (EXISTS ( SELECT 1
+  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (((cm.role = 'store_manager'::text) AND (EXISTS ( SELECT 1
            FROM warehouses w
           WHERE ((w.id = cm.warehouse_id) AND (w.is_main = true))))) OR ((cm.role = 'store_manager'::text) AND (cm.branch_id = third_party_inventory.branch_id)) OR ((cm.role = ANY (ARRAY['manager'::text, 'accountant'::text])) AND (cm.branch_id = third_party_inventory.branch_id)) OR ((cm.role = ANY (ARRAY['staff'::text, 'sales'::text, 'employee'::text])) AND (EXISTS ( SELECT 1
            FROM (invoices inv
              JOIN sales_orders so ON ((inv.sales_order_id = so.id)))
-          WHERE ((inv.id = third_party_inventory.invoice_id) AND (so.created_by_user_id = auth.uid()))))))))));
-CREATE POLICY third_party_inventory_update ON public.third_party_inventory AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
+          WHERE ((inv.id = third_party_inventory.invoice_id) AND (so.created_by_user_id = auth.uid()))))))))))));
 CREATE POLICY third_party_inventory_update_governance ON public.third_party_inventory AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR ((cm.role = ANY (ARRAY['manager'::text, 'accountant'::text, 'store_manager'::text])) AND (cm.branch_id = third_party_inventory.branch_id)))))));
@@ -10572,12 +10519,7 @@ CREATE POLICY user_branch_access_insert ON public.user_branch_access AS PERMISSI
 CREATE POLICY user_branch_access_insert_policy ON public.user_branch_access AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text]))))));
-CREATE POLICY user_branch_access_select ON public.user_branch_access AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
-   FROM company_members cm
-  WHERE ((cm.company_id = user_branch_access.company_id) AND (cm.user_id = auth.uid())))));
-CREATE POLICY user_branch_access_select_policy ON public.user_branch_access AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY user_branch_access_select_company ON public.user_branch_access AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY user_branch_access_update ON public.user_branch_access AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = user_branch_access.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -10685,9 +10627,6 @@ CREATE POLICY vrr_update_privileged_only ON public.vendor_refund_requests AS PER
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
 CREATE POLICY volume_tiers_public_read ON public.volume_discount_tiers AS PERMISSIVE FOR SELECT TO public USING (true);
-CREATE POLICY company_owner_initial_read_warehouses ON public.warehouses AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
-   FROM companies c
-  WHERE ((c.id = warehouses.company_id) AND (c.user_id = auth.uid())))));
 CREATE POLICY company_owner_initial_update_warehouses ON public.warehouses AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM companies c
   WHERE ((c.id = warehouses.company_id) AND (c.user_id = auth.uid()))))) WITH CHECK ((EXISTS ( SELECT 1
@@ -10699,9 +10638,7 @@ CREATE POLICY warehouses_delete_policy ON public.warehouses AS PERMISSIVE FOR DE
 CREATE POLICY warehouses_insert_policy ON public.warehouses AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'super_admin'::text, 'gm'::text, 'general_manager'::text, 'generalmanager'::text, 'superadmin'::text]))))));
-CREATE POLICY warehouses_select_policy ON public.warehouses AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
-   FROM company_members
-  WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY warehouses_select_company ON public.warehouses AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY warehouses_update_policy ON public.warehouses AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'super_admin'::text, 'gm'::text, 'general_manager'::text, 'generalmanager'::text, 'superadmin'::text]))))));
@@ -10844,6 +10781,9 @@ GRANT EXECUTE ON FUNCTION public.approve_supplier_payment(p_payment_id uuid, p_a
 REVOKE ALL ON FUNCTION public.approve_supplier_payment_atomic(p_payment_id uuid, p_user_id uuid, p_company_id uuid, p_action text, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.approve_supplier_payment_atomic(p_payment_id uuid, p_user_id uuid, p_company_id uuid, p_action text, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.approve_supplier_payment_atomic(p_payment_id uuid, p_user_id uuid, p_company_id uuid, p_action text, p_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.approve_vendor_credit(p_credit_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.approve_vendor_credit(p_credit_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_vendor_credit(p_credit_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.approve_vendor_refund_request(p_request_id uuid, p_company_id uuid, p_action text, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.approve_vendor_refund_request(p_request_id uuid, p_company_id uuid, p_action text, p_reason text) TO anon;
 GRANT EXECUTE ON FUNCTION public.approve_vendor_refund_request(p_request_id uuid, p_company_id uuid, p_action text, p_reason text) TO authenticated;
@@ -11126,8 +11066,6 @@ GRANT EXECUTE ON FUNCTION public.auto_generate_write_off_number() TO anon;
 GRANT EXECUTE ON FUNCTION public.auto_generate_write_off_number() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auto_generate_write_off_number() TO service_role;
 REVOKE ALL ON FUNCTION public.auto_journal_for_vendor_credit() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.auto_journal_for_vendor_credit() TO anon;
-GRANT EXECUTE ON FUNCTION public.auto_journal_for_vendor_credit() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auto_journal_for_vendor_credit() TO service_role;
 REVOKE ALL ON FUNCTION public.auto_link_inventory_to_journal() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auto_link_inventory_to_journal() TO anon;
@@ -11390,13 +11328,9 @@ REVOKE ALL ON FUNCTION public.calculate_customer_debit_note_totals() FROM PUBLIC
 GRANT EXECUTE ON FUNCTION public.calculate_customer_debit_note_totals() TO anon;
 GRANT EXECUTE ON FUNCTION public.calculate_customer_debit_note_totals() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.calculate_customer_debit_note_totals() TO service_role;
-REVOKE ALL ON FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, OUT total_cogs numeric, OUT lots_used jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, OUT total_cogs numeric, OUT lots_used jsonb) TO anon;
-GRANT EXECUTE ON FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, OUT total_cogs numeric, OUT lots_used jsonb) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, OUT total_cogs numeric, OUT lots_used jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, p_branch_id uuid, OUT total_cogs numeric, OUT lots_used jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, p_branch_id uuid, OUT total_cogs numeric, OUT lots_used jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.calculate_fifo_cost(p_product_id uuid, p_warehouse_id uuid, p_quantity numeric) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.calculate_fifo_cost(p_product_id uuid, p_warehouse_id uuid, p_quantity numeric) TO anon;
-GRANT EXECUTE ON FUNCTION public.calculate_fifo_cost(p_product_id uuid, p_warehouse_id uuid, p_quantity numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.calculate_fifo_cost(p_product_id uuid, p_warehouse_id uuid, p_quantity numeric) TO service_role;
 REVOKE ALL ON FUNCTION public.calculate_invoice_net_amount(p_invoice_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calculate_invoice_net_amount(p_invoice_id uuid) TO anon;
@@ -11410,6 +11344,10 @@ REVOKE ALL ON FUNCTION public.can_access_bill_items(p_bill_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_access_bill_items(p_bill_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_access_bill_items(p_bill_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_bill_items(p_bill_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.can_access_booking(p_booking_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_access_booking(p_booking_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.can_access_booking(p_booking_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_access_booking(p_booking_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.can_access_invoice_items(p_invoice_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_access_invoice_items(p_invoice_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_access_invoice_items(p_invoice_id uuid) TO authenticated;
@@ -11421,6 +11359,17 @@ GRANT EXECUTE ON FUNCTION public.can_access_journal_lines(p_journal_entry_id uui
 REVOKE ALL ON FUNCTION public.can_access_po_items(p_purchase_order_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_access_po_items(p_purchase_order_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_po_items(p_purchase_order_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.can_access_purchase_order_items(p_purchase_order_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_order_items(p_purchase_order_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_order_items(p_purchase_order_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.can_access_purchase_return(p_return_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_return(p_return_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_return(p_return_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_return(p_return_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.can_access_record_branch(p_company_id uuid, p_branch_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_access_record_branch(p_company_id uuid, p_branch_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_access_record_branch(p_company_id uuid, p_branch_id uuid) TO authenticated;
@@ -11462,10 +11411,16 @@ GRANT EXECUTE ON FUNCTION public.can_modify_invoice_items(p_invoice_id uuid) TO 
 REVOKE ALL ON FUNCTION public.can_modify_transaction(p_company_id uuid, p_transaction_date date, p_table_name text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_modify_transaction(p_company_id uuid, p_transaction_date date, p_table_name text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_modify_transaction(p_company_id uuid, p_transaction_date date, p_table_name text) TO service_role;
+REVOKE ALL ON FUNCTION public.can_purchase_branchless_product(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_purchase_branchless_product(p_company_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_purchase_branchless_product(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.can_review_company_ai(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_review_company_ai(p_company_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_review_company_ai(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_review_company_ai(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_created_by uuid, p_product_branch_id uuid, p_scope_by_branch boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_created_by uuid, p_product_branch_id uuid, p_scope_by_branch boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_created_by uuid, p_product_branch_id uuid, p_scope_by_branch boolean) TO service_role;
 REVOKE ALL ON FUNCTION public.can_write_to_company(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_write_to_company(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_write_to_company(p_company_id uuid) TO service_role;
@@ -11688,6 +11643,10 @@ REVOKE ALL ON FUNCTION public.cleanup_permission_sharing_on_member_leave() FROM 
 GRANT EXECUTE ON FUNCTION public.cleanup_permission_sharing_on_member_leave() TO anon;
 GRANT EXECUTE ON FUNCTION public.cleanup_permission_sharing_on_member_leave() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cleanup_permission_sharing_on_member_leave() TO service_role;
+REVOKE ALL ON FUNCTION public.cleanup_shareholder_accounts() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cleanup_shareholder_accounts() TO anon;
+GRANT EXECUTE ON FUNCTION public.cleanup_shareholder_accounts() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cleanup_shareholder_accounts() TO service_role;
 REVOKE ALL ON FUNCTION public.close_accounting_period(p_period_id uuid, p_closed_by uuid, p_retained_earnings_account_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.close_accounting_period(p_period_id uuid, p_closed_by uuid, p_retained_earnings_account_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.close_accounting_period(p_period_id uuid, p_closed_by uuid, p_retained_earnings_account_id uuid) TO authenticated;
@@ -11740,9 +11699,11 @@ GRANT EXECUTE ON FUNCTION public.confirm_purchase_return_delivery_v3(p_purchase_
 REVOKE ALL ON FUNCTION public.confirm_warehouse_allocation(p_allocation_id uuid, p_confirmed_by uuid, p_notes text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.confirm_warehouse_allocation(p_allocation_id uuid, p_confirmed_by uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.confirm_warehouse_allocation(p_allocation_id uuid, p_confirmed_by uuid, p_notes text) TO service_role;
-REVOKE ALL ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date) TO service_role;
+REVOKE ALL ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date, p_branch_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date, p_branch_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text) TO service_role;
 REVOKE ALL ON FUNCTION public.convert_purchase_request_to_po(p_request_id uuid, p_user_id uuid, p_company_id uuid, p_supplier_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.convert_purchase_request_to_po(p_request_id uuid, p_user_id uuid, p_company_id uuid, p_supplier_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.convert_purchase_request_to_po(p_request_id uuid, p_user_id uuid, p_company_id uuid, p_supplier_id uuid) TO authenticated;
@@ -11874,6 +11835,10 @@ GRANT EXECUTE ON FUNCTION public.create_reversal_entry(p_original_entry_id uuid,
 REVOKE ALL ON FUNCTION public.create_sales_invoice_atomic(p_invoice_data jsonb, p_invoice_items jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_sales_invoice_atomic(p_invoice_data jsonb, p_invoice_items jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_sales_invoice_atomic(p_invoice_data jsonb, p_invoice_items jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) TO anon;
+GRANT EXECUTE ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.create_sales_return_gl_reversal(p_company_id uuid, p_invoice_id uuid, p_return_amount numeric, p_return_request_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_sales_return_gl_reversal(p_company_id uuid, p_invoice_id uuid, p_return_amount numeric, p_return_request_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.create_seat_licenses_for_purchase(p_company_id uuid, p_seats_count integer, p_billing_period text, p_billing_invoice_id uuid) FROM PUBLIC;
@@ -11913,6 +11878,10 @@ REVOKE ALL ON FUNCTION public.current_user_branch_id(p_company_id uuid) FROM PUB
 GRANT EXECUTE ON FUNCTION public.current_user_branch_id(p_company_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.current_user_branch_id(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_user_branch_id(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.current_user_is_branch_unbounded(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_user_is_branch_unbounded(p_company_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.current_user_is_branch_unbounded(p_company_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_is_branch_unbounded(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.current_user_record_visibility(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.current_user_record_visibility(p_company_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.current_user_record_visibility(p_company_id uuid) TO authenticated;
@@ -12918,6 +12887,12 @@ REVOKE ALL ON FUNCTION public.inv_request_discount_approval_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.inv_request_discount_approval_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.inv_request_discount_approval_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.inv_request_discount_approval_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.inventory_transfer_post_journal(p_in_tx_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.inventory_transfer_post_journal(p_in_tx_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.inventory_transfer_post_journal_trg() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.inventory_transfer_post_journal_trg() TO anon;
+GRANT EXECUTE ON FUNCTION public.inventory_transfer_post_journal_trg() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.inventory_transfer_post_journal_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.invoice_amendment_reset_approval_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.invoice_amendment_reset_approval_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.invoice_amendment_reset_approval_trg() TO authenticated;
@@ -12942,6 +12917,9 @@ REVOKE ALL ON FUNCTION public.invoice_notify_accountant_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.invoice_notify_accountant_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.invoice_notify_accountant_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.invoice_notify_accountant_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.invoice_posted_unit_costs(p_invoice_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.invoice_posted_unit_costs(p_invoice_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.invoice_posted_unit_costs(p_invoice_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.invoice_protect_posted_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.invoice_protect_posted_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.invoice_protect_posted_trg() TO authenticated;
@@ -13010,6 +12988,10 @@ REVOKE ALL ON FUNCTION public.ir_set_updated_at() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ir_set_updated_at() TO anon;
 GRANT EXECUTE ON FUNCTION public.ir_set_updated_at() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ir_set_updated_at() TO service_role;
+REVOKE ALL ON FUNCTION public.is_booking_assignee(p_booking_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_booking_assignee(p_booking_id uuid) TO anon;
+GRANT EXECUTE ON FUNCTION public.is_booking_assignee(p_booking_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_booking_assignee(p_booking_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.is_branch_accessible(p_branch_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_branch_accessible(p_branch_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_branch_accessible(p_branch_id uuid, p_user_id uuid) TO service_role;
@@ -14146,6 +14128,9 @@ REVOKE ALL ON FUNCTION public.process_supplier_payment_allocation(p_company_id u
 GRANT EXECUTE ON FUNCTION public.process_supplier_payment_allocation(p_company_id uuid, p_supplier_id uuid, p_payment_amount numeric, p_payment_date date, p_payment_method character varying, p_account_id uuid, p_branch_id uuid, p_currency_code character varying, p_exchange_rate numeric, p_base_currency_amount numeric, p_allocations jsonb) TO anon;
 GRANT EXECUTE ON FUNCTION public.process_supplier_payment_allocation(p_company_id uuid, p_supplier_id uuid, p_payment_amount numeric, p_payment_date date, p_payment_method character varying, p_account_id uuid, p_branch_id uuid, p_currency_code character varying, p_exchange_rate numeric, p_base_currency_amount numeric, p_allocations jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.process_supplier_payment_allocation(p_company_id uuid, p_supplier_id uuid, p_payment_amount numeric, p_payment_date date, p_payment_method character varying, p_account_id uuid, p_branch_id uuid, p_currency_code character varying, p_exchange_rate numeric, p_base_currency_amount numeric, p_allocations jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.product_costs(p_product_ids uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.product_costs(p_product_ids uuid[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.product_costs(p_product_ids uuid[]) TO service_role;
 REVOKE ALL ON FUNCTION public.product_receive_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.product_receive_branch_manager_notify_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.product_receive_branch_manager_notify_trg() TO authenticated;
@@ -14332,6 +14317,9 @@ REVOKE ALL ON FUNCTION public.reject_supplier_payment(p_payment_id uuid, p_rejec
 GRANT EXECUTE ON FUNCTION public.reject_supplier_payment(p_payment_id uuid, p_rejector_id uuid, p_reason text) TO anon;
 GRANT EXECUTE ON FUNCTION public.reject_supplier_payment(p_payment_id uuid, p_rejector_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reject_supplier_payment(p_payment_id uuid, p_rejector_id uuid, p_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.reject_vendor_credit(p_credit_id uuid, p_reason text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reject_vendor_credit(p_credit_id uuid, p_reason text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reject_vendor_credit(p_credit_id uuid, p_reason text) TO service_role;
 REVOKE ALL ON FUNCTION public.reject_warehouse_return(p_purchase_return_id uuid, p_rejected_by uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reject_warehouse_return(p_purchase_return_id uuid, p_rejected_by uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reject_warehouse_return(p_purchase_return_id uuid, p_rejected_by uuid, p_reason text) TO service_role;
@@ -14536,6 +14524,9 @@ REVOKE ALL ON FUNCTION public.set_limit(real) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.set_limit(real) TO anon;
 GRANT EXECUTE ON FUNCTION public.set_limit(real) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.set_limit(real) TO service_role;
+REVOKE ALL ON FUNCTION public.set_purchase_cost_visibility(p_company_id uuid, p_mode text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_purchase_cost_visibility(p_company_id uuid, p_mode text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.set_purchase_cost_visibility(p_company_id uuid, p_mode text) TO service_role;
 REVOKE ALL ON FUNCTION public.should_user_be_notified(p_user_id uuid, p_company_id uuid, p_category text, p_channel text, p_severity text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.should_user_be_notified(p_user_id uuid, p_company_id uuid, p_category text, p_channel text, p_severity text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.should_user_be_notified(p_user_id uuid, p_company_id uuid, p_category text, p_channel text, p_severity text) TO service_role;
@@ -14559,6 +14550,9 @@ REVOKE ALL ON FUNCTION public.similarity_op(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.similarity_op(text, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.similarity_op(text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.similarity_op(text, text) TO service_role;
+REVOKE ALL ON FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text) TO service_role;
 REVOKE ALL ON FUNCTION public.so_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.so_branch_manager_notify_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.so_branch_manager_notify_trg() TO authenticated;
@@ -14961,8 +14955,6 @@ GRANT EXECUTE ON FUNCTION public.update_asset_book_value() TO anon;
 GRANT EXECUTE ON FUNCTION public.update_asset_book_value() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_asset_book_value() TO service_role;
 REVOKE ALL ON FUNCTION public.update_bill_on_credit_application() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.update_bill_on_credit_application() TO anon;
-GRANT EXECUTE ON FUNCTION public.update_bill_on_credit_application() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_bill_on_credit_application() TO service_role;
 REVOKE ALL ON FUNCTION public.update_bill_on_journal_delete() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.update_bill_on_journal_delete() TO anon;
@@ -15074,6 +15066,9 @@ REVOKE ALL ON FUNCTION public.update_vendor_credit_status() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.update_vendor_credit_status() TO anon;
 GRANT EXECUTE ON FUNCTION public.update_vendor_credit_status() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_vendor_credit_status() TO service_role;
+REVOKE ALL ON FUNCTION public.update_vendor_credit_with_items(p_credit_id uuid, p_credit jsonb, p_items jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.update_vendor_credit_with_items(p_credit_id uuid, p_credit jsonb, p_items jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_vendor_credit_with_items(p_credit_id uuid, p_credit jsonb, p_items jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.update_write_off_updated_at() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.update_write_off_updated_at() TO anon;
 GRANT EXECUTE ON FUNCTION public.update_write_off_updated_at() TO authenticated;
@@ -15244,6 +15239,8 @@ REVOKE ALL ON FUNCTION public.vector_typmod_in(cstring[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.vector_typmod_in(cstring[]) TO anon;
 GRANT EXECUTE ON FUNCTION public.vector_typmod_in(cstring[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.vector_typmod_in(cstring[]) TO service_role;
+REVOKE ALL ON FUNCTION public.vendor_credit_post_journal(p_vc vendor_credits) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.vendor_credit_post_journal(p_vc vendor_credits) TO service_role;
 REVOKE ALL ON FUNCTION public.verify_all_journal_entries_balanced() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.verify_all_journal_entries_balanced() TO anon;
 GRANT EXECUTE ON FUNCTION public.verify_all_journal_entries_balanced() TO authenticated;
@@ -15893,8 +15890,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pr
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_order_receipt_lines TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_order_receipt_lines TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_order_receipt_lines TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.products TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.products TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, TRIGGER, TRUNCATE, UPDATE ON public.products TO anon;
+GRANT DELETE, INSERT, REFERENCES, TRIGGER, TRUNCATE, UPDATE ON public.products TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.products TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.profit_distribution_lines TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.profit_distribution_lines TO authenticated;
@@ -15926,11 +15923,9 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.pu
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.purchase_returns TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.purchase_returns TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.purchase_returns TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_journal_template_lines TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_journal_template_lines TO authenticated;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.recurring_journal_template_lines TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_journal_template_lines TO service_role;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_journal_templates TO anon;
-GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_journal_templates TO authenticated;
+GRANT DELETE, INSERT, SELECT, UPDATE ON public.recurring_journal_templates TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_journal_templates TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.restore_batches TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.restore_batches TO authenticated;

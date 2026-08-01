@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-07-28T18:10:48.246Z
--- Routines: 1256
+-- Generated: 2026-08-01T12:04:44.341Z
+-- Routines: 1277
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -2498,6 +2498,89 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- approve_vendor_credit(p_credit_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.approve_vendor_credit(p_credit_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_vc public.vendor_credits%ROWTYPE;
+  v_approver_role text;
+  v_creator_role text;
+  v_je uuid;
+  v_rows int;
+BEGIN
+  IF v_actor IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NO_ACTOR');
+  END IF;
+
+  SELECT * INTO v_vc FROM vendor_credits WHERE id = p_credit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_FOUND');
+  END IF;
+  PERFORM public.assert_company_access(v_vc.company_id);
+
+  IF v_vc.status <> 'pending_approval' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_PENDING', 'status', v_vc.status);
+  END IF;
+
+  SELECT lower(btrim(role)) INTO v_approver_role
+    FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_actor LIMIT 1;
+  IF v_approver_role NOT IN ('owner', 'general_manager') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK');
+  END IF;
+
+  -- فصل المهام مطلق (865): لا أحد يعتمد إشعاراً أنشأه بنفسه.
+  IF v_vc.created_by_user_id IS NOT NULL AND v_vc.created_by_user_id = v_actor THEN
+    RETURN jsonb_build_object('success', false, 'error', 'SELF_APPROVAL');
+  END IF;
+
+  SELECT lower(btrim(role)) INTO v_creator_role
+    FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_vc.created_by_user_id LIMIT 1;
+  -- قيد المدير العام لا يعتمده إلا المالك؛ قيد المحاسب يعتمده المالك أو
+  -- المدير العام؛ والمجهول منشئُه لا يُعتمد إلا بقرار المالك (865 حرفياً).
+  IF COALESCE(v_creator_role, '') = 'general_manager' AND v_approver_role <> 'owner' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
+  END IF;
+  IF v_creator_role IS NULL AND v_approver_role <> 'owner' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
+  END IF;
+
+  v_je := public.vendor_credit_post_journal(v_vc);
+
+  UPDATE vendor_credits
+     SET journal_entry_id = v_je, status = 'open', updated_at = now()
+   WHERE id = p_credit_id AND status = 'pending_approval';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_APPROVE_RACE: % rows updated, expected 1', v_rows;
+  END IF;
+
+  IF v_vc.created_by_user_id IS NOT NULL THEN
+    INSERT INTO notifications (
+      company_id, branch_id, reference_type, reference_id,
+      created_by, assigned_to_user,
+      title, message, priority, status, event_key
+    ) VALUES (
+      v_vc.company_id, v_vc.branch_id, 'vendor_credit_approved', p_credit_id,
+      v_actor, v_vc.created_by_user_id,
+      'اعتُمد الإشعار الدائن',
+      'اعتُمد إشعارك ' || COALESCE(v_vc.credit_number, '') || ' ورُحّل قيده.',
+      'normal', 'unread',
+      'vendor_credit_approved:' || p_credit_id::text
+    );
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'entry_id', v_je);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- approve_vendor_refund_request(p_request_id uuid, p_company_id uuid, p_action text, p_reason text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.approve_vendor_refund_request(p_request_id uuid, p_company_id uuid, p_action text, p_reason text DEFAULT NULL::text)
@@ -4757,7 +4840,7 @@ BEGIN
   -- payload was prepared from — same order, same amounts.
   IF current_setting('app.fifo_payload_present', true) = 'true' THEN
     SELECT total_cogs INTO v_fifo_cogs
-      FROM public.calculate_fifo_cogs(NEW.product_id, ABS(NEW.quantity_change));
+      FROM public.calculate_fifo_cogs(NEW.product_id, ABS(NEW.quantity_change), NEW.branch_id);
   ELSE
     -- v3.74.702 — COGS from FIFO lots (what was ACTUALLY paid per batch).
     -- consume_fifo_lots records the consumption and depletes the batch —
@@ -4765,7 +4848,7 @@ BEGIN
     v_fifo_cogs := public.consume_fifo_lots(
       v_company_id, NEW.product_id, ABS(NEW.quantity_change),
       'sale', 'invoice', NEW.reference_id,
-      COALESCE(NEW.created_at::date, CURRENT_DATE)
+      COALESCE(NEW.created_at::date, CURRENT_DATE), NEW.branch_id
     );
   END IF;
 
@@ -5466,190 +5549,62 @@ CREATE OR REPLACE FUNCTION public.auto_journal_for_vendor_credit()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  ap_account        UUID;
-  inventory_account UUID;
-  vat_account       UUID;
-  advance_account   UUID;
-  v_is_overpayment  BOOLEAN;
-  v_lines           JSONB;
-  v_result          JSONB;
+  v_actor uuid;
+  v_role text;
+  v_member_branch uuid;
 BEGIN
+  -- إشعارات دورات المرتجعات تصل بقيدها المضبوط مسبقاً — لا شأن للمصفوفة بها.
   IF NEW.journal_entry_id IS NOT NULL THEN
     RETURN NEW;
   END IF;
 
-  v_is_overpayment := COALESCE(NEW.reference_type, '') = 'supplier_overpayment';
+  v_actor := COALESCE(auth.uid(), NEW.created_by_user_id);
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_NO_ACTOR: cannot resolve who is creating this credit | تعذّر استبانة منشئ الإشعار — والعجز عن التحقق ليس إذناً (865)';
+  END IF;
 
-  -- ── حساب الموردين (لازمٌ فى الحالتين) ──────────────────────────────
-  SELECT id INTO ap_account FROM chart_of_accounts
-   WHERE company_id = NEW.company_id
-     AND sub_type = 'accounts_payable'
-     AND coalesce(is_active, true) = true
-   ORDER BY account_code
+  SELECT lower(btrim(cm.role)), cm.branch_id INTO v_role, v_member_branch
+    FROM company_members cm
+   WHERE cm.company_id = NEW.company_id AND cm.user_id = v_actor
    LIMIT 1;
 
-  IF ap_account IS NULL THEN
-    SELECT id INTO ap_account FROM chart_of_accounts
-     WHERE company_id = NEW.company_id
-       AND account_type = 'liability'
-       AND coalesce(is_active, true) = true
-       AND (account_name ILIKE '%accounts payable%'
-            OR account_name ILIKE '%trade payable%'
-            OR account_name LIKE '%الموردين%'
-            OR account_name LIKE '%الموردون%')
-     ORDER BY account_code
-     LIMIT 1;
+  IF v_role IS NULL THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_ROLE_FORBIDDEN: user % is not a member of company % | ليس عضواً فى الشركة', v_actor, NEW.company_id;
   END IF;
 
-  IF ap_account IS NULL THEN
-    RAISE EXCEPTION
-      'VENDOR_CREDIT_NO_AP_ACCOUNT: company % has no accounts-payable account | لا حساب موردين',
-      NEW.company_id;
-  END IF;
+  NEW.created_by_user_id := COALESCE(NEW.created_by_user_id, v_actor);
 
-  IF v_is_overpayment THEN
-    -- ═══ زيادة الدفع: إعادة تصنيف من التزامٍ إلى أصل ═══════════════════
-    SELECT id INTO advance_account FROM chart_of_accounts
-     WHERE company_id = NEW.company_id
-       AND account_type = 'asset'
-       AND coalesce(is_active, true) = true
-       AND sub_type IN ('supplier_advance', 'vendor_credit_liability')
-     ORDER BY account_code
-     LIMIT 1;
-
-    IF advance_account IS NULL THEN
-      SELECT id INTO advance_account FROM chart_of_accounts
-       WHERE company_id = NEW.company_id
-         AND account_type = 'asset'
-         AND coalesce(is_active, true) = true
-         AND ((account_name LIKE '%سلف%' AND account_name LIKE '%مورد%')
-              OR (account_name ILIKE '%advance%' AND account_name ILIKE '%supplier%')
-              OR (account_name ILIKE '%prepayment%' AND account_name ILIKE '%supplier%'))
-       ORDER BY account_code
-       LIMIT 1;
-    END IF;
-
-    IF advance_account IS NULL THEN
-      RAISE EXCEPTION
-        'VENDOR_CREDIT_NO_SUPPLIER_ADVANCE_ACCOUNT: company % has no supplier-advance asset account | لا حساب سلف للموردين',
-        NEW.company_id;
-    END IF;
-
-    v_lines := jsonb_build_array(
-      jsonb_build_object(
-        'account_id',    advance_account,
-        'debit_amount',  NEW.total_amount,
-        'credit_amount', 0,
-        'description',   'سلفة لدى المورد — زيادة دفع'
-      ),
-      jsonb_build_object(
-        'account_id',    ap_account,
-        'debit_amount',  0,
-        'credit_amount', NEW.total_amount,
-        'description',   'تسوية رصيد الموردين المدين'
-      )
-    );
-
-  ELSE
-    -- ═══ مرتجع مشتريات: البضاعة عادت فالمخزون ينقص ════════════════════
-    SELECT id INTO inventory_account FROM chart_of_accounts
-     WHERE company_id = NEW.company_id
-       AND sub_type = 'inventory'
-       AND coalesce(is_active, true) = true
-     ORDER BY account_code
-     LIMIT 1;
-
-    IF inventory_account IS NULL THEN
-      SELECT id INTO inventory_account FROM chart_of_accounts
-       WHERE company_id = NEW.company_id
-         AND account_type = 'asset'
-         AND coalesce(is_active, true) = true
-         AND (account_name ILIKE '%inventory%' OR account_name LIKE '%المخزون%')
-       ORDER BY account_code
-       LIMIT 1;
-    END IF;
-
-    IF inventory_account IS NULL THEN
-      RAISE EXCEPTION
-        'VENDOR_CREDIT_NO_INVENTORY_ACCOUNT: company % has no inventory account | لا حساب مخزون',
-        NEW.company_id;
-    END IF;
-
-    -- ضريبة المدخلات — **أصلٌ لا التزام** (المدخلات مستردَّة، المخرجات مستحقَّة)
-    SELECT id INTO vat_account FROM chart_of_accounts
-     WHERE company_id = NEW.company_id
-       AND sub_type = 'vat_input'
-       AND coalesce(is_active, true) = true
-     ORDER BY account_code
-     LIMIT 1;
-
-    IF vat_account IS NULL THEN
-      SELECT id INTO vat_account FROM chart_of_accounts
-       WHERE company_id = NEW.company_id
-         AND account_type = 'asset'
-         AND coalesce(is_active, true) = true
-         AND (account_name ILIKE '%input vat%'
-              OR account_name ILIKE '%vat%input%'
-              OR account_name LIKE '%مدخلات%')
-       ORDER BY account_code
-       LIMIT 1;
-    END IF;
-
-    v_lines := jsonb_build_array(
-      jsonb_build_object(
-        'account_id',    ap_account,
-        'debit_amount',  NEW.subtotal + COALESCE(NEW.tax_amount, 0),
-        'credit_amount', 0,
-        'description',   'تخفيض ذمم دائنة'
-      ),
-      jsonb_build_object(
-        'account_id',    inventory_account,
-        'debit_amount',  0,
-        'credit_amount', NEW.subtotal,
-        'description',   'مردودات مشتريات'
-      )
-    );
-
-    IF COALESCE(NEW.tax_amount, 0) > 0 THEN
-      IF vat_account IS NULL THEN
-        RAISE EXCEPTION
-          'VENDOR_CREDIT_NO_VAT_ACCOUNT: credit % carries tax % but company has no input-VAT account | ضريبة بلا حساب',
-          NEW.credit_number, NEW.tax_amount;
+  IF v_role = 'owner' THEN
+    -- المالك: يُرحَّل مباشرة (المصفوفة).
+    NEW.journal_entry_id := public.vendor_credit_post_journal(NEW);
+    RETURN NEW;
+  ELSIF v_role IN ('general_manager', 'accountant') THEN
+    IF v_role = 'accountant' THEN
+      -- محاسب الفرع مقيَّد بفرعه — ومحاسبٌ بلا فرعٍ مسجَّل يُرفض (865).
+      IF v_member_branch IS NULL OR NEW.branch_id IS DISTINCT FROM v_member_branch THEN
+        RAISE EXCEPTION 'VENDOR_CREDIT_BRANCH_SCOPE: branch accountant may only create credits for their own branch | محاسب الفرع مقيَّد بفرعه';
       END IF;
-      v_lines := v_lines || jsonb_build_array(
-        jsonb_build_object(
-          'account_id',    vat_account,
-          'debit_amount',  0,
-          'credit_amount', NEW.tax_amount,
-          'description',   'تعديل ضريبة المشتريات'
-        )
-      );
     END IF;
+    NEW.status := 'pending_approval';
+    -- إخطار المالك (صف واحد لدورٍ واحد — احتراماً لحارس ازدواج الجمهور).
+    INSERT INTO notifications (
+      company_id, branch_id, reference_type, reference_id,
+      created_by, assigned_to_role,
+      title, message, priority, status, event_key
+    ) VALUES (
+      NEW.company_id, NEW.branch_id, 'vendor_credit_pending', NEW.id,
+      v_actor, 'owner',
+      'إشعار دائن بانتظار الاعتماد',
+      'أُنشئ إشعار دائن ' || COALESCE(NEW.credit_number, '') || ' بقيمة ' || NEW.total_amount ||
+        ' بواسطة ' || CASE WHEN v_role = 'general_manager' THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
+        ' — يحتاج اعتماداً قبل الترحيل (مصفوفة 865).',
+      'high', 'unread',
+      'vendor_credit_pending:' || NEW.id::text
+    );
+    RETURN NEW;
   END IF;
 
-  v_result := public.create_journal_entry_atomic(
-    NEW.company_id,
-    'vendor_credit',
-    NEW.id,
-    NEW.credit_date,
-    CASE WHEN v_is_overpayment
-         THEN 'سلفة مورد من زيادة دفع رقم ' || COALESCE(NEW.credit_number, NEW.id::text)
-         ELSE 'إشعار دائن مورد رقم ' || COALESCE(NEW.credit_number, NEW.id::text)
-    END,
-    NEW.branch_id,
-    NEW.cost_center_id,
-    NULL,
-    v_lines
-  );
-
-  IF COALESCE((v_result->>'success')::BOOLEAN, false) IS NOT TRUE THEN
-    RAISE EXCEPTION
-      'VENDOR_CREDIT_JOURNAL_FAILED: credit % — %',
-      COALESCE(NEW.credit_number, NEW.id::text), COALESCE(v_result->>'error', 'unknown');
-  END IF;
-
-  NEW.journal_entry_id := (v_result->>'entry_id')::UUID;
-  RETURN NEW;
+  RAISE EXCEPTION 'VENDOR_CREDIT_ROLE_FORBIDDEN: role % may not create vendor credits | هذا الدور لا يُنشئ إشعارات دائنة (مصفوفة 865)', v_role;
 END;
 $function$
 ;
@@ -6882,6 +6837,7 @@ DECLARE
   v_actor uuid;
   v_accountant uuid;
   v_branch_count int;
+  v_company_wide_count int;
   v_po_no text;
 BEGIN
   v_actor    := COALESCE(NEW.created_by_user_id, NEW.created_by);
@@ -6897,7 +6853,7 @@ BEGIN
     END IF;
   EXCEPTION WHEN OTHERS THEN v_po_no := NULL; END;
 
-  -- Count branch-scoped accountants first.
+  -- محاسبو فرع الفاتورة أولاً.
   SELECT COUNT(*) INTO v_branch_count
     FROM public.company_members
    WHERE company_id = NEW.company_id
@@ -6905,17 +6861,29 @@ BEGIN
      AND branch_id  = NEW.branch_id
      AND user_id    IS NOT NULL;
 
+  -- فإن لم يوجد: محاسبو الشركة كلها (بلا فرعٍ فى عضويتهم).
+  SELECT COUNT(*) INTO v_company_wide_count
+    FROM public.company_members
+   WHERE company_id = NEW.company_id
+     AND role       = 'accountant'
+     AND branch_id  IS NULL
+     AND user_id    IS NOT NULL;
+
   FOR v_accountant IN
     SELECT user_id FROM public.company_members
      WHERE company_id = NEW.company_id
-       AND role       = 'accountant'
        AND user_id    IS NOT NULL
        AND (
-         -- Branch-scoped accountants when available, otherwise fall back
-         -- to company-wide accountants.
-         (v_branch_count > 0 AND branch_id = NEW.branch_id)
+         -- (١) محاسب الفرع.
+         (v_branch_count > 0 AND role = 'accountant' AND branch_id = NEW.branch_id)
          OR
-         (v_branch_count = 0)
+         -- (٢) وإلا فمحاسب الشركة كلها.
+         (v_branch_count = 0 AND v_company_wide_count > 0
+          AND role = 'accountant' AND branch_id IS NULL)
+         OR
+         -- (٣) وإلا فالمالك والمدير العام — لا محاسبُ فرعٍ آخر.
+         (v_branch_count = 0 AND v_company_wide_count = 0
+          AND lower(btrim(role)) IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager'))
        )
        AND (v_actor IS NULL OR user_id <> v_actor)
   LOOP
@@ -8077,11 +8045,13 @@ AS $function$ DECLARE v_subtotal DECIMAL(15,2); v_tax_amount DECIMAL(15,2); v_to
 ;
 
 -- ---------------------------------------------------------------
--- calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, OUT total_cogs numeric, OUT lots_used jsonb)
+-- calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, p_branch_id uuid, OUT total_cogs numeric, OUT lots_used jsonb)
 -- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, OUT total_cogs numeric, OUT lots_used jsonb)
+CREATE OR REPLACE FUNCTION public.calculate_fifo_cogs(p_product_id uuid, p_quantity numeric, p_branch_id uuid DEFAULT NULL::uuid, OUT total_cogs numeric, OUT lots_used jsonb)
  RETURNS record
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_lot RECORD;
@@ -8089,28 +8059,31 @@ DECLARE
   v_qty_from_lot NUMERIC;
   v_cost_from_lot NUMERIC;
   v_lots_array JSONB := '[]'::JSONB;
+  v_company_id UUID;
 BEGIN
   total_cogs := 0;
 
-  -- الحصول على الدفعات بترتيب FIFO (الأقدم أولاً)
+  SELECT p.company_id INTO v_company_id FROM public.products p WHERE p.id = p_product_id;
+  IF v_company_id IS NULL THEN
+    RAISE EXCEPTION 'FIFO_PRODUCT_NOT_FOUND: product % has no company', p_product_id;
+  END IF;
+
   FOR v_lot IN
     SELECT id, remaining_quantity, unit_cost, lot_date
-    FROM fifo_cost_lots
+    FROM public.fifo_cost_lots
     WHERE product_id = p_product_id
+      AND company_id = v_company_id
       AND remaining_quantity > 0
+      AND (p_branch_id IS NULL OR branch_id = p_branch_id OR branch_id IS NULL)
     ORDER BY lot_date ASC, created_at ASC
   LOOP
-    -- إذا استهلكنا الكمية المطلوبة، نتوقف
     EXIT WHEN v_remaining_qty <= 0;
 
-    -- الكمية التي سنأخذها من هذه الدفعة
     v_qty_from_lot := LEAST(v_lot.remaining_quantity, v_remaining_qty);
     v_cost_from_lot := v_qty_from_lot * v_lot.unit_cost;
 
-    -- إضافة للتكلفة الإجمالية
     total_cogs := total_cogs + v_cost_from_lot;
 
-    -- تسجيل الدفعة المستخدمة
     v_lots_array := v_lots_array || jsonb_build_object(
       'lot_id', v_lot.id,
       'quantity', v_qty_from_lot,
@@ -8119,15 +8092,14 @@ BEGIN
       'lot_date', v_lot.lot_date
     );
 
-    -- تقليل الكمية المتبقية
     v_remaining_qty := v_remaining_qty - v_qty_from_lot;
   END LOOP;
 
   lots_used := v_lots_array;
 
-  -- إذا لم نجد دفعات كافية، نرجع خطأ
   IF v_remaining_qty > 0 THEN
-    RAISE WARNING 'Insufficient FIFO lots for product %. Missing quantity: %', p_product_id, v_remaining_qty;
+    RAISE EXCEPTION 'FIFO_LOTS_INSUFFICIENT: product % short by % in branch % - refusing to report an understated cost',
+      p_product_id, v_remaining_qty, COALESCE(p_branch_id::text, '(company)');
   END IF;
 END;
 $function$
@@ -8139,26 +8111,32 @@ $function$
 CREATE OR REPLACE FUNCTION public.calculate_fifo_cost(p_product_id uuid, p_warehouse_id uuid, p_quantity numeric)
  RETURNS numeric
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_total_cost NUMERIC := 0;
   v_remaining_qty NUMERIC := p_quantity;
   v_lot RECORD;
+  v_company_id UUID;
 BEGIN
-  -- جلب اللوتات حسب FIFO (الأقدم أولاً)
-  -- استخدام COALESCE للتعامل مع purchase_date إذا كان موجوداً
-  FOR v_lot IN 
+  -- v3.74.929 — قيدُ الشركة مشتقٌّ من المنتج، فلا يتغير التوقيع.
+  SELECT p.company_id INTO v_company_id FROM public.products p WHERE p.id = p_product_id;
+  IF v_company_id IS NULL THEN
+    RAISE EXCEPTION 'FIFO_PRODUCT_NOT_FOUND: product % has no company', p_product_id;
+  END IF;
+
+  FOR v_lot IN
     SELECT id, remaining_quantity, unit_cost
-    FROM fifo_cost_lots
+    FROM public.fifo_cost_lots
     WHERE product_id = p_product_id
+      AND company_id = v_company_id
       AND (warehouse_id = p_warehouse_id OR warehouse_id IS NULL)
       AND remaining_quantity > 0
     ORDER BY COALESCE(purchase_date, created_at::DATE) ASC, created_at ASC
   LOOP
-    IF v_remaining_qty <= 0 THEN
-      EXIT;
-    END IF;
-    
+    EXIT WHEN v_remaining_qty <= 0;
+
     DECLARE
       v_qty_from_lot NUMERIC := LEAST(v_lot.remaining_quantity, v_remaining_qty);
     BEGIN
@@ -8166,7 +8144,13 @@ BEGIN
       v_remaining_qty := v_remaining_qty - v_qty_from_lot;
     END;
   END LOOP;
-  
+
+  -- v3.74.929 — كانت تُرجع تكلفةً منقوصةً بصمت. صارت ترفض.
+  IF v_remaining_qty > 0 THEN
+    RAISE EXCEPTION 'FIFO_LOTS_INSUFFICIENT: product % is short by % - refusing to report an understated cost',
+      p_product_id, v_remaining_qty;
+  END IF;
+
   RETURN v_total_cost;
 END;
 $function$
@@ -8229,10 +8213,80 @@ CREATE OR REPLACE FUNCTION public.can_access_bill_items(p_bill_id uuid)
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_company_id UUID;
+DECLARE
+  v_company_id UUID;
+  v_branch_id  UUID;
 BEGIN
-  SELECT company_id INTO v_company_id FROM bills WHERE id = p_bill_id;
-  RETURN is_company_member(v_company_id);
+  SELECT company_id, branch_id INTO v_company_id, v_branch_id
+    FROM bills WHERE id = p_bill_id;
+  IF v_company_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  -- v3.74.917 — الفرع كالرأس: من لا يرى الفاتورة لا يرى سعر بندها.
+  RETURN public.can_access_record_branch(v_company_id, v_branch_id);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_booking(p_booking_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_booking(p_booking_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_company UUID;
+  v_branch  UUID;
+  v_creator UUID;
+  v_staff   UUID;
+  v_vis     TEXT;
+BEGIN
+  SELECT b.company_id, b.branch_id, b.created_by_user_id, b.staff_user_id
+    INTO v_company, v_branch, v_creator, v_staff
+    FROM public.bookings b
+   WHERE b.id = p_booking_id;
+
+  IF v_company IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  IF NOT public.is_company_member(v_company) THEN
+    RETURN FALSE;
+  END IF;
+
+  v_vis := public.current_user_resource_visibility(v_company, 'bookings');
+
+  IF v_vis = 'company' THEN
+    RETURN TRUE;
+  END IF;
+
+  IF v_vis = 'branch' THEN
+    RETURN v_branch IS NULL OR v_branch = public.current_user_branch_id(v_company);
+  END IF;
+
+  IF v_vis = 'own' THEN
+    -- التكليفُ القائم يعبر الجدار: هذا عملٌ أُسند إليه.
+    IF v_staff IS NOT NULL AND v_staff = auth.uid() THEN
+      RETURN TRUE;
+    END IF;
+
+    IF public.is_booking_assignee(p_booking_id) THEN
+      RETURN TRUE;
+    END IF;
+
+    -- والإنشاءُ وحده لا يعبره (قاعدة 922)، وكذلك حجزٌ بلا موظفٍ مسنَد.
+    IF (v_creator = auth.uid() OR v_staff IS NULL)
+       AND public.can_access_record_branch(v_company, v_branch) THEN
+      RETURN TRUE;
+    END IF;
+  END IF;
+
+  -- والمشاركةُ لا تعبر الجدار (قاعدة 922).
+  RETURN public.has_shared_access(v_company, 'bookings', v_creator)
+     AND public.can_access_record_branch(v_company, v_branch);
 END;
 $function$
 ;
@@ -8246,10 +8300,16 @@ CREATE OR REPLACE FUNCTION public.can_access_invoice_items(p_invoice_id uuid)
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_company_id UUID;
+DECLARE
+  v_company_id UUID;
+  v_branch_id  UUID;
 BEGIN
-  SELECT company_id INTO v_company_id FROM invoices WHERE id = p_invoice_id;
-  RETURN is_company_member(v_company_id);
+  SELECT company_id, branch_id INTO v_company_id, v_branch_id
+    FROM invoices WHERE id = p_invoice_id;
+  IF v_company_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  RETURN public.can_access_record_branch(v_company_id, v_branch_id);
 END;
 $function$
 ;
@@ -8263,10 +8323,16 @@ CREATE OR REPLACE FUNCTION public.can_access_journal_lines(p_journal_entry_id uu
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_company_id UUID;
+DECLARE
+  v_company_id UUID;
+  v_branch_id  UUID;
 BEGIN
-  SELECT company_id INTO v_company_id FROM journal_entries WHERE id = p_journal_entry_id;
-  RETURN is_company_member(v_company_id);
+  SELECT company_id, branch_id INTO v_company_id, v_branch_id
+    FROM journal_entries WHERE id = p_journal_entry_id;
+  IF v_company_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  RETURN public.can_access_record_branch(v_company_id, v_branch_id);
 END;
 $function$
 ;
@@ -8289,50 +8355,194 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- can_access_purchase_order_items(p_purchase_order_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_order_items(p_purchase_order_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_company_id UUID;
+  v_branch_id  UUID;
+BEGIN
+  SELECT company_id, branch_id INTO v_company_id, v_branch_id
+    FROM purchase_orders WHERE id = p_purchase_order_id;
+  IF v_company_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  RETURN public.can_access_record_branch(v_company_id, v_branch_id);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_purchase_return(p_return_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_return(p_return_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_company UUID;
+  v_branch  UUID;
+  v_mine    UUID;
+BEGIN
+  SELECT pr.company_id, pr.branch_id
+    INTO v_company, v_branch
+    FROM public.purchase_returns pr
+   WHERE pr.id = p_return_id;
+
+  IF v_company IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  IF public.current_user_is_branch_unbounded(v_company) THEN
+    RETURN TRUE;
+  END IF;
+
+  v_mine := public.current_user_branch_id(v_company);
+  IF v_mine IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- مرتجعُ فرعٍ واحد: فرعُه أو لا شىء.
+  IF v_branch IS NOT NULL THEN
+    RETURN v_branch = v_mine;
+  END IF;
+
+  -- مرتجعٌ متعدد المخازن: يُرى إن كان لفرعى نصيبٌ فيه.
+  RETURN EXISTS (
+    SELECT 1 FROM public.purchase_return_warehouse_allocations a
+     WHERE a.purchase_return_id = p_return_id AND a.branch_id = v_mine
+  ) OR EXISTS (
+    SELECT 1 FROM public.purchase_return_items i
+      JOIN public.warehouses w ON w.id = i.warehouse_id
+     WHERE i.purchase_return_id = p_return_id AND w.branch_id = v_mine
+  );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_purchase_return_item(p_item_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_return_item(p_item_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_return      UUID;
+  v_company     UUID;
+  v_head_branch UUID;
+  v_warehouse   UUID;
+  v_allocation  UUID;
+  v_mine        UUID;
+BEGIN
+  SELECT i.purchase_return_id, pr.company_id, pr.branch_id, i.warehouse_id, i.warehouse_allocation_id
+    INTO v_return, v_company, v_head_branch, v_warehouse, v_allocation
+    FROM public.purchase_return_items i
+    JOIN public.purchase_returns pr ON pr.id = i.purchase_return_id
+   WHERE i.id = p_item_id;
+
+  IF v_return IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- البند لا يُقرأ إن كان رأسُه محجوباً.
+  IF NOT public.can_access_purchase_return(v_return) THEN
+    RETURN FALSE;
+  END IF;
+
+  IF public.current_user_is_branch_unbounded(v_company) THEN
+    RETURN TRUE;
+  END IF;
+
+  -- رأسٌ بفرعٍ واحد وقد مرّ: بنودُه كلُّها لذلك الفرع.
+  IF v_head_branch IS NOT NULL THEN
+    RETURN TRUE;
+  END IF;
+
+  v_mine := public.current_user_branch_id(v_company);
+  IF v_mine IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- مرتجعٌ متعدد: بندُ فرعى وحده — والسعر فيه.
+  IF v_allocation IS NOT NULL THEN
+    RETURN EXISTS (
+      SELECT 1 FROM public.purchase_return_warehouse_allocations a
+       WHERE a.id = v_allocation AND a.branch_id = v_mine
+    );
+  END IF;
+
+  IF v_warehouse IS NOT NULL THEN
+    RETURN EXISTS (
+      SELECT 1 FROM public.warehouses w
+       WHERE w.id = v_warehouse AND w.branch_id = v_mine
+    );
+  END IF;
+
+  -- بندٌ فى مرتجعٍ متعددٍ بلا مخزنٍ ولا تخصيص: لا يُنسب إلى فرع، فلا يُقرأ
+  -- إلا بلا قيدٍ مكانى. (صفر صفٍّ من هذا الشكل عند الكتابة — قِيس.)
+  RETURN FALSE;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- can_access_record_branch(p_company_id uuid, p_branch_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_access_record_branch(p_company_id uuid, p_branch_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_role           TEXT;
   v_user_branch_id UUID;
+  v_found          BOOLEAN := FALSE;
 BEGIN
-  -- مستخدم غير مُسجَّل الدخول
   IF auth.uid() IS NULL THEN
     RETURN FALSE;
   END IF;
 
-  -- جلب دور المستخدم وفرعه في هذه الشركة
-  SELECT role, branch_id
-    INTO v_role, v_user_branch_id
-    FROM public.company_members
-   WHERE user_id   = auth.uid()
-     AND company_id = p_company_id
+  SELECT cm.role, cm.branch_id, TRUE
+    INTO v_role, v_user_branch_id, v_found
+    FROM public.company_members cm
+   WHERE cm.user_id = auth.uid()
+     AND cm.company_id = p_company_id
    LIMIT 1;
 
-  -- المستخدم ليس عضواً في هذه الشركة
-  IF NOT FOUND THEN
-    -- تحقق أنه مالك الشركة (companies.user_id)
-    IF EXISTS (SELECT 1 FROM public.companies WHERE id = p_company_id AND user_id = auth.uid()) THEN
-      RETURN TRUE; -- مالك الشركة لا يخضع لقيود الفرع
-    END IF;
-    RETURN FALSE;
+  -- ليس عضواً: يبقى مالك الشركة المسجَّل (درس ٨٣٦).
+  IF NOT COALESCE(v_found, FALSE) THEN
+    RETURN EXISTS (
+      SELECT 1 FROM public.companies c
+       WHERE c.id = p_company_id AND c.user_id = auth.uid()
+    );
   END IF;
 
-  -- الأدوار العليا: وصول لجميع الفروع
-  IF v_role IN ('owner', 'admin', 'general_manager') THEN
+  -- الأدوار العامة: كل الفروع.
+  IF lower(btrim(v_role)) IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager') THEN
     RETURN TRUE;
   END IF;
 
-  -- السجل ليس مرتبطاً بفرع محدد (بيانات على مستوى الشركة)
+  -- v3.74.917 — عضو الشركة كلها (بلا فرعٍ فى عضويته) بلا قيدٍ مكانى.
+  IF v_user_branch_id IS NULL THEN
+    RETURN TRUE;
+  END IF;
+
+  -- سجلٌّ بلا فرع: بيانات على مستوى الشركة.
   IF p_branch_id IS NULL THEN
     RETURN TRUE;
   END IF;
 
-  -- المستخدم العادي: فرعه فقط
   RETURN v_user_branch_id = p_branch_id;
 END;
 $function$
@@ -8645,6 +8855,39 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- can_purchase_branchless_product(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_purchase_branchless_product(p_company_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_role  text;
+BEGIN
+  IF v_actor IS NULL OR p_company_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  -- المالك المسجَّل فى companies.user_id مالكٌ ولو لم يُذكر عضواً (درس ٨٣٦:
+  -- الاعتماد على العضوية وحدها أسقط المالك عن حقّه أكثر من مرة).
+  IF EXISTS (SELECT 1 FROM companies c WHERE c.id = p_company_id AND c.user_id = v_actor) THEN
+    RETURN true;
+  END IF;
+
+  SELECT lower(btrim(cm.role)) INTO v_role
+    FROM company_members cm
+   WHERE cm.company_id = p_company_id AND cm.user_id = v_actor
+   LIMIT 1;
+
+  RETURN v_role IN ('owner', 'general_manager', 'gm', 'generalmanager');
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- can_review_company_ai(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_review_company_ai(p_company_id uuid)
@@ -8660,6 +8903,89 @@ AS $function$
       AND cm.user_id = auth.uid()
       AND LOWER(COALESCE(cm.role, '')) IN ('owner', 'admin', 'general_manager', 'manager')
   );
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_view_purchase_cost(p_company_id uuid, p_created_by uuid, p_product_branch_id uuid, p_scope_by_branch boolean)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_created_by uuid DEFAULT NULL::uuid, p_product_branch_id uuid DEFAULT NULL::uuid, p_scope_by_branch boolean DEFAULT false)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_actor        uuid := auth.uid();
+  v_role         text;
+  v_member_branch uuid;
+  v_mode         text;
+BEGIN
+  -- بلا هوية لا إذن: العجز عن التحقق ليس إذناً (865).
+  IF v_actor IS NULL OR p_company_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  SELECT COALESCE(c.purchase_cost_visibility, 'restricted') INTO v_mode
+    FROM companies c WHERE c.id = p_company_id;
+
+  -- شركةٌ لا وجود لها لا تُمنح عنها إذناً.
+  IF v_mode IS NULL THEN
+    RETURN false;
+  END IF;
+
+  -- مالك الشركة المسجَّل فى companies.user_id مالكٌ ولو لم يُذكر عضواً،
+  -- ولا يُقاس بفرع: مِلكُه الشركة كلها.
+  IF EXISTS (SELECT 1 FROM companies c WHERE c.id = p_company_id AND c.user_id = v_actor) THEN
+    RETURN true;
+  END IF;
+
+  SELECT lower(btrim(cm.role)), cm.branch_id INTO v_role, v_member_branch
+    FROM company_members cm
+   WHERE cm.company_id = p_company_id AND cm.user_id = v_actor
+   LIMIT 1;
+
+  -- من ليس عضواً فى الشركة لا يُسأل عن دوره.
+  IF v_role IS NULL THEN
+    RETURN false;
+  END IF;
+
+  -- الاستثناء بنص المالك: المالك والمدير العام (وتهجئاتهما) فى كل وضع،
+  -- وبلا قيد فرعٍ ولو حمل صفُّ عضويتهما فرعاً.
+  IF v_role IN ('owner', 'general_manager', 'gm', 'generalmanager') THEN
+    RETURN true;
+  END IF;
+
+  -- الوضع المفتوح: السلوك القديم لمن لا يريد حجباً.
+  IF v_mode = 'open' THEN
+    RETURN true;
+  END IF;
+
+  -- الوضع الافتراضى: المحاسب ومسئول المشتريات ومدير الفرع (914).
+  IF v_mode = 'restricted' AND v_role IN ('accountant', 'purchasing_officer', 'manager') THEN
+    -- v3.74.914 — وقيد الفرع: عضوٌ مربوطٌ بفرعٍ لا يرى إلا تكلفة منتجات
+    -- فرعه. ولا يُطبَّق القيد إلا حين يُسأل عن **منتجٍ بعينه**
+    -- (`p_scope_by_branch`)، فالسؤال العام «هل يرى التكلفة أصلاً؟» يبقى
+    -- جوابه بالدور — وإلا لأخفت الشاشاتُ أعمدةً يستحقها.
+    IF p_scope_by_branch AND v_member_branch IS NOT NULL THEN
+      -- منتجٌ بلا فرع: منتج الشركة لا منتج الفرع — للمالك والمدير العام.
+      IF p_product_branch_id IS NULL THEN
+        RETURN false;
+      END IF;
+      RETURN p_product_branch_id = v_member_branch;
+    END IF;
+    RETURN true;
+  END IF;
+
+  -- ومنشئ المستند يرى مستنده. وما لا منشئ له (بطاقة المنتج، طبقات FIFO،
+  -- تقييم المخزون) يُنادى بـ NULL فلا يمرّ من هنا — وهذا هو المقصود:
+  -- تكلفة المنتج تتغير بمشترياتٍ لا شأن لمنشئ المنتج بها.
+  IF p_created_by IS NOT NULL AND p_created_by = v_actor THEN
+    RETURN true;
+  END IF;
+
+  RETURN false;
+END;
 $function$
 ;
 
@@ -8708,9 +9034,16 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'لا يمكن إلغاء إهلاك غير معتمد');
   END IF;
 
+  -- v3.74.893 — القيد كان يولد posted عبر الافتراضى بلا سياق موثوق فيرفضه
+  -- enforce_je_integrity (DIRECT_POST_BLOCKED) ويفشل الإلغاء كله. الدالة
+  -- ذرّية موثوقة (SECURITY DEFINER + تحقق انتماء الشركة أعلاه) فتُمنح
+  -- السياق الموثوق حول إنشاء قيد العكس فقط، وبتصريحٍ بالحالة لا اعتماداً
+  -- على افتراضى العمود.
+  PERFORM set_config('app.allow_direct_post', 'true', true);
+
   INSERT INTO public.journal_entries (
     company_id, reference_type, reference_id, entry_date, description,
-    branch_id, cost_center_id
+    branch_id, cost_center_id, status
   ) VALUES (
     v_write_off.company_id,
     'write_off_reversal',
@@ -8718,7 +9051,8 @@ BEGIN
     CURRENT_DATE,
     'إلغاء إهلاك - ' || v_write_off.write_off_number,
     v_write_off.branch_id,
-    v_write_off.cost_center_id
+    v_write_off.cost_center_id,
+    'posted'
   ) RETURNING id INTO v_reversal_journal_id;
 
   INSERT INTO public.journal_entry_lines (
@@ -8732,6 +9066,9 @@ BEGIN
     'عكس: ' || COALESCE(description, '')
   FROM public.journal_entry_lines
   WHERE journal_entry_id = v_write_off.journal_entry_id;
+
+  -- v3.74.893 — انتهى الجزء المحتاج للسياق الموثوق؛ يُعاد فوراً.
+  PERFORM set_config('app.allow_direct_post', 'false', true);
 
   FOR v_item IN SELECT * FROM public.inventory_write_off_items WHERE write_off_id = p_write_off_id LOOP
     INSERT INTO public.inventory_transactions (
@@ -10969,6 +11306,43 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- cleanup_shareholder_accounts()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cleanup_shareholder_accounts()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_acc uuid;
+BEGIN
+  FOR v_acc IN
+    SELECT a FROM unnest(ARRAY[OLD.capital_account_id, OLD.drawings_account_id]) AS a
+    WHERE a IS NOT NULL
+  LOOP
+    -- عليه قيود ⇒ تاريخٌ لا يُمسّ.
+    CONTINUE WHEN EXISTS (
+      SELECT 1 FROM journal_entry_lines WHERE account_id = v_acc LIMIT 1
+    );
+    -- شريكٌ آخر يستعمله ⇒ ليس لنا.
+    CONTINUE WHEN EXISTS (
+      SELECT 1 FROM shareholders
+      WHERE capital_account_id = v_acc OR drawings_account_id = v_acc
+      LIMIT 1
+    );
+    BEGIN
+      DELETE FROM chart_of_accounts WHERE id = v_acc;
+    EXCEPTION WHEN foreign_key_violation THEN
+      RAISE WARNING 'cleanup_shareholder_accounts: account % is referenced elsewhere — left in place', v_acc;
+    END;
+  END LOOP;
+  RETURN OLD;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- close_accounting_period(p_period_id uuid, p_user_id uuid, p_notes text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.close_accounting_period(p_period_id uuid, p_user_id uuid, p_notes text DEFAULT NULL::text)
@@ -12686,9 +13060,9 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date)
+-- consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date, p_branch_id uuid)
 -- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date DEFAULT CURRENT_DATE)
+CREATE OR REPLACE FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date DEFAULT CURRENT_DATE, p_branch_id uuid DEFAULT NULL::uuid)
  RETURNS numeric
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -12703,64 +13077,86 @@ DECLARE
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
-  -- الحصول على الدفعات بترتيب FIFO
+
   FOR v_lot IN
     SELECT id, remaining_quantity, unit_cost
     FROM fifo_cost_lots
     WHERE product_id = p_product_id
       AND company_id = p_company_id
       AND remaining_quantity > 0
+      -- v3.74.932 — الفرعُ حين يُمرَّر: طبقاتُ فرعه، وطبقةٌ بلا فرع (قديمة
+      -- على مستوى الشركة). ولا يأخذ من فرعٍ آخر أبداً.
+      AND (p_branch_id IS NULL OR branch_id = p_branch_id OR branch_id IS NULL)
     ORDER BY lot_date ASC, created_at ASC
-    FOR UPDATE -- قفل الصفوف لتجنب race conditions
+    FOR UPDATE
   LOOP
     EXIT WHEN v_remaining_qty <= 0;
 
-    -- الكمية من هذه الدفعة
     v_qty_from_lot := LEAST(v_lot.remaining_quantity, v_remaining_qty);
     v_cost_from_lot := v_qty_from_lot * v_lot.unit_cost;
 
-    -- تسجيل الاستهلاك
     INSERT INTO fifo_lot_consumptions (
-      company_id,
-      lot_id,
-      product_id,
-      consumption_type,
-      reference_type,
-      reference_id,
-      quantity_consumed,
-      unit_cost,
-      total_cost,
-      consumption_date
+      company_id, lot_id, product_id, consumption_type,
+      reference_type, reference_id, quantity_consumed,
+      unit_cost, total_cost, consumption_date
     ) VALUES (
-      p_company_id,
-      v_lot.id,
-      p_product_id,
-      p_consumption_type,
-      p_reference_type,
-      p_reference_id,
-      v_qty_from_lot,
-      v_lot.unit_cost,
-      v_cost_from_lot,
-      p_consumption_date
+      p_company_id, v_lot.id, p_product_id, p_consumption_type,
+      p_reference_type, p_reference_id, v_qty_from_lot,
+      v_lot.unit_cost, v_cost_from_lot, p_consumption_date
     );
 
-    -- تحديث الكمية المتبقية في الدفعة
     UPDATE fifo_cost_lots
-    SET remaining_quantity = remaining_quantity - v_qty_from_lot,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = v_lot.id;
+       SET remaining_quantity = remaining_quantity - v_qty_from_lot,
+           updated_at = CURRENT_TIMESTAMP
+     WHERE id = v_lot.id;
 
-    -- إضافة للتكلفة الإجمالية
     v_total_cogs := v_total_cogs + v_cost_from_lot;
     v_remaining_qty := v_remaining_qty - v_qty_from_lot;
   END LOOP;
 
-  -- إذا لم نجد دفعات كافية
+  -- v3.74.932 — كان تحذيراً فتمرّ تكلفةٌ منقوصةٌ بصمت. صار رفضاً.
   IF v_remaining_qty > 0 THEN
-    RAISE WARNING 'Insufficient FIFO lots for product %. Missing quantity: %', p_product_id, v_remaining_qty;
+    RAISE EXCEPTION 'FIFO_LOTS_INSUFFICIENT: product % short by % in branch % - refusing to post an understated cost',
+      p_product_id, v_remaining_qty, COALESCE(p_branch_id::text, '(company)');
   END IF;
 
   RETURN v_total_cogs;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_rows int;
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+
+  IF p_rate IS NULL OR p_rate <= 0 THEN
+    RAISE EXCEPTION 'CURRENCY_RATE_INVALID: rate % is not usable | سعر تحويل غير صالح', p_rate;
+  END IF;
+  IF COALESCE(btrim(p_currency), '') = '' THEN
+    RAISE EXCEPTION 'CURRENCY_CODE_REQUIRED: a display currency is required | عملة العرض مطلوبة';
+  END IF;
+
+  -- نفس حساب `convertAmount` فى الواجهة: أربع منازل، تقريبٌ نصفىٌّ لأعلى.
+  UPDATE products
+     SET display_unit_price = round(COALESCE(original_unit_price, unit_price, 0) * p_rate, 4),
+         display_cost_price = round(COALESCE(original_cost_price, cost_price, 0) * p_rate, 4),
+         display_currency   = p_currency,
+         display_rate       = p_rate,
+         exchange_rate_used = p_rate
+   WHERE company_id = p_company_id;
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
 END;
 $function$
 ;
@@ -15857,6 +16253,88 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb DEFAULT '[]'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_so_id     uuid;
+  v_so_number text;
+  v_item      jsonb;
+BEGIN
+  INSERT INTO sales_orders (
+    company_id, customer_id, so_date, due_date, status,
+    subtotal, tax_amount, discount_amount, shipping_charge, shipping_tax,
+    adjustment, total, total_amount, currency, exchange_rate, total_base,
+    tax_inclusive, discount_type, discount_value, discount_position,
+    shipping, shipping_tax_rate, shipping_provider_id, notes,
+    branch_id, cost_center_id, warehouse_id, created_by_user_id
+  )
+  SELECT
+    (p_so_data->>'company_id')::uuid,
+    NULLIF(p_so_data->>'customer_id', '')::uuid,
+    COALESCE((p_so_data->>'so_date')::date, CURRENT_DATE),
+    (p_so_data->>'due_date')::date,
+    COALESCE(NULLIF(p_so_data->>'status', ''), 'draft'),
+    COALESCE((p_so_data->>'subtotal')::numeric, 0),
+    COALESCE((p_so_data->>'tax_amount')::numeric, 0),
+    COALESCE((p_so_data->>'discount_amount')::numeric, 0),
+    COALESCE((p_so_data->>'shipping_charge')::numeric, 0),
+    COALESCE((p_so_data->>'shipping_tax')::numeric, 0),
+    COALESCE((p_so_data->>'adjustment')::numeric, 0),
+    COALESCE((p_so_data->>'total')::numeric, 0),
+    COALESCE((p_so_data->>'total_amount')::numeric, 0),
+    COALESCE(NULLIF(p_so_data->>'currency', ''), 'EGP'),
+    COALESCE(NULLIF((p_so_data->>'exchange_rate')::numeric, 0), 1),
+    COALESCE((p_so_data->>'total_base')::numeric, 0),
+    COALESCE((p_so_data->>'tax_inclusive')::boolean, FALSE),
+    NULLIF(p_so_data->>'discount_type', ''),
+    COALESCE((p_so_data->>'discount_value')::numeric, 0),
+    NULLIF(p_so_data->>'discount_position', ''),
+    COALESCE((p_so_data->>'shipping')::numeric, 0),
+    COALESCE((p_so_data->>'shipping_tax_rate')::numeric, 0),
+    NULLIF(p_so_data->>'shipping_provider_id', '')::uuid,
+    NULLIF(p_so_data->>'notes', ''),
+    NULLIF(p_so_data->>'branch_id', '')::uuid,
+    NULLIF(p_so_data->>'cost_center_id', '')::uuid,
+    NULLIF(p_so_data->>'warehouse_id', '')::uuid,
+    NULLIF(p_so_data->>'created_by_user_id', '')::uuid
+  RETURNING id, so_number INTO v_so_id, v_so_number;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_so_items) LOOP
+    INSERT INTO sales_order_items (
+      sales_order_id, product_id, quantity, unit_price, tax_rate,
+      discount_percent, subtotal, tax_amount, total, line_total,
+      description, item_type
+    ) VALUES (
+      v_so_id,
+      NULLIF(v_item->>'product_id', '')::uuid,
+      COALESCE((v_item->>'quantity')::numeric, 0),
+      COALESCE((v_item->>'unit_price')::numeric, 0),
+      COALESCE((v_item->>'tax_rate')::numeric, 0),
+      COALESCE((v_item->>'discount_percent')::numeric, 0),
+      COALESCE((v_item->>'subtotal')::numeric, 0),
+      COALESCE((v_item->>'tax_amount')::numeric, 0),
+      COALESCE((v_item->>'total')::numeric, 0),
+      COALESCE((v_item->>'line_total')::numeric, 0),
+      NULLIF(v_item->>'description', ''),
+      COALESCE(NULLIF(v_item->>'item_type', ''), 'product')
+    );
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'sales_order_id', v_so_id,
+    'so_number', v_so_number
+  );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- create_sales_return_gl_reversal(p_company_id uuid, p_invoice_id uuid, p_return_amount numeric, p_return_request_id uuid, p_user_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.create_sales_return_gl_reversal(p_company_id uuid, p_invoice_id uuid, p_return_amount numeric, p_return_request_id uuid, p_user_id uuid DEFAULT NULL::uuid)
@@ -16316,7 +16794,8 @@ BEGIN
     branch_id, cost_center_id,
     status, applied_amount,
     bill_id, source_purchase_invoice_id, source_purchase_return_id,
-    reference_type, reference_id, journal_entry_id
+    reference_type, reference_id, journal_entry_id,
+    created_by_user_id
   ) VALUES (
     (p_credit->>'company_id')::UUID,
     (p_credit->>'supplier_id')::UUID,
@@ -16348,7 +16827,8 @@ BEGIN
     (p_credit->>'source_purchase_return_id')::UUID,
      p_credit->>'reference_type',
     (p_credit->>'reference_id')::UUID,
-    (p_credit->>'journal_entry_id')::UUID
+    (p_credit->>'journal_entry_id')::UUID,
+    auth.uid()
   ) RETURNING id INTO v_id;
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
@@ -16651,6 +17131,48 @@ AS $function$
   FROM public.company_members
   WHERE user_id = auth.uid() AND company_id = p_company_id
   LIMIT 1;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- current_user_is_branch_unbounded(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.current_user_is_branch_unbounded(p_company_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_role   TEXT;
+  v_branch UUID;
+  v_found  BOOLEAN := FALSE;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT cm.role, cm.branch_id, TRUE
+    INTO v_role, v_branch, v_found
+    FROM public.company_members cm
+   WHERE cm.user_id = auth.uid()
+     AND cm.company_id = p_company_id
+   LIMIT 1;
+
+  -- ليس عضواً: يبقى مالك الشركة المسجَّل (درس ٨٣٦).
+  IF NOT COALESCE(v_found, FALSE) THEN
+    RETURN EXISTS (
+      SELECT 1 FROM public.companies c
+       WHERE c.id = p_company_id AND c.user_id = auth.uid()
+    );
+  END IF;
+
+  IF lower(btrim(v_role)) IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager') THEN
+    RETURN TRUE;
+  END IF;
+
+  RETURN v_branch IS NULL;
+END;
 $function$
 ;
 
@@ -21512,7 +22034,7 @@ BEGIN
     v_line_cost := public.consume_fifo_lots(
       p_company_id, r.product_id, r.qty,
       'service', 'service_consumption', p_invoice_id,
-      COALESCE(r.created_at::date, CURRENT_DATE)
+      COALESCE(r.created_at::date, CURRENT_DATE), r.branch_id
     );
 
     IF COALESCE(v_line_cost,0) <= 0 THEN
@@ -26210,6 +26732,16 @@ BEGIN
     v_result := v_result || jsonb_build_object('discount_approval', v_n);
   END IF;
 
+  -- v3.74.903 — إشعارات دائنة بانتظار اعتماد مصفوفة 900. المعتمدون
+  -- مالك/مدير عام فقط (المصفوفة حرفياً)، ويُستبعد ما أنشأه المستخدم
+  -- نفسه — فصل المهام: لا يُعدُّ له ما لا يملك قراره.
+  IF v_role IN ('owner','general_manager') THEN
+    SELECT count(*) INTO v_n FROM vendor_credits
+    WHERE company_id = p_company_id AND status = 'pending_approval'
+      AND created_by_user_id IS DISTINCT FROM p_user_id;
+    v_result := v_result || jsonb_build_object('vendor_credit_pending', v_n);
+  END IF;
+
   RETURN v_result;
 END;
 $function$
@@ -27429,7 +27961,7 @@ CREATE OR REPLACE FUNCTION public.ic_ap_balance(p_company_id uuid)
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_bill_net numeric; v_acct_net numeric; v_diff numeric;
+DECLARE v_bill_net numeric; v_acct_net numeric; v_credit_unapplied numeric; v_diff numeric;
 BEGIN
   -- v3.74.135 — count only bills that have crossed the GL boundary
   -- (confirm-receipt onward). draft / pending_approval / sent /
@@ -27438,6 +27970,21 @@ BEGIN
     INTO v_bill_net FROM bills
   WHERE company_id = p_company_id
     AND COALESCE(status,'') IN ('received','partially_paid','paid','partially_returned','fully_returned');
+
+  -- v3.74.907 — إشعارٌ دائنٌ معتمدٌ لم يُطبَّق بعدُ على فاتورة يترك
+  -- رصيداً مديناً **مشروعاً** فى حساب الموردين: قيدُه خفّض الالتزام،
+  -- ولا فاتورة تحمله. إغفاله كان يجعل الفاحص يصرخ على دفترٍ سليم.
+  -- والمقياس هو **وجود قيدٍ مرحَّل** لا اسم الحالة: ما لم يدخل الأستاذ
+  -- لا يُطرح منه. وزيادةُ الدفع مستثناةٌ لأن قيدها يعمل فى الاتجاه
+  -- المعاكس (يُعيد التصنيف إلى أصل).
+  SELECT COALESCE(SUM(GREATEST(0, vc.total_amount - COALESCE(vc.applied_amount,0))),0)
+    INTO v_credit_unapplied
+    FROM vendor_credits vc
+    JOIN journal_entries je ON je.id = vc.journal_entry_id
+                           AND je.status = 'posted'
+                           AND COALESCE(je.is_deleted, false) = false
+   WHERE vc.company_id = p_company_id
+     AND COALESCE(vc.reference_type,'') <> 'supplier_overpayment';
 
   SELECT COALESCE(SUM(jel.credit_amount - jel.debit_amount),0) INTO v_acct_net
   FROM journal_entry_lines jel
@@ -27449,15 +27996,17 @@ BEGIN
     AND COALESCE(je.reference_type,'') NOT IN
         ('fx_period_end_revaluation','fx_revaluation','fx_ar_revaluation','fx_ap_revaluation');
 
-  v_diff := ROUND(v_bill_net - v_acct_net, 2);
+  v_diff := ROUND((v_bill_net - v_credit_unapplied) - v_acct_net, 2);
   IF ABS(v_diff) > 0.10 THEN
     severity := CASE WHEN ABS(v_diff)>100 THEN 'high' ELSE 'medium' END;
     detail := jsonb_build_object('bill_remaining',v_bill_net,'account_2110',v_acct_net,
+      'credit_unapplied',v_credit_unapplied,
       'difference',v_diff,
-      'hint','AP ledger (excluding FX revaluation) does not match outstanding bills.');
+      'hint','AP ledger (excluding FX revaluation) does not match outstanding bills less unapplied vendor credits.');
     RETURN NEXT;
   END IF;
-END $function$
+END
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -30170,6 +30719,172 @@ END; $function$
 ;
 
 -- ---------------------------------------------------------------
+-- inventory_transfer_post_journal(p_in_tx_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.inventory_transfer_post_journal(p_in_tx_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_in          inventory_transactions;
+  v_out         inventory_transactions;
+  v_inv_account UUID;
+  v_qty         NUMERIC;
+  v_unit_cost   NUMERIC;
+  v_value       NUMERIC;
+  v_product     TEXT;
+  v_transfer_no TEXT;
+  v_lines       JSONB;
+  v_result      JSONB;
+BEGIN
+  SELECT * INTO v_in FROM inventory_transactions WHERE id = p_in_tx_id;
+
+  IF v_in.id IS NULL OR v_in.transaction_type <> 'transfer_in' THEN
+    RETURN NULL;
+  END IF;
+
+  -- v3.74.919 — من المُنادى؟ الدالة تكتب فى الدفاتر بصلاحياتٍ كاملة،
+  -- فتُسأل عن هوية صاحبها قبل أن تفعل. ومن لا هوية له (المحفِّز الداخلى،
+  -- كتلة الإصلاح، مفتاح الخدمة) تمرّ عليه بحكم تصميم `assert_company_access`.
+  PERFORM public.assert_company_access(v_in.company_id);
+
+  -- تُنادى مرتين فلا تُقيَّد مرتين (الكتلة الإصلاحية تنادى نفس الدالة).
+  IF v_in.journal_entry_id IS NOT NULL THEN
+    RETURN v_in.journal_entry_id;
+  END IF;
+
+  -- الساق المقابلة: خروجٌ من نفس أمر النقل ونفس الصنف.
+  SELECT * INTO v_out
+    FROM inventory_transactions t
+   WHERE t.reference_id = v_in.reference_id
+     AND t.product_id   = v_in.product_id
+     AND t.transaction_type = 'transfer_out'
+     AND COALESCE(t.is_deleted, false) = false
+   ORDER BY t.created_at
+   LIMIT 1;
+
+  IF v_out.id IS NULL THEN
+    RAISE EXCEPTION
+      'TRANSFER_IN_WITHOUT_OUT: حركة استلام نقلٍ بلا حركة خروجٍ مقابلة (%) — لا يمكن معرفة الفرع المُرسِل',
+      p_in_tx_id;
+  END IF;
+
+  -- نقلٌ داخل الفرع الواحد (بين مخزنين): لا يتغيّر بُعد الدفتر، فلا قيد.
+  -- ويُستثنى صراحةً فى الفاحص بنفس الشرط، لا بالسكوت عنه.
+  IF v_out.branch_id = v_in.branch_id THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT id INTO v_inv_account
+    FROM chart_of_accounts
+   WHERE company_id = v_in.company_id
+     AND sub_type = 'inventory'
+     AND COALESCE(is_active, true) = true
+   ORDER BY account_code
+   LIMIT 1;
+
+  IF v_inv_account IS NULL THEN
+    RAISE EXCEPTION
+      'TRANSFER_NO_INVENTORY_ACCOUNT: الشركة % بلا حساب مخزون — لا يمكن تقييد النقل',
+      v_in.company_id;
+  END IF;
+
+  v_qty := ABS(COALESCE(v_in.quantity_change, 0));
+  IF v_qty <= 0 THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT CASE WHEN SUM(f.remaining_quantity) > 0
+              THEN SUM(f.remaining_quantity * f.unit_cost) / SUM(f.remaining_quantity)
+         END
+    INTO v_unit_cost
+    FROM fifo_cost_lots f
+   WHERE f.product_id = v_in.product_id
+     AND f.company_id = v_in.company_id
+     AND f.remaining_quantity > 0;
+
+  IF v_unit_cost IS NULL OR v_unit_cost <= 0 THEN
+    RAISE EXCEPTION
+      'TRANSFER_NO_COST_BASIS: لا طبقات تكلفة قائمة للصنف % — نقلٌ بلا تكلفة لا يُقيَّد',
+      v_in.product_id;
+  END IF;
+
+  v_value := ROUND(v_qty * v_unit_cost, 2);
+
+  SELECT name INTO v_product FROM products WHERE id = v_in.product_id;
+  SELECT transfer_number INTO v_transfer_no FROM inventory_transfers WHERE id = v_in.reference_id;
+
+  -- سطران على نفس الحساب وبُعدان مختلفان: المخزون ينتقل من فرعٍ إلى فرع.
+  v_lines := jsonb_build_array(
+    jsonb_build_object(
+      'account_id',     v_inv_account,
+      'debit_amount',   v_value,
+      'credit_amount',  0,
+      'branch_id',      v_in.branch_id,
+      'cost_center_id', v_in.cost_center_id,
+      'description',    'مخزون وارد بالنقل — ' || COALESCE(v_product, v_in.product_id::text)
+    ),
+    jsonb_build_object(
+      'account_id',     v_inv_account,
+      'debit_amount',   0,
+      'credit_amount',  v_value,
+      'branch_id',      v_out.branch_id,
+      'cost_center_id', v_out.cost_center_id,
+      'description',    'مخزون صادر بالنقل — ' || COALESCE(v_product, v_in.product_id::text)
+    )
+  );
+
+  v_result := public.create_journal_entry_atomic(
+    v_in.company_id,
+    'inventory_transfer',
+    v_in.reference_id,
+    COALESCE(v_in.created_at::date, CURRENT_DATE),
+    'نقل مخزون ' || COALESCE(v_transfer_no, '') || ' — ' ||
+      COALESCE(v_product, '') || ' × ' || v_qty::text,
+    v_in.branch_id,
+    v_in.cost_center_id,
+    v_in.warehouse_id,
+    v_lines
+  );
+
+  IF COALESCE((v_result->>'success')::BOOLEAN, false) IS NOT TRUE THEN
+    RAISE EXCEPTION
+      'TRANSFER_JOURNAL_FAILED: أمر النقل % — %',
+      COALESCE(v_transfer_no, v_in.reference_id::text), COALESCE(v_result->>'error', 'unknown');
+  END IF;
+
+  -- الحركتان تحملان قيمتَهما ورابطَ قيدهما. وكانت `unit_cost` فارغةً فى
+  -- الاثنتين، فالنقل بلا قيمةٍ مسجَّلة أصلاً.
+  UPDATE inventory_transactions
+     SET journal_entry_id = (v_result->>'entry_id')::UUID,
+         unit_cost        = v_unit_cost,
+         total_cost       = v_value
+   WHERE id IN (v_in.id, v_out.id);
+
+  RETURN (v_result->>'entry_id')::UUID;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- inventory_transfer_post_journal_trg()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.inventory_transfer_post_journal_trg()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  PERFORM public.inventory_transfer_post_journal(NEW.id);
+  RETURN NULL;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- invoice_amendment_reset_approval_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.invoice_amendment_reset_approval_trg()
@@ -30476,6 +31191,33 @@ BEGIN
 
   RETURN NEW;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- invoice_posted_unit_costs(p_invoice_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.invoice_posted_unit_costs(p_invoice_id uuid)
+ RETURNS TABLE(product_id uuid, unit_cost numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT ct.product_id,
+         round(SUM(ct.total_cost) / NULLIF(SUM(ct.quantity), 0), 4) AS unit_cost
+    FROM cogs_transactions ct
+    JOIN invoices i ON i.id = ct.source_id
+   WHERE ct.source_id = p_invoice_id
+     AND ct.source_type = 'invoice'
+     -- العضوية **أو** ملكية الشركة المسجَّلة على السجل نفسه: مالكٌ أنشأ
+     -- شركته قد لا يكون له صفٌّ فى `company_members` إطلاقاً (درس 836)،
+     -- فالاكتفاء بـ`is_company_member` يحجب عنه تكلفة فاتورته هو.
+     -- اصطاده البرهان: صفر صفوفٍ للمالك على قاعدة الاختبار.
+     AND (EXISTS (SELECT 1 FROM company_members cm
+                   WHERE cm.company_id = i.company_id AND cm.user_id = auth.uid())
+          OR EXISTS (SELECT 1 FROM companies co
+                      WHERE co.id = i.company_id AND co.user_id = auth.uid()))
+   GROUP BY ct.product_id;
 $function$
 ;
 
@@ -30956,6 +31698,29 @@ AS $function$
 BEGIN
   NEW.updated_at := NOW();
   RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- is_booking_assignee(p_booking_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.is_booking_assignee(p_booking_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.booking_staff_assignments bsa
+     WHERE bsa.booking_id = p_booking_id
+       AND bsa.user_id = auth.uid()
+  );
 END;
 $function$
 ;
@@ -42315,7 +43080,10 @@ BEGIN
   ) INTO has_transactions;
 
   IF TG_OP = 'DELETE' THEN
-    IF OLD.is_system THEN
+    -- v3.74.884: كان الرفض مطلقاً لكل حساب نظام، فصار مقيَّداً بالحذف
+    -- المباشر (من التطبيق/API). حذفٌ يبدؤه النظام من داخل مُشغِّل —
+    -- كتنظيف حسابات شريكٍ حُذف — يمرّ إلى فحص القيود أدناه.
+    IF OLD.is_system AND pg_trigger_depth() <= 1 THEN
       -- v3.74.810b: bilingual — the DB cannot know the UI language, so the
       -- message carries both (owner: «الرسالة حسب اللغة المختارة»).
       RAISE EXCEPTION 'لا يمكن حذف حساب نظام — مطلوب لعمل المحاسبة التلقائية. | System account cannot be deleted — required for automatic accounting.';
@@ -44772,6 +45540,22 @@ BEGIN
 
   RETURN v_payment_id;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- product_costs(p_product_ids uuid[])
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.product_costs(p_product_ids uuid[])
+ RETURNS TABLE(product_id uuid, cost_price numeric, original_cost_price numeric, display_cost_price numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT p.id, p.cost_price, p.original_cost_price, p.display_cost_price
+    FROM products p
+   WHERE p.id = ANY(COALESCE(p_product_ids, ARRAY[]::uuid[]))
+     AND public.can_view_purchase_cost(p.company_id, NULL, p.branch_id, true);
 $function$
 ;
 
@@ -47566,6 +48350,84 @@ BEGIN
     'rejected_by', p_rejector_id,
     'rejection_reason', p_reason
   );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- reject_vendor_credit(p_credit_id uuid, p_reason text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.reject_vendor_credit(p_credit_id uuid, p_reason text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_vc public.vendor_credits%ROWTYPE;
+  v_approver_role text;
+  v_creator_role text;
+  v_rows int;
+BEGIN
+  IF v_actor IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NO_ACTOR');
+  END IF;
+
+  SELECT * INTO v_vc FROM vendor_credits WHERE id = p_credit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_FOUND');
+  END IF;
+  PERFORM public.assert_company_access(v_vc.company_id);
+
+  IF v_vc.status <> 'pending_approval' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_PENDING', 'status', v_vc.status);
+  END IF;
+
+  SELECT lower(btrim(role)) INTO v_approver_role
+    FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_actor LIMIT 1;
+  IF v_approver_role NOT IN ('owner', 'general_manager') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK');
+  END IF;
+  IF v_vc.created_by_user_id IS NOT NULL AND v_vc.created_by_user_id = v_actor THEN
+    RETURN jsonb_build_object('success', false, 'error', 'SELF_APPROVAL');
+  END IF;
+  SELECT lower(btrim(role)) INTO v_creator_role
+    FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_vc.created_by_user_id LIMIT 1;
+  IF (COALESCE(v_creator_role, '') = 'general_manager' OR v_creator_role IS NULL)
+     AND v_approver_role <> 'owner' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
+  END IF;
+
+  UPDATE vendor_credits
+     SET status = 'rejected',
+         notes = COALESCE(notes, '') ||
+                 CASE WHEN COALESCE(btrim(p_reason), '') <> ''
+                      THEN E'\n' || 'سبب الرفض: ' || btrim(p_reason) ELSE '' END,
+         updated_at = now()
+   WHERE id = p_credit_id AND status = 'pending_approval';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_REJECT_RACE: % rows updated, expected 1', v_rows;
+  END IF;
+
+  IF v_vc.created_by_user_id IS NOT NULL THEN
+    INSERT INTO notifications (
+      company_id, branch_id, reference_type, reference_id,
+      created_by, assigned_to_user,
+      title, message, priority, status, event_key
+    ) VALUES (
+      v_vc.company_id, v_vc.branch_id, 'vendor_credit_rejected', p_credit_id,
+      v_actor, v_vc.created_by_user_id,
+      'رُفض الإشعار الدائن',
+      'رُفض إشعارك ' || COALESCE(v_vc.credit_number, '') ||
+        CASE WHEN COALESCE(btrim(p_reason), '') <> '' THEN ' — السبب: ' || btrim(p_reason) ELSE '.' END,
+      'normal', 'unread',
+      'vendor_credit_rejected:' || p_credit_id::text
+    );
+  END IF;
+
+  RETURN jsonb_build_object('success', true);
 END;
 $function$
 ;
@@ -51260,6 +52122,51 @@ AS '$libdir/pg_trgm', $function$set_limit$function$
 ;
 
 -- ---------------------------------------------------------------
+-- set_purchase_cost_visibility(p_company_id uuid, p_mode text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.set_purchase_cost_visibility(p_company_id uuid, p_mode text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_is_owner boolean;
+  v_rows int;
+BEGIN
+  IF v_actor IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NO_ACTOR');
+  END IF;
+  IF p_mode IS NULL OR p_mode NOT IN ('open', 'restricted', 'strict') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'BAD_MODE');
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM companies c WHERE c.id = p_company_id AND c.user_id = v_actor
+    UNION ALL
+    SELECT 1 FROM company_members cm
+     WHERE cm.company_id = p_company_id AND cm.user_id = v_actor
+       AND lower(btrim(cm.role)) = 'owner'
+  ) INTO v_is_owner;
+
+  -- من يرى التكلفة لا يقرر من يراها — القرار للمالك وحده.
+  IF NOT COALESCE(v_is_owner, false) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'OWNER_ONLY');
+  END IF;
+
+  UPDATE companies SET purchase_cost_visibility = p_mode WHERE id = p_company_id;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_FOUND');
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'mode', p_mode);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- should_user_be_notified(p_user_id uuid, p_company_id uuid, p_category text, p_channel text, p_severity text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.should_user_be_notified(p_user_id uuid, p_company_id uuid, p_category text, p_channel text, p_severity text DEFAULT 'info'::text)
@@ -51339,6 +52246,40 @@ CREATE OR REPLACE FUNCTION public.similarity_op(text, text)
  LANGUAGE c
  STABLE PARALLEL SAFE STRICT
 AS '$libdir/pg_trgm', $function$similarity_op$function$
+;
+
+-- ---------------------------------------------------------------
+-- snapshot_product_original_prices(p_company_id uuid, p_currency text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_rows int;
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+
+  IF COALESCE(btrim(p_currency), '') = '' THEN
+    RAISE EXCEPTION 'CURRENCY_CODE_REQUIRED: an original currency is required | العملة الأصلية مطلوبة';
+  END IF;
+
+  -- درس 874/890: لقطةٌ لا مصدر لها بعدها — فشلها الصامت يُفقد الأصل
+  -- نهائياً. وهنا تقع فى جملةٍ واحدة: إما كُتبت للجميع أو لم تُكتب لأحد.
+  UPDATE products
+     SET original_unit_price = COALESCE(NULLIF(original_unit_price, 0), unit_price),
+         original_currency   = COALESCE(NULLIF(btrim(original_currency), ''), p_currency)
+   WHERE company_id = p_company_id
+     AND (original_unit_price IS NULL
+          OR original_unit_price = 0
+          OR COALESCE(btrim(original_currency), '') = '');
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -54675,39 +55616,138 @@ CREATE OR REPLACE FUNCTION public.update_bill_on_credit_application()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  ap_account UUID;
-  vc_liability UUID;
-  je_id UUID;
   vc_record RECORD;
   bill_record RECORD;
+  ap_account UUID;
+  advance_account UUID;
+  v_total_applied NUMERIC;
+  v_vc_posted BOOLEAN;
+  v_result JSONB;
 BEGIN
-  -- Get vendor credit info
   SELECT * INTO vc_record FROM vendor_credits WHERE id = NEW.vendor_credit_id;
-  SELECT * INTO bill_record FROM bills WHERE id = NEW.bill_id;
-
-  -- Find AP account
-  SELECT id INTO ap_account FROM chart_of_accounts
-  WHERE company_id = NEW.company_id
-    AND (sub_type = 'accounts_payable' OR account_name ILIKE '%payable%')
-  LIMIT 1;
-
-  IF ap_account IS NULL THEN
-    RETURN NEW;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_APPLICATION_NO_CREDIT: application % references missing vendor credit % | تطبيق على إشعار غير موجود',
+      NEW.id, NEW.vendor_credit_id;
   END IF;
 
-  -- Create journal entry for the application
-  INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description)
-  VALUES (NEW.company_id, 'vendor_credit_application', NEW.id, NEW.applied_date,
-    'تطبيق إشعار دائن ' || vc_record.credit_number || ' على فاتورة ' || bill_record.bill_number)
-  RETURNING id INTO je_id;
+  SELECT * INTO bill_record FROM bills WHERE id = NEW.bill_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_APPLICATION_NO_BILL: application % references missing bill % | تطبيق على فاتورة غير موجودة',
+      NEW.id, NEW.bill_id;
+  END IF;
 
-  -- Debit: Vendor Credit Liability (reduce what supplier owes us)
-  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
-  VALUES (je_id, ap_account, 0, NEW.amount_applied, 'تسوية إشعار دائن');
+  -- v3.74.894 — تطابق الشركة والمورد شرطُ صحةٍ لا افتراض واجهة.
+  IF vc_record.company_id <> NEW.company_id OR bill_record.company_id <> NEW.company_id THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_APPLICATION_COMPANY_MISMATCH: credit/bill/application belong to different companies | عدم تطابق شركة';
+  END IF;
+  v_vc_posted := (vc_record.journal_entry_id IS NOT NULL)
+             AND vc_record.status NOT IN ('pending_approval', 'rejected');
 
-  -- Credit: Accounts Payable (reduce what we owe supplier)
-  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description)
-  VALUES (je_id, ap_account, NEW.amount_applied, 0, 'تسوية ذمم دائنة');
+  IF vc_record.supplier_id IS DISTINCT FROM bill_record.supplier_id THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_APPLICATION_SUPPLIER_MISMATCH: credit % belongs to another supplier than bill % | الإشعار لمورد آخر غير مورد الفاتورة',
+      vc_record.credit_number, bill_record.bill_number;
+  END IF;
+
+  -- v3.74.900 — إشعارٌ بانتظار الاعتماد أو مرفوض لم تدخل قيمته الدفاتر
+  -- أصلاً — تطبيقه على فاتورة يستهلك حقاً لم يثبت بعد.
+  IF v_vc_posted IS NOT TRUE THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_NOT_POSTED: credit % is % and has no posted journal — approve it first | لا يُطبَّق إشعارٌ غير مرحَّل',
+      vc_record.credit_number, vc_record.status;
+  END IF;
+
+  IF COALESCE(NEW.amount_applied, 0) <= 0 THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_APPLICATION_BAD_AMOUNT: amount must be positive | قيمة التطبيق يجب أن تكون موجبة';
+  END IF;
+
+  -- v3.74.894 — لا استهلاك يتجاوز قيمة الإشعار (الجمع شامل هذا الصف؛ AFTER INSERT).
+  SELECT COALESCE(SUM(amount_applied), 0) INTO v_total_applied
+    FROM vendor_credit_applications
+   WHERE vendor_credit_id = NEW.vendor_credit_id;
+  IF v_total_applied > COALESCE(vc_record.total_amount, 0) THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_OVERAPPLIED: total applied % exceeds credit total % on % | التطبيق يتجاوز قيمة الإشعار',
+      v_total_applied, vc_record.total_amount, vc_record.credit_number;
+  END IF;
+
+  IF COALESCE(vc_record.reference_type, '') = 'supplier_overpayment' THEN
+    -- ═══ إشعار زيادة دفع: القيمة راقدة فى أصل سلف الموردين — تُستهلك الآن ═══
+    -- بحث الحسابات بنفس نمط auto_journal_for_vendor_credit المجرَّب.
+    SELECT id INTO ap_account FROM chart_of_accounts
+     WHERE company_id = NEW.company_id
+       AND sub_type = 'accounts_payable'
+       AND coalesce(is_active, true) = true
+     ORDER BY account_code LIMIT 1;
+    IF ap_account IS NULL THEN
+      SELECT id INTO ap_account FROM chart_of_accounts
+       WHERE company_id = NEW.company_id
+         AND account_type = 'liability'
+         AND coalesce(is_active, true) = true
+         AND (account_name ILIKE '%accounts payable%'
+              OR account_name ILIKE '%trade payable%'
+              OR account_name LIKE '%الموردين%'
+              OR account_name LIKE '%الموردون%')
+       ORDER BY account_code LIMIT 1;
+    END IF;
+    IF ap_account IS NULL THEN
+      -- v3.74.894 — كان هنا تخطٍّ صامت (RETURN NEW). الغياب عطبٌ يُعلن.
+      RAISE EXCEPTION 'VENDOR_CREDIT_NO_AP_ACCOUNT: company % has no accounts-payable account | لا حساب موردين',
+        NEW.company_id;
+    END IF;
+
+    SELECT id INTO advance_account FROM chart_of_accounts
+     WHERE company_id = NEW.company_id
+       AND account_type = 'asset'
+       AND coalesce(is_active, true) = true
+       AND sub_type IN ('supplier_advance', 'vendor_credit_liability')
+     ORDER BY account_code LIMIT 1;
+    IF advance_account IS NULL THEN
+      SELECT id INTO advance_account FROM chart_of_accounts
+       WHERE company_id = NEW.company_id
+         AND account_type = 'asset'
+         AND coalesce(is_active, true) = true
+         AND ((account_name LIKE '%سلف%' AND account_name LIKE '%مورد%')
+              OR (account_name ILIKE '%advance%' AND account_name ILIKE '%supplier%')
+              OR (account_name ILIKE '%prepayment%' AND account_name ILIKE '%supplier%'))
+       ORDER BY account_code LIMIT 1;
+    END IF;
+    IF advance_account IS NULL THEN
+      RAISE EXCEPTION 'VENDOR_CREDIT_NO_SUPPLIER_ADVANCE_ACCOUNT: company % has no supplier-advance asset account | لا حساب سلف للموردين',
+        NEW.company_id;
+    END IF;
+
+    v_result := public.create_journal_entry_atomic(
+      NEW.company_id,
+      'vendor_credit_application',
+      NEW.id,
+      NEW.applied_date,
+      'تطبيق إشعار دائن ' || COALESCE(vc_record.credit_number, vc_record.id::text) ||
+        ' على فاتورة ' || COALESCE(bill_record.bill_number, bill_record.id::text),
+      vc_record.branch_id,
+      vc_record.cost_center_id,
+      NULL,
+      jsonb_build_array(
+        jsonb_build_object(
+          'account_id',    ap_account,
+          'debit_amount',  NEW.amount_applied,
+          'credit_amount', 0,
+          'description',   'تخفيض ذمم الموردين بتطبيق الإشعار'
+        ),
+        jsonb_build_object(
+          'account_id',    advance_account,
+          'debit_amount',  0,
+          'credit_amount', NEW.amount_applied,
+          'description',   'استهلاك سلفة المورد'
+        )
+      )
+    );
+    IF COALESCE((v_result->>'success')::BOOLEAN, false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'VENDOR_CREDIT_APPLICATION_JOURNAL_FAILED: % on % | فشل قيد التطبيق',
+        COALESCE(v_result->>'error', 'unknown'), vc_record.credit_number;
+    END IF;
+  END IF;
+
+  -- إشعار المرتجع: لا قيد — الموردون خُفّضوا بكامل الإشعار عند إنشائه
+  -- (مدين موردين / دائن مخزون + ضريبة مدخلات). التطبيق هنا توزيعُ
+  -- دفترِ مساعدٍ على فاتورة بعينها، وقيدٌ ثانٍ = تخفيض مزدوج.
 
   RETURN NEW;
 END;
@@ -55936,6 +56976,12 @@ CREATE OR REPLACE FUNCTION public.update_vendor_credit_status()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
+  -- v3.74.900 — حالات المصفوفة لا تُعاد كتابتها من المبالغ: إشعارٌ بلا
+  -- قيدٍ مرحَّل (بانتظار الاعتماد) أو مرفوضٌ يحتفظ بحالته.
+  IF NEW.status IN ('pending_approval', 'rejected') OR NEW.journal_entry_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
   -- تحديث حالة vendor_credit بناءً على المبلغ المطبق
   IF NEW.applied_amount >= NEW.total_amount THEN
     NEW.status = 'closed';
@@ -55944,8 +56990,183 @@ BEGIN
   ELSE
     NEW.status = 'open';
   END IF;
-  
+
   RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- update_vendor_credit_with_items(p_credit_id uuid, p_credit jsonb, p_items jsonb)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.update_vendor_credit_with_items(p_credit_id uuid, p_credit jsonb, p_items jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_vc public.vendor_credits%ROWTYPE;
+  v_role text;
+  v_member_branch uuid;
+  v_new_branch uuid;
+  v_item jsonb;
+  v_count int;
+  v_rows int;
+  v_je uuid;
+  v_resubmit_no bigint;
+BEGIN
+  IF v_actor IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NO_ACTOR');
+  END IF;
+  IF p_credit IS NULL OR jsonb_typeof(p_credit) <> 'object' THEN
+    RAISE EXCEPTION 'p_credit must be a JSON object';
+  END IF;
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN
+    RAISE EXCEPTION 'p_items must be a JSON array';
+  END IF;
+
+  SELECT * INTO v_vc FROM vendor_credits WHERE id = p_credit_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_FOUND');
+  END IF;
+  PERFORM public.assert_company_access(v_vc.company_id);
+
+  -- المرفوض وحده يُعدَّل — المعلّق يُقرَّر فى صندوق الموافقات، والمرحَّل
+  -- تحكمه أدوات التصحيح المحاسبية لا التعديل الحر.
+  IF v_vc.status <> 'rejected' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_REJECTED', 'status', v_vc.status);
+  END IF;
+  IF v_vc.journal_entry_id IS NOT NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALREADY_POSTED');
+  END IF;
+  IF COALESCE(v_vc.applied_amount, 0) <> 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'ALREADY_APPLIED');
+  END IF;
+
+  -- المنشئ وحده — والمجهول منشئُه لا يملكه أحد فلا يُعدَّل من هذا الباب.
+  IF v_vc.created_by_user_id IS NULL OR v_vc.created_by_user_id IS DISTINCT FROM v_actor THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_CREATOR');
+  END IF;
+
+  SELECT lower(btrim(cm.role)), cm.branch_id INTO v_role, v_member_branch
+    FROM company_members cm
+   WHERE cm.company_id = v_vc.company_id AND cm.user_id = v_actor
+   LIMIT 1;
+  IF v_role IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'NOT_MEMBER');
+  END IF;
+  IF v_role NOT IN ('owner', 'general_manager', 'accountant') THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_ROLE_FORBIDDEN: role % may not resubmit vendor credits | هذا الدور لا يعيد إرسال إشعارات دائنة (مصفوفة 865)', v_role;
+  END IF;
+
+  v_new_branch := COALESCE((p_credit->>'branch_id')::uuid, v_vc.branch_id);
+  IF v_role = 'accountant' THEN
+    -- محاسب الفرع مقيَّد بفرعه — ومحاسبٌ بلا فرعٍ مسجَّل يُرفض (865).
+    IF v_member_branch IS NULL OR v_new_branch IS DISTINCT FROM v_member_branch THEN
+      RAISE EXCEPTION 'VENDOR_CREDIT_BRANCH_SCOPE: branch accountant may only resubmit credits for their own branch | محاسب الفرع مقيَّد بفرعه';
+    END IF;
+  END IF;
+
+  -- الرأس: أعمدة مسمّاة، والهوية محصَّنة، والحالة تعود للانتظار.
+  UPDATE vendor_credits SET
+    supplier_id          = COALESCE((p_credit->>'supplier_id')::uuid, supplier_id),
+    credit_date          = COALESCE((p_credit->>'credit_date')::date, credit_date),
+    subtotal             = COALESCE((p_credit->>'subtotal')::numeric, subtotal),
+    tax_amount           = COALESCE((p_credit->>'tax_amount')::numeric, tax_amount),
+    total_amount         = COALESCE((p_credit->>'total_amount')::numeric, total_amount),
+    discount_type        = COALESCE(p_credit->>'discount_type', discount_type),
+    discount_value       = COALESCE((p_credit->>'discount_value')::numeric, discount_value),
+    discount_position    = COALESCE(p_credit->>'discount_position', discount_position),
+    tax_inclusive        = COALESCE((p_credit->>'tax_inclusive')::boolean, tax_inclusive),
+    shipping             = COALESCE((p_credit->>'shipping')::numeric, shipping),
+    shipping_tax_rate    = COALESCE((p_credit->>'shipping_tax_rate')::numeric, shipping_tax_rate),
+    notes                = CASE WHEN p_credit ? 'notes' THEN p_credit->>'notes' ELSE notes END,
+    original_currency    = COALESCE(p_credit->>'original_currency', original_currency),
+    original_subtotal    = COALESCE((p_credit->>'original_subtotal')::numeric, original_subtotal),
+    original_tax_amount  = COALESCE((p_credit->>'original_tax_amount')::numeric, original_tax_amount),
+    original_total_amount = COALESCE((p_credit->>'original_total_amount')::numeric, original_total_amount),
+    exchange_rate_used   = COALESCE((p_credit->>'exchange_rate_used')::numeric, exchange_rate_used),
+    exchange_rate_id     = COALESCE((p_credit->>'exchange_rate_id')::uuid, exchange_rate_id),
+    branch_id            = v_new_branch,
+    cost_center_id       = COALESCE((p_credit->>'cost_center_id')::uuid, cost_center_id),
+    status               = 'pending_approval',
+    updated_at           = now()
+  WHERE id = p_credit_id AND status = 'rejected';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'VENDOR_CREDIT_RESUBMIT_RACE: % rows updated, expected 1', v_rows;
+  END IF;
+
+  -- البنود تُستبدل والقيد NULL — فلا يتولد أثر مخزونٍ من إدراجها (897).
+  DELETE FROM vendor_credit_items WHERE vendor_credit_id = p_credit_id;
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    INSERT INTO public.vendor_credit_items (
+      vendor_credit_id, product_id, description, quantity, unit_price,
+      tax_rate, tax_code_id, discount_percent, account_id, line_total
+    ) VALUES (
+      p_credit_id,
+      (v_item->>'product_id')::uuid,
+       v_item->>'description',
+      (v_item->>'quantity')::int,
+      (v_item->>'unit_price')::numeric,
+      COALESCE((v_item->>'tax_rate')::numeric, 0),
+      (v_item->>'tax_code_id')::uuid,
+      COALESCE((v_item->>'discount_percent')::numeric, 0),
+      (v_item->>'account_id')::uuid,
+      (v_item->>'line_total')::numeric
+    );
+  END LOOP;
+  SELECT count(*) INTO v_count FROM public.vendor_credit_items WHERE vendor_credit_id = p_credit_id;
+  IF jsonb_array_length(p_items) > 0 AND v_count <> jsonb_array_length(p_items) THEN
+    RAISE EXCEPTION 'vendor credit % : % line(s) sent but % stored', p_credit_id, jsonb_array_length(p_items), v_count;
+  END IF;
+
+  -- مصفوفة 865 من جديد بدور المنشئ لحظةَ إعادة الإرسال.
+  IF v_role = 'owner' THEN
+    SELECT * INTO v_vc FROM vendor_credits WHERE id = p_credit_id;
+    v_je := public.vendor_credit_post_journal(v_vc);
+    UPDATE vendor_credits
+       SET journal_entry_id = v_je, status = 'open', updated_at = now()
+     WHERE id = p_credit_id AND status = 'pending_approval';
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows <> 1 THEN
+      RAISE EXCEPTION 'VENDOR_CREDIT_RESUBMIT_RACE: % rows updated, expected 1', v_rows;
+    END IF;
+    RETURN jsonb_build_object('success', true, 'status', 'open', 'entry_id', v_je);
+  END IF;
+
+  -- إخطارات معلّقة سابقة لذات الإشعار تُؤرشف كى لا تزدحم النسختان.
+  UPDATE notifications
+     SET status = 'archived'
+   WHERE company_id = v_vc.company_id
+     AND reference_type = 'vendor_credit_pending'
+     AND reference_id = p_credit_id
+     AND status = 'unread';
+
+  SELECT count(*) + 1 INTO v_resubmit_no
+    FROM notifications
+   WHERE company_id = v_vc.company_id
+     AND reference_type = 'vendor_credit_pending'
+     AND reference_id = p_credit_id;
+
+  INSERT INTO notifications (
+    company_id, branch_id, reference_type, reference_id,
+    created_by, assigned_to_role,
+    title, message, priority, status, event_key
+  ) VALUES (
+    v_vc.company_id, v_new_branch, 'vendor_credit_pending', p_credit_id,
+    v_actor, 'owner',
+    'إشعار دائن معدَّل بانتظار الاعتماد',
+    'أُعيد إرسال الإشعار الدائن ' || COALESCE(v_vc.credit_number, '') || ' بعد تعديله بواسطة ' ||
+      CASE WHEN v_role = 'general_manager' THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
+      ' — يحتاج اعتماداً قبل الترحيل (مصفوفة 865).',
+    'high', 'unread',
+    'vendor_credit_pending:' || p_credit_id::text || ':r' || v_resubmit_no::text
+  );
+
+  RETURN jsonb_build_object('success', true, 'status', 'pending_approval');
 END;
 $function$
 ;
@@ -56283,7 +57504,72 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_product_branch_isolation()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$ DECLARE v_pb UUID; v_db UUID; v_tn TEXT := TG_TABLE_NAME; v_p UUID; BEGIN IF NEW.product_id IS NULL THEN RETURN NEW; END IF; CASE v_tn WHEN 'purchase_order_items' THEN v_p := NEW.purchase_order_id; SELECT branch_id INTO v_db FROM purchase_orders WHERE id = v_p; WHEN 'bill_items' THEN v_p := NEW.bill_id; SELECT branch_id INTO v_db FROM bills WHERE id = v_p; WHEN 'sales_order_items' THEN v_p := NEW.sales_order_id; SELECT branch_id INTO v_db FROM sales_orders WHERE id = v_p; WHEN 'invoice_items' THEN v_p := NEW.invoice_id; SELECT branch_id INTO v_db FROM invoices WHERE id = v_p; WHEN 'purchase_return_items' THEN v_p := NEW.purchase_return_id; SELECT branch_id INTO v_db FROM purchase_returns WHERE id = v_p; WHEN 'vendor_credit_items' THEN v_p := NEW.vendor_credit_id; SELECT branch_id INTO v_db FROM vendor_credits WHERE id = v_p; ELSE RETURN NEW; END CASE; IF v_db IS NULL THEN RETURN NEW; END IF; SELECT branch_id INTO v_pb FROM products WHERE id = NEW.product_id; IF v_pb IS NOT NULL AND v_pb != v_db THEN RAISE EXCEPTION 'Branch Isolation Violation'; END IF; RETURN NEW; END; $function$
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_pb       UUID;
+  v_db       UUID;
+  v_company  UUID;
+  v_tn       TEXT := TG_TABLE_NAME;
+  v_p        UUID;
+  v_arrived  BOOLEAN;
+BEGIN
+  IF NEW.product_id IS NULL THEN RETURN NEW; END IF;
+
+  CASE v_tn
+    WHEN 'purchase_order_items'  THEN v_p := NEW.purchase_order_id;  SELECT branch_id INTO v_db FROM purchase_orders  WHERE id = v_p;
+    WHEN 'bill_items'            THEN v_p := NEW.bill_id;            SELECT branch_id INTO v_db FROM bills            WHERE id = v_p;
+    WHEN 'sales_order_items'     THEN v_p := NEW.sales_order_id;     SELECT branch_id INTO v_db FROM sales_orders     WHERE id = v_p;
+    WHEN 'invoice_items'         THEN v_p := NEW.invoice_id;         SELECT branch_id INTO v_db FROM invoices         WHERE id = v_p;
+    WHEN 'purchase_return_items' THEN v_p := NEW.purchase_return_id; SELECT branch_id INTO v_db FROM purchase_returns WHERE id = v_p;
+    WHEN 'vendor_credit_items'   THEN v_p := NEW.vendor_credit_id;   SELECT branch_id INTO v_db FROM vendor_credits   WHERE id = v_p;
+    ELSE RETURN NEW;
+  END CASE;
+
+  IF v_db IS NULL THEN RETURN NEW; END IF;
+
+  SELECT branch_id, company_id INTO v_pb, v_company FROM products WHERE id = NEW.product_id;
+
+  -- منتجُ هذا الفرع بعينه: لا سؤال.
+  IF v_pb IS NOT NULL AND v_pb = v_db THEN RETURN NEW; END IF;
+
+  -- v3.74.916 — الشراء على منتجٍ بلا فرع: للمالك والمدير العام وحدهما.
+  IF v_pb IS NULL
+     AND v_tn IN ('purchase_order_items', 'bill_items')
+     AND auth.uid() IS NOT NULL
+     AND NOT public.can_purchase_branchless_product(v_company)
+  THEN
+    RAISE EXCEPTION 'BRANCHLESS_PRODUCT_PURCHASE_DENIED: هذا الصنف غير مرتبط بفرع، والشراء عليه للمالك أو المدير العام وحدهما.';
+  END IF;
+
+  -- v3.74.915/916 — البيع على ما وصل: يُسمح حين تكون بضاعةٌ من هذا الصنف
+  -- قد **دخلت هذا الفرع فعلاً** (حركة موجبة: transfer_in أو شراء أو
+  -- إنتاج). لا نيّةٌ ولا أمر نقلٍ معلَّق — دخولٌ مسجَّل. والشرط واحدٌ
+  -- للمنقول ولمنتج الشركة معاً (916): كلاهما ليس منتج هذا الفرع.
+  IF v_tn IN ('invoice_items', 'sales_order_items') THEN
+    SELECT EXISTS (
+      SELECT 1 FROM inventory_transactions t
+       WHERE t.product_id = NEW.product_id
+         AND t.branch_id  = v_db
+         AND t.quantity_change > 0
+    ) INTO v_arrived;
+
+    IF v_arrived THEN RETURN NEW; END IF;
+
+    IF v_pb IS NULL THEN
+      RAISE EXCEPTION 'BRANCHLESS_PRODUCT_NOT_IN_BRANCH: هذا الصنف غير مرتبط بفرع ولم تصل منه بضاعةٌ إلى هذا الفرع بعد — انقل الكمية أولاً ثم بِع.';
+    END IF;
+
+    RAISE EXCEPTION 'Branch Isolation Violation';
+  END IF;
+
+  -- وما بقى (بلا فرع، أو فرعٌ آخر) على المستندات الأخرى: كما كان.
+  IF v_pb IS NULL THEN RETURN NEW; END IF;
+
+  RAISE EXCEPTION 'Branch Isolation Violation';
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -56936,6 +58222,310 @@ CREATE OR REPLACE FUNCTION public.vector_typmod_in(cstring[])
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/vector', $function$vector_typmod_in$function$
+;
+
+-- ---------------------------------------------------------------
+-- vendor_credit_post_journal(p_vc vendor_credits)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.vendor_credit_post_journal(p_vc vendor_credits)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  ap_account        UUID;
+  inventory_account UUID;
+  vat_account       UUID;
+  advance_account   UUID;
+  discount_account  UUID;
+  v_goods_moved     BOOLEAN;
+  v_is_overpayment  BOOLEAN;
+  v_residual        NUMERIC;
+  v_lines           JSONB;
+  v_result          JSONB;
+  v_debit           NUMERIC := 0;
+  v_credit          NUMERIC := 0;
+  v_line            JSONB;
+BEGIN
+  v_is_overpayment := COALESCE(p_vc.reference_type, '') = 'supplier_overpayment';
+
+  -- ما لا يفسّره الأصناف ولا الضريبة: الشحن والتسوية. كان يُهمَل صامتاً.
+  v_residual := ROUND(COALESCE(p_vc.total_amount, 0)
+                    - COALESCE(p_vc.subtotal, 0)
+                    - COALESCE(p_vc.tax_amount, 0), 2);
+
+  -- ── حساب الموردين (لازمٌ فى الحالتين) ──────────────────────────────
+  SELECT id INTO ap_account FROM chart_of_accounts
+   WHERE company_id = p_vc.company_id
+     AND sub_type = 'accounts_payable'
+     AND coalesce(is_active, true) = true
+   ORDER BY account_code
+   LIMIT 1;
+
+  IF ap_account IS NULL THEN
+    SELECT id INTO ap_account FROM chart_of_accounts
+     WHERE company_id = p_vc.company_id
+       AND account_type = 'liability'
+       AND coalesce(is_active, true) = true
+       AND (account_name ILIKE '%accounts payable%'
+            OR account_name ILIKE '%trade payable%'
+            OR account_name LIKE '%الموردين%'
+            OR account_name LIKE '%الموردون%')
+     ORDER BY account_code
+     LIMIT 1;
+  END IF;
+
+  IF ap_account IS NULL THEN
+    RAISE EXCEPTION
+      'VENDOR_CREDIT_NO_AP_ACCOUNT: company % has no accounts-payable account | لا حساب موردين',
+      p_vc.company_id;
+  END IF;
+
+  IF v_is_overpayment THEN
+    SELECT id INTO advance_account FROM chart_of_accounts
+     WHERE company_id = p_vc.company_id
+       AND account_type = 'asset'
+       AND coalesce(is_active, true) = true
+       AND sub_type IN ('supplier_advance', 'vendor_credit_liability')
+     ORDER BY account_code
+     LIMIT 1;
+
+    IF advance_account IS NULL THEN
+      SELECT id INTO advance_account FROM chart_of_accounts
+       WHERE company_id = p_vc.company_id
+         AND account_type = 'asset'
+         AND coalesce(is_active, true) = true
+         AND ((account_name LIKE '%سلف%' AND account_name LIKE '%مورد%')
+              OR (account_name ILIKE '%advance%' AND account_name ILIKE '%supplier%')
+              OR (account_name ILIKE '%prepayment%' AND account_name ILIKE '%supplier%'))
+       ORDER BY account_code
+       LIMIT 1;
+    END IF;
+
+    IF advance_account IS NULL THEN
+      RAISE EXCEPTION
+        'VENDOR_CREDIT_NO_SUPPLIER_ADVANCE_ACCOUNT: company % has no supplier-advance asset account | لا حساب سلف للموردين',
+        p_vc.company_id;
+    END IF;
+
+    v_lines := jsonb_build_array(
+      jsonb_build_object(
+        'account_id',    advance_account,
+        'debit_amount',  p_vc.total_amount,
+        'credit_amount', 0,
+        'description',   'سلفة لدى المورد — زيادة دفع'
+      ),
+      jsonb_build_object(
+        'account_id',    ap_account,
+        'debit_amount',  0,
+        'credit_amount', p_vc.total_amount,
+        'description',   'تسوية رصيد الموردين المدين'
+      )
+    );
+
+  ELSE
+    v_goods_moved := (p_vc.source_purchase_return_id IS NOT NULL)
+                  OR COALESCE(p_vc.reference_type, '') = 'bill_return';
+
+    IF v_goods_moved THEN
+      -- v3.74.907 — شحنٌ على إشعارٍ بحركة بضاعة: يُرفض بصوتٍ عالٍ لا
+      -- يُخمَّن. الفاتورة ترسمل الشحن داخل المخزون، وطبقات FIFO تحمل
+      -- التكلفة الواصلة به؛ فعكسه هنا قد يعكسه مرتين.
+      IF v_residual <> 0 THEN
+        RAISE EXCEPTION
+          'VENDOR_CREDIT_GOODS_RESIDUAL_UNPROVEN: credit % carries % beyond items+tax while goods moved; the FIFO effect is not proven yet | شحن أو تسوية على إشعارٍ بحركة بضاعة: أثره على طبقات FIFO غير مبرهَن',
+          COALESCE(p_vc.credit_number, p_vc.id::text), v_residual;
+      END IF;
+
+      SELECT id INTO inventory_account FROM chart_of_accounts
+       WHERE company_id = p_vc.company_id
+         AND sub_type = 'inventory'
+         AND coalesce(is_active, true) = true
+       ORDER BY account_code
+       LIMIT 1;
+
+      IF inventory_account IS NULL THEN
+        SELECT id INTO inventory_account FROM chart_of_accounts
+         WHERE company_id = p_vc.company_id
+           AND account_type = 'asset'
+           AND coalesce(is_active, true) = true
+           AND (account_name ILIKE '%inventory%' OR account_name LIKE '%المخزون%')
+         ORDER BY account_code
+         LIMIT 1;
+      END IF;
+
+      IF inventory_account IS NULL THEN
+        RAISE EXCEPTION
+          'VENDOR_CREDIT_NO_INVENTORY_ACCOUNT: company % has no inventory account | لا حساب مخزون',
+          p_vc.company_id;
+      END IF;
+
+      v_lines := jsonb_build_array(
+        jsonb_build_object(
+          'account_id',    ap_account,
+          'debit_amount',  p_vc.total_amount,
+          'credit_amount', 0,
+          'description',   'تخفيض ذمم دائنة'
+        ),
+        jsonb_build_object(
+          'account_id',    inventory_account,
+          'debit_amount',  0,
+          'credit_amount', p_vc.subtotal,
+          'description',   'مردودات مشتريات'
+        )
+      );
+    ELSE
+      SELECT id INTO discount_account FROM chart_of_accounts
+       WHERE company_id = p_vc.company_id
+         AND sub_type = 'purchase_discounts'
+         AND coalesce(is_active, true) = true
+       ORDER BY account_code
+       LIMIT 1;
+
+      IF discount_account IS NULL THEN
+        SELECT id INTO discount_account FROM chart_of_accounts
+         WHERE company_id = p_vc.company_id
+           AND sub_type = 'purchase_returns'
+           AND coalesce(is_active, true) = true
+         ORDER BY account_code
+         LIMIT 1;
+      END IF;
+
+      IF discount_account IS NULL THEN
+        SELECT id INTO discount_account FROM chart_of_accounts
+         WHERE company_id = p_vc.company_id
+           AND coalesce(is_active, true) = true
+           AND ((account_name LIKE '%خصم%' AND account_name LIKE '%مشتر%')
+                OR (account_name LIKE '%مردودات%' AND account_name LIKE '%مشتر%')
+                OR (account_name ILIKE '%purchase%' AND account_name ILIKE '%discount%'))
+         ORDER BY account_code
+         LIMIT 1;
+      END IF;
+
+      IF discount_account IS NULL THEN
+        RAISE EXCEPTION
+          'VENDOR_CREDIT_NO_DISCOUNT_ACCOUNT: company % has no purchase-discount/returns account for a standalone credit | لا حساب خصم مشتريات لإشعار مستقل',
+          p_vc.company_id;
+      END IF;
+
+      v_lines := jsonb_build_array(
+        jsonb_build_object(
+          'account_id',    ap_account,
+          'debit_amount',  p_vc.total_amount,
+          'credit_amount', 0,
+          'description',   'تخفيض ذمم دائنة'
+        ),
+        jsonb_build_object(
+          'account_id',    discount_account,
+          'debit_amount',  0,
+          'credit_amount', p_vc.subtotal,
+          'description',   'خصم مشتريات مكتسب — إشعار دائن بلا حركة بضاعة'
+        )
+      );
+
+      -- v3.74.907 — الشحن والتسوية: بنصّ المالك إلى حساب خصم المشتريات
+      -- نفسه. سطرٌ مستقلٌّ باسمه كى يُقرأ فى الأستاذ لا كى يُخبَّأ داخل رقم.
+      IF v_residual > 0 THEN
+        v_lines := v_lines || jsonb_build_array(
+          jsonb_build_object(
+            'account_id',    discount_account,
+            'debit_amount',  0,
+            'credit_amount', v_residual,
+            'description',   'شحن/تسوية على إشعار دائن — بلا حركة بضاعة'
+          )
+        );
+      ELSIF v_residual < 0 THEN
+        v_lines := v_lines || jsonb_build_array(
+          jsonb_build_object(
+            'account_id',    discount_account,
+            'debit_amount',  ABS(v_residual),
+            'credit_amount', 0,
+            'description',   'تسوية سالبة على إشعار دائن — بلا حركة بضاعة'
+          )
+        );
+      END IF;
+    END IF;
+
+    SELECT id INTO vat_account FROM chart_of_accounts
+     WHERE company_id = p_vc.company_id
+       AND sub_type = 'vat_input'
+       AND coalesce(is_active, true) = true
+     ORDER BY account_code
+     LIMIT 1;
+
+    IF vat_account IS NULL THEN
+      SELECT id INTO vat_account FROM chart_of_accounts
+       WHERE company_id = p_vc.company_id
+         AND account_type = 'asset'
+         AND coalesce(is_active, true) = true
+         AND (account_name ILIKE '%input vat%'
+              OR account_name ILIKE '%vat%input%'
+              OR account_name LIKE '%مدخلات%')
+       ORDER BY account_code
+       LIMIT 1;
+    END IF;
+
+    IF COALESCE(p_vc.tax_amount, 0) > 0 THEN
+      IF vat_account IS NULL THEN
+        RAISE EXCEPTION
+          'VENDOR_CREDIT_NO_VAT_ACCOUNT: credit % carries tax % but company has no input-VAT account | ضريبة بلا حساب',
+          p_vc.credit_number, p_vc.tax_amount;
+      END IF;
+      v_lines := v_lines || jsonb_build_array(
+        jsonb_build_object(
+          'account_id',    vat_account,
+          'debit_amount',  0,
+          'credit_amount', p_vc.tax_amount,
+          'description',   'تعديل ضريبة المشتريات'
+        )
+      );
+    END IF;
+  END IF;
+
+  -- v3.74.907 — القيد يساوى المستند أو لا يُرحَّل. القيد السابق كان
+  -- متوازناً فى ذاته وناقصاً عن مستنده، فمرّ من حارس التوازن سالماً.
+  FOR v_line IN SELECT * FROM jsonb_array_elements(v_lines) LOOP
+    v_debit  := v_debit  + COALESCE((v_line->>'debit_amount')::numeric, 0);
+    v_credit := v_credit + COALESCE((v_line->>'credit_amount')::numeric, 0);
+  END LOOP;
+
+  IF ABS(v_debit - v_credit) > 0.005 THEN
+    RAISE EXCEPTION
+      'VENDOR_CREDIT_UNBALANCED: credit % builds % debit vs % credit | قيد غير متوازن',
+      COALESCE(p_vc.credit_number, p_vc.id::text), v_debit, v_credit;
+  END IF;
+
+  IF ABS(v_debit - COALESCE(p_vc.total_amount, 0)) > 0.005 THEN
+    RAISE EXCEPTION
+      'VENDOR_CREDIT_JE_NOT_DOCUMENT: credit % totals % but its entry moves % | القيد لا يساوى المستند',
+      COALESCE(p_vc.credit_number, p_vc.id::text), p_vc.total_amount, v_debit;
+  END IF;
+
+  v_result := public.create_journal_entry_atomic(
+    p_vc.company_id,
+    'vendor_credit',
+    p_vc.id,
+    p_vc.credit_date,
+    CASE WHEN v_is_overpayment
+         THEN 'سلفة مورد من زيادة دفع رقم ' || COALESCE(p_vc.credit_number, p_vc.id::text)
+         ELSE 'إشعار دائن مورد رقم ' || COALESCE(p_vc.credit_number, p_vc.id::text)
+    END,
+    p_vc.branch_id,
+    p_vc.cost_center_id,
+    NULL,
+    v_lines
+  );
+
+  IF COALESCE((v_result->>'success')::BOOLEAN, false) IS NOT TRUE THEN
+    RAISE EXCEPTION
+      'VENDOR_CREDIT_JOURNAL_FAILED: credit % — %',
+      COALESCE(p_vc.credit_number, p_vc.id::text), COALESCE(v_result->>'error', 'unknown');
+  END IF;
+
+  RETURN (v_result->>'entry_id')::UUID;
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
