@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-01T16:00:53.306Z
--- Routines: 1285
+-- Generated: 2026-08-01T17:45:51.913Z
+-- Routines: 1286
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8850,6 +8850,28 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- can_manage_products(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_manage_products(p_company_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT
+    -- مالكُ الشركة المسجَّل مالكٌ ولو لم يُذكر عضواً (درس ٨٣٦).
+    EXISTS (SELECT 1 FROM public.companies c
+             WHERE c.id = p_company_id AND c.user_id = auth.uid())
+    OR EXISTS (SELECT 1 FROM public.company_members cm
+                WHERE cm.company_id = p_company_id
+                  AND cm.user_id = auth.uid()
+                  AND lower(btrim(cm.role)) IN (
+                        'owner', 'admin', 'general_manager', 'gm', 'generalmanager',
+                        'manager', 'accountant', 'store_manager', 'purchasing_officer'));
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- can_manage_supplier_row(p_company_id uuid, p_row_branch_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_manage_supplier_row(p_company_id uuid, p_row_branch_id uuid)
@@ -16056,6 +16078,11 @@ DECLARE
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.74.935
+  IF NOT public.can_manage_products(p_company_id) THEN
+    RAISE EXCEPTION 'PRODUCT_MANAGE_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
     -- 1. Fetch branch defaults if branch_id provided and cc/wh missing
     IF p_branch_id IS NOT NULL AND (p_cost_center_id IS NULL OR (p_item_type = 'product' AND p_warehouse_id IS NULL)) THEN
         SELECT default_cost_center_id, default_warehouse_id
@@ -16121,6 +16148,11 @@ DECLARE
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.74.935
+  IF NOT public.can_manage_products(p_company_id) THEN
+    RAISE EXCEPTION 'PRODUCT_MANAGE_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
     IF p_branch_id IS NOT NULL AND (p_cost_center_id IS NULL OR (p_item_type = 'product' AND p_warehouse_id IS NULL)) THEN
         SELECT default_cost_center_id, default_warehouse_id INTO v_branch_record
         FROM branches WHERE id = p_branch_id AND company_id = p_company_id;

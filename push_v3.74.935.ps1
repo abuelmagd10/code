@@ -6,90 +6,115 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.934 - the OLD script is removed, never this one. Five times a chained
+# v3.74.935 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.933.ps1") { Remove-Item -LiteralPath "push_v3.74.933.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.934.ps1") { Remove-Item -LiteralPath "push_v3.74.934.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.934"') {
-    Write-Host "+ 3.74.934" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.935"') {
+    Write-Host "+ 3.74.935" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.934]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.934]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.935]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.935]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# No migration in this release: the rule did not change, only WHO ASKS IT.
-# The one data change - the company moving from strict to restricted - is the
-# owner's setting, measured and written into the CHANGELOG, not a schema step.
-$screen = "app/products/page.tsx"
-$guard  = "scripts/check-cost-rule-has-one-home.js"
-$trap   = "scripts/selftest-cost-rule-has-one-home.js"
+$migration = "supabase/migrations/20260801000001_v3_74_935_products_are_created_by_their_owners.sql"
+$guard     = "scripts/check-product-management-one-door.js"
+$trap      = "scripts/selftest-product-management-one-door.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $screen, $guard, $trap,
-           "push_v3.74.934.ps1")
+           $migration, $guard, $trap,
+           "supabase/schema/functions.sql",
+           "push_v3.74.935.ps1")
 
-$s = Get-Content -LiteralPath $screen -Raw
+$m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# Measure on CODE only - a comment is not an instruction (930 and 932 lessons,
-# and this release quotes the very line it forbids).
-$sCode = ($s -split "`n" | Where-Object { $_ -notmatch "^\s*(//|\*|/\*)" }) -join "`n"
+# Measure on CODE only - a comment is not an instruction (930, 932, 934).
+$mCode = ($m -split "`n" | Where-Object { $_ -notmatch "^\s*--" }) -join "`n"
 
-# -- 1. the screen ASKS the rule, and no longer restates it -------------
-if ($sCode -match [regex]::Escape("setCanViewCOGS(isUpperRole)")) {
-    Write-Host "X the product screen still decides the cost field from a role list" -ForegroundColor Red
+# -- 1. one rule, and it names every role the owner named ---------------
+foreach ($role in @("owner", "admin", "general_manager", "manager",
+                    "accountant", "store_manager", "purchasing_officer")) {
+    if ($mCode -notmatch [regex]::Escape("'$role'")) {
+        Write-Host "X can_manage_products does not name $role - that role loses the products screen" -ForegroundColor Red
+        exit 1
+    }
+}
+foreach ($blocked in @("'staff'", "'manufacturing_officer'", "'booking_officer'", "'hr_officer'")) {
+    if ($mCode -match [regex]::Escape($blocked)) {
+        Write-Host "X $blocked is still named - the owner asked for it to be blocked" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ one rule, naming exactly the roles the owner named" -ForegroundColor Green
+
+# -- 2. the policies CALL the rule, and there is one door per write -----
+if ($mCode -notmatch [regex]::Escape("WITH CHECK (public.can_manage_products(company_id))")) {
+    Write-Host "X the INSERT policy does not call the rule" -ForegroundColor Red; exit 1
+}
+if ($mCode -notmatch [regex]::Escape("USING      (public.can_manage_products(company_id))")) {
+    Write-Host "X the UPDATE policy does not call the rule" -ForegroundColor Red; exit 1
+}
+foreach ($dropped in @("DROP POLICY IF EXISTS products_insert ", "DROP POLICY IF EXISTS products_insert_members",
+                       "DROP POLICY IF EXISTS products_update ", "DROP POLICY IF EXISTS products_update_members")) {
+    if ($mCode -notmatch [regex]::Escape($dropped)) {
+        Write-Host "X a second permissive door survives ($dropped)" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ one door per write, and the rule is called, not restated" -ForegroundColor Green
+
+# -- 3. THE REAL DOOR: the definer creator asks about the role ----------
+# The screen never inserts into products - measured, zero sites. Creation goes
+# through create_product_atomic, which is SECURITY DEFINER, so the row policy
+# never runs inside it. Narrowing the policy alone would have been a placebo.
+if ($mCode -notmatch [regex]::Escape("can_manage_products(p_company_id)")) {
+    Write-Host "X create_product_atomic is not given the role check - the real door stays open" -ForegroundColor Red
     exit 1
 }
-if ($sCode -notmatch [regex]::Escape('rpc(')) {
-    Write-Host "X the product screen makes no rpc call at all" -ForegroundColor Red; exit 1
+if ($mCode -notmatch [regex]::Escape("refusing to patch blindly")) {
+    Write-Host "X the patch does not refuse when its anchor moved (932 lesson)" -ForegroundColor Red; exit 1
 }
-if ($sCode -notmatch [regex]::Escape("can_view_purchase_cost")) {
-    Write-Host "X the product screen does not ask can_view_purchase_cost" -ForegroundColor Red; exit 1
+if ($mCode -notmatch [regex]::Escape("already guarded, left as is")) {
+    Write-Host "X re-running the migration would insert the check twice" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the product screen asks the rule instead of restating it" -ForegroundColor Green
+Write-Host "+ the definer creator asks about the role, patched at an anchor, once" -ForegroundColor Green
 
-# -- 2. and it asks about THIS branch, not in general -------------------
-# 914: a branch accountant does not see another branch's cost. Asking without
-# the branch would hand the field to him for every branch in the company.
-if ($sCode -notmatch [regex]::Escape("p_scope_by_branch")) {
-    Write-Host "X the screen asks the rule without scoping to the branch" -ForegroundColor Red; exit 1
-}
-if ($sCode -notmatch [regex]::Escape("p_product_branch_id")) {
-    Write-Host "X the screen does not pass a branch to the rule" -ForegroundColor Red; exit 1
-}
-Write-Host "+ it asks about the branch the item will belong to" -ForegroundColor Green
-
-# -- 3. failing to ask is not permission (865) --------------------------
-if ($sCode -notmatch [regex]::Escape("setCanViewCOGS(false)")) {
-    Write-Host "X an error asking the rule does not close the field - failure would open it" -ForegroundColor Red
+# -- 4. and the shared helper is NOT narrowed --------------------------
+# can_modify_data is used by other tables. Narrowing it would cut what was
+# never measured.
+if ($mCode -match [regex]::Escape("CREATE OR REPLACE FUNCTION public.can_modify_data")) {
+    Write-Host "X the migration rewrites can_modify_data - a shared helper used by other tables" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ an error asking the rule closes the field, it does not open it" -ForegroundColor Green
-
-# -- 4. the guard refuses the shape, and spares the innocent ------------
-if ($g -notmatch [regex]::Escape("isUpperRole")) {
-    Write-Host "X the guard does not know the shape it is meant to catch" -ForegroundColor Red; exit 1
+if ($mCode -notmatch [regex]::Escape("REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon")) {
+    Write-Host "X the re-created creator is left open to PUBLIC/anon (919/929)" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("not the cost")) {
-    Write-Host "X the trap never plants an INNOCENT role list - a guard that cries wolf gets switched off" -ForegroundColor Red
+Write-Host "+ the shared helper is untouched, and the re-created function is not left open" -ForegroundColor Green
+
+# -- 5. the guard measures the effect, and the trap plants the worst shape
+if ($g -notmatch [regex]::Escape("create_product_atomic")) {
+    Write-Host "X the guard does not look at the real door" -ForegroundColor Red; exit 1
+}
+if ($g -notmatch [regex]::Escape("ROLLBACK TO SAVEPOINT")) {
+    Write-Host "X the guard does not actually try to create - it would measure text, not effect" -ForegroundColor Red
     exit 1
 }
-if (([regex]::Matches($t, [regex]::Escape("stage("))).Count -lt 4) {
-    Write-Host "X the trap plants fewer than four shapes" -ForegroundColor Red; exit 1
+if ($t -notmatch [regex]::Escape("no longer asks about the role")) {
+    Write-Host "X the trap never plants the shape that was actually live before 935" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the trap plants the defect AND an innocent lookalike, and demands both verdicts" -ForegroundColor Green
+Write-Host "+ the guard tries it for real; the trap plants the shape that was live" -ForegroundColor Green
 
 # -- 6. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.934.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.935.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -111,14 +136,22 @@ if ($self2 -notmatch [regex]::Escape("selftest-purchase-cost-masked-path.js")) {
 if ($self2 -notmatch [regex]::Escape("selftest-cost-rule-has-one-home.js")) {
     Write-Host "X the one-home guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
 }
+if ($self2 -notmatch [regex]::Escape("selftest-product-management-one-door.js")) {
+    Write-Host "X the products-door guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
+}
 Write-Host "+ the battery plants its probes and watches every guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
+# The snapshot mirrors the database, and this release rewrites two functions.
+Write-Host "Refreshing the function snapshot from the live database..." -ForegroundColor Cyan
+node scripts/dump-db-functions.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X could not refresh supabase/schema/functions.sql" -ForegroundColor Red; exit 1 }
+
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.933.ps1" 2>$null
+git add -u -- "push_v3.74.934.ps1" 2>$null
 
 # -- 7. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.933.ps1")
+$expected = @($files) + @("push_v3.74.934.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -127,6 +160,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the products-door guard refuses all three shapes (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-product-management-one-door.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the products-door guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Measuring who may create a product, by actually trying it as every member..." -ForegroundColor Cyan
+node scripts/check-product-management-one-door.js --require-db
+if ($LASTEXITCODE -ne 0) { Write-Host "X who may create a product is not what the code assumes" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the one-home guard refuses a second copy of the cost rule..." -ForegroundColor Cyan
 node scripts/selftest-cost-rule-has-one-home.js
@@ -367,7 +408,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.933.ps1" 2>$null
+git add -u -- "push_v3.74.934.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -388,60 +429,57 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_934.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_935.txt"
     $msgLines = @(
-        'fix(security): v3.74.934 - the screen asks the cost rule instead of restating it',
+        'fix(security): v3.74.935 - products are created by their owners, and the real door is shut',
         '',
-        'THE OWNER DESCRIBED HIS RULE: the purchasing officer sees the cost of HIS',
-        'branch products and registers items and raw materials for it, since he is',
-        'the one who raises his branch purchase orders; the branch manager sees his',
-        'branch cost to know what goes on in it; the branch accountant sees the cost',
-        'of what he does the accounting for - and none of the three sees the cost of',
-        'goods MOVED INTO their warehouse from another warehouse.',
+        'THE OWNER DECIDED: creating and editing items is for the owner, the admin,',
+        'the general manager, the branch manager, the accountant, the store keeper',
+        'and the purchasing officer. The salesman and the manufacturing officer are',
+        'blocked - and so are the booking and HR officers, who were also getting',
+        'through.',
         '',
-        'MEASURED: that rule has been written and in force since 914, word for word.',
-        'product_costs asks can_view_purchase_cost with the PRODUCT branch, so the',
-        'comparison is branch against branch.',
+        'THE WRITTEN DOOR WAS NOT THE REAL ONE. products had TWO permissive INSERT',
+        'policies: one naming six roles, another delegating to can_modify_data,',
+        'which passes eleven - everybody. Same for UPDATE. That is the permissive',
+        'policy shape again (921, 928, 929, 930, 931).',
         '',
-        'BUT THE SCREEN SAID OTHERWISE. app/products/page.tsx decided whether to show',
-        'the Cost Price field with one line - setCanViewCOGS(isUpperRole) - and',
-        'UPPER_ROLES is three names: owner, admin, general_manager. So the purchasing',
-        'officer raised purchase orders for his branch and found NO COST FIELD AT ALL',
-        'when registering the item. No error, no message - just a missing field. No',
-        'test and no diff review catches this: each line is correct on its own.',
+        'BUT NARROWING THEM ALONE WOULD HAVE BEEN A PLACEBO THAT LOOKED COMPLETE.',
+        'The screen never inserts into products at all - measured: ZERO sites in the',
+        'whole tree. Creation goes through create_product_atomic, which is SECURITY',
+        'DEFINER, so the row policy NEVER RUNS INSIDE IT. All it asked was',
+        'assert_company_access: are you a member of this company - not in what role.',
         '',
-        'THE CURE IS ONE HOME. The screen now asks can_view_purchase_cost itself,',
-        'with the member branch and p_scope_by_branch = true. And an error asking is',
-        'not permission - failing to verify closes the field (865). The server was',
-        'already correct: the product update route has asked the same function with',
-        'the product branch since 914. The defect was the browser holding a second,',
-        'stale copy of a rule that lives in the database.',
+        'PROVEN BEFORE THE CURE: the real path was called by impersonating all seven',
+        'roles on production, and EVERY ONE OF THEM created an item successfully -',
+        'the salesman and the manufacturing officer included.',
         '',
-        'THIS IS THE PERMISSIVE-POLICY LESSON IN ANOTHER DRESS (921, 928, 929, 930,',
-        '931). There, two policies said the same thing and editing one changed',
-        'nothing. Here, a rule in the database and its echo in the browser - and the',
-        'echo kept lying after the original was corrected.',
+        'AND THE FUNCTION HAS TWO OVERLOADS (sixteen and seventeen parameters), both',
+        'SECURITY DEFINER, both granted to authenticated. The screen calls one; the',
+        'other was a sleeping back door. Both are shut.',
         '',
-        'AND THE LIVE SETTING NOW MATCHES THE RULE. The company was on strict, where',
-        'only the owner and the document author see anything. What the owner',
-        'described is exactly restricted, so it was switched at his instruction.',
-        'Measured on production by impersonation, role by role: the accountant, the',
-        'branch manager and the purchasing officer read 9 product costs of 10, 5 bill',
-        'totals and 9 line prices - all of their branch. The tenth product is the one',
-        'that is NOT theirs and only reached their warehouse by a movement, and its',
-        'cost stays hidden. The manufacturing officer, the salesman and the store',
-        'keeper read zero in every column.',
+        'ONE RULE, CALLED FROM TWO PLACES (the 934 lesson applied). can_manage_products',
+        'is written once and called by BOTH the row policy and the definer function,',
+        'so closing one closes the other and no text can claim what no effect',
+        'supports. can_modify_data was NOT narrowed - it is shared with other tables,',
+        'and narrowing it would cut what was never measured.',
         '',
-        'THE FOURTH CLAUSE WAS SEEN WORKING, BY PLANTING: a product owned by the Nasr',
-        'City branch was moved into the main branch warehouse. Before, the main',
-        'branch accountant neither saw it nor read its cost; after, HE SEES IT (it is',
-        'in his warehouse) AND ITS COST IS STILL HIDDEN. Rolled back.',
+        'THE BODIES ARE NOT COPIED INTO THE MIGRATION (932 lesson). Each overload is',
+        'read from the database, the anchor is verified, and the check is inserted',
+        'after it - RAISING if the anchor moved, and skipping if the check is already',
+        'there, so re-running cannot double it.',
         '',
-        'A GUARD KEEPS THE SECOND COPY FROM COMING BACK, and it is proven on four',
-        'shapes - including an INNOCENT one: a role list used for something that is',
-        'not the cost must pass in silence. A guard that cries wolf is switched off',
-        'within a week, and that is a defect in the guard, not in whoever switches it',
-        'off.'
+        'MEASURED AFTER, BY ACTUALLY TRYING, ROLLED BACK: the accountant, the branch',
+        'manager, the store keeper, the purchasing officer and the owner create and',
+        'edit as before; the manufacturing officer and the salesman are REFUSED and',
+        'edit ZERO rows. AND WHAT EACH CAN READ IS UNCHANGED - counted before and',
+        'after the attempt for every member. The narrowing is on who writes, not on',
+        'who looks.',
+        '',
+        'THE GUARD MEASURES THE REAL DOOR, not the written one: it tries to create',
+        'and to edit as every member inside a rolled-back transaction. And the trap',
+        'plants the worst shape - a definer creator that stopped asking about the',
+        'role - which is exactly the state that was live until this release.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -450,5 +488,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.934 pushed - the cost rule has one home, and the live setting matches it" -ForegroundColor Green
+    Write-Host "`n+ v3.74.935 pushed - products are created by their owners, and the real door is shut" -ForegroundColor Green
 }
