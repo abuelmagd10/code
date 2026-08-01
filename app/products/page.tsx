@@ -260,8 +260,43 @@ export default function ProductsPage() {
               setUserCostCenterId(costCenterId || "")
               setUserWarehouseId(warehouseId || "")
               setIsUpperRole(isUpperRole)
-              // فقط هذه الأدوار يمكنها رؤية سعر التكلفة
-              setCanViewCOGS(isUpperRole)
+
+              // v3.74.934 — حقلُ سعر التكلفة يُسأل عنه **القاعدةَ**، لا قائمةَ أدوارٍ هنا.
+              //
+              // كان هنا `setCanViewCOGS(isUpperRole)`، و`UPPER_ROLES` ثلاثةٌ فقط
+              // (owner · admin · general_manager). فكانت الشاشةُ **نسخةً ثانيةً من
+              // الحكم** تخالف الأصل: `can_view_purchase_cost` تُدخل فى الوضع
+              // المقيَّد المحاسبَ ومديرَ الفرع ومسئولَ المشتريات — كلٌّ فى حدود
+              // فرعه. فكان مسئولُ المشتريات يُنشئ أمرَ الشراء لفرعه ولا يجد حقلَ
+              // سعر الشراء أصلاً حين يسجّل الصنف.
+              //
+              // ومتى تعدّدت نسخُ الحكم صار تعديلُ إحداها لا يعنى شيئاً — وهو نفسُه
+              // درسُ الأبواب المتجاورة (921 · 928 · 931) فى ثوبٍ آخر: **حكمٌ واحدٌ
+              // يُنادى، لا نصٌّ يُكرَّر.**
+              //
+              // ويُسأل بفرع العضو: الدورُ العادى يُحفظ صنفُه على فرعه دائماً،
+              // والدورُ الأعلى يمرّ بلا قيدِ فرعٍ من الدالة نفسها.
+              try {
+                const { data: mayViewCost, error: costRuleError } = await supabase.rpc(
+                  "can_view_purchase_cost",
+                  {
+                    p_company_id: companyId,
+                    p_created_by: null,
+                    p_product_branch_id: branchId || null,
+                    p_scope_by_branch: true,
+                  }
+                )
+                // وخطأٌ فى السؤال ليس إذناً: العجزُ عن التحقق يُغلق لا يفتح (865).
+                if (costRuleError) {
+                  console.error("[products] can_view_purchase_cost failed:", costRuleError)
+                  setCanViewCOGS(false)
+                } else {
+                  setCanViewCOGS(mayViewCost === true)
+                }
+              } catch (ruleErr) {
+                console.error("[products] can_view_purchase_cost threw:", ruleErr)
+                setCanViewCOGS(false)
+              }
             }
           }
         }
