@@ -163,6 +163,28 @@ const CHILDREN = [
       }
     }
 
+    // ═══ المراجع الخمسة: بابٌ واحدٌ لكل جدول (v3.74.931) ═══
+    // قُرِّر إبقاؤها على مستوى الشركة (أسماءٌ لا مبالغ، وتُقرأ فى الربط).
+    // فالمقياسُ هنا ليس الفرع بل **عددَ الأبواب**: سياسةُ قراءةٍ واحدة لكل
+    // جدول. فمتى تعدّدت، صار تعديلُ واحدةٍ لا يعنى شيئاً ما دامت الأخرى
+    // مفتوحة — وهو الشكل الذى أوقعنا فى 921 و928 و929 و930.
+    {
+      const { rows: doors } = await client.query(`
+        SELECT tablename, count(*)::int AS n
+          FROM pg_policies
+         WHERE schemaname = 'public' AND cmd IN ('SELECT', 'ALL')
+           AND tablename IN ('chart_of_accounts','cost_centers','warehouses',
+                             'branch_shipping_providers','user_branch_access')
+         GROUP BY tablename HAVING count(*) > 1`)
+      seen.push(`مراجع(أبوابٌ زائدة)=${doors.length}`)
+      for (const d of doors) {
+        problems.push(
+          `${d.tablename}: ${d.n} read policies stand side by side on a reference table - ` +
+          `they are OR-ed, so tightening one changes nothing while another stays open`
+        )
+      }
+    }
+
     // ═══ الإشعارات: جمهورٌ لا فرعٌ فقط (v3.74.930) ═══
     // لا تُقاس مع الرؤوس: إشعارٌ **موجَّهٌ إلىَّ بالاسم** يعبر الفرع بحقّ —
     // شخصٌ قصدنى. فالمقياسان هنا: ألا أقرأ ما وُجّه لغيرى باسمه، وألا أقرأ

@@ -6,98 +6,90 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.930 - the OLD script is removed, never this one. Five times a chained
+# v3.74.931 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.929.ps1") { Remove-Item -LiteralPath "push_v3.74.929.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.930.ps1") { Remove-Item -LiteralPath "push_v3.74.930.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.930"') {
-    Write-Host "+ 3.74.930" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.931"') {
+    Write-Host "+ 3.74.931" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.930]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.930]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.931]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.931]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260731000019_v3_74_930_notification_audience.sql"
+$migration = "supabase/migrations/20260731000020_v3_74_931_reference_tables_one_door.sql"
 $guard     = "scripts/check-branch-isolation-holes.js"
 $trap      = "scripts/selftest-branch-isolation-holes.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
            $migration, $guard, $trap,
-           "push_v3.74.930.ps1")
+           "push_v3.74.931.ps1")
 
 $m = Get-Content -LiteralPath $migration -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. both old read policies are gone, and both write ones ------------
-foreach ($needle in @('DROP POLICY IF EXISTS "Users can view their notifications"',
-                      'DROP POLICY IF EXISTS "Users can view their own notifications"',
-                      'DROP POLICY IF EXISTS "Users can update their notifications"',
-                      'DROP POLICY IF EXISTS "Users can update their own notifications"')) {
+# -- 1. one read door per reference table -------------------------------
+foreach ($needle in @("DROP POLICY IF EXISTS cost_centers_select_policy",
+                      "DROP POLICY IF EXISTS company_owner_initial_read_cost_centers",
+                      "DROP POLICY IF EXISTS company_owner_initial_read_warehouses",
+                      "DROP POLICY IF EXISTS warehouses_select_policy",
+                      "DROP POLICY IF EXISTS user_branch_access_select_policy",
+                      "DROP POLICY IF EXISTS chart_accounts_owner_select")) {
     if ($m -notmatch [regex]::Escape($needle)) {
-        Write-Host "X an old notification policy survives ($needle)" -ForegroundColor Red; exit 1
+        Write-Host "X a duplicate read policy survives ($needle)" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ one read rule and one write rule replace four" -ForegroundColor Green
+Write-Host "+ the duplicate read policies are merged into one per table" -ForegroundColor Green
 
-# -- 2. the audience rule has all three arms ----------------------------
-# A notification is not a document: the question is WHO IT WAS WRITTEN FOR.
-# Addressed to me by name crosses the branch by right - hiding it would
-# leave a notification nobody can read.
-if ($m -notmatch [regex]::Escape("assigned_to_user = auth.uid()")) {
-    Write-Host "X the addressee arm is missing - a man would lose his own notifications" -ForegroundColor Red
+# -- 2. the FOR ALL policies are SPLIT, not merely dropped --------------
+# An ALL policy covers SELECT too, so it stays a second door however tidy
+# the read policies become. And dropping it outright would take away a
+# write permission somebody has. It is rewritten as three write policies
+# with the SAME predicate - no widening, no narrowing. (926 lesson.)
+if ($m -match "CREATE POLICY[^;]*FOR ALL") {
+    Write-Host "X a FOR ALL policy was re-created - it would be a second read door" -ForegroundColor Red
     exit 1
 }
-if ($m -notmatch [regex]::Escape("assigned_to_user IS NULL")) {
-    Write-Host "X the unassigned arm is missing" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("public.can_access_record_branch(company_id, branch_id)")) {
-    Write-Host "X an unassigned notification is still not scoped to the branch" -ForegroundColor Red; exit 1
-}
-# and the typo that made the OLD policy lie must never come back.
-# NOTE: measured on the CODE, not the file - the migration quotes the broken
-# line in its header to explain it, and a guard that reads a comment as code
-# refuses the document that documents the bug. (Caught by this very check.)
-$mCode = ($m -split "`n" | Where-Object { $_ -notmatch "^\s*--" }) -join "`n"
-if ($mCode -match "cm\.branch_id\s*=\s*cm\.branch_id") {
-    Write-Host "X a column is compared to ITSELF - the condition is always true" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ addressee, management and role+branch - and no self-comparison" -ForegroundColor Green
-
-# -- 3. reading and marking-as-read follow the SAME rule ----------------
-if (([regex]::Matches($m, [regex]::Escape("assigned_to_user = auth.uid()"))).Count -lt 2) {
-    Write-Host "X the update rule does not mirror the read rule" -ForegroundColor Red; exit 1
-}
-Write-Host "+ whoever cannot read a notification cannot mark it read" -ForegroundColor Green
-
-# -- 4. the guard measures notifications by AUDIENCE, not by branch alone
-foreach ($needle in @("notifications(", "assigned_to_user IS NOT NULL")) {
-    if ($g -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the guard does not measure the notification audience" -ForegroundColor Red; exit 1
+foreach ($needle in @("cost_centers_manage_insert", "cost_centers_manage_update",
+                      "cost_centers_manage_delete", "chart_of_accounts_owner_insert",
+                      "chart_of_accounts_owner_update", "chart_of_accounts_owner_delete")) {
+    if ($m -notmatch [regex]::Escape($needle)) {
+        Write-Host "X a write permission was dropped instead of split ($needle)" -ForegroundColor Red
+        exit 1
     }
 }
-if ($t -notmatch [regex]::Escape("notifications_unassigned_open")) {
-    Write-Host "X the trap never plants the arm this whole series began with" -ForegroundColor Red; exit 1
+Write-Host "+ both ALL policies became write-only, with their predicate word for word" -ForegroundColor Green
+
+# -- 3. the registered owner is no longer forgotten ---------------------
+if ($m -notmatch [regex]::Escape("b.company_id IN (SELECT get_user_company_ids())")) {
+    Write-Host "X branch_shipping_providers still forgets the registered owner" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("- notifications:")) {
-    Write-Host "X the trap does not require the guard to NAME notifications" -ForegroundColor Red; exit 1
+Write-Host "+ the registered owner sees the shipping providers of what he owns" -ForegroundColor Green
+
+# -- 4. and the DECISION itself is guarded ------------------------------
+# These five stay company-wide BY CHOICE - names, not amounts, and read in
+# joins on every document. The guard now counts their read doors, so a
+# second policy on any of them fails the release.
+if ($g -notmatch [regex]::Escape("مراجع(أبوابٌ زائدة)")) {
+    Write-Host "X the guard does not count the read doors on the reference tables" -ForegroundColor Red
+    exit 1
 }
 if ($t -match "on (TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|BOTH) (different )?(tables|shapes)") {
     Write-Host "X the trap closing line counts tables again" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the notification audience is measured, and its leak is planted every release" -ForegroundColor Green
+Write-Host "+ the decision is written in the migration AND measured every release" -ForegroundColor Green
 
 # -- 5. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.930.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.931.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -117,10 +109,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.929.ps1" 2>$null
+git add -u -- "push_v3.74.930.ps1" 2>$null
 
 # -- 6. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.929.ps1")
+$expected = @($files) + @("push_v3.74.930.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -353,7 +345,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.929.ps1" 2>$null
+git add -u -- "push_v3.74.930.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -374,71 +366,60 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_930.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_931.txt"
     $msgLines = @(
-        'fix(security): v3.74.930 - a notification reaches the person it was written for',
+        'refactor(security): v3.74.931 - one read door per reference table, and the decision written down',
         '',
-        'THIS IS THE DOOR THE WHOLE SERIES BEGAN AT. In 917 the Nasr City bill',
-        'was closed to the main-branch accountant - but the NOTIFICATION that',
-        'pointed him at it, carrying the supplier name and the figure 986.10 in',
-        'its text, was left exactly as it was. Closing a document without the',
-        'notification that describes it is a half-closing.',
+        'THE DECISION FIRST: chart_of_accounts, cost_centers, warehouses,',
+        'branch_shipping_providers and user_branch_access stay COMPANY-WIDE, by',
+        'choice rather than by oversight, for three measured reasons.',
         '',
-        'MEASURED ON PRODUCTION. Of 505 notifications in the company, EVERY ROLE',
-        'saw 503: accountant, manager, manufacturing officer, purchasing',
-        'officer, staff, store keeper - no difference between them. Among those,',
-        '77 belonged to Nasr City, and between 250 and 274 were addressed BY',
-        'NAME to somebody else. Every employee was reading his colleague mail -',
-        'and could mark it read.',
+        'One: not one of them carries an amount. They are names and structure -',
+        'the account name, the cost centre, the warehouse, which carrier serves',
+        'which branch, who may enter which branch. The worst of it is the name',
+        '"Nasr City warehouse", and the branches themselves are on screen',
+        'anyway.',
         '',
-        'TWO POLICIES, AND A TYPO IN ONE OF THEM. The first carried an arm',
-        'reading assigned_to_user IS NULL with no other condition, so every',
-        'notification not addressed to a named person was open to every member',
-        'of the company whatever his branch or role.',
+        'Two: isolating the chart of accounts would be plainly wrong - 102',
+        'accounts and only THREE carry a branch. It is the single company chart',
+        'by nature, and its balances come from the journal entries, which have',
+        'been isolated since 917.',
         '',
-        'The second was WRITTEN to scope by branch, and contained:',
-        '  (cm.branch_id IS NULL) OR (cm.branch_id = cm.branch_id)',
-        'which is ALWAYS TRUE - it compares the member branch to ITSELF rather',
-        'than to the notification branch. It should have read',
-        'notifications.branch_id = cm.branch_id. The warehouse check had the',
-        'same shape.',
+        'Three: they are read in JOINS everywhere - the warehouse name on a',
+        'document, the cost centre on an entry. Isolating them would empty names',
+        'out of screens without closing any data.',
         '',
-        'So the policy LOOKS branch-scoped and is not. That is nastier than 928:',
-        'there a correct policy was swallowed by its neighbour, here A SINGLE',
-        'POLICY LIES TO ITS READER BY ONE CHARACTER.',
+        'WHAT WAS ACTUALLY FIXED: the number of doors. cost_centers carried',
+        'THREE read policies, and warehouses, user_branch_access and',
+        'chart_of_accounts two each. None of them is a hole today - all say',
+        '"company member" or "registered owner", and is_company_member covers',
+        'both - but it is the same shape of adjacent permissive policies that',
+        'caught us in 921, 928, 929 and 930. ONCE THE POLICIES MULTIPLY,',
+        'TIGHTENING ONE MEANS NOTHING WHILE ANOTHER STAYS OPEN.',
         '',
-        'THE RULE: audience, not branch alone. A notification is not a document;',
-        'the question is who it was written for. Addressed to me by name - I',
-        'read it, even across a branch, because somebody meant me and hiding it',
-        'would leave a notification nobody can read. Management and the',
-        'registered owner - the whole company, as the first policy always',
-        'intended. Not addressed to a person - my role AND my branch, both.',
+        'So the reads are merged into ONE policy per table, with the same rule',
+        'word for word: no widening and no narrowing.',
         '',
-        'The same rule now governs UPDATE: whoever cannot read a notification',
-        'cannot mark it read. The old update policy let any holder of a role',
-        'mark a colleague notification.',
+        'And the two FOR ALL policies are SPLIT rather than dropped (the 926',
+        'lesson): an ALL policy covers SELECT too, so it remains a second door',
+        'however tidy the read policies become - while dropping it outright',
+        'would take away a write permission somebody holds. Each became three',
+        'write policies with its predicate unchanged.',
         '',
-        'PROVEN on production: accountant 503 to 64, manager to 160,',
-        'manufacturing officer to 23, purchasing officer to 31, staff to 27,',
-        'store keeper to 35, owner unchanged at 505 - and ZERO addressed to',
-        'someone else, with ZERO writes on them. What remains of Nasr City',
-        'notifications for each of them is addressed to him BY NAME - residue of',
-        'the recipient resolution fixed in 917, not a read hole.',
+        'One small correction rode along: branch_shipping_providers asked',
+        'company_members alone, hiding from the REGISTERED OWNER what he owns -',
+        'the same oversight corrected in 925 and 927. It now asks',
+        'get_user_company_ids.',
         '',
-        'THE GUARD MEASURES THIS ONE BY AUDIENCE, not with the heads: a',
-        'notification addressed to me by name crosses the branch by right. Two',
-        'measures were added - that I read nothing addressed by name to another,',
-        'and nothing of another branch that was not addressed to me - and a',
-        'twelfth stage joined the trap, planting the very arm this series began',
-        'with.',
+        'PROVEN on both databases by impersonation, for every role AND the',
+        'registered owner: the counts are identical before and after - 102',
+        'accounts, 2 cost centres, 2 warehouses, 11 access rows, 3 carriers.',
+        'Nobody lost anything. The only difference is that the doors are one',
+        'where they were two and three.',
         '',
-        'RECORDED AND NOT CLOSED: 300 of 505 notifications carry NO BRANCH at',
-        'all, among them 59 purchase-bill and 47 purchase-order notifications.',
-        'Whoever writes the notification does not stamp its document branch on',
-        'it, so it stays a company notification and is read by role alone. That',
-        'is a defect in the WRITER, not the reader, and the cure is stamping the',
-        'branch in every notification creator - work that touches many triggers,',
-        'so it does not belong in a read-side security release.'
+        'AND THE DECISION IS GUARDED, not just documented: the guard now counts',
+        'the read doors on these five tables, so a second policy returning to',
+        'any of them fails the release and names the table.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -447,5 +428,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.930 pushed - a notification reaches the person it was written for" -ForegroundColor Green
+    Write-Host "`n+ v3.74.931 pushed - one read door per reference table, and the decision is guarded" -ForegroundColor Green
 }
