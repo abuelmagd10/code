@@ -8,7 +8,7 @@
  * المالك — السياسة المتساهلة بجوار العزل، والدالة التى تفتح البند لمن
  * أُغلق عنه المستند — ثم يرى الحارس يسمّيهما.
  *
- * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). إحدى عشرة حالة:
+ * ويعمل على **قاعدة الاختبار وحدها** (`TEST_SUPABASE_DB_URL`). اثنتا عشرة حالة:
  *   (أ) `bills_select` المتساهلة تعود      ⇒ يُرفض ويُسمّى الجدول.
  *   (ب) `can_access_bill_items` تعود «عضو الشركة» ⇒ يُرفض ويُسمّى البند —
  *       وهذا هو الباب الخلفى الذى يُقرأ منه سعر الشراء.
@@ -20,7 +20,8 @@
  *   (ح) الموردون يعودون لعضوية الشركة (927)   ⇒ يُرفض ويُسمّى الجدول.
  *   (ط) متساهلةٌ تبتلع حوكمة الطرف الثالث (928) ⇒ يُرفض ويُسمّى الجدول.
  *   (ى) قيود التكلفة تعود لعضوية الشركة (929)  ⇒ يُرفض ويُسمّى الجدول.
- *   (ك) إعادة الحال                          ⇒ يصمت.
+ *   (ك) إشعارٌ بلا مُرسَلٍ إليه يُفتح للجميع (930) ⇒ يُرفض ويُسمّى الجدول.
+ *   (ل) إعادة الحال                          ⇒ يصمت.
  *
  * والدالة المستعادة تُقرأ من **ملف الهجرة نفسه**، فلا يتباعد الفخّ عمّا
  * كُتب.
@@ -99,6 +100,7 @@ function runGuard() {
     await client.query("DROP POLICY IF EXISTS suppliers_company_wide ON public.suppliers")
     await client.query("DROP POLICY IF EXISTS tpi_company_wide ON public.third_party_inventory")
     await client.query("DROP POLICY IF EXISTS cogs_company_wide ON public.cogs_transactions")
+    await client.query("DROP POLICY IF EXISTS notifications_unassigned_open ON public.notifications")
     await client.query(billItemsFn)
   }
 
@@ -203,6 +205,15 @@ function runGuard() {
         "CREATE POLICY cogs_company_wide ON public.cogs_transactions FOR SELECT USING (public.is_company_member(company_id))"
       ),
       /^\s+- cogs_transactions:/m
+    )
+
+    // 930: الشكل الذى بدأت منه السلسلة كلُّها — إشعارٌ يصف مستنداً مُغلقاً.
+    await stage(
+      "إشعارٌ بلا مُرسَلٍ إليه يُفتح للجميع",
+      () => client.query(
+        "CREATE POLICY notifications_unassigned_open ON public.notifications FOR SELECT USING (public.is_company_member(company_id) AND assigned_to_user IS NULL)"
+      ),
+      /^\s+- notifications:/m
     )
 
     if (ok) {

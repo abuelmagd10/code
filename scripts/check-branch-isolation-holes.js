@@ -163,6 +163,37 @@ const CHILDREN = [
       }
     }
 
+    // ═══ الإشعارات: جمهورٌ لا فرعٌ فقط (v3.74.930) ═══
+    // لا تُقاس مع الرؤوس: إشعارٌ **موجَّهٌ إلىَّ بالاسم** يعبر الفرع بحقّ —
+    // شخصٌ قصدنى. فالمقياسان هنا: ألا أقرأ ما وُجّه لغيرى باسمه، وألا أقرأ
+    // إشعارَ فرعٍ آخر لم يُوجَّه إلىّ.
+    {
+      // كلُّ استعلامٍ ببارامتراته هو — لا قائمةٌ مشتركةٌ يزيد عددُها عن
+      // عدد العلامات، فيرفض Postgres الربط (أمسكه الفخُّ).
+      const q = async (sql, params) => (await client.query(sql, params)).rows[0].n
+      const others = await q(`SELECT count(*)::int AS n FROM public.notifications
+                                WHERE company_id = $1 AND assigned_to_user IS NOT NULL
+                                  AND assigned_to_user <> $2`, [probe.company_id, probe.user_id])
+      seen.push(`notifications(لغيره)=${others}`)
+      if (others > 0) {
+        problems.push(
+          `notifications: a ${probe.role} reads ${others} notification(s) addressed BY NAME to someone else - ` +
+          `and a notification carries the document title, the supplier and the AMOUNT in its text`
+        )
+      }
+      const foreign = await q(`SELECT count(*)::int AS n FROM public.notifications
+                                 WHERE company_id = $1 AND branch_id IS NOT NULL AND branch_id <> $3
+                                   AND (assigned_to_user IS NULL OR assigned_to_user <> $2)`,
+                              [probe.company_id, probe.user_id, probe.branch_id])
+      seen.push(`notifications(فرعٌ آخر)=${foreign}`)
+      if (foreign > 0) {
+        problems.push(
+          `notifications: a ${probe.role} reads ${foreign} notification(s) of ANOTHER branch that were not ` +
+          `addressed to him - the document was closed but the notification describing it was not`
+        )
+      }
+    }
+
     await client.query("RESET ROLE")
     await client.query("ROLLBACK")
   } catch (e) {
