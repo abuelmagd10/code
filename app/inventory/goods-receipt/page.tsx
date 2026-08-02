@@ -20,6 +20,27 @@ import { Package, CheckCircle, XCircle, Warehouse, Building2, AlertCircle, Loade
 import { FilterContainer } from "@/components/ui/filter-container"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  HIDDEN_MONEY_HINT_AR,
+  HIDDEN_MONEY_HINT_EN,
+  isHiddenMoney,
+  money,
+  sumOrHidden,
+} from "@/lib/purchase-money"
+
+/**
+ * v3.74.945 — شاشةُ استلام البضاعة تقرأ مالَها من المنفذ المقنَّع.
+ *
+ * ولماذا كان التقنيعُ هنا **مجانياً**، مقيساً لا مُقدَّراً: زرُّ الاعتماد
+ * يُرسل إلى `/api/bills/[id]/confirm-receipt` جسماً واحداً لا ثانىَ له —
+ * `{ ui_surface: "goods_receipt_page" }`. لا سعرَ ولا كميةَ ولا بنداً. فما
+ * تقرؤه هذه الشاشةُ من مالٍ **عرضٌ محض**، لا مصدرُ حقيقةٍ لأى كتابة، فحجبُه
+ * لا يُفسد مستنداً — بخلاف شاشة إنشاء المرتجع التى انتظرت 941 قبل 942.
+ *
+ * ⚠️ وعطبٌ كان قائماً قبل هذا الإصدار: `Number(it.unit_price || 0)`. فلو
+ * قُنِّعت القراءةُ بلا إصلاحه لصار المحجوبُ **صفراً معروضاً** — وهو أسوأ من
+ * التسريب: رقمٌ كاذبٌ يبدو صحيحاً، ومن يرى صفراً يبنى عليه.
+ */
 
 type BillForReceipt = {
   id: string
@@ -32,9 +53,12 @@ type BillForReceipt = {
   branch_id: string | null
   warehouse_id: string | null
   cost_center_id: string | null
-  subtotal: number
-  tax_amount: number
-  total_amount: number
+  // مالُ شراءٍ من نافذةٍ مقنَّعة: `null` تعنى «محجوبٌ عنك»، لا صفراً.
+  //
+  // و`subtotal` و`tax_amount` حُذفا: قِيس أن الشاشةَ لا تعرضهما ولا تحسب
+  // بهما شيئاً — **وما لا يُقرأ لا يُسرَّب** (سابقةُ 942 مع
+  // `purchase_return_warehouse_allocations.total_amount`).
+  total_amount: number | null
   suppliers?: { name: string }
   created_by_user_id?: string | null  // منشئ الفاتورة
   received_by?: string | null
@@ -53,9 +77,8 @@ type BillItemRow = {
   id: string
   product_id: string | null
   quantity: number
-  unit_price: number
+  unit_price: number | null
   tax_rate: number
-  products?: { name: string; sku: string | null }
 }
 
 type ReceiptItem = {
@@ -64,7 +87,7 @@ type ReceiptItem = {
   product_name: string
   max_qty: number
   receive_qty: number
-  unit_price: number
+  unit_price: number | null
   tax_rate: number
 }
 
@@ -191,24 +214,42 @@ export default function GoodsReceiptPage() {
       setSelectedBill(bill)
       setProcessing(true)
 
-      // ✅ جلب بنود الفاتورة
+      // ✅ جلب بنود الفاتورة — من النافذة المقنَّعة، وبلا تضمين (درس 940:
+      // علاقتان بين نفس الجدولين تُنتجان `PGRST201` فتُفرَغ الشاشة).
       const { data: itemsData, error } = await supabase
-        .from("bill_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, products(name, sku)")
+        .from("bill_items_masked")
+        .select("id, product_id, quantity, unit_price, tax_rate")
         .eq("bill_id", bill.id)
 
       if (error) throw error
+
+      // الأسماءُ باستعلامٍ ثانٍ، وبنفس مفتاح الاستجابة الذى كان يعطيه التضمين.
+      const itemProductIds = [
+        ...new Set((itemsData || []).map((it: any) => it.product_id).filter(Boolean)),
+      ] as string[]
+      const productNameById = new Map<string, string>()
+      if (itemProductIds.length > 0) {
+        const { data: productRows } = await supabase
+          .from("products")
+          .select("id, name, sku")
+          .in("id", itemProductIds)
+        for (const p of (productRows || []) as any[]) {
+          productNameById.set(String(p.id), String(p.name || p.sku || ""))
+        }
+      }
 
       const rows: ReceiptItem[] = (itemsData || [])
         .filter((it: BillItemRow) => !!it.product_id)
         .map((it: BillItemRow) => ({
           id: it.id,
           product_id: it.product_id as string,
-          product_name: it.products?.name || it.product_id || "",
+          product_name: productNameById.get(String(it.product_id)) || it.product_id || "",
           max_qty: Number(it.quantity || 0),
           receive_qty: Number(it.quantity || 0), // افتراضياً استلام كامل
-          unit_price: Number(it.unit_price || 0),
-          tax_rate: Number(it.tax_rate || 0)
+          // ⚠️ المحجوبُ يبقى `null` ولا يصير صفراً: `Number(x || 0)` تكتب
+          // «0.00» مكان مبلغٍ موجود، فتكذب على قارئها بثقة.
+          unit_price: isHiddenMoney(it.unit_price) ? null : Number(it.unit_price),
+          tax_rate: Number(it.tax_rate || 0), // نسبةٌ لا مال: تمرّ من النافذة كما هى
         }))
 
       setReceiptItems(rows)
@@ -412,17 +453,32 @@ export default function GoodsReceiptPage() {
         const companyId = await getActiveCompanyId(supabase)
         if (!companyId) return
 
-        const { data: billData, error } = await supabase
-          .from("bills")
+        const { data: billRow, error } = await supabase
+          .from("bills_masked")
           .select(
-            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, received_by, received_at, suppliers(name)"
+            "id, bill_number, bill_date, supplier_id, status, receipt_status, branch_id, warehouse_id, cost_center_id, total_amount, created_by_user_id, received_by, received_at"
           )
           .eq("id", billIdFromQuery)
           .eq("company_id", companyId)
           .maybeSingle()
 
         if (error) throw error
-        if (!billData) return
+        if (!billRow) return
+
+        // اسمُ المورد باستعلامٍ ثانٍ — لا تضمينَ فوق نافذةٍ مقنَّعة.
+        let supplierName: string | null = null
+        if ((billRow as any).supplier_id) {
+          const { data: supRow } = await supabase
+            .from("suppliers")
+            .select("id, name")
+            .eq("id", (billRow as any).supplier_id)
+            .maybeSingle()
+          supplierName = (supRow as any)?.name ?? null
+        }
+        const billData = {
+          ...(billRow as any),
+          suppliers: supplierName ? { name: supplierName } : undefined,
+        }
 
         // ✅ إذا كانت الفاتورة مستلمة أو مرفوضة، قم بتبديل التبويب إلى "سجل الاستلام"
         if (billData.receipt_status === "received" || billData.receipt_status === "rejected") {
@@ -633,9 +689,9 @@ export default function GoodsReceiptPage() {
 
       // نقيّد الاستعلام يدوياً على الفرع والمخزن
       let q = supabase
-        .from("bills")
+        .from("bills_masked")
         .select(
-          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, subtotal, tax_amount, total_amount, created_by_user_id, received_by, received_at, updated_at, suppliers(name)"
+          "id, bill_number, bill_date, supplier_id, status, receipt_status, receipt_rejection_reason, branch_id, warehouse_id, cost_center_id, total_amount, created_by_user_id, received_by, received_at, updated_at"
         )
         .eq("company_id", companyId)
 
@@ -659,7 +715,30 @@ export default function GoodsReceiptPage() {
       if (error) throw error
 
       let fetchedBills = (data || []) as BillForReceipt[]
-      
+
+      // ✅ أسماءُ الموردين باستعلامٍ ثانٍ — كان تضميناً `suppliers(name)` فوق
+      // `bills`، ولا يجوز فوق نافذةٍ مقنَّعة. والبحثُ فى سجل القرارات يقرأ
+      // `bill.suppliers?.name`، فيُحفظ نفسُ الشكل لا شكلٌ جديد.
+      const supplierIds = [
+        ...new Set(fetchedBills.map((b) => b.supplier_id).filter(Boolean)),
+      ] as string[]
+      if (supplierIds.length > 0) {
+        const { data: supplierRows } = await supabase
+          .from("suppliers")
+          .select("id, name")
+          .in("id", supplierIds)
+        const supplierNameById = new Map<string, string>()
+        for (const s of (supplierRows || []) as any[]) {
+          supplierNameById.set(String(s.id), String(s.name || ""))
+        }
+        fetchedBills = fetchedBills.map((bill) => ({
+          ...bill,
+          suppliers: bill.supplier_id
+            ? { name: supplierNameById.get(String(bill.supplier_id)) || "" }
+            : undefined,
+        }))
+      }
+
       // جلب بيانات قرارات الاستلام: اعتماد أو رفض
       if (isReceivedTab && fetchedBills.length > 0) {
         const billIds = fetchedBills.map((b) => b.id)
@@ -772,19 +851,40 @@ export default function GoodsReceiptPage() {
         try {
           const billIds = fetchedBills.map((b) => b.id)
           if (billIds.length > 0) {
+            // ولا مالَ يُقرأ هنا — كميةٌ واسمُ منتجٍ فقط. ومع ذلك تُقرأ من
+            // النافذة: **البابُ واحدٌ لا بابان** (سابقةُ 942 حين قُرئ
+            // `bill_number` من `bills_masked` ولو أنه ليس مالاً).
             const { data: itemsData } = await supabase
-              .from("bill_items")
-              .select("bill_id, quantity, products(name, product_type)")
+              .from("bill_items_masked")
+              .select("bill_id, product_id, quantity")
               .in("bill_id", billIds)
 
             if (itemsData) {
+              const historyProductIds = [
+                ...new Set((itemsData as any[]).map((it) => it.product_id).filter(Boolean)),
+              ] as string[]
+              const productById = new Map<string, { name: string; product_type: string | null }>()
+              if (historyProductIds.length > 0) {
+                const { data: productRows } = await supabase
+                  .from("products")
+                  .select("id, name, product_type")
+                  .in("id", historyProductIds)
+                for (const p of (productRows || []) as any[]) {
+                  productById.set(String(p.id), {
+                    name: String(p.name || ""),
+                    product_type: p.product_type ?? null,
+                  })
+                }
+              }
+
               const itemsByBill = new Map<string, Array<{ product_name: string; product_type: string | null; quantity: number }>>()
               for (const item of itemsData as any[]) {
                 const billId = String(item.bill_id)
                 if (!itemsByBill.has(billId)) itemsByBill.set(billId, [])
+                const product = item.product_id ? productById.get(String(item.product_id)) : undefined
                 itemsByBill.get(billId)!.push({
-                  product_name: item.products?.name || "-",
-                  product_type: item.products?.product_type || null,
+                  product_name: product?.name || "-",
+                  product_type: product?.product_type || null,
                   quantity: Number(item.quantity || 0),
                 })
               }
@@ -1231,10 +1331,15 @@ export default function GoodsReceiptPage() {
   const displayBills = (activeTab === "received" && receiptType === "purchase") ? filteredBills : bills
   const hasDisplayBills = displayBills.length > 0
 
+  /**
+   * ⚠️ مجموعٌ ينقصه بندٌ محجوبٌ **رقمٌ خاطئٌ يبدو صحيحاً**. فإن كان فى
+   * المعروض مبلغٌ واحدٌ محجوب فالمجموعُ كلُّه محجوب، ويُعرض «—».
+   */
   const totalBillsAmount = useMemo(
-    () => displayBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+    () => sumOrHidden(displayBills.map((b) => b.total_amount)),
     [displayBills]
   )
+  const hiddenMoneyHint = appLang === "en" ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR
   const isReceiptHistoryTab = activeTab === "received"
   const showCompanyScopeColumns = isReceiptHistoryTab && isOwnerAdmin
 
@@ -1437,10 +1542,13 @@ export default function GoodsReceiptPage() {
                 </CardTitle>
               </div>
               {(activeTab === "pending" ? hasBills : hasDisplayBills) && (
-                <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                <div
+                  className="text-xs sm:text-sm text-gray-600 dark:text-gray-400"
+                  title={isHiddenMoney(totalBillsAmount) ? hiddenMoneyHint : undefined}
+                >
                   {appLang === "en"
-                    ? `Total: ${displayBills.length} bills, amount ${totalBillsAmount.toFixed(2)}`
-                    : `الإجمالي: ${displayBills.length} فاتورة، بقيمة ${totalBillsAmount.toFixed(2)}`}
+                    ? `Total: ${displayBills.length} bills, amount ${money(totalBillsAmount)}`
+                    : `الإجمالي: ${displayBills.length} فاتورة، بقيمة ${money(totalBillsAmount)}`}
                 </div>
               )}
             </CardHeader>
@@ -1615,8 +1723,11 @@ export default function GoodsReceiptPage() {
                                 : bill.bill_date
                             ).toLocaleDateString(appLang === "en" ? "en" : "ar")}
                           </td>
-                          <td className="px-3 py-2 text-right">
-                            {Number(bill.total_amount || 0).toFixed(2)}
+                          <td
+                            className={`px-3 py-2 text-right ${isHiddenMoney(bill.total_amount) ? "text-gray-400" : ""}`}
+                            title={isHiddenMoney(bill.total_amount) ? hiddenMoneyHint : undefined}
+                          >
+                            {money(bill.total_amount)}
                           </td>
                           {activeTab === "received" && (
                             <td className={`px-3 py-2 font-medium ${
@@ -1912,7 +2023,12 @@ export default function GoodsReceiptPage() {
                     <span className="block text-gray-400 mb-1">
                       {appLang === "en" ? "Amount" : "المبلغ"}
                     </span>
-                    <span className="font-medium">{Number(selectedBill.total_amount || 0).toFixed(2)}</span>
+                    <span
+                      className={`font-medium ${isHiddenMoney(selectedBill.total_amount) ? "text-gray-400" : ""}`}
+                      title={isHiddenMoney(selectedBill.total_amount) ? hiddenMoneyHint : undefined}
+                    >
+                      {money(selectedBill.total_amount)}
+                    </span>
                   </div>
                   <div>
                     <span className="block text-gray-400 mb-1">
@@ -2001,8 +2117,11 @@ export default function GoodsReceiptPage() {
                           <div className="font-medium">{it.product_name}</div>
                         </td>
                         <td className="px-2 py-2 text-center font-medium">{it.max_qty}</td>
-                        <td className="px-2 py-2 text-center">
-                          {it.unit_price.toFixed(2)}
+                        <td
+                          className={`px-2 py-2 text-center ${isHiddenMoney(it.unit_price) ? "text-gray-400" : ""}`}
+                          title={isHiddenMoney(it.unit_price) ? hiddenMoneyHint : undefined}
+                        >
+                          {money(it.unit_price)}
                         </td>
                       </tr>
                     ))}

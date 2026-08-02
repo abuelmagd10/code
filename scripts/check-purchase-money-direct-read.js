@@ -105,6 +105,10 @@ const CONVERTED = [
   "app/purchase-returns/page.tsx",
   "app/purchase-returns/[id]/page.tsx",
   "app/purchase-returns/new/page.tsx",
+  // v3.74.945 — الدفعة الخامسة: شاشةُ استلام البضاعة. **عرضٌ محض بالقياس**:
+  // زرُّ الاعتماد يُرسل `{ ui_surface }` وحدها إلى `confirm-receipt` — لا
+  // سعرَ ولا كميةَ ولا بنداً — فحجبُ المال هنا لا يُفسد مستنداً.
+  "app/inventory/goods-receipt/page.tsx",
 ]
 
 /**
