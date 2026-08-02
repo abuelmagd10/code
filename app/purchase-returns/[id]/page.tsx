@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { formatSupabaseError } from "@/lib/error-messages"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+// v3.74.942 — مبالغُ الشراء تُقرأ من المنفذ المقنَّع وتُعرض «—» حين تُحجب.
+import { HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN, isHiddenMoney } from "@/lib/purchase-money"
 
 const PRIVILEGED_ROLES  = ['owner', 'admin', 'general_manager']
 const STORE_MANAGER_ROLES = ['store_manager']
@@ -31,9 +33,12 @@ type ReturnDetail = {
   reason: string
   notes: string | null
   settlement_method: string
-  subtotal: number
-  tax_amount: number
-  total_amount: number
+  // v3.74.942 — مالُ الشراء يصل `null` لمن ليس من جمهور التكلفة (نافذةٌ
+  // مقنَّعة، لا حذفٌ فى الشاشة). والنوعُ يقول ذلك، فلا يمرّ `.toFixed` على
+  // فراغٍ ولا يُكتب صفرٌ كاذبٌ مكان مبلغٍ موجود.
+  subtotal: number | null
+  tax_amount: number | null
+  total_amount: number | null
   original_currency: string
   is_locked: boolean
   created_by: string | null
@@ -51,16 +56,17 @@ type ReturnDetail = {
   bills?: { id: string; bill_number: string } | null
   branches?: { name: string } | null
   warehouses?: { name: string } | null
+  refund_account?: { account_code: string; account_name: string } | null
   purchase_return_items?: Array<{
     id: string
     product_id: string | null
     bill_item_id: string | null
     description: string | null
     quantity: number
-    unit_price: number
-    tax_rate: number
-    discount_percent: number
-    line_total: number
+    unit_price: number | null
+    tax_rate: number | null
+    discount_percent: number | null
+    line_total: number | null
     products?: { name: string } | null
   }>
 }
@@ -137,8 +143,18 @@ export default function PurchaseReturnDetailPage() {
     ])
     setCurrentUserRole(companyData?.user_id === user.id ? 'owner' : (memberData?.role || 'viewer'))
 
-    const { data } = await supabase
-      .from('purchase_returns')
+    // ─── v3.74.942 — المنفذُ المقنَّع، وبلا تضمينٍ فوق النافذة ──────────
+    //
+    // ‏(١) `purchase_returns_masked` بدل الجدول: من ليس من جمهور التكلفة
+    //     يقرأ `null` فى أعمدة المال، ويعرضها المتصفحُ «—» بدل رقمٍ لا يحقّ
+    //     له. والقاعدةُ تُطبَّق صفاً صفاً بالفرع (914)، لا بالشركة.
+    //
+    // ‏(٢) **ولا تضمينَ واحد.** درسُ 940: علاقاتُ النافذة تُستنتج من مخطَّطٍ
+    //     لا نراه، ومفتاحٌ خارجىٌّ يُضاف غداً فى جدولٍ آخر يجعل التضمينَ
+    //     ملتبساً (`PGRST201`) فتفرغ الشاشة. فتُقرأ الرؤوسُ والبنودُ وحدها،
+    //     وتُجلب الأسماءُ باستعلامٍ ثانٍ وتُدمج بنفس المفاتيح.
+    const { data: head } = await supabase
+      .from('purchase_returns_masked')
       .select(`
         id, return_number, return_date, status, workflow_status, financial_status,
         reason, notes, settlement_method, refund_account_id,
@@ -146,20 +162,55 @@ export default function PurchaseReturnDetailPage() {
         is_locked, created_by, confirmed_by, approved_by, approved_at,
         rejected_by, rejected_at, rejection_reason,
         warehouse_rejected_by, warehouse_rejected_at, warehouse_rejection_reason,
-        branch_id, warehouse_id,
-        suppliers(name),
-        bills(id, bill_number),
-        branches(name),
-        warehouses(name),
-        refund_account:chart_of_accounts!purchase_returns_refund_account_id_fkey(account_code, account_name),
-        purchase_return_items(
-          id, product_id, bill_item_id, description, quantity,
-          unit_price, tax_rate, discount_percent, line_total,
-          products(name)
-        )
+        branch_id, warehouse_id, supplier_id, bill_id
       `)
       .eq('id', returnId)
       .single()
+
+    let data: any = head
+    if (head) {
+      const { data: itemRows } = await supabase
+        .from('purchase_return_items_masked')
+        .select('id, product_id, bill_item_id, description, quantity, unit_price, tax_rate, discount_percent, line_total')
+        .eq('purchase_return_id', returnId)
+
+      const items: any[] = itemRows || []
+      const productIds = [...new Set(items.map((i) => i.product_id).filter(Boolean))]
+
+      const [sup, bill, branch, wh, acct, prods] = await Promise.all([
+        (head as any).supplier_id
+          ? supabase.from('suppliers').select('name').eq('id', (head as any).supplier_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        (head as any).bill_id
+          ? supabase.from('bills_masked').select('id, bill_number').eq('id', (head as any).bill_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        (head as any).branch_id
+          ? supabase.from('branches').select('name').eq('id', (head as any).branch_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        (head as any).warehouse_id
+          ? supabase.from('warehouses').select('name').eq('id', (head as any).warehouse_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        (head as any).refund_account_id
+          ? supabase.from('chart_of_accounts').select('account_code, account_name').eq('id', (head as any).refund_account_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        productIds.length > 0
+          ? supabase.from('products').select('id, name').in('id', productIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ])
+
+      const nameOf: Record<string, { name: string }> = Object.fromEntries(
+        ((prods as any).data || []).map((p: any) => [p.id, { name: p.name }]))
+
+      data = {
+        ...(head as any),
+        suppliers: (sup as any).data || null,
+        bills: (bill as any).data || null,
+        branches: (branch as any).data || null,
+        warehouses: (wh as any).data || null,
+        refund_account: (acct as any).data || null,
+        purchase_return_items: items.map((i) => ({ ...i, products: i.product_id ? nameOf[i.product_id] ?? null : null })),
+      }
+    }
 
     if (data) {
       const returnData = data as unknown as ReturnDetail & { confirmed_by?: string, confirmer_name?: string }
@@ -312,7 +363,19 @@ export default function PurchaseReturnDetailPage() {
   }
 
   const formatDate  = (d: string | null) => d ? new Date(d).toLocaleDateString(appLang === 'ar' ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
-  const formatMoney = (n: number) => n.toLocaleString(appLang === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // v3.74.942 — مبلغٌ محجوبٌ يُعرض «—» لا «0.00».
+  //
+  // `n.toLocaleString()` على `null` كانت سترمى، وعلى `Number(n || 0)` كانت
+  // ستكتب صفراً مكان مبلغٍ موجود — **وهو أسوأ من الفراغ، لأن من يرى صفراً
+  // يبنى عليه**. فالمحجوبُ يُقال إنه محجوب.
+  const formatMoney = (n: number | string | null | undefined) =>
+    isHiddenMoney(n)
+      ? HIDDEN_MONEY
+      : Number(n).toLocaleString(appLang === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  /** تلميحٌ يُعلَّق على «—» فلا تُظنّ عطباً فى الشاشة. */
+  const hiddenHint = appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR
+  const moneyTitle = (n: number | string | null | undefined) => (isHiddenMoney(n) ? hiddenHint : undefined)
 
   if (loading) {
     return (
@@ -505,7 +568,7 @@ export default function PurchaseReturnDetailPage() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{t('المجموع', 'Subtotal')}</p>
-                  <p className="text-base sm:text-lg font-bold text-orange-600 dark:text-orange-400">{formatMoney(pr.subtotal)}</p>
+                  <p className="text-base sm:text-lg font-bold text-orange-600 dark:text-orange-400" title={moneyTitle(pr.subtotal)}>{formatMoney(pr.subtotal)}</p>
                 </div>
               </div>
             </Card>
@@ -516,7 +579,7 @@ export default function PurchaseReturnDetailPage() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{t('الضريبة', 'Tax')}</p>
-                  <p className="text-base sm:text-lg font-bold text-yellow-600 dark:text-yellow-400">{formatMoney(pr.tax_amount)}</p>
+                  <p className="text-base sm:text-lg font-bold text-yellow-600 dark:text-yellow-400" title={moneyTitle(pr.tax_amount)}>{formatMoney(pr.tax_amount)}</p>
                 </div>
               </div>
             </Card>
@@ -527,7 +590,7 @@ export default function PurchaseReturnDetailPage() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{t('الإجمالي', 'Total Amount')}</p>
-                  <p className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
+                  <p className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400" title={moneyTitle(pr.total_amount)}>
                     {formatMoney(pr.total_amount)} <span className="text-sm font-normal">{currency}</span>
                   </p>
                 </div>
@@ -651,17 +714,17 @@ export default function PurchaseReturnDetailPage() {
                         <tr key={item.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
                           <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-white">{item.products?.name || item.description || '—'}</td>
                           <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{item.quantity}</td>
-                          <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{formatMoney(item.unit_price)}</td>
+                          <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300" title={moneyTitle(item.unit_price)}>{formatMoney(item.unit_price)}</td>
                           <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{item.tax_rate}%</td>
                           <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300">{item.discount_percent}%</td>
-                          <td className="py-2.5 px-3 font-semibold text-gray-900 dark:text-white">{formatMoney(item.line_total)}</td>
+                          <td className="py-2.5 px-3 font-semibold text-gray-900 dark:text-white" title={moneyTitle(item.line_total)}>{formatMoney(item.line_total)}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="bg-gray-50 dark:bg-gray-700/30">
                         <td colSpan={5} className="py-2.5 px-3 text-right font-semibold text-gray-700 dark:text-gray-300">{t('الإجمالي', 'Total')}</td>
-                        <td className="py-2.5 px-3 font-bold text-gray-900 dark:text-white">{formatMoney(pr.total_amount)} {currency}</td>
+                        <td className="py-2.5 px-3 font-bold text-gray-900 dark:text-white" title={moneyTitle(pr.total_amount)}>{formatMoney(pr.total_amount)} {currency}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -672,15 +735,15 @@ export default function PurchaseReturnDetailPage() {
                       <p className="font-medium text-sm text-gray-900 dark:text-white">{item.products?.name || item.description || '—'}</p>
                       <div className="grid grid-cols-2 gap-1 text-xs text-gray-600 dark:text-gray-400">
                         <span>{t('الكمية:', 'Qty:')} {item.quantity}</span>
-                        <span>{t('السعر:', 'Price:')} {formatMoney(item.unit_price)}</span>
+                        <span title={moneyTitle(item.unit_price)}>{t('السعر:', 'Price:')} {formatMoney(item.unit_price)}</span>
                         <span>{t('ضريبة:', 'Tax:')} {item.tax_rate}%</span>
-                        <span className="font-semibold text-gray-900 dark:text-white">{t('الإجمالي:', 'Total:')} {formatMoney(item.line_total)}</span>
+                        <span className="font-semibold text-gray-900 dark:text-white" title={moneyTitle(item.line_total)}>{t('الإجمالي:', 'Total:')} {formatMoney(item.line_total)}</span>
                       </div>
                     </div>
                   ))}
                   <div className="flex justify-between items-center pt-2 border-t dark:border-gray-700">
                     <span className="font-semibold text-gray-700 dark:text-gray-300">{t('الإجمالي', 'Total')}</span>
-                    <span className="font-bold text-gray-900 dark:text-white">{formatMoney(pr.total_amount)} {currency}</span>
+                    <span className="font-bold text-gray-900 dark:text-white" title={moneyTitle(pr.total_amount)}>{formatMoney(pr.total_amount)} {currency}</span>
                   </div>
                 </div>
               </CardContent>

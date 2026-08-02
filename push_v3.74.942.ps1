@@ -6,152 +6,128 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.941 - the OLD script is removed, never this one. Five times a chained
+# v3.74.942 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.940.ps1") { Remove-Item -LiteralPath "push_v3.74.940.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.941.ps1") { Remove-Item -LiteralPath "push_v3.74.941.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.941"') {
-    Write-Host "+ 3.74.941" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.942"') {
+    Write-Host "+ 3.74.942" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.941]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.941]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.942]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.942]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260802000002_v3_74_941_the_server_prices_the_return.sql"
-$guard     = "scripts/check-purchase-return-priced-by-the-bill.js"
-$trap      = "scripts/selftest-purchase-return-priced-by-the-bill.js"
-
-$applier   = "scripts/apply-migration-file.js"
+$listScreen   = "app/purchase-returns/page.tsx"
+$detailScreen = "app/purchase-returns/[id]/page.tsx"
+$newScreen    = "app/purchase-returns/new/page.tsx"
+$guard        = "scripts/check-purchase-money-direct-read.js"
+$applier      = "scripts/apply-migration-file.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, $guard, $trap, $applier,
-           "push_v3.74.941.ps1")
+           $listScreen, $detailScreen, $newScreen, $guard,
+           "push_v3.74.942.ps1")
 
-$m = Get-Content -LiteralPath $migration -Raw
-$g = Get-Content -LiteralPath $guard     -Raw
-$t = Get-Content -LiteralPath $trap      -Raw
-
-# The migration QUOTES the old broken shapes in its header, so that whoever
-# reads it in a year sees what was wrong. A check that greps the raw file would
-# then refuse the very release that fixes them. So the payload-money check below
-# runs on the CODE, with comment lines removed - the 936 lesson, in SQL.
-$mCode = ($m -split "`n" | Where-Object { $_.TrimStart() -notmatch '^--' }) -join "`n"
+# -LiteralPath: the detail screen's path contains [id], and square brackets are
+# wildcards to PowerShell's provider. (858 lesson, and it bites here for real.)
+$ls = Get-Content -LiteralPath $listScreen   -Raw
+$ds = Get-Content -LiteralPath $detailScreen -Raw
+$ns = Get-Content -LiteralPath $newScreen    -Raw
+$g  = Get-Content -LiteralPath $guard        -Raw
 
 # ===========================================================================
-# 941 - THE BROWSER PRICED THE PURCHASE RETURN. Measured, not inferred: the
-# only two purchase returns on production sit on the SAME bill, the SAME line,
-# the SAME quantity and the SAME discount - and carry DIFFERENT values (0.90
-# and 0.77). One was born under the pre-515 formula, the other after it. The
-# number was never derived from anything; it was whatever the screen computed
-# at that moment. And COALESCE(...,0) turned a MISSING price into zero in
-# silence, which is worse than refusing.
+# 942 - THE THREE PURCHASE-RETURN SCREENS. They come AFTER 941 and not before:
+# masking the new-return screen while the browser still priced the document
+# would have CORRUPTED data rather than hidden it - a masked read returns null,
+# the screen computes zero, and a zero-valued return gets posted. Now that the
+# server prices from the bill and refuses any disagreeing number, the forty-nine
+# compute sites are display only, and masking is free.
 # ===========================================================================
 
-# -- 1. no writer takes money from the request any more -------------------
-foreach ($shape in @("COALESCE((v_item->>'unit_price')",
-                     "COALESCE((v_item->>'line_total')",
-                     "COALESCE((p_purchase_return->>'total_amount')",
-                     "COALESCE((p_purchase_return->>'subtotal')",
-                     "COALESCE((v_group->>'total_amount')",
-                     "p_bill_update->>'total_amount'")) {
-    if ($mCode -match [regex]::Escape($shape)) {
-        Write-Host "X the migration still takes money from the request: $shape" -ForegroundColor Red
-        exit 1
+# -- 1. all three read through the masked path, and none reads a table --------
+foreach ($pair in @(@{n="list"; s=$ls}, @{n="detail"; s=$ds}, @{n="new"; s=$ns})) {
+    if ($pair.s -notmatch [regex]::Escape("_masked")) {
+        Write-Host "X the $($pair.n) screen reads no masked view at all" -ForegroundColor Red; exit 1
+    }
+    foreach ($raw in @("from('purchase_returns')", 'from("purchase_returns")',
+                       "from('purchase_return_items')", 'from("purchase_return_items")',
+                       "from('bills')", 'from("bills")',
+                       "from('bill_items')", 'from("bill_items")')) {
+        if ($pair.s -match [regex]::Escape($raw)) {
+            Write-Host "X the $($pair.n) screen reads a money table directly: $raw" -ForegroundColor Red; exit 1
+        }
     }
 }
-Write-Host "+ no money is read from the request - not the line, not the header, not the bill total" -ForegroundColor Green
+Write-Host "+ the three screens read purchase money through the masked path only" -ForegroundColor Green
 
-# -- 2. the pricing rule has ONE home, and all three writers call it ------
-# Three functions repeated the formula and three places in the screen repeated
-# it, and they drifted. The rule is written once now.
-if ($m -notmatch [regex]::Escape("CREATE OR REPLACE FUNCTION public.purchase_return_priced_line")) {
-    Write-Host "X there is no single home for how a return line is priced" -ForegroundColor Red; exit 1
-}
-$calls = ([regex]::Matches($m, [regex]::Escape("public.purchase_return_priced_line("))).Count
-if ($calls -lt 7) {
-    Write-Host "X the pricing home is called $calls time(s) - a writer prices on its own again" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the pricing rule has one home, called from every writer ($calls call sites)" -ForegroundColor Green
-
-# -- 3. and a disagreeing number is REFUSED, naming both --------------------
-# The owner's ruling (2 August): refuse and say why. "Rejected" with no numbers
-# fixes no screen and exposes no tampering.
-if ($m -notmatch [regex]::Escape("CREATE OR REPLACE FUNCTION public.assert_purchase_return_amount")) {
-    Write-Host "X a disagreeing amount is not refused at all" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("يخالف المحسوبَ من الفاتورة")) {
-    Write-Host "X the refusal does not carry the sent value and the bill's value" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("الغيابُ خطأٌ لا صفر")) {
-    Write-Host "X a missing price would silently become zero again" -ForegroundColor Red; exit 1
-}
-Write-Host "+ a disagreeing amount is refused by name and number, and a missing price is an error not a zero" -ForegroundColor Green
-
-# -- 4. the full-rights writers all pin their search_path ------------------
-# resubmit_purchase_return was SECURITY DEFINER with no search_path.
-$definer = ([regex]::Matches($m, [regex]::Escape("SECURITY DEFINER"))).Count
-$paths   = ([regex]::Matches($m, [regex]::Escape("SET search_path TO 'public', 'pg_catalog'"))).Count
-if ($paths -lt $definer) {
-    Write-Host "X $definer SECURITY DEFINER function(s) but only $paths pinned search_path(s)" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ every SECURITY DEFINER writer pins its search_path ($definer definer(s), $paths pinned)" -ForegroundColor Green
-
-# -- 5. the pricing home is not handed to an end user ---------------------
-foreach ($fn in @("purchase_return_bill_discount_ratio(uuid)",
-                  "purchase_return_priced_line(uuid, uuid, numeric)",
-                  "assert_purchase_return_amount(text, numeric, numeric, numeric, text)")) {
-    if ($m -notmatch [regex]::Escape("REVOKE ALL ON FUNCTION public.$fn FROM PUBLIC, anon, authenticated")) {
-        Write-Host "X $fn is not revoked from end users" -ForegroundColor Red; exit 1
+# -- 2. and the guard KNOWS them - converted in the same release -------------
+# 936 shipped a screen converted in the file and raw at its /api source. A
+# conversion the guard does not know about is a conversion that can be undone
+# without a sound.
+foreach ($p in @("app/purchase-returns/page.tsx",
+                 "app/purchase-returns/[id]/page.tsx",
+                 "app/purchase-returns/new/page.tsx")) {
+    if ($g -notmatch [regex]::Escape($p)) {
+        Write-Host "X the guard does not know $p was converted" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the pricing rule is called from inside, never by a caller" -ForegroundColor Green
+Write-Host "+ the guard was taught the three screens in the same release that converted them" -ForegroundColor Green
 
-# -- 6. the guard measures the EFFECT: it plants a return and looks --------
-if ($g -notmatch [regex]::Escape("process_purchase_return_atomic")) {
-    Write-Host "X the guard reads text instead of planting a real purchase return" -ForegroundColor Red; exit 1
-}
-if ($g -notmatch [regex]::Escape("ROLLBACK")) {
-    Write-Host "X the guard would leave its probes behind" -ForegroundColor Red; exit 1
-}
-if ($g -notmatch [regex]::Escape("the innocent is spared")) {
-    Write-Host "X the guard never checks that what the CURRENT screen sends still works" -ForegroundColor Red
+# -- 3. the cost gate: asked at the door AND at both writes ------------------
+# A purchase return is a document VALUED AT the purchase cost of the bill it
+# returns. Whoever may not see that cost may not author one. And the question
+# is put to the DATABASE, never to a role list in the screen (934).
+if ($ns -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
+    Write-Host "X the new-return screen never asks whether the user may see purchase cost" -ForegroundColor Red
     exit 1
 }
-if ($g -notmatch [regex]::Escape("PINNED_LINE_TOTAL_DRIFT")) {
-    Write-Host "X the explained legacy divergence is not pinned - it would be forgiven silently" -ForegroundColor Red
+$gateHits = ([regex]::Matches($ns, [regex]::Escape('costGate !== "allowed"'))).Count
+if ($gateHits -lt 2) {
+    Write-Host "X the gate guards $gateHits write path(s) - both saveReturn and saveMultiWarehouseReturn must ask" -ForegroundColor Red
     exit 1
 }
-foreach ($needle in @("the writer takes unit_price from the request again",
-                      "the refusal is emptied out",
-                      "anon granted execute on the pricing home",
-                      "resubmit loses its search_path",
-                      "the pricing home drifts away from what the screen sends")) {
-    if ($t -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the trap no longer plants: $needle" -ForegroundColor Red; exit 1
-    }
+if ($ns -notmatch [regex]::Escape('costGate === "blocked"')) {
+    Write-Host "X a blocked user would meet a form he cannot submit instead of a reason" -ForegroundColor Red
+    exit 1
 }
-Write-Host "+ the guard plants a real return and looks, and the trap plants all five shapes" -ForegroundColor Green
+Write-Host "+ the gate is asked at the door and on both write paths, and it says why ($gateHits write path(s))" -ForegroundColor Green
 
-# -- 7. the migration is APPLIED FROM THE FILE, never retyped into the DB --
-# I made this mistake in this very release: I applied the six functions by hand
-# through the dashboard, and the file on disk carried inner comments I did not
-# carry with them. All six fingerprints diverged, and check-migration-matches-db
-# would have refused the push - rightly. The cure is not to strip the file until
-# it agrees with the database; it is to apply THE FILE.
+# -- 4. the SECOND HOME for the cost rule is gone ---------------------------
+# The amount column used to be dropped by a local role list - and that list had
+# already DRIFTED: it hid the amount from the accountant, who IS in the cost
+# audience by the rule (906, 914). Over-hiding, not leaking - milder, and it
+# proves the same point: a rule in two places diverges, and the direction it
+# diverges in is not under anyone's control.
+if ($ls -match [regex]::Escape("!isRestrictedRole ? [{")) {
+    Write-Host "X the amount column is decided by a local role list again" -ForegroundColor Red; exit 1
+}
+if ($ls -notmatch [regex]::Escape("isHiddenMoney")) {
+    Write-Host "X the list screen no longer distinguishes a hidden amount from a real zero" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the amount column asks the database, not a role list the screen keeps" -ForegroundColor Green
+
+# -- 5. what is not read cannot leak ----------------------------------------
+# purchase_return_warehouse_allocations.total_amount is purchase money in an
+# unmasked side table. Measured: this screen never displays it and never
+# computes with it - so it was removed from the select rather than masked.
+if ($ls -match [regex]::Escape("confirmed_at, total_amount")) {
+    Write-Host "X the list reads the allocation's total_amount again - unmasked purchase money it never shows" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the allocation's unmasked amount is not read at all - what is not read cannot leak" -ForegroundColor Green
+
+# -- 6. and the applier stays honest (941) ----------------------------------
 $ap = Get-Content -LiteralPath $applier -Raw
 if ($ap -notmatch [regex]::Escape("pg_get_functiondef")) {
-    Write-Host "X the applier does not read back what it applied - an exit code is not a measurement" -ForegroundColor Red
-    exit 1
+    Write-Host "X the applier does not read back what it applied" -ForegroundColor Red; exit 1
 }
 if ($ap -notmatch [regex]::Escape("name a target explicitly")) {
     Write-Host "X the applier could touch production without being told to" -ForegroundColor Red; exit 1
@@ -193,6 +169,20 @@ if ($pinned -gt 5) {
 }
 Write-Host "+ 940 holds: both routes read the head alone, and the pinned embed list is $pinned of 5" -ForegroundColor Green
 
+# 941 does not loosen: the browser must not price the return again.
+$m941 = Get-Content -LiteralPath "supabase/migrations/20260802000002_v3_74_941_the_server_prices_the_return.sql" -Raw
+$m941Code = ($m941 -split "`n" | Where-Object { $_.TrimStart() -notmatch '^--' }) -join "`n"
+foreach ($shape in @("COALESCE((v_item->>'unit_price')", "COALESCE((v_item->>'line_total')",
+                     "COALESCE((p_purchase_return->>'total_amount')", "p_bill_update->>'total_amount'")) {
+    if ($m941Code -match [regex]::Escape($shape)) {
+        Write-Host "X 941 loosened - the request prices the return again: $shape" -ForegroundColor Red; exit 1
+    }
+}
+if ($m941 -notmatch [regex]::Escape("purchase_return_priced_line")) {
+    Write-Host "X the pricing rule lost its single home" -ForegroundColor Red; exit 1
+}
+Write-Host "+ 941 holds: the server still prices the purchase return, the browser is not asked" -ForegroundColor Green
+
 $m939 = Get-Content -LiteralPath "supabase/migrations/20260802000001_v3_74_939_notifications_reach_a_person.sql" -Raw
 foreach ($needle in @("BEFORE INSERT ON public.notifications", "company_role_has_holder",
                       "workflow_row_is_open", "unverified_count", "ELSE TRUE")) {
@@ -225,7 +215,7 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-$self2 = Get-Content -LiteralPath "push_v3.74.941.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.942.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -245,9 +235,9 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.940.ps1" 2>$null
+git add -u -- "push_v3.74.941.ps1" 2>$null
 
-$expected = @($files) + @("push_v3.74.940.ps1")
+$expected = @($files) + @("push_v3.74.941.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -265,11 +255,23 @@ Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColo
 # a defect waiting for a tired evening. So the push applies its OWN migration,
 # from the file, and reads it back - and it does so FIRST, so a failure costs
 # seconds instead of the whole battery.
-Write-Host "Applying this release's migration from the file, and reading it back..." -ForegroundColor Cyan
-node scripts/apply-migration-file.js $migration --test --production
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "X the migration did not apply, or what runs differs from the file - NOT pushing" -ForegroundColor Red
-    exit 1
+# The apply step is GENERIC now, not tied to one named file: it applies every
+# migration this release ships, whatever they are. 941 taught this the hard way
+# - a step that must be REMEMBERED is not a step, it is a defect waiting for a
+# tired evening. This release ships none, and the script says so rather than
+# staying silent about a step that did not happen.
+$releaseMigrations = @($files | Where-Object { $_ -like "supabase/migrations/*.sql" })
+if ($releaseMigrations.Count -eq 0) {
+    Write-Host "+ this release ships no migration - nothing to apply" -ForegroundColor Green
+} else {
+    foreach ($mf in $releaseMigrations) {
+        Write-Host "Applying $mf from the file, and reading it back..." -ForegroundColor Cyan
+        node scripts/apply-migration-file.js $mf --test --production
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "X the migration did not apply, or what runs differs from the file - NOT pushing" -ForegroundColor Red
+            exit 1
+        }
+    }
 }
 
 Write-Host "Proving the pricing guard refuses all five shapes (TEST database only)..." -ForegroundColor Cyan
@@ -543,7 +545,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.940.ps1" 2>$null
+git add -u -- "push_v3.74.941.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -564,72 +566,64 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_941.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_942.txt"
     $msgLines = @(
-        'fix(security): v3.74.941 - the server prices the purchase return, the browser is not asked',
+        'feat(security): v3.74.942 - the purchase-return screens read their money through the masked path',
         '',
-        'A LIVE FINANCIAL-INTEGRITY HOLE, unrelated to the cost-hiding programme:',
-        'anyone who could create a purchase return could price it at whatever they',
-        'liked, and the ledger, the supplier balance and the inventory credit all',
-        'followed the browser.',
+        'STAGE 2, BATCH 4: the three purchase-return screens - list, detail and new.',
+        'Measured debt drops from 120 direct reads to 112, counted out loud as always.',
         '',
-        'FOUND BY MEASUREMENT, NOT BY READING. process_purchase_return_atomic locks',
-        'the bill_items row in its hands (FOR UPDATE) and then asks it about the',
-        'QUANTITY ONLY. The price came from the request:',
+        'WHY THIS COMES AFTER 941 AND NOT BEFORE. Masking the new-return screen while',
+        'the browser still priced the document would have CORRUPTED data rather than',
+        'hidden it: a masked read returns null, the screen computes zero, and a',
+        'zero-valued return gets posted to a real ledger. Now that the server prices',
+        'from the bill and refuses any disagreeing number, the forty-nine compute sites',
+        'in purchase-returns/new are DISPLAY ONLY, and masking costs nothing.',
         '',
-        "  COALESCE((v_item->>'unit_price')::NUMERIC, 0)",
-        "  COALESCE((v_item->>'line_total')::NUMERIC, 0)",
-        "  COALESCE((p_purchase_return->>'total_amount')::NUMERIC, 0)",
-        "  total_amount = (p_bill_update->>'total_amount')::NUMERIC   -- the BILL itself",
+        'THE AUTHORING GATE, AND ITS IMPACT MEASURED BEFORE IT WAS WRITTEN. A purchase',
+        'return is a document VALUED AT the purchase cost of the bill it returns. So',
+        'whoever may not see that cost may not author one - not because the screen would',
+        'show him numbers, but because a document whose author cannot see its value is a',
+        'document signed blind. Who may create one by RLS: owner, admin, manager,',
+        'accountant. The cost audience (906, 914) holds all of them EXCEPT admin - and',
+        'ZERO members hold the admin role in any company. So the gate takes nothing from',
+        'anyone who exists today, and shuts the door before it is opened. That settles',
+        'debt item 12 in the right direction: do not widen the cost audience to include',
+        'admin - stop admin from authoring a document he cannot see the value of.',
         '',
-        'And the proof came from the data, not the code: the only two purchase',
-        'returns on production sit on the SAME bill, the SAME line, the SAME quantity',
-        'and the SAME discount - and carry DIFFERENT values. PRET-5689 is 0.90 (the',
-        'pre-515 formula, before the document discount ratio existed) and PRET-79328',
-        'is 0.77 (after it). Two documents for the same goods, 15% apart, because each',
-        'was born in a different browser build. The number was never derived from',
-        'anything. And COALESCE(...,0) turned a MISSING price into zero IN SILENCE -',
-        'a zero-valued return posted instead of a refusal.',
+        'The gate is asked THREE times: at the door before a single number is read, and',
+        'on each of the two write paths - because browser state can be changed, and the',
+        'decision belongs at the moment of writing. And it is put to the DATABASE, never',
+        'to a role list the screen keeps (934). A blocked user meets an amber panel that',
+        'explains what a purchase return is valued at and who can create one - not a',
+        'silent redirect, which reads as a broken system.',
         '',
-        'THE CURE IS TO REMOVE THE AUTHORITY, NOT TO ADD A CHECK ON TOP OF IT. One',
-        'home for pricing - purchase_return_priced_line - called by all three writers,',
-        'so the rule cannot drift into three versions the way it already had. Price,',
-        'tax rate and discount come from THE BILL LINE THE RETURN RETURNS; line_total',
-        'is derived; the header is computed from the lines that were actually written.',
-        'The document discount ratio is computed from bills.subtotal over the sum of',
-        'bill_items.line_total instead of being sent - rounded to six places exactly as',
-        'the screen did, so no difference arises from rounding alone.',
+        'AND A SECOND HOME FOR THE COST RULE WAS FOUND HERE - ALREADY DRIFTED. The',
+        'amount column was dropped by a local role list: isRestrictedRole = store',
+        'manager OR ACCOUNTANT. But the accountant IS in the cost audience by the rule.',
+        'The screen was hiding a number he is entitled to. Over-hiding, not leaking -',
+        'milder, and it proves the same point: a rule kept in two places diverges, and',
+        'and nobody chooses the direction it diverges in. The column now shows for',
+        'everyone and the DATABASE answers: a masked null renders as an em dash with the',
+        'reason attached. isRestrictedRole stays where its meaning is true - which',
+        'quantity is mine - and nowhere else.',
         '',
-        'AND IT REFUSES OUT LOUD (the owner ruled on this, 2 August). Any disagreement',
-        'means either a screen computing wrongly or someone tampering, and both deserve',
-        'to be seen. Every refusal carries WHAT WAS SENT and WHAT THE BILL SAYS, the',
-        'field name, and the bill item id - diagnosable in a second, not an hour.',
+        'WHAT IS NOT READ CANNOT LEAK. purchase_return_warehouse_allocations.total_amount',
+        'is purchase money in an unmasked side table, and the list was reading it.',
+        'Measured: the screen never displays it and never computes with it - it uses only',
+        'the id, the warehouse and the status. So it was removed from the select rather',
+        'than masked. The column remains recorded debt; this screen is no longer a door',
+        'to it.',
         '',
-        'THREE MORE CLOSED ALONG THE WAY: the vendor credit took its totals from the',
-        'browser too and could disagree with the return it was born from - it is copied',
-        'from it now. resubmit_purchase_return deleted the lines and rewrote them at',
-        'sent prices, so a return rejected on one price could come back at another -',
-        'and it was SECURITY DEFINER WITH NO search_path, now pinned. And the path that',
-        'let the request rewrite bills.total_amount is gone; measured, the screen never',
-        'reaches it (the return bill list is restricted to receipt_status = received,',
-        'which is exactly what makes isFinalizedBill always true), so it was alive only',
-        'in the API - that is, only for a crafted request.',
+        'NO EMBED ON A MASKED VIEW. All three screens embedded supplier, bill, branch,',
+        'warehouse, products, allocations and items in one query. Left on top of the',
+        'masked views that would reproduce the 940 outage (PGRST201 empties the screen).',
+        'Heads and lines are read alone and the names are stitched in a second query',
+        'under the same response keys. Zero new embeds; the pinned list stays at five.',
         '',
-        'PROVEN LIVE ON PRODUCTION, ROLLED BACK: a forged price of 0.01 is refused',
-        'naming 0.01 and 1.00; the PRET-5689 formula (0.90 vs 0.77) is refused; and',
-        'WHAT THE CURRENT SCREEN SENDS IS ACCEPTED, writing 0.77/0.11/0.88 - the guard',
-        'refuses the wrong and spares the innocent. Zero probe rows remained. The six',
-        'function fingerprints (md5) are identical on production and test.',
-        '',
-        'NO DATA WAS REPAIRED: zero price divergence between every existing return line',
-        'and its bill line. The door was open and never walked through. The single',
-        'line_total divergence - PRET-5689 - is pinned BY NAME in the guard: explained,',
-        'not forgiven, and its count may not grow.',
-        '',
-        'The trap plants five shapes, the nastiest being an EMPTIED refusal function',
-        'that leaves every name in place so the text still reads perfectly - and a',
-        'fifth where the pricing rule drifts away from the screen, because a guard that',
-        'refuses the innocent is a defect, not protection.'
+        'And the bill NUMBER is read from bills_masked too, not from bills - one door,',
+        'not two, even for a column that is not money. The guard caught that on me: I',
+        'read bills for bill_number and it refused, correctly.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -653,7 +647,7 @@ if (-not $staged) {
 
 # -- the commit is not assumed: it is READ BACK -------------------------
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.941")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.942")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -669,5 +663,5 @@ if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.941 pushed - the server prices the purchase return, the browser is not asked" -ForegroundColor Green
+Write-Host "`n+ v3.74.942 pushed - the server prices the purchase return, the browser is not asked" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray

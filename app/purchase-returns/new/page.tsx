@@ -16,6 +16,8 @@ import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { getActiveCompanyId } from "@/lib/company"
 import { canReturnBill, getBillOperationError, billRequiresJournalEntries } from "@/lib/validation"
 import { validatePurchaseReturnStock, formatStockShortageMessage } from "@/lib/purchase-return-validation"
+// v3.74.942 — بوابةُ التكلفة: مستندٌ مُقوَّمٌ بتكلفة الشراء لا يؤلّفه من لا يراها.
+import { fetchCanViewPurchaseCost } from "@/lib/purchase-money"
 
 type Supplier = { id: string; name: string; phone?: string | null }
 type Bill = { id: string; bill_number: string; supplier_id: string; total_amount: number; status: string; receipt_status?: string | null; branch_id?: string | null; cost_center_id?: string | null; warehouse_id?: string | null }
@@ -87,6 +89,19 @@ export default function NewPurchaseReturnPage() {
   const [docDiscountRatio, setDocDiscountRatio] = useState(1)
   const [products, setProducts] = useState<Product[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
+
+  // ─── v3.74.942 — بوابةُ التكلفة ───────────────────────────────────────
+  //
+  // مرتجعُ المشتريات مستندٌ **مُقوَّمٌ بتكلفة الشراء بحكم تعريفه**. فمن لا
+  // يرى التكلفة لا يؤلّفه — لا لأن الشاشةَ ستُظهر له أرقاماً، بل لأن مستنداً
+  // لا يرى مؤلِّفُه قيمتَه مستندٌ يُوقَّع على المجهول.
+  //
+  // وقِيس الأثرُ قبل البناء: من يستطيع الإنشاءَ بسياسات RLS هم
+  // `owner · admin · manager · accountant`، وجمهورُ التكلفة يضمّهم جميعاً
+  // **إلا `admin`** — و**صفرُ أعضاءٍ يحملون `admin` فى أى شركة** (مقيس على
+  // الإنتاج). فالبوابةُ لا تسلب أحداً موجوداً اليوم شيئاً، وتغلق البابَ قبل
+  // أن يُفتح. ولا تُسأل قائمةُ أدوارٍ هنا: تُسأل القاعدة (درس 934).
+  const [costGate, setCostGate] = useState<"checking" | "allowed" | "blocked">("checking")
 
   // صلاحيات المستخدم
   const [currentUserRole, setCurrentUserRole] = useState<string>('accountant')
@@ -212,10 +227,17 @@ export default function NewPurchaseReturnPage() {
       const userBranchId = memberData?.branch_id || null
       setCurrentUserRole(role)
 
+      // ─── v3.74.942 — البوابةُ تُسأل قبل أن يُقرأ رقمٌ واحد ──────────────
+      // وتُسأل **القاعدة** لا قائمةَ الأدوار المحلية أعلاه، وفشلُ السؤال
+      // يُغلق ولا يفتح (865).
+      const mayPrice = await fetchCanViewPurchaseCost(supabase, loadedCompanyId, userBranchId)
+      setCostGate(mayPrice ? "allowed" : "blocked")
+      if (!mayPrice) return
+
       // 🔐 بناء استعلام الفواتير حسب الصلاحيات
       const isPrivilegedRole = PRIVILEGED_ROLES.includes(role.toLowerCase())
       let billQuery = supabase
-        .from("bills")
+        .from("bills_masked")
         .select("id, bill_number, supplier_id, total_amount, status, receipt_status, branch_id, cost_center_id, warehouse_id")
         .eq("company_id", loadedCompanyId)
         .in("status", ["paid", "partially_paid", "received"])
@@ -275,22 +297,39 @@ export default function NewPurchaseReturnPage() {
   useEffect(() => {
     if (!editReturnId || !companyId || editReturnLoaded) return
     ;(async () => {
-      const { data: pr } = await supabase
-        .from('purchase_returns')
+      // v3.74.942 — المنفذُ المقنَّع، وبلا تضمينٍ فوق النافذة (درسُ 940).
+      const { data: prHead } = await supabase
+        .from('purchase_returns_masked')
         .select(`
           id, return_number, return_date, settlement_method, reason, notes,
           supplier_id, bill_id, branch_id, cost_center_id, warehouse_id,
-          original_currency, workflow_status, status,
-          purchase_return_items(
-            id, bill_item_id, product_id, quantity, unit_price,
-            tax_rate, discount_percent, line_total,
-            products(id, name)
-          )
+          original_currency, workflow_status, status
         `)
         .eq('id', editReturnId)
         .single()
 
-      if (!pr) return
+      if (!prHead) return
+
+      const { data: prItemRows } = await supabase
+        .from('purchase_return_items_masked')
+        .select('id, bill_item_id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total')
+        .eq('purchase_return_id', editReturnId)
+
+      const prItems: any[] = prItemRows || []
+      const prProductIds = [...new Set(prItems.map((i) => i.product_id).filter(Boolean))]
+      const { data: prProducts } = prProductIds.length
+        ? await supabase.from('products').select('id, name').in('id', prProductIds)
+        : { data: [] as any[] }
+      const prNameOf: Record<string, any> = Object.fromEntries(
+        ((prProducts as any[]) || []).map((p: any) => [p.id, { id: p.id, name: p.name }]))
+
+      const pr: any = {
+        ...(prHead as any),
+        purchase_return_items: prItems.map((i) => ({
+          ...i,
+          products: i.product_id ? prNameOf[i.product_id] ?? null : null,
+        })),
+      }
       // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل لا من داخل الربط.
       await attachProductCosts(
         supabase,
@@ -487,12 +526,22 @@ export default function NewPurchaseReturnPage() {
       return
     }
     ; (async () => {
+      // v3.74.942 — المنفذُ المقنَّع، وبلا تضمينٍ فوق النافذة (درسُ 940).
       const { data } = await supabase
-        .from("bill_items")
-        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity, products(id, name)")
+        .from("bill_items_masked")
+        .select("id, product_id, quantity, unit_price, tax_rate, discount_percent, line_total, returned_quantity")
         .eq("bill_id", form.bill_id)
 
       const billItemsData = (data || []) as any[]
+      const biProductIds = [...new Set(billItemsData.map((i: any) => i.product_id).filter(Boolean))]
+      const { data: biProducts } = biProductIds.length
+        ? await supabase.from("products").select("id, name").in("id", biProductIds)
+        : { data: [] as any[] }
+      const biNameOf: Record<string, any> = Object.fromEntries(
+        ((biProducts as any[]) || []).map((p: any) => [p.id, { id: p.id, name: p.name }]))
+      for (const it of billItemsData) {
+        it.products = it.product_id ? biNameOf[it.product_id] ?? null : null
+      }
       // v3.74.909 — التكلفة تُلحَق من المسار المخوَّل.
       await attachProductCosts(supabase, billItemsData.map((it: any) => it?.products).filter(Boolean))
       setBillItems(billItemsData)
@@ -503,7 +552,7 @@ export default function NewPurchaseReturnPage() {
       // النسبة = subtotal الفاتورة (بعد الخصم العام) ÷ مجموع صوافى البنود.
       try {
         const { data: billRow } = await supabase
-          .from("bills")
+          .from("bills_masked")
           .select("subtotal")
           .eq("id", form.bill_id)
           .maybeSingle()
@@ -666,6 +715,14 @@ export default function NewPurchaseReturnPage() {
   // ===== حفظ المرتجع متعدد المخازن (المرحلة الثانية) =====
   const saveMultiWarehouseReturn = async () => {
     if (!companyId) return
+    // v3.74.942 — البوابةُ تُسأل عند الفعل أيضاً، لا عند الفتح وحده: حالةٌ
+    // فى المتصفح تُغيَّر، والقرارُ يجب أن يُتَّخذ فى اللحظة التى يُكتب فيها.
+    if (costGate !== "allowed") {
+      toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en'
+        ? 'You are not allowed to see purchase cost, so you cannot author a document valued at it.'
+        : 'غير مصرَّح لك برؤية تكلفة الشراء، فلا تؤلّف مستنداً مُقوَّماً بها.')
+      return
+    }
 
     // التحقق من أن كل تخصيص له مخزن
     const missingWarehouse = warehouseAllocations.find(a => !a.warehouseId)
@@ -690,7 +747,7 @@ export default function NewPurchaseReturnPage() {
 
     // التحقق من الفاتورة
     const { data: billCheck } = await supabase
-      .from("bills").select("status, paid_amount, total_amount, returned_amount").eq("id", form.bill_id).single()
+      .from("bills_masked").select("status, paid_amount, total_amount, returned_amount").eq("id", form.bill_id).single()
 
     if (!canReturnBill(billCheck?.status || null)) {
       const err = getBillOperationError(billCheck?.status || null, 'return', appLang as 'en' | 'ar')
@@ -868,6 +925,13 @@ export default function NewPurchaseReturnPage() {
   }
 
   const saveReturn = async () => {
+    // v3.74.942 — نفسُ البوابة على المسار المفرد.
+    if (costGate !== "allowed") {
+      toastActionError(toast, "الحفظ", "المرتجع", appLang === 'en'
+        ? 'You are not allowed to see purchase cost, so you cannot author a document valued at it.'
+        : 'غير مصرَّح لك برؤية تكلفة الشراء، فلا تؤلّف مستنداً مُقوَّماً بها.')
+      return
+    }
     try {
       setSaving(true)
       if (!companyId || !form.supplier_id) {
@@ -939,7 +1003,7 @@ export default function NewPurchaseReturnPage() {
 
       if (form.bill_id) {
         const { data: billCheck } = await supabase
-          .from("bills")
+          .from("bills_masked")
           .select("status, paid_amount, total_amount, returned_amount, receipt_status")
           .eq("id", form.bill_id)
           .single()
@@ -1328,6 +1392,41 @@ export default function NewPurchaseReturnPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // ─── v3.74.942 — البابُ يُغلق ويُقال لماذا ────────────────────────────
+  //
+  // ولا يُترك المستخدمُ أمام نموذجٍ يملؤه ثم يُرفض عند الحفظ: الرفضُ يُقال
+  // فى أوله. ولا يُعاد توجيهُه بصمتٍ أيضاً — الصمتُ يُقرأ عطباً فى النظام.
+  if (costGate === "blocked") {
+    return (
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8">
+          <Card className="border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800">
+            <CardHeader>
+              <CardTitle className="text-base sm:text-lg text-amber-900 dark:text-amber-200">
+                {appLang === 'en' ? 'Purchase cost is not visible to you' : 'تكلفةُ الشراء غيرُ مرئيةٍ لك'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-amber-900 dark:text-amber-200">
+              <p>
+                {appLang === 'en'
+                  ? 'A purchase return is a document valued at the purchase cost of the bill it returns. Since you are not permitted to see that cost, you cannot author one.'
+                  : 'مرتجعُ المشتريات مستندٌ مُقوَّمٌ بتكلفة شراء الفاتورة التى يردّها. ولأنك غيرُ مصرَّحٍ لك برؤية هذه التكلفة، فلا تؤلّفه.'}
+              </p>
+              <p>
+                {appLang === 'en'
+                  ? 'Ask the company owner to grant you purchase-cost visibility, or ask an accountant, a purchasing officer or a branch manager to create the return.'
+                  : 'اطلب من مالك الشركة إتاحةَ رؤية تكلفة الشراء لك، أو اطلب من المحاسب أو مسئول المشتريات أو مدير الفرع إنشاءَ المرتجع.'}
+              </p>
+              <Button variant="outline" onClick={() => router.push('/purchase-returns')}>
+                {appLang === 'en' ? 'Back to purchase returns' : 'العودة إلى المرتجعات'}
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
   }
 
   return (

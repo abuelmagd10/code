@@ -101,6 +101,10 @@ const CONVERTED = [
   "app/purchase-orders/[id]/edit/page.tsx",
   "app/api/v2/purchase-orders/route.ts",
   "app/api/v2/bills/route.ts",
+  // v3.74.942 — الدفعة الرابعة: مرتجعاتُ الشراء الثلاث.
+  "app/purchase-returns/page.tsx",
+  "app/purchase-returns/[id]/page.tsx",
+  "app/purchase-returns/new/page.tsx",
 ]
 
 /**

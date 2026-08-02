@@ -20,6 +20,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { formatSupabaseError } from "@/lib/error-messages"
+// v3.74.942 — مبالغُ الشراء تُقرأ من المنفذ المقنَّع وتُعرض «—» حين تُحجب.
+import { HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN, isHiddenMoney } from "@/lib/purchase-money"
 
 type WarehouseAllocation = {
   id: string
@@ -27,7 +29,9 @@ type WarehouseAllocation = {
   workflow_status: string
   confirmed_by: string | null
   confirmed_at: string | null
-  total_amount: number
+  // v3.74.942 — `total_amount` لم يعد يُقرأ أصلاً: قِيس أن هذه الشاشة لا
+  // تعرضه ولا تحسب به شيئاً، فحُذف من `select` بدل أن يُقنَّع. وما لا
+  // يُقرأ لا يحتاج حجباً.
   warehouses?: { name: string; branch_id: string | null } | null
 }
 
@@ -41,7 +45,8 @@ type PurchaseReturn = {
   id: string
   return_number: string
   return_date: string
-  total_amount: number
+  // v3.74.942 — يصل `null` لمن ليس من جمهور التكلفة، فيُعرض «—».
+  total_amount: number | null
   status: string
   workflow_status: string
   financial_status: string | null
@@ -193,20 +198,19 @@ export default function PurchaseReturnsPage() {
         const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
         const selectedBranchId = branchFilter.getFilteredBranchId()
 
+        // ─── v3.74.942 — المنفذُ المقنَّع، وبلا تضمينٍ فوق النافذة ──────
+        //
+        // ‏(١) `purchase_returns_masked` بدل الجدول.
+        // ‏(٢) ولا تضمينَ واحدٍ فوقها (درسُ 940: `PGRST201` يُفرغ الشاشة).
+        //     تُقرأ الرؤوسُ وحدها، ثم تُدمج الأسماءُ والتخصيصاتُ والبنود.
+        // ‏(٣) و`allocations.total_amount` **حُذف من القراءة**: قِيس أن هذه
+        //     الشاشة لا تعرضه ولا تحسب به. وما لا يُقرأ لا يُسرَّب.
         let query = supabase
-          .from("purchase_returns")
+          .from("purchase_returns_masked")
           .select(`
             id, return_number, return_date, total_amount, status, workflow_status, financial_status,
             reason, settlement_method, warehouse_id, branch_id, created_by,
-            suppliers(name),
-            bills(id, bill_number),
-            branches(name),
-            warehouses(name),
-            allocations:purchase_return_warehouse_allocations(
-              id, warehouse_id, workflow_status, confirmed_by, confirmed_at, total_amount,
-              warehouses(name, branch_id)
-            ),
-            purchase_return_items(quantity, warehouse_id, warehouse_allocation_id)
+            supplier_id, bill_id
           `)
           .eq("company_id", companyId)
 
@@ -220,10 +224,71 @@ export default function PurchaseReturnsPage() {
           query = query.or(`branch_id.eq.${memberData.branch_id},branch_id.is.null`)
         }
 
-        const { data, error } = await query.order("return_date", { ascending: false })
+        const { data: heads, error } = await query.order("return_date", { ascending: false })
 
-        if (!error && data) {
-          let filtered = data as PurchaseReturn[]
+        if (!error && heads) {
+          // ─── الأسماءُ والتخصيصاتُ والبنودُ تُدمج بدل أن تُضمَّن ────────
+          const rows: any[] = heads
+          const ids = rows.map((r) => r.id)
+          const uniq = (xs: any[]) => [...new Set(xs.filter(Boolean))]
+
+          const [sup, bl, br, wh, allocs, items] = await Promise.all([
+            (async () => {
+              const list = uniq(rows.map((r) => r.supplier_id))
+              if (!list.length) return {}
+              const { data } = await supabase.from('suppliers').select('id, name').in('id', list)
+              return Object.fromEntries((data || []).map((x: any) => [x.id, { name: x.name }]))
+            })(),
+            (async () => {
+              const list = uniq(rows.map((r) => r.bill_id))
+              if (!list.length) return {}
+              const { data } = await supabase.from('bills_masked').select('id, bill_number').in('id', list)
+              return Object.fromEntries((data || []).map((x: any) => [x.id, { id: x.id, bill_number: x.bill_number }]))
+            })(),
+            (async () => {
+              const list = uniq(rows.map((r) => r.branch_id))
+              if (!list.length) return {}
+              const { data } = await supabase.from('branches').select('id, name').in('id', list)
+              return Object.fromEntries((data || []).map((x: any) => [x.id, { name: x.name }]))
+            })(),
+            (async () => {
+              const list = uniq(rows.map((r) => r.warehouse_id))
+              if (!list.length) return {}
+              const { data } = await supabase.from('warehouses').select('id, name').in('id', list)
+              return Object.fromEntries((data || []).map((x: any) => [x.id, { name: x.name }]))
+            })(),
+            (async () => {
+              if (!ids.length) return {} as Record<string, any[]>
+              const { data } = await supabase
+                .from('purchase_return_warehouse_allocations')
+                .select('id, purchase_return_id, warehouse_id, workflow_status, confirmed_by, confirmed_at, warehouses(name, branch_id)')
+                .in('purchase_return_id', ids)
+              const byPr: Record<string, any[]> = {}
+              for (const a of (data || []) as any[]) (byPr[a.purchase_return_id] ||= []).push(a)
+              return byPr
+            })(),
+            (async () => {
+              if (!ids.length) return {} as Record<string, any[]>
+              const { data } = await supabase
+                .from('purchase_return_items_masked')
+                .select('purchase_return_id, quantity, warehouse_id, warehouse_allocation_id')
+                .in('purchase_return_id', ids)
+              const byPr: Record<string, any[]> = {}
+              for (const i of (data || []) as any[]) (byPr[i.purchase_return_id] ||= []).push(i)
+              return byPr
+            })(),
+          ])
+
+          for (const r of rows) {
+            r.suppliers = r.supplier_id ? (sup as any)[r.supplier_id] ?? null : null
+            r.bills = r.bill_id ? (bl as any)[r.bill_id] ?? null : null
+            r.branches = r.branch_id ? (br as any)[r.branch_id] ?? null : null
+            r.warehouses = r.warehouse_id ? (wh as any)[r.warehouse_id] ?? null : null
+            r.allocations = (allocs as any)[r.id] || []
+            r.purchase_return_items = (items as any)[r.id] || []
+          }
+
+          let filtered = rows as PurchaseReturn[]
 
           // للمسؤول المخزن: فلترة عميل — فقط المرتجعات ذات الصلة بمخزنه
           if (role === 'store_manager' && userWarehouseId) {
@@ -724,19 +789,33 @@ export default function PurchaseReturnsPage() {
         ) : <span className="text-gray-400">—</span>
       }
     },
-    // عمود المبلغ: للأدوار المميزة فقط
-    ...(!isRestrictedRole ? [{
+    // ─── عمودُ المبلغ — v3.74.942 ────────────────────────────────────────
+    //
+    // كان يُحذف بقائمةِ أدوارٍ محلية: `isRestrictedRole = مسؤول المخزن أو
+    // **المحاسب**`. والمحاسبُ من جمهور التكلفة بنصّ القاعدة (906 · 914)،
+    // فكانت الشاشةُ تحجب عنه رقماً يستحقّه — **بيتٌ ثانٍ للقاعدة، وقد
+    // انحرف** (درس 934). والانحرافُ هنا كان نحو التشديد لا التسريب، وهو
+    // أهون، لكنه يثبت المبدأ: قاعدةٌ فى مكانين تفترق.
+    //
+    // فالعمودُ يظهر للجميع، **والقاعدةُ تُجيب فى القاعدة**: من ليس من جمهور
+    // التكلفة يصله `null` من النافذة المقنَّعة فيرى «—» مع سببه.
+    // (و`isRestrictedRole` باقٍ حيث معناه صحيح: أىُّ كميةٍ «كميتى».)
+    {
       key: 'total_amount' as keyof PurchaseReturn,
       header: appLang === 'en' ? 'Amount' : 'المبلغ',
       type: 'currency' as const,
       align: 'right' as const,
       width: 'w-32',
       format: (value: unknown) => (
-        <span className="font-semibold text-purple-600 dark:text-purple-400">
-          {currencySymbol} {Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
+        isHiddenMoney(value as any) ? (
+          <span className="text-gray-400" title={appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR}>{HIDDEN_MONEY}</span>
+        ) : (
+          <span className="font-semibold text-purple-600 dark:text-purple-400">
+            {currencySymbol} {Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        )
       )
-    }] : []),
+    },
     {
       key: 'workflow_status',
       header: appLang === 'en' ? 'Status' : 'الحالة',
@@ -1153,7 +1232,13 @@ export default function PurchaseReturnsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Amount' : 'المبلغ'}</span>
-                  <span className="font-bold text-teal-700 dark:text-teal-400">{prToRefund.total_amount.toFixed(2)}</span>
+                  {/* v3.74.942 — `.toFixed(2)` على مبلغٍ محجوب كانت سترمى؛ والمحجوبُ يُقال. */}
+                  <span
+                    className={isHiddenMoney(prToRefund.total_amount) ? "text-gray-400" : "font-bold text-teal-700 dark:text-teal-400"}
+                    title={isHiddenMoney(prToRefund.total_amount) ? (appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR) : undefined}
+                  >
+                    {isHiddenMoney(prToRefund.total_amount) ? HIDDEN_MONEY : Number(prToRefund.total_amount).toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Method' : 'طريقة التسوية'}</span>
