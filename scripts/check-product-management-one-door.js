@@ -62,10 +62,34 @@ try { ({ Client } = require("pg")) } catch {
 const problems = []
 const notes = []
 
+/** v3.74.937 — انقطاعٌ عابر ليس نتيجةَ قياس (انظر الشرح فى الحارس المقنَّع). */
+const TRANSIENT = /ECONNRESET|Connection terminated|ETIMEDOUT|EPIPE|socket hang up/i
+
+async function withDatabase(work) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    problems.length = 0
+    notes.length = 0
+    const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
+    client.on("error", (e) => { if (!TRANSIENT.test(String(e && e.message))) console.error(`! pg: ${e.message}`) })
+    try {
+      await client.connect()
+      return await work(client)
+    } catch (e) {
+      const msg = String((e && e.message) || e)
+      if (attempt === 1 && TRANSIENT.test(msg)) {
+        console.log(`! the database connection dropped (${msg}) - measuring again, once.`)
+        try { await client.end() } catch { /* already gone */ }
+        continue
+      }
+      throw e
+    } finally {
+      try { await client.end() } catch { /* already gone */ }
+    }
+  }
+}
+
 ;(async () => {
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
-  await client.connect()
-  try {
+  await withDatabase(async (client) => {
     // ── (١) الحكمُ موجود، ومقصور ────────────────────────────────────────
     const { rows: fn } = await client.query(
       `SELECT p.prosecdef, COALESCE(array_to_string(p.proacl, ' | '), '') acl,
@@ -209,9 +233,7 @@ const notes = []
     if (members.length > 0 && allowed === 0) {
       problems.push("not one member may manage products - the rule is too narrow, and nobody can add an item")
     }
-  } finally {
-    await client.end()
-  }
+  })
 
   if (problems.length > 0) {
     console.error(`X who may create a product is not what the code assumes (${problems.length}):`)

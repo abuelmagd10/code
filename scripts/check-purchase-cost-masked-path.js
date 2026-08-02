@@ -121,10 +121,49 @@ try { ({ Client } = require("pg")) } catch {
 const problems = []
 const notes = []
 
+/**
+ * ⚠️ v3.74.937 — اتصالٌ ينقطع ليس نتيجةَ قياس.
+ *
+ * سقطت هذه الدفعةُ ثلاث مراتٍ فى يومٍ واحد على انقطاعٍ عابر (`ECONNRESET`
+ * مرةً، و«Connection terminated unexpectedly» مرتين). وفى إحداها **لم
+ * يُبلِّغ الحارسُ بل مات**: حدثُ `error` على عميل `pg` بلا مستمعٍ يُسقط
+ * العملية بأثرٍ برمجىٍّ خام، فيبدو الأمرُ عطباً فى الحجب وهو عطبٌ فى
+ * الشبكة.
+ *
+ * **وحارسٌ يسقط عشوائياً يُلتفّ عليه بعد أسبوع** — يُعاد التشغيل حتى يمرّ،
+ * فيصير المرورُ عادةً لا برهاناً. فالانقطاعُ العابر يُعاد فيه المحاولةُ
+ * مرةً واحدة، **وما عداه يُرفع كما هو**: لا تُبتلع نتيجةُ قياسٍ حقيقية.
+ */
+const TRANSIENT = /ECONNRESET|Connection terminated|ETIMEDOUT|EPIPE|socket hang up/i
+
+async function withDatabase(work) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    // ⚠️ المحاولةُ الثانية تبدأ من صفحةٍ بيضاء: لو بقيت ملاحظاتُ المحاولة
+    // المقطوعة لأُبلغ عن نصفِ قياسٍ مرتين، **فصار الحارسُ يخترع أعطاباً**.
+    problems.length = 0
+    notes.length = 0
+    const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
+    // بلا هذا المستمع يقتل انقطاعُ المقبس العمليةَ بدل أن يُبلِّغ.
+    client.on("error", (e) => { if (!TRANSIENT.test(String(e && e.message))) console.error(`! pg: ${e.message}`) })
+    try {
+      await client.connect()
+      return await work(client)
+    } catch (e) {
+      const msg = String((e && e.message) || e)
+      if (attempt === 1 && TRANSIENT.test(msg)) {
+        console.log(`! the database connection dropped (${msg}) - measuring again, once.`)
+        try { await client.end() } catch { /* already gone */ }
+        continue
+      }
+      throw e
+    } finally {
+      try { await client.end() } catch { /* already gone */ }
+    }
+  }
+}
+
 ;(async () => {
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
-  await client.connect()
-  try {
+  await withDatabase(async (client) => {
     for (const t of TABLES) {
       const view = `${t.base}_masked`
 
@@ -304,9 +343,7 @@ const notes = []
     if (members.length > 0 && sawNone === 0) {
       notes.push("! every member in every company is in the cost audience - the hide was not exercised here")
     }
-  } finally {
-    await client.end()
-  }
+  })
 
   if (problems.length > 0) {
     console.error(`X the purchase-cost masked path is not what the code assumes (${problems.length}):`)

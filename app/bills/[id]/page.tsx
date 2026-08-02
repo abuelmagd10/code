@@ -48,6 +48,7 @@ import {
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { getActiveCompanyId } from "@/lib/company"
+import { fetchCanViewPurchaseCost, money, HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN } from "@/lib/purchase-money"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
@@ -154,6 +155,11 @@ export default function BillViewPage() {
   const printAreaRef = useMemo(() => ({ current: null as HTMLDivElement | null }), [])
   const billContentRef = useRef<HTMLDivElement | null>(null)
   const [bill, setBill] = useState<Bill | null>(null)
+
+  // v3.74.937 - هل يرى قارئُ هذه الشاشة مبالغَ الشراء؟ يُسأل عنه القاعدةُ
+  // بفرع هذه الفاتورة (قاعدة 914)، ويُستعمل لمنع كل فعلٍ **يحسب مالاً**
+  // لا لإخفاء الصفحة: البنودُ والكمياتُ تبقى مقروءةً للجميع.
+  const [canSeeCost, setCanSeeCost] = useState<boolean>(false)
   // v3.74.376 — discount gate from the banner. "open" means posting
   // is allowed; everything else short-circuits the submit-for-receipt
   // flow with a destructive toast.
@@ -388,7 +394,7 @@ export default function BillViewPage() {
       // موجودة (مثلاً link قديم بعد حذف الفاتورة) نرجع null بسلامة بدل
       // ما نرمى exception ويظهر للمستخدم Error page.
       const { data: billData, error: billErr } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("*, shipping_providers(provider_name), receipt_status, receipt_rejection_reason, received_by, received_at, created_by, rejection_reason, rejected_by, rejected_at")
         .eq("id", id)
         .eq("company_id", activeCompanyId)
@@ -406,6 +412,10 @@ export default function BillViewPage() {
         return
       }
       setBill(billData as any)
+      // v3.74.937 — شركةُ الفاتورة نفسِها هى المصدر: السؤالُ عن **هذا**
+      // المستند، لا عن الشركة النشطة فى الجلسة.
+      setCanSeeCost(await fetchCanViewPurchaseCost(
+        supabase, (billData as any).company_id, (billData as any).branch_id ?? null))
       // v3.74.254 — load the most-recent rejected refund_request for this
       // bill so the banner can surface the reason.
       // v3.74.256 — load the most-recent rejected pre_receipt request for
@@ -457,7 +467,7 @@ export default function BillViewPage() {
       // Load linked purchase order if exists
       if (billData.purchase_order_id) {
         const { data: poData } = await supabase
-          .from("purchase_orders")
+          .from("purchase_orders_masked")
           .select("id, po_number")
           .eq("id", billData.purchase_order_id)
           .maybeSingle()
@@ -485,7 +495,7 @@ export default function BillViewPage() {
 
       const { data: supplierData } = await supabase.from("suppliers").select("id, name").eq("id", billData.supplier_id).maybeSingle()
       setSupplier(supplierData as any)
-      const { data: itemData } = await supabase.from("bill_items").select("*").eq("bill_id", id)
+      const { data: itemData } = await supabase.from("bill_items_masked").select("*").eq("bill_id", id)
       setItems((itemData || []) as any)
       const productIds = Array.from(new Set((itemData || []).map((it: any) => it.product_id)))
       if (productIds.length) {
@@ -554,7 +564,7 @@ export default function BillViewPage() {
       try {
         if (companyId && billData?.bill_number) {
           const { data: nextByNumber } = await supabase
-            .from("bills")
+            .from("bills_masked")
             .select("id, bill_number")
             .eq("company_id", companyId)
             .gt("bill_number", billData.bill_number)
@@ -563,7 +573,7 @@ export default function BillViewPage() {
           setNextBillId((nextByNumber && nextByNumber[0]?.id) || null)
 
           const { data: prevByNumber } = await supabase
-            .from("bills")
+            .from("bills_masked")
             .select("id, bill_number")
             .eq("company_id", companyId)
             .lt("bill_number", billData.bill_number)
@@ -708,6 +718,18 @@ export default function BillViewPage() {
   // Open return dialog
   const openReturnDialog = (type: 'partial' | 'full') => {
     if (!bill || !items.length) return
+    // v3.74.937 - **هذه النافذةُ تبنى مرتجعاً من أسعار البنود** ثم تُدرجه.
+    // فمن لا يقرأ السعرَ كان سيُنشئ مستنداً بأصفار - لا حجبٌ بل إتلاف.
+    if (!canSeeCost) {
+      toast({
+        title: appLang === 'en' ? "Not allowed" : "غير مسموح",
+        description: appLang === 'en'
+          ? "A purchase return is built from the purchase prices, and you are not allowed to see them."
+          : "مرتجعُ الشراء يُبنى من أسعار الشراء، وأنت غير مصرَّح لك برؤيتها.",
+        variant: "destructive",
+      })
+      return
+    }
     setReturnType(type)
     const returnableItems = items.map(it => ({
       item_id: it.id,
@@ -875,24 +897,38 @@ export default function BillViewPage() {
     try {
       // جلب الفاتورة للحصول على purchase_order_id والبيانات المالية
       const { data: billData } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("purchase_order_id, status, subtotal, tax_amount, total_amount, returned_amount, return_status")
         .eq("id", billId)
         .maybeSingle()
 
       if (!billData?.purchase_order_id) return // لا يوجد أمر شراء مرتبط
 
+      // v3.74.937 - هذه الدالةُ **تنسخ إجمالياتِ الفاتورة إلى أمر الشراء**.
+      // فلو قرأتها محجوبةً ومضت لكتبت فراغاً فوق أرقامٍ صحيحة فى مستندٍ
+      // آخر - **إتلافٌ صامتٌ فى مستندٍ لم يفتحه أحد**. ولا يجوز التخطى
+      // بصمتٍ أيضاً: أمرُ الشراء يبقى بأرقامٍ قديمةٍ ولا أحد يعلم.
+      //
+      // وقِيس أن هذا لا يُعطّل عملاً اليوم: صلاحيةُ تعديل الفواتير ممنوحةٌ
+      // للمحاسب والمالك والمشرف وحدهم، والأولان من جمهور التكلفة.
+      if (billData.subtotal == null || billData.tax_amount == null ||
+          billData.total_amount == null || billData.returned_amount == null) {
+        throw new Error(appLang === 'en'
+          ? "This bill's amounts are hidden from you, so the linked purchase order cannot be kept in step."
+          : "مبالغُ هذه الفاتورة محجوبةٌ عنك، فلا يُمكن تحديثُ أمر الشراء المرتبط بها.")
+      }
+
       const poId = billData.purchase_order_id
 
       // جلب بنود أمر الشراء
       const { data: poItems } = await supabase
-        .from("purchase_order_items")
+        .from("purchase_order_items_masked")
         .select("product_id, quantity")
         .eq("purchase_order_id", poId)
 
       // جلب جميع الفواتير المرتبطة بأمر الشراء (غير الملغاة وغير المحذوفة)
       const { data: linkedBills } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("id, status")
         .eq("purchase_order_id", poId)
         .not("status", "in", "(voided,cancelled)")
@@ -903,7 +939,7 @@ export default function BillViewPage() {
       let billedQtyMap: Record<string, number> = {}
       if (billIds.length > 0) {
         const { data: allBillItems } = await supabase
-          .from("bill_items")
+          .from("bill_items_masked")
           .select("product_id, quantity, returned_quantity")
           .in("bill_id", billIds)
 
@@ -1102,7 +1138,7 @@ export default function BillViewPage() {
         bill.receipt_status === 'received') {
         // جلب عناصر الفاتورة للتحقق
         const { data: billItems } = await supabase
-          .from("bill_items")
+          .from("bill_items_masked")
           .select("product_id, quantity")
           .eq("bill_id", bill.id)
 
@@ -1748,10 +1784,10 @@ export default function BillViewPage() {
                               )}
                             </td>
                             <td className="p-3 text-left">
-                              <span className="font-semibold text-gray-900 dark:text-white">{currencySymbol}{it.line_total.toFixed(2)}</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${it.line_total.toFixed(2)}`}</span>
                               {returnedQty > 0 && (
                                 <div className="text-xs text-orange-600 dark:text-orange-400">
-                                  {appLang === 'en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}
+                                  {appLang === 'en' ? 'Net' : 'صافي'}: {it.unit_price == null ? HIDDEN_MONEY : `${currencySymbol}${(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}`}
                                 </div>
                               )}
                             </td>
@@ -1774,7 +1810,7 @@ export default function BillViewPage() {
                             <h4 className="font-medium text-gray-900 dark:text-white">{products[it.product_id]?.name || it.product_id}</h4>
                             {it.description && <p className="text-xs text-gray-500 dark:text-gray-400">{it.description}</p>}
                           </div>
-                          <span className="font-bold text-blue-600 dark:text-blue-400">{currencySymbol}{it.line_total.toFixed(2)}</span>
+                          <span className="font-bold text-blue-600 dark:text-blue-400">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${it.line_total.toFixed(2)}`}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div className="flex flex-col">
@@ -1793,7 +1829,7 @@ export default function BillViewPage() {
                         {returnedQty > 0 && (
                           <div className="mt-2 pt-2 border-t border-dashed flex justify-between items-center">
                             <span className="text-xs text-orange-600 dark:text-orange-400">{appLang === 'en' ? 'Returned' : 'مرتجع'}: {returnedQty}</span>
-                            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{appLang === 'en' ? 'Net' : 'صافي'}: {currencySymbol}{(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}</span>
+                            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{appLang === 'en' ? 'Net' : 'صافي'}: {it.unit_price == null ? HIDDEN_MONEY : `${currencySymbol}${(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}`}</span>
                           </div>
                         )}
                       </div>
@@ -2070,7 +2106,7 @@ export default function BillViewPage() {
                     </div>
                     <div>
                       <p className="text-xs text-blue-600 dark:text-blue-400">{appLang === 'en' ? 'Bill Total' : 'إجمالي الفاتورة'}</p>
-                      <p className="text-lg font-bold text-blue-700 dark:text-blue-300">{currencySymbol}{bill.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                      <p className="text-lg font-bold text-blue-700 dark:text-blue-300" title={bill.total_amount == null ? (appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR) : undefined}>{bill.total_amount == null ? HIDDEN_MONEY : `${currencySymbol}${bill.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}</p>
                     </div>
                   </div>
                 </Card>
@@ -2112,9 +2148,12 @@ export default function BillViewPage() {
                   // the payment summary on the same page (المستحق: 6.31,
                   // panel: 7.34) and the "matched" badge stamped a lie.
                   const returnsTotal = Number((bill as any).returned_amount || 0)
-                  const netRemaining = bill.total_amount - paidTotal - returnsTotal
-                  const isCredit = netRemaining < 0
-                  const isOwed = netRemaining > 0
+                  // v3.74.937 - مطروحٌ من مجهولٍ مجهول، لا صفر.
+                  const netRemaining = (bill.total_amount == null || (bill as any).returned_amount == null)
+                    ? null
+                    : bill.total_amount - paidTotal - returnsTotal
+                  const isCredit = netRemaining !== null && netRemaining < 0
+                  const isOwed = netRemaining !== null && netRemaining > 0
                   return (
                     <Card className={`p-4 ${isOwed ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : isCredit ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'}`}>
                       <div className="flex items-center gap-3">
@@ -2130,7 +2169,7 @@ export default function BillViewPage() {
                             {appLang === 'en' ? (isCredit ? 'Credit Balance' : 'Net Remaining') : (isCredit ? 'رصيد دائن' : 'صافي المتبقي')}
                           </p>
                           <p className={`text-lg font-bold ${isOwed ? 'text-red-700 dark:text-red-300' : isCredit ? 'text-blue-700 dark:text-blue-300' : 'text-green-700 dark:text-green-300'}`}>
-                            {currencySymbol}{Math.abs(netRemaining).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {netRemaining === null ? HIDDEN_MONEY : `${currencySymbol}${Math.abs(netRemaining).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
                             {isCredit && <span className="text-xs mr-1">({appLang === 'en' ? 'credit' : 'دائن'})</span>}
                           </p>
                         </div>
@@ -2601,8 +2640,8 @@ export default function BillViewPage() {
                           disabled={returnType === 'full'}
                         />
                       </td>
-                      <td className="p-2 text-right">{it.unit_price.toFixed(2)}</td>
-                      <td className="p-2 text-right font-medium">{(it.return_qty * it.unit_price).toFixed(2)}</td>
+                      <td className="p-2 text-right">{money(it.unit_price)}</td>
+                      <td className="p-2 text-right font-medium">{it.unit_price == null ? HIDDEN_MONEY : (it.return_qty * it.unit_price).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>

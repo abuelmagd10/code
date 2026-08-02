@@ -36,15 +36,33 @@ function runGuard(root) {
   return { failed: r.status !== 0, output: `${r.stdout || ""}${r.stderr || ""}` }
 }
 
+/**
+ * قائمةُ المحوَّل **تُقرأ من الحارس نفسه**، لا تُكتب هنا ثانيةً.
+ *
+ * ⚠️ درسُ 937: كانت مكتوبةً هنا بملفين، فلمّا طالت القائمةُ بملفٍ ثالثٍ
+ * فى دفعةٍ تالية اشتكى الحارسُ بحقٍّ أن ملفاً مذكوراً غيرُ موجودٍ فى
+ * الشجرة المؤقتة — **فسقط الفخُّ على حالٍ صحيحة**. وهو نفسُ عطب النسخة
+ * الثانية من الحكم (934): قائمةٌ فى موضعين تفترق عند أول تعديل.
+ */
+function convertedList() {
+  const src = fs.readFileSync(GUARD, "utf8")
+  // ⚠️ الإغلاقُ يُطابَق **فى أول السطر**: أولُ `]` فى القائمة هو الذى داخل
+  // `[id]` فى مسار الملف، فلو وقف التعبيرُ عنده لقرأ سطراً واحداً وظنّ
+  // الباقىَ غائباً — وهو نفسُ ما وقع لحظةَ كتابته.
+  const block = src.match(/const CONVERTED = \[([\s\S]*?)\n\]/)
+  if (!block) throw new Error("could not read CONVERTED from the guard")
+  return [...block[1].matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1])
+}
+
 function tree(body) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "purchase-money-"))
-  const p = path.join(root, CONVERTED_FILE)
-  fs.mkdirSync(path.dirname(p), { recursive: true })
-  fs.writeFileSync(p, body)
-  // الملفُّ الثانى المذكور فى القائمة يجب أن يوجد وإلا اشتكى الحارس بحق.
-  const q = path.join(root, "app/bills/[id]/edit/page.tsx")
-  fs.mkdirSync(path.dirname(q), { recursive: true })
-  fs.writeFileSync(q, 'const x = supabase.from("bills_masked").select("*")\n')
+  for (const rel of convertedList()) {
+    const p = path.join(root, rel)
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    // الملفُّ محلُّ الزرع يأخذ الجسدَ المزروع، والبقيةُ نظيفةٌ كى لا
+    // يشتكى الحارسُ من غيابها بحق.
+    fs.writeFileSync(p, rel === CONVERTED_FILE ? body : 'const x = supabase.from("bills_masked").select("*")\n')
+  }
   return root
 }
 

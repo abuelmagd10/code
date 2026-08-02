@@ -6,109 +6,109 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.936 - the OLD script is removed, never this one. Five times a chained
+# v3.74.937 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.935.ps1") { Remove-Item -LiteralPath "push_v3.74.935.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.936.ps1") { Remove-Item -LiteralPath "push_v3.74.936.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.936"') {
-    Write-Host "+ 3.74.936" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.937"') {
+    Write-Host "+ 3.74.937" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.936]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.936]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.937]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.937]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# No migration: the masked path was built in 933. This release moves the FIRST
-# batch of screens onto it, and blocks what would otherwise write zeros.
-$helper = "lib/purchase-money.ts"
-$list   = "app/bills/page.tsx"
-$edit   = "app/bills/[id]/edit/page.tsx"
+# No migration: stage 2, second batch - the bill screen itself.
+$detail = "app/bills/[id]/page.tsx"
 $guard  = "scripts/check-purchase-money-direct-read.js"
 $trap   = "scripts/selftest-purchase-money-direct-read.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $helper, $list, $edit, $guard, $trap,
-           "push_v3.74.936.ps1")
+           $detail, $guard, $trap,
+           "scripts/check-purchase-cost-masked-path.js",
+           "scripts/check-product-management-one-door.js",
+           "push_v3.74.937.ps1")
 
-$h = Get-Content -LiteralPath $helper -Raw
-$l = Get-Content -LiteralPath $list -Raw
-$e = Get-Content -LiteralPath $edit -Raw
+$d = Get-Content -LiteralPath $detail -Raw
 $g = Get-Content -LiteralPath $guard -Raw
 $t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. failing to ask is not permission (865) --------------------------
-if ($h -notmatch [regex]::Escape("return false")) {
-    Write-Host "X the helper does not close on error - a failed check would open the money" -ForegroundColor Red
+# -- 1. the screen asks the rule, for THIS bill's branch ----------------
+if ($d -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
+    Write-Host "X the bill screen never asks whether the reader may see the cost" -ForegroundColor Red; exit 1
+}
+if ($d -notmatch [regex]::Escape("branch_id ?? null")) {
+    Write-Host "X it asks without the bill's branch - 914 would be undone" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the bill screen asks the rule, scoped to that bill's branch" -ForegroundColor Green
+
+# -- 2. what builds a document from a price is gated --------------------
+if ($d -notmatch [regex]::Escape("if (!canSeeCost)")) {
+    Write-Host "X the return dialog is not gated - it would build a return out of zeros" -ForegroundColor Red
     exit 1
 }
-if ($h -notmatch [regex]::Escape("p_scope_by_branch")) {
-    Write-Host "X the helper asks without the branch - 914 would be undone" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the helper asks the rule with the branch, and closes on error" -ForegroundColor Green
+Write-Host "+ the return dialog refuses before it reads a price it may not see" -ForegroundColor Green
 
-# -- 2. a hidden amount is NEVER a zero ---------------------------------
-# Number(x || 0) writes 0.00 where a real amount exists. A lying zero is
-# worse than an honest blank, because it gets believed and built upon.
-if ($h -notmatch [regex]::Escape("HIDDEN_MONEY")) {
-    Write-Host "X the helper has no symbol for a hidden amount" -ForegroundColor Red; exit 1
+# -- 3. and the linked purchase order is never overwritten with a blank -
+# This screen copies the bill totals INTO the purchase order. Writing a
+# hidden amount there would corrupt a document nobody has open. Skipping
+# in silence is no better: the order keeps stale figures and nobody knows.
+if ($d -notmatch [regex]::Escape("billData.subtotal == null")) {
+    Write-Host "X the purchase-order sync does not check for a hidden amount" -ForegroundColor Red; exit 1
 }
-if ($h -notmatch [regex]::Escape("sumOrHidden")) {
-    Write-Host "X no safe sum - a total missing a hidden item is wrong and looks right" -ForegroundColor Red
-    exit 1
+if ($d -notmatch [regex]::Escape("throw new Error")) {
+    Write-Host "X the sync skips in silence instead of refusing out loud" -ForegroundColor Red; exit 1
 }
-if ($l -match [regex]::Escape("Number(bill.total_amount || 0)")) {
-    Write-Host "X the list still turns a hidden total into zero" -ForegroundColor Red; exit 1
-}
-if ($l -notmatch [regex]::Escape("number | null")) {
-    Write-Host "X getDisplayAmount no longer admits a hidden amount" -ForegroundColor Red; exit 1
-}
-Write-Host "+ a hidden amount stays hidden: no lying zero, and no partial total" -ForegroundColor Green
+Write-Host "+ the purchase-order sync refuses out loud rather than writing a blank" -ForegroundColor Green
 
-# -- 3. what cannot be read cannot be computed --------------------------
-# The return dialog multiplies quantity by unit_price and INSERTS the result.
-# Reading null and carrying on would write zeros into a real ledger.
-if ($l -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
-    Write-Host "X the list never asks whether the reader may see the cost" -ForegroundColor Red; exit 1
+# -- 4. no lying zero on this screen either -----------------------------
+if ($d -match [regex]::Escape("{currencySymbol}{bill.total_amount.toLocaleString")) {
+    Write-Host "X the total card would print a figure for a hidden amount" -ForegroundColor Red; exit 1
 }
-if ($e -notmatch [regex]::Escape("costGate")) {
-    Write-Host "X the edit screen has no cost gate" -ForegroundColor Red; exit 1
+if ($d -notmatch [regex]::Escape("HIDDEN_MONEY")) {
+    Write-Host "X the screen has no symbol for a hidden amount" -ForegroundColor Red; exit 1
 }
-# The gate must stand in BOTH places. A view gate alone leaves a stale tab
-# able to submit, and the save is what destroys.
-if ($e -notmatch [regex]::Escape('if (costGate !== "allowed")')) {
-    Write-Host "X the edit screen gates the view but not the SAVE - a stale tab would still write" -ForegroundColor Red
-    exit 1
-}
-if ($e -notmatch [regex]::Escape('if (costGate === "blocked")')) {
-    Write-Host "X the edit screen never refuses to render for a blocked reader" -ForegroundColor Red; exit 1
-}
-if ($l -match [regex]::Escape("Number(bill.total_amount || 0)")) {
-    Write-Host "X the return dialog still turns a hidden total into zero" -ForegroundColor Red; exit 1
-}
-Write-Host "+ every action that computes purchase money is gated, view AND save" -ForegroundColor Green
+Write-Host "+ hidden amounts read as a dash, not as a number" -ForegroundColor Green
 
-# -- 4. the guard looks only where an embed can be, and spares comments -
-if ($g -notmatch [regex]::Escape("selectRe")) {
-    Write-Host "X the guard scans the whole file - it will read a comment as code (930, 932, 934)" -ForegroundColor Red
+# -- 5. a dropped connection is not a measurement ------------------------
+# Three runs died today on a transient drop, and one of them KILLED the
+# process with a raw stack instead of reporting - a guard that falls over at
+# random gets worked around within a week.
+foreach ($dbGuard in @("scripts/check-purchase-cost-masked-path.js",
+                       "scripts/check-product-management-one-door.js")) {
+    $gsrc = Get-Content -LiteralPath $dbGuard -Raw
+    if ($gsrc -notmatch [regex]::Escape("client.on(")) {
+        Write-Host "X $dbGuard has no error listener - a dropped socket would kill it" -ForegroundColor Red
+        exit 1
+    }
+    if ($gsrc -notmatch [regex]::Escape("TRANSIENT")) {
+        Write-Host "X $dbGuard does not retry a transient drop" -ForegroundColor Red; exit 1
+    }
+    if ($gsrc -notmatch [regex]::Escape("problems.length = 0")) {
+        Write-Host "X $dbGuard would carry half a measurement into its retry" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the database guards survive a dropped connection, and retry from a clean slate" -ForegroundColor Green
+
+# -- 5. and the ratchet grew ---------------------------------------------
+if ($g -notmatch [regex]::Escape('"app/bills/[id]/page.tsx"')) {
+    Write-Host "X the converted screen was not added to the guard - it would not be watched" -ForegroundColor Red
     exit 1
 }
 if ($t -notmatch [regex]::Escape("a comment that merely mentions the table")) {
-    Write-Host "X the trap does not prove the comment false-positive stays fixed" -ForegroundColor Red; exit 1
+    Write-Host "X the trap no longer pins the comment false-positive" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("writes, which stay on the table")) {
-    Write-Host "X the trap does not prove writes are spared" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the guard searches inside select() only, and the trap pins both false positives" -ForegroundColor Green
+Write-Host "+ the converted screen joined the ratchet in the same release" -ForegroundColor Green
 
 # -- 6. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.936.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.937.ps1" -Raw
 if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
     Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
 }
@@ -141,10 +141,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 # ---------------------------------------------------------------------------
 # The snapshot mirrors the database, and this release rewrites two functions.
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.935.ps1" 2>$null
+git add -u -- "push_v3.74.936.ps1" 2>$null
 
 # -- 7. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.935.ps1")
+$expected = @($files) + @("push_v3.74.936.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -409,7 +409,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.935.ps1" 2>$null
+git add -u -- "push_v3.74.936.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -430,57 +430,48 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_936.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_937.txt"
     $msgLines = @(
-        'feat(security): v3.74.936 - the first screens read purchase money through the masked path',
+        'feat(security): v3.74.937 - the bill screen reads its money through the masked path',
         '',
-        'STAGE 2 OF 3, FIRST BATCH: the supplier-bill list and its edit screen.',
-        'The masked views were built in 933 and nothing read them yet. Now two',
-        'screens do, and the pattern for the remaining nine is set here.',
+        'STAGE 2, SECOND BATCH: app/bills/[id]/page.tsx - the heaviest file of the',
+        'family. Ten read sites moved to the masked views; writes stay on the',
+        'tables.',
         '',
-        'A HIDDEN AMOUNT IS NEVER A ZERO. getDisplayAmount used Number(x || 0) in',
-        'every branch - correct while a missing amount meant none. After 933 a',
-        'missing amount means HIDDEN, so || 0 would print 0.00 where a real figure',
-        'exists. A lying zero is worse than an honest blank: it gets believed and',
-        'built upon. It now returns null, and the screen shows an em dash with a',
-        'tooltip saying why - the owner chose the dash so the table keeps the same',
-        'shape for everyone and nobody thinks the screen is broken.',
+        'TWO ACTIONS ON THIS SCREEN BUILD MONEY OUT OF WHAT THEY READ.',
         '',
-        'AND A TOTAL MISSING A HIDDEN ITEM IS A WRONG NUMBER THAT LOOKS RIGHT.',
-        'sumOrHidden refuses to sum a list containing a hidden amount: one hidden',
-        'bill hides the whole total. Nothing on a screen can say "this sum is short',
-        'by one row", so the sum must not be printed at all.',
+        'The return dialog turns every line into quantity times unit_price and',
+        'inserts the result - the same shape closed in the bill list in 936. It now',
+        'refuses before it reads, and says why.',
         '',
-        'WHAT CANNOT BE READ CANNOT BE COMPUTED. The Create Purchase Return dialog',
-        'in the bill list multiplies quantity by unit_price and INSERTS the result.',
-        'Reading null and carrying on would have written zeros into a real ledger -',
-        'not a hide, a corruption. It now asks the rule FOR THAT BILL BRANCH before',
-        'reading anything, and says plainly why it refuses.',
+        'The second is worse and is new: changing a bill status COPIES THE BILL',
+        'TOTALS INTO THE LINKED PURCHASE ORDER. Reading a hidden amount and',
+        'carrying on would write blanks over correct figures IN A DOCUMENT NOBODY',
+        'HAS OPEN - a silent corruption discovered only much later. And skipping in',
+        'silence is no better: the order keeps stale numbers and nothing says so.',
+        'It now REFUSES OUT LOUD.',
         '',
-        'THE EDIT SCREEN IS BLOCKED ENTIRELY for whoever may not see the cost - the',
-        'owner decided this rather than a form with half its fields empty. Gated',
-        'twice: the view, and the save. A view gate alone leaves a stale tab able to',
-        'submit, and the save is what destroys.',
+        'MEASURED BEFORE CHOOSING TO REFUSE: bills.can_update on this company is',
+        'granted to the accountant, the admin and the owner only - the manager and',
+        'the viewer cannot change a bill status at all. The accountant and the owner',
+        'are both in the cost audience, so refusing blocks no real work today. The',
+        'admin is the one gap, and it is the already-recorded debt that',
+        'can_view_purchase_cost does not name admin while every other rule does -',
+        'with zero admin members in any company, measured.',
         '',
-        'ALL READS OF THE SIX TABLES IN BOTH SCREENS NOW GO THROUGH THE MASKED',
-        'VIEWS - ten sites. Writes stay on the tables: a view is for reading.',
+        'AND THE PROPER LONG-TERM CURE IS RECORDED, not pretended: a document',
+        'consequence should never depend on who is looking, so the purchase-order',
+        'sync belongs on the server. Today the refusal is safe and measured; the',
+        'move is written into the handover rather than assumed done.',
         '',
-        'A RATCHET GUARD, not a project-wide claim that would be false today and',
-        'true next month: converted files are named, and must have ZERO direct',
-        'reads. The list grows every batch and never shrinks, and the guard PRINTS',
-        'how many direct reads remain elsewhere - counted, not hidden.',
+        'NO LYING ZERO HERE EITHER: the total card, the net-of-returns line, the',
+        'line totals and the remaining-amount card all read as a dash when the',
+        'amount is hidden, and the remaining amount is null rather than',
+        'total-minus-paid computed from a blank.',
         '',
-        'IT ALSO CATCHES THE HALF-OPEN SHAPE: a nested embed like bill_items(...)',
-        'reads the TABLE even when the head is masked, so the head is hidden while',
-        'the line price stays visible. The cure is an alias -',
-        'bill_items:bill_items_masked(...) - which keeps the response key intact.',
-        '',
-        'AND THE GUARD PAID ITS OWN LESSON: the first version scanned whole files',
-        'and refused a COMMENT that happened to read "(bills list, supplier',
-        'ledger)". Fourth time this exact shape has bitten (930, 932, 934). The',
-        'root cure is not to skip comments but to search only where an embed can',
-        'exist - inside the select() literal. The trap now pins that false positive',
-        'and the writes-are-spared case, so neither can come back.'
+        'THE CONVERTED SCREEN JOINED THE RATCHET IN THE SAME RELEASE - a file',
+        'converted but not listed is a file nobody watches. Three screens converted,',
+        '141 direct reads remain elsewhere, printed every run.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -489,5 +480,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.936 pushed - the bills screens read purchase money through the masked path" -ForegroundColor Green
+    Write-Host "`n+ v3.74.937 pushed - the bill screen reads its money through the masked path" -ForegroundColor Green
 }

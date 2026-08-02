@@ -50,6 +50,8 @@ const TABLES = [
 const CONVERTED = [
   "app/bills/page.tsx",
   "app/bills/[id]/edit/page.tsx",
+  // v3.74.937 — الدفعة الثانية: شاشةُ الفاتورة نفسها.
+  "app/bills/[id]/page.tsx",
 ]
 
 const problems = []
