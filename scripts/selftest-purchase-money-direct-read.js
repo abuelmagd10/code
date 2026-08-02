@@ -187,8 +187,23 @@ stage("the same names, but only in a comment or a string",
   'const { data } = await supabase.from("bills_masked").select("*")\n',
   false)
 
+// ═══ v3.74.940 — البابُ الرابع: تضمينٌ فوق نافذةٍ مقنَّعة ══════════════
+// وهذا شكلٌ **أفرغ شاشةً حقيقيةً عند المستخدم**: `goods_receipts (…)` فوق
+// `bills_masked` ملتبسٌ لأن بين الجدولين علاقتين، فردّ المسارُ 500 وظهرت
+// قائمةُ الفواتير «لا توجد فواتير حتى الآن».
+stage("a NEW embed on a masked view",
+  'const { data } = await supabase.from("bills_masked").select("id, goods_receipts(id, grn_number)")\n',
+  true, "on bills_masked")
+
+// والمثبَّتُ من الدفعات السابقة يُترك — وإلا رفض الحارسُ الشجرةَ كما هى
+// ولم يُشغَّل أبداً. وسلامتُه تُقاس على القاعدة لا هنا.
+stage("a PINNED embed from an earlier batch",
+  'const { data } = await supabase.from("bills_masked").select("id, shipping_providers(provider_name)")\n',
+  false)
+
 if (!ok) process.exit(1)
 console.log("+ the direct-read guard is proven refusing a bare read, an unaliased nested embed,")
 console.log("  an /api source that stays raw, an unresolvable /api path, and a local role list -")
 console.log("  and sparing an aliased embed, a masked /api source, a POST-only route, every write,")
-console.log("  and the same names when they appear only in a comment or a string.")
+console.log("  and the same names when they appear only in a comment or a string,")
+console.log("  and refusing a NEW embed on a masked view while sparing the pinned ones.")

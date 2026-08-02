@@ -51,17 +51,24 @@ const DEFAULT_PAGE_SIZE = 20
 /**
  * الـ select المستخدم — الحقول الضرورية فقط (Performance Optimization)
  */
-// v3.74.938 — ولماذا سقطت تلميحاتُ `!..._fkey` من هذا النصّ؟
+// v3.74.940 — ⚠️ **وهنا وقع عطبٌ حىٌّ فى 938، وسببُه قياسٌ ناقص.**
 //
-// وثيقةُ PostgREST تضمن استنتاجَ العلاقات **للنافذة** من جداولها الأصل ما
-// دامت أعمدةُ المفتاح الأجنبى مذكورةً فى `SELECT` الأعلى — وهو مقيسٌ هنا
-// عموداً عموداً. أما استعمالُ **اسم القيد** تلميحاً فوق نافذةٍ فغيرُ
-// موثَّق، ولا يُبنى على غير الموثَّق مالٌ.
+// أُسقطت تلميحاتُ التضمين فى 938 بحجّة أن «كلَّ علاقةٍ واحدةٌ لا غير»،
+// **وكان القياسُ على اتجاهٍ واحدٍ فقط**: مفاتيحُ `bills` الخارجة. ولم
+// يُسأل عن الاتجاه المعاكس. والحقيقةُ المقيسة:
 //
-// والتلميحُ إنما يلزم عند تعدّد المفاتيح إلى نفس الجدول. وقِيس أن كلَّ
-// علاقةٍ هنا **واحدةٌ لا غير** (suppliers · branches · goods_receipts)،
-// فالتضمينُ بلا تلميحٍ غيرُ ملتبس. ولو أُضيف يوماً مفتاحٌ ثانٍ إلى نفس
-// الجدول فسيرفض PostgREST بصوتٍ عالٍ (PGRST201) لا بصمت.
+//   bills.goods_receipt_id  →  goods_receipts     (bills_goods_receipt_id_fkey)
+//   goods_receipts.bill_id  →  bills              (goods_receipts_bill_id_fkey)
+//
+// **علاقتان بين نفس الجدولين فى اتجاهين**، فالتضمينُ بلا تلميحٍ ملتبس،
+// فيرفض PostgREST بـ`PGRST201`، فيردّ هذا المسارُ 500، **فتظهر قائمةُ
+// الفواتير فارغةً «لا توجد فواتير حتى الآن»**. وهذا نفسُ درس رقم ١١:
+// **السؤالُ والقياسُ يجب أن يقعا على نفس النطاق.**
+//
+// والعلاجُ هنا **لا يعتمد على استنتاجٍ أصلاً**: لا تضمينَ فوق النافذة.
+// تُقرأ الرؤوسُ وحدها، ثم تُجلب أسماءُ المورد والفرع وإذن الاستلام
+// باستعلامٍ ثانٍ وتُدمج بنفس شكل الاستجابة — فلا مفتاحَ يتغيّر عند القارئ،
+// ولا شىءَ يتوقف على ذاكرةِ مخطَّطٍ لا نراها.
 const BILL_SELECT = `
   id,
   supplier_id,
@@ -82,10 +89,7 @@ const BILL_SELECT = `
   branch_id,
   cost_center_id,
   purchase_order_id,
-  goods_receipt_id,
-  suppliers (name, phone),
-  branches (name),
-  goods_receipts (id, grn_number)
+  goods_receipt_id
 `
 
 export async function GET(request: NextRequest) {
@@ -175,13 +179,44 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // ─── 6b. الأسماءُ تُدمج بدل أن تُضمَّن (v3.74.940) ──────────────────
+    // نفسُ شكل الاستجابة الذى يقرؤه العميل: `suppliers` · `branches` ·
+    // `goods_receipts` — لكنها تُبنى هنا لا فى PostgREST.
+    const rows: any[] = bills || []
+    const uniq = (xs: any[]) => [...new Set(xs.filter(Boolean))]
+    const [sup, br, gr] = await Promise.all([
+      (async () => {
+        const ids = uniq(rows.map((r) => r.supplier_id))
+        if (ids.length === 0) return {}
+        const { data } = await supabase.from('suppliers').select('id, name, phone').in('id', ids)
+        return Object.fromEntries((data || []).map((x: any) => [x.id, { name: x.name, phone: x.phone }]))
+      })(),
+      (async () => {
+        const ids = uniq(rows.map((r) => r.branch_id))
+        if (ids.length === 0) return {}
+        const { data } = await supabase.from('branches').select('id, name').in('id', ids)
+        return Object.fromEntries((data || []).map((x: any) => [x.id, { name: x.name }]))
+      })(),
+      (async () => {
+        const ids = uniq(rows.map((r) => r.goods_receipt_id))
+        if (ids.length === 0) return {}
+        const { data } = await supabase.from('goods_receipts').select('id, grn_number').in('id', ids)
+        return Object.fromEntries((data || []).map((x: any) => [x.id, { id: x.id, grn_number: x.grn_number }]))
+      })(),
+    ])
+    for (const r of rows) {
+      r.suppliers = r.supplier_id ? (sup as any)[r.supplier_id] ?? null : null
+      r.branches = r.branch_id ? (br as any)[r.branch_id] ?? null : null
+      r.goods_receipts = r.goods_receipt_id ? (gr as any)[r.goods_receipt_id] ?? null : null
+    }
+
     const totalCount = count ?? 0
     const totalPages = Math.ceil(totalCount / pageSize) || 1
 
     // ─── 7. Response (Standardized PaginatedResponse<Bill>) ─────────────
     return NextResponse.json({
       success: true,
-      data: bills || [],
+      data: rows,
       meta: {
         totalCount,
         page,

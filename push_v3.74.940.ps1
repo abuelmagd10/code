@@ -6,41 +6,151 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.939 - the OLD script is removed, never this one. Five times a chained
+# v3.74.940 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.938.ps1") { Remove-Item -LiteralPath "push_v3.74.938.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.939.ps1") { Remove-Item -LiteralPath "push_v3.74.939.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.939"') {
-    Write-Host "+ 3.74.939" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.940"') {
+    Write-Host "+ 3.74.940" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.939]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.939]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.940]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.940]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$migration = "supabase/migrations/20260802000001_v3_74_939_notifications_reach_a_person.sql"
-$guard     = "scripts/check-notifications-reach-a-person.js"
-$trap      = "scripts/selftest-notifications-reach-a-person.js"
+$billsRoute = "app/api/v2/bills/route.ts"
+$poRoute    = "app/api/v2/purchase-orders/route.ts"
+$guard      = "scripts/check-purchase-money-direct-read.js"
+$trap       = "scripts/selftest-purchase-money-direct-read.js"
+$dbGuard    = "scripts/check-purchase-cost-masked-path.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $migration, $guard, $trap,
-           "push_v3.74.939.ps1")
+           $billsRoute, $poRoute, $guard, $trap, $dbGuard,
+           "push_v3.74.940.ps1")
 
-$m = Get-Content -LiteralPath $migration -Raw
-$g = Get-Content -LiteralPath $guard -Raw
-$t = Get-Content -LiteralPath $trap -Raw
+$bills = Get-Content -LiteralPath $billsRoute -Raw
+$po    = Get-Content -LiteralPath $poRoute    -Raw
+$g     = Get-Content -LiteralPath $guard      -Raw
+$t     = Get-Content -LiteralPath $trap       -Raw
+$dg    = Get-Content -LiteralPath $dbGuard    -Raw
 
-# -- 1. the rule sits on the TABLE, not in a function anyone can bypass --
-# create_notification exists, but TWENTY-FOUR functions insert into
-# notifications directly and skip it (measured by reading their bodies). A
-# rule written in that function is a placebo - the 935 lesson exactly.
+# ===========================================================================
+# 940 - THE LIVE OUTAGE. The bill list said "no bills yet" for every user.
+# 938 dropped the embed hints on the argument that "every relationship here
+# is single" - and that argument was measured on ONE DIRECTION ONLY: the
+# foreign keys leaving `bills`. The reverse direction was never asked about:
+#
+#   bills.goods_receipt_id  -> goods_receipts   (bills_goods_receipt_id_fkey)
+#   goods_receipts.bill_id  -> bills            (goods_receipts_bill_id_fkey)
+#
+# Two relationships between the same pair. An unhinted embed is ambiguous,
+# PostgREST refuses with PGRST201, the route answers 500, and the screen
+# shows its empty state. Rule eleven, exactly: the question and the
+# measurement have to fall on the same scope.
+# ===========================================================================
+
+# -- 1. the head is read ALONE: no embed survives in either select ---------
+# The cure does not depend on inference at all. Not a better hint - no hint,
+# because there is nothing left to infer.
+if ($bills -notmatch '(?s)const BILL_SELECT = `(.*?)`') {
+    Write-Host "X BILL_SELECT is gone - the bills route no longer names its columns" -ForegroundColor Red
+    exit 1
+}
+$billSel = $Matches[1]
+if ($billSel -match '\(') {
+    Write-Host "X BILL_SELECT embeds another table again - PGRST201 would empty the list a second time" -ForegroundColor Red
+    exit 1
+}
+if ($po -notmatch '(?s)const PO_SELECT = `(.*?)`') {
+    Write-Host "X PO_SELECT is gone - the purchase-orders route no longer names its columns" -ForegroundColor Red
+    exit 1
+}
+$poSel = $Matches[1]
+if ($poSel -match '\(') {
+    Write-Host "X PO_SELECT embeds another table again - the same outage, one release later" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ both routes read the head alone - no embed left to be made ambiguous by tomorrow's foreign key" -ForegroundColor Green
+
+# -- 2. and the names are STITCHED, so the response shape is unchanged -----
+# The client reads r.suppliers / r.branches / r.goods_receipts. Removing the
+# embed without rebuilding those keys would trade an empty list for a list
+# with no supplier names - a quieter version of the same defect.
+foreach ($needle in @("r.suppliers = r.supplier_id",
+                      "r.branches = r.branch_id",
+                      "r.goods_receipts = r.goods_receipt_id",
+                      "from('goods_receipts')")) {
+    if ($bills -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the bills route no longer stitches: $needle" -ForegroundColor Red; exit 1
+    }
+}
+foreach ($needle in @("o.suppliers = o.supplier_id",
+                      "o.branches = o.branch_id")) {
+    if ($po -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the purchase-orders route no longer stitches: $needle" -ForegroundColor Red; exit 1
+    }
+}
+if ($bills -notmatch [regex]::Escape("data: rows")) {
+    Write-Host "X the bills route no longer returns the stitched rows" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the supplier, branch and receipt names are stitched back - same keys, same shape, no embed" -ForegroundColor Green
+
+# -- 3. the guard REFUSES a new embed on a masked view --------------------
+# This defect was invisible to every guard in the repo: the file read the
+# masked view, so the rule said "converted". What broke was the embed on top
+# of it. The rule now names that shape.
+if ($g -notmatch [regex]::Escape("KNOWN_VIEW_EMBEDS")) {
+    Write-Host "X the guard has no pinned list - it cannot tell a new embed from an old one" -ForegroundColor Red
+    exit 1
+}
+if ($g -notmatch [regex]::Escape("PGRST201")) {
+    Write-Host "X the guard does not refuse an embed on a masked view - the outage could return" -ForegroundColor Red
+    exit 1
+}
+# the pinned list is a RATCHET: it shrinks toward zero and never grows.
+$pinned = ([regex]::Matches($g, '"[a-z_]+_masked:[a-z_]+"')).Count
+if ($pinned -gt 5) {
+    Write-Host "X KNOWN_VIEW_EMBEDS grew to $pinned - a debt list that grows is not a ratchet" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ a NEW embed on a masked view is refused, and the pinned list is $pinned of 5 - shrink-only" -ForegroundColor Green
+
+# -- 4. and every pinned embed is RE-MEASURED on the database, both ways ---
+# A pinned pair is safe only while it stays single. The measurement asks in
+# BOTH directions - the exact question 938 failed to ask.
+if ($dg -notmatch [regex]::Escape("PINNED_VIEW_EMBEDS")) {
+    Write-Host "X the database guard no longer re-measures the pinned embeds" -ForegroundColor Red; exit 1
+}
+if ($dg -notmatch [regex]::Escape("(a.relname=`$1 AND b.relname=`$2) OR (a.relname=`$2 AND b.relname=`$1)")) {
+    Write-Host "X the pinned-embed measurement is one-directional again - that is how 938 broke" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ every pinned pair is counted on the live database in both directions, every release" -ForegroundColor Green
+
+# -- 5. the trap plants the new shape, and spares the old ones ------------
+foreach ($needle in @("a NEW embed on a masked view",
+                      "a PINNED embed from an earlier batch")) {
+    if ($t -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the trap no longer plants: $needle" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the trap plants the new embed and watches the guard refuse it - and spare the pinned ones" -ForegroundColor Green
+
+# ===========================================================================
+# CARRIED FORWARD - the ratchets from 938 and 939 do not loosen here.
+# ===========================================================================
+$migration = "supabase/migrations/20260802000001_v3_74_939_notifications_reach_a_person.sql"
+$m  = Get-Content -LiteralPath $migration -Raw
+$ng = Get-Content -LiteralPath "scripts/check-notifications-reach-a-person.js" -Raw
+$nt = Get-Content -LiteralPath "scripts/selftest-notifications-reach-a-person.js" -Raw
+
 if ($m -notmatch [regex]::Escape("BEFORE INSERT ON public.notifications")) {
     Write-Host "X the routing rule is not a trigger on the table - 24 writers would bypass it" -ForegroundColor Red
     exit 1
@@ -48,89 +158,60 @@ if ($m -notmatch [regex]::Escape("BEFORE INSERT ON public.notifications")) {
 if ($m -notmatch [regex]::Escape("company_role_has_holder")) {
     Write-Host "X there is no single home for 'does anyone hold this role'" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the routing rule sits on the table itself, where no writer can step past it" -ForegroundColor Green
-
-# -- 2. it spares a role that HAS a holder, and it says why it moved -----
-# A rule that rewrites every row protects nothing, and a silent reroute hides
-# that the company is missing a job.
 if ($m -notmatch [regex]::Escape("IF public.company_role_has_holder(NEW.company_id, NEW.assigned_to_role) THEN")) {
     Write-Host "X the trigger does not spare a role that has a holder" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("v3.74.939] كان هذا الإشعارُ موجَّهاً إلى دور")) {
-    Write-Host "X the reroute is silent - the missing role would never be noticed" -ForegroundColor Red; exit 1
 }
 if ($m -notmatch [regex]::Escape("IF v_owner IS NULL THEN")) {
     Write-Host "X a company with no owner would lose the notification instead of keeping it" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ it spares a role with a holder, says why it moved, and never drops a notification" -ForegroundColor Green
-
-# -- 3. the staleness check asks by ID, not by a CASE on the type name ---
-# The CASE is what produced the false alarm: an unlisted reference_type fell
-# to ELSE TRUE and was counted forever. All five alarms pointed at PRET-5689,
-# which is completed.
 if ($m -notmatch [regex]::Escape("workflow_row_is_open")) {
     Write-Host "X the staleness check still keys off the reference_type name" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("RETURN NULL;   -- لا صفَّ له فى أى جدولٍ نعرفه")) {
-    Write-Host "X an unknown document is not distinguished from a pending one" -ForegroundColor Red; exit 1
 }
 if ($m -notmatch [regex]::Escape("unverified_count")) {
     Write-Host "X what the check cannot verify is not reported - it would be swallowed or cried over" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the check asks by id, and names what it cannot verify instead of claiming it is pending" -ForegroundColor Green
-
-# -- 4. 'finished' is the closed list, not 'pending' ---------------------
-# Pending vocabularies differ per table and grow with every feature; terminal
-# words are few and shared. A status added tomorrow counts as OPEN - seen and
-# asked about, not swallowed.
 if ($m -notmatch [regex]::Escape("ELSE TRUE")) {
     Write-Host "X an unknown status would be treated as finished - work would vanish quietly" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ an unknown status counts as still open, so nothing disappears in silence" -ForegroundColor Green
-
-# -- 5. and the guard measures WHERE a notification lands, not the text --
-if ($g -notmatch [regex]::Escape("INSERT INTO public.notifications")) {
-    Write-Host "X the guard reads text instead of planting a real notification" -ForegroundColor Red; exit 1
+if ($ng -notmatch [regex]::Escape("INSERT INTO public.notifications")) {
+    Write-Host "X the routing guard reads text instead of planting a real notification" -ForegroundColor Red; exit 1
 }
-if ($g -notmatch [regex]::Escape("ROLLBACK")) {
-    Write-Host "X the guard would leave its probes behind" -ForegroundColor Red; exit 1
-}
-if ($g -notmatch [regex]::Escape("a rule that rewrites everything protects nothing")) {
-    Write-Host "X the guard never checks that an innocent role is spared" -ForegroundColor Red; exit 1
+if ($ng -notmatch [regex]::Escape("ROLLBACK")) {
+    Write-Host "X the routing guard would leave its probes behind" -ForegroundColor Red; exit 1
 }
 foreach ($needle in @("the routing trigger dropped",
                       "a trigger that reroutes even a role that HAS a holder",
                       "a trigger that reroutes in silence",
                       "the staleness check back on the 215 catch-all",
                       "anon granted execute on the routing function")) {
-    if ($t -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the trap no longer plants: $needle" -ForegroundColor Red; exit 1
+    if ($nt -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the routing trap no longer plants: $needle" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the guard measures where a notification lands, and the trap plants all five shapes" -ForegroundColor Green
+Write-Host "+ 939 holds: the rule still sits on the table, the alarm still names what it cannot verify" -ForegroundColor Green
 
-# -- 6. a dropped connection is not a measurement ------------------------
-foreach ($dbg in @("scripts/check-notifications-reach-a-person.js",
-                   "scripts/check-purchase-cost-masked-path.js",
-                   "scripts/check-product-management-one-door.js")) {
-    $gsrc = Get-Content -LiteralPath $dbg -Raw
+# -- a dropped connection is not a measurement ---------------------------
+foreach ($dbgf in @("scripts/check-notifications-reach-a-person.js",
+                    "scripts/check-purchase-cost-masked-path.js",
+                    "scripts/check-product-management-one-door.js")) {
+    $gsrc = Get-Content -LiteralPath $dbgf -Raw
     if ($gsrc -notmatch [regex]::Escape("client.on(")) {
-        Write-Host "X $dbg has no error listener - a dropped socket would kill it" -ForegroundColor Red
+        Write-Host "X $dbgf has no error listener - a dropped socket would kill it" -ForegroundColor Red
         exit 1
     }
     if ($gsrc -notmatch [regex]::Escape("TRANSIENT")) {
-        Write-Host "X $dbg does not retry a transient drop" -ForegroundColor Red; exit 1
+        Write-Host "X $dbgf does not retry a transient drop" -ForegroundColor Red; exit 1
     }
     if ($gsrc -notmatch [regex]::Escape("problems.length = 0")) {
-        Write-Host "X $dbg would carry half a measurement into its retry" -ForegroundColor Red; exit 1
+        Write-Host "X $dbgf would carry half a measurement into its retry" -ForegroundColor Red; exit 1
     }
 }
 Write-Host "+ the database guards survive a dropped connection, and retry from a clean slate" -ForegroundColor Green
 
-# -- 7. the scratch folders stay out of the type-check graph (938) -------
+# -- the scratch folders stay out of the type-check graph (938) -----------
 $ts = Get-Content -LiteralPath "tsconfig.json" -Raw
 if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
     Write-Host "X tsconfig no longer excludes _wip_* - scratch copies would be type-checked" -ForegroundColor Red
@@ -138,8 +219,8 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-# -- 8. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.939.ps1" -Raw
+# -- the battery below still proves the standing guards -------------------
+$self2 = Get-Content -LiteralPath "push_v3.74.940.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -158,10 +239,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.938.ps1" 2>$null
+git add -u -- "push_v3.74.939.ps1" 2>$null
 
-# -- 10. nothing staged beyond this release (the 872 lesson) -------------
-$expected = @($files) + @("push_v3.74.938.ps1")
+# -- nothing staged beyond this release (the 872 lesson) -----------------
+$expected = @($files) + @("push_v3.74.939.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -171,6 +252,14 @@ foreach ($p in $stagedNow) {
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
 
+Write-Host "Proving the direct-read guard refuses on all fifteen shapes, and spares the innocent..." -ForegroundColor Cyan
+node scripts/selftest-purchase-money-direct-read.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the direct-read guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Checking no screen or /api source reads money raw - and no embed sits on a masked view..." -ForegroundColor Cyan
+node scripts/check-purchase-money-direct-read.js --list
+if ($LASTEXITCODE -ne 0) { Write-Host "X a converted screen reads raw, or a new embed sits on a masked view" -ForegroundColor Red; exit 1 }
+
 Write-Host "Proving the routing guard refuses all five shapes (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-notifications-reach-a-person.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the routing guard was not seen refusing" -ForegroundColor Red; exit 1 }
@@ -178,14 +267,6 @@ if ($LASTEXITCODE -ne 0) { Write-Host "X the routing guard was not seen refusing
 Write-Host "Measuring where a notification actually lands, by planting one on the live database..." -ForegroundColor Cyan
 node scripts/check-notifications-reach-a-person.js --require-db --list
 if ($LASTEXITCODE -ne 0) { Write-Host "X a notification can still be sent where nobody will read it" -ForegroundColor Red; exit 1 }
-
-Write-Host "Proving the direct-read guard refuses on all thirteen shapes, and spares the innocent..." -ForegroundColor Cyan
-node scripts/selftest-purchase-money-direct-read.js
-if ($LASTEXITCODE -ne 0) { Write-Host "X the direct-read guard was not seen refusing" -ForegroundColor Red; exit 1 }
-
-Write-Host "Checking converted screens - and their /api sources - read money through the masked path only..." -ForegroundColor Cyan
-node scripts/check-purchase-money-direct-read.js --list
-if ($LASTEXITCODE -ne 0) { Write-Host "X a converted screen or its /api source reads a table directly" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the products-door guard refuses all three shapes (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-product-management-one-door.js
@@ -207,9 +288,9 @@ Write-Host "Proving the masked path refuses all seven shapes (TEST database only
 node scripts/selftest-purchase-cost-masked-path.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the masked-path guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
-Write-Host "Measuring the purchase-cost masked path by impersonation on the live database..." -ForegroundColor Cyan
+Write-Host "Measuring the masked path by impersonation - and counting every pinned embed's relationships..." -ForegroundColor Cyan
 node scripts/check-purchase-cost-masked-path.js --require-db
-if ($LASTEXITCODE -ne 0) { Write-Host "X the masked path is not what the code assumes" -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Host "X the masked path is not what the code assumes, or a pinned embed turned ambiguous" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving an exposed SECURITY DEFINER writer is refused (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-exposed-definer-functions.js
@@ -434,7 +515,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.938.ps1" 2>$null
+git add -u -- "push_v3.74.939.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -455,62 +536,50 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_939.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_940.txt"
     $msgLines = @(
-        'fix(ops): v3.74.939 - a notification reaches a person, and the alarm stops crying wolf',
+        'fix(security): v3.74.940 - the bill list is back, and no embed sits on a masked view again',
         '',
-        'A dashboard drift item ("1 low") turned out to be a FALSE ALARM BY',
-        'CONSTRUCTION - and underneath it sat a real defect it had been hiding.',
+        'A LIVE OUTAGE I CAUSED IN 938. Every user opening purchase bills saw',
+        '"no bills yet". The screen was not empty - the request never returned.',
         '',
-        'THE ALARM. ic_stale_critical_notifications (215) requires the underlying',
-        'workflow to still be pending, but it knows only six reference_types and',
-        'everything else falls through to ELSE TRUE - counted forever. All five',
-        'flagged rows pointed at PRET-5689, whose status is completed. Measured:',
-        '24 of 30 types uncovered, carrying 165 critical/high notifications, every',
-        'one of them a false alarm waiting to turn 30 days old. A guard that cries',
-        'wolf gets switched off within a week.',
+        'WHAT I DID WRONG. 938 dropped the PostgREST embed hints on the argument',
+        'that "every relationship here is single". That argument was measured on',
+        'ONE DIRECTION ONLY - the foreign keys leaving bills. The reverse direction',
+        'was never asked about. Measured now, both ways:',
         '',
-        'THE CURE WAS NOT A LONGER LIST. The CASE on the type name is what produced',
-        'the bug. The question is now asked BY ID: workflow_row_is_open(uuid) searches',
-        'twenty-one tables and answers three ways - TRUE pending, FALSE finished, and',
-        'NULL not found anywhere. approval_request carries the DOCUMENT id, not an',
-        'approval-record id (measured on PRET-5689), so asking by id hits where',
-        'matching by name misses. What cannot be verified is REPORTED SEPARATELY,',
-        'named and counted - visible debt, not a false alarm.',
+        '  bills.goods_receipt_id  -> goods_receipts  (bills_goods_receipt_id_fkey)',
+        '  goods_receipts.bill_id  -> bills           (goods_receipts_bill_id_fkey)',
         '',
-        'And "finished" is the closed list, not "pending": pending vocabularies differ',
-        'per table and grow with every feature, terminal words are few and shared. A',
-        'status added tomorrow counts as OPEN - seen and asked about, not swallowed.',
+        'TWO relationships between the same pair of tables. An unhinted embed is',
+        'ambiguous, PostgREST refuses with PGRST201, the route answers 500, the',
+        'client throws, and the screen falls back to its empty state. This is rule',
+        'eleven exactly: THE QUESTION AND THE MEASUREMENT MUST FALL ON THE SAME',
+        'SCOPE. I asked about a pair of tables and measured one direction of it.',
         '',
-        'THE REAL DEFECT UNDERNEATH: 35 unread notifications addressed to roles NOBODY',
-        'HOLDS - general_manager (18), admin (14), warehouse_manager (3), with zero',
-        'members in those roles in ANY company. An approval sent to an empty role is',
-        'an approval that is never taken.',
+        'THE CURE DOES NOT DEPEND ON INFERENCE AT ALL. Not a better hint - hints on',
+        'views are undocumented and would be a second bet on the same unseen schema',
+        'cache. Both routes now read the head ALONE and fetch the supplier, branch',
+        'and receipt names in a second query, stitched into the same response keys.',
+        'The client sees no difference. Nothing depends on a relationship graph that',
+        'a foreign key added tomorrow, in another table, can change.',
         '',
-        'AND THE RULE WENT WHERE IT CANNOT BE BYPASSED. create_notification exists,',
-        'but TWENTY-FOUR functions insert into the table directly and skip it (nine',
-        'call it) - measured by reading their bodies. A rule written in that function',
-        'is a placebo: the 935 lesson exactly. So the rule is a BEFORE INSERT TRIGGER',
-        'on the table itself. No writer steps past it, and the twenty-fifth writer is',
-        'covered the day it is written.',
+        'AND THE GUARD LEARNED THE SHAPE IT COULD NOT SEE. Every guard in the repo',
+        'called this file "converted": it read the masked view. What broke was the',
+        'EMBED ON TOP of the view - a shape no rule named. The direct-read guard now',
+        'refuses any embed on a *_masked view. It immediately surfaced EIGHT MORE',
+        'shipped in 936-938, across five distinct pairs. Those are pinned in a',
+        'shrink-only list - counted out loud in every run, never allowed to grow -',
+        'and the database guard now COUNTS THE RELATIONSHIPS OF EACH PINNED PAIR IN',
+        'BOTH DIRECTIONS on the live database, every release. The day one of them',
+        'becomes ambiguous, the push refuses instead of the screen emptying.',
         '',
-        'THE REROUTE SAYS WHY. It reaches the owner carrying "this was addressed to',
-        'role X and nobody holds it" - a silent reroute would hide that the company',
-        'is missing a job. And no notification is ever dropped: a company with no',
-        'owner keeps the row as it is (zero such companies, measured).',
+        'The trap plants a new embed and watches the guard refuse it, and plants a',
+        'pinned one and watches it be spared: fifteen shapes now, all proven.',
         '',
-        'THE BACKFILL MOVED WHAT WAS ACTUALLY STUCK, AND NOTHING ELSE: 0 rows moved,',
-        '119 left as log lines for work already finished. Nothing is stuck today -',
-        'the value of this release is forward-looking, and it is said rather than',
-        'dressed up.',
-        '',
-        'THE GUARD MEASURES WHERE A NOTIFICATION LANDS, NOT WHAT THE CODE SAYS: it',
-        'plants a real row inside a rolled-back transaction and looks. A role with no',
-        'holder must reach the owner and say why; A ROLE WITH A HOLDER MUST BE LEFT',
-        'ALONE; one already addressed to a person must be untouched; and the staleness',
-        'check must fire for a pending document and stay silent for a resolved one.',
-        'The trap plants five shapes on the test database - including a trigger that',
-        'reroutes EVERYTHING, the nastiest of them, because it looks like it works.'
+        'THE HONEST PART: the eight pinned embeds are debt, not safety. They are',
+        'safe today by measurement, and the measurement is repeated every release',
+        'rather than remembered.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -536,7 +605,7 @@ if (-not $staged) {
 # -- the commit is not assumed: it is READ BACK -------------------------
 # An exit code says the command returned; only the log says the release exists.
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.939")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.940")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -554,5 +623,5 @@ if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.939 pushed - a notification reaches a person, and the alarm stops crying wolf" -ForegroundColor Green
+Write-Host "`n+ v3.74.940 pushed - the bill list is back, and no embed sits on a masked view again" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray

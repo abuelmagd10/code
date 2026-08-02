@@ -56,17 +56,13 @@ const DEFAULT_PAGE_SIZE = 20
 // أُضيفت لأن شاشة القائمة تعرض عمود «الشحن» منها ولم تكن تُرسل إطلاقاً، فكان
 // العمود «-» فى كل سطر ولو كان للأمر شركة شحنٍ وتكلفة (ملاحظة المالك 30/7).
 // تنبيه: لا تُكتب تعليقات داخل نص select — PostgREST يقرؤها أسماء أعمدة.
-// v3.74.938 — ولماذا سقطت تلميحاتُ `!..._fkey` من هذا النصّ؟
+// v3.74.940 — لا تضمينَ فوق النافذة، حتى حيث تبدو العلاقةُ واضحة.
 //
-// وثيقةُ PostgREST تضمن استنتاجَ العلاقات **للنافذة** من جداولها الأصل ما
-// دامت أعمدةُ المفتاح الأجنبى مذكورةً فى `SELECT` الأعلى — وهو مقيسٌ هنا
-// عموداً عموداً. أما استعمالُ **اسم القيد** تلميحاً فوق نافذةٍ فغيرُ
-// موثَّق، ولا يُبنى على غير الموثَّق مالٌ.
-//
-// والتلميحُ إنما يلزم عند تعدّد المفاتيح إلى نفس الجدول. وقِيس أن كلَّ
-// علاقةٍ هنا **واحدةٌ لا غير** (suppliers · branches)،
-// فالتضمينُ بلا تلميحٍ غيرُ ملتبس. ولو أُضيف يوماً مفتاحٌ ثانٍ إلى نفس
-// الجدول فسيرفض PostgREST بصوتٍ عالٍ (PGRST201) لا بصمت.
+// أُسقطت التلميحاتُ فى 938 بقياسٍ ناقص (اتجاهٌ واحدٌ من المفاتيح)، فانكسرت
+// قائمةُ فواتير الشراء لأن `bills ↔ goods_receipts` علاقتان لا واحدة.
+// وهنا العلاقتان مفردتان بالقياس، **لكن الاعتمادَ على استنتاج المخطَّط
+// نفسِه هو ما كسر**: يتغيّر بمفتاحٍ يُضاف غداً بلا أن يلمس أحدٌ هذا الملف.
+// فتُقرأ الرؤوسُ وحدها، وتُدمج الأسماءُ باستعلامٍ ثانٍ بنفس شكل الاستجابة.
 const PO_SELECT = `
   id,
   company_id,
@@ -88,9 +84,7 @@ const PO_SELECT = `
   branch_id,
   cost_center_id,
   warehouse_id,
-  created_by_user_id,
-  suppliers (id, name, phone),
-  branches (name)
+  created_by_user_id
 `
 
 export async function GET(request: NextRequest) {
@@ -194,6 +188,30 @@ export async function GET(request: NextRequest) {
     // the document. Batch the discount_approvals fetch and stamp a
     // discount_approval_status field on each PO row.
     let enrichedOrders: any[] = orders || []
+
+    // v3.74.940 — الأسماءُ تُدمج بدل أن تُضمَّن (نفسُ مفاتيح الاستجابة).
+    if (enrichedOrders.length > 0) {
+      const uniq = (xs: any[]) => [...new Set(xs.filter(Boolean))]
+      const [sup, br] = await Promise.all([
+        (async () => {
+          const ids = uniq(enrichedOrders.map((o: any) => o.supplier_id))
+          if (ids.length === 0) return {}
+          const { data } = await supabase.from('suppliers').select('id, name, phone').in('id', ids)
+          return Object.fromEntries((data || []).map((x: any) => [x.id, { id: x.id, name: x.name, phone: x.phone }]))
+        })(),
+        (async () => {
+          const ids = uniq(enrichedOrders.map((o: any) => o.branch_id))
+          if (ids.length === 0) return {}
+          const { data } = await supabase.from('branches').select('id, name').in('id', ids)
+          return Object.fromEntries((data || []).map((x: any) => [x.id, { name: x.name }]))
+        })(),
+      ])
+      for (const o of enrichedOrders) {
+        o.suppliers = o.supplier_id ? (sup as any)[o.supplier_id] ?? null : null
+        o.branches = o.branch_id ? (br as any)[o.branch_id] ?? null : null
+      }
+    }
+
     if (enrichedOrders.length > 0) {
       const poIds = enrichedOrders.map((o: any) => o.id)
       const { data: discountRows } = await supabase

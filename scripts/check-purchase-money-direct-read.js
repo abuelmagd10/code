@@ -47,6 +47,16 @@
  * خمسُ مراتٍ فى هذا المشروع (930 · 932 · 934 · 936) اصطاد حارسٌ جملةً فى
  * تعليق. **التعليقُ ليس تعليمة.**
  *
+ * **(٤) تضمينٌ فوق نافذةٍ مقنَّعة — أىُّ تضمينٍ كان.** ⚠️ **عطبٌ حىٌّ فى
+ * 938**: قائمةُ فواتير الشراء ظهرت **فارغة** لأن `goods_receipts (…)` فوق
+ * `bills_masked` ملتبس — `bills → goods_receipts` **و**`goods_receipts →
+ * bills` علاقتان، فيرفض PostgREST بـ`PGRST201` ويردّ المسارُ 500.
+ *
+ * ولم يكن العلاجُ إعادةَ التلميح: **ارتباطُ النافذة يُستنتَج من ذاكرة
+ * مخطَّطٍ لا نراها**، ويتغيّر بمفتاحٍ يُضاف فى جدولٍ آخر بلا أن يلمس أحدٌ
+ * هذا الملف. فما يُقرأ من نافذةٍ مقنَّعة يُقرأ **بلا تضمين**، وتُدمج
+ * الأسماءُ باستعلامٍ ثانٍ بنفس شكل الاستجابة.
+ *
  * Usage: node scripts/check-purchase-money-direct-read.js [--list]
  * Env:   PURCHASE_MONEY_SCAN_ROOT — جذرٌ بديل (يستعمله الفخّ الذاتى).
  * ---------------------------------------------------------------------------
@@ -93,8 +103,25 @@ const CONVERTED = [
   "app/api/v2/bills/route.ts",
 ]
 
+/**
+ * التضميناتُ فوق النوافذ **الباقية من 936·937·938**، مثبَّتةٌ بالاسم.
+ *
+ * **تقصر ولا تطول.** وكلُّ واحدٍ منها **مفردُ العلاقة اليومَ بالقياس** —
+ * ولذلك يعمل — بخلاف `bills → goods_receipts` الذى كان علاقتين فانكسر.
+ * وحارسُ القاعدة (`check-purchase-cost-masked-path.js`) يُعيد قياسَ هذه
+ * الأزواج فى كل دفعة، فإن صار زوجٌ منها ملتبساً **رُفض قبل أن يفرغ شاشة**.
+ */
+const KNOWN_VIEW_EMBEDS = [
+  "bill_items_masked:products",
+  "bills_masked:shipping_providers",
+  "purchase_orders_masked:suppliers",
+  "purchase_orders_masked:branches",
+  "purchase_order_items_masked:products",
+]
+
 const problems = []
 const notes = []
+let pinnedEmbeds = 0
 
 /**
  * نصُّ الملفِّ بلا تعليقات — وبلا محتوى السلاسل إن طُلب.
@@ -250,6 +277,22 @@ for (const rel of CONVERTED) {
           `the head would be masked while the line price stays visible`)
   }
 
+  // (٤) تضمينٌ فوق نافذةٍ مقنَّعة — ولو إلى جدولٍ خارج الستة
+  const maskedSelectRe = /\.from\(\s*(['"`])([a-z_]+_masked)\1\s*\)\s*\n?\s*\.select\(\s*(['"`])([\s\S]*?)\3/g
+  let ms
+  while ((ms = maskedSelectRe.exec(src))) {
+    const view = ms[2]
+    const literal = ms[4]
+    const embeds = [...literal.matchAll(/(^|[^\w:!])([a-z_]+)\s*(![a-z_]+)?\s*\(/g)].map((m) => m[2])
+    for (const e of [...new Set(embeds)]) {
+      if (KNOWN_VIEW_EMBEDS.includes(`${view}:${e}`)) { pinnedEmbeds++; continue }
+      problems.push(
+        `${rel}:${lineOf(src, ms.index)} embeds ${e}(...) on ${view} - a view's relationships are ` +
+        `inferred from a schema cache nobody can see, and a foreign key added in ANOTHER table can ` +
+        `make it ambiguous (PGRST201) and empty the screen. Read the head, then fetch and stitch.`)
+    }
+  }
+
   // (٣) جدولُ أدوارٍ محلى — يُبحث عنه فى النصِّ المجرَّد لا فى التعليقات
   for (const name of LOCAL_ROLE_RULES) {
     const re = new RegExp(`\\b${name}\\b`, "g")
@@ -323,3 +366,6 @@ console.log(
   `+ all ${CONVERTED.length} converted screen(s) read purchase money through the masked path only, ` +
   `decide nothing from a local role list, and take nothing raw from an /api source. ` +
   `${remaining} direct read(s) remain in screens not yet converted - counted, not hidden.`)
+console.log(
+  `+ no NEW embed on a masked view. ${pinnedEmbeds} pinned embed(s) remain from 936-938 - each measured ` +
+  `single-relationship today, re-measured on the database every release, and shrinking.`)

@@ -99,6 +99,26 @@ const scopedNotMineCount = (t) =>
   `SELECT count(*) AS n FROM ${t.from} WHERE ${t.company} = $1 AND ${t.probe} IS NOT NULL
      AND ${t.creator} IS DISTINCT FROM auth.uid()`
 
+/**
+ * التضميناتُ الباقيةُ فوق النوافذ (مثبَّتةٌ بالاسم فى
+ * `check-purchase-money-direct-read.js`) — **وهنا تُقاس سلامتُها**.
+ *
+ * ⚠️ v3.74.940: `goods_receipts (…)` فوق `bills_masked` أفرغ قائمةَ فواتير
+ * الشراء، لأن بين الجدولين **علاقتين لا واحدة**: `bills.goods_receipt_id`
+ * و`goods_receipts.bill_id`. فرفض PostgREST بـ`PGRST201` وردّ المسارُ 500.
+ * والنصُّ لم يتغيّر: **مفتاحٌ فى جدولٍ آخر يكفى لكسر شاشة**.
+ *
+ * فيُعاد قياسُ كل زوجٍ باقٍ فى كل دفعة: أكثرُ من علاقةٍ بين الطرفين
+ * (فى أى اتجاه) ⇒ يُرفض قبل أن يُفرغ شاشةً عند المستخدم.
+ */
+const PINNED_VIEW_EMBEDS = [
+  { view: "bill_items_masked", base: "bill_items", target: "products" },
+  { view: "bills_masked", base: "bills", target: "shipping_providers" },
+  { view: "purchase_orders_masked", base: "purchase_orders", target: "suppliers" },
+  { view: "purchase_orders_masked", base: "purchase_orders", target: "branches" },
+  { view: "purchase_order_items_masked", base: "purchase_order_items", target: "products" },
+]
+
 /** السياساتُ التى يجب أن تُنادى الحكمَ الواحد لا أن تكتبه. */
 const ONE_RULE = [
   { table: "bills", policy: "bills_select_branch_isolation", rule: "can_access_bill" },
@@ -360,6 +380,26 @@ async function withDatabase(work) {
       }
     } finally {
       await client.query("ROLLBACK")
+    }
+
+    // ── التضميناتُ المثبَّتة: أيبقى كلُّ زوجٍ مفردَ العلاقة؟ ───────────────
+    for (const e of PINNED_VIEW_EMBEDS) {
+      const { rows: rel } = await client.query(
+        `SELECT count(*) AS n FROM pg_constraint con
+           JOIN pg_class a ON a.oid = con.conrelid
+           JOIN pg_class b ON b.oid = con.confrelid
+          WHERE con.contype='f'
+            AND ((a.relname=$1 AND b.relname=$2) OR (a.relname=$2 AND b.relname=$1))`,
+        [e.base, e.target])
+      const n = Number(rel[0].n)
+      if (n !== 1) {
+        problems.push(
+          `${e.view} embeds ${e.target}(...) but there are now ${n} foreign key(s) between ` +
+          `${e.base} and ${e.target} - PostgREST cannot choose (PGRST201), the request returns 500, ` +
+          `and the screen goes EMPTY without a line of code changing. Stitch it instead of embedding.`)
+      } else if (verbose) {
+        notes.push(`  ${e.view} -> ${e.target}: still a single relationship`)
+      }
     }
 
     // قياسٌ لا يقيس شيئاً يُخفى فشلاً: لا بد أن يكون قد رأى الحالتين.
