@@ -83,3 +83,6 @@ ops/ollama/oci/probe-content.json
 ops/ollama/oci/recovery-history-*.log
 ops/ollama/oci/ssh-ingress-rule.json
 ops/ollama/oci/target.json
+
+# v3.74.943 — ذاكرةُ بناء TypeScript تُولَّد، ولا تُلتزم.
+*.tsbuildinfo

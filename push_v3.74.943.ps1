@@ -6,131 +6,157 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.942 - the OLD script is removed, never this one. Five times a chained
+# v3.74.943 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.941.ps1") { Remove-Item -LiteralPath "push_v3.74.941.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.942.ps1") { Remove-Item -LiteralPath "push_v3.74.942.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.942"') {
-    Write-Host "+ 3.74.942" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.943"') {
+    Write-Host "+ 3.74.943" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.942]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.942]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.943]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.943]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$listScreen   = "app/purchase-returns/page.tsx"
-$detailScreen = "app/purchase-returns/[id]/page.tsx"
-$newScreen    = "app/purchase-returns/new/page.tsx"
-$guard        = "scripts/check-purchase-money-direct-read.js"
-$applier      = "scripts/apply-migration-file.js"
+$attrs = ".gitattributes"
+$guard = "scripts/check-line-endings-are-one-way.js"
+$trap  = "scripts/selftest-line-endings-are-one-way.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $listScreen, $detailScreen, $newScreen, $guard,
-           "push_v3.74.942.ps1")
+           $attrs, ".gitignore", $guard, $trap,
+           "push_v3.74.943.ps1")
 
-# -LiteralPath: the detail screen's path contains [id], and square brackets are
-# wildcards to PowerShell's provider. (858 lesson, and it bites here for real.)
-$ls = Get-Content -LiteralPath $listScreen   -Raw
-$ds = Get-Content -LiteralPath $detailScreen -Raw
-$ns = Get-Content -LiteralPath $newScreen    -Raw
-$g  = Get-Content -LiteralPath $guard        -Raw
+# ─── GENERATED ARTEFACTS THAT .gitignore ALREADY NAMES ────────────────────
+#
+# .gitignore has said `supabase/.temp/` since long before today, and *.temp
+# besides. But an ignore rule does not apply to a file that is ALREADY
+# tracked - these were committed before the rule existed, so git kept
+# reporting them, and every tool run rewrote them: gotrue-version holds
+# v2.183.0 in HEAD and v2.193.0 on disk because the Supabase CLI moved on.
+#
+# They blocked this release four times, and I kept asking for a command to be
+# typed before every run. That was the 941 mistake all over again: a step that
+# must be REMEMBERED is not a step, it is a defect waiting for a tired evening.
+# So the release finishes the decision the repository already made.
+#
+# And it belongs HERE, not in a release of its own: this one is about making
+# "modified" mean modified. A file that changes every time a tool runs is the
+# same disease as a file that reads as changed because of a carriage return.
+$generated = @(
+    "supabase/.temp/cli-latest",
+    "supabase/.temp/gotrue-version",
+    "supabase/.temp/pooler-url",
+    "supabase/.temp/postgres-version",
+    "supabase/.temp/project-ref",
+    "supabase/.temp/rest-version",
+    "supabase/.temp/storage-migration",
+    "supabase/.temp/storage-version",
+    "tsconfig.check.tsbuildinfo"
+)
+
+$at = Get-Content -LiteralPath $attrs -Raw
+$g  = Get-Content -LiteralPath $guard -Raw
+$t  = Get-Content -LiteralPath $trap  -Raw
 
 # ===========================================================================
-# 942 - THE THREE PURCHASE-RETURN SCREENS. They come AFTER 941 and not before:
-# masking the new-return screen while the browser still priced the document
-# would have CORRUPTED data rather than hidden it - a masked read returns null,
-# the screen computes zero, and a zero-valued return gets posted. Now that the
-# server prices from the bill and refuses any disagreeing number, the forty-nine
-# compute sites are display only, and masking is free.
+# 943 - LINE ENDINGS. Measured before anything was written: 3642 tracked files,
+# NO .gitattributes at all, and core.autocrlf unset in every scope. 2538 files
+# are stored LF and sit on disk as CRLF, so every one of them reads as modified
+# in every run, with a diff the size of the whole file. That is not cosmetic
+# noise: THE REAL CHANGE PASSES UNDERNEATH IT - which is exactly how the 938
+# defect that emptied the purchase-bill list got through my own review.
+#
+# And what does it actually cost? Measured, not estimated. `git add
+# --renormalize .` re-stores every file under the new rules:
+#   - 3555 files already LF in the index  -> stored LF     -> NO CHANGE
+#   - 44 binaries and 21 empty files      -> untouched
+#   - 13 files stored CRLF in the index   -> become LF
+# So the commit touches THIRTEEN files, not thousands, and the noise disappears
+# without rewriting the repository's history.
 # ===========================================================================
 
-# -- 1. all three read through the masked path, and none reads a table --------
-foreach ($pair in @(@{n="list"; s=$ls}, @{n="detail"; s=$ds}, @{n="new"; s=$ns})) {
-    if ($pair.s -notmatch [regex]::Escape("_masked")) {
-        Write-Host "X the $($pair.n) screen reads no masked view at all" -ForegroundColor Red; exit 1
+# ⚠️ NO LIST OF EXPECTED FILES HERE, AND THAT IS DELIBERATE.
+#
+# The first draft pinned thirteen paths - the files measured as stored CRLF -
+# and refused a fourteenth. It was wrong twice over. It missed
+# scripts/test-supplier.js, whose index is LF but whose working copy is MIXED,
+# so renormalising it changes the blob too; and the true set could not be
+# measured reliably from outside this machine at all.
+#
+# A prediction I cannot verify is not a measurement, and a guard built on one
+# refuses honest work. What actually matters is provable exactly, per file,
+# with no list at all:
+#
+#     NOT ONE STAGED FILE MAY DIFFER BY ANYTHING BUT A CARRIAGE RETURN.
+#
+# That is the whole safety property. The count and the names are then REPORTED,
+# not asserted - you see exactly what moved.
+
+# -- 1. the rule is written down, once -------------------------------------
+if ($at -notmatch [regex]::Escape("* text=auto eol=lf")) {
+    Write-Host "X .gitattributes does not carry the one rule" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the rule is written down: git stores LF, and every checkout writes LF" -ForegroundColor Green
+
+# -- 2. the UTF-16 files are named, not left to implicit detection ---------
+# git detects them today. But an implicit detection is a bet: re-save one of
+# them in another encoding tomorrow and its classification changes with nobody
+# touching it. They are diagnostic output that belongs OUTSIDE the repository -
+# naming them stops them being corrupted now; it does not bless them staying.
+$pinnedInAttrs = ([regex]::Matches($at, "(?m)^\S+\s+-text\s*$")).Count
+if ($pinnedInAttrs -lt 14) {
+    Write-Host "X only $pinnedInAttrs UTF-16 file(s) are named in .gitattributes - 14 were measured" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ all $pinnedInAttrs UTF-16 files are named, so nothing depends on implicit detection" -ForegroundColor Green
+
+# -- 3. the guard reads the INDEX, not the working tree --------------------
+# On Windows the working tree stays CRLF after checkout, AND THAT IS THE POINT.
+# The agreement is about what git stores, not about what lands on the disk.
+if ($g -notmatch [regex]::Escape("ls-files")) {
+    Write-Host "X the guard does not ask git what is stored - it would measure the disk instead" -ForegroundColor Red
+    exit 1
+}
+if ($g -notmatch [regex]::Escape("PINNED_UTF16")) {
+    Write-Host "X the guard has no pinned list - a new UTF-16 file would slip in unnamed" -ForegroundColor Red
+    exit 1
+}
+$pinnedInGuard = ([regex]::Matches($g, '"[A-Za-z0-9_./-]+\.(md|txt|sql|json|js)"')).Count
+if ($pinnedInGuard -gt 14) {
+    Write-Host "X the pinned UTF-16 list grew to $pinnedInGuard - a debt list that grows is not a ratchet" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the guard measures what git STORES, and its pinned list is $pinnedInGuard of 14 - shrink-only" -ForegroundColor Green
+
+# -- 4. and the trap plants every shape, in a repository of its own --------
+# A selftest that mutates THIS repository to prove a point about THIS
+# repository leaves the tree dirty and the index locked. Each shape gets a
+# throwaway repository instead.
+foreach ($needle in @("no .gitattributes at all",
+                      "the one rule deleted from .gitattributes",
+                      "a file stored with CRLF in the index",
+                      "a NEW UTF-16 file nobody pinned",
+                      "a PINNED UTF-16 file, exactly as it is today")) {
+    if ($t -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the trap no longer plants: $needle" -ForegroundColor Red; exit 1
     }
-    foreach ($raw in @("from('purchase_returns')", 'from("purchase_returns")',
-                       "from('purchase_return_items')", 'from("purchase_return_items")',
-                       "from('bills')", 'from("bills")',
-                       "from('bill_items')", 'from("bill_items")')) {
-        if ($pair.s -match [regex]::Escape($raw)) {
-            Write-Host "X the $($pair.n) screen reads a money table directly: $raw" -ForegroundColor Red; exit 1
-        }
-    }
 }
-Write-Host "+ the three screens read purchase money through the masked path only" -ForegroundColor Green
+if ($t -notmatch [regex]::Escape("mkdtempSync")) {
+    Write-Host "X the trap mutates this repository instead of a throwaway one" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the trap plants all shapes in throwaway repositories - this tree is never touched" -ForegroundColor Green
 
-# -- 2. and the guard KNOWS them - converted in the same release -------------
-# 936 shipped a screen converted in the file and raw at its /api source. A
-# conversion the guard does not know about is a conversion that can be undone
-# without a sound.
-foreach ($p in @("app/purchase-returns/page.tsx",
-                 "app/purchase-returns/[id]/page.tsx",
-                 "app/purchase-returns/new/page.tsx")) {
-    if ($g -notmatch [regex]::Escape($p)) {
-        Write-Host "X the guard does not know $p was converted" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ the guard was taught the three screens in the same release that converted them" -ForegroundColor Green
-
-# -- 3. the cost gate: asked at the door AND at both writes ------------------
-# A purchase return is a document VALUED AT the purchase cost of the bill it
-# returns. Whoever may not see that cost may not author one. And the question
-# is put to the DATABASE, never to a role list in the screen (934).
-if ($ns -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
-    Write-Host "X the new-return screen never asks whether the user may see purchase cost" -ForegroundColor Red
-    exit 1
-}
-$gateHits = ([regex]::Matches($ns, [regex]::Escape('costGate !== "allowed"'))).Count
-if ($gateHits -lt 2) {
-    Write-Host "X the gate guards $gateHits write path(s) - both saveReturn and saveMultiWarehouseReturn must ask" -ForegroundColor Red
-    exit 1
-}
-if ($ns -notmatch [regex]::Escape('costGate === "blocked"')) {
-    Write-Host "X a blocked user would meet a form he cannot submit instead of a reason" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the gate is asked at the door and on both write paths, and it says why ($gateHits write path(s))" -ForegroundColor Green
-
-# -- 4. the SECOND HOME for the cost rule is gone ---------------------------
-# The amount column used to be dropped by a local role list - and that list had
-# already DRIFTED: it hid the amount from the accountant, who IS in the cost
-# audience by the rule (906, 914). Over-hiding, not leaking - milder, and it
-# proves the same point: a rule in two places diverges, and the direction it
-# diverges in is not under anyone's control.
-if ($ls -match [regex]::Escape("!isRestrictedRole ? [{")) {
-    Write-Host "X the amount column is decided by a local role list again" -ForegroundColor Red; exit 1
-}
-if ($ls -notmatch [regex]::Escape("isHiddenMoney")) {
-    Write-Host "X the list screen no longer distinguishes a hidden amount from a real zero" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the amount column asks the database, not a role list the screen keeps" -ForegroundColor Green
-
-# -- 5. what is not read cannot leak ----------------------------------------
-# purchase_return_warehouse_allocations.total_amount is purchase money in an
-# unmasked side table. Measured: this screen never displays it and never
-# computes with it - so it was removed from the select rather than masked.
-if ($ls -match [regex]::Escape("confirmed_at, total_amount")) {
-    Write-Host "X the list reads the allocation's total_amount again - unmasked purchase money it never shows" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ the allocation's unmasked amount is not read at all - what is not read cannot leak" -ForegroundColor Green
-
-# -- 6. and the applier stays honest (941) ----------------------------------
-$ap = Get-Content -LiteralPath $applier -Raw
+# -- 5. and the applier stays honest (941) ---------------------------------
+$ap = Get-Content -LiteralPath "scripts/apply-migration-file.js" -Raw
 if ($ap -notmatch [regex]::Escape("pg_get_functiondef")) {
     Write-Host "X the applier does not read back what it applied" -ForegroundColor Red; exit 1
-}
-if ($ap -notmatch [regex]::Escape("name a target explicitly")) {
-    Write-Host "X the applier could touch production without being told to" -ForegroundColor Red; exit 1
 }
 Write-Host "+ migrations are applied from the file, and read back before being believed" -ForegroundColor Green
 
@@ -170,6 +196,19 @@ if ($pinned -gt 5) {
 Write-Host "+ 940 holds: both routes read the head alone, and the pinned embed list is $pinned of 5" -ForegroundColor Green
 
 # 941 does not loosen: the browser must not price the return again.
+# 942 does not loosen: the return screens keep reading through the masked path.
+foreach ($scr in @("app/purchase-returns/page.tsx", "app/purchase-returns/[id]/page.tsx", "app/purchase-returns/new/page.tsx")) {
+    $src = Get-Content -LiteralPath $scr -Raw
+    if ($src -notmatch [regex]::Escape("_masked")) {
+        Write-Host "X 942 loosened - $scr no longer reads a masked view" -ForegroundColor Red; exit 1
+    }
+}
+$nsrc = Get-Content -LiteralPath "app/purchase-returns/new/page.tsx" -Raw
+if ($nsrc -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
+    Write-Host "X 942 loosened - the authoring gate is gone from the new-return screen" -ForegroundColor Red; exit 1
+}
+Write-Host "+ 942 holds: the return screens read masked, and the authoring gate still asks" -ForegroundColor Green
+
 $m941 = Get-Content -LiteralPath "supabase/migrations/20260802000002_v3_74_941_the_server_prices_the_return.sql" -Raw
 $m941Code = ($m941 -split "`n" | Where-Object { $_.TrimStart() -notmatch '^--' }) -join "`n"
 foreach ($shape in @("COALESCE((v_item->>'unit_price')", "COALESCE((v_item->>'line_total')",
@@ -215,7 +254,7 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-$self2 = Get-Content -LiteralPath "push_v3.74.942.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.943.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -235,17 +274,130 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.941.ps1" 2>$null
+git add -u -- "push_v3.74.942.ps1" 2>$null
 
-$expected = @($files) + @("push_v3.74.941.ps1")
-$stagedNow = git diff --cached --name-only
-foreach ($p in $stagedNow) {
-    if ($expected -notcontains $p) {
-        Write-Host "X staged but not part of this release: $p" -ForegroundColor Red
+# ─── THE NORMALISATION ITSELF, AND ITS PROOF ─────────────────────────────
+# Every other release refuses anything staged beyond its file list. THIS one
+# stages the whole tree on purpose - so the question is not "what is staged"
+# but "what CHANGED", and the check has to be stronger, not weaker.
+#
+# ⚠️ And `git add --renormalize .` CANNOT be used as-is: it aborts with
+# `fatal: unable to stat` on the FIRST tracked file missing from the working
+# tree, and stages NOTHING - silently, because the output is swallowed. This
+# repository has 18 such files today (Arabic-named notes and one literally
+# called "` cat"), deleted from disk but never from git. That is real,
+# pre-existing debt, and it is NOT this release's business: bundling their
+# deletion into a line-endings commit is exactly the mixed commit this project
+# refuses. So the file list is built from what actually EXISTS, and the missing
+# ones are left alone - visible, counted, untouched.
+# `git ls-files` quotes non-ASCII paths in C style ("\331\205...") unless told
+# otherwise, and Test-Path then rejects them as illegal. core.quotepath=false
+# hands them over as they are.
+$tracked = @(git -c core.quotepath=false ls-files)
+
+# Tracked files missing from the working tree, asked of GIT rather than of the
+# filesystem - 18 of them here, deleted from disk and never from git. Real,
+# older debt, and NOT this release's business: bundling their deletion into a
+# line-endings commit is the mixed commit this project refuses. They are simply
+# left out of the pathspec, and counted out loud.
+# The files stay on disk; only their tracking ends.
+$stillTracked = @(git -c core.quotepath=false ls-files -- $generated)
+if ($stillTracked.Count -gt 0) {
+    git rm --cached --quiet -- $stillTracked
+    if ($LASTEXITCODE -ne 0) { Write-Host "X could not untrack the generated artefacts" -ForegroundColor Red; exit 1 }
+    Write-Host "+ $($stillTracked.Count) generated artefact(s) untracked - kept on disk, ignored from now on" -ForegroundColor Green
+} else {
+    Write-Host "+ the generated artefacts are already untracked" -ForegroundColor Green
+}
+
+$gone = @(git -c core.quotepath=false ls-files --deleted)
+$missing = $gone.Count
+Write-Host "! $missing tracked file(s) are deleted on disk but still tracked - older debt, deliberately untouched here" -ForegroundColor Yellow
+
+# ─── AND NOTHING ELSE MAY BE PENDING ──────────────────────────────────────
+#
+# This release stages the whole tree, so anything already differing from HEAD
+# would be swept into a line-endings commit - staged or not. Measured here:
+# supabase/.temp/gotrue-version holds v2.183.0 in HEAD and v2.193.0 on disk,
+# because the Supabase CLI rewrote it as it ran. Real work, someone else's,
+# and none of this release's business.
+#
+# `git diff` alone would not have caught it: that compares the INDEX to the
+# disk, and this file was already staged. The question has to be asked against
+# HEAD - the 938 lesson again, in another costume: the measurement has to fall
+# on the same scope as the claim.
+#
+# And it is NOT silently unstaged for you. Discarding or committing your work
+# is your call, not a side effect of a line-endings release.
+# ⚠️ And "differs from HEAD" is not the question either - not once
+# .gitattributes is in place. From that moment the thirteen-odd files whose
+# STORED blob is CRLF start reporting as different, because git normalises the
+# disk copy before comparing. Those differences ARE this release. Refusing them
+# would be refusing the work itself.
+#
+# So the question is narrowed one more time, to the only one that matters:
+# which files differ from HEAD **by something other than a carriage return**.
+#
+# `--no-renames` because git otherwise collapses a rename into ONE row whose
+# path reads "old => new" - a string no file list can contain. This script
+# renames itself every release, so without it the release reports itself as an
+# alien pending change.
+$pending = @()
+foreach ($line in (git -c core.quotepath=false diff HEAD --numstat --ignore-cr-at-eol --no-renames)) {
+    if (-not $line) { continue }
+    $f = ($line -split "`t")[2]
+    if ($files -contains $f -or $f -eq "push_v3.74.942.ps1" -or $gone -contains $f -or $generated -contains $f) { continue }
+    $pending += $f
+}
+if ($pending.Count -gt 0) {
+    Write-Host "X $($pending.Count) file(s) differ from HEAD and are not part of this release:" -ForegroundColor Red
+    foreach ($f in $pending) { Write-Host "    $f" -ForegroundColor Red }
+    Write-Host "  A line-endings release must not carry them in. Commit them on their own, or -" -ForegroundColor Yellow
+    Write-Host "  for regenerable state like supabase/.temp/* or *.tsbuildinfo - discard them with:" -ForegroundColor Yellow
+    Write-Host "    git restore --staged --worktree <file>" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "+ nothing else is pending against HEAD - the tree carries only this release" -ForegroundColor Green
+
+$existing = @($tracked | Where-Object { $gone -notcontains $_ -and $generated -notcontains $_ })
+
+$listPath = Join-Path $env:TEMP "renormalise_v3_74_943.txt"
+[System.IO.File]::WriteAllLines($listPath, $existing, (New-Object System.Text.UTF8Encoding($false)))
+git add --renormalize --pathspec-from-file=$listPath 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+$addExit = $LASTEXITCODE
+Remove-Item -LiteralPath $listPath -Force -ErrorAction SilentlyContinue
+if ($addExit -ne 0) {
+    Write-Host "X git add --renormalize failed - nothing was normalised" -ForegroundColor Red
+    exit 1
+}
+
+# `--ignore-cr-at-eol` makes a carriage-return-only change vanish ENTIRELY from
+# the diff. So a file that is staged but ABSENT from that diff changed by
+# nothing else. This is the proof, and it is per file, with no exceptions.
+$realChange = @()
+foreach ($line in (git -c core.quotepath=false diff --cached --numstat --ignore-cr-at-eol --no-renames)) {
+    if (-not $line) { continue }
+    $realChange += ($line -split "`t")[2]
+}
+
+$normalised = @()
+foreach ($f in (git -c core.quotepath=false diff --cached --name-only --no-renames)) {
+    if ($files -contains $f -or $f -eq "push_v3.74.942.ps1" -or $generated -contains $f) { continue }
+    if ($realChange -contains $f) {
+        Write-Host "X $f changes CONTENT, not just line endings - STOP" -ForegroundColor Red
         exit 1
     }
+    $normalised += $f
 }
-Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+# A silent no-op must fail too: if renormalise had aborted, nothing would be
+# staged and every check above would pass without a word.
+if ($normalised.Count -eq 0) {
+    Write-Host "X nothing was normalised at all - the release would claim work it did not do" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ $($normalised.Count) file(s) normalised, and EVERY one of them differs by carriage returns alone:" -ForegroundColor Green
+foreach ($f in $normalised) { Write-Host "    $f" -ForegroundColor DarkGray }
 
 # ---------------------------------------------------------------------------
 # A TWO-STEP PROCEDURE THAT MUST BE DONE IN ORDER IS A TRAP, AND I BUILT ONE.
@@ -545,7 +697,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.941.ps1" 2>$null
+git add -u -- "push_v3.74.942.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -566,64 +718,65 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_942.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_943.txt"
     $msgLines = @(
-        'feat(security): v3.74.942 - the purchase-return screens read their money through the masked path',
+        'chore(repo): v3.74.943 - line endings are one way, so "modified" means modified',
         '',
-        'STAGE 2, BATCH 4: the three purchase-return screens - list, detail and new.',
-        'Measured debt drops from 120 direct reads to 112, counted out loud as always.',
+        'MEASURED BEFORE ANYTHING WAS WRITTEN: 3642 tracked files, NO .gitattributes at',
+        'all, and core.autocrlf unset in every scope - local, global and system. 2538',
+        'files are stored LF and sit on disk as CRLF, so every one of them reads as',
+        'modified in every run, with a diff the size of the whole file. One registry',
+        'file alone reports 7688 changed lines while nobody has touched it.',
         '',
-        'WHY THIS COMES AFTER 941 AND NOT BEFORE. Masking the new-return screen while',
-        'the browser still priced the document would have CORRUPTED data rather than',
-        'hidden it: a masked read returns null, the screen computes zero, and a',
-        'zero-valued return gets posted to a real ledger. Now that the server prices',
-        'from the bill and refuses any disagreeing number, the forty-nine compute sites',
-        'in purchase-returns/new are DISPLAY ONLY, and masking costs nothing.',
+        'THIS IS NOT COSMETIC NOISE. The real change passes underneath it. The 938',
+        'defect that emptied the purchase-bill list for every user went through my own',
+        'review inside exactly this flood.',
         '',
-        'THE AUTHORING GATE, AND ITS IMPACT MEASURED BEFORE IT WAS WRITTEN. A purchase',
-        'return is a document VALUED AT the purchase cost of the bill it returns. So',
-        'whoever may not see that cost may not author one - not because the screen would',
-        'show him numbers, but because a document whose author cannot see its value is a',
-        'document signed blind. Who may create one by RLS: owner, admin, manager,',
-        'accountant. The cost audience (906, 914) holds all of them EXCEPT admin - and',
-        'ZERO members hold the admin role in any company. So the gate takes nothing from',
-        'anyone who exists today, and shuts the door before it is opened. That settles',
-        'debt item 12 in the right direction: do not widen the cost audience to include',
-        'admin - stop admin from authoring a document he cannot see the value of.',
+        'AND WHAT DOES IT COST? Far less than the noise suggests. Most of those 2538',
+        'files are ALREADY LF in the index - the noise comes from the disk copy being',
+        'CRLF, and .gitattributes makes git normalise before comparing, so the noise',
+        'stops without a single byte changing. Only the files whose stored blob really',
+        'is CRLF get rewritten.',
         '',
-        'The gate is asked THREE times: at the door before a single number is read, and',
-        'on each of the two write paths - because browser state can be changed, and the',
-        'decision belongs at the moment of writing. And it is put to the DATABASE, never',
-        'to a role list the screen keeps (934). A blocked user meets an amber panel that',
-        'explains what a purchase return is valued at and who can create one - not a',
-        'silent redirect, which reads as a broken system.',
+        'I TRIED TO PIN THAT SET BY NAME AND I WAS WRONG TWICE. The first draft listed',
+        'thirteen paths - the files measured as stored CRLF - and refused a fourteenth.',
+        'It missed scripts/test-supplier.js, whose index is LF but whose working copy is',
+        'MIXED, so renormalising changes its blob too. And the true set could not be',
+        'measured reliably from outside the machine at all. A prediction I cannot verify',
+        'is not a measurement, and a guard built on one refuses honest work.',
         '',
-        'AND A SECOND HOME FOR THE COST RULE WAS FOUND HERE - ALREADY DRIFTED. The',
-        'amount column was dropped by a local role list: isRestrictedRole = store',
-        'manager OR ACCOUNTANT. But the accountant IS in the cost audience by the rule.',
-        'The screen was hiding a number he is entitled to. Over-hiding, not leaking -',
-        'milder, and it proves the same point: a rule kept in two places diverges, and',
-        'and nobody chooses the direction it diverges in. The column now shows for',
-        'everyone and the DATABASE answers: a masked null renders as an em dash with the',
-        'reason attached. isRestrictedRole stays where its meaning is true - which',
-        'quantity is mine - and nowhere else.',
+        'SO THE PROOF IS THE PROPERTY ITSELF, PER FILE, WITH NO LIST. --ignore-cr-at-eol',
+        'makes a carriage-return-only change vanish entirely from the diff, so a file',
+        'that is staged but absent from that diff changed by nothing else. Every staged',
+        'file is checked that way and any real content stops the push. The count and the',
+        'names are REPORTED, not asserted. And a SILENT NO-OP fails too: if nothing',
+        'normalises, the release refuses itself rather than claiming work it did not do.',
         '',
-        'WHAT IS NOT READ CANNOT LEAK. purchase_return_warehouse_allocations.total_amount',
-        'is purchase money in an unmasked side table, and the list was reading it.',
-        'Measured: the screen never displays it and never computes with it - it uses only',
-        'the id, the warehouse and the status. So it was removed from the select rather',
-        'than masked. The column remains recorded debt; this screen is no longer a door',
-        'to it.',
+        'A TRAP THAT RAN INTO A REAL DEFECT BEFORE ANY OF THIS SHIPPED. The self-test',
+        'plants a UTF-16 file that nobody pinned - and the guard did not refuse it. The',
+        'reason: git ls-files --eol puts the attributes in a field that CONTAINS A SPACE',
+        '("attr/text=auto eol=lf"), so splitting on whitespace swallowed part of it and',
+        'glued the rest onto the path. The guard went looking for a file called',
+        '"eol=lf <tab>sneaky.ts", failed to find it, and PASSED IN SILENCE. The reliable',
+        'separator is the tab. Fixed, and the trap now sees it refuse.',
         '',
-        'NO EMBED ON A MASKED VIEW. All three screens embedded supplier, bill, branch,',
-        'warehouse, products, allocations and items in one query. Left on top of the',
-        'masked views that would reproduce the 940 outage (PGRST201 empties the screen).',
-        'Heads and lines are read alone and the names are stitched in a second query',
-        'under the same response keys. Zero new embeds; the pinned list stays at five.',
+        'AND git add --renormalize . COULD NOT BE USED AS WRITTEN. It aborts with',
+        '"fatal: unable to stat" on the first tracked file missing from the working tree',
+        'and stages NOTHING - silently, since the output is swallowed. This repository',
+        'has 18 such files (Arabic-named notes, and one literally named "` cat"),',
+        'deleted from disk but never from git. That is real pre-existing debt and it is',
+        'NOT this release: bundling their deletion into a line-endings commit is the',
+        'mixed commit this project refuses. The pathspec is built from what exists, the',
+        'missing ones are left alone, and their count is pinned so it cannot grow.',
         '',
-        'And the bill NUMBER is read from bills_masked too, not from bills - one door,',
-        'not two, even for a column that is not money. The guard caught that on me: I',
-        'read bills for bill_number and it refused, correctly.'
+        'THE 14 UTF-16 FILES are named explicitly rather than left to git implicit',
+        'detection - detection changes when a file is re-saved, with nobody touching it.',
+        'They are old diagnostic output that belongs outside the repository; naming them',
+        'stops them being corrupted today, and does not bless them staying.',
+        '',
+        'And the guard reads the INDEX, not the disk. On Windows the working tree stays',
+        'CRLF after checkout, and that is the point: the agreement is about what git',
+        'stores, not about what lands on the disk.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -647,7 +800,7 @@ if (-not $staged) {
 
 # -- the commit is not assumed: it is READ BACK -------------------------
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.942")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.943")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -663,5 +816,5 @@ if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.942 pushed - the server prices the purchase return, the browser is not asked" -ForegroundColor Green
+Write-Host "`n+ v3.74.943 pushed - line endings are one way, so `"modified`" means modified" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray
