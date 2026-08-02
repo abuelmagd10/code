@@ -6,183 +6,115 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.938 - the OLD script is removed, never this one. Five times a chained
+# v3.74.939 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.937.ps1") { Remove-Item -LiteralPath "push_v3.74.937.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.938.ps1") { Remove-Item -LiteralPath "push_v3.74.938.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.938"') {
-    Write-Host "+ 3.74.938" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.939"') {
+    Write-Host "+ 3.74.939" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.938]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.938]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.939]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.939]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# No migration: stage 2, third batch - the three purchase-order screens AND
-# the two API routes their rows actually come from.
-$list    = "app/purchase-orders/page.tsx"
-$detail  = "app/purchase-orders/[id]/page.tsx"
-$edit    = "app/purchase-orders/[id]/edit/page.tsx"
-$apiPo   = "app/api/v2/purchase-orders/route.ts"
-$apiBill = "app/api/v2/bills/route.ts"
-$lib     = "lib/purchase-money.ts"
-$guard   = "scripts/check-purchase-money-direct-read.js"
-$trap    = "scripts/selftest-purchase-money-direct-read.js"
-$dbGuard = "scripts/check-purchase-cost-masked-path.js"
-$dbTrap  = "scripts/selftest-purchase-cost-masked-path.js"
+$migration = "supabase/migrations/20260802000001_v3_74_939_notifications_reach_a_person.sql"
+$guard     = "scripts/check-notifications-reach-a-person.js"
+$trap      = "scripts/selftest-notifications-reach-a-person.js"
 
-$files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md", "tsconfig.json",
-           $list, $detail, $edit, $apiPo, $apiBill, $lib,
-           $guard, $trap, $dbGuard, $dbTrap,
-           "scripts/check-product-management-one-door.js",
-           "push_v3.74.938.ps1")
+$files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
+           $migration, $guard, $trap,
+           "push_v3.74.939.ps1")
 
-$l  = Get-Content -LiteralPath $list -Raw
-$d  = Get-Content -LiteralPath $detail -Raw
-$e  = Get-Content -LiteralPath $edit -Raw
-$ap = Get-Content -LiteralPath $apiPo -Raw
-$ab = Get-Content -LiteralPath $apiBill -Raw
-$lm = Get-Content -LiteralPath $lib -Raw
-$g  = Get-Content -LiteralPath $guard -Raw
-$t  = Get-Content -LiteralPath $trap -Raw
-$dg = Get-Content -LiteralPath $dbGuard -Raw
-$dt = Get-Content -LiteralPath $dbTrap -Raw
+$m = Get-Content -LiteralPath $migration -Raw
+$g = Get-Content -LiteralPath $guard -Raw
+$t = Get-Content -LiteralPath $trap -Raw
 
-# -- 1. the rows come from the API, so the API reads the masked view -----
-# THIS IS THE HOLE 936 SHIPPED: app/bills/page.tsx was converted while the
-# route that actually feeds it kept reading the raw table. Masking a file
-# nobody calls hides nothing.
-if ($ab -notmatch [regex]::Escape(".from('bills_masked')")) {
-    Write-Host "X /api/v2/bills still reads the raw bills table - the 936 hole is open" -ForegroundColor Red
+# -- 1. the rule sits on the TABLE, not in a function anyone can bypass --
+# create_notification exists, but TWENTY-FOUR functions insert into
+# notifications directly and skip it (measured by reading their bodies). A
+# rule written in that function is a placebo - the 935 lesson exactly.
+if ($m -notmatch [regex]::Escape("BEFORE INSERT ON public.notifications")) {
+    Write-Host "X the routing rule is not a trigger on the table - 24 writers would bypass it" -ForegroundColor Red
     exit 1
 }
-if ($ap -notmatch [regex]::Escape(".from('purchase_orders_masked')")) {
-    Write-Host "X /api/v2/purchase-orders still reads the raw table" -ForegroundColor Red; exit 1
+if ($m -notmatch [regex]::Escape("company_role_has_holder")) {
+    Write-Host "X there is no single home for 'does anyone hold this role'" -ForegroundColor Red; exit 1
 }
-Write-Host "+ both v2 routes serve their rows from the masked views" -ForegroundColor Green
+Write-Host "+ the routing rule sits on the table itself, where no writer can step past it" -ForegroundColor Green
 
-# -- 2. and the guard now follows a screen to its /api source -------------
-if ($g -notmatch [regex]::Escape("apiPathsIn")) {
-    Write-Host "X the guard does not follow a converted screen to its /api source" -ForegroundColor Red
+# -- 2. it spares a role that HAS a holder, and it says why it moved -----
+# A rule that rewrites every row protects nothing, and a silent reroute hides
+# that the company is missing a job.
+if ($m -notmatch [regex]::Escape("IF public.company_role_has_holder(NEW.company_id, NEW.assigned_to_role) THEN")) {
+    Write-Host "X the trigger does not spare a role that has a holder" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch [regex]::Escape("v3.74.939] كان هذا الإشعارُ موجَّهاً إلى دور")) {
+    Write-Host "X the reroute is silent - the missing role would never be noticed" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch [regex]::Escape("IF v_owner IS NULL THEN")) {
+    Write-Host "X a company with no owner would lose the notification instead of keeping it" -ForegroundColor Red
     exit 1
 }
-if ($g -notmatch [regex]::Escape("no app/api/**/route.ts matches it")) {
-    Write-Host "X an unresolvable /api path would pass unproven" -ForegroundColor Red; exit 1
-}
-if ($t -notmatch [regex]::Escape("a converted screen whose /api source reads the raw table")) {
-    Write-Host "X the trap does not prove the /api-source rule refuses" -ForegroundColor Red; exit 1
-}
-if ($t -notmatch [regex]::Escape("an /api route with no GET")) {
-    Write-Host "X the trap does not prove server-side work is spared" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the /api source of a converted screen is held to the same rule, and proven both ways" -ForegroundColor Green
+Write-Host "+ it spares a role with a holder, says why it moved, and never drops a notification" -ForegroundColor Green
 
-# -- 3. one home for the rule: no local role list on a converted screen ---
-# 934 removed isUpperRole from the products screen. The same shape lived on
-# here as canViewPurchasePrices - a second copy that drifts on first edit.
-if ($g -notmatch [regex]::Escape("LOCAL_ROLE_RULES")) {
-    Write-Host "X the guard does not refuse a local role list" -ForegroundColor Red; exit 1
+# -- 3. the staleness check asks by ID, not by a CASE on the type name ---
+# The CASE is what produced the false alarm: an unlisted reference_type fell
+# to ELSE TRUE and was counted forever. All five alarms pointed at PRET-5689,
+# which is completed.
+if ($m -notmatch [regex]::Escape("workflow_row_is_open")) {
+    Write-Host "X the staleness check still keys off the reference_type name" -ForegroundColor Red; exit 1
 }
-if ($g -notmatch [regex]::Escape("strip(raw, { strings: true })")) {
-    Write-Host "X the local-role search would read comments as code" -ForegroundColor Red; exit 1
+if ($m -notmatch [regex]::Escape("RETURN NULL;   -- لا صفَّ له فى أى جدولٍ نعرفه")) {
+    Write-Host "X an unknown document is not distinguished from a pending one" -ForegroundColor Red; exit 1
 }
-if ($t -notmatch [regex]::Escape("only in a comment or a string")) {
-    Write-Host "X the trap does not prove a comment is spared" -ForegroundColor Red; exit 1
-}
-Write-Host "+ a converted screen may not decide cost visibility from a local role list" -ForegroundColor Green
-
-# -- 4. hidden is told from empty by a NOT NULL witness, and it is guarded -
-# A null in a masked column means two things. shipping defaults to zero and
-# accepts null, so measuring the hide on it would show a dash to EVERYONE on
-# an order with no shipping. The witness must be a column that cannot be null.
-if ($lm -notmatch [regex]::Escape("export function rowMoneyHidden")) {
-    Write-Host "X there is no single home for 'is this row hidden'" -ForegroundColor Red; exit 1
-}
-if ($dg -notmatch [regex]::Escape("attnotnull")) {
-    Write-Host "X the database guard does not check the witness column is NOT NULL" -ForegroundColor Red; exit 1
-}
-if ($dt -notmatch [regex]::Escape("the hidden-money witness column turned nullable")) {
-    Write-Host "X the trap does not plant a nullable witness" -ForegroundColor Red; exit 1
-}
-if ($dt -notmatch [regex]::Escape("SET NOT NULL")) {
-    Write-Host "X the trap would leave the table looser than it found it" -ForegroundColor Red; exit 1
-}
-Write-Host "+ 'hidden' cannot be confused with 'empty', and the constraint itself is watched" -ForegroundColor Green
-
-# -- 5. the edit screen is blocked, at load AND at save -------------------
-# Editing a PO rebuilds its totals from unit_price and copies them into the
-# linked bill. A blocked reader carrying on would write zeros into TWO real
-# documents.
-if ($e -notmatch [regex]::Escape('if (costGate !== "allowed")')) {
-    Write-Host "X the edit screen would open for someone who cannot read the prices" -ForegroundColor Red
+if ($m -notmatch [regex]::Escape("unverified_count")) {
+    Write-Host "X what the check cannot verify is not reported - it would be swallowed or cried over" -ForegroundColor Red
     exit 1
 }
-if (([regex]::Matches($e, [regex]::Escape('costGate !== "allowed"'))).Count -lt 2) {
-    Write-Host "X the gate is not repeated at save - a stale tab would still write" -ForegroundColor Red
+Write-Host "+ the check asks by id, and names what it cannot verify instead of claiming it is pending" -ForegroundColor Green
+
+# -- 4. 'finished' is the closed list, not 'pending' ---------------------
+# Pending vocabularies differ per table and grow with every feature; terminal
+# words are few and shared. A status added tomorrow counts as OPEN - seen and
+# asked about, not swallowed.
+if ($m -notmatch [regex]::Escape("ELSE TRUE")) {
+    Write-Host "X an unknown status would be treated as finished - work would vanish quietly" -ForegroundColor Red
     exit 1
 }
-if ($e -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
-    Write-Host "X the edit screen never asks the rule" -ForegroundColor Red; exit 1
-}
-if ($e -notmatch [regex]::Escape("branch_id ?? null")) {
-    Write-Host "X it asks without this order's branch - 914 would be undone" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the edit screen refuses at load and again at save, scoped to this order's branch" -ForegroundColor Green
+Write-Host "+ an unknown status counts as still open, so nothing disappears in silence" -ForegroundColor Green
 
-# -- 6. no lying zero, and no total summed over a hidden part -------------
-if ($l -match [regex]::Escape("if (!canViewPrices) return '***'")) {
-    Write-Host "X the list still masks by role instead of by data" -ForegroundColor Red; exit 1
+# -- 5. and the guard measures WHERE a notification lands, not the text --
+if ($g -notmatch [regex]::Escape("INSERT INTO public.notifications")) {
+    Write-Host "X the guard reads text instead of planting a real notification" -ForegroundColor Red; exit 1
 }
-foreach ($pair in @(@($list, $l), @($detail, $d))) {
-    if ($pair[1] -notmatch [regex]::Escape("sumOrHidden")) {
-        Write-Host "X $($pair[0]) sums money without refusing a hidden part" -ForegroundColor Red; exit 1
-    }
-    if ($pair[1] -notmatch [regex]::Escape("HIDDEN_MONEY")) {
-        Write-Host "X $($pair[0]) has no symbol for a hidden amount" -ForegroundColor Red; exit 1
+if ($g -notmatch [regex]::Escape("ROLLBACK")) {
+    Write-Host "X the guard would leave its probes behind" -ForegroundColor Red; exit 1
+}
+if ($g -notmatch [regex]::Escape("a rule that rewrites everything protects nothing")) {
+    Write-Host "X the guard never checks that an innocent role is spared" -ForegroundColor Red; exit 1
+}
+foreach ($needle in @("the routing trigger dropped",
+                      "a trigger that reroutes even a role that HAS a holder",
+                      "a trigger that reroutes in silence",
+                      "the staleness check back on the 215 catch-all",
+                      "anon granted execute on the routing function")) {
+    if ($t -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the trap no longer plants: $needle" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ hidden amounts read as a dash, and one hidden part hides the whole total" -ForegroundColor Green
+Write-Host "+ the guard measures where a notification lands, and the trap plants all five shapes" -ForegroundColor Green
 
-# -- 7. and the ratchet grew, in the same release ------------------------
-foreach ($f in @($list, $detail, $edit, $apiPo, $apiBill)) {
-    if ($g -notmatch [regex]::Escape("`"$f`"")) {
-        Write-Host "X $f was converted but not added to the guard - nobody watches it" -ForegroundColor Red
-        exit 1
-    }
-}
-if ($t -notmatch [regex]::Escape("a comment that merely mentions the table")) {
-    Write-Host "X the trap no longer pins the comment false-positive" -ForegroundColor Red; exit 1
-}
-Write-Host "+ all five converted files joined the ratchet in the same release" -ForegroundColor Green
-
-# -- 7b. the scratch folders are OUT of the type-check graph -------------
-#
-# The staging folder _wip_NNN holds working COPIES of real screens. tsconfig
-# included **/*.ts and **/*.tsx from the repo root, so ten scratch files -
-# among them a second copy of app/bills/page.tsx - were being compiled as
-# part of the project. They passed by luck, not by design: an old copy that
-# still imports a removed export, or a probe file, fails the release for a
-# reason that has nothing to do with the release. Measured: 1181 files
-# before, 1171 after, 10 of them scratch.
-$ts = Get-Content -LiteralPath "tsconfig.json" -Raw
-if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
-    Write-Host "X tsconfig no longer excludes _wip_* - scratch copies would be type-checked" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
-
-# -- 8. a dropped connection is not a measurement ------------------------
-# Three runs died on a transient drop in one day, and one KILLED the process
-# with a raw stack instead of reporting - a guard that falls over at random
-# gets worked around within a week.
-foreach ($dbg in @("scripts/check-purchase-cost-masked-path.js",
+# -- 6. a dropped connection is not a measurement ------------------------
+foreach ($dbg in @("scripts/check-notifications-reach-a-person.js",
+                   "scripts/check-purchase-cost-masked-path.js",
                    "scripts/check-product-management-one-door.js")) {
     $gsrc = Get-Content -LiteralPath $dbg -Raw
     if ($gsrc -notmatch [regex]::Escape("client.on(")) {
@@ -198,8 +130,16 @@ foreach ($dbg in @("scripts/check-purchase-cost-masked-path.js",
 }
 Write-Host "+ the database guards survive a dropped connection, and retry from a clean slate" -ForegroundColor Green
 
-# -- 9. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.938.ps1" -Raw
+# -- 7. the scratch folders stay out of the type-check graph (938) -------
+$ts = Get-Content -LiteralPath "tsconfig.json" -Raw
+if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
+    Write-Host "X tsconfig no longer excludes _wip_* - scratch copies would be type-checked" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
+
+# -- 8. the battery below still proves the standing guards ----------------
+$self2 = Get-Content -LiteralPath "push_v3.74.939.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -208,7 +148,8 @@ foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "selftest-purchase-cost-masked-path.js",
                       "selftest-cost-rule-has-one-home.js",
                       "selftest-product-management-one-door.js",
-                      "selftest-purchase-money-direct-read.js")) {
+                      "selftest-purchase-money-direct-read.js",
+                      "selftest-notifications-reach-a-person.js")) {
     if ($self2 -notmatch [regex]::Escape($needle)) {
         Write-Host "X the push battery no longer proves: $needle" -ForegroundColor Red; exit 1
     }
@@ -217,10 +158,10 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.937.ps1" 2>$null
+git add -u -- "push_v3.74.938.ps1" 2>$null
 
 # -- 10. nothing staged beyond this release (the 872 lesson) -------------
-$expected = @($files) + @("push_v3.74.937.ps1")
+$expected = @($files) + @("push_v3.74.938.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -229,6 +170,14 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+Write-Host "Proving the routing guard refuses all five shapes (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-notifications-reach-a-person.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the routing guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Measuring where a notification actually lands, by planting one on the live database..." -ForegroundColor Cyan
+node scripts/check-notifications-reach-a-person.js --require-db --list
+if ($LASTEXITCODE -ne 0) { Write-Host "X a notification can still be sent where nobody will read it" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the direct-read guard refuses on all thirteen shapes, and spares the innocent..." -ForegroundColor Cyan
 node scripts/selftest-purchase-money-direct-read.js
@@ -485,7 +434,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.937.ps1" 2>$null
+git add -u -- "push_v3.74.938.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -506,72 +455,104 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_938.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_939.txt"
     $msgLines = @(
-        'feat(security): v3.74.938 - the purchase orders, and the API hole 936 shipped',
+        'fix(ops): v3.74.939 - a notification reaches a person, and the alarm stops crying wolf',
         '',
-        'STAGE 2, THIRD BATCH: the three purchase-order screens. But the most',
-        'important finding in this batch is NOT a screen.',
+        'A dashboard drift item ("1 low") turned out to be a FALSE ALARM BY',
+        'CONSTRUCTION - and underneath it sat a real defect it had been hiding.',
         '',
-        'A CONVERTED SCREEN WAS TAKING ITS MONEY FROM SOMEWHERE ELSE.',
+        'THE ALARM. ic_stale_critical_notifications (215) requires the underlying',
+        'workflow to still be pending, but it knows only six reference_types and',
+        'everything else falls through to ELSE TRUE - counted forever. All five',
+        'flagged rows pointed at PRET-5689, whose status is completed. Measured:',
+        '24 of 30 types uncovered, carrying 165 critical/high notifications, every',
+        'one of them a false alarm waiting to turn 30 days old. A guard that cries',
+        'wolf gets switched off within a week.',
         '',
-        'The purchase-order list does not query the table itself; it calls',
-        '/api/v2/purchase-orders. Opening that route showed the bill list is the',
-        'same shape: converted in 936 to read bills_masked, while its rows come',
-        'from app/api/v2/bills/route.ts, which read the raw table. THE MASKING WAS',
-        'IN A FILE NOBODY CALLS, and the amounts crossed the wire in full.',
+        'THE CURE WAS NOT A LONGER LIST. The CASE on the type name is what produced',
+        'the bug. The question is now asked BY ID: workflow_row_is_open(uuid) searches',
+        'twenty-one tables and answers three ways - TRUE pending, FALSE finished, and',
+        'NULL not found anywhere. approval_request carries the DOCUMENT id, not an',
+        'approval-record id (measured on PRET-5689), so asking by id hits where',
+        'matching by name misses. What cannot be verified is REPORTED SEPARATELY,',
+        'named and counted - visible debt, not a false alarm.',
         '',
-        'Both routes now read the masked views. Both run with the USER session',
-        '(anon key, not the service key), so the security_invoker view applies to',
-        'them exactly as it does in the browser.',
+        'And "finished" is the closed list, not "pending": pending vocabularies differ',
+        'per table and grow with every feature, terminal words are few and shared. A',
+        'status added tomorrow counts as OPEN - seen and asked about, not swallowed.',
         '',
-        'AND THE CLASS WAS CLOSED, not just the instance: the guard now follows',
-        'every /api/... a converted screen calls, and any route that exposes a GET',
-        'is held to the same rule. An /api path that resolves to no route file is',
-        'refused too - what cannot be resolved cannot be proven clean.',
+        'THE REAL DEFECT UNDERNEATH: 35 unread notifications addressed to roles NOBODY',
+        'HOLDS - general_manager (18), admin (14), warehouse_manager (3), with zero',
+        'members in those roles in ANY company. An approval sent to an empty role is',
+        'an approval that is never taken.',
         '',
-        'A SECOND HOME FOR THE RULE WAS REMOVED. All three screens decided price',
-        'visibility with canViewPurchasePrices - a local role table in',
-        'lib/validation.ts, the same shape deleted from the products screen in 934.',
-        'Two copies of one rule diverge on the first edit, and the difference shows',
-        'up as exposed money. What is displayed is now decided by the data itself:',
-        'a hidden amount arrives as null and reads as a dash with a tooltip.',
+        'AND THE RULE WENT WHERE IT CANNOT BE BYPASSED. create_notification exists,',
+        'but TWENTY-FOUR functions insert into the table directly and skip it (nine',
+        'call it) - measured by reading their bodies. A rule written in that function',
+        'is a placebo: the 935 lesson exactly. So the rule is a BEFORE INSERT TRIGGER',
+        'on the table itself. No writer steps past it, and the twenty-fifth writer is',
+        'covered the day it is written.',
         '',
-        'HIDDEN AND EMPTY NO LONGER LOOK ALIKE. A null in a masked column means two',
-        'things, and shipping defaults to zero and accepts null - measuring the hide',
-        'on it would show a dash to EVERYONE on an order with no shipping. The hide',
-        'is measured on a NOT NULL witness (total_amount on heads, unit_price on',
-        'lines); all three were measured to be NOT NULL, and THE CONSTRAINT ITSELF',
-        'IS NOW GUARDED - the database guard refuses if a witness turns nullable,',
-        'and the trap plants exactly that on the test database and watches it refuse.',
+        'THE REROUTE SAYS WHY. It reaches the owner carrying "this was addressed to',
+        'role X and nobody holds it" - a silent reroute would hide that the company',
+        'is missing a job. And no notification is ever dropped: a company with no',
+        'owner keeps the row as it is (zero such companies, measured).',
         '',
-        'THE EDIT SCREEN IS BLOCKED OUTRIGHT. Editing a purchase order rebuilds its',
-        'totals from the unit prices it read and copies them into the linked bill,',
-        'so a blocked reader carrying on would write zeros over real figures in TWO',
-        'documents. There is a gate at load and another at save, and the condition',
-        'is "not allowed" rather than "blocked" - if the check never answers, the',
-        'screen stays shut (865).',
+        'THE BACKFILL MOVED WHAT WAS ACTUALLY STUCK, AND NOTHING ELSE: 0 rows moved,',
+        '119 left as log lines for work already finished. Nothing is stuck today -',
+        'the value of this release is forward-looking, and it is said rather than',
+        'dressed up.',
         '',
-        'NO LYING ZERO IN ANY TOTAL: the list totals and the detail cards go through',
-        'sumOrHidden - ONE HIDDEN PART HIDES THE WHOLE SUM - and the line discount',
-        'built from unit prices does the same. "Does it have returns?" is now asked',
-        'of return_status, which is not money and is never masked.',
-        '',
-        'Five files joined the ratchet in the same release. 120 direct reads remain',
-        'in screens not yet converted, printed on every run.',
-        '',
-        'ALSO: tsconfig now excludes the _wip_* staging folders. They hold working',
-        'COPIES of real screens, and the project include (**/*.ts, **/*.tsx from the',
-        'repo root) was compiling ten of them - including a second copy of',
-        'app/bills/page.tsx. They passed by luck. Measured: 1181 files in the graph',
-        'before, 1171 after. The push script now refuses if the exclusion is removed.'
+        'THE GUARD MEASURES WHERE A NOTIFICATION LANDS, NOT WHAT THE CODE SAYS: it',
+        'plants a real row inside a rolled-back transaction and looks. A role with no',
+        'holder must reach the owner and say why; A ROLE WITH A HOLDER MUST BE LEFT',
+        'ALONE; one already addressed to a person must be untouched; and the staleness',
+        'check must fire for a pending document and stay silent for a resolved one.',
+        'The trap plants five shapes on the test database - including a trigger that',
+        'reroutes EVERYTHING, the nastiest of them, because it looks like it works.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
+
+    # v3.74.939 - a stale index.lock appeared DURING the battery (a guard that
+    # shells out to git leaves one behind), the commit failed, `git push` then
+    # said "Everything up-to-date" and the banner declared success. THE SCRIPT
+    # LIED ABOUT ITS OWN RELEASE. Deleting the lock at the top is not enough:
+    # it has to be gone at the moment of the commit.
+    if (Test-Path -LiteralPath ".git/index.lock") {
+        Write-Host "! a stale .git/index.lock was left by an earlier step - removing it" -ForegroundColor Yellow
+        Remove-Item -LiteralPath ".git/index.lock" -Force -ErrorAction SilentlyContinue
+    }
+
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "X git commit FAILED - nothing was recorded. NOT pushing." -ForegroundColor Red
+        Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
     Remove-Item -LiteralPath $msgPath -Force -ErrorAction SilentlyContinue
 }
 
-git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.938 pushed - the purchase orders, and the API hole 936 shipped" -ForegroundColor Green
+# -- the commit is not assumed: it is READ BACK -------------------------
+# An exit code says the command returned; only the log says the release exists.
+$headSubject = git log -1 --format=%s
+if ($headSubject -notmatch [regex]::Escape("v3.74.939")) {
+    Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
+    exit 1
 }
+Write-Host "+ the commit is on HEAD: $headSubject" -ForegroundColor Green
+
+git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
+if ($LASTEXITCODE -ne 0) { Write-Host "X git push failed" -ForegroundColor Red; exit 1 }
+
+# -- and neither is the push: the remote is READ BACK -------------------
+# "Everything up-to-date" is exit 0. It means nothing was sent - which is a
+# success only if the remote already has this commit.
+$localHead  = (git rev-parse HEAD).Trim()
+$remoteHead = (git rev-parse origin/main).Trim()
+if ($localHead -ne $remoteHead) {
+    Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
+    exit 1
+}
+Write-Host "`n+ v3.74.939 pushed - a notification reaches a person, and the alarm stops crying wolf" -ForegroundColor Green
+Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray
