@@ -220,6 +220,34 @@ async function withDatabase(work) {
           (!missing.length && !extra.length ? " - same columns in a different order" : ""))
       }
 
+      // ── (٣ب) وشاهدُ الحجب لا يقبل الفراغ فى الجدول ────────────────────
+      //
+      // v3.74.938 — تقرأ الواجهةُ `null` فى عمودٍ مقنَّعٍ فتقول «محجوب».
+      // وهذا صحيحٌ **بشرط** ألا يكون العمودُ يقبل الفراغ أصلاً — وإلا التبس
+      // «محجوبٌ عنك» بـ«لا قيمةَ هنا»، فظهرت «—» لمن يملك الرؤية (حجبٌ
+      // كاذبٌ يراه الجميع) أو ظهر رقمٌ لمن حُجب عنه.
+      //
+      // فالشاهدُ المستعمَل فى الواجهة (`total_amount` فى الرؤوس، `unit_price`
+      // فى البنود) يجب أن يكون `NOT NULL` هنا. ولو أُسقط القيدُ يوماً
+      // **صاح الحارسُ بدل أن يصمت الحجب**.
+      const witness = t.probe.replace(/^v\./, "")
+      const { rows: wit } = await client.query(
+        `SELECT a.attnotnull
+           FROM pg_attribute a
+           JOIN pg_class c ON c.oid = a.attrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname='public' AND c.relname=$1 AND a.attname=$2 AND a.attnum > 0`,
+        [t.base, witness])
+      if (wit.length === 0) {
+        problems.push(`${t.base}.${witness} is gone - the UI has no witness left to tell "hidden" from "no value"`)
+      } else if (!wit[0].attnotnull) {
+        problems.push(
+          `${t.base}.${witness} is nullable - the screens read a null there as "hidden from you", ` +
+          `so a genuinely empty value would show a dash to someone allowed to see it`)
+      } else if (verbose) {
+        notes.push(`  ${t.base}.${witness} is NOT NULL - a null in ${view} can only mean hidden`)
+      }
+
       // ── (٤) والصلاحية: قراءةٌ لـ authenticated وحدها، ولا شىءَ لـ anon ─
       const { rows: grants } = await client.query(
         `SELECT grantee, privilege_type FROM information_schema.role_table_grants

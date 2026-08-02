@@ -25,6 +25,20 @@
  *
  * ملاحظة: هذا route جديد ولا يؤثر على أي route موجود.
  * الـ route القديم /api/bills يبقى كما هو.
+ *
+ * ═══ v3.74.938 — ثغرةٌ شُحنت فى 936 وأُغلقت هنا ═══
+ *
+ * حُوِّلت شاشةُ `app/bills/page.tsx` فى 936 لتقرأ من `bills_masked`، **لكن
+ * صفوفَ القائمة لا تأتى منها أصلاً**: تأتى من هنا. فكان الرأسُ مقنَّعاً فى
+ * ملفٍ لا يُستدعى، والمبالغُ الحقيقيةُ تعبر السلكَ من هذا الـ route.
+ *
+ * والدرسُ أعمُّ من الملف: **الشاشةُ المحوَّلة قد تأخذ مالَها من مصدرٍ آخر.**
+ * فصار الحارسُ يتتبّع كلَّ `/api/...` تناديه شاشةٌ محوَّلة ويقرأ دالةَ `GET`
+ * فيه — ومن قرأ عمودَ مالٍ من جدولٍ خام رُفض. ولا يكفى تحويلُ هذا الملف.
+ *
+ * وهذا الـ route يعمل **بجلسة المستخدم** (`createClient()` بمفتاح anon)، لا
+ * بمفتاح الخدمة — فالنافذةُ `security_invoker` تُطبَّق عليه كما تُطبَّق على
+ * المتصفح، ولا حاجةَ لأى تحقّقٍ إضافى هنا.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -37,6 +51,17 @@ const DEFAULT_PAGE_SIZE = 20
 /**
  * الـ select المستخدم — الحقول الضرورية فقط (Performance Optimization)
  */
+// v3.74.938 — ولماذا سقطت تلميحاتُ `!..._fkey` من هذا النصّ؟
+//
+// وثيقةُ PostgREST تضمن استنتاجَ العلاقات **للنافذة** من جداولها الأصل ما
+// دامت أعمدةُ المفتاح الأجنبى مذكورةً فى `SELECT` الأعلى — وهو مقيسٌ هنا
+// عموداً عموداً. أما استعمالُ **اسم القيد** تلميحاً فوق نافذةٍ فغيرُ
+// موثَّق، ولا يُبنى على غير الموثَّق مالٌ.
+//
+// والتلميحُ إنما يلزم عند تعدّد المفاتيح إلى نفس الجدول. وقِيس أن كلَّ
+// علاقةٍ هنا **واحدةٌ لا غير** (suppliers · branches · goods_receipts)،
+// فالتضمينُ بلا تلميحٍ غيرُ ملتبس. ولو أُضيف يوماً مفتاحٌ ثانٍ إلى نفس
+// الجدول فسيرفض PostgREST بصوتٍ عالٍ (PGRST201) لا بصمت.
 const BILL_SELECT = `
   id,
   supplier_id,
@@ -58,9 +83,9 @@ const BILL_SELECT = `
   cost_center_id,
   purchase_order_id,
   goods_receipt_id,
-  suppliers!bills_supplier_id_fkey (name, phone),
-  branches!bills_branch_id_fkey (name),
-  goods_receipts!goods_receipt_id (id, grn_number)
+  suppliers (name, phone),
+  branches (name),
+  goods_receipts (id, grn_number)
 `
 
 export async function GET(request: NextRequest) {
@@ -91,8 +116,10 @@ export async function GET(request: NextRequest) {
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
     const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
 
+    // v3.74.938 — المنفذُ المقنَّع لا الجدول: من ليس من جمهور التكلفة يقرأ
+    // `null` فى أعمدة المال ويعرضها المتصفحُ «—».
     let query = supabase
-      .from('bills')
+      .from('bills_masked')
       .select(BILL_SELECT, { count: 'exact' })
       .eq('company_id', governance.companyId)
       .neq('status', 'voided') // استثناء الفواتير الملغاة دائماً

@@ -19,7 +19,10 @@
  *   (هـ) السياسةُ تكتب الحكمَ بيدها بدل أن تُناديه      ⇒ يُرفض (انفصالُ
  *       الحكم إلى نسختين).
  *   (و) عمودٌ يسقط من النافذة                           ⇒ يُرفض (الانحراف).
- *   (ز) ثم تُعاد الحال                                   ⇒ يصمت الحارس.
+ *   (ز) شاهدُ الحجب يصير يقبل الفراغ                     ⇒ يُرفض (v3.74.938:
+ *       الواجهةُ تقرأ `null` فتقول «محجوب»، فلو قَبِل العمودُ الفراغَ أصلاً
+ *       التبس «محجوبٌ عنك» بـ«لا قيمةَ هنا»).
+ *   (ح) ثم تُعاد الحال                                   ⇒ يصمت الحارس.
  *
  * والاستعادةُ لا تُكتب بيدى: تُلتقط `pg_get_viewdef` قبل الزرع وتُعاد
  * حرفياً بعده — فلا تنحرف نسخةُ الفخّ عن نسخة الهجرة أبداً.
@@ -176,7 +179,18 @@ const grantsOf = (view) => `
       "drifted from bill_items",
       () => restoreView("bill_items_masked"))
 
-    // (ز) والحال الصحيحة تُقرأ سليمة
+    // (ز) شاهدُ الحجب يصير يقبل الفراغ
+    //
+    // v3.74.938 — الشاشاتُ تُميّز «محجوبٌ عنك» عن «لا قيمةَ هنا» بعمودٍ
+    // `NOT NULL` واحد. ولو أُسقط القيدُ فى هجرةٍ تالية لصار الفراغُ غامضاً
+    // **بلا أن يتغيّر حرفٌ فى الكود** — وهذا بالضبط ما لا يمسكه فحصٌ نصّى.
+    await stage(
+      "the hidden-money witness column turned nullable",
+      () => client.query("ALTER TABLE public.bills ALTER COLUMN total_amount DROP NOT NULL"),
+      "is nullable",
+      () => client.query("ALTER TABLE public.bills ALTER COLUMN total_amount SET NOT NULL"))
+
+    // (ح) والحال الصحيحة تُقرأ سليمة
     if (ok) {
       const r = runGuard()
       if (r.failed) {
@@ -192,11 +206,14 @@ const grantsOf = (view) => `
       for (const v of VIEWS) await restoreView(v)
       await restorePolicy()
       await restoreFn()
+      // v3.74.938 — والقيدُ يُعاد مهما وقع: فخٌّ يترك جدولاً أرخى من قبله
+      // أسوأُ من فخٍّ لا يوجد.
+      await client.query("ALTER TABLE public.bills ALTER COLUMN total_amount SET NOT NULL")
     } catch (e) { console.error(`! restore failed: ${e.message}`) }
     await client.end()
   }
 
   if (!ok) process.exit(1)
-  console.log("+ the masked-path guard is proven refusing all six shapes that would undo the hide,")
+  console.log("+ the masked-path guard is proven refusing all seven shapes that would undo the hide,")
   console.log("  and staying silent on the correct state (test database only).")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })

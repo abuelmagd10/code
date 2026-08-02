@@ -39,6 +39,7 @@
   ],
   "exclude": [
     "node_modules",
+    "_wip_*",
     "tests",
     "website",
     "supabase/functions",

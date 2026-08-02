@@ -6,145 +6,221 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.937 - the OLD script is removed, never this one. Five times a chained
+# v3.74.938 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.936.ps1") { Remove-Item -LiteralPath "push_v3.74.936.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.937.ps1") { Remove-Item -LiteralPath "push_v3.74.937.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.937"') {
-    Write-Host "+ 3.74.937" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.938"') {
+    Write-Host "+ 3.74.938" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.937]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.937]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.938]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.938]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# No migration: stage 2, second batch - the bill screen itself.
-$detail = "app/bills/[id]/page.tsx"
-$guard  = "scripts/check-purchase-money-direct-read.js"
-$trap   = "scripts/selftest-purchase-money-direct-read.js"
+# No migration: stage 2, third batch - the three purchase-order screens AND
+# the two API routes their rows actually come from.
+$list    = "app/purchase-orders/page.tsx"
+$detail  = "app/purchase-orders/[id]/page.tsx"
+$edit    = "app/purchase-orders/[id]/edit/page.tsx"
+$apiPo   = "app/api/v2/purchase-orders/route.ts"
+$apiBill = "app/api/v2/bills/route.ts"
+$lib     = "lib/purchase-money.ts"
+$guard   = "scripts/check-purchase-money-direct-read.js"
+$trap    = "scripts/selftest-purchase-money-direct-read.js"
+$dbGuard = "scripts/check-purchase-cost-masked-path.js"
+$dbTrap  = "scripts/selftest-purchase-cost-masked-path.js"
 
-$files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $detail, $guard, $trap,
-           "scripts/check-purchase-cost-masked-path.js",
+$files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md", "tsconfig.json",
+           $list, $detail, $edit, $apiPo, $apiBill, $lib,
+           $guard, $trap, $dbGuard, $dbTrap,
            "scripts/check-product-management-one-door.js",
-           "push_v3.74.937.ps1")
+           "push_v3.74.938.ps1")
 
-$d = Get-Content -LiteralPath $detail -Raw
-$g = Get-Content -LiteralPath $guard -Raw
-$t = Get-Content -LiteralPath $trap -Raw
+$l  = Get-Content -LiteralPath $list -Raw
+$d  = Get-Content -LiteralPath $detail -Raw
+$e  = Get-Content -LiteralPath $edit -Raw
+$ap = Get-Content -LiteralPath $apiPo -Raw
+$ab = Get-Content -LiteralPath $apiBill -Raw
+$lm = Get-Content -LiteralPath $lib -Raw
+$g  = Get-Content -LiteralPath $guard -Raw
+$t  = Get-Content -LiteralPath $trap -Raw
+$dg = Get-Content -LiteralPath $dbGuard -Raw
+$dt = Get-Content -LiteralPath $dbTrap -Raw
 
-# -- 1. the screen asks the rule, for THIS bill's branch ----------------
-if ($d -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
-    Write-Host "X the bill screen never asks whether the reader may see the cost" -ForegroundColor Red; exit 1
-}
-if ($d -notmatch [regex]::Escape("branch_id ?? null")) {
-    Write-Host "X it asks without the bill's branch - 914 would be undone" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the bill screen asks the rule, scoped to that bill's branch" -ForegroundColor Green
-
-# -- 2. what builds a document from a price is gated --------------------
-if ($d -notmatch [regex]::Escape("if (!canSeeCost)")) {
-    Write-Host "X the return dialog is not gated - it would build a return out of zeros" -ForegroundColor Red
+# -- 1. the rows come from the API, so the API reads the masked view -----
+# THIS IS THE HOLE 936 SHIPPED: app/bills/page.tsx was converted while the
+# route that actually feeds it kept reading the raw table. Masking a file
+# nobody calls hides nothing.
+if ($ab -notmatch [regex]::Escape(".from('bills_masked')")) {
+    Write-Host "X /api/v2/bills still reads the raw bills table - the 936 hole is open" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ the return dialog refuses before it reads a price it may not see" -ForegroundColor Green
+if ($ap -notmatch [regex]::Escape(".from('purchase_orders_masked')")) {
+    Write-Host "X /api/v2/purchase-orders still reads the raw table" -ForegroundColor Red; exit 1
+}
+Write-Host "+ both v2 routes serve their rows from the masked views" -ForegroundColor Green
 
-# -- 3. and the linked purchase order is never overwritten with a blank -
-# This screen copies the bill totals INTO the purchase order. Writing a
-# hidden amount there would corrupt a document nobody has open. Skipping
-# in silence is no better: the order keeps stale figures and nobody knows.
-if ($d -notmatch [regex]::Escape("billData.subtotal == null")) {
-    Write-Host "X the purchase-order sync does not check for a hidden amount" -ForegroundColor Red; exit 1
+# -- 2. and the guard now follows a screen to its /api source -------------
+if ($g -notmatch [regex]::Escape("apiPathsIn")) {
+    Write-Host "X the guard does not follow a converted screen to its /api source" -ForegroundColor Red
+    exit 1
 }
-if ($d -notmatch [regex]::Escape("throw new Error")) {
-    Write-Host "X the sync skips in silence instead of refusing out loud" -ForegroundColor Red; exit 1
+if ($g -notmatch [regex]::Escape("no app/api/**/route.ts matches it")) {
+    Write-Host "X an unresolvable /api path would pass unproven" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the purchase-order sync refuses out loud rather than writing a blank" -ForegroundColor Green
+if ($t -notmatch [regex]::Escape("a converted screen whose /api source reads the raw table")) {
+    Write-Host "X the trap does not prove the /api-source rule refuses" -ForegroundColor Red; exit 1
+}
+if ($t -notmatch [regex]::Escape("an /api route with no GET")) {
+    Write-Host "X the trap does not prove server-side work is spared" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the /api source of a converted screen is held to the same rule, and proven both ways" -ForegroundColor Green
 
-# -- 4. no lying zero on this screen either -----------------------------
-if ($d -match [regex]::Escape("{currencySymbol}{bill.total_amount.toLocaleString")) {
-    Write-Host "X the total card would print a figure for a hidden amount" -ForegroundColor Red; exit 1
+# -- 3. one home for the rule: no local role list on a converted screen ---
+# 934 removed isUpperRole from the products screen. The same shape lived on
+# here as canViewPurchasePrices - a second copy that drifts on first edit.
+if ($g -notmatch [regex]::Escape("LOCAL_ROLE_RULES")) {
+    Write-Host "X the guard does not refuse a local role list" -ForegroundColor Red; exit 1
 }
-if ($d -notmatch [regex]::Escape("HIDDEN_MONEY")) {
-    Write-Host "X the screen has no symbol for a hidden amount" -ForegroundColor Red; exit 1
+if ($g -notmatch [regex]::Escape("strip(raw, { strings: true })")) {
+    Write-Host "X the local-role search would read comments as code" -ForegroundColor Red; exit 1
 }
-Write-Host "+ hidden amounts read as a dash, not as a number" -ForegroundColor Green
+if ($t -notmatch [regex]::Escape("only in a comment or a string")) {
+    Write-Host "X the trap does not prove a comment is spared" -ForegroundColor Red; exit 1
+}
+Write-Host "+ a converted screen may not decide cost visibility from a local role list" -ForegroundColor Green
 
-# -- 5. a dropped connection is not a measurement ------------------------
-# Three runs died today on a transient drop, and one of them KILLED the
-# process with a raw stack instead of reporting - a guard that falls over at
-# random gets worked around within a week.
-foreach ($dbGuard in @("scripts/check-purchase-cost-masked-path.js",
-                       "scripts/check-product-management-one-door.js")) {
-    $gsrc = Get-Content -LiteralPath $dbGuard -Raw
-    if ($gsrc -notmatch [regex]::Escape("client.on(")) {
-        Write-Host "X $dbGuard has no error listener - a dropped socket would kill it" -ForegroundColor Red
+# -- 4. hidden is told from empty by a NOT NULL witness, and it is guarded -
+# A null in a masked column means two things. shipping defaults to zero and
+# accepts null, so measuring the hide on it would show a dash to EVERYONE on
+# an order with no shipping. The witness must be a column that cannot be null.
+if ($lm -notmatch [regex]::Escape("export function rowMoneyHidden")) {
+    Write-Host "X there is no single home for 'is this row hidden'" -ForegroundColor Red; exit 1
+}
+if ($dg -notmatch [regex]::Escape("attnotnull")) {
+    Write-Host "X the database guard does not check the witness column is NOT NULL" -ForegroundColor Red; exit 1
+}
+if ($dt -notmatch [regex]::Escape("the hidden-money witness column turned nullable")) {
+    Write-Host "X the trap does not plant a nullable witness" -ForegroundColor Red; exit 1
+}
+if ($dt -notmatch [regex]::Escape("SET NOT NULL")) {
+    Write-Host "X the trap would leave the table looser than it found it" -ForegroundColor Red; exit 1
+}
+Write-Host "+ 'hidden' cannot be confused with 'empty', and the constraint itself is watched" -ForegroundColor Green
+
+# -- 5. the edit screen is blocked, at load AND at save -------------------
+# Editing a PO rebuilds its totals from unit_price and copies them into the
+# linked bill. A blocked reader carrying on would write zeros into TWO real
+# documents.
+if ($e -notmatch [regex]::Escape('if (costGate !== "allowed")')) {
+    Write-Host "X the edit screen would open for someone who cannot read the prices" -ForegroundColor Red
+    exit 1
+}
+if (([regex]::Matches($e, [regex]::Escape('costGate !== "allowed"'))).Count -lt 2) {
+    Write-Host "X the gate is not repeated at save - a stale tab would still write" -ForegroundColor Red
+    exit 1
+}
+if ($e -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
+    Write-Host "X the edit screen never asks the rule" -ForegroundColor Red; exit 1
+}
+if ($e -notmatch [regex]::Escape("branch_id ?? null")) {
+    Write-Host "X it asks without this order's branch - 914 would be undone" -ForegroundColor Red; exit 1
+}
+Write-Host "+ the edit screen refuses at load and again at save, scoped to this order's branch" -ForegroundColor Green
+
+# -- 6. no lying zero, and no total summed over a hidden part -------------
+if ($l -match [regex]::Escape("if (!canViewPrices) return '***'")) {
+    Write-Host "X the list still masks by role instead of by data" -ForegroundColor Red; exit 1
+}
+foreach ($pair in @(@($list, $l), @($detail, $d))) {
+    if ($pair[1] -notmatch [regex]::Escape("sumOrHidden")) {
+        Write-Host "X $($pair[0]) sums money without refusing a hidden part" -ForegroundColor Red; exit 1
+    }
+    if ($pair[1] -notmatch [regex]::Escape("HIDDEN_MONEY")) {
+        Write-Host "X $($pair[0]) has no symbol for a hidden amount" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ hidden amounts read as a dash, and one hidden part hides the whole total" -ForegroundColor Green
+
+# -- 7. and the ratchet grew, in the same release ------------------------
+foreach ($f in @($list, $detail, $edit, $apiPo, $apiBill)) {
+    if ($g -notmatch [regex]::Escape("`"$f`"")) {
+        Write-Host "X $f was converted but not added to the guard - nobody watches it" -ForegroundColor Red
         exit 1
     }
-    if ($gsrc -notmatch [regex]::Escape("TRANSIENT")) {
-        Write-Host "X $dbGuard does not retry a transient drop" -ForegroundColor Red; exit 1
-    }
-    if ($gsrc -notmatch [regex]::Escape("problems.length = 0")) {
-        Write-Host "X $dbGuard would carry half a measurement into its retry" -ForegroundColor Red; exit 1
-    }
-}
-Write-Host "+ the database guards survive a dropped connection, and retry from a clean slate" -ForegroundColor Green
-
-# -- 5. and the ratchet grew ---------------------------------------------
-if ($g -notmatch [regex]::Escape('"app/bills/[id]/page.tsx"')) {
-    Write-Host "X the converted screen was not added to the guard - it would not be watched" -ForegroundColor Red
-    exit 1
 }
 if ($t -notmatch [regex]::Escape("a comment that merely mentions the table")) {
     Write-Host "X the trap no longer pins the comment false-positive" -ForegroundColor Red; exit 1
 }
-Write-Host "+ the converted screen joined the ratchet in the same release" -ForegroundColor Green
+Write-Host "+ all five converted files joined the ratchet in the same release" -ForegroundColor Green
 
-# -- 6. the battery below still proves the standing guards ----------------
-$self2 = Get-Content -LiteralPath "push_v3.74.937.ps1" -Raw
-if ($self2 -notmatch [regex]::Escape("check-je-default-status.js --prove --require-db")) {
-    Write-Host "X the push battery no longer proves the je-default guard" -ForegroundColor Red; exit 1
+# -- 7b. the scratch folders are OUT of the type-check graph -------------
+#
+# The staging folder _wip_NNN holds working COPIES of real screens. tsconfig
+# included **/*.ts and **/*.tsx from the repo root, so ten scratch files -
+# among them a second copy of app/bills/page.tsx - were being compiled as
+# part of the project. They passed by luck, not by design: an old copy that
+# still imports a removed export, or a probe file, fails the release for a
+# reason that has nothing to do with the release. Measured: 1181 files
+# before, 1171 after, 10 of them scratch.
+$ts = Get-Content -LiteralPath "tsconfig.json" -Raw
+if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
+    Write-Host "X tsconfig no longer excludes _wip_* - scratch copies would be type-checked" -ForegroundColor Red
+    exit 1
 }
-if ($self2 -notmatch [regex]::Escape("check-anon-open-tables.js --prove --require-db")) {
-    Write-Host "X the push battery no longer proves the anon-open guard" -ForegroundColor Red; exit 1
+Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
+
+# -- 8. a dropped connection is not a measurement ------------------------
+# Three runs died on a transient drop in one day, and one KILLED the process
+# with a raw stack instead of reporting - a guard that falls over at random
+# gets worked around within a week.
+foreach ($dbg in @("scripts/check-purchase-cost-masked-path.js",
+                   "scripts/check-product-management-one-door.js")) {
+    $gsrc = Get-Content -LiteralPath $dbg -Raw
+    if ($gsrc -notmatch [regex]::Escape("client.on(")) {
+        Write-Host "X $dbg has no error listener - a dropped socket would kill it" -ForegroundColor Red
+        exit 1
+    }
+    if ($gsrc -notmatch [regex]::Escape("TRANSIENT")) {
+        Write-Host "X $dbg does not retry a transient drop" -ForegroundColor Red; exit 1
+    }
+    if ($gsrc -notmatch [regex]::Escape("problems.length = 0")) {
+        Write-Host "X $dbg would carry half a measurement into its retry" -ForegroundColor Red; exit 1
+    }
 }
-if ($self2 -notmatch [regex]::Escape("selftest-products-branch-policy.js")) {
-    Write-Host "X the branch-rules guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
-}
-if ($self2 -notmatch [regex]::Escape("selftest-branch-isolation-holes.js")) {
-    Write-Host "X the branch-isolation guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
-}
-if ($self2 -notmatch [regex]::Escape("selftest-transfer-journal.js")) {
-    Write-Host "X the transfer-journal mechanism is not proven in this battery" -ForegroundColor Red; exit 1
-}
-if ($self2 -notmatch [regex]::Escape("selftest-purchase-cost-masked-path.js")) {
-    Write-Host "X the masked-path guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
-}
-if ($self2 -notmatch [regex]::Escape("selftest-cost-rule-has-one-home.js")) {
-    Write-Host "X the one-home guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
-}
-if ($self2 -notmatch [regex]::Escape("selftest-product-management-one-door.js")) {
-    Write-Host "X the products-door guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
-}
-if ($self2 -notmatch [regex]::Escape("selftest-purchase-money-direct-read.js")) {
-    Write-Host "X the direct-read guard is not proven refusing in this battery" -ForegroundColor Red; exit 1
+Write-Host "+ the database guards survive a dropped connection, and retry from a clean slate" -ForegroundColor Green
+
+# -- 9. the battery below still proves the standing guards ----------------
+$self2 = Get-Content -LiteralPath "push_v3.74.938.ps1" -Raw
+foreach ($needle in @("check-je-default-status.js --prove --require-db",
+                      "check-anon-open-tables.js --prove --require-db",
+                      "selftest-products-branch-policy.js",
+                      "selftest-branch-isolation-holes.js",
+                      "selftest-transfer-journal.js",
+                      "selftest-purchase-cost-masked-path.js",
+                      "selftest-cost-rule-has-one-home.js",
+                      "selftest-product-management-one-door.js",
+                      "selftest-purchase-money-direct-read.js")) {
+    if ($self2 -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the push battery no longer proves: $needle" -ForegroundColor Red; exit 1
+    }
 }
 Write-Host "+ the battery plants its probes and watches every guard refuse, every release" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# The snapshot mirrors the database, and this release rewrites two functions.
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.936.ps1" 2>$null
+git add -u -- "push_v3.74.937.ps1" 2>$null
 
-# -- 7. nothing staged beyond this release (the 872 lesson) --------------
-$expected = @($files) + @("push_v3.74.936.ps1")
+# -- 10. nothing staged beyond this release (the 872 lesson) -------------
+$expected = @($files) + @("push_v3.74.937.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -154,13 +230,13 @@ foreach ($p in $stagedNow) {
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
 
-Write-Host "Proving the direct-read guard refuses, and spares comments and writes..." -ForegroundColor Cyan
+Write-Host "Proving the direct-read guard refuses on all thirteen shapes, and spares the innocent..." -ForegroundColor Cyan
 node scripts/selftest-purchase-money-direct-read.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the direct-read guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
-Write-Host "Checking converted screens read purchase money through the masked path only..." -ForegroundColor Cyan
+Write-Host "Checking converted screens - and their /api sources - read money through the masked path only..." -ForegroundColor Cyan
 node scripts/check-purchase-money-direct-read.js --list
-if ($LASTEXITCODE -ne 0) { Write-Host "X a converted screen reads a table directly" -ForegroundColor Red; exit 1 }
+if ($LASTEXITCODE -ne 0) { Write-Host "X a converted screen or its /api source reads a table directly" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the products-door guard refuses all three shapes (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-product-management-one-door.js
@@ -178,7 +254,7 @@ Write-Host "Checking the cost rule has exactly one home..." -ForegroundColor Cya
 node scripts/check-cost-rule-has-one-home.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the cost rule has more than one home" -ForegroundColor Red; exit 1 }
 
-Write-Host "Proving the masked path refuses all six shapes (TEST database only)..." -ForegroundColor Cyan
+Write-Host "Proving the masked path refuses all seven shapes (TEST database only)..." -ForegroundColor Cyan
 node scripts/selftest-purchase-cost-masked-path.js
 if ($LASTEXITCODE -ne 0) { Write-Host "X the masked-path guard was not seen refusing" -ForegroundColor Red; exit 1 }
 
@@ -409,7 +485,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.936.ps1" 2>$null
+git add -u -- "push_v3.74.937.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -430,48 +506,65 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_937.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_938.txt"
     $msgLines = @(
-        'feat(security): v3.74.937 - the bill screen reads its money through the masked path',
+        'feat(security): v3.74.938 - the purchase orders, and the API hole 936 shipped',
         '',
-        'STAGE 2, SECOND BATCH: app/bills/[id]/page.tsx - the heaviest file of the',
-        'family. Ten read sites moved to the masked views; writes stay on the',
-        'tables.',
+        'STAGE 2, THIRD BATCH: the three purchase-order screens. But the most',
+        'important finding in this batch is NOT a screen.',
         '',
-        'TWO ACTIONS ON THIS SCREEN BUILD MONEY OUT OF WHAT THEY READ.',
+        'A CONVERTED SCREEN WAS TAKING ITS MONEY FROM SOMEWHERE ELSE.',
         '',
-        'The return dialog turns every line into quantity times unit_price and',
-        'inserts the result - the same shape closed in the bill list in 936. It now',
-        'refuses before it reads, and says why.',
+        'The purchase-order list does not query the table itself; it calls',
+        '/api/v2/purchase-orders. Opening that route showed the bill list is the',
+        'same shape: converted in 936 to read bills_masked, while its rows come',
+        'from app/api/v2/bills/route.ts, which read the raw table. THE MASKING WAS',
+        'IN A FILE NOBODY CALLS, and the amounts crossed the wire in full.',
         '',
-        'The second is worse and is new: changing a bill status COPIES THE BILL',
-        'TOTALS INTO THE LINKED PURCHASE ORDER. Reading a hidden amount and',
-        'carrying on would write blanks over correct figures IN A DOCUMENT NOBODY',
-        'HAS OPEN - a silent corruption discovered only much later. And skipping in',
-        'silence is no better: the order keeps stale numbers and nothing says so.',
-        'It now REFUSES OUT LOUD.',
+        'Both routes now read the masked views. Both run with the USER session',
+        '(anon key, not the service key), so the security_invoker view applies to',
+        'them exactly as it does in the browser.',
         '',
-        'MEASURED BEFORE CHOOSING TO REFUSE: bills.can_update on this company is',
-        'granted to the accountant, the admin and the owner only - the manager and',
-        'the viewer cannot change a bill status at all. The accountant and the owner',
-        'are both in the cost audience, so refusing blocks no real work today. The',
-        'admin is the one gap, and it is the already-recorded debt that',
-        'can_view_purchase_cost does not name admin while every other rule does -',
-        'with zero admin members in any company, measured.',
+        'AND THE CLASS WAS CLOSED, not just the instance: the guard now follows',
+        'every /api/... a converted screen calls, and any route that exposes a GET',
+        'is held to the same rule. An /api path that resolves to no route file is',
+        'refused too - what cannot be resolved cannot be proven clean.',
         '',
-        'AND THE PROPER LONG-TERM CURE IS RECORDED, not pretended: a document',
-        'consequence should never depend on who is looking, so the purchase-order',
-        'sync belongs on the server. Today the refusal is safe and measured; the',
-        'move is written into the handover rather than assumed done.',
+        'A SECOND HOME FOR THE RULE WAS REMOVED. All three screens decided price',
+        'visibility with canViewPurchasePrices - a local role table in',
+        'lib/validation.ts, the same shape deleted from the products screen in 934.',
+        'Two copies of one rule diverge on the first edit, and the difference shows',
+        'up as exposed money. What is displayed is now decided by the data itself:',
+        'a hidden amount arrives as null and reads as a dash with a tooltip.',
         '',
-        'NO LYING ZERO HERE EITHER: the total card, the net-of-returns line, the',
-        'line totals and the remaining-amount card all read as a dash when the',
-        'amount is hidden, and the remaining amount is null rather than',
-        'total-minus-paid computed from a blank.',
+        'HIDDEN AND EMPTY NO LONGER LOOK ALIKE. A null in a masked column means two',
+        'things, and shipping defaults to zero and accepts null - measuring the hide',
+        'on it would show a dash to EVERYONE on an order with no shipping. The hide',
+        'is measured on a NOT NULL witness (total_amount on heads, unit_price on',
+        'lines); all three were measured to be NOT NULL, and THE CONSTRAINT ITSELF',
+        'IS NOW GUARDED - the database guard refuses if a witness turns nullable,',
+        'and the trap plants exactly that on the test database and watches it refuse.',
         '',
-        'THE CONVERTED SCREEN JOINED THE RATCHET IN THE SAME RELEASE - a file',
-        'converted but not listed is a file nobody watches. Three screens converted,',
-        '141 direct reads remain elsewhere, printed every run.'
+        'THE EDIT SCREEN IS BLOCKED OUTRIGHT. Editing a purchase order rebuilds its',
+        'totals from the unit prices it read and copies them into the linked bill,',
+        'so a blocked reader carrying on would write zeros over real figures in TWO',
+        'documents. There is a gate at load and another at save, and the condition',
+        'is "not allowed" rather than "blocked" - if the check never answers, the',
+        'screen stays shut (865).',
+        '',
+        'NO LYING ZERO IN ANY TOTAL: the list totals and the detail cards go through',
+        'sumOrHidden - ONE HIDDEN PART HIDES THE WHOLE SUM - and the line discount',
+        'built from unit prices does the same. "Does it have returns?" is now asked',
+        'of return_status, which is not money and is never masked.',
+        '',
+        'Five files joined the ratchet in the same release. 120 direct reads remain',
+        'in screens not yet converted, printed on every run.',
+        '',
+        'ALSO: tsconfig now excludes the _wip_* staging folders. They hold working',
+        'COPIES of real screens, and the project include (**/*.ts, **/*.tsx from the',
+        'repo root) was compiling ten of them - including a second copy of',
+        'app/bills/page.tsx. They passed by luck. Measured: 1181 files in the graph',
+        'before, 1171 after. The push script now refuses if the exclusion is removed.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
     git commit -F $msgPath 2>&1 | ForEach-Object { Write-Host $_ }
@@ -480,5 +573,5 @@ if (-not $staged) {
 
 git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n+ v3.74.937 pushed - the bill screen reads its money through the masked path" -ForegroundColor Green
+    Write-Host "`n+ v3.74.938 pushed - the purchase orders, and the API hole 936 shipped" -ForegroundColor Green
 }

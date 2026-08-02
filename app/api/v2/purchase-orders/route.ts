@@ -29,6 +29,15 @@
  *
  * ملاحظة: هذا route جديد ولا يؤثر على أي route موجود.
  * الـ route القديم /api/purchase-orders/* يبقى كما هو.
+ *
+ * ═══ v3.74.938 — صفوفُ شاشة أوامر الشراء تأتى من هنا، لا من المتصفح ═══
+ *
+ * شاشةُ القائمة لا تسأل الجدولَ بنفسها: تنادى هذا الـ route. فلو حُوِّلت
+ * الشاشةُ وحدها لبقى المالُ يعبر السلكَ كاملاً من هنا — وهو ما وقع فعلاً فى
+ * فواتير الشراء (936) وأُصلح فى نفس هذا الإصدار.
+ *
+ * ويعمل هذا الـ route **بجلسة المستخدم** (`createClient()` بمفتاح anon) لا
+ * بمفتاح الخدمة، فالنافذةُ `security_invoker` تُطبَّق عليه كما على المتصفح.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -47,6 +56,17 @@ const DEFAULT_PAGE_SIZE = 20
 // أُضيفت لأن شاشة القائمة تعرض عمود «الشحن» منها ولم تكن تُرسل إطلاقاً، فكان
 // العمود «-» فى كل سطر ولو كان للأمر شركة شحنٍ وتكلفة (ملاحظة المالك 30/7).
 // تنبيه: لا تُكتب تعليقات داخل نص select — PostgREST يقرؤها أسماء أعمدة.
+// v3.74.938 — ولماذا سقطت تلميحاتُ `!..._fkey` من هذا النصّ؟
+//
+// وثيقةُ PostgREST تضمن استنتاجَ العلاقات **للنافذة** من جداولها الأصل ما
+// دامت أعمدةُ المفتاح الأجنبى مذكورةً فى `SELECT` الأعلى — وهو مقيسٌ هنا
+// عموداً عموداً. أما استعمالُ **اسم القيد** تلميحاً فوق نافذةٍ فغيرُ
+// موثَّق، ولا يُبنى على غير الموثَّق مالٌ.
+//
+// والتلميحُ إنما يلزم عند تعدّد المفاتيح إلى نفس الجدول. وقِيس أن كلَّ
+// علاقةٍ هنا **واحدةٌ لا غير** (suppliers · branches)،
+// فالتضمينُ بلا تلميحٍ غيرُ ملتبس. ولو أُضيف يوماً مفتاحٌ ثانٍ إلى نفس
+// الجدول فسيرفض PostgREST بصوتٍ عالٍ (PGRST201) لا بصمت.
 const PO_SELECT = `
   id,
   company_id,
@@ -69,8 +89,8 @@ const PO_SELECT = `
   cost_center_id,
   warehouse_id,
   created_by_user_id,
-  suppliers!purchase_orders_supplier_id_fkey (id, name, phone),
-  branches!purchase_orders_branch_id_fkey (name)
+  suppliers (id, name, phone),
+  branches (name)
 `
 
 export async function GET(request: NextRequest) {
@@ -101,8 +121,9 @@ export async function GET(request: NextRequest) {
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
     const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
 
+    // v3.74.938 — المنفذُ المقنَّع لا الجدول.
     let query = supabase
-      .from('purchase_orders')
+      .from('purchase_orders_masked')
       .select(PO_SELECT, { count: 'exact' }) // ← count: 'exact' يُعيد العدد الكامل
       .eq('company_id', governance.companyId)
 

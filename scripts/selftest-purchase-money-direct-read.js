@@ -4,6 +4,7 @@
  * ---------------------------------------------------------------------------
  * v3.74.936 — يُرى الحارس وهو يرفض، **وهو يُبقى البرىء** — والبرىءُ هنا
  * ليس فرضاً نظرياً: أولُ كتابةٍ للحارس رفضت جملةً فى تعليق.
+ * v3.74.938 — وأُضيف البابان الجديدان: مصدرُ `/api` وجدولُ الأدوار المحلى.
  *
  * يبنى شجرةً مؤقتةً بملفٍ واحدٍ مذكورٍ فى قائمة المحوَّل، ويزرع فيها:
  *   (أ) قراءةٌ مباشرة `.from("bills").select(...)`      ⇒ يُرفض.
@@ -15,6 +16,18 @@
  *       الشكلُ فى المشروع (930 · 932 · 934).
  *   (هـ) كتابةٌ على الجدول (معكوس)                       ⇒ يصمت — النافذةُ
  *       للقراءة، والكتابةُ تبقى على الجدول.
+ *   (و) شاشةٌ تنادى `/api` يقرأ `GET`ه الجدولَ الخام      ⇒ يُرفض. **وهذه
+ *       هى الثغرةُ التى شُحنت فعلاً فى 936 ولم يرها الحارسُ القديم.**
+ *   (ز) نفسُ المسار وقد صار يقرأ النافذة (معكوس)         ⇒ يصمت.
+ *   (ح) مسارٌ بلا `GET` يقرأ الجدولَ الخام (معكوس)       ⇒ يصمت — عملٌ
+ *       خادمىٌّ لا يُسلّم مالاً إلى المتصفح.
+ *   (ط) شاشةٌ تنادى `/api` لا وجودَ له                    ⇒ يُرفض — ما لا
+ *       يُحلّ لا يُثبت نظافتُه.
+ *   (ى) استعمالُ `canViewPurchasePrices` (بيتٌ ثانٍ للقاعدة) ⇒ يُرفض.
+ *   (ك) **ذِكرُ الاسم نفسِه فى تعليق أو سلسلة** (معكوس)  ⇒ يصمت — خامسُ
+ *       مرةٍ يُختبر فيها هذا الشكل: التعليقُ ليس تعليمة.
+ *   (ل) **مسارُ `/api` مذكورٌ فى تعليقٍ وحده** (معكوس)   ⇒ يصمت — والحارسُ
+ *       نفسُه كاد يقع فيها: كان يقرأ المساراتِ من النصِّ الخام.
  *
  * Usage: node scripts/selftest-purchase-money-direct-read.js
  * ---------------------------------------------------------------------------
@@ -54,22 +67,29 @@ function convertedList() {
   return [...block[1].matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1])
 }
 
-function tree(body) {
+/** الجسدُ البرىء: يقرأ النافذة ولا ينادى شيئاً. */
+const CLEAN = 'const x = supabase.from("bills_masked").select("*")\n'
+
+function tree(body, extra) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "purchase-money-"))
-  for (const rel of convertedList()) {
+  const write = (rel, text) => {
     const p = path.join(root, rel)
     fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, text)
+  }
+  for (const rel of convertedList()) {
     // الملفُّ محلُّ الزرع يأخذ الجسدَ المزروع، والبقيةُ نظيفةٌ كى لا
     // يشتكى الحارسُ من غيابها بحق.
-    fs.writeFileSync(p, rel === CONVERTED_FILE ? body : 'const x = supabase.from("bills_masked").select("*")\n')
+    write(rel, rel === CONVERTED_FILE ? body : CLEAN)
   }
+  for (const [rel, text] of Object.entries(extra || {})) write(rel, text)
   return root
 }
 
 let ok = true
-const stage = (title, body, mustFail, needle) => {
+const stage = (title, body, mustFail, needle, extra) => {
   if (!ok) return
-  const root = tree(body)
+  const root = tree(body, extra)
   const r = runGuard(root)
   fs.rmSync(root, { recursive: true, force: true })
   if (mustFail) {
@@ -111,6 +131,64 @@ stage("writes, which stay on the table",
   'await supabase.from("bill_items").insert(rows)\n',
   false)
 
+// ═══ v3.74.938 — البابُ الثانى: مصدرُ `/api` ══════════════════════════
+const RAW_GET = 'export async function GET() {\n' +
+  '  const { data } = await supabase.from("bills").select("id, total_amount")\n' +
+  '  return Response.json(data)\n}\n'
+const MASKED_GET = 'export async function GET() {\n' +
+  '  const { data } = await supabase.from("bills_masked").select("id, total_amount")\n' +
+  '  return Response.json(data)\n}\n'
+const RAW_POST = 'export async function POST() {\n' +
+  '  const { data } = await supabase.from("bills").select("id, total_amount")\n' +
+  '  return Response.json({ ok: !!data })\n}\n'
+
+stage("a converted screen whose /api source reads the raw table",
+  'const res = await fetch(`/api/v9/bills?${params.toString()}`)\n',
+  true, "directly and serves a converted screen",
+  { "app/api/v9/bills/route.ts": RAW_GET })
+
+stage("the same /api source, once it reads the masked view",
+  'const res = await fetch(`/api/v9/bills?${params.toString()}`)\n',
+  false, null,
+  { "app/api/v9/bills/route.ts": MASKED_GET })
+
+stage("an /api route with no GET, doing server-side work on the raw table",
+  'await fetch(`/api/v9/bills/${encodeURIComponent(id)}/void`, { method: "POST" })\n',
+  false, null,
+  { "app/api/v9/bills/[id]/void/route.ts": RAW_POST })
+
+stage("a converted screen calling an /api path that does not exist",
+  'const res = await fetch("/api/v9/ghost")\n',
+  true, "no app/api/**/route.ts matches it")
+
+// ⚠️ مسارٌ بمقطعٍ واحد (`/api/my-company`) مسارٌ صحيح. وأولُ كتابةٍ للحارس
+// أهملت كلَّ ما كان أقلَّ من مقطعين، فسقط منه مصدرٌ حقيقىٌّ فى الشجرة
+// الحقيقية بلا أن يشتكى أحد — **الحارسُ الصامتُ عن بابٍ كاملٍ أسوأ من غيابه**.
+stage("a one-segment /api source that reads the raw table",
+  'const res = await fetch("/api/whoami")\n',
+  true, "directly and serves a converted screen",
+  { "app/api/whoami/route.ts": RAW_GET })
+
+// ═══ v3.74.938 — البابُ الثالث: جدولُ أدوارٍ محلى ═════════════════════
+stage("a converted screen deciding cost visibility from a local role list",
+  'const canSee = canViewPurchasePrices(context)\n' +
+  'const { data } = await supabase.from("bills_masked").select("*")\n',
+  true, "a second home for a rule")
+
+stage("an /api path that appears only in a comment",
+  '// the old list used to call /api/v9/ghost before v3.74.900\n' +
+  'const { data } = await supabase.from("bills_masked").select("*")\n',
+  false)
+
+stage("the same names, but only in a comment or a string",
+  '// v3.74.938 - canViewPurchasePrices was removed; the rule lives in the database now\n' +
+  '/* PURCHASE_ORDER_ROLE_PERMISSIONS is gone too */\n' +
+  'const label = "isUpperRole is only a string here"\n' +
+  'const { data } = await supabase.from("bills_masked").select("*")\n',
+  false)
+
 if (!ok) process.exit(1)
-console.log("+ the direct-read guard is proven refusing a bare read and an unaliased nested embed,")
-console.log("  and sparing an aliased embed, a comment that names the table, and every write.")
+console.log("+ the direct-read guard is proven refusing a bare read, an unaliased nested embed,")
+console.log("  an /api source that stays raw, an unresolvable /api path, and a local role list -")
+console.log("  and sparing an aliased embed, a masked /api source, a POST-only route, every write,")
+console.log("  and the same names when they appear only in a comment or a string.")

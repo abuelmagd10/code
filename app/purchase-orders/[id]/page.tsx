@@ -12,7 +12,10 @@ import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { Pencil, ArrowRight, ArrowLeft, Loader2, Mail, Send, FileText, CreditCard, RotateCcw, DollarSign, Package, Receipt, ShoppingCart, Plus, CheckCircle, Clock, AlertCircle, Ban, Printer, XCircle } from "lucide-react"
-import { type UserContext, validatePurchaseOrderAction, canViewPurchasePrices } from "@/lib/validation"
+// v3.74.938 — `canViewPurchasePrices` (جدولُ أدوارٍ محلىٌّ فى `lib/validation.ts`)
+// رُفع: القاعدةُ بيتُها واحدٌ فى قاعدة البيانات، وما يُعرض يُقرَّر من البيانات.
+import { type UserContext, validatePurchaseOrderAction } from "@/lib/validation"
+import { money, sumOrHidden, isHiddenMoney, rowMoneyHidden, HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN } from "@/lib/purchase-money"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -57,7 +60,6 @@ export default function PurchaseOrderDetailPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [canSendOrder, setCanSendOrder] = useState(false)
   const [canReceiveOrder, setCanReceiveOrder] = useState(false)
-  const [canViewPrices, setCanViewPrices] = useState(false)
 
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState("")
@@ -142,14 +144,13 @@ export default function PurchaseOrderDetailPage() {
           role: role
         }
         setUserContext(context)
-        setCanViewPrices(canViewPurchasePrices(context))
 
         loadCompanyDetails(companyId)
       }
 
       // تحميل أمر الشراء مع suppliers (بدون created_by لأنه غير موجود في الجدول)
       const { data: poData, error: poError } = await supabase
-        .from("purchase_orders")
+        .from("purchase_orders_masked")
         .select("*, suppliers(*)")
         .eq("id", poId)
         .maybeSingle()
@@ -209,12 +210,12 @@ export default function PurchaseOrderDetailPage() {
 
         // Load linked bill status
         if (poData.bill_id) {
-          const { data: billData } = await supabase.from("bills").select("status").eq("id", poData.bill_id).single()
+          const { data: billData } = await supabase.from("bills_masked").select("status").eq("id", poData.bill_id).single()
           if (billData) setLinkedBillStatus(billData.status)
         }
       }
       const { data: itemsData } = await supabase
-        .from("purchase_order_items")
+        .from("purchase_order_items_masked")
         .select("*, products(name, sku)")
         .eq("purchase_order_id", poId)
       setItems(itemsData || [])
@@ -224,7 +225,7 @@ export default function PurchaseOrderDetailPage() {
       if (poData?.bill_id) billIds.push(poData.bill_id)
 
       const { data: billsData } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
         .or(`purchase_order_id.eq.${poId}${poData?.bill_id ? `,id.eq.${poData.bill_id}` : ''}`)
 
@@ -246,7 +247,7 @@ export default function PurchaseOrderDetailPage() {
 
         // Load purchase returns for all linked bills
         const { data: returnsData } = await supabase
-          .from("purchase_returns")
+          .from("purchase_returns_masked")
           .select("id, return_number, return_date, total_amount, status, reason, bill_id")
           .in("bill_id", billIdsArray)
           .order("return_date", { ascending: false })
@@ -260,7 +261,7 @@ export default function PurchaseOrderDetailPage() {
       if (uniqueBills.length > 0) {
         const billIdsArray = uniqueBills.map((b: any) => b.id)
         const { data: billItems } = await supabase
-          .from("bill_items")
+          .from("bill_items_masked")
           .select("product_id, quantity, bill_id")
           .in("bill_id", billIdsArray)
 
@@ -326,7 +327,7 @@ export default function PurchaseOrderDetailPage() {
 
     // جلب جميع الفواتير المرتبطة بأمر الشراء
     const { data: billsData } = await supabase
-      .from("bills")
+      .from("bills_masked")
       .select("id, bill_number, bill_date, due_date, total_amount, status, paid_amount, returned_amount, return_status, original_total")
       .or(`purchase_order_id.eq.${poId}${po?.bill_id ? `,id.eq.${po.bill_id}` : ''}`)
 
@@ -348,7 +349,7 @@ export default function PurchaseOrderDetailPage() {
 
       // جلب المرتجعات
       const { data: returnsData } = await supabase
-        .from("purchase_returns")
+        .from("purchase_returns_masked")
         .select("id, return_number, return_date, total_amount, status, reason, bill_id")
         .in("bill_id", billIdsArray)
         .order("return_date", { ascending: false })
@@ -357,7 +358,7 @@ export default function PurchaseOrderDetailPage() {
       // تحديث الكميات المفوترة في البنود
       if (billIdsArray.length > 0) {
         const { data: billItems } = await supabase
-          .from("bill_items")
+          .from("bill_items_masked")
           .select("product_id, quantity, bill_id")
           .in("bill_id", billIdsArray)
 
@@ -416,7 +417,11 @@ export default function PurchaseOrderDetailPage() {
   // Calculate summary
   const currency = po?.currency || 'EGP'
   const symbol = currencySymbols[currency] || currency
-  const total = Number(po?.total_amount || po?.total || 0)
+  // v3.74.938 — `total_amount` عمودٌ `NOT NULL` فى الجدول، ففراغُه شاهدُ الحجب.
+  // و«محجوب» ينتقل كـ`null` إلى موضع العرض، لا يصير صفراً فى منتصف الطريق.
+  const moneyHidden = rowMoneyHidden((po as any)?.total_amount)
+  const total: number | null = po ? (moneyHidden ? null : Number((po as any).total_amount)) : null
+  const hint = appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR
 
   // ✅ حساب إجمالي المدفوع من جميع المدفوعات (نفس منطق صفحة الفواتير)
   // v3.74.552 — read base_currency_amount so FC payments contribute
@@ -430,8 +435,11 @@ export default function PurchaseOrderDetailPage() {
   }, [linkedPayments])
 
   // ✅ حساب إجمالي المرتجعات من جميع الفواتير المرتبطة (نفس منطق صفحة الفواتير)
+  // v3.74.938 — مجموعٌ ينقصه فاتورةٌ محجوبةٌ رقمٌ خاطئٌ يبدو صحيحاً.
+  // فإن كانت فى القائمة فاتورةٌ واحدةٌ محجوبةٌ عنى فالمجموع «—».
   const totalReturned = useMemo(() => {
-    return linkedBills.reduce((sum: number, b: any) => sum + Number(b.returned_amount || 0), 0)
+    return sumOrHidden(linkedBills.map((b: any) =>
+      rowMoneyHidden(b.total_amount) ? null : Number(b.returned_amount || 0)))
   }, [linkedBills])
 
   // ✅ حساب إجمالي الفواتير (نفس منطق صفحة الفواتير تماماً)
@@ -440,10 +448,7 @@ export default function PurchaseOrderDetailPage() {
     // في صفحة الفواتير: Bill Total = bill.total_amount مباشرة
     // في صفحة أمر الشراء: Total Billed = مجموع total_amount من جميع الفواتير المرتبطة
     const totalBilled = linkedBills.length > 0
-      ? linkedBills.reduce((sum, b) => {
-        // ✅ استخدام total_amount مباشرة (مثل صفحة الفواتير)
-        return sum + Number(b.total_amount || 0)
-      }, 0)
+      ? sumOrHidden(linkedBills.map((b: any) => b.total_amount ?? null))
       : 0
 
     // ✅ صافي المتبقي = إجمالي الفواتير - المدفوع - المرتجعات
@@ -451,7 +456,10 @@ export default function PurchaseOrderDetailPage() {
     //   remaining = total - paid - returned
     // بدون طرح المرتجعات كان الرقم بيبان أكبر من الحقيقة (مثال:
     // 4.34 بدل 3.31 على BILL-0001).
-    const netRemaining = totalBilled - totalPaid - totalReturned
+    // v3.74.938 — ومطروحٌ من مجهولٍ مجهول: لو حُجب أحدُ الطرفين فالصافى «—».
+    const netRemaining = (totalBilled === null || totalReturned === null)
+      ? null
+      : totalBilled - totalPaid - totalReturned
 
     return {
       totalBilled, // ✅ إجمالي الفواتير (total_amount من كل فاتورة)
@@ -459,7 +467,10 @@ export default function PurchaseOrderDetailPage() {
       totalReturned, // ✅ إجمالي المرتجعات (للعرض فقط)
       netRemaining // ✅ صافي المتبقي = total - totalBilled - totalPaid
     }
-  }, [linkedBills, totalPaid, total])
+    // v3.74.938 — `totalReturned` كان يُستعمل ولا يُذكر فى الاعتماد: قيمةٌ
+    // قديمةٌ كانت قد تبقى بعد تغيّر المرتجعات. وقد صار له أثرٌ أوضح الآن
+    // لأنه يحمل «محجوب» لا صفراً.
+  }, [linkedBills, totalPaid, totalReturned, total])
 
   // Calculate remaining quantities
   const remainingItems = useMemo(() => {
@@ -995,7 +1006,7 @@ export default function PurchaseOrderDetailPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Billed' : 'إجمالي الفواتير'}</p>
-                    <p className="text-lg font-bold text-blue-600">{symbol}{summary.totalBilled.toFixed(2)}</p>
+                    <p className="text-lg font-bold text-blue-600" title={summary.totalBilled === null ? hint : undefined}>{summary.totalBilled === null ? HIDDEN_MONEY : `${symbol}${summary.totalBilled.toFixed(2)}`}</p>
                   </div>
                 </div>
               </Card>
@@ -1017,18 +1028,18 @@ export default function PurchaseOrderDetailPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Total Returns' : 'إجمالي المرتجعات'}</p>
-                    <p className="text-lg font-bold text-orange-600">{symbol}{summary.totalReturned.toFixed(2)}</p>
+                    <p className="text-lg font-bold text-orange-600" title={summary.totalReturned === null ? hint : undefined}>{summary.totalReturned === null ? HIDDEN_MONEY : `${symbol}${summary.totalReturned.toFixed(2)}`}</p>
                   </div>
                 </div>
               </Card>
               <Card className="dark:bg-gray-800 dark:border-gray-700 p-3 sm:p-4">
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${summary.netRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
-                    <DollarSign className={`h-5 w-5 ${summary.netRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
+                  <div className={`p-2 rounded-lg ${summary.netRemaining !== null && summary.netRemaining > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-green-100 dark:bg-green-900/30'}`}>
+                    <DollarSign className={`h-5 w-5 ${summary.netRemaining !== null && summary.netRemaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Net Remaining' : 'صافي المتبقي'}</p>
-                    <p className={`text-lg font-bold ${summary.netRemaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{symbol}{summary.netRemaining.toFixed(2)}</p>
+                    <p className={`text-lg font-bold ${summary.netRemaining !== null && summary.netRemaining > 0 ? 'text-red-600' : 'text-green-600'}`} title={summary.netRemaining === null ? hint : undefined}>{summary.netRemaining === null ? HIDDEN_MONEY : `${symbol}${summary.netRemaining.toFixed(2)}`}</p>
                   </div>
                 </div>
               </Card>
@@ -1070,22 +1081,32 @@ export default function PurchaseOrderDetailPage() {
                   )}
 
                   {/* v3.74.411 - financial breakdown on the order info card */}
-                  {Number((po as any).subtotal || 0) > 0 && (
+                  {/* v3.74.938 — السطرُ يظهر إن كان له مبلغٌ **أو كان محجوباً**:
+                      إخفاءُ السطر كلِّه يقول «لا مجموعَ فرعى» وهو غيرُ صحيح. */}
+                  {(moneyHidden || Number((po as any).subtotal || 0) > 0) && (
                     <div className="flex justify-between pt-2 border-t dark:border-gray-700">
                       <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Subtotal' : 'المجموع الفرعى'}</span>
-                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).subtotal).toFixed(2)}</span>
+                      <span className="text-gray-900 dark:text-white" title={moneyHidden ? hint : undefined}>{moneyHidden ? HIDDEN_MONEY : `${symbol}${Number((po as any).subtotal).toFixed(2)}`}</span>
                     </div>
                   )}
                   {/* v3.74.453 — surface line-level discount (per-item %) so
                       the owner sees the full discount picture, not only
                       the document-level one. */}
                   {(() => {
-                    const lineDiscount = items.reduce((sum, it: any) => {
-                      const qty = Number(it.quantity || 0)
-                      const price = Number(it.unit_price || 0)
-                      const pct = Number(it.discount_percent || 0)
-                      return sum + (qty * price * pct / 100)
-                    }, 0)
+                    // v3.74.938 — خصمٌ يُبنى من `unit_price`: لو حُجب سعرُ بندٍ
+                    // واحدٍ فالخصمُ لا يُحسب. `sumOrHidden` تفرضها.
+                    const lineDiscount = sumOrHidden(items.map((it: any) =>
+                      isHiddenMoney(it.unit_price)
+                        ? null
+                        : Number(it.quantity || 0) * Number(it.unit_price) * Number(it.discount_percent || 0) / 100))
+                    if (lineDiscount === null) {
+                      return (
+                        <div className="flex justify-between text-red-600 dark:text-red-400" title={hint}>
+                          <span>{appLang === 'en' ? 'Line discount (items)' : 'خصم البنود (على كل صنف)'}</span>
+                          <span>{HIDDEN_MONEY}</span>
+                        </div>
+                      )
+                    }
                     return lineDiscount > 0 ? (
                       <div className="flex justify-between text-red-600 dark:text-red-400">
                         <span>{appLang === 'en' ? 'Line discount (items)' : 'خصم البنود (على كل صنف)'}</span>
@@ -1103,23 +1124,25 @@ export default function PurchaseOrderDetailPage() {
                             ? (appLang === 'en' ? ' (after tax)' : ' (بعد الضريبة)')
                             : ''}
                       </span>
-                      <span>
-                        {(po as any).discount_type === 'percent'
-                          ? `${Number((po as any).discount_value).toFixed(2)}%`
-                          : `-${symbol}${Number((po as any).discount_value).toFixed(2)}`}
+                      <span title={moneyHidden ? hint : undefined}>
+                        {moneyHidden
+                          ? HIDDEN_MONEY
+                          : (po as any).discount_type === 'percent'
+                            ? `${Number((po as any).discount_value).toFixed(2)}%`
+                            : `-${symbol}${Number((po as any).discount_value).toFixed(2)}`}
                       </span>
                     </div>
                   )}
-                  {Number((po as any).tax_amount || 0) > 0 && (
+                  {(moneyHidden || Number((po as any).tax_amount || 0) > 0) && (
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
-                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).tax_amount).toFixed(2)}</span>
+                      <span className="text-gray-900 dark:text-white" title={moneyHidden ? hint : undefined}>{moneyHidden ? HIDDEN_MONEY : `${symbol}${Number((po as any).tax_amount).toFixed(2)}`}</span>
                     </div>
                   )}
-                  {Number((po as any).shipping || 0) > 0 && (
+                  {(moneyHidden || Number((po as any).shipping || 0) > 0) && (
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Shipping' : 'الشحن'}</span>
-                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).shipping).toFixed(2)}</span>
+                      <span className="text-gray-900 dark:text-white" title={moneyHidden ? hint : undefined}>{moneyHidden ? HIDDEN_MONEY : `${symbol}${Number((po as any).shipping).toFixed(2)}`}</span>
                     </div>
                   )}
                   {Number((po as any).shipping_tax_rate || 0) > 0 && (
@@ -1128,16 +1151,16 @@ export default function PurchaseOrderDetailPage() {
                       <span className="text-gray-900 dark:text-white">{Number((po as any).shipping_tax_rate).toFixed(2)}%</span>
                     </div>
                   )}
-                  {Number((po as any).adjustment || 0) !== 0 && (
+                  {(moneyHidden || Number((po as any).adjustment || 0) !== 0) && (
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span>
-                      <span className="text-gray-900 dark:text-white">{symbol}{Number((po as any).adjustment).toFixed(2)}</span>
+                      <span className="text-gray-900 dark:text-white" title={moneyHidden ? hint : undefined}>{moneyHidden ? HIDDEN_MONEY : `${symbol}${Number((po as any).adjustment).toFixed(2)}`}</span>
                     </div>
                   )}
 
                   <div className="flex justify-between pt-2 border-t dark:border-gray-700">
                     <span className="text-gray-500 dark:text-gray-400 font-medium">{appLang === 'en' ? 'Order Total' : 'إجمالي الأمر'}</span>
-                    <span className="font-bold text-gray-900 dark:text-white">{symbol}{total.toFixed(2)}</span>
+                    <span className="font-bold text-gray-900 dark:text-white" title={total === null ? hint : undefined}>{total === null ? HIDDEN_MONEY : `${symbol}${total.toFixed(2)}`}</span>
                   </div>
                   {po.status === 'rejected' && po.rejection_reason && (
                     <div className="flex justify-between pt-2 border-t dark:border-red-900/30">
@@ -1192,7 +1215,7 @@ export default function PurchaseOrderDetailPage() {
                       className="data-[state=active]:bg-orange-100 data-[state=active]:text-orange-700 dark:data-[state=active]:bg-orange-900/30 dark:data-[state=active]:text-orange-300 flex items-center gap-1 sm:gap-2 text-xs sm:text-sm py-2"
                     >
                       <RotateCcw className="h-4 w-4 hidden sm:inline" />
-                      {appLang === 'en' ? 'Returns' : 'المرتجعات'} ({linkedBills.filter(b => Number((b as any).returned_amount || 0) > 0).length})
+                      {appLang === 'en' ? 'Returns' : 'المرتجعات'} ({linkedBills.filter(b => ['full', 'partial'].includes(String((b as any).return_status || ''))).length})
                     </TabsTrigger>
                   </TabsList>
                 </div>
@@ -1228,10 +1251,10 @@ export default function PurchaseOrderDetailPage() {
                               </span>
                             </td>
                             <td className="py-2 px-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">
-                              {canViewPrices ? `${symbol}${Number(item.unit_price).toFixed(2)}` : '***'}
+                              <span title={isHiddenMoney(item.unit_price) ? hint : undefined}>{isHiddenMoney(item.unit_price) ? HIDDEN_MONEY : `${symbol}${money(item.unit_price)}`}</span>
                             </td>
                             <td className="py-2 px-2 text-right font-medium text-gray-900 dark:text-white">
-                              {canViewPrices ? `${symbol}${Number(item.line_total).toFixed(2)}` : '***'}
+                              <span title={isHiddenMoney(item.line_total) ? hint : undefined}>{isHiddenMoney(item.line_total) ? HIDDEN_MONEY : `${symbol}${money(item.line_total)}`}</span>
                             </td>
                           </tr>
                         ))}
@@ -1264,7 +1287,7 @@ export default function PurchaseOrderDetailPage() {
                                 <Link href={`/bills/${bill.id}`} className="hover:underline">{bill.bill_number}</Link>
                               </td>
                               <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{bill.bill_date}</td>
-                              <td className="py-2 px-2 text-right font-medium text-gray-900 dark:text-white">{symbol}{Number(bill.total_amount).toFixed(2)}</td>
+                              <td className="py-2 px-2 text-right font-medium text-gray-900 dark:text-white" title={isHiddenMoney(bill.total_amount) ? hint : undefined}>{isHiddenMoney(bill.total_amount) ? HIDDEN_MONEY : `${symbol}${money(bill.total_amount)}`}</td>
                               <td className="py-2 px-2 text-center">
                                 {getStatusBadge(bill.status)}
                               </td>
@@ -1335,7 +1358,7 @@ export default function PurchaseOrderDetailPage() {
                             <tr key={ret.id} className="border-b dark:border-gray-700">
                               <td className="py-2 px-2 font-medium text-orange-600 dark:text-orange-400">{ret.return_number}</td>
                               <td className="py-2 px-2 text-gray-700 dark:text-gray-300">{ret.return_date}</td>
-                              <td className="py-2 px-2 text-right font-medium text-orange-600 dark:text-orange-400">{symbol}{Number(ret.total_amount).toFixed(2)}</td>
+                              <td className="py-2 px-2 text-right font-medium text-orange-600 dark:text-orange-400" title={isHiddenMoney(ret.total_amount) ? hint : undefined}>{isHiddenMoney(ret.total_amount) ? HIDDEN_MONEY : `${symbol}${money(ret.total_amount)}`}</td>
                               <td className="py-2 px-2 text-gray-700 dark:text-gray-300 truncate max-w-[200px]">{ret.reason || '-'}</td>
                             </tr>
                           ))}

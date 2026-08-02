@@ -21,7 +21,13 @@ import { getActiveCompanyId } from "@/lib/company";
 // ⚡ v2: Server-side pagination (الـ hook القديم usePagination محفوظ في lib/pagination.ts دون تغيير)
 import { buildPaginatedUrl } from "@/lib/server-pagination";
 import { DataPagination } from "@/components/data-pagination";
-import { type UserContext, canViewPurchasePrices, getAccessFilter } from "@/lib/validation";
+// v3.74.938 — `canViewPurchasePrices` كانت تُقرَّر من جدول أدوارٍ محلىٍّ فى
+// `lib/validation.ts`. وهذا **بيتٌ ثانٍ لنفس القاعدة** — وهو ما مُنع فى 934
+// حين حُذف `isUpperRole` من شاشة المنتجات. القاعدةُ واحدةٌ فى القاعدة
+// (`can_view_purchase_cost`)، وما يُعرض يُقرَّر من البيانات نفسها: المبلغُ
+// المحجوب يصل `null` فيُعرض «—».
+import { type UserContext, getAccessFilter } from "@/lib/validation";
+import { sumOrHidden, isHiddenMoney, rowMoneyHidden, HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN } from "@/lib/purchase-money";
 import { buildDataVisibilityFilter, applyDataVisibilityFilter, canAccessDocument, canCreateDocument } from "@/lib/data-visibility-control";
 import { useBranchFilter } from "@/hooks/use-branch-filter";
 import { BranchFilter } from "@/components/BranchFilter";
@@ -79,7 +85,12 @@ export default function PurchaseOrdersPage() {
   }, []);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<PurchaseOrder | null>(null);
-  const [linkedBills, setLinkedBills] = useState<Record<string, LinkedBill>>({});
+  // v3.74.938 — مبالغُ الفاتورة المرتبطة قد تصل محجوبةً (`null`). والنوعُ
+  // المشترك يعدها أرقاماً دائماً، فلو تُركت كما هى لكتب `|| 0` صفراً كاذباً.
+  type LinkedBillMasked = Omit<LinkedBill, 'total_amount' | 'paid_amount' | 'returned_amount'> & {
+    total_amount: number | null; paid_amount: number | null; returned_amount: number | null
+  };
+  const [linkedBills, setLinkedBills] = useState<Record<string, LinkedBillMasked>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
 
@@ -91,7 +102,6 @@ export default function PurchaseOrdersPage() {
 
   // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
   const branchFilter = useBranchFilter();
-  const [canViewPrices, setCanViewPrices] = useState(false);
   const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -198,7 +208,6 @@ export default function PurchaseOrdersPage() {
       role: role
     };
     setUserContext(context);
-    setCanViewPrices(canViewPurchasePrices(context));
 
     const accessFilter = getAccessFilter(role, user.id, member?.branch_id || null, member?.cost_center_id || null);
 
@@ -243,12 +252,19 @@ export default function PurchaseOrdersPage() {
     const billIds = newOrders.filter((o) => o.bill_id).map((o) => o.bill_id as string);
     if (billIds.length > 0) {
       const { data: bills } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("id, status, total_amount, paid_amount, returned_amount, return_status")
         .in("id", billIds);
-      const billMap: Record<string, LinkedBill> = {};
+      const billMap: Record<string, LinkedBillMasked> = {};
       (bills || []).forEach((b: any) => {
-        billMap[b.id] = { id: b.id, status: b.status, total_amount: b.total_amount || 0, paid_amount: b.paid_amount || 0, returned_amount: b.returned_amount || 0, return_status: b.return_status };
+        // v3.74.938 — كان `|| 0`: مبلغٌ محجوبٌ يصير صفراً **يُصدَّق**. المحجوبُ
+        // يبقى `null` حتى موضع العرض، فيُقرأ «—» لا «0.00».
+        billMap[b.id] = {
+          id: b.id, status: b.status, return_status: b.return_status,
+          total_amount: b.total_amount ?? null,
+          paid_amount: b.paid_amount ?? null,
+          returned_amount: b.returned_amount ?? null,
+        } as LinkedBillMasked;
       });
       setLinkedBills(billMap);
     } else {
@@ -259,7 +275,7 @@ export default function PurchaseOrdersPage() {
     const orderIds = newOrders.map((o) => o.id);
     if (orderIds.length > 0) {
       const { data: itemsData } = await supabase
-        .from("purchase_order_items")
+        .from("purchase_order_items_masked")
         .select("purchase_order_id, quantity, product_id")
         .in("purchase_order_id", orderIds);
       const productIds = [...new Set((itemsData || []).map((i: any) => i.product_id).filter(Boolean))];
@@ -274,7 +290,7 @@ export default function PurchaseOrdersPage() {
       // تحميل الكميات المرتجعة للصفحة الحالية فقط
       if (billIds.length > 0) {
         const { data: billItemsData } = await supabase
-          .from("bill_items")
+          .from("bill_items_masked")
           .select("bill_id, product_id, returned_quantity")
           .in("bill_id", billIds)
           .gt("returned_quantity", 0);
@@ -410,7 +426,7 @@ export default function PurchaseOrdersPage() {
 
       // ⚠️ Realtime لا يرسل البيانات المنضمة، لذا نجلبها من قاعدة البيانات
       const { data: fullOrder } = await supabase
-        .from("purchase_orders")
+        .from("purchase_orders_masked")
         .select("*, suppliers(name, phone), branches(name)")
         .eq("id", newOrder.id)
         .single();
@@ -435,7 +451,7 @@ export default function PurchaseOrdersPage() {
 
         // ⚠️ Fetch items for the new order to prevent it from disappearing if filtered by products
         const { data: itemsData } = await supabase
-          .from("purchase_order_items")
+          .from("purchase_order_items_masked")
           .select("purchase_order_id, quantity, product_id")
           .eq("purchase_order_id", newOrder.id);
 
@@ -470,7 +486,7 @@ export default function PurchaseOrdersPage() {
       // ⚠️ Realtime لا يرسل البيانات المنضمة (branches, suppliers)
       // لذا نجلب البيانات الكاملة من قاعدة البيانات لضمان دقة البيانات
       const { data: fullOrder } = await supabase
-        .from("purchase_orders")
+        .from("purchase_orders_masked")
         .select("*, suppliers(name, phone), branches(name)")
         .eq("id", newOrder.id)
         .single();
@@ -485,7 +501,7 @@ export default function PurchaseOrdersPage() {
           if (newOrder.bill_id) {
             // تحديث حالة الفاتورة المرتبطة
             const { data: bill } = await supabase
-              .from("bills")
+              .from("bills_masked")
               .select("id, status, total_amount, paid_amount, returned_amount, return_status")
               .eq("id", newOrder.bill_id)
               .single();
@@ -496,11 +512,11 @@ export default function PurchaseOrdersPage() {
                 [bill.id]: {
                   id: bill.id,
                   status: bill.status,
-                  total_amount: bill.total_amount,
-                  paid_amount: bill.paid_amount,
-                  returned_amount: bill.returned_amount,
+                  total_amount: bill.total_amount ?? null,
+                  paid_amount: bill.paid_amount ?? null,
+                  returned_amount: bill.returned_amount ?? null,
                   return_status: bill.return_status
-                }
+                } as LinkedBillMasked
               }));
             }
           }
@@ -658,52 +674,62 @@ export default function PurchaseOrdersPage() {
       type: 'currency',
       align: 'right',
       format: (_, row) => {
-        // 🔐 ERP Access Control: إخفاء الإجمالي لمن لا يرى أسعار الشراء.
-        // v3.74.905 — كانت «-» فتُقرأ نقصَ بيانات لا منعَ صلاحية (ملاحظة
-        // المالك الحية 30/7). «***» هى نفس لغة صفحة التفاصيل: محجوبٌ لا ناقص.
-        if (!canViewPrices) return '***';
-        const total = row.total_amount || 0;
+        // v3.74.938 — لا قائمةَ أدوارٍ هنا بعد اليوم. المبلغُ المحجوب يصل
+        // `null` من `purchase_orders_masked` فيُعرض «—» بتلميحٍ يشرح السبب،
+        // ولا يُعرض «***» يُظنّ عطباً ولا «0.00» يُصدَّق.
+        // `total_amount` عمودٌ `NOT NULL` فى الجدول، ففراغُه شاهدُ الحجب لا شاهدُ النقص.
+        const hint = appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR;
+        if (rowMoneyHidden((row as any).total_amount)) return <span title={hint}>{HIDDEN_MONEY}</span>;
+        const total = Number((row as any).total_amount);
         const symbol = currencySymbols[row.currency || 'SAR'] || row.currency || 'SAR';
         const linkedBill = row.bill_id ? linkedBills[row.bill_id] : null;
+        const fmt = (n: number) => `${symbol}${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+        // ⚠️ «مطروحٌ من مجهولٍ مجهول»: لو حُجب المدفوعُ أو المرتجعُ فالمتبقى
+        // لا يُحسب — `sumOrHidden` تُعيد `null` إن كان فى المجموعة محجوبٌ واحد.
+        const returnedAmount = linkedBill ? linkedBill.returned_amount : null;
+        const paidAmount = linkedBill ? linkedBill.paid_amount : null;
 
         // إذا كانت هناك فاتورة مرتبطة بها مرتجعات، نعرض التفاصيل
-        if (linkedBill && (linkedBill.returned_amount || 0) > 0) {
-          const returnedAmount = linkedBill.returned_amount || 0;
-          const paidAmount = linkedBill.paid_amount || 0;
-          const netRemaining = total - paidAmount - returnedAmount;
+        if (linkedBill && (linkedBill.return_status === 'full' || linkedBill.return_status === 'partial' || Number(returnedAmount ?? 0) > 0)) {
+          const netRemaining = (isHiddenMoney(paidAmount) || isHiddenMoney(returnedAmount))
+            ? null
+            : total - Number(paidAmount) - Number(returnedAmount);
 
           return (
             <div className="flex flex-col items-end gap-0.5 text-xs">
-              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-              <span className="text-red-600 dark:text-red-400">
-                {appLang === 'en' ? 'Ret:' : 'مرتجع:'} -{symbol}{returnedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span className="font-medium">{fmt(total)}</span>
+              <span className="text-red-600 dark:text-red-400" title={isHiddenMoney(returnedAmount) ? hint : undefined}>
+                {appLang === 'en' ? 'Ret:' : 'مرتجع:'} {isHiddenMoney(returnedAmount) ? HIDDEN_MONEY : `-${fmt(Number(returnedAmount))}`}
               </span>
-              {paidAmount > 0 && (
-                <span className="text-green-600 dark:text-green-400">
-                  {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              {(isHiddenMoney(paidAmount) || Number(paidAmount) > 0) && (
+                <span className="text-green-600 dark:text-green-400" title={isHiddenMoney(paidAmount) ? hint : undefined}>
+                  {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {isHiddenMoney(paidAmount) ? HIDDEN_MONEY : fmt(Number(paidAmount))}
                 </span>
               )}
-              <span className={`font-bold ${netRemaining > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
-                {appLang === 'en' ? 'Due:' : 'متبقي:'} {symbol}{netRemaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span
+                className={`font-bold ${netRemaining !== null && netRemaining > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}
+                title={netRemaining === null ? hint : undefined}
+              >
+                {appLang === 'en' ? 'Due:' : 'متبقي:'} {netRemaining === null ? HIDDEN_MONEY : fmt(netRemaining)}
               </span>
             </div>
           );
         }
 
         // إذا كانت هناك فاتورة مرتبطة بمدفوعات فقط (بدون مرتجعات)
-        if (linkedBill && (linkedBill.paid_amount || 0) > 0) {
-          const paidAmount = linkedBill.paid_amount || 0;
-          const remaining = total - paidAmount;
+        if (linkedBill && (isHiddenMoney(paidAmount) || Number(paidAmount) > 0)) {
+          const remaining = isHiddenMoney(paidAmount) ? null : total - Number(paidAmount);
 
           return (
             <div className="flex flex-col items-end gap-0.5 text-xs">
-              <span className="font-medium">{symbol}{total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-              <span className="text-green-600 dark:text-green-400">
-                {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {symbol}{paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <span className="font-medium">{fmt(total)}</span>
+              <span className="text-green-600 dark:text-green-400" title={isHiddenMoney(paidAmount) ? hint : undefined}>
+                {appLang === 'en' ? 'Paid:' : 'مدفوع:'} {isHiddenMoney(paidAmount) ? HIDDEN_MONEY : fmt(Number(paidAmount))}
               </span>
-              {remaining > 0 && (
-                <span className="text-yellow-600 dark:text-yellow-400 font-bold">
-                  {appLang === 'en' ? 'Due:' : 'متبقي:'} {symbol}{remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              {(remaining === null || remaining > 0) && (
+                <span className="text-yellow-600 dark:text-yellow-400 font-bold" title={remaining === null ? hint : undefined}>
+                  {appLang === 'en' ? 'Due:' : 'متبقي:'} {remaining === null ? HIDDEN_MONEY : fmt(remaining)}
                 </span>
               )}
             </div>
@@ -711,7 +737,7 @@ export default function PurchaseOrdersPage() {
         }
 
         // بدون فاتورة أو فاتورة بدون مدفوعات/مرتجعات
-        return `${symbol}${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+        return fmt(total);
       }
     },
     {
@@ -731,9 +757,14 @@ export default function PurchaseOrdersPage() {
           return shippingProviders.find(p => p.id === providerId)?.provider_name
             || (appLang === 'en' ? 'Provider' : 'شركة شحن');
         }
+        // v3.74.938 — تكلفةُ الشحن عمودُ مالٍ مقنَّع. و«-» هنا معناها «لا شحن»،
+        // فلا يجوز أن تعنى «محجوب» أيضاً — ولا يُقاس الحجبُ على `shipping`
+        // نفسِه لأنه يقبل الفراغ افتراضاً؛ يُقاس على شاهدٍ `NOT NULL`.
+        if (rowMoneyHidden((row as any).total_amount)) {
+          return <span title={appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR}>{HIDDEN_MONEY}</span>;
+        }
         const shippingCost = Number((row as any).shipping || 0);
         if (shippingCost > 0) {
-          if (!canViewPrices) return '***';
           const symbol = currencySymbols[row.currency || 'EGP'] || row.currency || '';
           return `${symbol}${shippingCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
         }
@@ -753,7 +784,9 @@ export default function PurchaseOrdersPage() {
           const orderStatus = (linkedBill && linkedBill.status !== 'draft' && row.bill_id)
             ? 'billed'
             : row.status;
-          const hasReturns = linkedBill && (linkedBill.returned_amount || 0) > 0;
+          // v3.74.938 — «هل لها مرتجعات؟» سؤالُ حالةٍ لا سؤالُ مبلغ:
+          // `return_status` ليس عمودَ مالٍ فيُقرأ دائماً، والمبلغُ قد يُحجب.
+          const hasReturns = linkedBill && (linkedBill.return_status === 'full' || linkedBill.return_status === 'partial');
           const returnStatus = linkedBill?.return_status;
 
           // تحديد نص حالة الفاتورة
@@ -851,10 +884,11 @@ export default function PurchaseOrdersPage() {
         );
       }
     }
-  // v3.74.905 — `canViewPrices` و`shippingProviders` يُحمَّلان بعد أول رسم،
-  // ولم يكونا فى قائمة الاعتماد: فالأعمدة كانت قد تُحسب مرة بحالةٍ قديمة
-  // (سعرٌ محجوب لمن يملك رؤيته، أو شركة شحنٍ بلا اسم). تُذكر صراحةً.
-  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite, orderItems, returnedQuantities, canViewPrices, shippingProviders]);
+  // v3.74.905 — `shippingProviders` يُحمَّل بعد أول رسم، ولم يكن فى قائمة
+  // الاعتماد: فالأعمدة كانت قد تُحسب مرة بحالةٍ قديمة (شركة شحنٍ بلا اسم).
+  // v3.74.938 — `canViewPrices` رُفع من القائمة لأنه رُفع من الشاشة كلِّها:
+  // ما يُعرض صار يُقرَّر من البيانات (`null` ⇒ «—») لا من جدول أدوارٍ محلى.
+  ], [appLang, linkedBills, permRead, permUpdate, permDelete, permWrite, orderItems, returnedQuantities, shippingProviders]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; label: { ar: string; en: string } }> = {
@@ -942,12 +976,14 @@ export default function PurchaseOrdersPage() {
     const draft = orders.filter((o: PurchaseOrder) => o.status === 'draft').length;
     const sent = orders.filter((o: PurchaseOrder) => o.status === 'sent').length;
     const billed = orders.filter((o: PurchaseOrder) => o.bill_id != null && o.bill_id !== '').length;
-    const totalValue = orders.reduce((sum: number, o: PurchaseOrder) => {
-      const orderTotal = o.total || o.total_amount || 0;
+    // v3.74.938 — مجموعٌ ينقصه بندٌ محجوبٌ رقمٌ خاطئٌ يبدو صحيحاً. فإن كان فى
+    // الصفحة أمرٌ واحدٌ محجوبٌ عنى فالمجموعُ كلُّه «—» — وهذا امتدادُ قرار 905
+    // نفسِه: «مَن حُجب عنه الجزء يُحجب عنه الكل».
+    const totalValue = sumOrHidden(orders.flatMap((o: PurchaseOrder) => {
       const linked = o.bill_id ? linkedBills[o.bill_id] : null;
-      const returnedAmount = linked?.returned_amount || 0;
-      return sum + (orderTotal - returnedAmount);
-    }, 0);
+      return [(o as any).total_amount ?? null,
+              linked ? (linked.returned_amount === null ? null : -Number(linked.returned_amount)) : 0];
+    }));
     return { total, draft, sent, billed, totalValue };
   }, [orders, totalCount, linkedBills]);
 
@@ -1158,12 +1194,12 @@ export default function PurchaseOrdersPage() {
                    footer={{
                       render: () => {
                         const totalOrders = totalCount
-                        const totalAmount = paginatedOrders.reduce((sum: number, o: PurchaseOrder) => {
-                          const orderTotal = o.total || o.total_amount || 0;
+                        // v3.74.938 — نفسُ قاعدة الإحصاء: محجوبٌ واحدٌ يحجب المجموع.
+                        const totalAmount = sumOrHidden(paginatedOrders.flatMap((o: PurchaseOrder) => {
                           const linked = o.bill_id ? linkedBills[o.bill_id] : null;
-                          const returnedAmount = linked?.returned_amount || 0;
-                          return sum + (orderTotal - returnedAmount);
-                        }, 0)
+                          return [(o as any).total_amount ?? null,
+                                  linked ? (linked.returned_amount === null ? null : -Number(linked.returned_amount)) : 0];
+                        }))
 
                         return (
                           <tr>
@@ -1175,14 +1211,19 @@ export default function PurchaseOrdersPage() {
                             <td className="px-3 py-4">
                               {/* v3.74.905 — الحماية كانت مسرحية: تُحجب أسعار
                                   السطور عمَّن لا يراها ثم يُطبع لهم المجموع
-                                  كاملاً هنا. مَن حُجب عنه الجزء يُحجب عنه الكل. */}
+                                  كاملاً هنا. مَن حُجب عنه الجزء يُحجب عنه الكل.
+                                  v3.74.938 — والقاعدةُ صارت فى الحساب نفسِه
+                                  (`sumOrHidden`) لا فى شرطِ عرضٍ يُنسى. */}
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center justify-between gap-4">
                                   <span className="text-sm text-gray-600 dark:text-gray-400">{appLang === 'en' ? 'Total Value:' : 'إجمالي القيمة:'}</span>
-                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                    {canViewPrices
-                                      ? totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                      : '***'}
+                                  <span
+                                    className="text-blue-600 dark:text-blue-400 font-semibold"
+                                    title={totalAmount === null ? (appLang === 'en' ? HIDDEN_MONEY_HINT_EN : HIDDEN_MONEY_HINT_AR) : undefined}
+                                  >
+                                    {totalAmount === null
+                                      ? HIDDEN_MONEY
+                                      : totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </div>
                               </div>

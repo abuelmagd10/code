@@ -87,6 +87,24 @@ export function money(value: number | string | null | undefined, digits = 2): st
   return n.toFixed(digits)
 }
 
+/**
+ * هل حُجبت مبالغُ هذا الصفِّ كلُّها؟
+ *
+ * ⚠️ **درس 938**: `null` فى عمودٍ مقنَّع يحتمل معنيين — «محجوبٌ عنك» و«لا
+ * قيمةَ أصلاً». وعمودٌ كـ`shipping` افتراضُه صفرٌ ويقبل الفراغ، فلو قيس
+ * الحجبُ عليه لظهرت «—» لكل أمرٍ بلا شحن — **حجبٌ كاذبٌ يراه الجميع**.
+ *
+ * فيُسأل عن **شاهدٍ لا يقبل الفراغ فى الجدول الأصل**: `total_amount` فى
+ * الرؤوس (`bills` · `purchase_orders` · `purchase_returns`)، و`unit_price`
+ * أو `line_total` فى البنود — كلُّها `NOT NULL` **مقيسةً**. ففراغُها لا يأتى
+ * إلا من التقنيع. والقيدُ نفسُه محروسٌ فى
+ * `scripts/check-purchase-cost-masked-path.js`، فإن سقط يوماً صاح الحارسُ
+ * بدل أن يصمت الحجب.
+ */
+export function rowMoneyHidden(witness: number | string | null | undefined): boolean {
+  return isHiddenMoney(witness)
+}
+
 /** هل هذا المبلغُ محجوبٌ عنى؟ (لتقرير عرضِ تلميحٍ أو تعطيلِ زر) */
 export function isHiddenMoney(value: number | string | null | undefined): boolean {
   if (value === null || value === undefined) return true

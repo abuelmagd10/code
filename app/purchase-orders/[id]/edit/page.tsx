@@ -23,6 +23,7 @@ import { ProductSearchSelect } from "@/components/ProductSearchSelect"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { TaxCodeSelect } from "@/components/forms/tax-code-select"
 import { computeDocumentTotals } from "@/lib/document-totals"
+import { fetchCanViewPurchaseCost } from "@/lib/purchase-money"
 
 interface Supplier {
   id: string
@@ -66,6 +67,13 @@ export default function EditPurchaseOrderPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [orderStatus, setOrderStatus] = useState<string>("draft")
   const [canEdit, setCanEdit] = useState(false)
+  // v3.74.938 — بوابةُ التكلفة، بنفس شكل شاشة تحرير الفاتورة (936).
+  // تحريرُ أمر الشراء **يعيد بناء مبالغه من `unit_price` المقروء**، ثم
+  // ينسخها إلى الفاتورة المرتبطة. فمن لا يقرأ الأسعار لو فُتحت له الشاشةُ
+  // لقرأ `null`، ولحسب `computeDocumentTotals` أصفاراً، ولكتبها فوق
+  // مبالغَ حقيقية **فى مستندين** — إتلافٌ صامتٌ لا حجب. وهذا قرارُ المالك
+  // حرفياً: تُمنع شاشاتُ التحرير كلياً بلا لبس.
+  const [costGate, setCostGate] = useState<"checking" | "allowed" | "blocked">("checking")
   const { checkPurchaseOrderPermissions, showPermissionError } = useOrderPermissions()
 
   const [appLang, setAppLang] = useState<'ar' | 'en'>(() => {
@@ -235,9 +243,17 @@ export default function EditPurchaseOrderPage() {
       setProducts(await attachProductCosts(supabase, (productsData || []) as any[]))
 
       // Load purchase order & items
-      const { data: order } = await supabase.from("purchase_orders").select("*").eq("id", orderId).single()
+      const { data: order } = await supabase.from("purchase_orders_masked").select("*").eq("id", orderId).single()
+
+      // v3.74.938 — السؤالُ عن **فرع هذا الأمر بعينه** (قاعدة 914)، وقبل
+      // قراءة البنود وملء النموذج: فلا يُبنى نموذجٌ من أرقامٍ لن تُقرأ.
+      const mayEditMoney = await fetchCanViewPurchaseCost(
+        supabase, activeCompanyId, (order as any)?.branch_id ?? null)
+      setCostGate(mayEditMoney ? "allowed" : "blocked")
+      if (!mayEditMoney) { setIsLoading(false); return }
+
       const { data: items } = await supabase
-        .from("purchase_order_items")
+        .from("purchase_order_items_masked")
         .select("*")
         .eq("purchase_order_id", orderId)
 
@@ -359,6 +375,19 @@ export default function EditPurchaseOrderPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // v3.74.938 — حارسٌ ثانٍ عند الحفظ: العرضُ قد يُتجاوز بنموذجٍ قديمٍ فى
+    // تبويبٍ مفتوح، **والحفظُ هو ما يُتلف** — هنا وفى الفاتورة المرتبطة معاً.
+    if (costGate !== "allowed") {
+      toast({
+        title: appLang === 'en' ? "Not allowed" : "غير مسموح",
+        description: appLang === 'en'
+          ? "You are not allowed to see or change purchase amounts."
+          : "غير مصرَّح لك برؤية مبالغ الشراء ولا بتغييرها.",
+        variant: "destructive",
+      })
+      return
+    }
 
     // التحقق من الصلاحيات قبل الحفظ
     if (!canEdit) {
@@ -491,7 +520,7 @@ export default function EditPurchaseOrderPage() {
       const syncLinkedBill = async () => {
         try {
           const { data: poData } = await supabase
-            .from("purchase_orders")
+            .from("purchase_orders_masked")
             .select("bill_id")
             .eq("id", orderId)
             .single()
@@ -607,6 +636,33 @@ export default function EditPurchaseOrderPage() {
         <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-orange-600" />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // v3.74.938 — بوابةُ التكلفة بعد التحميل وقبل النموذج: من لا يقرأ المبالغَ
+  // لا يرى نموذجاً نصفُ حقوله فارغ. رسالةٌ واضحةٌ خيرٌ من نموذجٍ كاذب.
+  //
+  // والشرطُ `!== "allowed"` لا `=== "blocked"`: لو انقطع التحميلُ قبل أن
+  // يُجاب السؤالُ بقيت الحالةُ "checking" — **والعجزُ عن التحقق يُغلق ولا
+  // يفتح** (درس 865). ولهذا يأتى بعد شاشة التحميل لا قبلها.
+  if (costGate !== "allowed") {
+    return (
+      <div className="flex min-h-screen bg-white dark:bg-slate-950" dir={appLang === 'ar' ? 'rtl' : 'ltr'}>
+        <main className="flex-1 md:mr-64 p-3 sm:p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+            <p className="text-amber-900 dark:text-amber-100 leading-7">
+              {appLang === 'en'
+                ? 'Editing a purchase order means rebuilding its amounts, and you are not allowed to see the purchase cost of this branch. You can still open the order to read its items and quantities.'
+                : 'تعديلُ أمر الشراء إعادةُ بناءٍ لمبالغه، وأنت غير مصرَّح لك برؤية تكلفة الشراء فى هذا الفرع. ويمكنك فتحُ الأمر لقراءة بنوده وكمياته.'}
+            </p>
+          </div>
+          <div className="mt-4">
+            <Button type="button" variant="outline" size="sm" onClick={() => router.push(`/purchase-orders/${orderId}`)}>
+              {appLang === 'en' ? 'Open the order' : 'فتح أمر الشراء'}
+            </Button>
           </div>
         </main>
       </div>
