@@ -6,201 +6,209 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.940 - the OLD script is removed, never this one. Five times a chained
+# v3.74.941 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.939.ps1") { Remove-Item -LiteralPath "push_v3.74.939.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.940.ps1") { Remove-Item -LiteralPath "push_v3.74.940.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.940"') {
-    Write-Host "+ 3.74.940" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.941"') {
+    Write-Host "+ 3.74.941" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.940]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.940]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.941]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.941]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$billsRoute = "app/api/v2/bills/route.ts"
-$poRoute    = "app/api/v2/purchase-orders/route.ts"
-$guard      = "scripts/check-purchase-money-direct-read.js"
-$trap       = "scripts/selftest-purchase-money-direct-read.js"
-$dbGuard    = "scripts/check-purchase-cost-masked-path.js"
+$migration = "supabase/migrations/20260802000002_v3_74_941_the_server_prices_the_return.sql"
+$guard     = "scripts/check-purchase-return-priced-by-the-bill.js"
+$trap      = "scripts/selftest-purchase-return-priced-by-the-bill.js"
+
+$applier   = "scripts/apply-migration-file.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $billsRoute, $poRoute, $guard, $trap, $dbGuard,
-           "push_v3.74.940.ps1")
+           $migration, $guard, $trap, $applier,
+           "push_v3.74.941.ps1")
 
-$bills = Get-Content -LiteralPath $billsRoute -Raw
-$po    = Get-Content -LiteralPath $poRoute    -Raw
-$g     = Get-Content -LiteralPath $guard      -Raw
-$t     = Get-Content -LiteralPath $trap       -Raw
-$dg    = Get-Content -LiteralPath $dbGuard    -Raw
+$m = Get-Content -LiteralPath $migration -Raw
+$g = Get-Content -LiteralPath $guard     -Raw
+$t = Get-Content -LiteralPath $trap      -Raw
+
+# The migration QUOTES the old broken shapes in its header, so that whoever
+# reads it in a year sees what was wrong. A check that greps the raw file would
+# then refuse the very release that fixes them. So the payload-money check below
+# runs on the CODE, with comment lines removed - the 936 lesson, in SQL.
+$mCode = ($m -split "`n" | Where-Object { $_.TrimStart() -notmatch '^--' }) -join "`n"
 
 # ===========================================================================
-# 940 - THE LIVE OUTAGE. The bill list said "no bills yet" for every user.
-# 938 dropped the embed hints on the argument that "every relationship here
-# is single" - and that argument was measured on ONE DIRECTION ONLY: the
-# foreign keys leaving `bills`. The reverse direction was never asked about:
-#
-#   bills.goods_receipt_id  -> goods_receipts   (bills_goods_receipt_id_fkey)
-#   goods_receipts.bill_id  -> bills            (goods_receipts_bill_id_fkey)
-#
-# Two relationships between the same pair. An unhinted embed is ambiguous,
-# PostgREST refuses with PGRST201, the route answers 500, and the screen
-# shows its empty state. Rule eleven, exactly: the question and the
-# measurement have to fall on the same scope.
+# 941 - THE BROWSER PRICED THE PURCHASE RETURN. Measured, not inferred: the
+# only two purchase returns on production sit on the SAME bill, the SAME line,
+# the SAME quantity and the SAME discount - and carry DIFFERENT values (0.90
+# and 0.77). One was born under the pre-515 formula, the other after it. The
+# number was never derived from anything; it was whatever the screen computed
+# at that moment. And COALESCE(...,0) turned a MISSING price into zero in
+# silence, which is worse than refusing.
 # ===========================================================================
 
-# -- 1. the head is read ALONE: no embed survives in either select ---------
-# The cure does not depend on inference at all. Not a better hint - no hint,
-# because there is nothing left to infer.
-if ($bills -notmatch '(?s)const BILL_SELECT = `(.*?)`') {
-    Write-Host "X BILL_SELECT is gone - the bills route no longer names its columns" -ForegroundColor Red
-    exit 1
-}
-$billSel = $Matches[1]
-if ($billSel -match '\(') {
-    Write-Host "X BILL_SELECT embeds another table again - PGRST201 would empty the list a second time" -ForegroundColor Red
-    exit 1
-}
-if ($po -notmatch '(?s)const PO_SELECT = `(.*?)`') {
-    Write-Host "X PO_SELECT is gone - the purchase-orders route no longer names its columns" -ForegroundColor Red
-    exit 1
-}
-$poSel = $Matches[1]
-if ($poSel -match '\(') {
-    Write-Host "X PO_SELECT embeds another table again - the same outage, one release later" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ both routes read the head alone - no embed left to be made ambiguous by tomorrow's foreign key" -ForegroundColor Green
-
-# -- 2. and the names are STITCHED, so the response shape is unchanged -----
-# The client reads r.suppliers / r.branches / r.goods_receipts. Removing the
-# embed without rebuilding those keys would trade an empty list for a list
-# with no supplier names - a quieter version of the same defect.
-foreach ($needle in @("r.suppliers = r.supplier_id",
-                      "r.branches = r.branch_id",
-                      "r.goods_receipts = r.goods_receipt_id",
-                      "from('goods_receipts')")) {
-    if ($bills -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the bills route no longer stitches: $needle" -ForegroundColor Red; exit 1
+# -- 1. no writer takes money from the request any more -------------------
+foreach ($shape in @("COALESCE((v_item->>'unit_price')",
+                     "COALESCE((v_item->>'line_total')",
+                     "COALESCE((p_purchase_return->>'total_amount')",
+                     "COALESCE((p_purchase_return->>'subtotal')",
+                     "COALESCE((v_group->>'total_amount')",
+                     "p_bill_update->>'total_amount'")) {
+    if ($mCode -match [regex]::Escape($shape)) {
+        Write-Host "X the migration still takes money from the request: $shape" -ForegroundColor Red
+        exit 1
     }
 }
-foreach ($needle in @("o.suppliers = o.supplier_id",
-                      "o.branches = o.branch_id")) {
-    if ($po -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the purchase-orders route no longer stitches: $needle" -ForegroundColor Red; exit 1
+Write-Host "+ no money is read from the request - not the line, not the header, not the bill total" -ForegroundColor Green
+
+# -- 2. the pricing rule has ONE home, and all three writers call it ------
+# Three functions repeated the formula and three places in the screen repeated
+# it, and they drifted. The rule is written once now.
+if ($m -notmatch [regex]::Escape("CREATE OR REPLACE FUNCTION public.purchase_return_priced_line")) {
+    Write-Host "X there is no single home for how a return line is priced" -ForegroundColor Red; exit 1
+}
+$calls = ([regex]::Matches($m, [regex]::Escape("public.purchase_return_priced_line("))).Count
+if ($calls -lt 7) {
+    Write-Host "X the pricing home is called $calls time(s) - a writer prices on its own again" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ the pricing rule has one home, called from every writer ($calls call sites)" -ForegroundColor Green
+
+# -- 3. and a disagreeing number is REFUSED, naming both --------------------
+# The owner's ruling (2 August): refuse and say why. "Rejected" with no numbers
+# fixes no screen and exposes no tampering.
+if ($m -notmatch [regex]::Escape("CREATE OR REPLACE FUNCTION public.assert_purchase_return_amount")) {
+    Write-Host "X a disagreeing amount is not refused at all" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch [regex]::Escape("يخالف المحسوبَ من الفاتورة")) {
+    Write-Host "X the refusal does not carry the sent value and the bill's value" -ForegroundColor Red; exit 1
+}
+if ($m -notmatch [regex]::Escape("الغيابُ خطأٌ لا صفر")) {
+    Write-Host "X a missing price would silently become zero again" -ForegroundColor Red; exit 1
+}
+Write-Host "+ a disagreeing amount is refused by name and number, and a missing price is an error not a zero" -ForegroundColor Green
+
+# -- 4. the full-rights writers all pin their search_path ------------------
+# resubmit_purchase_return was SECURITY DEFINER with no search_path.
+$definer = ([regex]::Matches($m, [regex]::Escape("SECURITY DEFINER"))).Count
+$paths   = ([regex]::Matches($m, [regex]::Escape("SET search_path TO 'public', 'pg_catalog'"))).Count
+if ($paths -lt $definer) {
+    Write-Host "X $definer SECURITY DEFINER function(s) but only $paths pinned search_path(s)" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ every SECURITY DEFINER writer pins its search_path ($definer definer(s), $paths pinned)" -ForegroundColor Green
+
+# -- 5. the pricing home is not handed to an end user ---------------------
+foreach ($fn in @("purchase_return_bill_discount_ratio(uuid)",
+                  "purchase_return_priced_line(uuid, uuid, numeric)",
+                  "assert_purchase_return_amount(text, numeric, numeric, numeric, text)")) {
+    if ($m -notmatch [regex]::Escape("REVOKE ALL ON FUNCTION public.$fn FROM PUBLIC, anon, authenticated")) {
+        Write-Host "X $fn is not revoked from end users" -ForegroundColor Red; exit 1
     }
 }
-if ($bills -notmatch [regex]::Escape("data: rows")) {
-    Write-Host "X the bills route no longer returns the stitched rows" -ForegroundColor Red; exit 1
-}
-Write-Host "+ the supplier, branch and receipt names are stitched back - same keys, same shape, no embed" -ForegroundColor Green
+Write-Host "+ the pricing rule is called from inside, never by a caller" -ForegroundColor Green
 
-# -- 3. the guard REFUSES a new embed on a masked view --------------------
-# This defect was invisible to every guard in the repo: the file read the
-# masked view, so the rule said "converted". What broke was the embed on top
-# of it. The rule now names that shape.
-if ($g -notmatch [regex]::Escape("KNOWN_VIEW_EMBEDS")) {
-    Write-Host "X the guard has no pinned list - it cannot tell a new embed from an old one" -ForegroundColor Red
+# -- 6. the guard measures the EFFECT: it plants a return and looks --------
+if ($g -notmatch [regex]::Escape("process_purchase_return_atomic")) {
+    Write-Host "X the guard reads text instead of planting a real purchase return" -ForegroundColor Red; exit 1
+}
+if ($g -notmatch [regex]::Escape("ROLLBACK")) {
+    Write-Host "X the guard would leave its probes behind" -ForegroundColor Red; exit 1
+}
+if ($g -notmatch [regex]::Escape("the innocent is spared")) {
+    Write-Host "X the guard never checks that what the CURRENT screen sends still works" -ForegroundColor Red
     exit 1
 }
-if ($g -notmatch [regex]::Escape("PGRST201")) {
-    Write-Host "X the guard does not refuse an embed on a masked view - the outage could return" -ForegroundColor Red
+if ($g -notmatch [regex]::Escape("PINNED_LINE_TOTAL_DRIFT")) {
+    Write-Host "X the explained legacy divergence is not pinned - it would be forgiven silently" -ForegroundColor Red
     exit 1
 }
-# the pinned list is a RATCHET: it shrinks toward zero and never grows.
-$pinned = ([regex]::Matches($g, '"[a-z_]+_masked:[a-z_]+"')).Count
-if ($pinned -gt 5) {
-    Write-Host "X KNOWN_VIEW_EMBEDS grew to $pinned - a debt list that grows is not a ratchet" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ a NEW embed on a masked view is refused, and the pinned list is $pinned of 5 - shrink-only" -ForegroundColor Green
-
-# -- 4. and every pinned embed is RE-MEASURED on the database, both ways ---
-# A pinned pair is safe only while it stays single. The measurement asks in
-# BOTH directions - the exact question 938 failed to ask.
-if ($dg -notmatch [regex]::Escape("PINNED_VIEW_EMBEDS")) {
-    Write-Host "X the database guard no longer re-measures the pinned embeds" -ForegroundColor Red; exit 1
-}
-if ($dg -notmatch [regex]::Escape("(a.relname=`$1 AND b.relname=`$2) OR (a.relname=`$2 AND b.relname=`$1)")) {
-    Write-Host "X the pinned-embed measurement is one-directional again - that is how 938 broke" -ForegroundColor Red
-    exit 1
-}
-Write-Host "+ every pinned pair is counted on the live database in both directions, every release" -ForegroundColor Green
-
-# -- 5. the trap plants the new shape, and spares the old ones ------------
-foreach ($needle in @("a NEW embed on a masked view",
-                      "a PINNED embed from an earlier batch")) {
+foreach ($needle in @("the writer takes unit_price from the request again",
+                      "the refusal is emptied out",
+                      "anon granted execute on the pricing home",
+                      "resubmit loses its search_path",
+                      "the pricing home drifts away from what the screen sends")) {
     if ($t -notmatch [regex]::Escape($needle)) {
         Write-Host "X the trap no longer plants: $needle" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ the trap plants the new embed and watches the guard refuse it - and spare the pinned ones" -ForegroundColor Green
+Write-Host "+ the guard plants a real return and looks, and the trap plants all five shapes" -ForegroundColor Green
+
+# -- 7. the migration is APPLIED FROM THE FILE, never retyped into the DB --
+# I made this mistake in this very release: I applied the six functions by hand
+# through the dashboard, and the file on disk carried inner comments I did not
+# carry with them. All six fingerprints diverged, and check-migration-matches-db
+# would have refused the push - rightly. The cure is not to strip the file until
+# it agrees with the database; it is to apply THE FILE.
+$ap = Get-Content -LiteralPath $applier -Raw
+if ($ap -notmatch [regex]::Escape("pg_get_functiondef")) {
+    Write-Host "X the applier does not read back what it applied - an exit code is not a measurement" -ForegroundColor Red
+    exit 1
+}
+if ($ap -notmatch [regex]::Escape("name a target explicitly")) {
+    Write-Host "X the applier could touch production without being told to" -ForegroundColor Red; exit 1
+}
+Write-Host "+ migrations are applied from the file, and read back before being believed" -ForegroundColor Green
 
 # ===========================================================================
-# CARRIED FORWARD - the ratchets from 938 and 939 do not loosen here.
+# CARRIED FORWARD - the ratchets from 938, 939 and 940 do not loosen here.
 # ===========================================================================
-$migration = "supabase/migrations/20260802000001_v3_74_939_notifications_reach_a_person.sql"
-$m  = Get-Content -LiteralPath $migration -Raw
-$ng = Get-Content -LiteralPath "scripts/check-notifications-reach-a-person.js" -Raw
-$nt = Get-Content -LiteralPath "scripts/selftest-notifications-reach-a-person.js" -Raw
-
-if ($m -notmatch [regex]::Escape("BEFORE INSERT ON public.notifications")) {
-    Write-Host "X the routing rule is not a trigger on the table - 24 writers would bypass it" -ForegroundColor Red
+$bills = Get-Content -LiteralPath "app/api/v2/bills/route.ts" -Raw
+$po    = Get-Content -LiteralPath "app/api/v2/purchase-orders/route.ts" -Raw
+if ($bills -notmatch '(?s)const BILL_SELECT = `(.*?)`') {
+    Write-Host "X BILL_SELECT is gone - the bills route no longer names its columns" -ForegroundColor Red; exit 1
+}
+if ($Matches[1] -match '\(') {
+    Write-Host "X BILL_SELECT embeds another table again - PGRST201 would empty the list a second time" -ForegroundColor Red
     exit 1
 }
-if ($m -notmatch [regex]::Escape("company_role_has_holder")) {
-    Write-Host "X there is no single home for 'does anyone hold this role'" -ForegroundColor Red; exit 1
+if ($po -notmatch '(?s)const PO_SELECT = `(.*?)`') {
+    Write-Host "X PO_SELECT is gone" -ForegroundColor Red; exit 1
 }
-if ($m -notmatch [regex]::Escape("IF public.company_role_has_holder(NEW.company_id, NEW.assigned_to_role) THEN")) {
-    Write-Host "X the trigger does not spare a role that has a holder" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("IF v_owner IS NULL THEN")) {
-    Write-Host "X a company with no owner would lose the notification instead of keeping it" -ForegroundColor Red
+if ($Matches[1] -match '\(') {
+    Write-Host "X PO_SELECT embeds another table again - the same outage, one release later" -ForegroundColor Red
     exit 1
 }
-if ($m -notmatch [regex]::Escape("workflow_row_is_open")) {
-    Write-Host "X the staleness check still keys off the reference_type name" -ForegroundColor Red; exit 1
-}
-if ($m -notmatch [regex]::Escape("unverified_count")) {
-    Write-Host "X what the check cannot verify is not reported - it would be swallowed or cried over" -ForegroundColor Red
-    exit 1
-}
-if ($m -notmatch [regex]::Escape("ELSE TRUE")) {
-    Write-Host "X an unknown status would be treated as finished - work would vanish quietly" -ForegroundColor Red
-    exit 1
-}
-if ($ng -notmatch [regex]::Escape("INSERT INTO public.notifications")) {
-    Write-Host "X the routing guard reads text instead of planting a real notification" -ForegroundColor Red; exit 1
-}
-if ($ng -notmatch [regex]::Escape("ROLLBACK")) {
-    Write-Host "X the routing guard would leave its probes behind" -ForegroundColor Red; exit 1
-}
-foreach ($needle in @("the routing trigger dropped",
-                      "a trigger that reroutes even a role that HAS a holder",
-                      "a trigger that reroutes in silence",
-                      "the staleness check back on the 215 catch-all",
-                      "anon granted execute on the routing function")) {
-    if ($nt -notmatch [regex]::Escape($needle)) {
-        Write-Host "X the routing trap no longer plants: $needle" -ForegroundColor Red; exit 1
+foreach ($needle in @("r.suppliers = r.supplier_id", "r.goods_receipts = r.goods_receipt_id", "data: rows")) {
+    if ($bills -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the bills route no longer stitches: $needle" -ForegroundColor Red; exit 1
     }
 }
-Write-Host "+ 939 holds: the rule still sits on the table, the alarm still names what it cannot verify" -ForegroundColor Green
+$mvg = Get-Content -LiteralPath "scripts/check-purchase-money-direct-read.js" -Raw
+if ($mvg -notmatch [regex]::Escape("KNOWN_VIEW_EMBEDS") -or $mvg -notmatch [regex]::Escape("PGRST201")) {
+    Write-Host "X the masked-view embed rule is gone - the 940 outage could return" -ForegroundColor Red; exit 1
+}
+$pinned = ([regex]::Matches($mvg, '"[a-z_]+_masked:[a-z_]+"')).Count
+if ($pinned -gt 5) {
+    Write-Host "X KNOWN_VIEW_EMBEDS grew to $pinned - a debt list that grows is not a ratchet" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ 940 holds: both routes read the head alone, and the pinned embed list is $pinned of 5" -ForegroundColor Green
 
-# -- a dropped connection is not a measurement ---------------------------
-foreach ($dbgf in @("scripts/check-notifications-reach-a-person.js",
+$m939 = Get-Content -LiteralPath "supabase/migrations/20260802000001_v3_74_939_notifications_reach_a_person.sql" -Raw
+foreach ($needle in @("BEFORE INSERT ON public.notifications", "company_role_has_holder",
+                      "workflow_row_is_open", "unverified_count", "ELSE TRUE")) {
+    if ($m939 -notmatch [regex]::Escape($needle)) {
+        Write-Host "X 939 loosened: $needle" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ 939 holds: the routing rule still sits on the table, the alarm still names what it cannot verify" -ForegroundColor Green
+
+foreach ($dbgf in @("scripts/check-purchase-return-priced-by-the-bill.js",
+                    "scripts/check-notifications-reach-a-person.js",
                     "scripts/check-purchase-cost-masked-path.js",
                     "scripts/check-product-management-one-door.js")) {
     $gsrc = Get-Content -LiteralPath $dbgf -Raw
     if ($gsrc -notmatch [regex]::Escape("client.on(")) {
-        Write-Host "X $dbgf has no error listener - a dropped socket would kill it" -ForegroundColor Red
-        exit 1
+        Write-Host "X $dbgf has no error listener - a dropped socket would kill it" -ForegroundColor Red; exit 1
     }
     if ($gsrc -notmatch [regex]::Escape("TRANSIENT")) {
         Write-Host "X $dbgf does not retry a transient drop" -ForegroundColor Red; exit 1
@@ -211,16 +219,13 @@ foreach ($dbgf in @("scripts/check-notifications-reach-a-person.js",
 }
 Write-Host "+ the database guards survive a dropped connection, and retry from a clean slate" -ForegroundColor Green
 
-# -- the scratch folders stay out of the type-check graph (938) -----------
 $ts = Get-Content -LiteralPath "tsconfig.json" -Raw
 if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
-    Write-Host "X tsconfig no longer excludes _wip_* - scratch copies would be type-checked" -ForegroundColor Red
-    exit 1
+    Write-Host "X tsconfig no longer excludes _wip_*" -ForegroundColor Red; exit 1
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-# -- the battery below still proves the standing guards -------------------
-$self2 = Get-Content -LiteralPath "push_v3.74.940.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.941.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -230,7 +235,8 @@ foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "selftest-cost-rule-has-one-home.js",
                       "selftest-product-management-one-door.js",
                       "selftest-purchase-money-direct-read.js",
-                      "selftest-notifications-reach-a-person.js")) {
+                      "selftest-notifications-reach-a-person.js",
+                      "selftest-purchase-return-priced-by-the-bill.js")) {
     if ($self2 -notmatch [regex]::Escape($needle)) {
         Write-Host "X the push battery no longer proves: $needle" -ForegroundColor Red; exit 1
     }
@@ -239,10 +245,9 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.939.ps1" 2>$null
+git add -u -- "push_v3.74.940.ps1" 2>$null
 
-# -- nothing staged beyond this release (the 872 lesson) -----------------
-$expected = @($files) + @("push_v3.74.939.ps1")
+$expected = @($files) + @("push_v3.74.940.ps1")
 $stagedNow = git diff --cached --name-only
 foreach ($p in $stagedNow) {
     if ($expected -notcontains $p) {
@@ -251,6 +256,29 @@ foreach ($p in $stagedNow) {
     }
 }
 Write-Host "+ nothing is staged beyond this release's file list" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
+# A TWO-STEP PROCEDURE THAT MUST BE DONE IN ORDER IS A TRAP, AND I BUILT ONE.
+# This release's migration had to be applied before the push, by hand, in a
+# separate command. It was missed twice, and both times the battery ran to the
+# very end before refusing. A step that must be remembered is not a step: it is
+# a defect waiting for a tired evening. So the push applies its OWN migration,
+# from the file, and reads it back - and it does so FIRST, so a failure costs
+# seconds instead of the whole battery.
+Write-Host "Applying this release's migration from the file, and reading it back..." -ForegroundColor Cyan
+node scripts/apply-migration-file.js $migration --test --production
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "X the migration did not apply, or what runs differs from the file - NOT pushing" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Proving the pricing guard refuses all five shapes (TEST database only)..." -ForegroundColor Cyan
+node scripts/selftest-purchase-return-priced-by-the-bill.js
+if ($LASTEXITCODE -ne 0) { Write-Host "X the pricing guard was not seen refusing" -ForegroundColor Red; exit 1 }
+
+Write-Host "Measuring how a purchase return is priced, by planting one on the live database..." -ForegroundColor Cyan
+node scripts/check-purchase-return-priced-by-the-bill.js --require-db --list
+if ($LASTEXITCODE -ne 0) { Write-Host "X a purchase return can still be priced by whoever sends the request" -ForegroundColor Red; exit 1 }
 
 Write-Host "Proving the direct-read guard refuses on all fifteen shapes, and spares the innocent..." -ForegroundColor Cyan
 node scripts/selftest-purchase-money-direct-read.js
@@ -515,7 +543,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.939.ps1" 2>$null
+git add -u -- "push_v3.74.940.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -536,58 +564,79 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_940.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_941.txt"
     $msgLines = @(
-        'fix(security): v3.74.940 - the bill list is back, and no embed sits on a masked view again',
+        'fix(security): v3.74.941 - the server prices the purchase return, the browser is not asked',
         '',
-        'A LIVE OUTAGE I CAUSED IN 938. Every user opening purchase bills saw',
-        '"no bills yet". The screen was not empty - the request never returned.',
+        'A LIVE FINANCIAL-INTEGRITY HOLE, unrelated to the cost-hiding programme:',
+        'anyone who could create a purchase return could price it at whatever they',
+        'liked, and the ledger, the supplier balance and the inventory credit all',
+        'followed the browser.',
         '',
-        'WHAT I DID WRONG. 938 dropped the PostgREST embed hints on the argument',
-        'that "every relationship here is single". That argument was measured on',
-        'ONE DIRECTION ONLY - the foreign keys leaving bills. The reverse direction',
-        'was never asked about. Measured now, both ways:',
+        'FOUND BY MEASUREMENT, NOT BY READING. process_purchase_return_atomic locks',
+        'the bill_items row in its hands (FOR UPDATE) and then asks it about the',
+        'QUANTITY ONLY. The price came from the request:',
         '',
-        '  bills.goods_receipt_id  -> goods_receipts  (bills_goods_receipt_id_fkey)',
-        '  goods_receipts.bill_id  -> bills           (goods_receipts_bill_id_fkey)',
+        "  COALESCE((v_item->>'unit_price')::NUMERIC, 0)",
+        "  COALESCE((v_item->>'line_total')::NUMERIC, 0)",
+        "  COALESCE((p_purchase_return->>'total_amount')::NUMERIC, 0)",
+        "  total_amount = (p_bill_update->>'total_amount')::NUMERIC   -- the BILL itself",
         '',
-        'TWO relationships between the same pair of tables. An unhinted embed is',
-        'ambiguous, PostgREST refuses with PGRST201, the route answers 500, the',
-        'client throws, and the screen falls back to its empty state. This is rule',
-        'eleven exactly: THE QUESTION AND THE MEASUREMENT MUST FALL ON THE SAME',
-        'SCOPE. I asked about a pair of tables and measured one direction of it.',
+        'And the proof came from the data, not the code: the only two purchase',
+        'returns on production sit on the SAME bill, the SAME line, the SAME quantity',
+        'and the SAME discount - and carry DIFFERENT values. PRET-5689 is 0.90 (the',
+        'pre-515 formula, before the document discount ratio existed) and PRET-79328',
+        'is 0.77 (after it). Two documents for the same goods, 15% apart, because each',
+        'was born in a different browser build. The number was never derived from',
+        'anything. And COALESCE(...,0) turned a MISSING price into zero IN SILENCE -',
+        'a zero-valued return posted instead of a refusal.',
         '',
-        'THE CURE DOES NOT DEPEND ON INFERENCE AT ALL. Not a better hint - hints on',
-        'views are undocumented and would be a second bet on the same unseen schema',
-        'cache. Both routes now read the head ALONE and fetch the supplier, branch',
-        'and receipt names in a second query, stitched into the same response keys.',
-        'The client sees no difference. Nothing depends on a relationship graph that',
-        'a foreign key added tomorrow, in another table, can change.',
+        'THE CURE IS TO REMOVE THE AUTHORITY, NOT TO ADD A CHECK ON TOP OF IT. One',
+        'home for pricing - purchase_return_priced_line - called by all three writers,',
+        'so the rule cannot drift into three versions the way it already had. Price,',
+        'tax rate and discount come from THE BILL LINE THE RETURN RETURNS; line_total',
+        'is derived; the header is computed from the lines that were actually written.',
+        'The document discount ratio is computed from bills.subtotal over the sum of',
+        'bill_items.line_total instead of being sent - rounded to six places exactly as',
+        'the screen did, so no difference arises from rounding alone.',
         '',
-        'AND THE GUARD LEARNED THE SHAPE IT COULD NOT SEE. Every guard in the repo',
-        'called this file "converted": it read the masked view. What broke was the',
-        'EMBED ON TOP of the view - a shape no rule named. The direct-read guard now',
-        'refuses any embed on a *_masked view. It immediately surfaced EIGHT MORE',
-        'shipped in 936-938, across five distinct pairs. Those are pinned in a',
-        'shrink-only list - counted out loud in every run, never allowed to grow -',
-        'and the database guard now COUNTS THE RELATIONSHIPS OF EACH PINNED PAIR IN',
-        'BOTH DIRECTIONS on the live database, every release. The day one of them',
-        'becomes ambiguous, the push refuses instead of the screen emptying.',
+        'AND IT REFUSES OUT LOUD (the owner ruled on this, 2 August). Any disagreement',
+        'means either a screen computing wrongly or someone tampering, and both deserve',
+        'to be seen. Every refusal carries WHAT WAS SENT and WHAT THE BILL SAYS, the',
+        'field name, and the bill item id - diagnosable in a second, not an hour.',
         '',
-        'The trap plants a new embed and watches the guard refuse it, and plants a',
-        'pinned one and watches it be spared: fifteen shapes now, all proven.',
+        'THREE MORE CLOSED ALONG THE WAY: the vendor credit took its totals from the',
+        'browser too and could disagree with the return it was born from - it is copied',
+        'from it now. resubmit_purchase_return deleted the lines and rewrote them at',
+        'sent prices, so a return rejected on one price could come back at another -',
+        'and it was SECURITY DEFINER WITH NO search_path, now pinned. And the path that',
+        'let the request rewrite bills.total_amount is gone; measured, the screen never',
+        'reaches it (the return bill list is restricted to receipt_status = received,',
+        'which is exactly what makes isFinalizedBill always true), so it was alive only',
+        'in the API - that is, only for a crafted request.',
         '',
-        'THE HONEST PART: the eight pinned embeds are debt, not safety. They are',
-        'safe today by measurement, and the measurement is repeated every release',
-        'rather than remembered.'
+        'PROVEN LIVE ON PRODUCTION, ROLLED BACK: a forged price of 0.01 is refused',
+        'naming 0.01 and 1.00; the PRET-5689 formula (0.90 vs 0.77) is refused; and',
+        'WHAT THE CURRENT SCREEN SENDS IS ACCEPTED, writing 0.77/0.11/0.88 - the guard',
+        'refuses the wrong and spares the innocent. Zero probe rows remained. The six',
+        'function fingerprints (md5) are identical on production and test.',
+        '',
+        'NO DATA WAS REPAIRED: zero price divergence between every existing return line',
+        'and its bill line. The door was open and never walked through. The single',
+        'line_total divergence - PRET-5689 - is pinned BY NAME in the guard: explained,',
+        'not forgiven, and its count may not grow.',
+        '',
+        'The trap plants five shapes, the nastiest being an EMPTIED refusal function',
+        'that leaves every name in place so the text still reads perfectly - and a',
+        'fifth where the pricing rule drifts away from the screen, because a guard that',
+        'refuses the innocent is a defect, not protection.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
-    # v3.74.939 - a stale index.lock appeared DURING the battery (a guard that
-    # shells out to git leaves one behind), the commit failed, `git push` then
-    # said "Everything up-to-date" and the banner declared success. THE SCRIPT
-    # LIED ABOUT ITS OWN RELEASE. Deleting the lock at the top is not enough:
-    # it has to be gone at the moment of the commit.
+    # v3.74.939 - a stale index.lock appeared DURING the battery, the commit
+    # failed, `git push` said "Everything up-to-date" and the banner declared
+    # success. THE SCRIPT LIED ABOUT ITS OWN RELEASE. Deleting the lock at the
+    # top is not enough: it has to be gone at the moment of the commit.
     if (Test-Path -LiteralPath ".git/index.lock") {
         Write-Host "! a stale .git/index.lock was left by an earlier step - removing it" -ForegroundColor Yellow
         Remove-Item -LiteralPath ".git/index.lock" -Force -ErrorAction SilentlyContinue
@@ -603,9 +652,8 @@ if (-not $staged) {
 }
 
 # -- the commit is not assumed: it is READ BACK -------------------------
-# An exit code says the command returned; only the log says the release exists.
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.940")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.941")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -615,13 +663,11 @@ git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) { Write-Host "X git push failed" -ForegroundColor Red; exit 1 }
 
 # -- and neither is the push: the remote is READ BACK -------------------
-# "Everything up-to-date" is exit 0. It means nothing was sent - which is a
-# success only if the remote already has this commit.
 $localHead  = (git rev-parse HEAD).Trim()
 $remoteHead = (git rev-parse origin/main).Trim()
 if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.940 pushed - the bill list is back, and no embed sits on a masked view again" -ForegroundColor Green
+Write-Host "`n+ v3.74.941 pushed - the server prices the purchase return, the browser is not asked" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray

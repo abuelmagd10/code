@@ -11,7 +11,7 @@
  * On each release, bump this AND the `git commit` version together. The
  * release script `push_v3.X.Y.ps1` greps for this string as a safety check.
  */
-export const APP_VERSION = "3.74.940"
+export const APP_VERSION = "3.74.941"
 
 /**
  * Parse "major.minor.patch" into numeric parts. Bad input yields zeros.
