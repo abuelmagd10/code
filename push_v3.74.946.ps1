@@ -6,36 +6,124 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.945 - the OLD script is removed, never this one. Five times a chained
+# v3.74.946 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.944.ps1") { Remove-Item -LiteralPath "push_v3.74.944.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.945.ps1") { Remove-Item -LiteralPath "push_v3.74.945.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.945"') {
-    Write-Host "+ 3.74.945" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.946"') {
+    Write-Host "+ 3.74.946" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.945]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.945]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.946]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.946]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-$screen = "app/inventory/goods-receipt/page.tsx"
-$route  = "app/api/bills/[id]/confirm-receipt/route.ts"
-$mvg    = "scripts/check-purchase-money-direct-read.js"
+$screen  = "app/inventory/goods-receipt/page.tsx"
+$route   = "app/api/bills/[id]/confirm-receipt/route.ts"
+$mvg     = "scripts/check-purchase-money-direct-read.js"
+$inbox   = "app/approvals/page.tsx"
 
 $files = @("lib/version.ts", "CHANGELOG.md",
-           $screen, $mvg,
-           "push_v3.74.945.ps1")
+           $inbox, $mvg,
+           "push_v3.74.946.ps1")
 
 $s = Get-Content -LiteralPath $screen -Raw
 $r = Get-Content -LiteralPath $route  -Raw
 $g = Get-Content -LiteralPath $mvg    -Raw
+$a = Get-Content -LiteralPath $inbox  -Raw
+
+$aCode = [regex]::Replace($a, '(?s)/\*.*?\*/', '')
+$aCode = [regex]::Replace($aCode, '(?m)//.*$', '')
+
+# ===========================================================================
+# 946 - THE APPROVALS INBOX. The money here is not a column - it is BUILT INTO
+# SENTENCES that an approver reads and signs:
+#
+#     `${name} · ${qty} × ${Number(it.unit_price).toFixed(2)} = ${...}`
+#
+# Mask the read and leave that alone and the decision line reads
+# "item · 3 × 0.00 = 0.00": a FALSE NUMBER inside an approval document, which
+# is worse than an honest blank. So no toFixed may sit on purchase money in
+# this file, and every amount goes through money() / fmtMoney().
+# ===========================================================================
+foreach ($mview in @("bills_masked", "bill_items_masked",
+                     "purchase_orders_masked", "purchase_returns_masked",
+                     "purchase_return_items_masked")) {
+    if ($aCode -notmatch [regex]::Escape($mview)) {
+        Write-Host "X the approvals inbox no longer reads $mview" -ForegroundColor Red; exit 1
+    }
+}
+foreach ($raw in @('.from("bills")', '.from("bill_items")', '.from("purchase_orders")',
+                   '.from("purchase_returns")', '.from("purchase_return_items")',
+                   '.from("purchase_order_items")')) {
+    if ($aCode -match [regex]::Escape($raw)) {
+        Write-Host "X the approvals inbox went back to the raw table: $raw" -ForegroundColor Red; exit 1
+    }
+}
+Write-Host "+ the approvals inbox reads all six purchase tables through the masked views only" -ForegroundColor Green
+
+# ⚠️ AND A NOTE THAT COST A RUN: `.\push_*.ps1` HERE IS WINDOWS POWERSHELL 5.1,
+# NOT PWSH 7. Its parser is stricter, and it refuses a line that BEGINS with a
+# pipe ("An empty pipe element is not allowed") - before executing anything. I
+# had parse-checked this file under pwsh 7, where the same shape is legal, so
+# the check passed and the release still died on the first line of the run.
+# A guard measured on a different engine than the one that runs is not a
+# measurement. The pipe now ends the previous line, which both engines accept.
+
+# -- THE FALSE ZERO INSIDE A SENTENCE --------------------------------------
+# Zero tolerance on the line columns: unit_price / line_total / paid_amount /
+# returned_amount appear in this file ONLY on purchase reads, so a toFixed on
+# any of them is a hidden amount about to print as 0.00.
+$falseZero = @([regex]::Matches($aCode,
+    '(?m)^.*Number\(\s*[A-Za-z_][\w.]*\.(unit_price|line_total|paid_amount|returned_amount)\s*(\|\|\s*0\s*)?\)\s*\.toFixed.*$') |
+   ForEach-Object { $_.Value.Trim() })
+if ($falseZero.Count -gt 0) {
+    Write-Host "X $($falseZero.Count) place(s) still print a purchase line amount with toFixed - a hidden amount would read 0.00:" -ForegroundColor Red
+    foreach ($l in $falseZero) { Write-Host "    $l" -ForegroundColor Red }
+    exit 1
+}
+
+# `total_amount` is a shared name: sales invoices and vendor credits carry it
+# too, and those tables are NOT masked. So this is a RATCHET, not a ban -
+# measured at three today, printed every run, and it may shrink, never grow.
+# A fourth would be a new purchase head total printing 0.00 to whoever cannot
+# see it, and the release stops.
+$headToFixed = @([regex]::Matches($aCode,
+    '(?m)^.*Number\(\s*[A-Za-z_][\w.]*\.total_amount\s*(\|\|\s*0\s*)?\)\s*\.toFixed.*$') |
+   ForEach-Object { $_.Value.Trim() })
+if ($headToFixed.Count -gt 3) {
+    Write-Host "X $($headToFixed.Count) total_amount site(s) still use toFixed - three were measured, and the list shrinks:" -ForegroundColor Red
+    foreach ($l in $headToFixed) { Write-Host "    $l" -ForegroundColor Red }
+    exit 1
+}
+Write-Host "! $($headToFixed.Count) of 3 non-purchase total_amount site(s) still use toFixed (sales invoice / vendor credit - unmasked tables). Debt, tracked and shrink-only." -ForegroundColor Yellow
+
+foreach ($needle in @("money(it.unit_price)", "money(it.line_total)", "money(r.total_amount)")) {
+    if ($aCode -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the approval sentence no longer builds its amount with money(): $needle" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ every amount in an approval sentence is built with money() - a dash, never a false zero" -ForegroundColor Green
+
+# -- and the funnel every amount on this screen passes through -------------
+if ($aCode -notmatch [regex]::Escape("if (isHiddenMoney(n)) return HIDDEN_MONEY")) {
+    Write-Host "X fmtMoney no longer distinguishes a real zero from a hidden amount" -ForegroundColor Red
+    exit 1
+}
+# `quantity * null` is 0 in JavaScript. The line total must refuse to multiply.
+if ($aCode -notmatch [regex]::Escape("isHiddenMoney(it.unit_price) ? HIDDEN_MONEY : fmtMoney(it.quantity")) {
+    Write-Host "X the line total multiplies a hidden price again - it would print 0.00" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ fmtMoney returns a dash for a hidden amount, and no total is multiplied out of one" -ForegroundColor Green
 
 # ⚠️ THE CHECKS BELOW READ CODE, NOT COMMENTS - and this cost a run to learn.
 # The screen's own header documents the defect it removed by quoting it:
@@ -145,16 +233,18 @@ if ($sCode -match 'reduce\([^)]*total_amount') {
 Write-Host "+ the total is hidden whole when any line is hidden - not silently summed short" -ForegroundColor Green
 
 # -- the screen is in the guard's converted list, which only ever grows -----
-if ($g -notmatch [regex]::Escape($screen)) {
-    Write-Host "X $screen is not in the guard's converted list - it would not be watched" -ForegroundColor Red
-    exit 1
+foreach ($conv in @($screen, $inbox)) {
+    if ($g -notmatch [regex]::Escape($conv)) {
+        Write-Host "X $conv is not in the guard's converted list - it would not be watched" -ForegroundColor Red
+        exit 1
+    }
 }
 $converted = ([regex]::Matches($g, '"app/[^"]+\.tsx?"')).Count
-if ($converted -lt 12) {
+if ($converted -lt 13) {
     Write-Host "X the converted list shrank to $converted - it grows, it does not shrink" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ $converted screens are on the converted list, and this one is among them" -ForegroundColor Green
+Write-Host "+ $converted screens are on the converted list, and both of this batch are among them" -ForegroundColor Green
 
 # ===========================================================================
 # CARRIED FORWARD - the ratchets from 938 through 944 do not loosen here.
@@ -273,7 +363,7 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-$self2 = Get-Content -LiteralPath "push_v3.74.945.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.946.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -592,7 +682,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.944.ps1" 2>$null
+git add -u -- "push_v3.74.945.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -613,48 +703,48 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_945.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_946.txt"
     $msgLines = @(
-        'feat(purchase): v3.74.945 - the goods receipt reads its money through the masked view',
+        'feat(purchase): v3.74.946 - the approvals inbox stops printing a price the reader may not see',
         '',
-        'Stage 2, batch 5. Twelve screens converted; the counted remainder falls from',
-        '112 direct reads to 108.',
+        'Stage 2, batch 6. Thirteen screens converted; the counted remainder falls from',
+        '108 direct reads to 97.',
         '',
-        'WHY THIS SCREEN NEEDED NO MIGRATION FIRST - MEASURED, NOT ASSUMED.',
+        'THE DANGER HERE IS NOT A COLUMN. IT IS A SENTENCE.',
         '',
-        'The purchase return had to wait for 941 before 942 could mask it, because its',
-        'creation screen PRICED the document from a read: mask it first and the browser',
-        'computes zero, and a real document gets posted at zero. The goods receipt is',
-        'not that. The confirm button sends one field:',
+        'This screen does not put purchase money in a cell you can hide. It BUILDS the',
+        'money into the line an approver reads and signs:',
         '',
-        '    body: JSON.stringify({ ui_surface: "goods_receipt_page" })',
+        '    `${name} · ${qty} × ${Number(it.unit_price).toFixed(2)} = ${line_total}`',
         '',
-        'and the route takes one field back out of it - two occurrences, no others.',
-        'Every price and quantity is read by the server from the database itself. So',
-        'the money on this screen is pure display, and hiding it cannot spoil anything.',
+        'Mask the read and leave that alone and the decision line reads',
+        '"item · 3 × 0.00 = 0.00" - a false number inside an approval document. A leak',
+        'is seen and disbelieved; a false zero is believed, and here it is believed by',
+        'the person authorising the money. Every such sentence is now built with',
+        'money(), so a hidden amount reads as a dash and the approver knows he is not',
+        'seeing it rather than thinking he saw it.',
         '',
-        'That premise carries the whole release, so it is not left to memory: this push',
-        'refuses if the screen ever sends a priced field, or if confirm-receipt ever',
-        'reads anything but ui_surface from the request. A priced field sent from here',
-        'would be a MASKED price - null - and would post as zero.',
+        'fmtMoney - the funnel every amount on this screen passes through - used to',
+        'take a number and format whatever arrived. A masked null arrived as 0.00. It',
+        'now returns a dash for a hidden amount and formats only real ones.',
         '',
-        'AND A DEFECT THAT WAS ALREADY THERE, WHICH MASKING ALONE WOULD HAVE WEAPONISED.',
+        'And `quantity * null` is 0 in JavaScript, so the line-total cell would have',
+        'printed a confident 0.00 next to a dashed unit price. It refuses to multiply',
+        'when either side is hidden.',
         '',
-        '    unit_price: Number(it.unit_price || 0)',
+        'ELEVEN READS MOVED TO THE MASKED VIEWS, AND EVERY EMBED BECAME A SECOND QUERY.',
         '',
-        'Number(null || 0) is zero. Mask the read without removing this and a store',
-        'manager sees 0.00 where a price exists - worse than a leak, because a leak is',
-        'seen and disbelieved while a false number is believed and built upon. Hidden',
-        'money now stays null and shows as a dash with the reason, in all three places,',
-        'and the list total is hidden WHOLE when any line is hidden rather than summed',
-        'short.',
+        'Eight embeds sat on these reads (suppliers, branches, warehouses, products,',
+        'bills). Left in place over a masked view they would reproduce the 940 outage -',
+        'PGRST201 empties the screen for everyone. They are now second queries that',
+        'rebuild the SAME response keys, because the cards read r.suppliers?.name and a',
+        'changed shape fails silently rather than loudly.',
         '',
-        'No embed sits on a masked view: the four embeds became second queries that',
-        'rebuild the same response keys, because the history search reads',
-        'bill.suppliers?.name and a changed shape would fail silently.',
+        'bills(bill_number) inside the vendor-payment-correction read was the same shape',
+        'in a different place, and it is stitched too: one door, not two.',
         '',
-        'subtotal and tax_amount were dropped from both selects - measured as never',
-        'displayed and never computed with. What is not read cannot leak.'
+        'The payment card no longer hides its bill line when the amount is hidden - it',
+        'shows the line with a dash and the reason. Silence reads as a broken screen.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -678,7 +768,7 @@ if (-not $staged) {
 
 # -- the commit is not assumed: it is READ BACK -------------------------
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.945")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.946")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -694,5 +784,5 @@ if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.945 pushed - the goods receipt shows a dash, never a false zero" -ForegroundColor Green
+Write-Host "`n+ v3.74.946 pushed - no approval sentence prints a price the reader is not allowed to see" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray

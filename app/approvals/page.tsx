@@ -15,6 +15,25 @@ import {
 } from "lucide-react"
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
+import { HIDDEN_MONEY, isHiddenMoney, money } from "@/lib/purchase-money"
+
+/**
+ * v3.74.946 — شاشةُ الاعتمادات تقرأ مالَ الشراء من المنفذ المقنَّع.
+ *
+ * **وأخطرُ ما فيها ليس عمودَ مبلغ**: هذه الشاشةُ تبنى المالَ داخل **نصوصٍ
+ * مُركَّبة** يقرؤها المعتمِدُ ويوقّع عليها:
+ *
+ * ```ts
+ * `${name} · ${qty} × ${Number(it.unit_price).toFixed(2)} = ${Number(it.line_total).toFixed(2)}`
+ * ```
+ *
+ * فلو قُنِّعت القراءةُ وحدها لصار سطرُ القرار «صنف · ٣ × 0.00 = 0.00» —
+ * **رقمٌ كاذبٌ فى مستندِ اعتماد**، لا فراغٌ صادق. ولذلك يُبنى كلُّ سطرٍ
+ * بـ`money()`، فيقرأ المعتمِدُ «—» ويعرف أنه لا يرى، بدل أن يظنّ أنه رأى.
+ *
+ * والقاعدةُ نفسُها عند المصبّ: `fmtMoney` صارت تُرجع «—» للمحجوب بدل أن
+ * تُنسّق الفراغَ صفراً — وهى الدالةُ التى تمرّ منها كلُّ مبالغ هذه الشاشة.
+ */
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -265,7 +284,8 @@ interface PendingGoodsReceipt {
   id: string
   bill_no: string | null
   supplier_name: string | null
-  total: number
+  // مالُ شراءٍ من نافذةٍ مقنَّعة: `null` تعنى «محجوبٌ عنك»، لا صفراً.
+  total: number | null
   branch_name: string | null
   warehouse_name: string | null
   requested_at: string
@@ -273,7 +293,7 @@ interface PendingGoodsReceipt {
     product_name: string
     product_type: string | null
     quantity: number
-    unit_price: number
+    unit_price: number | null
   }>
   type: "goods_receipt"
 }
@@ -375,7 +395,8 @@ interface PendingPurchaseReturn {
   supplier_name: string | null
   bill_id: string | null
   bill_no: string | null
-  total: number
+  // مالُ شراءٍ مقنَّع: `null` = محجوب، ويُعرض «—».
+  total: number | null
   // v3.74.513 — لنطاق الفرع/المخزن لأدوار المخازن
   branch_id: string | null
   warehouse_id: string | null
@@ -1067,6 +1088,33 @@ const UnifiedHistoryCard = ({ h, ctx }: { h: UnifiedHistoryEntry; ctx: UnifiedHi
   )
 }
 
+/**
+ * أسماءُ صفوفٍ مرجعية بمفتاح `id`، باستعلامٍ ثانٍ.
+ *
+ * ⚠️ **لا تضمينَ فوق نافذةٍ مقنَّعة** (درس 940): علاقتان بين نفس الجدولين
+ * تجعلان PostgREST يردّ `PGRST201` فتُفرَغ الشاشةُ على كل مستخدم. فتُقرأ
+ * الرؤوسُ وحدها، وتُدمج الأسماءُ هنا **بنفس مفاتيح الاستجابة** التى كان
+ * التضمينُ يعطيها، حتى لا يصمت شىءٌ كان يعمل.
+ */
+async function nameMapById(
+  supabase: any, table: string, ids: string[], column = "name"
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const uniq = Array.from(new Set(ids.filter(Boolean))) as string[]
+  if (uniq.length === 0) return out
+  try {
+    const { data } = await supabase.from(table).select(`id, ${column}`).in("id", uniq)
+    for (const row of (data || []) as any[]) {
+      if (row?.id != null) out.set(String(row.id), String(row[column] ?? ""))
+    }
+  } catch { /* الاسمُ تحسينٌ للعرض: غيابُه لا يُسقط الشاشة */ }
+  return out
+}
+
+/** `{ name }` أو `undefined` — نفسُ شكل التضمين الذى كان. */
+const asNamed = (m: Map<string, string>, id: any) =>
+  id ? { name: m.get(String(id)) ?? "" } : undefined
+
 // ── Component ─────────────────────────────────────────────
 
 function ApprovalsContent() {
@@ -1519,7 +1567,7 @@ function ApprovalsContent() {
             ? supabase.from("suppliers").select("id, name").in("id", paySupplierIds)
             : Promise.resolve({ data: [] as any[] }),
           allocBillIds.length
-            ? supabase.from("bills")
+            ? supabase.from("bills_masked")
                 .select("id, bill_number, total_amount, paid_amount, returned_amount, currency_code, purchase_order_id")
                 .in("id", allocBillIds)
             : Promise.resolve({ data: [] as any[] }),
@@ -1565,8 +1613,10 @@ function ApprovalsContent() {
         const payPoIds = Array.from(new Set(((payBillsRes.data || []) as any[])
           .map((b: any) => b.purchase_order_id)
           .filter(Boolean)))
+        // البابُ واحدٌ لا بابان: رقمُ أمر الشراء يُقرأ من النافذة أيضاً، ولو
+        // أنه ليس مالاً (سابقةُ 942 مع `bill_number`).
         const payPosRes = payPoIds.length
-          ? await supabase.from("purchase_orders").select("id, po_number").in("id", payPoIds)
+          ? await supabase.from("purchase_orders_masked").select("id, po_number").in("id", payPoIds)
           : { data: [] as any[] }
         const payPoMap = new Map(((payPosRes.data || []) as any[]).map((po: any) => [po.id, po.po_number]))
 
@@ -1580,8 +1630,12 @@ function ApprovalsContent() {
             : null
           const primaryBill = primaryAlloc?.bill_id ? payBillMap.get(primaryAlloc.bill_id) : null
           const primaryPoNo = primaryBill?.purchase_order_id ? payPoMap.get(primaryBill.purchase_order_id) : null
-          const billTotal = primaryBill ? Number(primaryBill.total_amount || 0) : null
-          const billPaid = primaryBill ? Number(primaryBill.paid_amount || 0) : null
+          // ⚠️ `Number(x || 0)` كانت تُحوّل المحجوبَ إلى صفرٍ معروض. والمبلغُ
+          // المحجوب يبقى `null` هنا، فيُعرض «—» ولا يدخل حساباً.
+          const billTotal = primaryBill && !isHiddenMoney(primaryBill.total_amount)
+            ? Number(primaryBill.total_amount) : null
+          const billPaid = primaryBill && !isHiddenMoney(primaryBill.paid_amount)
+            ? Number(primaryBill.paid_amount) : null
           const allocatedTotal = allocs.length
             ? Number(allocs.reduce((s: number, a: any) => s + Number(a.allocated_amount || 0), 0).toFixed(4))
             : null
@@ -1634,23 +1688,35 @@ function ApprovalsContent() {
       // PurchaseReturnCommandService → approve_purchase_return_atomic
       // (role check + JE creation on approve).
       try {
-        const { data: prs } = await supabase
-          .from("purchase_returns")
+        const { data: prsHeads } = await supabase
+          .from("purchase_returns_masked")
           .select(`
             id, return_number, total_amount, status, workflow_status,
             created_at, created_by,
             settlement_method, refund_account_id, reason, original_currency,
-            supplier_id, branch_id, warehouse_id, bill_id,
-            suppliers(name),
-            branches(name),
-            warehouses(name),
-            bills(bill_number)
+            supplier_id, branch_id, warehouse_id, bill_id
           `)
           .eq("company_id", cid)
           // v3.74.513 — تشمل مرحلة إخراج المخزن حتى تظهر فى صندوق مسؤول المخزن
           .in("workflow_status", ["pending_admin_approval", "pending_approval", "pending_warehouse"])
           .order("created_at", { ascending: true })
           .limit(100)
+
+        // الأسماءُ الأربعةُ التى كان يعطيها التضمين، باستعلاماتٍ ثانية.
+        const prsRows = (prsHeads || []) as any[]
+        const [prSupMap, prBrMap, prWhMap, prBillMap] = await Promise.all([
+          nameMapById(supabase, "suppliers", prsRows.map(r => r.supplier_id)),
+          nameMapById(supabase, "branches", prsRows.map(r => r.branch_id)),
+          nameMapById(supabase, "warehouses", prsRows.map(r => r.warehouse_id)),
+          nameMapById(supabase, "bills_masked", prsRows.map(r => r.bill_id), "bill_number"),
+        ])
+        const prs = prsRows.map((r: any) => ({
+          ...r,
+          suppliers: asNamed(prSupMap, r.supplier_id),
+          branches: asNamed(prBrMap, r.branch_id),
+          warehouses: asNamed(prWhMap, r.warehouse_id),
+          bills: r.bill_id ? { bill_number: prBillMap.get(String(r.bill_id)) ?? null } : undefined,
+        }))
 
         // v3.74.579 — بيانات توضيحية: بنود المرتجع (نفس نمط السجل v3.74.512)
         // + حساب الاسترداد + اسم المنفذ بدل الإيميل.
@@ -1659,12 +1725,17 @@ function ApprovalsContent() {
         if (qPretIds.length > 0) {
           try {
             const { data: qPretItems } = await supabase
-              .from("purchase_return_items")
-              .select("purchase_return_id, description, quantity, unit_price, line_total, products(name)")
+              .from("purchase_return_items_masked")
+              .select("purchase_return_id, product_id, description, quantity, unit_price, line_total")
               .in("purchase_return_id", qPretIds)
+            const qPretProdMap = await nameMapById(
+              supabase, "products", ((qPretItems || []) as any[]).map((it: any) => it.product_id))
             for (const it of (qPretItems || []) as any[]) {
-              const name = it.products?.name ?? it.description ?? "?"
-              const line = `${name} · ${Number(it.quantity)} × ${Number(it.unit_price).toFixed(2)} = ${Number(it.line_total).toFixed(2)}`
+              const name = (it.product_id ? qPretProdMap.get(String(it.product_id)) : null)
+                || it.description || "?"
+              // ⚠️ `Number(x).toFixed(2)` على مبلغٍ محجوب تكتب «0.00» فى سطرٍ
+              // يوقّع عليه المعتمِد. `money()` تكتب «—».
+              const line = `${name} · ${Number(it.quantity)} × ${money(it.unit_price)} = ${money(it.line_total)}`
               const arr = qPretItemsMap.get(it.purchase_return_id) || []
               arr.push(line)
               qPretItemsMap.set(it.purchase_return_id, arr)
@@ -1704,7 +1775,7 @@ function ApprovalsContent() {
           supplier_name: r.suppliers?.name ?? null,
           bill_id: r.bill_id ?? null,
           bill_no: r.bills?.bill_number ?? null,
-          total: Number(r.total_amount || 0),
+          total: isHiddenMoney(r.total_amount) ? null : Number(r.total_amount),
           branch_id: r.branch_id ?? null,
           warehouse_id: r.warehouse_id ?? null,
           branch_name: r.branches?.name ?? null,
@@ -1850,19 +1921,27 @@ function ApprovalsContent() {
       // v3.74.539 — also pull metadata so the card can surface
       // proposed_changes (what the accountant wants to change to).
       try {
-        const { data: vpc } = await supabase
+        // `bills(bill_number)` كان تضميناً على جدول الفواتير نفسِه. والبابُ
+        // واحدٌ لا بابان، فيُقرأ رقمُ الفاتورة من `bills_masked` باستعلامٍ ثانٍ.
+        const { data: vpcRows } = await supabase
           .from("vendor_payment_correction_requests")
           .select(`
             id, amount, status, notes, rejection_reason, original_payment_id,
             metadata,
             created_at, supplier_id, requested_by, approved_by, approved_at,
             suppliers(name),
-            bill_id, bills(bill_number)
+            bill_id
           `)
           .eq("company_id", cid)
           .in("status", ["pending", "approved"])
           .order("created_at", { ascending: true })
           .limit(100)
+        const vpcBillMap = await nameMapById(
+          supabase, "bills_masked", ((vpcRows || []) as any[]).map((r: any) => r.bill_id), "bill_number")
+        const vpc = ((vpcRows || []) as any[]).map((r: any) => ({
+          ...r,
+          bills: r.bill_id ? { bill_number: vpcBillMap.get(String(r.bill_id)) ?? null } : undefined,
+        }))
         // Batch-fetch original payments for their currency/FX + requester emails.
         const vpcOrigIds = Array.from(new Set(((vpc || []) as any[]).map(r => r.original_payment_id).filter(Boolean)))
         const vpcUserIds = Array.from(new Set(((vpc || []) as any[]).map(r => r.requested_by).filter(Boolean)))
@@ -2100,14 +2179,11 @@ function ApprovalsContent() {
       // v3.74.483 — fetch bill_items in a second query so the warehouse
       // manager can review products + quantities inline.
       try {
-        const { data: bills } = await supabase
-          .from("bills")
+        const { data: billHeads } = await supabase
+          .from("bills_masked")
           .select(`
             id, bill_number, total_amount, receipt_status, status,
-            created_at, supplier_id, branch_id, warehouse_id,
-            suppliers(name),
-            branches(name),
-            warehouses(name)
+            created_at, supplier_id, branch_id, warehouse_id
           `)
           .eq("company_id", cid)
           .eq("receipt_status", "pending")
@@ -2115,32 +2191,46 @@ function ApprovalsContent() {
           .order("created_at", { ascending: true })
           .limit(100)
 
+        const bills = (billHeads || []) as any[]
+        const [grSupMap, grBrMap, grWhMap] = await Promise.all([
+          nameMapById(supabase, "suppliers", bills.map(b => b.supplier_id)),
+          nameMapById(supabase, "branches", bills.map(b => b.branch_id)),
+          nameMapById(supabase, "warehouses", bills.map(b => b.warehouse_id)),
+        ])
+
         const itemsByBill = new Map<string, PendingGoodsReceipt["items"]>()
-        const billIds = (bills || []).map((b: any) => b.id)
+        const billIds = bills.map((b: any) => b.id)
         if (billIds.length > 0) {
           const { data: items } = await supabase
-            .from("bill_items")
-            .select("bill_id, quantity, unit_price, description, products(name, product_type)")
+            .from("bill_items_masked")
+            .select("bill_id, product_id, quantity, unit_price, description")
             .in("bill_id", billIds)
-          for (const it of (items || []) as any[]) {
+          const itemRows = (items || []) as any[]
+          const [grProdName, grProdType] = await Promise.all([
+            nameMapById(supabase, "products", itemRows.map(it => it.product_id)),
+            nameMapById(supabase, "products", itemRows.map(it => it.product_id), "product_type"),
+          ])
+          for (const it of itemRows) {
             const key = String(it.bill_id)
             if (!itemsByBill.has(key)) itemsByBill.set(key, [])
             itemsByBill.get(key)!.push({
-              product_name: it.products?.name ?? it.description ?? "—",
-              product_type: it.products?.product_type ?? null,
+              product_name: (it.product_id ? grProdName.get(String(it.product_id)) : null)
+                || it.description || "—",
+              product_type: (it.product_id ? grProdType.get(String(it.product_id)) : null) || null,
               quantity: Number(it.quantity || 0),
-              unit_price: Number(it.unit_price || 0),
+              // المحجوبُ يبقى `null` ولا يصير صفراً معروضاً.
+              unit_price: isHiddenMoney(it.unit_price) ? null : Number(it.unit_price),
             })
           }
         }
 
-        setGoodsReceipts((bills || []).map((b: any) => ({
+        setGoodsReceipts(bills.map((b: any) => ({
           id: b.id,
           bill_no: b.bill_number ?? null,
-          supplier_name: b.suppliers?.name ?? null,
-          total: Number(b.total_amount || 0),
-          branch_name: b.branches?.name ?? null,
-          warehouse_name: b.warehouses?.name ?? null,
+          supplier_name: asNamed(grSupMap, b.supplier_id)?.name ?? null,
+          total: isHiddenMoney(b.total_amount) ? null : Number(b.total_amount),
+          branch_name: asNamed(grBrMap, b.branch_id)?.name ?? null,
+          warehouse_name: asNamed(grWhMap, b.warehouse_id)?.name ?? null,
           requested_at: b.created_at,
           items: itemsByBill.get(b.id) ?? [],
           type: "goods_receipt" as const,
@@ -2797,12 +2887,12 @@ function ApprovalsContent() {
         }
         const histAllBillIds = Array.from(new Set(((histAllocsRes.data || []) as any[]).map(a => a.bill_id).filter(Boolean)))
         const histBillsRes = histAllBillIds.length
-          ? await supabase.from("bills").select("id, bill_number, purchase_order_id").in("id", histAllBillIds)
+          ? await supabase.from("bills_masked").select("id, bill_number, purchase_order_id").in("id", histAllBillIds)
           : { data: [] as any[] }
         const histBillMap = new Map(((histBillsRes.data || []) as any[]).map((b: any) => [b.id, b]))
         const histPoIds = Array.from(new Set(((histBillsRes.data || []) as any[]).map((b: any) => b.purchase_order_id).filter(Boolean)))
         const histPosRes = histPoIds.length
-          ? await supabase.from("purchase_orders").select("id, po_number").in("id", histPoIds)
+          ? await supabase.from("purchase_orders_masked").select("id, po_number").in("id", histPoIds)
           : { data: [] as any[] }
         const histPoMap = new Map(((histPosRes.data || []) as any[]).map((po: any) => [po.id, po.po_number]))
         for (const p of (pays || []) as any[]) {
@@ -3135,17 +3225,20 @@ function ApprovalsContent() {
         // v3.74.510 — كان يطلب عمودى تاريخ اعتماد/رفض غير موجودين فى جدول
         // bills ويشترط receipt_status='approved' بينما القيمة الفعلية
         // 'received' — فكان القسم صفراً دائماً منذ إنشائه.
-        const { data: bills } = await supabase
-          .from("bills")
+        const { data: billHistHeads } = await supabase
+          .from("bills_masked")
           .select(`id, bill_number, total_amount, receipt_status,
                    created_at, updated_at,
                    created_by, created_by_user_id, received_by, rejected_by,
                    receipt_rejection_reason, branch_id, warehouse_id,
-                   supplier_id, suppliers(name)`)
+                   supplier_id`)
           .eq("company_id", cid)
           .in("receipt_status", ["received", "rejected"])
           .order("created_at", { ascending: false })
           .limit(50)
+        const billHistRows = (billHistHeads || []) as any[]
+        const recvSupMap = await nameMapById(supabase, "suppliers", billHistRows.map(b => b.supplier_id))
+        const bills = billHistRows.map((b: any) => ({ ...b, suppliers: asNamed(recvSupMap, b.supplier_id) }))
         for (const r of (bills || []) as any[]) {
           const status = r.receipt_status === "rejected" ? "rejected" : "approved"
           merged.push({
@@ -3154,7 +3247,7 @@ function ApprovalsContent() {
             doc_label: `استلام مخزنى · ${r.bill_number ?? r.id.slice(0, 8)}`,
             doc_href: `/bills/${r.id}`,
             party_label: r.suppliers?.name ?? null,
-            value_label: `${Number(r.total_amount).toFixed(2)}`,
+            value_label: money(r.total_amount),
             status: status as any,
             requested_by_email: null,
             requested_by_id: r.created_by_user_id ?? r.created_by ?? null,
@@ -3433,8 +3526,8 @@ function ApprovalsContent() {
 
       // v3.74.474 — purchase returns history (decided rows).
       try {
-        const { data: prs } = await supabase
-          .from("purchase_returns")
+        const { data: prsHistHeads } = await supabase
+          .from("purchase_returns_masked")
           .select(`
             id, return_number, total_amount, workflow_status, status,
             created_at, approved_at, rejected_at, rejection_reason,
@@ -3442,7 +3535,7 @@ function ApprovalsContent() {
             created_by, approved_by, rejected_by,
             settlement_method, refund_account_id, reason, original_currency,
             confirmed_at,
-            supplier_id, suppliers(name), branches(name), bills(bill_number)
+            supplier_id
           `)
           .eq("company_id", cid)
           // v3.74.510 — القرار الإدارى (اعتماد/رفض) هو الحدث المسجَّل،
@@ -3453,6 +3546,20 @@ function ApprovalsContent() {
           .order("created_at", { ascending: false })
           .limit(100)
 
+        // الأسماءُ الثلاثةُ التى كان يعطيها التضمين، باستعلامٍ ثانٍ لكلٍّ منها.
+        const prsHistRows = (prsHistHeads || []) as any[]
+        const [prhSupMap, prhBrMap, prhBillMap] = await Promise.all([
+          nameMapById(supabase, "suppliers", prsHistRows.map(r => r.supplier_id)),
+          nameMapById(supabase, "branches", prsHistRows.map(r => r.branch_id)),
+          nameMapById(supabase, "bills_masked", prsHistRows.map(r => r.bill_id), "bill_number"),
+        ])
+        const prs = prsHistRows.map((r: any) => ({
+          ...r,
+          suppliers: asNamed(prhSupMap, r.supplier_id),
+          branches: asNamed(prhBrMap, r.branch_id),
+          bills: r.bill_id ? { bill_number: prhBillMap.get(String(r.bill_id)) ?? null } : undefined,
+        }))
+
         // v3.74.512 — بنود المرتجع (دفعة واحدة لكل المرتجعات) لعرض
         // تفصيل "ماذا أُرجع" على غرار تفصيل الخصومات.
         const pretIds = (prs || []).map((r: any) => r.id)
@@ -3460,12 +3567,16 @@ function ApprovalsContent() {
         if (pretIds.length > 0) {
           try {
             const { data: pretItems } = await supabase
-              .from("purchase_return_items")
-              .select("purchase_return_id, description, quantity, unit_price, line_total, products(name)")
+              .from("purchase_return_items_masked")
+              .select("purchase_return_id, product_id, description, quantity, unit_price, line_total")
               .in("purchase_return_id", pretIds)
+            const pretProdMap = await nameMapById(
+              supabase, "products", ((pretItems || []) as any[]).map((it: any) => it.product_id))
             for (const it of (pretItems || []) as any[]) {
-              const name = it.products?.name ?? it.description ?? "?"
-              const line = `${name} · ${Number(it.quantity)} × ${Number(it.unit_price).toFixed(2)} = ${Number(it.line_total).toFixed(2)}`
+              const name = (it.product_id ? pretProdMap.get(String(it.product_id)) : null)
+                || it.description || "?"
+              // «—» لا «0.00»: سطرُ القرار لا يكذب على من يوقّعه.
+              const line = `${name} · ${Number(it.quantity)} × ${money(it.unit_price)} = ${money(it.line_total)}`
               const arr = pretItemsMap.get(it.purchase_return_id) || []
               arr.push(line)
               pretItemsMap.set(it.purchase_return_id, arr)
@@ -3508,7 +3619,7 @@ function ApprovalsContent() {
             doc_label: `مرتجع مشتريات · ${r.return_number ?? r.id.slice(0, 8)}${r.bills?.bill_number ? ` · 🧾 ${r.bills.bill_number}` : ""}`,
             doc_href: `/purchase-returns/${r.id}`,
             party_label: r.suppliers?.name ?? null,
-            value_label: `${Number(r.total_amount).toFixed(2)} ${String(r.original_currency || "EGP")}`,
+            value_label: `${money(r.total_amount)} ${String(r.original_currency || "EGP")}`,
             status: status as any,
             requested_by_email: null,
             requested_by_id: r.created_by ?? null,
@@ -3654,13 +3765,25 @@ function ApprovalsContent() {
 
   const totalPending = bomVersions.length + routingVersions.length + productionOrders.length + materialIssues.length + discountApprovals.length + supplierPayments.length + purchaseReturns.length + salesReturnRequests.length + customerRefunds.length + vendorPaymentCorrections.length + dispatches.length + goodsReceipts.length + writeOffs.length + inventoryTransfers.length + miscApprovals.length + productReceivePending.length + bookingWithdrawals.length + bookingCustodyReturns.length + journalEntries.length + vendorCredits.length
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString(appLang === "ar" ? "ar-EG" : "en-US") : "—"
-  const fmtMoney = (n: number) => {
+  /**
+   * v3.74.946 — المصبُّ الوحيد لكل مبلغ فى هذه الشاشة، وقد صار **يفرّق بين
+   * صفرٍ حقيقىٍّ ومبلغٍ محجوب**.
+   *
+   * كانت تستقبل `number` وتُنسّق ما يصلها؛ فلو وصلها `null` من نافذةٍ مقنَّعة
+   * لكتبت «0.00» — رقمٌ كاذبٌ فى شاشةِ اعتماد. الآن المحجوبُ «—».
+   */
+  const fmtMoney = (n: number | string | null | undefined) => {
+    if (isHiddenMoney(n)) return HIDDEN_MONEY
     try {
       return new Intl.NumberFormat(appLang === "ar" ? "ar-EG" : "en-US", {
         style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2,
-      }).format(n)
+      }).format(Number(n))
     } catch { return String(n) }
   }
+  const hiddenMoneyHint = t(
+    "غير مصرَّح لك برؤية تكلفة الشراء",
+    "You are not allowed to see the purchase cost"
+  )
   // v3.74.422 — explicit branches for every document type so unknown
   // values cannot silently fall through to "Booking".
   const docTypeLabel = (d: PendingDiscountApproval["document_type"]) => {
@@ -4463,11 +4586,18 @@ function ApprovalsContent() {
                                   amounts so USD 0.10 vs. EGP 7.34 isn't compared
                                   as raw numbers. */}
                               {/* v3.74.579 — سياق الفاتورة الكامل: كم كانت، كم دُفع، كم أُرجع */}
-                              {p.bill_total != null && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
+                              {/* v3.74.946 — الشرطُ صار «هل هناك فاتورةٌ مرتبطة؟»
+                                  لا «هل عندى رقمُها؟». فمن لا يرى تكلفةَ الشراء
+                                  يرى السطرَ نفسَه بـ«—»: **الصمتُ يُقرأ عطباً فى
+                                  الشاشة، والفراغُ المُعلَن يُقرأ حجباً**. */}
+                              {p.bill_id != null && (
+                                <p
+                                  className="text-xs text-muted-foreground mt-0.5"
+                                  title={isHiddenMoney(p.bill_total) ? hiddenMoneyHint : undefined}
+                                >
                                   🧮 {t("إجمالى الفاتورة", "Bill total")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_total)}</span>
-                                  {p.bill_paid != null && <> · {t("مدفوع سابقاً", "Paid so far")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_paid)}</span></>}
-                                  {p.bill_returned != null && p.bill_returned > 0 && <> · {t("مرتجعات", "Returns")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_returned)}</span></>}
+                                  {!isHiddenMoney(p.bill_total) && p.bill_paid != null && <> · {t("مدفوع سابقاً", "Paid so far")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_paid)}</span></>}
+                                  {!isHiddenMoney(p.bill_total) && p.bill_returned != null && p.bill_returned > 0 && <> · {t("مرتجعات", "Returns")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_returned)}</span></>}
                                   {" "}{p.bill_currency || "EGP"}
                                 </p>
                               )}
@@ -5298,7 +5428,10 @@ function ApprovalsContent() {
                                 👤 {b.supplier_name ?? "—"}
                               </p>
                               <p className="text-xs mt-1">
-                                <span className="font-semibold text-lime-700 dark:text-lime-300">
+                                <span
+                                  className="font-semibold text-lime-700 dark:text-lime-300"
+                                  title={isHiddenMoney(b.total) ? hiddenMoneyHint : undefined}
+                                >
                                   {t("قيمة الفاتورة", "Bill total")}: {fmtMoney(b.total)}
                                 </span>
                               </p>
@@ -5368,8 +5501,17 @@ function ApprovalsContent() {
                                           {it.product_name}
                                         </td>
                                         <td className="p-2 text-end">{it.quantity}</td>
-                                        <td className="p-2 text-end">{fmtMoney(it.unit_price)}</td>
-                                        <td className="p-2 text-end font-medium">{fmtMoney(it.quantity * it.unit_price)}</td>
+                                        <td
+                                          className="p-2 text-end"
+                                          title={isHiddenMoney(it.unit_price) ? hiddenMoneyHint : undefined}
+                                        >{fmtMoney(it.unit_price)}</td>
+                                        {/* ⚠️ `quantity * null` تساوى صفراً فى JS، فكان الإجمالى
+                                            سيُطبع «0.00» لمن لا يرى السعر. الضربُ لا يُجرى أصلاً
+                                            حين يكون أحدُ طرفيه محجوباً. */}
+                                        <td
+                                          className="p-2 text-end font-medium"
+                                          title={isHiddenMoney(it.unit_price) ? hiddenMoneyHint : undefined}
+                                        >{isHiddenMoney(it.unit_price) ? HIDDEN_MONEY : fmtMoney(it.quantity * (it.unit_price as number))}</td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -6477,7 +6619,10 @@ function ApprovalsContent() {
                                 {r.bill_no && <> · 🧾 {t("فاتورة", "Bill")}: {r.bill_no}</>}
                               </p>
                               <p className="text-xs mt-1">
-                                <span className="font-semibold text-orange-700 dark:text-orange-300">
+                                <span
+                                  className="font-semibold text-orange-700 dark:text-orange-300"
+                                  title={isHiddenMoney(r.total) ? hiddenMoneyHint : undefined}
+                                >
                                   {t("قيمة المرتجع", "Return amount")}: {fmtMoney(r.total)} {r.currency}
                                 </span>
                               </p>
