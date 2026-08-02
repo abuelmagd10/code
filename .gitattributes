@@ -42,23 +42,28 @@
 # ملفٌ يُعاد حفظُه غداً بترميزٍ آخر يتغيّر تصنيفُه بلا أن يلمسه أحد. فتُسمّى
 # صراحةً.
 #
+# ⚠️ **والمائلةُ الأولى ليست زينة** (v3.74.944): نمطٌ بلا مائلةٍ فى
+# `.gitattributes` يطابق الاسمَ **فى أى مجلد**. فـ`test-supplier.js` التقط
+# معه `scripts/test-supplier.js` — ملفٌ نصّىٌّ سليم — فوسمه «ثنائياً» ومنع
+# تطبيعَه، فرفضه الحارسُ بعد 943 بحق. والمائلةُ تقصر المطابقة على الجذر.
+#
 # وكلُّها ناتجُ أوامرَ تشخيصيةٍ قديمة لا مصدرٌ للبرنامج — **دَينٌ مُسجَّل:
 # مكانُها خارجَ المستودع، وتُحذف حين يقرّر المالك.** وتسميتُها هنا تمنع
 # إفسادَها اليوم، ولا تباركُ بقاءها.
-DEPLOYMENT_COMPLETE.md  -text
-ap_breakdown.txt        -text
-check_bills.sql         -text
-check_triggers.sql      -text
-diff.txt                -text
-get_func.sql            -text
-get_func_list.sql       -text
-jes_output.json         -text
-out.txt                 -text
-output2.txt             -text
-output3.txt             -text
-output4.txt             -text
-supabase_mig_err.txt    -text
-test-supplier.js        -text
+/DEPLOYMENT_COMPLETE.md  -text
+/ap_breakdown.txt        -text
+/check_bills.sql         -text
+/check_triggers.sql      -text
+/diff.txt                -text
+/get_func.sql            -text
+/get_func_list.sql       -text
+/jes_output.json         -text
+/out.txt                 -text
+/output2.txt             -text
+/output3.txt             -text
+/output4.txt             -text
+/supabase_mig_err.txt    -text
+/test-supplier.js        -text
 
 # ── ما هو ثنائىٌّ بيقين ───────────────────────────────────────────────────
 *.png   binary

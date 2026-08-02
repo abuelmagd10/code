@@ -6,21 +6,21 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.943 - the OLD script is removed, never this one. Five times a chained
+# v3.74.944 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.942.ps1") { Remove-Item -LiteralPath "push_v3.74.942.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.943.ps1") { Remove-Item -LiteralPath "push_v3.74.943.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.943"') {
-    Write-Host "+ 3.74.943" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.944"') {
+    Write-Host "+ 3.74.944" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.943]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.943]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.944]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.944]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
@@ -30,8 +30,8 @@ $guard = "scripts/check-line-endings-are-one-way.js"
 $trap  = "scripts/selftest-line-endings-are-one-way.js"
 
 $files = @("lib/version.ts", "CHANGELOG.md", "docs/HANDOVER_2026-07-24.md",
-           $attrs, ".gitignore", $guard, $trap,
-           "push_v3.74.943.ps1")
+           $attrs, $guard, $trap,
+           "push_v3.74.944.ps1")
 
 # ─── GENERATED ARTEFACTS THAT .gitignore ALREADY NAMES ────────────────────
 #
@@ -104,6 +104,20 @@ if ($at -notmatch [regex]::Escape("* text=auto eol=lf")) {
     Write-Host "X .gitattributes does not carry the one rule" -ForegroundColor Red; exit 1
 }
 Write-Host "+ the rule is written down: git stores LF, and every checkout writes LF" -ForegroundColor Green
+
+# -- 944: every pinned pattern is ANCHORED to the root ---------------------
+# A pattern with no slash in .gitattributes matches the NAME IN ANY DIRECTORY.
+# `test-supplier.js` therefore also caught scripts/test-supplier.js - an
+# ordinary text file - marked it binary and kept it out of the normalisation,
+# so the guard refused straight after 943 shipped. It was right to. The leading
+# slash confines each pattern to the repository root, where those files live.
+$unanchored = @([regex]::Matches($at, "(?m)^(?!/)(\S+)\s+-text\s*$") | ForEach-Object { $_.Groups[1].Value })
+if ($unanchored.Count -gt 0) {
+    Write-Host "X $($unanchored.Count) pinned pattern(s) are not anchored to the root - they would capture namesakes in any folder:" -ForegroundColor Red
+    foreach ($p in $unanchored) { Write-Host "    $p" -ForegroundColor Red }
+    exit 1
+}
+Write-Host "+ every pinned pattern is anchored to the repository root - no namesake elsewhere is captured" -ForegroundColor Green
 
 # -- 2. the UTF-16 files are named, not left to implicit detection ---------
 # git detects them today. But an implicit detection is a bet: re-save one of
@@ -254,7 +268,7 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-$self2 = Get-Content -LiteralPath "push_v3.74.943.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.944.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -274,7 +288,7 @@ Write-Host "+ the battery plants its probes and watches every guard refuse, ever
 
 # ---------------------------------------------------------------------------
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.942.ps1" 2>$null
+git add -u -- "push_v3.74.943.ps1" 2>$null
 
 # ─── THE NORMALISATION ITSELF, AND ITS PROOF ─────────────────────────────
 # Every other release refuses anything staged beyond its file list. THIS one
@@ -346,7 +360,7 @@ $pending = @()
 foreach ($line in (git -c core.quotepath=false diff HEAD --numstat --ignore-cr-at-eol --no-renames)) {
     if (-not $line) { continue }
     $f = ($line -split "`t")[2]
-    if ($files -contains $f -or $f -eq "push_v3.74.942.ps1" -or $gone -contains $f -or $generated -contains $f) { continue }
+    if ($files -contains $f -or $f -eq "push_v3.74.943.ps1" -or $gone -contains $f -or $generated -contains $f) { continue }
     $pending += $f
 }
 if ($pending.Count -gt 0) {
@@ -382,7 +396,7 @@ foreach ($line in (git -c core.quotepath=false diff --cached --numstat --ignore-
 
 $normalised = @()
 foreach ($f in (git -c core.quotepath=false diff --cached --name-only --no-renames)) {
-    if ($files -contains $f -or $f -eq "push_v3.74.942.ps1" -or $generated -contains $f) { continue }
+    if ($files -contains $f -or $f -eq "push_v3.74.943.ps1" -or $generated -contains $f) { continue }
     if ($realChange -contains $f) {
         Write-Host "X $f changes CONTENT, not just line endings - STOP" -ForegroundColor Red
         exit 1
@@ -697,7 +711,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.942.ps1" 2>$null
+git add -u -- "push_v3.74.943.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -718,65 +732,25 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_943.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_944.txt"
     $msgLines = @(
-        'chore(repo): v3.74.943 - line endings are one way, so "modified" means modified',
+        'fix(repo): v3.74.944 - the pinned patterns are anchored, and the last file is normalised',
         '',
-        'MEASURED BEFORE ANYTHING WAS WRITTEN: 3642 tracked files, NO .gitattributes at',
-        'all, and core.autocrlf unset in every scope - local, global and system. 2538',
-        'files are stored LF and sit on disk as CRLF, so every one of them reads as',
-        'modified in every run, with a diff the size of the whole file. One registry',
-        'file alone reports 7688 changed lines while nobody has touched it.',
+        'A DEFECT I SHIPPED IN 943, CAUGHT BY ITS OWN GUARD ON THE VERY NEXT RUN.',
         '',
-        'THIS IS NOT COSMETIC NOISE. The real change passes underneath it. The 938',
-        'defect that emptied the purchase-bill list for every user went through my own',
-        'review inside exactly this flood.',
+        'A pattern with no slash in .gitattributes matches THE NAME IN ANY DIRECTORY.',
+        'The fourteen UTF-16 files were pinned by bare name, so test-supplier.js also',
+        'captured scripts/test-supplier.js - an ordinary text file - marked it binary',
+        'and kept it out of the normalisation. 943 therefore left exactly one file',
+        'stored with CRLF, and check-line-endings-are-one-way refused the moment it was',
+        'asked. It was right to refuse, and it named the file.',
         '',
-        'AND WHAT DOES IT COST? Far less than the noise suggests. Most of those 2538',
-        'files are ALREADY LF in the index - the noise comes from the disk copy being',
-        'CRLF, and .gitattributes makes git normalise before comparing, so the noise',
-        'stops without a single byte changing. Only the files whose stored blob really',
-        'is CRLF get rewritten.',
+        'Measured: of the fourteen names, only test-supplier.js has a namesake anywhere',
+        'else in the tree, so exactly one file was affected. The leading slash confines',
+        'each pattern to the repository root, which is where all fourteen actually live.',
         '',
-        'I TRIED TO PIN THAT SET BY NAME AND I WAS WRONG TWICE. The first draft listed',
-        'thirteen paths - the files measured as stored CRLF - and refused a fourteenth.',
-        'It missed scripts/test-supplier.js, whose index is LF but whose working copy is',
-        'MIXED, so renormalising changes its blob too. And the true set could not be',
-        'measured reliably from outside the machine at all. A prediction I cannot verify',
-        'is not a measurement, and a guard built on one refuses honest work.',
-        '',
-        'SO THE PROOF IS THE PROPERTY ITSELF, PER FILE, WITH NO LIST. --ignore-cr-at-eol',
-        'makes a carriage-return-only change vanish entirely from the diff, so a file',
-        'that is staged but absent from that diff changed by nothing else. Every staged',
-        'file is checked that way and any real content stops the push. The count and the',
-        'names are REPORTED, not asserted. And a SILENT NO-OP fails too: if nothing',
-        'normalises, the release refuses itself rather than claiming work it did not do.',
-        '',
-        'A TRAP THAT RAN INTO A REAL DEFECT BEFORE ANY OF THIS SHIPPED. The self-test',
-        'plants a UTF-16 file that nobody pinned - and the guard did not refuse it. The',
-        'reason: git ls-files --eol puts the attributes in a field that CONTAINS A SPACE',
-        '("attr/text=auto eol=lf"), so splitting on whitespace swallowed part of it and',
-        'glued the rest onto the path. The guard went looking for a file called',
-        '"eol=lf <tab>sneaky.ts", failed to find it, and PASSED IN SILENCE. The reliable',
-        'separator is the tab. Fixed, and the trap now sees it refuse.',
-        '',
-        'AND git add --renormalize . COULD NOT BE USED AS WRITTEN. It aborts with',
-        '"fatal: unable to stat" on the first tracked file missing from the working tree',
-        'and stages NOTHING - silently, since the output is swallowed. This repository',
-        'has 18 such files (Arabic-named notes, and one literally named "` cat"),',
-        'deleted from disk but never from git. That is real pre-existing debt and it is',
-        'NOT this release: bundling their deletion into a line-endings commit is the',
-        'mixed commit this project refuses. The pathspec is built from what exists, the',
-        'missing ones are left alone, and their count is pinned so it cannot grow.',
-        '',
-        'THE 14 UTF-16 FILES are named explicitly rather than left to git implicit',
-        'detection - detection changes when a file is re-saved, with nobody touching it.',
-        'They are old diagnostic output that belongs outside the repository; naming them',
-        'stops them being corrupted today, and does not bless them staying.',
-        '',
-        'And the guard reads the INDEX, not the disk. On Windows the working tree stays',
-        'CRLF after checkout, and that is the point: the agreement is about what git',
-        'stores, not about what lands on the disk.'
+        'And the push script now REFUSES an unanchored pin, so the shape cannot come',
+        'back quietly - the guard that caught it once should not have to catch it twice.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -800,7 +774,7 @@ if (-not $staged) {
 
 # -- the commit is not assumed: it is READ BACK -------------------------
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.943")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.944")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -816,5 +790,5 @@ if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.943 pushed - line endings are one way, so `"modified`" means modified" -ForegroundColor Green
+Write-Host "`n+ v3.74.944 pushed - the pattern is anchored, and the last file is normalised" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray
