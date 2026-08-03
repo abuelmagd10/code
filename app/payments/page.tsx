@@ -55,7 +55,7 @@ import { Eye } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { DataPagination } from "@/components/data-pagination"
 import { usePagination } from "@/lib/pagination"
-import { fetchCanViewPurchaseCost } from "@/lib/purchase-money"
+import { fetchCanViewPurchaseCost, isHiddenMoney, money } from "@/lib/purchase-money"
 
 // v3.74.78 — مكون صَغير يَعرِض رَصيد العَميل الدائن عِندَ اختياره فى نَموذَج الدَّفع.
 // يَجلِب الرَّصيد من /api/customer-credits/[customerId] وَيَختَفى لَو لا يوجَد رَصيد.
@@ -1108,7 +1108,7 @@ export default function PaymentsPage() {
         // ✅ جلب أرقام أوامر الشراء
         const poIds = Array.from(new Set((bills || []).map((b: any) => b.purchase_order_id).filter(Boolean))) as string[]
         if (poIds.length > 0) {
-          const { data: pos } = await supabase.from("purchase_orders").select("id, po_number").in("id", poIds)
+          const { data: pos } = await supabase.from("purchase_orders_masked").select("id, po_number").in("id", poIds)
           const poMap: Record<string, string> = {}
           ;(pos || []).forEach((po: any) => { poMap[po.id] = po.po_number })
           setPoNumbers(poMap)
@@ -1678,7 +1678,7 @@ export default function PaymentsPage() {
     try {
       // جلب الفاتورة للحصول على purchase_order_id
       const { data: billData } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("purchase_order_id")
         .eq("id", billId)
         .single()
@@ -1689,13 +1689,13 @@ export default function PaymentsPage() {
 
       // جلب بنود أمر الشراء
       const { data: poItems } = await supabase
-        .from("purchase_order_items")
+        .from("purchase_order_items_masked")
         .select("product_id, quantity")
         .eq("purchase_order_id", poId)
 
       // جلب جميع الفواتير المرتبطة بأمر الشراء
       const { data: linkedBills } = await supabase
-        .from("bills")
+        .from("bills_masked")
         .select("id")
         .eq("purchase_order_id", poId)
 
@@ -1703,7 +1703,7 @@ export default function PaymentsPage() {
 
       // جلب بنود كل الفواتير المرتبطة
       const { data: allBillItems } = await supabase
-        .from("bill_items")
+        .from("bill_items_masked")
         .select("product_id, quantity")
         .in("bill_id", billIds.length > 0 ? billIds : [''])
 
@@ -1771,7 +1771,7 @@ export default function PaymentsPage() {
     setApplyAmount(p.amount)
     setApplyDocId("")
     const { data: pos } = await supabase
-      .from("purchase_orders")
+      .from("purchase_orders_masked")
       .select("id, po_number, total_amount, received_amount, status")
       .eq("supplier_id", p.supplier_id)
       .in("status", ["received_partial", "received"])
@@ -1784,7 +1784,7 @@ export default function PaymentsPage() {
     setApplyAmount(p.amount)
     setApplyDocId("")
     const { data: bills } = await supabase
-      .from("bills")
+      .from("bills_masked")
       .select("id, bill_number, total_amount, paid_amount, returned_amount, status")
       .eq("supplier_id", p.supplier_id)
       .in("status", ["sent", "received", "partially_paid"]) // قابلة للدفع - لا تشمل draft
@@ -1939,7 +1939,8 @@ export default function PaymentsPage() {
         setSaving(false)
         return
       }
-      const { data: po } = await supabase.from("purchase_orders").select("*").eq("id", applyDocId).single()
+      // خلف بوابة 947: من يصل هنا من جمهور التكلفة بالضرورة، فالأرقامُ حقيقية.
+      const { data: po } = await supabase.from("purchase_orders_masked").select("*").eq("id", applyDocId).single()
       if (!po) return
 
       if (!canPayOnDocument(po.branch_id)) {
@@ -2010,7 +2011,8 @@ export default function PaymentsPage() {
         setSaving(false)
         return
       }
-      const { data: bill } = await supabase.from("bills").select("*").eq("id", applyDocId).single()
+      // خلف بوابة 947: من يصل هنا من جمهور التكلفة بالضرورة، فالأرقامُ حقيقية.
+      const { data: bill } = await supabase.from("bills_masked").select("*").eq("id", applyDocId).single()
       if (!bill) return
 
       // 🔐 ERP Governance: التحقق من صلاحية الدفع على هذه الفاتورة
@@ -3981,10 +3983,14 @@ export default function PaymentsPage() {
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
                   <option value="">{appLang === 'en' ? 'Select a purchase order' : 'اختر أمر شراء'}</option>
                   {supplierPOs.map((po) => {
-                    const outstanding = Math.max(Number(po.total_amount || 0) - Number(po.received_amount || 0), 0)
+                    // ⚠️ `Number(null || 0)` صفر. فلا يُطرح محجوبٌ من محجوب:
+                    // المحجوبُ يبقى `null` ويُعرض «—».
+                    const outstanding = isHiddenMoney(po.total_amount) || isHiddenMoney(po.received_amount)
+                      ? null
+                      : Math.max(Number(po.total_amount) - Number(po.received_amount), 0)
                     return (
                       <option key={po.id} value={po.id}>
-                        {po.po_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
+                        {po.po_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {money(outstanding)}
                       </option>
                     )
                   })}
@@ -4014,10 +4020,13 @@ export default function PaymentsPage() {
                 <select className="w-full border rounded px-2 py-1" value={applyDocId} onChange={(e) => setApplyDocId(e.target.value)}>
                   <option value="">{appLang === 'en' ? 'Select a bill' : 'اختر فاتورة'}</option>
                   {supplierBills.map((b) => {
-                    const outstanding = Math.max(Number(b.total_amount || 0) - Number(b.paid_amount || 0), 0)
+                    // نفسُ القاعدة: لا طرحَ فوق محجوب، و«—» بدل صفرٍ كاذب.
+                    const outstanding = isHiddenMoney(b.total_amount) || isHiddenMoney(b.paid_amount)
+                      ? null
+                      : Math.max(Number(b.total_amount) - Number(b.paid_amount), 0)
                     return (
                       <option key={b.id} value={b.id}>
-                        {b.bill_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {outstanding.toFixed(2)}
+                        {b.bill_number} — {appLang === 'en' ? 'Remaining' : 'متبقّي'} {money(outstanding)}
                       </option>
                     )
                   })}
