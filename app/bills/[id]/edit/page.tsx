@@ -670,7 +670,6 @@ export default function EditBillPage() {
         const rateFactor = 1 + (it.tax_rate / 100)
         const discountFactor = 1 - ((it.discount_percent ?? 0) / 100)
         const base = it.quantity * it.unit_price * discountFactor
-        const net = taxInclusive ? (base / rateFactor) : base
         return {
           bill_id: existingBill.id,
           product_id: it.product_id,
@@ -681,7 +680,7 @@ export default function EditBillPage() {
           // v3.74.394 - persist tax code link alongside the rate
           tax_code_id: it.tax_code_id || null,
           discount_percent: it.discount_percent || 0,
-          line_total: net,
+          // v3.74.951 — لا يُرسل line_total: الخادمُ يحسبه (purchase_line_net).
           returned_quantity: (it as any).returned_quantity ?? 0,
         }
       })
@@ -804,7 +803,7 @@ export default function EditBillPage() {
             unit_price: it.unit_price,
             tax_rate: it.tax_rate,
             discount_percent: it.discount_percent || 0,
-            line_total: it.quantity * it.unit_price * (1 - (it.discount_percent || 0) / 100),
+            // v3.74.951 — لا يُرسل line_total: الخادمُ يحسبه (purchase_line_net).
             item_type: it.item_type || "product",
           }))
 

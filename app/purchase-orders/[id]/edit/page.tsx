@@ -495,7 +495,6 @@ export default function EditPurchaseOrderPage() {
           const rateFactor = 1 + (item.tax_rate / 100)
           const discountFactor = 1 - ((item.discount_percent ?? 0) / 100)
           const base = item.quantity * item.unit_price * discountFactor
-          const netLine = taxInclusive ? (base / rateFactor) : base
           const product = products.find(p => p.id === item.product_id)
           return {
             purchase_order_id: orderId,
@@ -506,7 +505,7 @@ export default function EditPurchaseOrderPage() {
             // v3.74.394 - persist tax code link alongside the rate
             tax_code_id: item.tax_code_id || null,
             discount_percent: item.discount_percent ?? 0,
-            line_total: netLine,
+            // v3.74.951 — لا يُرسل line_total: الخادمُ يحسبه (purchase_line_net).
             item_type: product?.item_type || 'product',
           }
         })
@@ -572,7 +571,7 @@ export default function EditPurchaseOrderPage() {
             // v3.74.394 - propagate the tax code link into the linked bill
             tax_code_id: it.tax_code_id || null,
             discount_percent: it.discount_percent || 0,
-            line_total: it.line_total,
+            // v3.74.951 — لا يُرسل line_total: الخادمُ يحسبه (purchase_line_net).
             item_type: it.item_type || "product",
           }))
 

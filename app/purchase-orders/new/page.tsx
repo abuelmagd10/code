@@ -516,14 +516,10 @@ export default function NewPurchaseOrderPage() {
         tax_code_id: item.tax_code_id || null,
         discount_percent: item.discount_percent || 0,
         item_type: item.item_type || 'product',
-        line_total: (() => {
-          const qty = Number(item.quantity) || 0
-          const price = Number(item.unit_price) || 0
-          const disc = Number(item.discount_percent) || 0
-          const tax = Number(item.tax_rate) || 0
-          const base = qty * price * (1 - disc / 100)
-          return taxInclusive ? base : base * (1 + tax / 100)
-        })()
+        // v3.74.951 — كان هنا حسابٌ مقلوبُ الشرط (الشاملُ للضريبة يُترك
+        // وغيرُ الشامل يُضرب) وهو أصلُ «التعريفات الخمسة» التى صحّحها ٩٥٠.
+        // ولا يُصلَح الشرطُ بل يُحذف الحساب: الخادمُ صاحبُ الرقم
+        // (purchase_line_net + المُشغِّل على purchase_order_items).
       }))
 
       const response = await fetch("/api/purchase-orders", {

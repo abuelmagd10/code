@@ -51,7 +51,7 @@ function buildPurchaseOrderItemRow(item: any, purchaseOrderId: string) {
     tax_code_id: item.tax_code_id || null,
     discount_percent: normalizeLineNumber(item.discount_percent, 0),
     item_type: item.item_type || "product",
-    line_total: normalizeLineNumber(item.line_total, 0),
+    // v3.74.951 — لا يُرسل line_total: الخادمُ يحسبه (purchase_line_net).
   }
 }
 
@@ -67,7 +67,7 @@ function buildBillItemRow(item: any, billId: string) {
     tax_code_id: item.tax_code_id || null,
     discount_percent: normalizeLineNumber(item.discount_percent, 0),
     item_type: item.item_type || "product",
-    line_total: normalizeLineNumber(item.line_total, 0),
+    // v3.74.951 — لا يُرسل line_total: الخادمُ يحسبه (purchase_line_net).
   }
 }
 
