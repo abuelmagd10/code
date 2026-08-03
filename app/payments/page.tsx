@@ -55,7 +55,7 @@ import { Eye } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { DataPagination } from "@/components/data-pagination"
 import { usePagination } from "@/lib/pagination"
-import { fetchCanViewPurchaseCost, isHiddenMoney, money } from "@/lib/purchase-money"
+import { HIDDEN_MONEY, fetchCanViewPurchaseCost, isHiddenMoney, money } from "@/lib/purchase-money"
 
 // v3.74.78 — مكون صَغير يَعرِض رَصيد العَميل الدائن عِندَ اختياره فى نَموذَج الدَّفع.
 // يَجلِب الرَّصيد من /api/customer-credits/[customerId] وَيَختَفى لَو لا يوجَد رَصيد.
@@ -147,8 +147,9 @@ interface InvoiceRow {
 interface PORow {
   id: string;
   po_number: string;
-  total_amount: number;
-  received_amount: number;
+  // مالُ شراءٍ من نافذةٍ مقنَّعة: `null` = محجوب، لا صفر.
+  total_amount: number | null;
+  received_amount: number | null;
   status: string;
   branch_id?: string | null;
   branches?: { name: string } | null;
@@ -157,9 +158,9 @@ interface BillRow {
   id: string;
   bill_number: string;
   bill_date?: string;
-  total_amount: number;
-  paid_amount: number;
-  returned_amount?: number;
+  total_amount: number | null;
+  paid_amount: number | null;
+  returned_amount?: number | null;
   status: string;
   branch_id?: string | null;
   branches?: { name: string } | null;
@@ -209,7 +210,7 @@ export default function PaymentsPage() {
   const [billNumbers, setBillNumbers] = useState<Record<string, string>>({})
   const [poNumbers, setPoNumbers] = useState<Record<string, string>>({})
   const [billToPoMap, setBillToPoMap] = useState<Record<string, string>>({})
-  const [billAmountsMap, setBillAmountsMap] = useState<Record<string, {total: number, returned: number}>>({})
+  const [billAmountsMap, setBillAmountsMap] = useState<Record<string, {total: number | null, returned: number | null}>>({})
   const [accountNames, setAccountNames] = useState<Record<string, string>>({}) // Map bill_id -> purchase_order_id
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchNames, setBranchNames] = useState<Record<string, string>>({})
@@ -1087,18 +1088,22 @@ export default function PaymentsPage() {
 
         // ✅ جلب branch_id مع بيانات الفاتورة
         const { data: bills } = await supabase
-          .from("bills")
+          .from("bills_masked")
           .select("id, bill_number, purchase_order_id, branch_id, total_amount, returned_amount")
           .in("id", ids)
         const map: Record<string, string> = {}
         const branchMap: Record<string, string> = {} // bill_id -> branch_id
         const billPoMap: Record<string, string> = {}  // bill_id -> purchase_order_id
-        const amountsMap: Record<string, {total: number, returned: number}> = {} // bill_id -> amounts
+        const amountsMap: Record<string, {total: number | null, returned: number | null}> = {} // bill_id -> amounts
         ;(bills || []).forEach((r: any) => {
           map[r.id] = r.bill_number
           if (r.branch_id) branchMap[r.id] = r.branch_id
           if (r.purchase_order_id) billPoMap[r.id] = r.purchase_order_id
-          amountsMap[r.id] = { total: Number(r.total_amount || 0), returned: Number(r.returned_amount || 0) }
+          // المحجوبُ يبقى `null`: قارئُ الخريطة الوحيد يفحص `!== null` أصلاً.
+          amountsMap[r.id] = {
+            total: isHiddenMoney(r.total_amount) ? null : Number(r.total_amount),
+            returned: isHiddenMoney(r.returned_amount) ? null : Number(r.returned_amount),
+          }
         })
         setBillNumbers(map)
         setBillBranchMap(branchMap)
@@ -1171,9 +1176,11 @@ export default function PaymentsPage() {
         if (!newSuppPayment.supplier_id) { setFormSupplierBills([]); return }
         if (!companyId) return
 
+        // التضمينُ حُذف: لا تضمينَ فوق نافذةٍ مقنَّعة (درس 940). ولا حاجةَ
+        // لاستعلامٍ ثانٍ — العرضُ يسقط على `branchNames` الموجودة أصلاً.
         let query = supabase
-          .from("bills")
-          .select("id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, branch_id, branches:branch_id(name)")
+          .from("bills_masked")
+          .select("id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, branch_id")
           .eq("supplier_id", newSuppPayment.supplier_id)
           .eq("company_id", companyId)
           .in("status", ["received", "partially_paid", "partially_returned"]) // ✅ فقط بعد الاستلام المخزني
@@ -2623,7 +2630,7 @@ export default function PaymentsPage() {
     const effectiveBillIdForAmount = p.bill_id || allocBillByPayment[p.id] || null
     const billAmtInfo = effectiveBillIdForAmount ? billAmountsMap[effectiveBillIdForAmount] : null
     const billTotalAmt = billAmtInfo?.total ?? null
-    const billReturnedAmt = billAmtInfo?.returned ?? 0
+    const billReturnedAmt = billAmtInfo?.returned ?? 0 // محجوب ⇒ 0، والإجمالى `null` فيُلغى الحساب كلَّه
     const netBillAmt = billTotalAmt !== null ? Math.max(0, billTotalAmt - billReturnedAmt) : null
     const isOverpayment = netBillAmt !== null && paidAmt > netBillAmt + 0.001
     const advanceAmt = isOverpayment ? paidAmt - (netBillAmt ?? 0) : 0
@@ -3566,18 +3573,24 @@ export default function PaymentsPage() {
                   <tbody>
                     {formSupplierBills.map((b) => {
                       // ✅ Net Outstanding = total - returned - paid (ERP standard)
+                      // ⚠️ v3.74.949 — الشرطُ التالى كان يُفرغ الجدولَ كلَّه لمن لا
+                      // يرى التكلفة: كلُّ صافٍ يصير صفراً، فتُحذف كلُّ فاتورة،
+                      // فيُقال له «لا توجد فواتير» — **وهذا كذبٌ لا حجب**.
+                      // فيُفرَّق: صافٍ صفرٌ حقاً يُحذف، ومحجوبٌ يُعرض بـ«—».
+                      const moneyHidden = isHiddenMoney(b.total_amount)
                       const returnedAmt = Number((b as any).returned_amount || 0)
-                      const netOutstanding = Math.max(
-                        Number(b.total_amount || 0) - returnedAmt - Number(b.paid_amount || 0),
+                      const netOutstanding = moneyHidden ? null : Math.max(
+                        Number(b.total_amount) - returnedAmt - Number(b.paid_amount || 0),
                         0
                       )
-                      // Only show bills with net outstanding > 0
-                      if (netOutstanding <= 0) return null
+                      if (netOutstanding !== null && netOutstanding <= 0) return null
                       // v3.74.810 — المستحق الفعلى = الصافى − الدفعات المعلقة.
                       // الشاشة كانت تكذب: تعرض الصافى وزر اختيار نشطاً رغم
                       // دفعة معلقة تغطيه، والمحاسب لا يكتشف إلا برفض الخادم.
                       const pendingAmt = Number((b as any).pending_amount || 0)
-                      const effectiveOutstanding = Math.max(netOutstanding - pendingAmt, 0)
+                      const effectiveOutstanding = netOutstanding === null
+                        ? null
+                        : Math.max(netOutstanding - pendingAmt, 0)
                       return (
                         <tr key={b.id} className="border-b">
                           <td className="px-2 py-2">{b.bill_number}</td>
@@ -3587,9 +3600,9 @@ export default function PaymentsPage() {
                               {b.branches?.name || (b.branch_id ? branchNames[b.branch_id] : null) || (appLang === 'en' ? 'Main' : 'رئيسي')}
                             </span>
                           </td>
-                          <td className="px-2 py-2">{Number(b.total_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2">{money(b.total_amount)} {moneyHidden ? "" : (currencySymbols[baseCurrency] || baseCurrency)}</td>
                           <td className="px-2 py-2">
-                            {Number(b.paid_amount || 0).toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}
+                            {money(b.paid_amount)} {moneyHidden ? "" : (currencySymbols[baseCurrency] || baseCurrency)}
                             {pendingAmt > 0 && (
                               <span className="block text-xs text-amber-600 dark:text-amber-400">
                                 ⏳ {appLang === 'en' ? 'Pending approval' : 'معلقة'}: {pendingAmt.toFixed(2)}
@@ -3597,11 +3610,15 @@ export default function PaymentsPage() {
                             )}
                           </td>
                           <td className="px-2 py-2 text-orange-600">
-                            {returnedAmt > 0 ? `-${returnedAmt.toFixed(2)} ${currencySymbols[baseCurrency] || baseCurrency}` : '-'}
+                            {moneyHidden ? HIDDEN_MONEY : (returnedAmt > 0 ? `-${returnedAmt.toFixed(2)} ${currencySymbols[baseCurrency] || baseCurrency}` : '-')}
                           </td>
-                          <td className="px-2 py-2 font-semibold text-red-600">{effectiveOutstanding.toFixed(2)} {currencySymbols[baseCurrency] || baseCurrency}</td>
+                          <td className="px-2 py-2 font-semibold text-red-600">{money(effectiveOutstanding)} {moneyHidden ? "" : (currencySymbols[baseCurrency] || baseCurrency)}</td>
                           <td className="px-2 py-2">
-                            {effectiveOutstanding > 0 ? (
+                            {effectiveOutstanding === null ? (
+                              <span className="text-xs text-gray-400" title={appLang === 'en' ? 'You are not allowed to see the purchase cost' : 'غير مصرَّح لك برؤية تكلفة الشراء'}>
+                                {HIDDEN_MONEY}
+                              </span>
+                            ) : effectiveOutstanding > 0 ? (
                               <Button variant={selectedFormBillId === b.id ? "default" : "outline"} size="sm" onClick={() => {
                                 setSelectedFormBillId(b.id)
                                 // ✅ Auto-fill with EFFECTIVE outstanding

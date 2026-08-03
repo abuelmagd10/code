@@ -6,21 +6,21 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.948 - the OLD script is removed, never this one. Five times a chained
+# v3.74.949 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.947.ps1") { Remove-Item -LiteralPath "push_v3.74.947.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.948.ps1") { Remove-Item -LiteralPath "push_v3.74.948.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.948"') {
-    Write-Host "+ 3.74.948" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.949"') {
+    Write-Host "+ 3.74.949" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.948]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.948]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.949]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.949]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
@@ -33,8 +33,8 @@ $inbox   = "app/approvals/page.tsx"
 $pay = "app/payments/page.tsx"
 
 $files = @("lib/version.ts", "CHANGELOG.md",
-           $pay,
-           "push_v3.74.948.ps1")
+           $pay, $mvg,
+           "push_v3.74.949.ps1")
 
 $s = Get-Content -LiteralPath $screen -Raw
 $r = Get-Content -LiteralPath $route  -Raw
@@ -177,11 +177,31 @@ Write-Host "+ customer payments are untouched - they are not valued at purchase 
 
 # And this release does NOT claim to mask: the screen is deliberately absent
 # from the converted list, so its raw reads keep counting in the remainder.
-if ($g -match [regex]::Escape('"app/payments/page.tsx"')) {
-    Write-Host "X app/payments/page.tsx is on the converted list, but this release only gates it - 948 masks it" -ForegroundColor Red
+# 949 - the screen is finally CLOSED, so now it MUST be on the converted list.
+if ($g -notmatch [regex]::Escape('"app/payments/page.tsx"')) {
+    Write-Host "X the payments screen is closed but is not on the converted list - it would go unwatched" -ForegroundColor Red
     exit 1
 }
-Write-Host "+ 947 gates, it does not mask - the screen still counts in the remainder, honestly" -ForegroundColor Green
+Write-Host "+ the payments screen is on the converted list - every read of it is watched from now on" -ForegroundColor Green
+
+# ⚠️ THE LINE THAT WOULD HAVE EMPTIED THE TABLE IN SILENCE.
+# `if (netOutstanding <= 0) return null` drops a bill from the picker. Mask the
+# read and every net becomes 0, so EVERY bill is dropped and the user is told
+# "no unpaid bills" - a lie, not a hide. The condition must tell a real zero
+# apart from an amount it cannot see.
+if ($pCode -notmatch [regex]::Escape('const moneyHidden = isHiddenMoney(b.total_amount)')) {
+    Write-Host "X the picker no longer tells a real zero from a hidden amount - it would empty the table" -ForegroundColor Red
+    exit 1
+}
+if ($pCode -match [regex]::Escape('if (netOutstanding <= 0) return null')) {
+    Write-Host "X the bare drop-if-zero is back - a hidden amount would delete the row from the table" -ForegroundColor Red
+    exit 1
+}
+if ($pCode -notmatch [regex]::Escape('effectiveOutstanding === null ?')) {
+    Write-Host "X the Select button would auto-fill the amount from an amount nobody can see" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ a hidden bill is SHOWN with dashes, not deleted - and no button fills an unknown amount" -ForegroundColor Green
 
 # ===========================================================================
 # 946 - THE APPROVALS INBOX. The money here is not a column - it is BUILT INTO
@@ -504,7 +524,7 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-$self2 = Get-Content -LiteralPath "push_v3.74.948.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.949.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -823,7 +843,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.947.ps1" 2>$null
+git add -u -- "push_v3.74.948.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -844,43 +864,45 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_948.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_949.txt"
     $msgLines = @(
-        'feat(purchase): v3.74.948 - nine payment-screen reads move to the masked views',
+        'feat(purchase): v3.74.949 - the payments screen closes, and a hidden bill is shown rather than deleted',
         '',
-        'Stage 2, batch 8 - and what was not fully understood was not touched.',
+        'Stage 2, batch 9. The screen enters the converted list for the first time.',
         '',
-        'Nine reads move behind the masked views. Four of them carry no money at',
-        'all (the purchase-order status sync reads ids and quantities) and move',
-        'anyway: one door, not two - the 942 precedent with bill_number.',
+        'THE BILL-AMOUNTS MAP HAD EXACTLY ONE READER, AND IT ALREADY HANDLED ABSENCE.',
         '',
-        'Two of them - the select("*") inside applyPaymentToPO and',
-        'applyPaymentToBill - sit BEHIND THE 947 GATE. Whoever reaches them is in',
-        'the cost audience by construction, so they can never compute a zero from a',
-        'masked null. That is exactly what putting the gate before the mask bought.',
+        '948 deferred it because its readers were not measured. Measured now: one',
+        'reader, written as `billAmtInfo?.total ?? null` with every downstream step',
+        'guarded by `!== null`. A hidden amount travels the same path an unlinked',
+        'bill always travelled. The type change breaks nothing.',
         '',
-        'The two apply dialogs printed `outstanding.toFixed(2)`, and',
-        'Number(null || 0) is zero - so a hidden amount would have read 0.00 in a',
-        'dropdown the accountant picks from. They now refuse to subtract when either',
-        'side is hidden, and print a dash.',
+        'AND THE EMBED CAME OFF WITHOUT A SECOND QUERY.',
         '',
-        'The status UPDATE stays on the table: read through the view, write to the',
-        'table.',
+        'branches:branch_id(name) may not sit on a masked view (940). The table',
+        'already falls back to branchNames[b.branch_id] when the embed is absent -',
+        'the fallback was written years ago and simply had to be left to work.',
         '',
-        'TWO READS ARE DELIBERATELY STILL RAW, AND THE RELEASE SAYS SO.',
+        'THE LINE THAT WOULD HAVE EMPTIED THE TABLE IN SILENCE.',
         '',
-        'The bill-amounts map: its type would have to admit a hidden amount, and',
-        'its consumers are not measured yet. Changing a type whose readers I have',
-        'not seen either breaks the build or hides a false zero somewhere I cannot',
-        'see.',
+        '    if (netOutstanding <= 0) return null',
         '',
-        'The supplier-bill picker: it carries an embed, and no embed may sit on a',
-        'masked view (940: PGRST201 emptied the bill list for everyone). Worse, its',
-        'table drops every bill whose net outstanding is <= 0 - so masking alone',
-        'would EMPTY the table rather than dash it, which is silence, not hiding.',
+        'Mask the read and every net becomes zero, so EVERY bill is dropped and the',
+        'user reads "no unpaid bills for this supplier". The bills exist. That is a',
+        'lie, not a hide - and it is worse than a false zero, because there is',
+        'nothing left on screen to doubt.',
         '',
-        'So the screen is NOT added to the converted list, and its remaining raw',
-        'reads keep counting in the remainder. 949 closes both.'
+        'The condition now separates two things a single number cannot: a net that',
+        'really is zero (dropped, as before) and a net nobody is allowed to see',
+        '(shown, with dashes, and a mark where the Select button used to be).',
+        '',
+        'This is the 936 rule - the row is visible, the money is hidden - applied',
+        'for the first time to a CONDITION rather than to a cell. Masking does not',
+        'only corrupt the numbers; it corrupts every test built on them.',
+        '',
+        'And the Select button used to auto-fill the payment box with that net. On a',
+        'hidden bill it would have filled zero and the server would have refused it.',
+        'It is not offered when the amount cannot be seen.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -904,7 +926,7 @@ if (-not $staged) {
 
 # -- the commit is not assumed: it is READ BACK -------------------------
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.948")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.949")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
