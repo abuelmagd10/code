@@ -55,6 +55,7 @@ import { Eye } from "lucide-react"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { DataPagination } from "@/components/data-pagination"
 import { usePagination } from "@/lib/pagination"
+import { fetchCanViewPurchaseCost } from "@/lib/purchase-money"
 
 // v3.74.78 — مكون صَغير يَعرِض رَصيد العَميل الدائن عِندَ اختياره فى نَموذَج الدَّفع.
 // يَجلِب الرَّصيد من /api/customer-credits/[customerId] وَيَختَفى لَو لا يوجَد رَصيد.
@@ -388,6 +389,19 @@ export default function PaymentsPage() {
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [canOverrideContext, setCanOverrideContext] = useState(false)
 
+  /**
+   * v3.74.947 — هل يرى هذا المستخدمُ تكلفةَ الشراء؟
+   *
+   * **ولمَ يُسأل هنا أصلاً؟** لأن تخصيصَ دفعةٍ على مستندِ شراءٍ يُحسب فى
+   * المتصفح من `total_amount − returned_amount − paid_amount`. فمن لا يرى
+   * هذه الأعمدةَ يحسب صفراً، والخادمُ يرفض الصفرَ برسالةٍ محيّرة. فالشاشةُ
+   * لا تعرض فعلاً تعرف أنه لن ينجح: **تقول السبب قبل أن يُضغط الزر.**
+   *
+   * ولا تُسأل قائمةُ أدوارٍ محلية: تُسأل القاعدة (درس 934). والعجزُ عن
+   * التحقق يُغلق ولا يفتح (درس 865) — ولذلك الافتراضُ «يُفحص» ثم «محجوب».
+   */
+  const [purchaseCostGate, setPurchaseCostGate] = useState<"checking" | "allowed" | "blocked">("checking")
+
   // 🔐 فلتر الفروع الموحد - يظهر فقط للأدوار المميزة (Owner/Admin/General Manager)
   const branchFilter = useBranchFilter()
 
@@ -522,6 +536,11 @@ export default function PaymentsPage() {
           }
           setUserContext(context)
           setCanOverrideContext(["owner", "admin", "manager"].includes(currentRole))
+
+          // تُسأل القاعدةُ مرةً عند الفتح، بلا قيدِ فرع: السؤالُ هنا «هل هو
+          // من جمهور التكلفة أصلاً؟» لا «فى هذا الفرع».
+          const maySeeCost = await fetchCanViewPurchaseCost(supabase, activeCompanyId, null)
+          setPurchaseCostGate(maySeeCost ? "allowed" : "blocked")
         }
 
         // Load currencies from database
@@ -1366,6 +1385,19 @@ export default function PaymentsPage() {
   const createSupplierPayment = async () => {
     try {
       setSaving(true)
+      // ⚠️ وتُسأل هنا لا عند التحميل وحده: حالةُ المتصفح تُغيَّر، والقرارُ
+      // يُتَّخذ فى اللحظة التى يُكتب فيها (درس 942).
+      if (purchaseCostGate !== "allowed") {
+        toast({
+          title: appLang === 'en' ? 'Not permitted' : 'غير مصرَّح',
+          description: appLang === 'en'
+            ? 'A payment against a purchase document is sized from the purchase cost. You are not allowed to see that cost, so you cannot allocate it.'
+            : 'الدفعةُ على مستندِ شراءٍ تُقاس من تكلفة الشراء، وأنت غيرُ مصرَّحٍ لك برؤيتها — فلا يمكنك تخصيصُها.',
+          variant: 'destructive',
+        })
+        setSaving(false)
+        return
+      }
 
       // 🚫 منع المبالغ السالبة - المرتجعات يجب أن تكون في purchase_returns
       if (newSuppPayment.amount < 0) {
@@ -1894,6 +1926,19 @@ export default function PaymentsPage() {
     try {
       if (!selectedPayment || !applyDocId || applyAmount <= 0) return
       setSaving(true)
+      // ⚠️ وتُسأل هنا لا عند التحميل وحده: حالةُ المتصفح تُغيَّر، والقرارُ
+      // يُتَّخذ فى اللحظة التى يُكتب فيها (درس 942).
+      if (purchaseCostGate !== "allowed") {
+        toast({
+          title: appLang === 'en' ? 'Not permitted' : 'غير مصرَّح',
+          description: appLang === 'en'
+            ? 'A payment against a purchase document is sized from the purchase cost. You are not allowed to see that cost, so you cannot allocate it.'
+            : 'الدفعةُ على مستندِ شراءٍ تُقاس من تكلفة الشراء، وأنت غيرُ مصرَّحٍ لك برؤيتها — فلا يمكنك تخصيصُها.',
+          variant: 'destructive',
+        })
+        setSaving(false)
+        return
+      }
       const { data: po } = await supabase.from("purchase_orders").select("*").eq("id", applyDocId).single()
       if (!po) return
 
@@ -1952,6 +1997,19 @@ export default function PaymentsPage() {
     try {
       if (!selectedPayment || !applyDocId || applyAmount <= 0) return
       setSaving(true)
+      // ⚠️ وتُسأل هنا لا عند التحميل وحده: حالةُ المتصفح تُغيَّر، والقرارُ
+      // يُتَّخذ فى اللحظة التى يُكتب فيها (درس 942).
+      if (purchaseCostGate !== "allowed") {
+        toast({
+          title: appLang === 'en' ? 'Not permitted' : 'غير مصرَّح',
+          description: appLang === 'en'
+            ? 'A payment against a purchase document is sized from the purchase cost. You are not allowed to see that cost, so you cannot allocate it.'
+            : 'الدفعةُ على مستندِ شراءٍ تُقاس من تكلفة الشراء، وأنت غيرُ مصرَّحٍ لك برؤيتها — فلا يمكنك تخصيصُها.',
+          variant: 'destructive',
+        })
+        setSaving(false)
+        return
+      }
       const { data: bill } = await supabase.from("bills").select("*").eq("id", applyDocId).single()
       if (!bill) return
 
@@ -2821,7 +2879,7 @@ export default function PaymentsPage() {
             ) : (
               <>
                 {!p.bill_id && !allocBillByPayment[p.id] && permWrite && (
-                  <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
+                  <Button variant="outline" onClick={() => openApplyToBill(p)} disabled={!online || purchaseCostGate !== "allowed"} title={purchaseCostGate !== "allowed" ? (appLang === 'en' ? 'You are not allowed to see the purchase cost this allocation is sized from' : 'غير مصرَّح لك برؤية تكلفة الشراء التى تُقاس منها هذه الدفعة') : undefined}>{appLang === 'en' ? 'Apply to Bill' : 'تطبيق على فاتورة'}</Button>
                 )}
                 {(() => {
                   const hasDirectPO = !!p.purchase_order_id
@@ -2829,7 +2887,7 @@ export default function PaymentsPage() {
                   const hasPOViaBill = !!(effectiveBillIdForPo && billToPoMap[effectiveBillIdForPo])
                   const hasAnyPO = hasDirectPO || hasPOViaBill
                   return !hasAnyPO && permWrite && (
-                  <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
+                  <Button variant="ghost" onClick={() => openApplyToPO(p)} disabled={!online || purchaseCostGate !== "allowed"} title={purchaseCostGate !== "allowed" ? (appLang === 'en' ? 'You are not allowed to see the purchase cost this allocation is sized from' : 'غير مصرَّح لك برؤية تكلفة الشراء التى تُقاس منها هذه الدفعة') : undefined}>{appLang === 'en' ? 'Apply to PO' : 'على أمر شراء'}</Button>
                   )
                 })()}
                 {permUpdate && (
@@ -3454,8 +3512,24 @@ export default function PaymentsPage() {
                   />
                 </div>
               )}
+              {/* v3.74.947 — زرٌّ مُعطَّلٌ بلا سبب يُقرأ عطباً فى الشاشة.
+                  فالسببُ مكتوبٌ، لا مخبوءٌ فى تلميحٍ لا يراه من لا يملك فأرة. */}
+              {purchaseCostGate === "blocked" && (
+                <div className="w-full md:col-span-5 mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  <p className="text-sm font-medium">
+                    {appLang === 'en'
+                      ? 'You cannot create or allocate a supplier payment'
+                      : 'لا يمكنك إنشاءُ دفعةِ موردٍ ولا تخصيصُها'}
+                  </p>
+                  <p className="text-xs mt-1">
+                    {appLang === 'en'
+                      ? 'A payment against a purchase document is sized from the purchase cost of that document. Your role is not allowed to see that cost, so the amount cannot be determined here. An owner, manager, accountant or purchasing officer can do this.'
+                      : 'الدفعةُ على مستندِ شراءٍ تُقاس من تكلفة شرائه، ودورُك غيرُ مصرَّحٍ له برؤية تلك التكلفة — فلا يمكن تحديدُ المبلغ من هنا. يستطيع ذلك: المالك أو المدير أو المحاسب أو مسؤول المشتريات.'}
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2 w-full md:col-span-5 mt-2">
-                <Button onClick={createSupplierPayment} disabled={saving || !online || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang === 'en' ? 'Create Single Payment' : 'إنشاء دفعة لمورد'}</Button>
+                <Button onClick={createSupplierPayment} disabled={saving || !online || purchaseCostGate !== "allowed" || !newSuppPayment.supplier_id || newSuppPayment.amount <= 0 || !newSuppPayment.account_id}>{appLang === 'en' ? 'Create Single Payment' : 'إنشاء دفعة لمورد'}</Button>
                 
                 <div className="mr-auto">
                   <SupplierPaymentAllocationUI

@@ -6,21 +6,21 @@ $env:GIT_LITERAL_PATHSPECS = "1"
 Set-Location "C:\Users\abuel\Documents\trae_projects\ERB_VitaSlims"
 
 if (Test-Path ".git/index.lock") { Remove-Item ".git/index.lock" -Force }
-# v3.74.946 - the OLD script is removed, never this one. Five times a chained
+# v3.74.947 - the OLD script is removed, never this one. Five times a chained
 # string-replace turned this line into self-deletion (861, 865, 866, 870, 871).
 # This line is written by hand, every release, without exception.
-if (Test-Path -LiteralPath "push_v3.74.945.ps1") { Remove-Item -LiteralPath "push_v3.74.945.ps1" -Force }
+if (Test-Path -LiteralPath "push_v3.74.946.ps1") { Remove-Item -LiteralPath "push_v3.74.946.ps1" -Force }
 
 $v = Get-Content -LiteralPath "lib/version.ts" -Raw
-if ($v -match 'APP_VERSION = "3.74.946"') {
-    Write-Host "+ 3.74.946" -ForegroundColor Green
+if ($v -match 'APP_VERSION = "3.74.947"') {
+    Write-Host "+ 3.74.947" -ForegroundColor Green
 } else { Write-Host "X version mismatch" -ForegroundColor Red; exit 1 }
 
 if (Test-Path ".githooks/pre-push") { git config core.hooksPath .githooks 2>&1 | Out-Null }
 
 $cl = Get-Content -LiteralPath "CHANGELOG.md" -Raw
-if ($cl -notmatch [regex]::Escape("[3.74.946]")) {
-    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.946]" -ForegroundColor Red; exit 1
+if ($cl -notmatch [regex]::Escape("[3.74.947]")) {
+    Write-Host "X CHANGELOG needs a heading containing exactly [3.74.947]" -ForegroundColor Red; exit 1
 }
 Write-Host "+ CHANGELOG heading matches the hook" -ForegroundColor Green
 
@@ -30,17 +30,87 @@ $route   = "app/api/bills/[id]/confirm-receipt/route.ts"
 $mvg     = "scripts/check-purchase-money-direct-read.js"
 $inbox   = "app/approvals/page.tsx"
 
+$pay = "app/payments/page.tsx"
+
 $files = @("lib/version.ts", "CHANGELOG.md",
-           $inbox, $mvg,
-           "push_v3.74.946.ps1")
+           $pay,
+           "push_v3.74.947.ps1")
 
 $s = Get-Content -LiteralPath $screen -Raw
 $r = Get-Content -LiteralPath $route  -Raw
 $g = Get-Content -LiteralPath $mvg    -Raw
 $a = Get-Content -LiteralPath $inbox  -Raw
+$p = Get-Content -LiteralPath $pay    -Raw
+$pCode = [regex]::Replace($p, '(?s)/\*.*?\*/', '')
+$pCode = [regex]::Replace($pCode, '(?m)//.*$', '')
 
 $aCode = [regex]::Replace($a, '(?s)/\*.*?\*/', '')
 $aCode = [regex]::Replace($aCode, '(?m)//.*$', '')
+
+# ===========================================================================
+# 947 - THE PAYMENTS SCREEN IS NOT PURE DISPLAY, AND THAT IS THE WHOLE POINT.
+#
+# Before sending an allocation it sizes the amount IN THE BROWSER:
+#     netOutstanding = total_amount - returned_amount - paid_amount
+#     amount         = Math.min(applyAmount, netOutstanding)
+# Mask those three columns and they all become null, netOutstanding becomes 0,
+# and the request carries 0 - which the server then refuses. Not corruption
+# (the server sizes it itself and refuses both zero and anything above the
+# real outstanding), but an action that ALWAYS fails, with a baffling message.
+#
+# So the gate comes BEFORE the mask - the same order as 941 before 942: make
+# the document safe first, hide the money second. 948 does the masking.
+#
+# Measured before it was written: all 11 supplier payments in the system were
+# created by the accountant (10) or the owner (1), both in the cost audience.
+# The four members outside it created ZERO. The gate takes nothing away.
+# ===========================================================================
+if ($pCode -notmatch [regex]::Escape("fetchCanViewPurchaseCost")) {
+    Write-Host "X the payments screen no longer asks the rule who may see purchase cost" -ForegroundColor Red
+    exit 1
+}
+if ($pCode -match [regex]::Escape("canViewPurchasePrices") -or $pCode -match [regex]::Escape("UPPER_ROLES")) {
+    Write-Host "X the payments screen decides the cost rule from a local role list - it has one home" -ForegroundColor Red
+    exit 1
+}
+# The gate is asked at the OPENING and again at EVERY write: browser state is
+# mutable, and the decision belongs to the moment of writing (942 lesson).
+$gateAsks = ([regex]::Matches($pCode, 'purchaseCostGate\s*!==\s*"allowed"')).Count
+if ($gateAsks -lt 6) {
+    Write-Host "X the gate is asked only $gateAsks time(s) - three writes and three buttons were measured" -ForegroundColor Red
+    exit 1
+}
+foreach ($needle in @('const createSupplierPayment', 'openApplyToBill', 'openApplyToPO')) {
+    if ($pCode -notmatch [regex]::Escape($needle)) {
+        Write-Host "X the payments screen no longer has the action the gate guards: $needle" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ the payments screen asks the RULE, and asks it again at every purchase write ($gateAsks guards)" -ForegroundColor Green
+
+# A greyed-out button with no reason reads as a broken screen, not as a rule.
+if ($pCode -notmatch [regex]::Escape('purchaseCostGate === "blocked"')) {
+    Write-Host "X the blocked user gets a dead button with no written reason" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ whoever is blocked is told why, in writing - not left with a dead button" -ForegroundColor Green
+
+# Customer payments are NOT purchase cost and must stay untouched.
+foreach ($needle in @('applyPaymentToInvoiceWithOverrides', 'openApplyToInvoice')) {
+    if ($pCode -notmatch [regex]::Escape($needle)) {
+        Write-Host "X a customer-payment path disappeared - this release must not touch them" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "+ customer payments are untouched - they are not valued at purchase cost" -ForegroundColor Green
+
+# And this release does NOT claim to mask: the screen is deliberately absent
+# from the converted list, so its raw reads keep counting in the remainder.
+if ($g -match [regex]::Escape('"app/payments/page.tsx"')) {
+    Write-Host "X app/payments/page.tsx is on the converted list, but this release only gates it - 948 masks it" -ForegroundColor Red
+    exit 1
+}
+Write-Host "+ 947 gates, it does not mask - the screen still counts in the remainder, honestly" -ForegroundColor Green
 
 # ===========================================================================
 # 946 - THE APPROVALS INBOX. The money here is not a column - it is BUILT INTO
@@ -363,7 +433,7 @@ if ($ts -notmatch [regex]::Escape('"_wip_*"')) {
 }
 Write-Host "+ scratch folders are outside the type-check graph" -ForegroundColor Green
 
-$self2 = Get-Content -LiteralPath "push_v3.74.946.ps1" -Raw
+$self2 = Get-Content -LiteralPath "push_v3.74.947.ps1" -Raw
 foreach ($needle in @("check-je-default-status.js --prove --require-db",
                       "check-anon-open-tables.js --prove --require-db",
                       "selftest-products-branch-policy.js",
@@ -682,7 +752,7 @@ if ($tscErr -eq 0) {
 }
 
 git add -- $files 2>&1 | Out-Null
-git add -u -- "push_v3.74.945.ps1" 2>$null
+git add -u -- "push_v3.74.946.ps1" 2>$null
 git --no-pager diff --cached --stat
 $staged = git diff --cached --name-only
 if ($staged -match "backups/.*\.(sql|dump)$") {
@@ -703,48 +773,50 @@ foreach ($f in $files) {
 if (-not $staged) {
     Write-Host "Nothing to commit" -ForegroundColor Yellow
 } else {
-    $msgPath = Join-Path $env:TEMP "commit_v3_74_946.txt"
+    $msgPath = Join-Path $env:TEMP "commit_v3_74_947.txt"
     $msgLines = @(
-        'feat(purchase): v3.74.946 - the approvals inbox stops printing a price the reader may not see',
+        'feat(purchase): v3.74.947 - whoever cannot see the purchase cost cannot size a payment by it',
         '',
-        'Stage 2, batch 6. Thirteen screens converted; the counted remainder falls from',
-        '108 direct reads to 97.',
+        'Stage 2, batch 7. A GATE, not a mask - and the order is the point.',
         '',
-        'THE DANGER HERE IS NOT A COLUMN. IT IS A SENTENCE.',
+        'THE PAYMENTS SCREEN IS NOT PURE DISPLAY. Before sending an allocation it',
+        'sizes the amount in the browser:',
         '',
-        'This screen does not put purchase money in a cell you can hide. It BUILDS the',
-        'money into the line an approver reads and signs:',
+        '    netOutstanding = total_amount - returned_amount - paid_amount',
+        '    amount         = Math.min(applyAmount, netOutstanding)',
         '',
-        '    `${name} · ${qty} × ${Number(it.unit_price).toFixed(2)} = ${line_total}`',
+        'Mask those three columns first and all three become null, netOutstanding',
+        'becomes 0, and the request carries 0. Measured: the server sizes the cap',
+        'itself and refuses both zero and anything above the real outstanding, so',
+        'this is not corruption - it is an action that ALWAYS fails, with a message',
+        'that explains nothing. A screen must not offer a button it knows will fail.',
         '',
-        'Mask the read and leave that alone and the decision line reads',
-        '"item · 3 × 0.00 = 0.00" - a false number inside an approval document. A leak',
-        'is seen and disbelieved; a false zero is believed, and here it is believed by',
-        'the person authorising the money. Every such sentence is now built with',
-        'money(), so a hidden amount reads as a dash and the approver knows he is not',
-        'seeing it rather than thinking he saw it.',
+        'So the gate lands first and 948 masks the reads - the same order as 941',
+        'before 942: make the document safe, then hide the money.',
         '',
-        'fmtMoney - the funnel every amount on this screen passes through - used to',
-        'take a number and format whatever arrived. A masked null arrived as 0.00. It',
-        'now returns a dash for a hidden amount and formats only real ones.',
+        'THE GATE ASKS THE RULE, NOT A ROLE LIST, AND ASKS IT AT EVERY WRITE.',
         '',
-        'And `quantity * null` is 0 in JavaScript, so the line-total cell would have',
-        'printed a confident 0.00 next to a dashed unit price. It refuses to multiply',
-        'when either side is hidden.',
+        'can_view_purchase_cost is asked when the screen opens and again inside all',
+        'three purchase writes - create a supplier payment, apply it to a bill,',
+        'apply it to a purchase order - because browser state is mutable and the',
+        'decision belongs to the moment of writing. Failure to verify closes rather',
+        'than opens: the state starts at "checking", never at "allowed".',
         '',
-        'ELEVEN READS MOVED TO THE MASKED VIEWS, AND EVERY EMBED BECAME A SECOND QUERY.',
+        'AND ITS PRICE WAS MEASURED BEFORE IT WAS WRITTEN, NOT AFTER.',
         '',
-        'Eight embeds sat on these reads (suppliers, branches, warehouses, products,',
-        'bills). Left in place over a masked view they would reproduce the 940 outage -',
-        'PGRST201 empties the screen for everyone. They are now second queries that',
-        'rebuild the SAME response keys, because the cards read r.suppliers?.name and a',
-        'changed shape fails silently rather than loudly.',
+        'All 11 supplier payments in the history of this system were created by the',
+        'accountant (10) or the owner (1) - both in the cost audience. The four',
+        'members outside it (store_manager, staff x2, manufacturing_officer) created',
+        'ZERO. The gate removes nothing anybody uses; it closes a door that only',
+        'ever worked by leaking the cost.',
         '',
-        'bills(bill_number) inside the vendor-payment-correction read was the same shape',
-        'in a different place, and it is stitched too: one door, not two.',
+        'Recorded as debt for stage 3: can_modify_data still lets those three roles',
+        'insert into payments at the DATABASE level. The screen closes the known',
+        'road; the wall is stage 3 work.',
         '',
-        'The payment card no longer hides its bill line when the amount is hidden - it',
-        'shows the line with a dash and the reason. Silence reads as a broken screen.'
+        'Customer payments are untouched - they are not valued at purchase cost.',
+        'And this release deliberately does NOT add the screen to the converted',
+        'list: its twelve raw reads keep counting in the remainder, honestly.'
     )
     [System.IO.File]::WriteAllLines($msgPath, $msgLines)
 
@@ -768,7 +840,7 @@ if (-not $staged) {
 
 # -- the commit is not assumed: it is READ BACK -------------------------
 $headSubject = git log -1 --format=%s
-if ($headSubject -notmatch [regex]::Escape("v3.74.946")) {
+if ($headSubject -notmatch [regex]::Escape("v3.74.947")) {
     Write-Host "X HEAD is not this release ($headSubject) - refusing to claim a push" -ForegroundColor Red
     exit 1
 }
@@ -784,5 +856,5 @@ if ($localHead -ne $remoteHead) {
     Write-Host "X origin/main is $remoteHead but HEAD is $localHead - the push did NOT land" -ForegroundColor Red
     exit 1
 }
-Write-Host "`n+ v3.74.946 pushed - no approval sentence prints a price the reader is not allowed to see" -ForegroundColor Green
+Write-Host "`n+ v3.74.947 pushed - whoever cannot see the purchase cost cannot size a payment by it" -ForegroundColor Green
 Write-Host "  HEAD = origin/main = $localHead" -ForegroundColor DarkGray
