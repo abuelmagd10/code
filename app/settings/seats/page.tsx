@@ -263,6 +263,20 @@ export default function SeatsManagementPage() {
   const expiredSeatCount = data.expired_seat_count ?? data.seats.filter((s) => s.seat_number > 0 && s.is_expired).length
   const hasExpiredSeats = expiredSeatCount > 0
 
+  // v3.74.957 — الاشتراكُ شىءٌ ورخصةُ المقعد شىءٌ آخر، فليقل كلٌّ اسمَه.
+  // و«تجديد فى» تحت تاريخٍ مضى وعدٌ كاذب: تُقال «انتهت الفترة فى».
+  const subIsStopped = data.subscription_status === 'payment_failed'
+  const subIsLapsed =
+    subIsStopped ||
+    data.subscription_status === 'past_due' ||
+    data.subscription_status === 'canceled'
+  const periodLabel =
+    data.subscription_status === 'canceled'
+      ? 'تنتهى فى'
+      : subIsLapsed
+        ? 'انتهت الفترة فى'
+        : 'تجديد فى'
+
   // Standard DataTable columns for the seats list. Reproduces the same
   // columns/order as the previous hand-rolled table; business logic
   // (swap + renew handlers) is unchanged — only the presentation moves
@@ -355,7 +369,10 @@ export default function SeatsManagementPage() {
                     ? 'text-amber-600 dark:text-amber-400 font-medium'
                     : 'text-gray-500 dark:text-gray-400'
               }>
-                ينتهى: <span className="font-medium">{fmtDate(row.expires_at)}</span>
+                صلاحية رخصة المقعد حتى: <span className="font-medium">{fmtDate(row.expires_at)}</span>
+                {subIsLapsed && (
+                  <span className="ms-1 text-[10px] text-gray-400">— لا أثر لها ما دام الاشتراك متوقفاً</span>
+                )}
                 {daysToExpiry !== null && (
                   <span className="ms-1 text-[10px]">
                     ({row.is_expired
@@ -473,6 +490,11 @@ export default function SeatsManagementPage() {
                   {subBadge.icon}
                   {subBadge.label}
                 </span>
+                {subIsStopped && data.suspended_at && (
+                  <p className="text-[10px] mt-1 text-red-600 dark:text-red-400">
+                    موقوف منذ {fmtDate(data.suspended_at)}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">نوع الفوترة</p>
@@ -489,15 +511,19 @@ export default function SeatsManagementPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                  {data.subscription_status === 'canceled' ? 'تنتهى فى' : 'تجديد فى'}
+                  {periodLabel}
                 </p>
                 <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5 text-gray-400" />
                   {fmtDate(data.current_period_end)}
                 </p>
-                {daysLeft !== null && daysLeft >= 0 && (
-                  <p className={`text-[10px] mt-0.5 ${daysLeft <= 3 ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>
-                    {daysLeft === 0 ? 'اليوم' : `بعد ${daysLeft} يوم`}
+                {daysLeft !== null && (
+                  <p className={`text-[10px] mt-0.5 ${daysLeft < 0 ? 'text-red-600 font-semibold' : daysLeft <= 3 ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>
+                    {daysLeft < 0
+                      ? `مضى عليه ${Math.abs(daysLeft)} يوم`
+                      : daysLeft === 0
+                        ? 'اليوم'
+                        : `بعد ${daysLeft} يوم`}
                   </p>
                 )}
               </div>
