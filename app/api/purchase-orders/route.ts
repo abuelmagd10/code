@@ -15,6 +15,7 @@ import {
 } from "@/lib/governance-middleware"
 import { PurchaseOrderNotificationService } from "@/lib/services/purchase-order-notification.service"
 import { findForeignCompanyIds } from "@/lib/company-scope-guard"
+import { arabicReason } from "@/lib/error-messages"
 
 const PURCHASE_PRIVILEGED_ROLES = new Set([
   "super_admin",
@@ -297,7 +298,7 @@ export async function GET(request: NextRequest) {
       console.error("[API /purchase-orders] Database error:", dbError)
       return NextResponse.json({
         error: dbError.message,
-        error_ar: "خطأ في جلب أوامر الشراء"
+        error_ar: arabicReason(dbError, "خطأ في جلب أوامر الشراء")
       }, { status: 500 })
     }
 
@@ -320,7 +321,7 @@ export async function GET(request: NextRequest) {
     console.error("[API /purchase-orders] Unexpected error:", error)
     return NextResponse.json({
       error: error.message,
-      error_ar: "حدث خطأ غير متوقع"
+      error_ar: arabicReason(error, "حدث خطأ غير متوقع")
     }, {
       status: error.message.includes('Unauthorized') ? 401 : 403
     })
@@ -541,7 +542,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       return NextResponse.json({
         error: insertError.message,
-        error_ar: "فشل في إنشاء أمر الشراء"
+        error_ar: arabicReason(insertError, "فشل في إنشاء أمر الشراء")
       }, { status: 500 })
     }
 
@@ -718,7 +719,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({
       error: error.message,
-      error_ar: "حدث خطأ غير متوقع"
+      error_ar: arabicReason(error, "حدث خطأ غير متوقع")
     }, {
       status: error.message.includes('Violation') ? 403 : 500
     })

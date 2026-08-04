@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { enforceGovernance } from "@/lib/governance-middleware"
 import { resolveMatchingException } from "@/lib/three-way-matching"
+import { arabicReason } from "@/lib/error-messages"
 
 /**
  * GET /api/matching-exceptions
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
       console.error("[API /matching-exceptions] Database error:", dbError)
       return NextResponse.json({
         error: dbError.message,
-        error_ar: "خطأ في جلب استثناءات المطابقة"
+        error_ar: arabicReason(dbError, "خطأ في جلب استثناءات المطابقة")
       }, { status: 500 })
     }
 
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
     console.error("[API /matching-exceptions] Unexpected error:", error)
     return NextResponse.json({
       error: error.message,
-      error_ar: "حدث خطأ غير متوقع"
+      error_ar: arabicReason(error, "حدث خطأ غير متوقع")
     }, {
       status: error.message.includes('Unauthorized') ? 401 : 403
     })
@@ -137,7 +138,7 @@ export async function PUT(request: NextRequest) {
     console.error("[API /matching-exceptions] Unexpected error:", error)
     return NextResponse.json({
       error: error.message,
-      error_ar: "حدث خطأ غير متوقع"
+      error_ar: arabicReason(error, "حدث خطأ غير متوقع")
     }, {
       status: error.message.includes('Unauthorized') ? 401 : 403
     })

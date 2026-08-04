@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
+import { arabicReason } from "@/lib/error-messages"
 
 /**
  * v3.74.858 — أعمدة الإهلاك القابلة للتعديل من هذه الشاشة، بالاسم.
@@ -124,7 +125,7 @@ export async function PATCH(
 
     if (updateError) {
       return NextResponse.json(
-        { error: updateError.message, error_ar: "فشل في تحديث الإهلاك" },
+        { error: updateError.message, error_ar: arabicReason(updateError, "فشل في تحديث الإهلاك") },
         { status: 500 }
       )
     }
@@ -133,7 +134,7 @@ export async function PATCH(
   } catch (error: any) {
     console.error("Error updating write-off:", error)
     return NextResponse.json(
-      { error: error.message, error_ar: "خطأ في تحديث الإهلاك" },
+      { error: error.message, error_ar: arabicReason(error, "خطأ في تحديث الإهلاك") },
       { status: 500 }
     )
   }
@@ -219,7 +220,7 @@ export async function DELETE(
 
     if (deleteError) {
       return NextResponse.json(
-        { error: deleteError.message, error_ar: "فشل في حذف الإهلاك" },
+        { error: deleteError.message, error_ar: arabicReason(deleteError, "فشل في حذف الإهلاك") },
         { status: 500 }
       )
     }
@@ -228,7 +229,7 @@ export async function DELETE(
   } catch (error: any) {
     console.error("Error deleting write-off:", error)
     return NextResponse.json(
-      { error: error.message, error_ar: "خطأ في حذف الإهلاك" },
+      { error: error.message, error_ar: arabicReason(error, "خطأ في حذف الإهلاك") },
       { status: 500 }
     )
   }

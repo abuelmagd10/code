@@ -13,6 +13,7 @@ import {
 } from "@/lib/governance-middleware"
 import { SalesOrderNotificationService } from "@/lib/services/sales-order-notification.service"
 import { findForeignCompanyIds } from "@/lib/company-scope-guard"
+import { arabicReason } from "@/lib/error-messages"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
       console.error("[API /sales-orders] Database error:", dbError)
       return NextResponse.json({
         error: dbError.message,
-        error_ar: "خطأ في جلب أوامر البيع"
+        error_ar: arabicReason(dbError, "خطأ في جلب أوامر البيع")
       }, { status: 500 })
     }
 
@@ -105,7 +106,7 @@ export async function GET(request: NextRequest) {
     console.error("[API /sales-orders] Error:", error)
     return NextResponse.json({
       error: error.message,
-      error_ar: "حدث خطأ غير متوقع"
+      error_ar: arabicReason(error, "حدث خطأ غير متوقع")
     }, {
       status: error.message.includes('Unauthorized') ? 401 : 403
     })

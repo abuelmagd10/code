@@ -43,6 +43,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { enforceGovernance } from '@/lib/governance-middleware'
+import { arabicReason } from "@/lib/error-messages"
 
 // الحد الأقصى المسموح به لـ pageSize لمنع طلبات ضخمة
 const MAX_PAGE_SIZE = 100
@@ -175,7 +176,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('[API v2 /purchase-orders] Query error:', error)
       return NextResponse.json(
-        { success: false, error: error.message, error_ar: 'خطأ في جلب أوامر الشراء' },
+        { success: false, error: error.message, error_ar: arabicReason(error, 'خطأ في جلب أوامر الشراء') },
         { status: 500 }
       )
     }
@@ -254,7 +255,7 @@ export async function GET(request: NextRequest) {
       {
         success: false,
         error: error.message,
-        error_ar: 'حدث خطأ غير متوقع'
+        error_ar: arabicReason(error, 'حدث خطأ غير متوقع')
       },
       { status: error.message?.includes('Unauthorized') ? 401 : 500 }
     )

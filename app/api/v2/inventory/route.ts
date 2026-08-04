@@ -28,6 +28,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { enforceGovernance } from '@/lib/governance-middleware'
+import { arabicReason } from "@/lib/error-messages"
 
 const MAX_PAGE_SIZE = 200
 const DEFAULT_PAGE_SIZE = 50
@@ -138,7 +139,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('[API v2 /inventory] Query error:', error)
       return NextResponse.json(
-        { success: false, error: error.message, error_ar: 'خطأ في جلب حركات المخزون' },
+        { success: false, error: error.message, error_ar: arabicReason(error, 'خطأ في جلب حركات المخزون') },
         { status: 500 }
       )
     }
@@ -165,7 +166,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[API v2 /inventory] Unexpected error:', error)
     return NextResponse.json(
-      { success: false, error: error.message, error_ar: 'حدث خطأ غير متوقع' },
+      { success: false, error: error.message, error_ar: arabicReason(error, 'حدث خطأ غير متوقع') },
       { status: error.message?.includes('Unauthorized') ? 401 : 500 }
     )
   }

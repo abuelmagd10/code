@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { enforceGovernance } from "@/lib/governance-middleware"
+import { arabicReason } from "@/lib/error-messages"
 
 const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager', 'gm', 'super_admin', 'superadmin', 'generalmanager']
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('[API shipping-providers]', error)
-      return NextResponse.json({ error: error.message, error_ar: 'خطأ في جلب شركات الشحن' }, { status: 500 })
+      return NextResponse.json({ error: error.message, error_ar: arabicReason(error, 'خطأ في جلب شركات الشحن') }, { status: 500 })
     }
 
     let list = providers || []
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error('[API shipping-providers]', err)
     return NextResponse.json(
-      { error: err.message, error_ar: 'حدث خطأ غير متوقع' },
+      { error: err.message, error_ar: arabicReason(err, 'حدث خطأ غير متوقع') },
       { status: err.message?.includes('Unauthorized') ? 401 : 500 }
     )
   }

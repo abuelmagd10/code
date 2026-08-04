@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { enforceGovernance, applyGovernanceFilters } from "@/lib/governance-middleware"
+import { arabicReason } from "@/lib/error-messages"
 
 export async function PATCH(
   request: NextRequest,
@@ -25,7 +26,7 @@ export async function PATCH(
 
     if (findError) {
       return NextResponse.json(
-        { error: findError.message, error_ar: "تعذر جلب أمر البيع" },
+        { error: findError.message, error_ar: arabicReason(findError, "تعذر جلب أمر البيع") },
         { status: 500 }
       )
     }
@@ -57,7 +58,7 @@ export async function PATCH(
 
     if (updateError) {
       return NextResponse.json(
-        { error: updateError.message, error_ar: "فشل في تحديث أمر البيع" },
+        { error: updateError.message, error_ar: arabicReason(updateError, "فشل في تحديث أمر البيع") },
         { status: 500 }
       )
     }
@@ -79,7 +80,7 @@ export async function PATCH(
     })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message, error_ar: "حدث خطأ غير متوقع" },
+      { error: error.message, error_ar: arabicReason(error, "حدث خطأ غير متوقع") },
       { status: error.message.includes("Violation") ? 403 : 500 }
     )
   }
@@ -110,7 +111,7 @@ export async function DELETE(
     if (findError) {
       console.error("❌ [DELETE] Error finding sales order:", findError)
       return NextResponse.json(
-        { error: findError.message, error_ar: "تعذر جلب أمر البيع" },
+        { error: findError.message, error_ar: arabicReason(findError, "تعذر جلب أمر البيع") },
         { status: 500 }
       )
     }
@@ -211,7 +212,7 @@ export async function DELETE(
   } catch (error: any) {
     console.error("❌ [DELETE] Unexpected error:", error)
     return NextResponse.json(
-      { error: error.message, error_ar: "حدث خطأ غير متوقع" },
+      { error: error.message, error_ar: arabicReason(error, "حدث خطأ غير متوقع") },
       { status: error.message.includes("Violation") ? 403 : 500 }
     )
   }

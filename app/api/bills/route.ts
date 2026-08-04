@@ -14,6 +14,7 @@ import {
   addGovernanceData
 } from "@/lib/governance-middleware"
 import { validateShippingProviderForBranch } from "@/lib/shipping-provider-branch"
+import { arabicReason } from "@/lib/error-messages"
 
 /**
  * GET /api/bills
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
       console.error("[API /bills] Database error:", dbError)
       return NextResponse.json({ 
         error: dbError.message, 
-        error_ar: "خطأ في جلب فواتير الشراء" 
+        error_ar: arabicReason(dbError, "خطأ في جلب فواتير الشراء") 
       }, { status: 500 })
     }
 
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
     console.error("[API /bills] Unexpected error:", error)
     return NextResponse.json({ 
       error: error.message, 
-      error_ar: "حدث خطأ غير متوقع" 
+      error_ar: arabicReason(error, "حدث خطأ غير متوقع") 
     }, { 
       status: error.message.includes('Unauthorized') ? 401 : 403 
     })

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { enforceGovernance } from "@/lib/governance-middleware"
 import { validateBillMatching } from "@/lib/three-way-matching"
+import { arabicReason } from "@/lib/error-messages"
 
 export async function POST(
   request: NextRequest,
@@ -46,7 +47,7 @@ export async function POST(
     const errorMessage = error?.message || String(error) || 'Unknown error'
     return NextResponse.json({
       error: errorMessage,
-      error_ar: "حدث خطأ غير متوقع"
+      error_ar: arabicReason(errorMessage, "حدث خطأ غير متوقع")
     }, {
       status: errorMessage.includes('Unauthorized') ? 401 : 403
     })
