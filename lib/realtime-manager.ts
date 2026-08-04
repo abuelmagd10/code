@@ -528,9 +528,13 @@ class RealtimeManager {
       default:
         // ✅ افتراضي: حسب company_id و branch_id (فرع واحد فقط)
         // 🎯 قرار معماري: المستخدم له فرع واحد فقط - لا دعم للفروع المتعددة
+        // v3.74.958 — قناةُ Supabase تحمل **شرطاً واحداً** لا أكثر. وإلحاقُ
+        // شرطِ الفرع بقيمة شرطِ الشركة يجعلها تُقرأ رقمَ شركةٍ واحداً، فتردّ
+        // invalid input syntax for type uuid وتسقط القناةُ بصمت — فلا يُحدَّث
+        // شىءٌ لأىِّ موظّفٍ مربوطٍ بفرع. وهذا ما تقوله بقيةُ الفروع أعلاه
+        // وتفعله: شرطُ الشركة وحدَه هنا، وتصفيةُ الفرع فى shouldProcessEvent.
         if (accessFilter.filterByBranch && branchId) {
-          // ✅ استخدام branch_id واحد فقط (من company_members.branch_id)
-          return filter + `.and.branch_id.eq.${branchId}`
+          return filter
         }
         return filter
     }
