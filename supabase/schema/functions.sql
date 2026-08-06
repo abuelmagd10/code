@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-01T17:45:51.913Z
--- Routines: 1286
+-- Generated: 2026-08-06T22:33:15.609Z
+-- Routines: 1304
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4267,6 +4267,30 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_purchase_return_amount(p_field text, p_sent numeric, p_computed numeric, p_tolerance numeric, p_context text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_purchase_return_amount(p_field text, p_sent numeric, p_computed numeric, p_tolerance numeric DEFAULT 0.01, p_context text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  -- لم يُرسَل شىء ⇒ لا خلافَ يُعلن عنه؛ المحسوبُ هو المكتوب.
+  IF p_sent IS NULL THEN
+    RETURN;
+  END IF;
+  IF ABS(p_sent - COALESCE(p_computed, 0)) <= p_tolerance THEN
+    RETURN;
+  END IF;
+  RAISE EXCEPTION
+    'v3.74.941: % المُرسَل (%) يخالف المحسوبَ من الفاتورة (%)%. المرتجعُ يُسعَّر من الفاتورة، ولا يُكتب رقمٌ لا تُصدّقه.',
+    p_field, p_sent, p_computed, COALESCE(' — ' || p_context, '');
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assign_default_member_branch()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assign_default_member_branch()
@@ -5443,7 +5467,22 @@ AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BE
 CREATE OR REPLACE FUNCTION public.auto_generate_po_number()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.po_number IS NULL OR NEW.po_number = '' THEN v_lock_key := hashtext('po_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(po_number FROM 'PO-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM purchase_orders WHERE company_id = NEW.company_id AND po_number ~ '^PO-[0-9]+$'; v_number := 'PO-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.po_number := v_number; END IF; RETURN NEW; END; $function$
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_lock_key BIGINT;
+BEGIN
+  IF NEW.po_number IS NULL OR NEW.po_number = '' THEN
+    IF NEW.company_id IS NULL THEN
+      RAISE EXCEPTION 'v3.74.952: أمرُ شراءٍ بلا شركة — لا يمكن توليدُ رقمه.';
+    END IF;
+    v_lock_key := hashtext('po_' || NEW.company_id::TEXT);
+    PERFORM pg_advisory_xact_lock(v_lock_key);
+    NEW.po_number := public.next_po_number(NEW.company_id);
+  END IF;
+  RETURN NEW;
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -6096,33 +6135,6 @@ BEGIN
 
     RETURN QUERY SELECT c.company_id, v_created;
   END LOOP;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- bank_voucher_sod_guard()
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.bank_voucher_sod_guard()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF public.erp_company_senior_count(NEW.company_id) > 1 THEN
-    IF NEW.reviewed_by IS NOT NULL
-       AND NEW.created_by IS NOT NULL
-       AND NEW.reviewed_by = NEW.created_by AND NOT public.erp_is_company_owner(NEW.company_id, NEW.created_by) THEN
-      RAISE EXCEPTION 'SoD violation: مُعتَمِد السَّنَد لا يَجوز أَن يَكون هو نَفسه مُنشِئ السَّنَد.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-    IF NEW.posted_by IS NOT NULL
-       AND NEW.reviewed_by IS NOT NULL
-       AND NEW.posted_by = NEW.reviewed_by AND NOT public.erp_is_company_owner(NEW.company_id, NEW.reviewed_by) THEN
-      RAISE EXCEPTION 'SoD violation: مُنَفِّذ السَّنَد لا يَجوز أَن يَكون هو نَفسه مُعتَمِد السَّنَد.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-  END IF;
-  RETURN NEW;
 END;
 $function$
 ;
@@ -6997,6 +7009,74 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- bill_receipt_transition_guard_trg()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.bill_receipt_transition_guard_trg()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_old     TEXT := COALESCE(OLD.receipt_status, 'pending');
+  v_new     TEXT := COALESCE(NEW.receipt_status, 'pending');
+  v_who     UUID;
+  v_when    TIMESTAMPTZ;
+  v_name    TEXT;
+  v_word    TEXT;
+  v_touched BOOLEAN;
+BEGIN
+  NEW.updated_at := NOW();
+
+  v_touched :=
+        (v_new IS DISTINCT FROM v_old)
+     OR (NEW.receipt_rejection_reason IS DISTINCT FROM OLD.receipt_rejection_reason)
+     OR (NEW.rejected_by  IS DISTINCT FROM OLD.rejected_by)
+     OR (NEW.rejected_at  IS DISTINCT FROM OLD.rejected_at)
+     OR (NEW.received_by  IS DISTINCT FROM OLD.received_by)
+     OR (NEW.received_at  IS DISTINCT FROM OLD.received_at);
+
+  IF NOT v_touched THEN
+    RETURN NEW;
+  END IF;
+
+  IF (v_old = 'pending'  AND v_new IN ('received', 'rejected'))
+     OR (v_old = 'rejected' AND v_new = 'pending') THEN
+
+    IF v_new = 'rejected' THEN
+      IF NEW.rejected_by IS NULL THEN NEW.rejected_by := auth.uid(); END IF;
+      IF NEW.rejected_at IS NULL THEN NEW.rejected_at := NOW(); END IF;
+    ELSIF v_new = 'received' THEN
+      IF NEW.received_by IS NULL THEN NEW.received_by := auth.uid(); END IF;
+      IF NEW.received_at IS NULL THEN NEW.received_at := NOW(); END IF;
+    ELSE
+      NEW.rejected_by := NULL;
+      NEW.rejected_at := NULL;
+      NEW.receipt_rejection_reason := NULL;
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  IF v_old = 'rejected' THEN
+    v_word := 'رُفض'; v_who := OLD.rejected_by; v_when := OLD.rejected_at;
+  ELSIF v_old = 'received' THEN
+    v_word := 'استُلم'; v_who := OLD.received_by; v_when := OLD.received_at;
+  ELSE
+    v_word := 'حُسم'; v_who := NULL; v_when := NULL;
+  END IF;
+
+  SELECT u.email INTO v_name FROM auth.users u WHERE u.id = v_who;
+
+  RAISE EXCEPTION 'v3.74.955: هذا المستندُ حُسم بالفعل — % %. حدّث الصفحة ثمّ انظر حالتَه.',
+    v_word,
+    COALESCE('بواسطة ' || COALESCE(v_name, v_who::TEXT), 'من قبل')
+      || COALESCE(' فى ' || to_char(v_when AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' بتوقيت جرينتش', '');
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- bill_request_discount_approval_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.bill_request_discount_approval_trg()
@@ -7328,6 +7408,8 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.bkg_trg_record_status_history()
  RETURNS trigger
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
   IF TG_OP = 'INSERT' THEN
@@ -7343,7 +7425,8 @@ BEGIN
         WHEN 'no_show' THEN 'Customer no-show' ELSE 'Status updated' END);
   END IF;
   RETURN NEW;
-END; $function$
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -8269,12 +8352,8 @@ CREATE OR REPLACE FUNCTION public.can_access_bill(p_bill_id uuid)
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  SELECT EXISTS (
-    SELECT 1 FROM public.bills b
-     WHERE b.id = p_bill_id
-       AND b.company_id IN (SELECT public.get_user_company_ids())
-       AND public.can_access_record_branch(b.company_id, b.branch_id)
-  );
+  SELECT EXISTS (SELECT 1 FROM public.bills b
+     WHERE b.id = p_bill_id AND public.can_access_bill_row(b.company_id, b.branch_id));
 $function$
 ;
 
@@ -8283,22 +8362,26 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_access_bill_items(p_bill_id uuid)
  RETURNS boolean
- LANGUAGE plpgsql
+ LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE
-  v_company_id UUID;
-  v_branch_id  UUID;
-BEGIN
-  SELECT company_id, branch_id INTO v_company_id, v_branch_id
-    FROM bills WHERE id = p_bill_id;
-  IF v_company_id IS NULL THEN
-    RETURN FALSE;
-  END IF;
-  -- v3.74.917 — الفرع كالرأس: من لا يرى الفاتورة لا يرى سعر بندها.
-  RETURN public.can_access_record_branch(v_company_id, v_branch_id);
-END;
+  SELECT public.can_access_bill(p_bill_id);
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_bill_row(p_company_id uuid, p_branch_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_bill_row(p_company_id uuid, p_branch_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT p_company_id IN (SELECT public.get_user_company_ids())
+     AND public.can_access_record_branch(p_company_id, p_branch_id)
+     AND public.can_view_resource(p_company_id, 'bills');
 $function$
 ;
 
@@ -8316,7 +8399,6 @@ DECLARE
   v_branch  UUID;
   v_creator UUID;
   v_staff   UUID;
-  v_vis     TEXT;
 BEGIN
   SELECT b.company_id, b.branch_id, b.created_by_user_id, b.staff_user_id
     INTO v_company, v_branch, v_creator, v_staff
@@ -8327,23 +8409,43 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  IF NOT public.is_company_member(v_company) THEN
+  RETURN public.can_access_booking_row(p_booking_id, v_company, v_branch, v_creator, v_staff);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_booking_row(p_booking_id uuid, p_company_id uuid, p_branch_id uuid, p_creator uuid, p_staff uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_booking_row(p_booking_id uuid, p_company_id uuid, p_branch_id uuid, p_creator uuid, p_staff uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_vis TEXT;
+BEGIN
+  IF p_company_id IS NULL THEN
     RETURN FALSE;
   END IF;
 
-  v_vis := public.current_user_resource_visibility(v_company, 'bookings');
+  IF NOT public.is_company_member(p_company_id) THEN
+    RETURN FALSE;
+  END IF;
+
+  v_vis := public.current_user_resource_visibility(p_company_id, 'bookings');
 
   IF v_vis = 'company' THEN
     RETURN TRUE;
   END IF;
 
   IF v_vis = 'branch' THEN
-    RETURN v_branch IS NULL OR v_branch = public.current_user_branch_id(v_company);
+    RETURN p_branch_id IS NULL OR p_branch_id = public.current_user_branch_id(p_company_id);
   END IF;
 
   IF v_vis = 'own' THEN
-    -- التكليفُ القائم يعبر الجدار: هذا عملٌ أُسند إليه.
-    IF v_staff IS NOT NULL AND v_staff = auth.uid() THEN
+    IF p_staff IS NOT NULL AND p_staff = auth.uid() THEN
       RETURN TRUE;
     END IF;
 
@@ -8351,16 +8453,14 @@ BEGIN
       RETURN TRUE;
     END IF;
 
-    -- والإنشاءُ وحده لا يعبره (قاعدة 922)، وكذلك حجزٌ بلا موظفٍ مسنَد.
-    IF (v_creator = auth.uid() OR v_staff IS NULL)
-       AND public.can_access_record_branch(v_company, v_branch) THEN
+    IF (p_creator = auth.uid() OR p_staff IS NULL)
+       AND public.can_access_record_branch(p_company_id, p_branch_id) THEN
       RETURN TRUE;
     END IF;
   END IF;
 
-  -- والمشاركةُ لا تعبر الجدار (قاعدة 922).
-  RETURN public.has_shared_access(v_company, 'bookings', v_creator)
-     AND public.can_access_record_branch(v_company, v_branch);
+  RETURN public.has_shared_access(p_company_id, 'bookings', p_creator)
+     AND public.can_access_record_branch(p_company_id, p_branch_id);
 END;
 $function$
 ;
@@ -8440,8 +8540,7 @@ AS $function$
   SELECT EXISTS (
     SELECT 1 FROM public.purchase_orders po
      WHERE po.id = p_purchase_order_id
-       AND po.company_id IN (SELECT public.get_user_company_ids())
-       AND public.can_access_record_branch(po.company_id, po.branch_id)
+       AND public.can_access_purchase_order_row(po.company_id, po.branch_id)
   );
 $function$
 ;
@@ -8470,6 +8569,20 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- can_access_purchase_order_row(p_company_id uuid, p_branch_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_order_row(p_company_id uuid, p_branch_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT p_company_id IN (SELECT public.get_user_company_ids())
+     AND public.can_access_record_branch(p_company_id, p_branch_id);
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- can_access_purchase_return(p_return_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_access_purchase_return(p_return_id uuid)
@@ -8481,10 +8594,10 @@ AS $function$
 DECLARE
   v_company UUID;
   v_branch  UUID;
-  v_mine    UUID;
+  v_creator UUID;
 BEGIN
-  SELECT pr.company_id, pr.branch_id
-    INTO v_company, v_branch
+  SELECT pr.company_id, pr.branch_id, pr.created_by
+    INTO v_company, v_branch, v_creator
     FROM public.purchase_returns pr
    WHERE pr.id = p_return_id;
 
@@ -8492,29 +8605,7 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  IF public.current_user_is_branch_unbounded(v_company) THEN
-    RETURN TRUE;
-  END IF;
-
-  v_mine := public.current_user_branch_id(v_company);
-  IF v_mine IS NULL THEN
-    RETURN FALSE;
-  END IF;
-
-  -- مرتجعُ فرعٍ واحد: فرعُه أو لا شىء.
-  IF v_branch IS NOT NULL THEN
-    RETURN v_branch = v_mine;
-  END IF;
-
-  -- مرتجعٌ متعدد المخازن: يُرى إن كان لفرعى نصيبٌ فيه.
-  RETURN EXISTS (
-    SELECT 1 FROM public.purchase_return_warehouse_allocations a
-     WHERE a.purchase_return_id = p_return_id AND a.branch_id = v_mine
-  ) OR EXISTS (
-    SELECT 1 FROM public.purchase_return_items i
-      JOIN public.warehouses w ON w.id = i.warehouse_id
-     WHERE i.purchase_return_id = p_return_id AND w.branch_id = v_mine
-  );
+  RETURN public.can_access_purchase_return_row(p_return_id, v_company, v_branch, v_creator);
 END;
 $function$
 ;
@@ -8529,25 +8620,52 @@ CREATE OR REPLACE FUNCTION public.can_access_purchase_return_item(p_item_id uuid
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_return      UUID;
-  v_company     UUID;
-  v_head_branch UUID;
-  v_warehouse   UUID;
-  v_allocation  UUID;
-  v_mine        UUID;
+  v_return     UUID;
+  v_warehouse  UUID;
+  v_allocation UUID;
 BEGIN
-  SELECT i.purchase_return_id, pr.company_id, pr.branch_id, i.warehouse_id, i.warehouse_allocation_id
-    INTO v_return, v_company, v_head_branch, v_warehouse, v_allocation
+  SELECT i.purchase_return_id, i.warehouse_id, i.warehouse_allocation_id
+    INTO v_return, v_warehouse, v_allocation
     FROM public.purchase_return_items i
-    JOIN public.purchase_returns pr ON pr.id = i.purchase_return_id
    WHERE i.id = p_item_id;
 
   IF v_return IS NULL THEN
     RETURN FALSE;
   END IF;
 
-  -- البند لا يُقرأ إن كان رأسُه محجوباً.
-  IF NOT public.can_access_purchase_return(v_return) THEN
+  RETURN public.can_access_purchase_return_item_row(v_return, v_warehouse, v_allocation);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_purchase_return_item_row(p_return_id uuid, p_warehouse_id uuid, p_allocation_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_return_item_row(p_return_id uuid, p_warehouse_id uuid, p_allocation_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_company     UUID;
+  v_head_branch UUID;
+  v_mine        UUID;
+BEGIN
+  IF p_return_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT pr.company_id, pr.branch_id
+    INTO v_company, v_head_branch
+    FROM public.purchase_returns pr
+   WHERE pr.id = p_return_id;
+
+  IF v_company IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  IF NOT public.can_access_purchase_return(p_return_id) THEN
     RETURN FALSE;
   END IF;
 
@@ -8555,7 +8673,6 @@ BEGIN
     RETURN TRUE;
   END IF;
 
-  -- رأسٌ بفرعٍ واحد وقد مرّ: بنودُه كلُّها لذلك الفرع.
   IF v_head_branch IS NOT NULL THEN
     RETURN TRUE;
   END IF;
@@ -8565,24 +8682,72 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  -- مرتجعٌ متعدد: بندُ فرعى وحده — والسعر فيه.
-  IF v_allocation IS NOT NULL THEN
+  IF p_allocation_id IS NOT NULL THEN
     RETURN EXISTS (
       SELECT 1 FROM public.purchase_return_warehouse_allocations a
-       WHERE a.id = v_allocation AND a.branch_id = v_mine
+       WHERE a.id = p_allocation_id AND a.branch_id = v_mine
     );
   END IF;
 
-  IF v_warehouse IS NOT NULL THEN
+  IF p_warehouse_id IS NOT NULL THEN
     RETURN EXISTS (
       SELECT 1 FROM public.warehouses w
-       WHERE w.id = v_warehouse AND w.branch_id = v_mine
+       WHERE w.id = p_warehouse_id AND w.branch_id = v_mine
     );
   END IF;
 
-  -- بندٌ فى مرتجعٍ متعددٍ بلا مخزنٍ ولا تخصيص: لا يُنسب إلى فرع، فلا يُقرأ
-  -- إلا بلا قيدٍ مكانى. (صفر صفٍّ من هذا الشكل عند الكتابة — قِيس.)
   RETURN FALSE;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- can_access_purchase_return_row(p_return_id uuid, p_company_id uuid, p_branch_id uuid, p_created_by uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_purchase_return_row(p_return_id uuid, p_company_id uuid, p_branch_id uuid, p_created_by uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_mine UUID;
+BEGIN
+  IF p_company_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  IF public.current_user_is_branch_unbounded(p_company_id) THEN
+    RETURN TRUE;
+  END IF;
+
+  v_mine := public.current_user_branch_id(p_company_id);
+  IF v_mine IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  IF p_branch_id IS NOT NULL THEN
+    RETURN p_branch_id = v_mine;
+  END IF;
+
+  IF p_created_by IS NOT NULL AND p_created_by = auth.uid()
+     AND NOT EXISTS (
+       SELECT 1 FROM public.purchase_return_items i
+        WHERE i.purchase_return_id = p_return_id)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.purchase_return_warehouse_allocations a
+        WHERE a.purchase_return_id = p_return_id) THEN
+    RETURN TRUE;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.purchase_return_warehouse_allocations a
+     WHERE a.purchase_return_id = p_return_id AND a.branch_id = v_mine
+  ) OR EXISTS (
+    SELECT 1 FROM public.purchase_return_items i
+      JOIN public.warehouses w ON w.id = i.warehouse_id
+     WHERE i.purchase_return_id = p_return_id AND w.branch_id = v_mine
+  );
 END;
 $function$
 ;
@@ -8792,29 +8957,11 @@ END; $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_delete_data(p_company_id uuid)
  RETURNS boolean
- LANGUAGE plpgsql
- SECURITY DEFINER
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-BEGIN
-  -- المالك يمكنه الحذف دائماً
-  IF EXISTS (
-    SELECT 1 FROM companies c WHERE c.id = p_company_id AND c.user_id = auth.uid()
-  ) THEN
-    RETURN TRUE;
-  END IF;
-  
-  -- التحقق من صلاحية الحذف من جدول الصلاحيات
-  RETURN EXISTS (
-    SELECT 1 
-    FROM company_members cm
-    JOIN company_role_permissions crp ON crp.company_id = cm.company_id AND crp.role = cm.role
-    WHERE cm.company_id = p_company_id
-    AND cm.user_id = auth.uid()
-    AND crp.resource = 'customers'
-    AND crp.can_delete = true
-  );
-END;
+  SELECT public.can_delete_resource(p_company_id, 'customers');
 $function$
 ;
 
@@ -9101,6 +9248,34 @@ BEGIN
   RETURN false;
 END;
 $function$
+;
+
+-- ---------------------------------------------------------------
+-- can_view_resource(p_company_id uuid, p_resource text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_view_resource(p_company_id uuid, p_resource text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_role text; v_access boolean; v_read boolean; v_all boolean;
+BEGIN
+  IF p_company_id IS NULL OR p_resource IS NULL THEN RETURN false; END IF;
+  IF EXISTS (SELECT 1 FROM public.companies c WHERE c.id=p_company_id AND c.user_id=auth.uid()) THEN
+    RETURN true;
+  END IF;
+  SELECT lower(cm.role) INTO v_role FROM public.company_members cm
+   WHERE cm.company_id=p_company_id AND cm.user_id=auth.uid() LIMIT 1;
+  IF v_role IS NULL THEN RETURN false; END IF;
+  IF v_role IN ('owner','admin','general_manager') THEN RETURN true; END IF;
+  SELECT crp.can_access, crp.can_read, crp.all_access INTO v_access, v_read, v_all
+    FROM public.company_role_permissions crp
+   WHERE crp.company_id=p_company_id AND crp.role=v_role AND crp.resource=p_resource LIMIT 1;
+  IF NOT FOUND THEN RETURN false; END IF;
+  IF v_access IS NOT TRUE THEN RETURN false; END IF;
+  RETURN coalesce(v_all,false) OR coalesce(v_read,false);
+END $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -11953,6 +12128,23 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- company_role_has_holder(p_company_id uuid, p_role text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.company_role_has_holder(p_company_id uuid, p_role text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.company_members m
+     WHERE m.company_id = p_company_id
+       AND lower(trim(replace(m.role, ' ', '_'))) = lower(trim(replace(p_role, ' ', '_')))
+  );
 $function$
 ;
 
@@ -19460,6 +19652,23 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_is_company_senior(p_company_id uuid, p_user_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT p_user_id IS NOT NULL AND (
+    EXISTS (SELECT 1 FROM public.company_members
+             WHERE company_id = p_company_id AND user_id = p_user_id
+               AND lower(role) IN ('owner','admin','general_manager','gm','generalmanager','superadmin','super_admin'))
+    OR EXISTS (SELECT 1 FROM public.companies WHERE id = p_company_id AND user_id = p_user_id));
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_is_sole_senior(p_company_id uuid, p_user_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid)
@@ -19492,6 +19701,48 @@ AS $function$
     WHEN lower(coalesce(p_product_type,'')) = 'manufactured' THEN 'MFG'
     ELSE 'PRD'
   END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_sod_guard()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_sod_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_row     jsonb := to_jsonb(NEW);
+  v_company uuid;
+  v_spec    text;
+  v_parts   text[];
+  v_earlier uuid;
+  v_later   uuid;
+BEGIN
+  v_company := nullif(v_row->>'company_id','')::uuid;
+  IF v_company IS NULL THEN RETURN NEW; END IF;
+
+  FOREACH v_spec IN ARRAY TG_ARGV LOOP
+    v_parts := string_to_array(v_spec, '|');
+    IF array_length(v_parts, 1) IS DISTINCT FROM 3 THEN
+      RAISE EXCEPTION 'v3.74.966: وصفُ فصلِ المهامّ معطوبٌ على %: %', TG_TABLE_NAME, v_spec;
+    END IF;
+    IF NOT jsonb_exists(v_row, v_parts[1]) OR NOT jsonb_exists(v_row, v_parts[2]) THEN
+      RAISE EXCEPTION 'v3.74.966: عمودٌ غيرُ موجودٍ فى % — % أو %', TG_TABLE_NAME, v_parts[1], v_parts[2];
+    END IF;
+    v_earlier := nullif(v_row->>v_parts[1], '')::uuid;
+    v_later   := nullif(v_row->>v_parts[2], '')::uuid;
+
+    -- v3.74.968: الاستثناءُ على قدرِ الشخص لا الشركة.
+    IF v_earlier IS NOT NULL AND v_later IS NOT NULL AND v_earlier = v_later
+       AND NOT public.erp_is_company_owner(v_company, v_earlier)
+       AND NOT (public.erp_company_senior_count(v_company) <= 1
+                AND public.erp_is_company_senior(v_company, v_earlier)) THEN
+      RAISE EXCEPTION 'SoD violation: %', v_parts[3] USING ERRCODE = 'check_violation';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END
 $function$
 ;
 
@@ -20759,33 +21010,6 @@ BEGIN
      AND COALESCE(NEW.amount, 0) > 0 THEN
     RAISE EXCEPTION 'لا يُمكِن تَعليم المَصروف كمَدفوع/مُرحَّل بدون قَيد مُحاسَبي. رحِّل القَيد أولاً (تأكَّد من إعداد حساب المَصروف وحساب الدَّفع).'
       USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- expense_sod_guard()
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.expense_sod_guard()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  -- Segregation of duties only applies when 2+ seniors exist. For a sole-owner
-  -- company, self-approval/self-pay is unavoidable and must be allowed.
-  IF public.erp_company_senior_count(NEW.company_id) > 1 THEN
-    IF NEW.approved_by IS NOT NULL AND NEW.created_by IS NOT NULL
-       AND NEW.approved_by = NEW.created_by AND NOT public.erp_is_company_owner(NEW.company_id, NEW.created_by) THEN
-      RAISE EXCEPTION 'SoD violation: مُعتَمِد المَصروف لا يَجوز أَن يَكون هو نَفسه مُنشِئ المَصروف.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-    IF NEW.paid_by IS NOT NULL AND NEW.approved_by IS NOT NULL
-       AND NEW.paid_by = NEW.approved_by AND NOT public.erp_is_company_owner(NEW.company_id, NEW.approved_by) THEN
-      RAISE EXCEPTION 'SoD violation: مُنَفِّذ الصَّرف لا يَجوز أَن يَكون هو نَفسه مُعتَمِد المَصروف.'
-        USING ERRCODE = 'check_violation';
-    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -29853,72 +30077,44 @@ CREATE OR REPLACE FUNCTION public.ic_stale_critical_notifications(p_company_id u
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_count integer;
+DECLARE v_pending integer; v_unknown integer;
 BEGIN
-  SELECT COUNT(*) INTO v_count
-  FROM notifications n
-  WHERE n.company_id = p_company_id
-    AND n.priority IN ('critical','high')
-    AND n.read_at IS NULL
-    AND n.created_at < NOW() - INTERVAL '30 days'
-    -- v3.74.215 — exclude notifications whose source workflow is resolved.
-    AND CASE n.reference_type
-      WHEN 'purchase_order' THEN EXISTS (
-        SELECT 1 FROM purchase_orders po
-        WHERE po.id = n.reference_id
-          AND COALESCE(po.status, '') IN ('draft', 'pending_approval', 'pending_director', 'pending_manager', 'sent_to_supplier')
-      )
-      WHEN 'bill' THEN EXISTS (
-        SELECT 1 FROM bills b
-        WHERE b.id = n.reference_id
-          AND COALESCE(b.status, '') IN ('draft', 'pending_approval', 'received')
-          AND COALESCE(b.paid_amount, 0) < COALESCE(b.total_amount, 0)
-      )
-      WHEN 'invoice' THEN EXISTS (
-        SELECT 1 FROM invoices i
-        WHERE i.id = n.reference_id
-          AND COALESCE(i.status, '') IN ('draft', 'sent', 'partially_paid')
-          AND COALESCE(i.approval_status, '') IN ('pending', '')
-      )
-      WHEN 'stock_transfer' THEN EXISTS (
-        SELECT 1 FROM inventory_transfers t
-        WHERE t.id = n.reference_id
-          AND COALESCE(t.status, '') IN ('draft', 'pending_approval', 'in_transit')
-      )
-      WHEN 'payment_approval' THEN EXISTS (
-        SELECT 1 FROM payments p
-        WHERE p.id = n.reference_id
-          AND COALESCE(p.status, '') IN ('pending_approval', 'pending_manager', 'pending_director')
-      )
-      WHEN 'expense' THEN EXISTS (
-        SELECT 1 FROM expenses e
-        WHERE e.id = n.reference_id
-          AND COALESCE(e.status, '') IN ('draft', 'pending_approval')
-      )
-      ELSE TRUE  -- unknown reference_type → keep legacy behaviour
-    END;
+  SELECT COUNT(*) FILTER (WHERE s.still_open IS TRUE),
+         COUNT(*) FILTER (WHERE s.still_open IS NULL)
+    INTO v_pending, v_unknown
+    FROM notifications n
+    CROSS JOIN LATERAL (SELECT public.workflow_row_is_open(n.reference_id) AS still_open) s
+   WHERE n.company_id = p_company_id
+     AND n.priority IN ('critical','high')
+     AND n.read_at IS NULL
+     AND n.created_at < NOW() - INTERVAL '30 days';
 
-  IF v_count > 0 THEN
+  -- إنذارٌ حقيقى: عملٌ ما زال معلَّقاً ولم يقرأه أحد منذ شهر.
+  IF COALESCE(v_pending, 0) > 0 THEN
     severity := 'low';
     detail := jsonb_build_object(
-      'unread_critical_count', v_count,
-      'hint','Critical or high-priority notifications unread > 30 days, and the underlying workflow is still pending action.'
-    );
+      'unread_critical_count', v_pending,
+      'hint','Critical or high-priority notifications unread > 30 days, and the underlying workflow is still pending action.');
     RETURN NEXT;
   END IF;
-EXCEPTION WHEN undefined_table OR undefined_column THEN
-  -- One of the joined tables doesn't exist (custom deployments).
-  -- Fall back to the legacy check so we still flag something.
-  SELECT COUNT(*) INTO v_count
-  FROM notifications
-  WHERE company_id = p_company_id
-    AND priority IN ('critical','high')
-    AND read_at IS NULL
-    AND created_at < NOW() - INTERVAL '30 days';
-  IF v_count > 0 THEN
+
+  -- ودَينٌ مرئى: إشعاراتٌ لا نعرف مستنداتِها، **فلا يُدَّعى أنها معلَّقة**.
+  -- تُقال بعددها وأنواعها كى تُغطّى، لا كى تُبتلع.
+  IF COALESCE(v_unknown, 0) > 0 THEN
     severity := 'low';
-    detail := jsonb_build_object('unread_critical_count', v_count,
-      'hint','Critical or high-priority notifications unread > 30 days. Decisions may have been missed.');
+    detail := jsonb_build_object(
+      'unverified_count', v_unknown,
+      'reference_types', (
+        SELECT COALESCE(jsonb_object_agg(t.reference_type, t.n), '{}'::jsonb) FROM (
+          SELECT n2.reference_type, COUNT(*) AS n
+            FROM notifications n2
+           WHERE n2.company_id = p_company_id
+             AND n2.priority IN ('critical','high')
+             AND n2.read_at IS NULL
+             AND n2.created_at < NOW() - INTERVAL '30 days'
+             AND public.workflow_row_is_open(n2.reference_id) IS NULL
+           GROUP BY n2.reference_type) t),
+      'hint','Old unread notifications whose source document could not be found - their state is UNVERIFIED, not pending. Add the table to workflow_row_is_open to cover them.');
     RETURN NEXT;
   END IF;
 END
@@ -33739,26 +33935,6 @@ BEGIN
 
   RAISE NOTICE 'Migration completed: % products, % lots, total value: %',
     v_products_count, v_lots_count, v_total_value;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- mmia_sod_guard()
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.mmia_sod_guard()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF public.erp_company_senior_count(NEW.company_id) > 1 THEN
-    IF NEW.approved_by IS NOT NULL AND NEW.requested_by IS NOT NULL
-       AND NEW.approved_by = NEW.requested_by AND NOT public.erp_is_company_owner(NEW.company_id, NEW.requested_by) THEN
-      RAISE EXCEPTION 'SoD violation: مُعتَمِد طَلَب صَرف المَواد لا يَجوز أَن يَكون هو نَفسه مُقَدِّم الطَّلَب.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-  END IF;
-  RETURN NEW;
 END;
 $function$
 ;
@@ -38416,6 +38592,40 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- next_po_number(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.next_po_number(p_company_id uuid)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_max INTEGER;
+BEGIN
+  IF p_company_id IS NULL THEN
+    RAISE EXCEPTION 'v3.74.952: لا يُولَّد رقمُ أمرِ شراءٍ بلا شركة.';
+  END IF;
+
+  -- صلاحيةٌ مرتفعةٌ لا تعنى بابًا مفتوحاً: جلسةُ مستخدمٍ لا تسأل عن شركةٍ
+  -- ليست له. وغيابُ الجلسة (خادمٌ موثوق) يمرّ.
+  IF auth.uid() IS NOT NULL
+     AND p_company_id NOT IN (SELECT public.get_user_company_ids()) THEN
+    RAISE EXCEPTION 'v3.74.952: لا صلةَ لك بهذه الشركة.';
+  END IF;
+
+  SELECT COALESCE(MAX(CAST(SUBSTRING(po_number FROM 'PO-([0-9]+)') AS INTEGER)), 0)
+    INTO v_max
+    FROM public.purchase_orders
+   WHERE company_id = p_company_id
+     AND po_number ~ '^PO-[0-9]+$';
+
+  RETURN 'PO-' || LPAD((v_max + 1)::TEXT, 4, '0');
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- no_show_booking_atomic(p_company_id uuid, p_booking_id uuid, p_updated_by uuid, p_notes text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.no_show_booking_atomic(p_company_id uuid, p_booking_id uuid, p_updated_by uuid, p_notes text DEFAULT NULL::text)
@@ -38751,6 +38961,56 @@ BEGIN
 
   RETURN NEW;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- notifications_route_to_a_person()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notifications_route_to_a_person()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_owner uuid; v_role text;
+BEGIN
+  -- مُوجَّهٌ إلى شخصٍ بعينه، أو بلا دور: لا شأنَ لنا به.
+  IF NEW.assigned_to_user IS NOT NULL OR NEW.assigned_to_role IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- للدور عضوٌ يحمله: يُترك كما هو. **وهذا نصفُ الحكم**: حارسٌ يحوّل كلَّ
+  -- شىءٍ لا يحرس شيئاً، ولا بد أن يُرى وهو يُبقى البرىء.
+  IF public.company_role_has_holder(NEW.company_id, NEW.assigned_to_role) THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT m.user_id INTO v_owner
+    FROM public.company_members m
+   WHERE m.company_id = NEW.company_id
+     AND lower(trim(replace(m.role, ' ', '_'))) = 'owner'
+   LIMIT 1;
+
+  IF v_owner IS NULL THEN
+    SELECT c.user_id INTO v_owner FROM public.companies c WHERE c.id = NEW.company_id;
+  END IF;
+
+  -- لا مالكَ أصلاً: **يبقى الإشعارُ كما هو ولا يُسقَط**. إسقاطُ إشعارٍ
+  -- لتعذُّر توجيهه أسوأُ من إشعارٍ سيّئ التوجيه، وهذه الحالُ تُقاس فى
+  -- الحارس (صفرُ شركاتٍ بلا مالك، مقيس).
+  IF v_owner IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_role := NEW.assigned_to_role;
+  NEW.assigned_to_user := v_owner;
+  NEW.assigned_to_role := NULL;
+  NEW.message := COALESCE(NEW.message, '')
+    || E'\n\n⚠️ [v3.74.939] كان هذا الإشعارُ موجَّهاً إلى دور «' || v_role
+    || E'» ولا عضوَ يحمله فى شركتك، فحُوِّل إليك. عيِّن عضواً لهذا الدور كى يصل إلى صاحبه.';
+  RETURN NEW;
+END
 $function$
 ;
 
@@ -41290,34 +41550,35 @@ AS $function$
 DECLARE
   v_result JSONB := '{}'::JSONB;
   v_journal_entry_id UUID;
-  v_bill_exists BOOLEAN := FALSE;
+  v_receipt_status TEXT;
 BEGIN
-  -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.bills
-    WHERE id = p_bill_id
-      AND company_id = p_company_id
-  )
-  INTO v_bill_exists;
+  SELECT COALESCE(b.receipt_status, 'pending')
+    INTO v_receipt_status
+    FROM public.bills b
+   WHERE b.id = p_bill_id
+     AND b.company_id = p_company_id
+   FOR UPDATE;
 
-  IF NOT v_bill_exists THEN
+  IF v_receipt_status IS NULL THEN
     RAISE EXCEPTION 'Bill not found or does not belong to company';
+  END IF;
+
+  IF v_receipt_status = 'rejected' THEN
+    RAISE EXCEPTION 'v3.74.955: هذا المستندُ مرفوضٌ من الاستلام — لا يُقيَّد ولا تدخل بضاعتُه. حدّث الصفحة.';
+  END IF;
+
+  IF p_journal_entry IS NOT NULL
+     AND public.get_journal_entry_id_for_bill_receipt(p_company_id, p_bill_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.74.955: هذا المستندُ له قيدٌ مُقيَّدٌ سلفاً — لا يُقيَّد مرتين. حدّث الصفحة.';
   END IF;
 
   IF p_journal_entry IS NOT NULL THEN
     INSERT INTO public.journal_entries (
-      company_id,
-      branch_id,
-      cost_center_id,
-      entry_date,
-      description,
-      reference_type,
-      reference_id,
-      status
+      company_id, branch_id, cost_center_id, entry_date, description,
+      reference_type, reference_id, status
     ) VALUES (
       p_company_id,
       NULLIF(p_journal_entry->>'branch_id', '')::UUID,
@@ -41332,13 +41593,8 @@ BEGIN
 
     IF p_journal_entry->'lines' IS NOT NULL THEN
       INSERT INTO public.journal_entry_lines (
-        journal_entry_id,
-        account_id,
-        description,
-        debit_amount,
-        credit_amount,
-        branch_id,
-        cost_center_id
+        journal_entry_id, account_id, description, debit_amount, credit_amount,
+        branch_id, cost_center_id
       )
       SELECT
         v_journal_entry_id,
@@ -41356,23 +41612,9 @@ BEGIN
 
   IF p_inventory_transactions IS NOT NULL AND jsonb_array_length(p_inventory_transactions) > 0 THEN
     INSERT INTO public.inventory_transactions (
-      company_id,
-      product_id,
-      transaction_type,
-      quantity_change,
-      unit_cost,
-      total_cost,
-      reference_id,
-      reference_type,
-      journal_entry_id,
-      notes,
-      branch_id,
-      cost_center_id,
-      warehouse_id,
-      original_currency,
-      original_unit_cost,
-      original_total_cost,
-      exchange_rate_used
+      company_id, product_id, transaction_type, quantity_change, unit_cost, total_cost,
+      reference_id, reference_type, journal_entry_id, notes, branch_id, cost_center_id,
+      warehouse_id, original_currency, original_unit_cost, original_total_cost, exchange_rate_used
     )
     SELECT
       p_company_id,
@@ -41395,11 +41637,8 @@ BEGIN
     FROM jsonb_array_elements(p_inventory_transactions) AS tx;
 
     v_result := jsonb_set(
-      v_result,
-      '{inventory_transaction_count}',
-      to_jsonb(COALESCE(jsonb_array_length(p_inventory_transactions), 0)),
-      true
-    );
+      v_result, '{inventory_transaction_count}',
+      to_jsonb(COALESCE(jsonb_array_length(p_inventory_transactions), 0)), true);
   END IF;
 
   IF p_bill_update IS NOT NULL THEN
@@ -41418,6 +41657,9 @@ BEGIN
   RETURN v_result;
 EXCEPTION WHEN OTHERS THEN
   PERFORM set_config('app.allow_direct_post', 'false', true);
+  IF SQLERRM LIKE '%v3.74.955%' THEN
+    RAISE;
+  END IF;
   RAISE EXCEPTION 'Bill receipt posting failed: %', SQLERRM;
 END;
 $function$
@@ -45093,6 +45335,7 @@ CREATE OR REPLACE FUNCTION public.process_purchase_return_atomic(p_company_id uu
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_pr_id           UUID;
@@ -45111,6 +45354,15 @@ DECLARE
   v_je_status       TEXT;
   v_result          JSONB := '{}';
   v_refund_account_id UUID;
+  -- v3.74.941 — المالُ يُحسب هنا
+  v_priced          RECORD;
+  v_rate            NUMERIC;
+  v_orig_subtotal   NUMERIC := 0;
+  v_orig_tax        NUMERIC := 0;
+  v_orig_total      NUMERIC := 0;
+  v_subtotal        NUMERIC := 0;
+  v_tax_amount      NUMERIC := 0;
+  v_total_amount    NUMERIC := 0;
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
@@ -45162,6 +45414,43 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- ══ v3.74.941 — التسعيرُ قبل الكتابة، فيولد الرأسُ صحيحاً لا يُصحَّح بعدُ ══
+  -- الرأسُ كان يُكتب من رقمٍ مُرسَل ثم لا يُراجَع أبداً. صار يُحسب من بنودٍ
+  -- كلُّ واحدٍ منها مُسعَّرٌ من فاتورته، فلا لحظةَ يوجد فيها صفٌّ بقيمةٍ
+  -- لم تُصدَّق.
+  v_rate := COALESCE(NULLIF(p_purchase_return->>'exchange_rate_used', '')::NUMERIC, 1);
+  IF v_rate <= 0 THEN
+    RAISE EXCEPTION 'v3.74.941: سعرُ صرفٍ غيرُ موجب (%) — لا يُحوَّل به مال.', v_rate;
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_return_items) LOOP
+    v_bill_item_id  := NULLIF(v_item->>'bill_item_id', '')::UUID;
+    v_requested_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
+    IF v_requested_qty <= 0 THEN CONTINUE; END IF;
+
+    SELECT * INTO v_priced
+      FROM public.purchase_return_priced_line(p_bill_id, v_bill_item_id, v_requested_qty);
+
+    PERFORM public.assert_purchase_return_amount(
+      'unit_price', NULLIF(v_item->>'unit_price', '')::NUMERIC, v_priced.unit_price,
+      0.0001, 'bill_item ' || v_bill_item_id::text);
+    PERFORM public.assert_purchase_return_amount(
+      'line_total', NULLIF(v_item->>'line_total', '')::NUMERIC, v_priced.line_total,
+      0.01, 'bill_item ' || v_bill_item_id::text);
+
+    v_orig_subtotal := v_orig_subtotal + v_priced.line_total;
+    v_orig_tax      := v_orig_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+  END LOOP;
+
+  v_orig_total   := v_orig_subtotal + v_orig_tax;
+  v_subtotal     := ROUND(v_orig_subtotal * v_rate, 4);
+  v_tax_amount   := ROUND(v_orig_tax * v_rate, 4);
+  v_total_amount := v_subtotal + v_tax_amount;
+
+  PERFORM public.assert_purchase_return_amount('subtotal',     NULLIF(p_purchase_return->>'subtotal', '')::NUMERIC,     v_subtotal);
+  PERFORM public.assert_purchase_return_amount('tax_amount',   NULLIF(p_purchase_return->>'tax_amount', '')::NUMERIC,   v_tax_amount);
+  PERFORM public.assert_purchase_return_amount('total_amount', NULLIF(p_purchase_return->>'total_amount', '')::NUMERIC, v_total_amount);
+
   IF p_journal_entry IS NOT NULL THEN
     INSERT INTO journal_entries (
       company_id, branch_id, cost_center_id, reference_type, reference_id,
@@ -45205,18 +45494,14 @@ BEGIN
     CASE WHEN v_is_pending THEN 'pending_approval' ELSE 'completed' END,
     COALESCE(NULLIF(p_workflow_status, ''), 'pending_admin_approval'),
     p_created_by,
-    COALESCE((p_purchase_return->>'subtotal')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'tax_amount')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'total_amount')::NUMERIC, 0),
+    v_subtotal, v_tax_amount, v_total_amount,
     p_purchase_return->>'settlement_method',
     p_purchase_return->>'reason',
     p_purchase_return->>'notes',
     v_branch_id, v_cost_center_id, v_warehouse_id,
     COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), 'EGP'),
-    COALESCE((p_purchase_return->>'original_subtotal')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'original_tax_amount')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'original_total_amount')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'exchange_rate_used')::NUMERIC, 1),
+    v_orig_subtotal, v_orig_tax, v_orig_total,
+    v_rate,
     NULLIF(p_purchase_return->>'exchange_rate_id', '')::UUID,
     v_refund_account_id
   ) RETURNING id INTO v_pr_id;
@@ -45233,16 +45518,16 @@ BEGIN
     v_requested_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
     IF v_requested_qty <= 0 THEN CONTINUE; END IF;
 
+    SELECT * INTO v_priced
+      FROM public.purchase_return_priced_line(p_bill_id, v_bill_item_id, v_requested_qty);
+
     INSERT INTO purchase_return_items (
       purchase_return_id, bill_item_id, product_id,
       description, quantity, unit_price, tax_rate, discount_percent, line_total
     ) VALUES (
       v_pr_id, v_bill_item_id, v_product_id,
       v_item->>'description', v_requested_qty,
-      COALESCE((v_item->>'unit_price')::NUMERIC, 0),
-      COALESCE((v_item->>'tax_rate')::NUMERIC, 0),
-      COALESCE((v_item->>'discount_percent')::NUMERIC, 0),
-      COALESCE((v_item->>'line_total')::NUMERIC, 0)
+      v_priced.unit_price, v_priced.tax_rate, v_priced.discount_percent, v_priced.line_total
     );
 
     IF NOT v_is_pending THEN
@@ -45270,6 +45555,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM vendor_credits WHERE source_purchase_return_id = v_pr_id) THEN
       RAISE EXCEPTION 'Vendor Credit already exists for this purchase return';
     END IF;
+    -- v3.74.941 — إشعارُ الدائن صدى المرتجع لا مستندٌ مستقلٌّ بأرقامه:
+    -- كان يأخذ إجمالياته من المتصفح أيضاً، فيمكن أن يخالف المرتجعَ الذى
+    -- وُلد منه. صار يُنسخ عنه.
     INSERT INTO vendor_credits (
       company_id, supplier_id, bill_id,
       source_purchase_return_id, source_purchase_invoice_id, journal_entry_id,
@@ -45282,9 +45570,7 @@ BEGIN
       p_vendor_credit->>'credit_number',
       COALESCE((p_vendor_credit->>'credit_date')::DATE, CURRENT_DATE),
       'open',
-      COALESCE((p_vendor_credit->>'subtotal')::NUMERIC, 0),
-      COALESCE((p_vendor_credit->>'tax_amount')::NUMERIC, 0),
-      COALESCE((p_vendor_credit->>'total_amount')::NUMERIC, 0),
+      v_subtotal, v_tax_amount, v_total_amount,
       0, v_branch_id, v_cost_center_id,
       p_vendor_credit->>'notes'
     ) RETURNING id INTO v_vc_id;
@@ -45294,26 +45580,25 @@ BEGIN
         vendor_credit_id, product_id, description,
         quantity, unit_price, tax_rate, discount_percent, line_total
       )
-      SELECT v_vc_id,
-        NULLIF(vci->>'product_id', '')::UUID, vci->>'description',
-        COALESCE((vci->>'quantity')::NUMERIC, 0),
-        COALESCE((vci->>'unit_price')::NUMERIC, 0),
-        COALESCE((vci->>'tax_rate')::NUMERIC, 0),
-        COALESCE((vci->>'discount_percent')::NUMERIC, 0),
-        COALESCE((vci->>'line_total')::NUMERIC, 0)
-      FROM jsonb_array_elements(p_vendor_credit_items) AS vci;
+      SELECT v_vc_id, pri.product_id, pri.description,
+             pri.quantity, pri.unit_price, pri.tax_rate, pri.discount_percent, pri.line_total
+      FROM purchase_return_items pri
+      WHERE pri.purchase_return_id = v_pr_id;
     END IF;
     v_result := jsonb_set(v_result, '{vendor_credit_id}', to_jsonb(v_vc_id));
   END IF;
 
   IF p_bill_update IS NOT NULL AND p_bill_id IS NOT NULL AND NOT v_is_pending THEN
+    -- v3.74.941 — `total_amount` لم يعد يُكتب من الطلب. الفاتورةُ تحتفظ
+    -- بإجماليها، والمرتجعُ يُسجَّل فى `returned_amount` حيث مكانه. وقِيس أن
+    -- الفرعَ الذى كان يخفض الإجمالى **لا تبلغه الشاشةُ أصلاً**: قائمةُ
+    -- الفواتير المعروضة للمرتجع مقصورةٌ على `receipt_status = 'received'`،
+    -- وهو بعينه ما يجعل `isFinalizedBill` صحيحاً دائماً. فكان حياً فى الـAPI
+    -- وحدها — أى لطلبٍ مصنوع.
     UPDATE bills SET
       returned_amount = COALESCE(NULLIF(p_bill_update->>'returned_amount', '')::NUMERIC, returned_amount),
       return_status   = COALESCE(NULLIF(p_bill_update->>'return_status', ''), return_status),
       status          = COALESCE(NULLIF(p_bill_update->>'status', ''), status),
-      total_amount    = CASE
-        WHEN (p_bill_update->>'total_amount') IS NOT NULL AND (p_bill_update->>'total_amount') != ''
-        THEN (p_bill_update->>'total_amount')::NUMERIC ELSE total_amount END,
       updated_at = NOW()
     WHERE id = p_bill_id;
   END IF;
@@ -45350,6 +45635,17 @@ DECLARE
   v_result         JSONB := '{}';
   v_group_count    INT;
   v_qty_check      RECORD;
+  -- v3.74.941
+  v_priced         RECORD;
+  v_rate           NUMERIC;
+  v_g_sub          NUMERIC;
+  v_g_tax          NUMERIC;
+  v_orig_subtotal  NUMERIC := 0;
+  v_orig_tax       NUMERIC := 0;
+  v_orig_total     NUMERIC := 0;
+  v_subtotal       NUMERIC := 0;
+  v_tax_amount     NUMERIC := 0;
+  v_total_amount   NUMERIC := 0;
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
@@ -45412,6 +45708,51 @@ BEGIN
       v_qty_check.id;
   END IF;
 
+  -- ══ v3.74.941 — التسعيرُ قبل الكتابة ══════════════════════════════════════
+  v_rate := COALESCE(NULLIF(p_purchase_return->>'exchange_rate_used', '')::NUMERIC, 1);
+  IF v_rate <= 0 THEN
+    RAISE EXCEPTION 'v3.74.941: سعرُ صرفٍ غيرُ موجب (%) — لا يُحوَّل به مال.', v_rate;
+  END IF;
+
+  FOR v_group IN SELECT * FROM jsonb_array_elements(p_warehouse_groups) LOOP
+    v_g_sub := 0; v_g_tax := 0;
+    FOR v_item IN SELECT * FROM jsonb_array_elements(v_group->'items') LOOP
+      v_bill_item_id  := NULLIF(v_item->>'bill_item_id', '')::UUID;
+      v_requested_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
+      IF v_requested_qty <= 0 THEN CONTINUE; END IF;
+
+      SELECT * INTO v_priced
+        FROM public.purchase_return_priced_line(p_bill_id, v_bill_item_id, v_requested_qty);
+
+      PERFORM public.assert_purchase_return_amount(
+        'unit_price', NULLIF(v_item->>'unit_price', '')::NUMERIC, v_priced.unit_price,
+        0.0001, 'bill_item ' || v_bill_item_id::text);
+      PERFORM public.assert_purchase_return_amount(
+        'line_total', NULLIF(v_item->>'line_total', '')::NUMERIC, v_priced.line_total,
+        0.01, 'bill_item ' || v_bill_item_id::text);
+
+      v_g_sub := v_g_sub + v_priced.line_total;
+      v_g_tax := v_g_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+    END LOOP;
+
+    PERFORM public.assert_purchase_return_amount(
+      'group.total_amount', NULLIF(v_group->>'total_amount', '')::NUMERIC,
+      ROUND((v_g_sub + v_g_tax) * v_rate, 4), 0.01,
+      'warehouse ' || COALESCE(v_group->>'warehouse_id', '-'));
+
+    v_orig_subtotal := v_orig_subtotal + v_g_sub;
+    v_orig_tax      := v_orig_tax + v_g_tax;
+  END LOOP;
+
+  v_orig_total   := v_orig_subtotal + v_orig_tax;
+  v_subtotal     := ROUND(v_orig_subtotal * v_rate, 4);
+  v_tax_amount   := ROUND(v_orig_tax * v_rate, 4);
+  v_total_amount := v_subtotal + v_tax_amount;
+
+  PERFORM public.assert_purchase_return_amount('subtotal',     NULLIF(p_purchase_return->>'subtotal', '')::NUMERIC,     v_subtotal);
+  PERFORM public.assert_purchase_return_amount('tax_amount',   NULLIF(p_purchase_return->>'tax_amount', '')::NUMERIC,   v_tax_amount);
+  PERFORM public.assert_purchase_return_amount('total_amount', NULLIF(p_purchase_return->>'total_amount', '')::NUMERIC, v_total_amount);
+
   INSERT INTO purchase_returns (
     company_id, supplier_id, bill_id,
     return_number, return_date, status, workflow_status, created_by,
@@ -45427,18 +45768,14 @@ BEGIN
     COALESCE(NULLIF(p_purchase_return->>'status', ''), 'completed'),
     'pending_approval',
     p_created_by,
-    COALESCE((p_purchase_return->>'subtotal')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'tax_amount')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'total_amount')::NUMERIC, 0),
+    v_subtotal, v_tax_amount, v_total_amount,
     p_purchase_return->>'settlement_method',
     p_purchase_return->>'reason',
     p_purchase_return->>'notes',
     NULL, NULL, NULL,
     COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), 'EGP'),
-    COALESCE((p_purchase_return->>'original_subtotal')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'original_tax_amount')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'original_total_amount')::NUMERIC, 0),
-    COALESCE((p_purchase_return->>'exchange_rate_used')::NUMERIC, 1),
+    v_orig_subtotal, v_orig_tax, v_orig_total,
+    v_rate,
     NULLIF(p_purchase_return->>'exchange_rate_id', '')::UUID
   ) RETURNING id INTO v_pr_id;
 
@@ -45449,6 +45786,7 @@ BEGIN
     v_branch_id      := NULLIF(v_group->>'branch_id', '')::UUID;
     v_cost_center_id := NULLIF(v_group->>'cost_center_id', '')::UUID;
     v_je_id          := NULL;
+    v_g_sub := 0; v_g_tax := 0;
 
     IF (v_group->'journal_entry') IS NOT NULL THEN
       INSERT INTO journal_entries (
@@ -45487,6 +45825,16 @@ BEGIN
       END IF;
     END IF;
 
+    FOR v_item IN SELECT * FROM jsonb_array_elements(v_group->'items') LOOP
+      v_bill_item_id  := NULLIF(v_item->>'bill_item_id', '')::UUID;
+      v_requested_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
+      IF v_requested_qty <= 0 THEN CONTINUE; END IF;
+      SELECT * INTO v_priced
+        FROM public.purchase_return_priced_line(p_bill_id, v_bill_item_id, v_requested_qty);
+      v_g_sub := v_g_sub + v_priced.line_total;
+      v_g_tax := v_g_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+    END LOOP;
+
     INSERT INTO purchase_return_warehouse_allocations (
       company_id, purchase_return_id, warehouse_id, branch_id, cost_center_id,
       journal_entry_id, workflow_status,
@@ -45494,9 +45842,9 @@ BEGIN
     ) VALUES (
       p_company_id, v_pr_id, v_warehouse_id, v_branch_id, v_cost_center_id,
       v_je_id, 'pending_approval',
-      COALESCE((v_group->>'subtotal')::NUMERIC, 0),
-      COALESCE((v_group->>'tax_amount')::NUMERIC, 0),
-      COALESCE((v_group->>'total_amount')::NUMERIC, 0)
+      ROUND(v_g_sub * v_rate, 4),
+      ROUND(v_g_tax * v_rate, 4),
+      ROUND(v_g_sub * v_rate, 4) + ROUND(v_g_tax * v_rate, 4)
     ) RETURNING id INTO v_alloc_id;
 
     v_alloc_ids := array_append(v_alloc_ids, v_alloc_id);
@@ -45506,6 +45854,8 @@ BEGIN
       v_bill_item_id  := NULLIF(v_item->>'bill_item_id', '')::UUID;
       v_requested_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
       IF v_requested_qty <= 0 THEN CONTINUE; END IF;
+      SELECT * INTO v_priced
+        FROM public.purchase_return_priced_line(p_bill_id, v_bill_item_id, v_requested_qty);
       INSERT INTO purchase_return_items (
         purchase_return_id, bill_item_id, product_id,
         description, quantity, unit_price, tax_rate, discount_percent, line_total,
@@ -45513,10 +45863,7 @@ BEGIN
       ) VALUES (
         v_pr_id, v_bill_item_id, v_product_id,
         v_item->>'description', v_requested_qty,
-        COALESCE((v_item->>'unit_price')::NUMERIC, 0),
-        COALESCE((v_item->>'tax_rate')::NUMERIC, 0),
-        COALESCE((v_item->>'discount_percent')::NUMERIC, 0),
-        COALESCE((v_item->>'line_total')::NUMERIC, 0),
+        v_priced.unit_price, v_priced.tax_rate, v_priced.discount_percent, v_priced.line_total,
         v_warehouse_id, v_alloc_id
       );
     END LOOP;
@@ -46061,6 +46408,119 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- purchase_doc_tax_inclusive(p_kind text, p_doc_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_doc_tax_inclusive(p_kind text, p_doc_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_found boolean;
+  v_ti boolean;
+BEGIN
+  IF p_doc_id IS NULL THEN
+    RAISE EXCEPTION 'v3.74.950: بندُ شراءٍ بلا مستندٍ أب — لا يُسعَّر بندٌ بلا رأس.';
+  END IF;
+  IF p_kind = 'bill' THEN
+    SELECT true, COALESCE(b.tax_inclusive, false) INTO v_found, v_ti FROM bills b WHERE b.id = p_doc_id;
+  ELSIF p_kind = 'purchase_order' THEN
+    SELECT true, COALESCE(po.tax_inclusive, false) INTO v_found, v_ti FROM purchase_orders po WHERE po.id = p_doc_id;
+  ELSE
+    RAISE EXCEPTION 'v3.74.950: نوعُ مستندٍ غيرُ معروف: %', p_kind;
+  END IF;
+  IF NOT COALESCE(v_found, false) THEN
+    RAISE EXCEPTION 'v3.74.950: المستندُ % (%) غيرُ موجود — بندٌ يتيمٌ لا يُسعَّر.', p_doc_id, p_kind;
+  END IF;
+  RETURN v_ti;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_item_price_the_line()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_item_price_the_line()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_kind text;
+  v_doc_id uuid;
+  v_ti boolean;
+  v_computed numeric;
+  v_submitted numeric := NEW.line_total;
+  v_log boolean;
+BEGIN
+  IF TG_TABLE_NAME = 'bill_items' THEN
+    v_kind := 'bill'; v_doc_id := NEW.bill_id;
+  ELSIF TG_TABLE_NAME = 'purchase_order_items' THEN
+    v_kind := 'purchase_order'; v_doc_id := NEW.purchase_order_id;
+  ELSE
+    RAISE EXCEPTION 'v3.74.950: المُشغِّلُ رُكِّب على جدولٍ لا يعرفه: %', TG_TABLE_NAME;
+  END IF;
+
+  v_ti := public.purchase_doc_tax_inclusive(v_kind, v_doc_id);
+  v_computed := public.purchase_line_net(NEW.quantity, NEW.unit_price, NEW.discount_percent, NEW.tax_rate, v_ti);
+
+  -- لا يُسجَّل إلا اختلافٌ أرسله كاتب: من يعدّل الكميةَ وحدها يصير
+  -- NEW.line_total = OLD.line_total، وتسجيلُه صياحٌ على برىء — ودفترٌ يصيح
+  -- لا يسكت أبداً، ولو لم يسكت ما جاز سحبُ الإذن فى ٩٥٢.
+  IF TG_OP = 'INSERT' THEN
+    v_log := (v_submitted IS NULL) OR (ABS(v_submitted - v_computed) > 0.005);
+  ELSE
+    v_log := (NEW.line_total IS DISTINCT FROM OLD.line_total)
+             AND ((v_submitted IS NULL) OR (ABS(v_submitted - v_computed) > 0.005));
+  END IF;
+
+  IF v_log THEN
+    BEGIN
+      INSERT INTO public.purchase_pricing_divergence
+        (source_table, row_id, doc_id, op, submitted, computed, actor, note)
+      VALUES (TG_TABLE_NAME, NEW.id, v_doc_id, TG_OP, v_submitted, v_computed, auth.uid(), 'v3.74.950');
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+
+  NEW.line_total := v_computed;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_line_net(p_quantity numeric, p_unit_price numeric, p_discount_percent numeric, p_tax_rate numeric, p_tax_inclusive boolean)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_line_net(p_quantity numeric, p_unit_price numeric, p_discount_percent numeric, p_tax_rate numeric, p_tax_inclusive boolean)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE
+  v_qty numeric := COALESCE(p_quantity, 0);
+  v_disc numeric := COALESCE(p_discount_percent, 0);
+  v_rate numeric := COALESCE(p_tax_rate, 0);
+  v_gross numeric;
+BEGIN
+  IF p_unit_price IS NULL THEN
+    RAISE EXCEPTION 'v3.74.950: بندُ شراءٍ بلا سعرِ وحدة — الغيابُ خطأٌ لا صفر.';
+  END IF;
+  IF v_rate <= -100 THEN
+    RAISE EXCEPTION 'v3.74.950: نسبةُ ضريبةٍ مستحيلة (%) — لا يُقسم عليها.', v_rate;
+  END IF;
+  v_gross := v_qty * p_unit_price * (1 - v_disc / 100.0);
+  IF COALESCE(p_tax_inclusive, false) THEN
+    RETURN ROUND(v_gross / (1 + v_rate / 100.0), 2);
+  END IF;
+  RETURN ROUND(v_gross, 2);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- purchase_order_item_money(p_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.purchase_order_item_money(p_id uuid)
@@ -46160,6 +46620,38 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
   RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_return_bill_discount_ratio(p_bill_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_return_bill_discount_ratio(p_bill_id uuid)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bill_subtotal NUMERIC;
+  v_items_base    NUMERIC;
+BEGIN
+  IF p_bill_id IS NULL THEN
+    RETURN 1;
+  END IF;
+
+  SELECT b.subtotal INTO v_bill_subtotal FROM bills b WHERE b.id = p_bill_id;
+  SELECT COALESCE(SUM(bi.line_total), 0) INTO v_items_base
+    FROM bill_items bi WHERE bi.bill_id = p_bill_id;
+
+  -- لا نسبةَ تُحسب ⇒ لا خصمَ يُطبَّق. والواحدُ هنا ليس تخميناً: هو نفسُ
+  -- ما تفعله الشاشةُ حين يتعذّر الحساب، فلا يتغيّر سلوكٌ قائم.
+  IF v_bill_subtotal IS NULL OR v_items_base IS NULL OR v_items_base <= 0 OR v_bill_subtotal <= 0 THEN
+    RETURN 1;
+  END IF;
+
+  RETURN LEAST(ROUND(v_bill_subtotal / v_items_base, 6), 1);
 END;
 $function$
 ;
@@ -46273,11 +46765,22 @@ DECLARE
 BEGIN
   IF TG_OP = 'UPDATE' AND OLD.status = NEW.status THEN RETURN NEW; END IF;
   IF NEW.status <> 'pending_approval' THEN RETURN NEW; END IF;
-  v_requester := NEW.created_by;
+
+  v_requester := COALESCE(
+    NEW.created_by,
+    auth.uid(),
+    (SELECT c.user_id FROM public.companies c WHERE c.id = NEW.company_id)
+  );
+
   v_currency  := COALESCE(NEW.original_currency, 'EGP');
   BEGIN
     SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
   EXCEPTION WHEN OTHERS THEN v_supplier_name := NULL; END;
+
+  IF v_requester IS NULL THEN
+    RAISE WARNING 'v3.74.956: مرتجعٌ % بلا مُنشئٍ ولا مالكٍ للشركة — لم يُرسَل طلبُ الاعتماد.', NEW.return_number;
+    RETURN NEW;
+  END IF;
 
   FOR v_approver_id IN
     SELECT DISTINCT u FROM (
@@ -46287,7 +46790,7 @@ BEGIN
        WHERE company_id = NEW.company_id
          AND role IN ('owner', 'general_manager')
     ) approvers
-    WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
+    WHERE u IS NOT NULL AND u <> v_requester
   LOOP
     INSERT INTO public.notifications (
       company_id, reference_type, reference_id, created_by,
@@ -46304,6 +46807,76 @@ BEGIN
       'high', 'warning', 'approvals', 'in_app', NOW()
     );
   END LOOP;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_return_priced_line(p_bill_id uuid, p_bill_item_id uuid, p_quantity numeric)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_return_priced_line(p_bill_id uuid, p_bill_item_id uuid, p_quantity numeric)
+ RETURNS TABLE(unit_price numeric, tax_rate numeric, discount_percent numeric, line_total numeric)
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bi     RECORD;
+  v_ratio  NUMERIC;
+  v_net    NUMERIC;
+BEGIN
+  IF p_bill_item_id IS NULL THEN
+    RAISE EXCEPTION 'v3.74.941: سطرُ مرتجعٍ بلا bill_item_id — بندُ المرتجع يُسعَّر ببند الفاتورة الذى يردّه، ولا بندَ هنا.';
+  END IF;
+
+  SELECT bi.id, bi.bill_id, bi.unit_price, bi.tax_rate, bi.discount_percent
+    INTO v_bi
+    FROM bill_items bi
+   WHERE bi.id = p_bill_item_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'v3.74.941: بندُ الفاتورة % غيرُ موجود — لا مصدرَ للسعر.', p_bill_item_id;
+  END IF;
+
+  -- بندٌ من فاتورةٍ أخرى ليس مصدرَ تسعيرٍ لهذا المرتجع (وهذا شكلُ عبثٍ
+  -- بعينه: يُرسَل bill_item_id أرخصُ من فاتورةٍ أخرى).
+  IF p_bill_id IS NOT NULL AND v_bi.bill_id IS DISTINCT FROM p_bill_id THEN
+    RAISE EXCEPTION 'v3.74.941: بندُ الفاتورة % يتبع الفاتورة % لا الفاتورة % — لا يُسعَّر منه مرتجعُ فاتورةٍ أخرى.',
+      p_bill_item_id, v_bi.bill_id, p_bill_id;
+  END IF;
+
+  IF v_bi.unit_price IS NULL THEN
+    RAISE EXCEPTION 'v3.74.941: بندُ الفاتورة % بلا سعرٍ مسجَّل — الغيابُ خطأٌ لا صفر.', p_bill_item_id;
+  END IF;
+
+  v_ratio := public.purchase_return_bill_discount_ratio(v_bi.bill_id);
+
+  unit_price       := v_bi.unit_price;
+  tax_rate         := COALESCE(v_bi.tax_rate, 0);
+  discount_percent := COALESCE(v_bi.discount_percent, 0);
+
+  v_net      := COALESCE(p_quantity, 0) * unit_price * (1 - discount_percent / 100.0);
+  line_total := ROUND(v_net * v_ratio, 2);
+
+  RETURN NEXT;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- purchase_return_set_created_by_trg()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.purchase_return_set_created_by_trg()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF NEW.created_by IS NULL THEN
+    NEW.created_by := auth.uid();
+  END IF;
   RETURN NEW;
 END;
 $function$
@@ -49975,10 +50548,21 @@ CREATE OR REPLACE FUNCTION public.resubmit_purchase_return(p_return_id uuid, p_u
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_pr       RECORD;
   v_item     JSONB;
+  v_priced   RECORD;
+  v_qty      NUMERIC;
+  v_bill_item_id UUID;
+  v_rate     NUMERIC;
+  v_orig_subtotal NUMERIC := 0;
+  v_orig_tax      NUMERIC := 0;
+  v_orig_total    NUMERIC := 0;
+  v_subtotal      NUMERIC := 0;
+  v_tax_amount    NUMERIC := 0;
+  v_total_amount  NUMERIC := 0;
 BEGIN
   -- v3.74.749 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access_by_row('purchase_returns', p_return_id);
@@ -50009,18 +50593,53 @@ BEGIN
     );
   END IF;
 
+  -- ══ v3.74.941 — يُسعَّر من فاتورته قبل أن يُكتب شىء ══════════════════════
+  v_rate := COALESCE(NULLIF(p_purchase_return->>'exchange_rate_used', '')::NUMERIC, v_pr.exchange_rate_used, 1);
+  IF v_rate <= 0 THEN
+    RAISE EXCEPTION 'v3.74.941: سعرُ صرفٍ غيرُ موجب (%) — لا يُحوَّل به مال.', v_rate;
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_return_items) LOOP
+    v_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
+    IF v_qty <= 0 THEN CONTINUE; END IF;
+    v_bill_item_id := NULLIF(v_item->>'bill_item_id', '')::UUID;
+
+    SELECT * INTO v_priced
+      FROM public.purchase_return_priced_line(v_pr.bill_id, v_bill_item_id, v_qty);
+
+    PERFORM public.assert_purchase_return_amount(
+      'unit_price', NULLIF(v_item->>'unit_price', '')::NUMERIC, v_priced.unit_price,
+      0.0001, 'bill_item ' || v_bill_item_id::text);
+    PERFORM public.assert_purchase_return_amount(
+      'line_total', NULLIF(v_item->>'line_total', '')::NUMERIC, v_priced.line_total,
+      0.01, 'bill_item ' || v_bill_item_id::text);
+
+    v_orig_subtotal := v_orig_subtotal + v_priced.line_total;
+    v_orig_tax      := v_orig_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+  END LOOP;
+
+  v_orig_total   := v_orig_subtotal + v_orig_tax;
+  v_subtotal     := ROUND(v_orig_subtotal * v_rate, 4);
+  v_tax_amount   := ROUND(v_orig_tax * v_rate, 4);
+  v_total_amount := v_subtotal + v_tax_amount;
+
+  PERFORM public.assert_purchase_return_amount('subtotal',     NULLIF(p_purchase_return->>'subtotal', '')::NUMERIC,     v_subtotal);
+  PERFORM public.assert_purchase_return_amount('tax_amount',   NULLIF(p_purchase_return->>'tax_amount', '')::NUMERIC,   v_tax_amount);
+  PERFORM public.assert_purchase_return_amount('total_amount', NULLIF(p_purchase_return->>'total_amount', '')::NUMERIC, v_total_amount);
+
   -- Update the return record with new data, reset workflow
   UPDATE purchase_returns SET
     reason             = COALESCE(NULLIF(p_purchase_return->>'reason', ''), reason),
     notes              = COALESCE(NULLIF(p_purchase_return->>'notes', ''), notes),
     settlement_method  = COALESCE(NULLIF(p_purchase_return->>'settlement_method', ''), settlement_method),
     return_date        = COALESCE(NULLIF(p_purchase_return->>'return_date', '')::DATE, return_date),
-    subtotal           = COALESCE(NULLIF(p_purchase_return->>'subtotal', '')::NUMERIC, subtotal),
-    tax_amount         = COALESCE(NULLIF(p_purchase_return->>'tax_amount', '')::NUMERIC, tax_amount),
-    total_amount       = COALESCE(NULLIF(p_purchase_return->>'total_amount', '')::NUMERIC, total_amount),
-    original_subtotal  = COALESCE(NULLIF(p_purchase_return->>'original_subtotal', '')::NUMERIC, original_subtotal),
-    original_tax_amount= COALESCE(NULLIF(p_purchase_return->>'original_tax_amount', '')::NUMERIC, original_tax_amount),
-    original_total_amount = COALESCE(NULLIF(p_purchase_return->>'original_total_amount', '')::NUMERIC, original_total_amount),
+    subtotal           = v_subtotal,
+    tax_amount         = v_tax_amount,
+    total_amount       = v_total_amount,
+    original_subtotal  = v_orig_subtotal,
+    original_tax_amount= v_orig_tax,
+    original_total_amount = v_orig_total,
+    exchange_rate_used = v_rate,
     -- Reset workflow
     status             = 'pending_approval',
     workflow_status    = 'pending_admin_approval',
@@ -50038,19 +50657,23 @@ BEGIN
   DELETE FROM purchase_return_items WHERE purchase_return_id = p_return_id;
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_return_items) LOOP
+    v_qty := COALESCE((v_item->>'quantity')::NUMERIC, 0);
+    IF v_qty <= 0 THEN CONTINUE; END IF;
+    v_bill_item_id := NULLIF(v_item->>'bill_item_id', '')::UUID;
+
+    SELECT * INTO v_priced
+      FROM public.purchase_return_priced_line(v_pr.bill_id, v_bill_item_id, v_qty);
+
     INSERT INTO purchase_return_items (
       purchase_return_id, bill_item_id, product_id,
       description, quantity, unit_price, tax_rate, discount_percent, line_total
     ) VALUES (
       p_return_id,
-      NULLIF(v_item->>'bill_item_id', '')::UUID,
+      v_bill_item_id,
       NULLIF(v_item->>'product_id', '')::UUID,
       v_item->>'description',
-      COALESCE((v_item->>'quantity')::NUMERIC, 0),
-      COALESCE((v_item->>'unit_price')::NUMERIC, 0),
-      COALESCE((v_item->>'tax_rate')::NUMERIC, 0),
-      COALESCE((v_item->>'discount_percent')::NUMERIC, 0),
-      COALESCE((v_item->>'line_total')::NUMERIC, 0)
+      v_qty,
+      v_priced.unit_price, v_priced.tax_rate, v_priced.discount_percent, v_priced.line_total
     );
   END LOOP;
 
@@ -50062,8 +50685,8 @@ BEGIN
     'SUBMIT',
     'purchase_returns',
     p_return_id,
-    jsonb_build_object('workflow_status', v_pr.workflow_status, 'status', v_pr.status),
-    jsonb_build_object('workflow_status', 'pending_admin_approval', 'status', 'pending_approval'),
+    jsonb_build_object('workflow_status', v_pr.workflow_status, 'status', v_pr.status, 'total_amount', v_pr.total_amount),
+    jsonb_build_object('workflow_status', 'pending_admin_approval', 'status', 'pending_approval', 'total_amount', v_total_amount),
     NOW()
   );
 
@@ -59186,4 +59809,109 @@ CREATE OR REPLACE FUNCTION public.word_similarity_op(text, text)
  LANGUAGE c
  STABLE PARALLEL SAFE STRICT
 AS '$libdir/pg_trgm', $function$word_similarity_op$function$
+;
+
+-- ---------------------------------------------------------------
+-- workflow_row_is_open(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.workflow_row_is_open(p_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v boolean;
+BEGIN
+  IF p_id IS NULL THEN RETURN NULL; END IF;
+
+  -- ── الستةُ التى غطّتها 215، بمنطقها كما هو ──────────────────────────────
+  SELECT (COALESCE(b.status,'') IN ('draft','pending_approval','received')
+          AND COALESCE(b.paid_amount,0) < COALESCE(b.total_amount,0))
+    INTO v FROM bills b WHERE b.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT (COALESCE(i.status,'') IN ('draft','sent','partially_paid')
+          AND COALESCE(i.approval_status,'') IN ('pending',''))
+    INTO v FROM invoices i WHERE i.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT (COALESCE(po.status,'') IN ('draft','pending_approval','pending_director','pending_manager','sent_to_supplier'))
+    INTO v FROM purchase_orders po WHERE po.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT (COALESCE(t.status,'') IN ('draft','pending_approval','in_transit'))
+    INTO v FROM inventory_transfers t WHERE t.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT (COALESCE(p.status,'') IN ('pending_approval','pending_manager','pending_director'))
+    INTO v FROM payments p WHERE p.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT (COALESCE(e.status,'') IN ('draft','pending_approval'))
+    INTO v FROM expenses e WHERE e.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  -- ── وما لم تكن 215 تعرفه ───────────────────────────────────────────────
+  -- مرتجعُ الشراء له حالتان: `workflow_status` هى الحاكمة، و`status` احتياط.
+  SELECT public.workflow_status_is_open(COALESCE(r.workflow_status, r.status))
+    INTO v FROM purchase_returns r WHERE r.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT public.workflow_status_is_open(a.status) INTO v FROM approval_requests a WHERE a.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(a.status) INTO v FROM approval_requests a WHERE a.document_id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM bookings x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM booking_stock_withdrawals x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM sales_return_requests x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM customer_refund_requests x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM vendor_credits x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM vendor_payment_correction_requests x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM subscriptions x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM sales_orders x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM manufacturing_production_orders x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM manufacturing_material_issue_approvals x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM manufacturing_product_receive_approvals x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM manufacturing_bom_versions x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+  SELECT public.workflow_status_is_open(x.status) INTO v FROM manufacturing_routing_versions x WHERE x.id = p_id;
+  IF FOUND THEN RETURN v; END IF;
+
+  RETURN NULL;   -- لا صفَّ له فى أى جدولٍ نعرفه: يُقال، ولا يُدَّعى
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- workflow_status_is_open(p_status text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.workflow_status_is_open(p_status text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT CASE
+    WHEN COALESCE(trim(p_status), '') = '' THEN TRUE          -- بلا حالة ⇒ مفتوح
+    WHEN lower(p_status) LIKE '%reject%'  THEN FALSE
+    WHEN lower(p_status) LIKE '%cancel%'  THEN FALSE
+    WHEN lower(p_status) LIKE '%void%'    THEN FALSE
+    WHEN lower(trim(p_status)) IN (
+           'approved', 'approved_completed', 'executed', 'completed', 'closed',
+           'applied', 'paid', 'billed', 'no_show', 'refund_recorded',
+           'not_applicable', 'archived', 'expired')           THEN FALSE
+    ELSE TRUE
+  END;
+$function$
 ;

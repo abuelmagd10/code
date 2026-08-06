@@ -316,10 +316,39 @@ async function withDatabase(work) {
         continue
       }
       const qual = rows[0].qual || ""
-      if (!qual.includes(`${r.rule}(`)) {
+
+      // v3.74.973 — الخاصّيّةُ لا الاسم.
+      //
+      // كان الشرطُ: «نصُّ السياسة يحوى اسمَ الدالّة». فصرخ على البرىء يومَ
+      // ٩٧٠: صارت can_access_bill غلافاً لا يُقرّر بنفسه بل يفوّض إلى
+      // can_access_bill_row، وصارت السياسةُ تنادى تلك الدالّةَ نفسَها.
+      // فالبيتُ واحدٌ حقّاً، والحارسُ يصرخ على اسمٍ قديم.
+      //
+      // والمقصودُ من أوّل يوم: **أينتهى الطريقان إلى قرارٍ واحد؟** فيُقرأ
+      // جسدُ الدالّة من الكتالوج: إن كانت لا تفوّض إلا إلى **دالّةِ حكمٍ
+      // واحدةٍ لا غير**، فنداءُ السياسةِ لتلك الدالّة هو البيتُ الواحدُ
+      // بعينه. أمّا إن فوّضت إلى أكثرَ من واحدة فلا تكافؤَ يُدَّعى، ويُرفض.
+      //
+      // وهذا **أشدُّ** من الأوّل لا أضعف: سياسةٌ تكتب حكمَها بنفسها تُرفض
+      // كما كانت تُرفض، وقد رُفض بها أمرُ الشراء اليومَ حتى صار له بيتٌ واحد.
+      const { rows: defRows } = await client.query(
+        `SELECT pg_get_functiondef(p.oid) AS def
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND p.proname = $1`, [r.rule])
+      const body = defRows.map((d) => d.def || "").join("\n")
+      const delegates = [...new Set(
+        (body.match(/public\.([a-z_][a-z0-9_]*)\s*\(/gi) || [])
+          .map((s) => s.replace(/^public\./i, "").replace(/\s*\($/, ""))
+      )].filter((f) => f !== r.rule && /^(can_|is_)/.test(f))
+      const oneDelegate = delegates.length === 1 ? delegates[0] : null
+      const callsRule = qual.includes(`${r.rule}(`)
+      const callsDelegate = oneDelegate !== null && qual.includes(`${oneDelegate}(`)
+      if (!callsRule && !callsDelegate) {
         problems.push(
-          `${r.table}: ${r.policy} no longer calls ${r.rule}() - the visibility rule now has two copies ` +
-          `(the policy and the money function), and changing one silently leaves the other open`)
+          `${r.table}: ${r.policy} decides for itself instead of calling ${r.rule}()` +
+          (oneDelegate ? ` or its single delegate ${oneDelegate}()` : "") +
+          ` - the visibility rule now has two copies (the policy and the money function), ` +
+          `and changing one silently leaves the other open`)
       }
     }
 
