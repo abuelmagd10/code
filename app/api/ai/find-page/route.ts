@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { createClient } from "@/lib/supabase/server"
+import { DEFAULT_ROLE_PAGES } from "@/lib/role-default-pages"
 import {
   findRelevantPages,
   type GovernanceContext,
@@ -148,67 +149,15 @@ async function buildGovernanceContext(
   }
 }
 
-const DEFAULT_ROLE_PAGES: Record<string, string[]> = {
-  manager: [
-    "dashboard", "reports", "invoices", "customers", "estimates",
-    "sales_orders", "sales_returns", "sent_invoice_returns",
-    "customer_debit_notes", "bills", "suppliers", "purchase_orders",
-    "purchase_returns", "vendor_credits", "manufacturing_boms",
-    "products", "inventory", "inventory_transfers", "write_offs",
-    "third_party_inventory", "product_availability",
-    "inventory_goods_receipt", "payments", "expenses", "drawings",
-    "journal_entries", "banking", "chart_of_accounts", "fixed_assets",
-    "asset_categories", "fixed_assets_reports", "annual_closing",
-    "hr", "employees", "attendance", "payroll", "instant_payouts",
-    "branches", "cost_centers", "warehouses",
-  ],
-  accountant: [
-    "dashboard", "reports", "invoices", "customers", "sales_returns",
-    "customer_debit_notes", "bills", "suppliers", "purchase_returns",
-    "vendor_credits", "payments", "expenses", "drawings",
-    "journal_entries", "chart_of_accounts", "banking", "annual_closing",
-    "accounting_periods", "shareholders", "fixed_assets",
-    "asset_categories", "fixed_assets_reports", "taxes",
-    "exchange_rates", "accounting_maintenance", "products", "inventory",
-    "inventory_transfers", "write_offs", "third_party_inventory",
-    "product_availability", "inventory_goods_receipt",
-  ],
-  store_manager: [
-    "dashboard", "manufacturing_boms", "products", "inventory",
-    "product_availability", "inventory_transfers",
-    "third_party_inventory", "write_offs", "inventory_goods_receipt",
-    "purchase_orders", "sales_orders", "shipping",
-  ],
-  manufacturing_officer: [
-    "dashboard", "manufacturing_boms", "products", "inventory",
-    "product_availability", "reports",
-  ],
-  booking_officer: [
-    "dashboard", "bookings", "services", "customers", "payments",
-    "reports",
-  ],
-  purchasing_officer: [
-    "dashboard", "reports", "bills", "suppliers", "purchase_orders",
-    "purchase_returns", "vendor_credits", "payments", "expenses",
-    "drawings", "journal_entries", "chart_of_accounts", "banking",
-    "annual_closing", "accounting_periods", "shareholders",
-    "fixed_assets", "asset_categories", "fixed_assets_reports",
-    "taxes", "exchange_rates", "accounting_maintenance", "products",
-    "inventory", "inventory_transfers", "inventory_goods_receipt",
-    "product_availability", "write_offs", "third_party_inventory",
-  ],
-  staff: [
-    "dashboard", "customers", "estimates", "sales_orders", "invoices",
-    "inventory", "product_availability", "attendance",
-  ],
-  sales: [
-    "dashboard", "customers", "estimates", "sales_orders", "invoices",
-    "product_availability",
-  ],
-  employee: [
-    "dashboard", "attendance",
-  ],
-  viewer: [
-    "dashboard", "reports",
-  ],
-}
+// v3.74.965 - البيتُ الوحيد لهذه القائمة: lib/role-default-pages.ts
+//
+// وكانت هنا نسخةٌ ثالثةٌ مكتوبةٌ بخطِّ اليد، **وأوسعُ الثلاث بكثير**:
+// كانت تُعطى مسؤولَ المشتريات bills و journal_entries و banking و
+// shareholders و chart_of_accounts - أى قائمةَ محاسبٍ كاملة. وهذا يناقض
+// قاعدةَ المشروع صراحةً: مسؤولُ المشتريات لا يرى فواتيرَ الشراء.
+//
+// وليست ميتةً تماماً: تُقرأ حين لا يكون للدور صفٌّ واحد، **وفى مُلتقَط
+// الخطأ أيضاً** - أى عند عُطلٍ عابرٍ فى القاعدة، وهو وارد.
+//
+// فصارت تُستورَد من البيت الواحد. والمحتوى الموحَّد منقولٌ عن
+// access-context لأنّه الأدقُّ ولأنّه يوافق ما فى قاعدة البيانات.

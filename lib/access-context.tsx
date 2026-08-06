@@ -40,6 +40,7 @@ import { useGovernanceRealtime } from "@/hooks/use-governance-realtime"
 import { useToast } from "@/hooks/use-toast"
 import { getRealtimeManager } from "@/lib/realtime-manager"
 import { getResourceFromPath } from "@/lib/permissions-context"
+import { DEFAULT_ROLE_PAGES } from "@/lib/role-default-pages"
 
 // =====================================================
 // Types
@@ -321,69 +322,10 @@ async function fetchAccessProfile(
       // 🔐 v3.69.1 — VERBATIM Ahmed spec, mirror of DB seed_default_role_permissions().
       // Used only as last-resort fallback when DB has zero rows for a role.
       // For 99% of cases the DB-authoritative branch above is what runs.
-      const defaultRolePages: Record<string, string[]> = {
-        // 1. الموظف — 4 pages verbatim
-        staff: ['customers', 'estimates', 'sales_orders', 'inventory'],
-        // 2. المحاسب — 17 pages (dashboard explicit)
-        accountant: [
-          'dashboard',
-          'invoices', 'sales_returns', 'sales_return_requests', 'customer_credits',
-          'bills', 'purchase_returns',
-          'products', 'services',
-          'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-          'dispatch_approvals', 'inventory_goods_receipt',
-          'payments', 'expenses', 'banking',
-          // v3.74.569 — approvals inbox is where the accountant executes
-          // corrections and receives feedback on their submissions
-          'approvals',
-          'vendor_payment_correction_requests', 'customer_refund_requests',
-        ],
-        // 3. مسؤول المشتريات
-        // v3.74.297 — Added products + services. The purchasing officer
-        // needs to be able to open the Products & Services page to look
-        // up which SKU to put on a purchase order and to register a new
-        // raw material when the supplier offers one we don't carry yet.
-        purchasing_officer: [
-          'suppliers', 'purchase_orders', 'inventory',
-          'dispatch_approvals', 'inventory_goods_receipt',
-          'products', 'services',
-          // v3.74.569
-          'approvals',
-        ],
-        // 4. مسؤول الحجوزات — 2 pages verbatim
-        booking_officer: ['bookings', 'customers'],
-        // 5. مسؤول التصنيع — 2 entries verbatim (umbrella + approvals)
-        manufacturing_officer: ['manufacturing_boms', 'approvals'],
-        // 6. مسؤول المخزن — 7 pages
-        store_manager: [
-          'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-          'dispatch_approvals', 'inventory_goods_receipt',
-          'sales_return_requests',
-          'purchase_returns',
-          // v3.74.569 — warehouse dispatches PR items via approvals card
-          'approvals',
-        ],
-        // 7. المدير (branch manager) — union, READ-ONLY at can_write level
-        manager: [
-          'dashboard',
-          'customers', 'estimates', 'sales_orders',
-          'invoices', 'sales_returns', 'sales_return_requests', 'customer_credits',
-          'bills', 'purchase_returns',
-          'products', 'services',
-          'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-          'dispatch_approvals', 'inventory_goods_receipt',
-          'payments', 'expenses', 'banking',
-          'suppliers', 'purchase_orders',
-          'bookings',
-          'manufacturing_boms', 'approvals',
-        ],
-        // HR officer (not redefined in Ahmed spec — kept from v3.65.4)
-        hr_officer: [
-          'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
-          'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
-        ],
-        viewer: ['dashboard', 'reports'],
-      }
+      // v3.74.965 - البيتُ الوحيد لهذه القائمة: lib/role-default-pages.ts
+      // وكانت مكتوبةً بخطِّ اليد فى ثلاثة مواضع، وقد افترقت الثلاثة.
+      // والمحتوى هنا لم يتغيّر حرفاً - نُقل فقط إلى بيتٍ واحد.
+      const defaultRolePages: Record<string, string[]> = DEFAULT_ROLE_PAGES
 
       // 🔐 v3.69.1 — DB is authoritative when the role has ANY permission row.
       // The hardcoded `defaultRolePages` is only a last-resort fallback for

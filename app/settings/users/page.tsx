@@ -23,6 +23,7 @@ import { Users, UserPlus, Shield, Key, Mail, Trash2, Building2, ChevronRight, Us
 import SeatStatusBanner from "@/components/billing/SeatStatusBanner"
 import { ModulesSubscriptionCard } from "@/components/settings/ModulesSubscriptionCard"
 import { PurchaseCostVisibilityCard } from "@/components/settings/PurchaseCostVisibilityCard"
+import { DEFAULT_ROLE_PAGES } from "@/lib/role-default-pages"
 
 type Member = { id: string; user_id: string; role: string; email?: string; is_current?: boolean; username?: string; display_name?: string; branch_id?: string; cost_center_id?: string; warehouse_id?: string; employee_id?: string; employee_name?: string; employee_job_title?: string }
 type Employee = { id: string; full_name: string; job_title?: string; email?: string; department?: string }
@@ -1565,6 +1566,9 @@ export default function UsersSettingsPage() {
       resources: [
         { value: 'dashboard', label: t('Dashboard', 'لوحة التحكم') },
         { value: 'reports', label: t('General Reports', 'التقارير العامة') },
+        // v3.74.965 - يحكم فعلاً فى القاعدة (وهو المنحةُ الحقيقيةُ الوحيدة
+        // للمدير العام) ولم يكن يظهر هنا، فلم يكن يُدار من الشاشة.
+        { value: 'financial_reports', label: t('Financial Reports', 'التقارير المالية') },
       ]
     },
     sales: {
@@ -1625,6 +1629,9 @@ export default function UsersSettingsPage() {
       label: t('🏭 Manufacturing', '🏭 التصنيع'),
       resources: [
         { value: 'manufacturing_boms', label: t('Manufacturing (BOMs, Routings, Production Orders)', 'التصنيع (هياكل المواد، مسارات التشغيل، أوامر الإنتاج)') },
+        // v3.74.965 - يحكم فعلاً فى القاعدة (٢٣ صفّاً) وله صفحةٌ قائمة
+        // (hr/production-labour) ولم يكن يظهر هنا.
+        { value: 'production_labour_wages', label: t('Production Labour Wages', 'أجور عمالة الإنتاج') },
       ]
     },
     // v3.74.482 — Approvals is now cross-cutting (not manufacturing-only),
@@ -1717,63 +1724,26 @@ export default function UsersSettingsPage() {
   // companies INSERT auto-seeds these for every NEW company. Admins can
   // override per-company from /settings/users → صلاحيات الأدوار.
   // dashboard appears ONLY where Ahmed explicitly listed it (accountant + manager).
+  // v3.74.965 - بيتٌ واحد: القائمةُ تُشتقّ من lib/role-default-pages.ts.
+  // وكانت هنا نسخةٌ يدويّةٌ افترقت عن أختَيها، والفارقُ مقيس:
+  //   مسؤولُ المشتريات: كانت تعرض ٤ صفحات، والحقيقةُ ٦ (تنقصها products
+  //     و services - وقاعدةُ البيانات تمنحه إيّاهما فعلاً).
+  //   المحاسب: كانت تنقصه vendor_payment_correction_requests و
+  //     customer_refund_requests.
+  //   مسؤولُ المخزن: كانت تنقصه purchase_returns - وله عليها صلاحيةٌ
+  //     كاملةٌ فى القاعدة.
+  // والتصفيةُ بكتالوج الشاشة تُبقى العرضَ على ما له عنوانٌ معروف، فلا
+  // يظهر للمالك مفتاحٌ خامٌ بلا اسم.
+  const catalogueResourceValues = new Set(
+    Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value))
+  )
   const defaultSidebarResourcesByRole: Record<string, string[]> = {
-    owner: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
-    admin: Object.values(resourceCategories).flatMap((cat) => cat.resources.map((r) => r.value)),
-    // 1. الموظف (sales rep) — 4 pages verbatim
-    staff: ['customers', 'estimates', 'sales_orders', 'inventory'],
-    // 2. المحاسب — 17 pages (dashboard explicit in spec)
-    // v3.74.484 — 'approvals' added so accountant can act on discount
-    // + payment + bill amendment approvals directly from the unified inbox.
-    accountant: [
-      'dashboard',
-      'approvals',
-      'invoices', 'sales_returns', 'customer_credits',
-      'bills', 'purchase_returns',
-      'products', 'services',
-      'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-            'payments', 'expenses', 'banking',
-    ],
-    // 3. مسؤول المشتريات — 5 pages verbatim
-    // v3.74.484 — 'approvals' added so purchasing officer sees
-    // purchase-request + PO discount approvals in the inbox.
-    purchasing_officer: [
-      'approvals',
-      'suppliers', 'purchase_orders', 'inventory',
-          ],
-    // 4. مسؤول الحجوزات — 2 pages verbatim
-    booking_officer: ['bookings', 'customers'],
-    // 5. مسؤول التصنيع — 2 entries verbatim (umbrella covers 7 sub-pages)
-    manufacturing_officer: ['manufacturing_boms', 'approvals'],
-    // 6. مسؤول المخزن — 6 pages verbatim
-    // v3.74.484 — 'approvals' added so warehouse notifications
-    // (goods receipt, dispatch, inventory transfers, write-offs) land
-    // on the unified inbox with the store manager's warehouse filter
-    // preserved via RLS + get_user_approval_badges.
-    store_manager: [
-      'approvals',
-      'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-          ],
-    // 7. المدير (branch manager) — 25 pages, union, ALL READ-ONLY
-    manager: [
-      'dashboard',
-      'customers', 'estimates', 'sales_orders',
-      'invoices', 'sales_returns', 'customer_credits',
-      'bills', 'purchase_returns',
-      'products', 'services',
-      'inventory', 'inventory_transfers', 'third_party_inventory', 'write_offs',
-            'payments', 'expenses', 'banking',
-      'suppliers', 'purchase_orders',
-      'bookings',
-      'manufacturing_boms', 'approvals',
-    ],
-    // HR officer (kept from v3.65.4 — not redefined in Ahmed's spec)
-    hr_officer: [
-      'dashboard', 'reports', 'hr', 'employees', 'payroll', 'attendance',
-      'instant_payouts', 'employee_bonuses', 'branches', 'cost_centers',
-    ],
-    // Read-only auditor (company-wide)
-    viewer: ['dashboard', 'reports'],
+    owner: Array.from(catalogueResourceValues),
+    admin: Array.from(catalogueResourceValues),
+  }
+  for (const roleKey of Object.keys(DEFAULT_ROLE_PAGES)) {
+    defaultSidebarResourcesByRole[roleKey] =
+      DEFAULT_ROLE_PAGES[roleKey].filter((p) => catalogueResourceValues.has(p))
   }
 
   // حالة التحميل
