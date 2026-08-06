@@ -57,6 +57,18 @@ import { validateBillMatching } from "@/lib/three-way-matching"
 import { BillDiscountApprovalBanner, type BillDiscountGate } from "@/components/bills/BillDiscountApprovalBanner"
 import { BillAmendmentBanner } from "@/components/bills/BillAmendmentBanner"
 
+// v3.74.971 - الرقمُ المحجوبُ يعرض شرطةً ولا يُسقط الشاشة.
+// المصادرُ المقنَّعة تُعيد قيمةً **فارغة** لمن لا يحقُّ له رؤيةُ سعر الشراء
+// (مسؤولُ المخزن مثلاً). وتنسيقُ الفارغ يُسقط الصفحةَ كلَّها - أُثبت ذلك
+// بسجلّ المتصفّح: Cannot read properties of null (reading 'toFixed').
+// فالحجبُ حالةٌ مشروعة، وجوابُها شرطةٌ لا انهيار. ولا يُعرض صفرٌ أبداً:
+// الصفرُ كذبةٌ تُوهم أنّ المبلغَ صفر.
+const maskedFixed = (v: any, d: number = 2): string =>
+  v === null || v === undefined || v === "" || Number.isNaN(Number(v))
+    ? HIDDEN_MONEY
+    : Number(v).toFixed(d)
+
+
 type Bill = {
   id: string
   supplier_id: string
@@ -1773,7 +1785,7 @@ export default function BillViewPage() {
                               {it.description && <div className="text-xs text-gray-500 dark:text-gray-400">{it.description}</div>}
                             </td>
                             <td className="p-3 text-center font-medium">{it.quantity}</td>
-                            <td className="p-3 text-center">{currencySymbol}{it.unit_price.toFixed(2)}</td>
+                            <td className="p-3 text-center">{currencySymbol}{maskedFixed(it.unit_price, 2)}</td>
                             <td className="p-3 text-center">{(it.discount_percent || 0) > 0 ? `${(it.discount_percent || 0).toFixed(0)}%` : '-'}</td>
                             <td className="p-3 text-center">{it.tax_rate > 0 ? `${it.tax_rate.toFixed(0)}%` : '-'}</td>
                             <td className="p-3 text-center">
@@ -1784,7 +1796,7 @@ export default function BillViewPage() {
                               )}
                             </td>
                             <td className="p-3 text-left">
-                              <span className="font-semibold text-gray-900 dark:text-white">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${it.line_total.toFixed(2)}`}</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${maskedFixed(it.line_total, 2)}`}</span>
                               {returnedQty > 0 && (
                                 <div className="text-xs text-orange-600 dark:text-orange-400">
                                   {appLang === 'en' ? 'Net' : 'صافي'}: {it.unit_price == null ? HIDDEN_MONEY : `${currencySymbol}${(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}`}
@@ -1810,7 +1822,7 @@ export default function BillViewPage() {
                             <h4 className="font-medium text-gray-900 dark:text-white">{products[it.product_id]?.name || it.product_id}</h4>
                             {it.description && <p className="text-xs text-gray-500 dark:text-gray-400">{it.description}</p>}
                           </div>
-                          <span className="font-bold text-blue-600 dark:text-blue-400">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${it.line_total.toFixed(2)}`}</span>
+                          <span className="font-bold text-blue-600 dark:text-blue-400">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${maskedFixed(it.line_total, 2)}`}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div className="flex flex-col">
@@ -1819,7 +1831,7 @@ export default function BillViewPage() {
                           </div>
                           <div className="flex flex-col">
                             <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Price' : 'السعر'}</span>
-                            <span className="font-medium">{currencySymbol}{it.unit_price.toFixed(2)}</span>
+                            <span className="font-medium">{currencySymbol}{maskedFixed(it.unit_price, 2)}</span>
                           </div>
                           <div className="flex flex-col">
                             <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
@@ -1843,8 +1855,8 @@ export default function BillViewPage() {
                       <CardTitle className="text-base">{appLang === 'en' ? 'Summary' : 'ملخص'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{bill.subtotal.toFixed(2)}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span><span>{bill.tax_amount.toFixed(2)} {bill.tax_inclusive ? (appLang === 'en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{maskedFixed(bill.subtotal, 2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span><span>{maskedFixed(bill.tax_amount, 2)} {bill.tax_inclusive ? (appLang === 'en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
                       {(bill.shipping || 0) > 0 && (
                         <>
                           {(bill as any).shipping_providers?.provider_name && (
@@ -1863,7 +1875,7 @@ export default function BillViewPage() {
                         <>
                           <div className="flex items-center justify-between text-gray-500">
                             <span>{appLang === 'en' ? 'Original Total' : 'الإجمالي الأصلي'}</span>
-                            <span>{((bill as any).original_total || bill.total_amount).toFixed(2)}</span>
+                            <span>{maskedFixed((bill as any).original_total ?? bill.total_amount, 2)}</span>
                           </div>
                           <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
                             <span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span>
@@ -1877,14 +1889,14 @@ export default function BillViewPage() {
                       ) : (
                         <div className="flex items-center justify-between font-semibold text-blue-600 pt-2 border-t border-gray-200 dark:border-gray-700">
                           <span>{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
-                          <span>{bill.total_amount.toFixed(2)} {currencySymbol}</span>
+                          <span>{maskedFixed(bill.total_amount, 2)} {currencySymbol}</span>
                         </div>
                       )}
                       {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
                       {bill.currency_code && bill.currency_code !== appCurrency && bill.base_currency_total && (
                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
                           <span>{appLang === 'en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</span>
-                          <span className="font-medium">{bill.base_currency_total.toFixed(2)} {appCurrency}</span>
+                          <span className="font-medium">{maskedFixed(bill.base_currency_total, 2)} {appCurrency}</span>
                         </div>
                       )}
                     </CardContent>
@@ -2641,7 +2653,7 @@ export default function BillViewPage() {
                         />
                       </td>
                       <td className="p-2 text-right">{money(it.unit_price)}</td>
-                      <td className="p-2 text-right font-medium">{it.unit_price == null ? HIDDEN_MONEY : (it.return_qty * it.unit_price).toFixed(2)}</td>
+                      <td className="p-2 text-right font-medium">{it.unit_price == null ? HIDDEN_MONEY : maskedFixed(it.unit_price == null ? null : it.return_qty * it.unit_price, 2)}</td>
                     </tr>
                   ))}
                 </tbody>
