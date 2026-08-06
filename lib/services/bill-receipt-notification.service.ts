@@ -245,22 +245,60 @@ export class BillReceiptNotificationService {
     cycleKey: string | null
   ) {
     const cycle = eventCycle(cycleKey)
+
+    // v3.74.967 — الإشعارُ يتبع الزرّ.
+    //
+    // قِيست إشعاراتُ رفضٍ حقيقيةٌ فى الإنتاج فتبيّن أنّ الرفضَ يُنشئ أربعةَ
+    // إشعاراتٍ **بنصٍّ واحدٍ حرفياً**: لمنشئِ أمر الشراء، والمالك، والمدير،
+    // والمحاسب. والنصُّ يقول: «تم رفض استلام البضاعة للفاتورة رقم …».
+    //
+    // وفيه ثلاثةُ عيوب:
+    //   (١) يُسمّى **الفاتورة**، ومسؤولُ المشتريات لا يرى فواتيرَ الشراء
+    //       أصلاً — فيُشار عليه بمستندٍ لا يستطيع فتحَه، ورابطُ الإشعار
+    //       يقوده إلى باب مغلق.
+    //   (٢) **لا يقول ماذا يُفعَل ولا مَن يفعله**. أربعةٌ يقرأون نفسَ الجملة
+    //       فلا أحدَ يعرف أنّ الدورَ عليه.
+    //   (٣) المحاسبُ يُخطَر بلهجةِ مَن عليه عمل، والقاعدةُ أنّ مَن يُعدّل هو
+    //       مسؤولُ المشتريات على **أمرِ الشراء**.
+    //
+    // فصار إشعارٌ واحدٌ للعمل — إلى منشئِ أمر الشراء، باسم أمرِ الشراء وبالفعل
+    // المطلوب ومرجعُه أمرُ الشراء نفسُه — وثلاثةٌ للعلم تقول صراحةً على مَن
+    // يقع التعديل.
+    //
+    // ⚠️ ومفاتيحُ الأحداث (eventKey) لم تُمسّ حرفاً: هى هويّةُ منعِ التكرار،
+    // وتغييرُها يُنشئ إشعاراتٍ مكرَّرةً لنفس الحدث.
+    const poInfo = bill.purchase_order_id
+      ? await this.loadPurchaseOrderInfo(bill.purchase_order_id)
+      : null
+    const poCreatorId = poInfo?.createdByUserId || null
+    const poLabel = poInfo?.poNumber || null
+
+    const billLabel = bill.bill_number || bill.id
+    const whoAmends = "والتعديلُ على مسؤول المشتريات مُنشئِ أمر الشراء."
     const title = "تم رفض استلام البضاعة"
-    const message = `تم رفض استلام البضاعة للفاتورة رقم ${bill.bill_number || bill.id}. السبب: ${rejectionReason}`
-    // v3.74.138 — Resolve the ACTUAL PO creator (not the bill creator).
-    // bills.created_by_user_id is the owner who approved the PO when the
-    // bill was auto-created, so falling back to it pings the wrong person.
-    // Only use the PO creator; if there's no PO link, fall back to the
-    // bill creator.
-    const poCreatorId = await this.resolvePurchaseOrderCreator(bill)
+    const message = poLabel
+      ? "تم رفض استلام البضاعة للفاتورة رقم " + billLabel + " (أمر الشراء " + poLabel + "). السبب: " + rejectionReason + " — للعلم؛ " + whoAmends
+      : "تم رفض استلام البضاعة للفاتورة رقم " + billLabel + ". السبب: " + rejectionReason + " — للعلم؛ " + whoAmends
+
     const targetUserId = poCreatorId || bill.created_by_user_id || bill.created_by || null
 
+    // المرجعُ يصير أمرَ الشراء **فقط** حين يكون المُخطَرُ هو منشئَه فعلاً؛
+    // وإن سقطنا إلى منشئ الفاتورة بقى المرجعُ الفاتورةَ كما كان.
+    const targetIsPoCreator = Boolean(poCreatorId && bill.purchase_order_id && targetUserId === poCreatorId)
+
     if (targetUserId && targetUserId !== actor.actorId) {
+      const actionTitle = targetIsPoCreator
+        ? "مطلوبٌ منك: تعديلُ أمر الشراء بعد رفض الاستلام"
+        : title
+      const actionMessage = targetIsPoCreator
+        ? "رُفض استلامُ بضاعةِ أمرِ الشراء رقم " + (poLabel || "") + ". السبب: " + rejectionReason + ". راجع أمرَ الشراء وعدّله ثمّ أعِد إرسالَه للاعتماد."
+        : message
+
       await this.createNotification(actor, {
-        referenceType: "bill",
-        referenceId: bill.id,
-        title,
-        message,
+        referenceType: targetIsPoCreator ? "purchase_order" : "bill",
+        referenceId: targetIsPoCreator ? (bill.purchase_order_id as string) : bill.id,
+        title: actionTitle,
+        message: actionMessage,
         branchId: bill.branch_id,
         warehouseId: bill.warehouse_id,
         costCenterId: null,
@@ -277,6 +315,7 @@ export class BillReceiptNotificationService {
         ),
         severity: "error",
         category: "inventory",
+        kind: targetIsPoCreator ? "action" : "info",
       })
     }
 
@@ -323,10 +362,10 @@ export class BillReceiptNotificationService {
         ),
         severity: "error",
         category: "inventory",
+        kind: "info",
       })
     }
   }
-
   async notifyBillAdminRejected(
     actor: BillReceiptNotificationActor,
     bill: BillReceiptNotificationBill,
