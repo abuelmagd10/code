@@ -143,10 +143,18 @@ function parseFunctions(sql) {
 /** Every `CREATE TRIGGER name ... ON [public.]table`. */
 function parseTriggers(sql) {
   const out = [];
+  // v3.74.975 — DDL مكتوبٌ داخل format(): اسمُ الجدول لا يُعرف من النصّ.
+  //
+  // كان النمطُ يقرأ `ON public.%I` فيلتقط «public» جدولاً، ثمّ يقول إنّ
+  // المُشغِّلَ غيرُ موجود — وهو موجودٌ على واحدٍ وعشرين جدولاً. فصرخ على
+  // البرىء. ولم تُغيَّر صياغةُ الهجرة لتفلت من النمط — ذاك تهرّبٌ لا علاج.
   const re =
-    /CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?([A-Za-z0-9_]+)"?[\s\S]{0,400}?\sON\s+(?:public\.)?"?([A-Za-z0-9_]+)"?/gi;
+    /CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?([A-Za-z0-9_]+)"?[\s\S]{0,400}?\sON\s+(?:public\.)?"?([A-Za-z0-9_%]+)"?/gi;
   let m;
-  while ((m = re.exec(sql)) !== null) out.push({ name: m[1], table: m[2] });
+  while ((m = re.exec(sql)) !== null) {
+    const table = m[2];
+    out.push({ name: m[1], table, dynamic: /%/.test(table) });
+  }
   return out;
 }
 
@@ -195,6 +203,30 @@ function parseTriggers(sql) {
 
     for (const tg of parseTriggers(sql)) {
       checkedTriggers++;
+
+      // v3.74.975 — اسمُ الجدول ديناميكىّ: يُتحقَّق باسم المُشغِّل وحدَه.
+      // الادّعاءُ المُراد إثباتُه هو «هذا المُشغِّلُ موجودٌ فى القاعدة»،
+      // وهو قابلٌ للإثبات بلا معرفةِ الجدول. وما لا يُعرف يُقال لا يُخمَّن.
+      if (tg.dynamic) {
+        const { rows: dyn } = await client.query(
+          `SELECT count(*)::int AS n
+             FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE NOT t.tgisinternal AND n.nspname = 'public' AND t.tgname = $1`,
+          [tg.name]
+        );
+        const n = dyn[0] ? dyn[0].n : 0;
+        if (n === 0) {
+          problems.push(
+            `${base}: the file creates trigger ${tg.name} on a table named at run time, ` +
+              `and NO trigger by that name exists in the database at all.`
+          );
+        } else {
+          console.log(`  ${tg.name}: dynamic DDL — present on ${n} table(s).`);
+        }
+        continue;
+      }
+
       const { rows } = await client.query(
         `SELECT 1
            FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
