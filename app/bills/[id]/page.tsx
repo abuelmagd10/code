@@ -48,7 +48,7 @@ import {
 import { checkInventoryAvailability, getShortageToastContent } from "@/lib/inventory-check"
 import { createVendorCreditForReturn } from "@/lib/purchase-returns-vendor-credits"
 import { getActiveCompanyId } from "@/lib/company"
-import { fetchCanViewPurchaseCost, money, HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN } from "@/lib/purchase-money"
+import { fetchCanViewPurchaseCost, money, isHiddenMoney, HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN } from "@/lib/purchase-money"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { filterCashBankAccounts, getLeafAccountIds } from "@/lib/accounts"
@@ -57,16 +57,13 @@ import { validateBillMatching } from "@/lib/three-way-matching"
 import { BillDiscountApprovalBanner, type BillDiscountGate } from "@/components/bills/BillDiscountApprovalBanner"
 import { BillAmendmentBanner } from "@/components/bills/BillAmendmentBanner"
 
-// v3.74.971 - الرقمُ المحجوبُ يعرض شرطةً ولا يُسقط الشاشة.
-// المصادرُ المقنَّعة تُعيد قيمةً **فارغة** لمن لا يحقُّ له رؤيةُ سعر الشراء
-// (مسؤولُ المخزن مثلاً). وتنسيقُ الفارغ يُسقط الصفحةَ كلَّها - أُثبت ذلك
-// بسجلّ المتصفّح: Cannot read properties of null (reading 'toFixed').
-// فالحجبُ حالةٌ مشروعة، وجوابُها شرطةٌ لا انهيار. ولا يُعرض صفرٌ أبداً:
-// الصفرُ كذبةٌ تُوهم أنّ المبلغَ صفر.
-const maskedFixed = (v: any, d: number = 2): string =>
-  v === null || v === undefined || v === "" || Number.isNaN(Number(v))
-    ? HIDDEN_MONEY
-    : Number(v).toFixed(d)
+// v3.74.974 - المساعدُ المحلّىُّ حُذف، والنداءُ صار للبيت الواحد.
+//
+// كتبتُ فى ٩٧١ مساعداً اسمُه maskedFixed يفعل بالحرف ما تفعله money()
+// فى lib/purchase-money منذ ٩٣٦ — فصنعتُ بيتاً ثانياً لعملٍ له بيت،
+// وهو العيبُ الذى أُطارده فى المشروع كلِّه. والسببُ أنّ ماسحى بحث عن
+// أسماءٍ مثل formatMoney ولم يبحث عن الخاصّيّة، فلم يرَ البيتَ القائم.
+// فالبحثُ بالاسم يُخفى ما البحثُ بالمعنى يجده.
 
 
 type Bill = {
@@ -798,6 +795,9 @@ export default function BillViewPage() {
   // ✅ إنشاء طلب مرتجع بحالة "pending_approval" — المخزون لا يُخصم إلا عند اعتماد مسؤول المخزن
   const processPurchaseReturn = async () => {
     if (!bill || returnTotal <= 0) return
+    // v3.74.974 — بابٌ ثانٍ على مسار الكتابة: من لا يقرأ السعرَ لا يبنى
+    // به مستنداً. الحراسةُ الواحدةُ صدفةٌ لا تصميم.
+    if (!canSeeCost) return
     try {
       setReturnProcessing(true)
 
@@ -823,6 +823,8 @@ export default function BillViewPage() {
             unit_price: it.unit_price,
             tax_rate: taxRate,
             discount_percent: discountPct,
+            // masked-money-exempt: حمولةُ كتابةٍ لا عرض، والفعلُ خلف بوّابتَى إذن
+            // (openReturnDialog و processPurchaseReturn) تردّان من لا يرى التكلفة.
             line_total: Number((lineNet + lineNet * taxRate / 100).toFixed(2)),
           }
         })
@@ -1785,7 +1787,7 @@ export default function BillViewPage() {
                               {it.description && <div className="text-xs text-gray-500 dark:text-gray-400">{it.description}</div>}
                             </td>
                             <td className="p-3 text-center font-medium">{it.quantity}</td>
-                            <td className="p-3 text-center">{currencySymbol}{maskedFixed(it.unit_price, 2)}</td>
+                            <td className="p-3 text-center">{currencySymbol}{money(it.unit_price, 2)}</td>
                             <td className="p-3 text-center">{(it.discount_percent || 0) > 0 ? `${(it.discount_percent || 0).toFixed(0)}%` : '-'}</td>
                             <td className="p-3 text-center">{it.tax_rate > 0 ? `${it.tax_rate.toFixed(0)}%` : '-'}</td>
                             <td className="p-3 text-center">
@@ -1796,7 +1798,7 @@ export default function BillViewPage() {
                               )}
                             </td>
                             <td className="p-3 text-left">
-                              <span className="font-semibold text-gray-900 dark:text-white">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${maskedFixed(it.line_total, 2)}`}</span>
+                              <span className="font-semibold text-gray-900 dark:text-white">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${money(it.line_total, 2)}`}</span>
                               {returnedQty > 0 && (
                                 <div className="text-xs text-orange-600 dark:text-orange-400">
                                   {appLang === 'en' ? 'Net' : 'صافي'}: {it.unit_price == null ? HIDDEN_MONEY : `${currencySymbol}${(effectiveQty * it.unit_price * (1 - (it.discount_percent || 0) / 100)).toFixed(2)}`}
@@ -1822,7 +1824,7 @@ export default function BillViewPage() {
                             <h4 className="font-medium text-gray-900 dark:text-white">{products[it.product_id]?.name || it.product_id}</h4>
                             {it.description && <p className="text-xs text-gray-500 dark:text-gray-400">{it.description}</p>}
                           </div>
-                          <span className="font-bold text-blue-600 dark:text-blue-400">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${maskedFixed(it.line_total, 2)}`}</span>
+                          <span className="font-bold text-blue-600 dark:text-blue-400">{it.line_total == null ? HIDDEN_MONEY : `${currencySymbol}${money(it.line_total, 2)}`}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div className="flex flex-col">
@@ -1831,7 +1833,7 @@ export default function BillViewPage() {
                           </div>
                           <div className="flex flex-col">
                             <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Price' : 'السعر'}</span>
-                            <span className="font-medium">{currencySymbol}{maskedFixed(it.unit_price, 2)}</span>
+                            <span className="font-medium">{currencySymbol}{money(it.unit_price, 2)}</span>
                           </div>
                           <div className="flex flex-col">
                             <span className="text-gray-500 dark:text-gray-400">{appLang === 'en' ? 'Tax' : 'الضريبة'}</span>
@@ -1855,8 +1857,8 @@ export default function BillViewPage() {
                       <CardTitle className="text-base">{appLang === 'en' ? 'Summary' : 'ملخص'}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{maskedFixed(bill.subtotal, 2)}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span><span>{maskedFixed(bill.tax_amount, 2)} {bill.tax_inclusive ? (appLang === 'en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Subtotal' : 'الإجمالي الفرعي'}</span><span>{money(bill.subtotal, 2)}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Tax' : 'الضريبة'}</span><span>{money(bill.tax_amount, 2)} {bill.tax_inclusive ? (appLang === 'en' ? '(Prices inclusive)' : '(أسعار شاملة)') : ''}</span></div>
                       {(bill.shipping || 0) > 0 && (
                         <>
                           {(bill as any).shipping_providers?.provider_name && (
@@ -1867,36 +1869,42 @@ export default function BillViewPage() {
                       )}
                       {/* v3.74.810 — خانة التسوية أُلغيت (788)؛ نعرض القيم
                           الموروثة غير الصفرية فقط بدل سطر «التعديل 0.00» دائم */}
-                      {Number(bill.adjustment || 0) !== 0 && (
-                        <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span><span>{Number(bill.adjustment || 0).toFixed(2)}</span></div>
+                      {(isHiddenMoney(bill.adjustment) || Number(bill.adjustment) !== 0) && (
+                        <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Adjustment' : 'التعديل'}</span><span>{money(bill.adjustment, 2)}</span></div>
                       )}
                       {/* عرض المرتجعات إذا وجدت */}
                       {Number((bill as any).returned_amount || 0) > 0 ? (
                         <>
                           <div className="flex items-center justify-between text-gray-500">
                             <span>{appLang === 'en' ? 'Original Total' : 'الإجمالي الأصلي'}</span>
-                            <span>{maskedFixed((bill as any).original_total ?? bill.total_amount, 2)}</span>
+                            <span>{money((bill as any).original_total ?? bill.total_amount, 2)}</span>
                           </div>
                           <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
                             <span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span>
-                            <span>-{Number((bill as any).returned_amount).toFixed(2)}</span>
+                            <span>{isHiddenMoney((bill as any).returned_amount) ? HIDDEN_MONEY : `-${money((bill as any).returned_amount, 2)}`}</span>
                           </div>
                           <div className="flex items-center justify-between font-semibold text-blue-600 pt-2 border-t border-gray-200 dark:border-gray-700">
                             <span>{appLang === 'en' ? 'Net Total' : 'الإجمالي الصافي'}</span>
-                            <span>{Math.max(((bill as any).original_total || bill.total_amount) - Number((bill as any).returned_amount || 0), 0).toFixed(2)} {currencySymbol}</span>
+                            <span>{(() => {
+                              const gross = (bill as any).original_total ?? bill.total_amount
+                              const back = (bill as any).returned_amount
+                              return (isHiddenMoney(gross) || isHiddenMoney(back))
+                                ? HIDDEN_MONEY
+                                : money(Math.max(Number(gross) - Number(back), 0), 2)
+                            })()} {currencySymbol}</span>
                           </div>
                         </>
                       ) : (
                         <div className="flex items-center justify-between font-semibold text-blue-600 pt-2 border-t border-gray-200 dark:border-gray-700">
                           <span>{appLang === 'en' ? 'Total' : 'الإجمالي'}</span>
-                          <span>{maskedFixed(bill.total_amount, 2)} {currencySymbol}</span>
+                          <span>{money(bill.total_amount, 2)} {currencySymbol}</span>
                         </div>
                       )}
                       {/* عرض القيمة المحولة إذا كانت العملة مختلفة */}
                       {bill.currency_code && bill.currency_code !== appCurrency && bill.base_currency_total && (
                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
                           <span>{appLang === 'en' ? `Equivalent in ${appCurrency}:` : `المعادل بـ ${appCurrency}:`}</span>
-                          <span className="font-medium">{maskedFixed(bill.base_currency_total, 2)} {appCurrency}</span>
+                          <span className="font-medium">{money(bill.base_currency_total, 2)} {appCurrency}</span>
                         </div>
                       )}
                     </CardContent>
@@ -1948,7 +1956,7 @@ export default function BillViewPage() {
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Type' : 'النوع'}</span><span>{bill.discount_type === 'percent' ? (appLang === 'en' ? 'Percentage' : 'نسبة') : (appLang === 'en' ? 'Amount' : 'قيمة')}</span></div>
-                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Value' : 'القيمة'}</span><span>{Number(bill.discount_value || 0).toFixed(2)}{bill.discount_type === 'percent' ? '%' : ''}</span></div>
+                      <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Value' : 'القيمة'}</span><span>{money(bill.discount_value, 2)}{bill.discount_type === 'percent' ? '%' : ''}</span></div>
                       <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Position' : 'الموضع'}</span><span>{bill.discount_position === 'after_tax' ? (appLang === 'en' ? 'After tax' : 'بعد الضريبة') : (appLang === 'en' ? 'Before tax' : 'قبل الضريبة')}</span></div>
                     </CardContent>
                   </Card>
@@ -1959,8 +1967,8 @@ export default function BillViewPage() {
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                       <div className="flex items-center justify-between"><span>{appLang === 'en' ? 'Paid' : 'المدفوع'}</span><span className="text-green-600">{paidTotal.toFixed(2)} {currencySymbol}</span></div>
-                      {Number((bill as any).returned_amount || 0) > 0 && (
-                        <div className="flex items-center justify-between text-orange-600 dark:text-orange-400"><span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span><span>-{Number((bill as any).returned_amount || 0).toFixed(2)} {currencySymbol}</span></div>
+                      {(isHiddenMoney((bill as any).returned_amount) || Number((bill as any).returned_amount) > 0) && (
+                        <div className="flex items-center justify-between text-orange-600 dark:text-orange-400"><span>{appLang === 'en' ? 'Returns' : 'المرتجعات'}</span><span>{isHiddenMoney((bill as any).returned_amount) ? HIDDEN_MONEY : `-${money((bill as any).returned_amount, 2)}`} {currencySymbol}</span></div>
                       )}
                       <div className="flex items-center justify-between font-semibold">
                         <span>{appLang === 'en' ? 'Net Outstanding' : 'الصافي المستحق'}</span>
@@ -2351,8 +2359,8 @@ export default function BillViewPage() {
                                     <tr key={item.id} className="border-t border-gray-100 dark:border-gray-800">
                                       <td className="py-2 text-gray-700 dark:text-gray-300">{item.product_name || '-'}</td>
                                       <td className="py-2 text-gray-600 dark:text-gray-400">{item.quantity}</td>
-                                      <td className="py-2 text-gray-600 dark:text-gray-400">{currencySymbol}{Number(item.unit_price || 0).toFixed(2)}</td>
-                                      <td className="py-2 font-medium text-orange-600 dark:text-orange-400">{currencySymbol}{Number(item.line_total || 0).toFixed(2)}</td>
+                                      <td className="py-2 text-gray-600 dark:text-gray-400">{currencySymbol}{money(item.unit_price, 2)}</td>
+                                      <td className="py-2 font-medium text-orange-600 dark:text-orange-400">{currencySymbol}{money(item.line_total, 2)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -2653,7 +2661,7 @@ export default function BillViewPage() {
                         />
                       </td>
                       <td className="p-2 text-right">{money(it.unit_price)}</td>
-                      <td className="p-2 text-right font-medium">{it.unit_price == null ? HIDDEN_MONEY : maskedFixed(it.unit_price == null ? null : it.return_qty * it.unit_price, 2)}</td>
+                      <td className="p-2 text-right font-medium">{it.unit_price == null ? HIDDEN_MONEY : money(it.unit_price == null ? null : it.return_qty * it.unit_price, 2)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -81,7 +81,9 @@ export const HIDDEN_MONEY_HINT_EN = "You are not allowed to see the purchase cos
  * يصيران واحداً، **والكاذبُ منهما يُصدَّق**.
  */
 export function money(value: number | string | null | undefined, digits = 2): string {
-  if (value === null || value === undefined) return HIDDEN_MONEY
+  // v3.74.974 — والنصُّ الفارغُ محجوبٌ أيضاً: Number("") = 0، فلولا هذا
+  // السطرِ لكتب صفراً واثقاً مكان مبلغٍ لم يُقرأ.
+  if (value === null || value === undefined || value === "") return HIDDEN_MONEY
   const n = typeof value === "string" ? Number(value) : value
   if (!Number.isFinite(n)) return HIDDEN_MONEY
   return n.toFixed(digits)
