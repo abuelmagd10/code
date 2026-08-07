@@ -336,7 +336,7 @@ export default function BillViewPage() {
               // من يمكنه الاعتماد الإداري؟
               // v3.74.505 — مواءمة مع ADMIN_APPROVAL_ROLES فى الخادم:
               // admin كان يرى الزر ثم يُرفض من الـ API (v3.74.132 استبعدته).
-              setCanApproveAdmin(["owner", "general_manager"].includes(role))
+              setCanApproveAdmin(["owner", "admin", "general_manager"].includes(role))
 
               // من يمكنه اعتماد الاستلام؟ (مسؤول المخزن + الإدارة العليا)
               setCanApproveReceipt(["owner", "admin", "general_manager", "store_manager"].includes(role))

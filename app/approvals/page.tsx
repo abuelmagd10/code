@@ -1210,7 +1210,7 @@ function ApprovalsContent() {
   const isAdminLike = !!myRole && ["owner","admin","general_manager"].includes(myRole)
   // v3.74.509 — قرارات محصورة بالمالك/المدير العام فقط (دفعات الموردين،
   // استرداد العملاء، تصحيحات دفعات الموردين) مطابقة لبوابات الخادم
-  const isOwnerOrGm = !!myRole && ["owner","general_manager"].includes(myRole)
+  const isOwnerOrGm = !!myRole && ["owner","admin","general_manager"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
       ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","vc"] as const)
@@ -4880,7 +4880,7 @@ function ApprovalsContent() {
                     //   creator = accountant      -> owner or general_manager
                     // plus absolute separation of duties: never your own entry.
                     const creatorRole = String(e.creator_role || "")
-                    const rankOk = creatorRole === "general_manager" ? myRole === "owner" : isOwnerOrGm
+                    const rankOk = (creatorRole === "general_manager" || creatorRole === "admin") ? myRole === "owner" : isOwnerOrGm
                     const notMine = !!myUserId && String(e.created_by || "") !== String(myUserId)
                     const canDecideJe = rankOk && notMine
                     return (

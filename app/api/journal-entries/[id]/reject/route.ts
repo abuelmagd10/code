@@ -33,7 +33,7 @@ function approversFor(creatorRole: string): Set<string> {
     case "general_manager":
       return new Set(["owner"])
     case "accountant":
-      return new Set(["owner", "general_manager"])
+      return new Set(["owner", "admin", "general_manager"])
     default:
       return new Set(["owner"])
   }
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (errorResponse || !context) return errorResponse
 
   const approverRole = norm(context.member?.role)
-  if (approverRole !== "owner" && approverRole !== "general_manager") {
+  if (approverRole !== "owner" && approverRole !== "admin" && approverRole !== "general_manager") {
     return NextResponse.json(
       { error: "forbidden", message: "رفض القيود اليدوية للمالك والمدير العام فقط" },
       { status: 403 }
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       {
         error: "approver_rank",
         message:
-          creatorRole === "general_manager"
+          (creatorRole === "general_manager" || creatorRole === "admin")
             ? "قيد المدير العام يردّه المالك"
             : "ليس لك ردّ هذا القيد",
       },

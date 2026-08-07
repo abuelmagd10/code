@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   // الفرع المقصود لا يُعرف إلا بعد `prepareCommand` — ولأن **الخدمة هى
   // الحدّ الذى يجب أن يصمد** حتى لو استُدعيت من مسارٍ آخر لاحقاً.
   const role = String(context.member?.role || "").trim().toLowerCase()
-  if (role !== "owner" && role !== "general_manager" && role !== "accountant") {
+  if (role !== "owner" && role !== "admin" && role !== "general_manager" && role !== "accountant") {
     return NextResponse.json(
       { error: "forbidden", message: "القيود اليدوية متاحة للمالك والمدير العام ومحاسب الفرع فقط" },
       { status: 403 }

@@ -884,7 +884,7 @@ export default function PurchaseOrderDetailPage() {
                   same gate, so a stale UI cannot escape it either. */}
               {/* v3.74.407 — was: role==='manager' which let BRANCH managers approve.
                   Policy: only المالك + المدير العام. The DB RPC enforces this too. */}
-              {po.status === "pending_approval" && (userContext?.role === 'owner' || userContext?.role === 'general_manager') && (() => {
+              {po.status === "pending_approval" && (userContext?.role === 'owner' || (userContext?.role === 'general_manager' || userContext?.role === 'admin')) && (() => {
                 // v3.74.420 — gate approval button when discount approval is pending/rejected.
                 // POs without discount (discount_value = 0 or null) work as before.
                 const hasDiscount = Number(po.discount_value || 0) > 0

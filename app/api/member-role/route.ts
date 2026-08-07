@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     // (إن وُجد سجل موظف). فشل المزامنة لا يفشل تغيير الدور.
     const ROLE_LABELS_AR: Record<string, string> = {
       owner: "مالك",
-      admin: "مدير النظام",
+      admin: "مدير عام",
       general_manager: "المدير العام",
       manager: "مدير الفرع",
       accountant: "محاسب",

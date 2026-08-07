@@ -16,7 +16,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
 
 const REQUEST_ROLES = new Set(["owner","general_manager","admin","manager","accountant"])
-const SELF_EXECUTE_ROLES = new Set(["owner","general_manager"])
+const SELF_EXECUTE_ROLES = new Set(["owner","admin","general_manager"])
 
 export async function POST(
   request: NextRequest,

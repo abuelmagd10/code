@@ -205,7 +205,7 @@ export default function VendorPaymentCorrectionRequestsPage() {
     return () => { if (ch) supabase.removeChannel(ch) }
   }, [hydrated, loadRequests, supabase])
 
-  const canApprove = userRole === "owner" || userRole === "general_manager"
+  const canApprove = userRole === "owner" || userRole === "admin" || userRole === "general_manager"
 
   // Visible rows: board members see all; everyone else sees only their own
   const visibleRequests = useMemo(() => {

@@ -62,7 +62,7 @@ export async function POST(
     }
 
     // v3.74.115 - permission gate (needs the request row to compare ids).
-    const isBoard = ["owner", "general_manager"].includes(role)
+    const isBoard = ["owner", "admin", "general_manager"].includes(role)
     const isRequester = (refundReq as any).requested_by === user.id
     if (!isBoard && !isRequester) {
       return NextResponse.json({

@@ -29,7 +29,7 @@ export async function POST(
       .eq("company_id", companyId)
       .maybeSingle()
     const role = String((member as any)?.role || "")
-    if (!["owner", "general_manager"].includes(role)) {
+    if (!["owner", "admin", "general_manager"].includes(role)) {
       return NextResponse.json({
         error: "Forbidden: only owner/general manager may approve refund requests"
       }, { status: 403 })

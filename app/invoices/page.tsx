@@ -1486,7 +1486,7 @@ export default function InvoicesPage() {
             {permDelete && actualStatus === 'draft' && (() => {
               const canDeleteInvoice =
                 currentUserRole === 'owner' ||
-                currentUserRole === 'general_manager' ||
+                currentUserRole === 'general_manager' || currentUserRole === 'admin' ||
                 (currentUserRole === 'manager' && userContext?.branch_id === (row as any).branch_id)
 
               return canDeleteInvoice ? (
@@ -1647,7 +1647,7 @@ export default function InvoicesPage() {
     // التحقق من صلاحية الحذف بناءً على الدور
     const canDeleteInvoice =
       currentUserRole === 'owner' ||
-      currentUserRole === 'general_manager' ||
+      currentUserRole === 'general_manager' || currentUserRole === 'admin' ||
       (currentUserRole === 'manager' && userContext?.branch_id === (invoice as any).branch_id)
 
     if (!canDeleteInvoice) {

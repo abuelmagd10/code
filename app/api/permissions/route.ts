@@ -164,7 +164,7 @@ export async function POST(request: Request) {
 
     // 🔐 v3.74.67 — Tightened: only Owner + General Manager can grant/share
     // permissions. Admin removed at the user's explicit request.
-    const allowedRoles = ["owner", "general_manager"]
+    const allowedRoles = ["owner", "admin", "general_manager"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }

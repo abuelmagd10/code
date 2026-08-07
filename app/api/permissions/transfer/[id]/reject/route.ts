@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic"
 
 // v3.74.67 — tightened: only Owner + General Manager can approve/reject
 // permission transfers. Admin removed at the user's explicit request.
-const ALLOWED_ROLES = ["owner", "general_manager"] as const
+const ALLOWED_ROLES = ["owner", "admin", "general_manager"] as const
 
 export async function POST(
   request: Request,

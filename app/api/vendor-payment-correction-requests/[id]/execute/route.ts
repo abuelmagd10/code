@@ -42,7 +42,7 @@ export async function POST(
       .from("company_members").select("role")
       .eq("user_id", user.id).eq("company_id", companyId).maybeSingle()
     const role = String((member as any)?.role || "")
-    const isOwnerOrGm = ["owner", "general_manager"].includes(role)
+    const isOwnerOrGm = ["owner", "admin", "general_manager"].includes(role)
     const isRequester = user.id === requesterId
 
     if (!isRequester && !isOwnerOrGm) {

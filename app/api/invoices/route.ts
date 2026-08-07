@@ -374,7 +374,7 @@ export async function POST(req: NextRequest) {
     // automatically with the same totals + items so the existing
     // sync trigger keeps the SO in step with the invoice (status,
     // returned_amount, etc.) afterwards. Other roles still need a SO.
-    const AUTO_SO_ROLES = new Set(['owner', 'general_manager'])
+    const AUTO_SO_ROLES = new Set(['owner', 'admin', 'general_manager'])
     if (!invoiceData.sales_order_id && AUTO_SO_ROLES.has(String(member.role || '').toLowerCase())) {
       const soDate = invoiceData.invoice_date || new Date().toISOString().slice(0, 10)
       const soStatus = invoiceData.status || 'draft'

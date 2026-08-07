@@ -26,7 +26,7 @@ const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manag
 // key used was "manager" (branch manager — a VIEW-ONLY role). Branch
 // managers could admin-approve bills while real general managers were
 // rejected. Corrected to "general_manager".
-const ADMIN_APPROVAL_ROLES = new Set(["owner", "general_manager"])
+const ADMIN_APPROVAL_ROLES = new Set(["owner", "admin", "general_manager"])
 
 type ActorContext = {
   companyId: string

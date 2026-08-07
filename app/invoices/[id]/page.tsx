@@ -385,7 +385,7 @@ export default function InvoiceDetailPage() {
   // العام فقط (نفس مجموعة اعتماد دفعات الموردين v3.74.132). باقى
   // الأدوار طريقها دورة "طلب مرتجع مبيعات". القاعدة ترفض أيضاً
   // (ترجر sales_returns_direct_gate) — الواجهة تخفى والخادم يحكم.
-  const canDirectReturn = ['owner', 'general_manager'].includes(currentUserRole)
+  const canDirectReturn = ['owner', 'admin', 'general_manager'].includes(currentUserRole)
   // 🔐 الأدوار التي يمكنها رؤية وتنفيذ زر صرف رصيد العميل
   const CREDIT_REFUND_ROLES = ['owner', 'admin', 'general_manager', 'accountant', 'manager']
   const canSeeCreditRefundButton = CREDIT_REFUND_ROLES.includes(currentUserRole) || permPayWrite
