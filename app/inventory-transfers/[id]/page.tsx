@@ -18,6 +18,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { getActiveCompanyId } from "@/lib/company"
+import { resolveUserDisplayName } from "@/lib/user-display-name"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeftRight, Warehouse, Package, CheckCircle2, Clock, XCircle, Truck, ArrowLeft, User, Calendar, FileText, Send, PackageCheck, X, Trash2, ShieldCheck, ShieldX, AlertTriangle, Edit } from "lucide-react"
@@ -1035,20 +1036,21 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
     // ✅ القاعدة 2: فقط المستخدم الذي أنشأ الطلب يمكنه إلغاءه
     if (transfer.created_by !== userId) {
-      // جلب اسم المستخدم الذي أنشأ الطلب
-      const { data: creatorData } = await supabase
-        .from("profiles")
-        .select("full_name, email")
-        .eq("id", transfer.created_by)
-        .single()
-
-      const creatorName = creatorData?.full_name || creatorData?.email || 'Unknown'
+      // v3.74.979 — كان يُسأل هنا جدولٌ اسمه "profiles" لا وجود له فى القاعدة،
+      // فتعود النتيجة فارغةً دائماً وتقول الرسالة «Unknown»: تمنعك وتأبى أن
+      // تقول لك مِمَّن تطلب. الاسم يُقرأ الآن من بيته الواحد، وإن لم يُعرف
+      // فلا يُختلق اسم — الرسالة تُقال بلا ادّعاء معرفة.
+      const creatorName = await resolveUserDisplayName(supabase, companyId, transfer.created_by)
 
       toast({
         title: appLang === 'en' ? 'Access Denied' : 'غير مصرح',
         description: appLang === 'en'
-          ? `Only the user who created this transfer can cancel it: ${creatorName}`
-          : `لا يمكن إلغاء طلب نقل المخزون إلا من قبل المستخدم الذي قام بإنشائه: ${creatorName}`,
+          ? (creatorName
+              ? `Only the user who created this transfer can cancel it: ${creatorName}`
+              : 'Only the user who created this transfer can cancel it.')
+          : (creatorName
+              ? `لا يمكن إلغاء طلب نقل المخزون إلا من قبل المستخدم الذي قام بإنشائه: ${creatorName}`
+              : 'لا يمكن إلغاء طلب نقل المخزون إلا من قبل المستخدم الذي قام بإنشائه.'),
         variant: 'destructive'
       })
       return
