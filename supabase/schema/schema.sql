@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T14:59:31.116Z
--- Tables: 256 | Policies: 785 | Triggers: 579 | Constraints: 1838
+-- Generated: 2026-08-08T15:52:03.759Z
+-- Tables: 256 | Policies: 785 | Triggers: 580 | Constraints: 1838
 -- =====================================================================
 
 
@@ -8028,6 +8028,7 @@ CREATE TRIGGER trg_payments_bills_insert AFTER INSERT ON public.payments FOR EAC
 CREATE TRIGGER trg_prevent_bill_overpayment BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION prevent_bill_overpayment();
 CREATE TRIGGER trg_prevent_negative_payment_invoice_link BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION prevent_negative_payment_invoice_link();
 CREATE TRIGGER trg_prevent_payment_closed_period BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION prevent_payment_in_closed_period();
+CREATE TRIGGER trg_rejection_is_not_a_reversal BEFORE UPDATE OF status ON public.payments FOR EACH ROW WHEN (((old.status = ANY (ARRAY['approved'::text, 'posted'::text, 'paid'::text, 'partially_paid'::text])) AND (new.status = 'rejected'::text))) EXECUTE FUNCTION enforce_rejection_is_not_a_reversal();
 CREATE TRIGGER trg_safe_delete_payment_journals BEFORE DELETE ON public.payments FOR EACH ROW EXECUTE FUNCTION safe_delete_payment_journals();
 CREATE TRIGGER trg_sync_invoice_paid AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION sync_document_paid_amount();
 CREATE TRIGGER trg_update_invoice_on_payment_delete BEFORE DELETE ON public.payments FOR EACH ROW EXECUTE FUNCTION update_invoice_on_payment_delete();
@@ -11027,6 +11028,9 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_985_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_986_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_986_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_986_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_988_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_988_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_988_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12112,6 +12116,10 @@ REVOKE ALL ON FUNCTION public.enforce_posted_entry_no_edit() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_posted_entry_no_edit() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_posted_entry_no_edit() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_posted_entry_no_edit() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_rejection_is_not_a_reversal() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_rejection_is_not_a_reversal() TO anon;
+GRANT EXECUTE ON FUNCTION public.enforce_rejection_is_not_a_reversal() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.enforce_rejection_is_not_a_reversal() TO service_role;
 REVOKE ALL ON FUNCTION public.enqueue_notification_outbox_event(p_event_id uuid, p_tenant_id uuid, p_event_type text, p_aggregate_type text, p_aggregate_id text, p_payload jsonb, p_context jsonb, p_idempotency_key text, p_correlation_id text, p_causation_event_id uuid, p_version integer, p_available_at timestamp with time zone, p_created_by uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enqueue_notification_outbox_event(p_event_id uuid, p_tenant_id uuid, p_event_type text, p_aggregate_type text, p_aggregate_id text, p_payload jsonb, p_context jsonb, p_idempotency_key text, p_correlation_id text, p_causation_event_id uuid, p_version integer, p_available_at timestamp with time zone, p_created_by uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.enqueue_notification_outbox_event(p_event_id uuid, p_tenant_id uuid, p_event_type text, p_aggregate_type text, p_aggregate_id text, p_payload jsonb, p_context jsonb, p_idempotency_key text, p_correlation_id text, p_causation_event_id uuid, p_version integer, p_available_at timestamp with time zone, p_created_by uuid) TO service_role;
@@ -14821,6 +14829,12 @@ REVOKE ALL ON FUNCTION public.suggest_fix_for_unbalanced_entry(p_journal_entry_i
 GRANT EXECUTE ON FUNCTION public.suggest_fix_for_unbalanced_entry(p_journal_entry_id uuid, p_account_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.suggest_fix_for_unbalanced_entry(p_journal_entry_id uuid, p_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.suggest_fix_for_unbalanced_entry(p_journal_entry_id uuid, p_account_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.supplier_payment_decision_error(p_status text, p_action text, p_role text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.supplier_payment_decision_error(p_status text, p_action text, p_role text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.supplier_payment_decision_error(p_status text, p_action text, p_role text) TO service_role;
+REVOKE ALL ON FUNCTION public.supplier_payment_stage_next_status(p_status text, p_role text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.supplier_payment_stage_next_status(p_status text, p_role text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.supplier_payment_stage_next_status(p_status text, p_role text) TO service_role;
 REVOKE ALL ON FUNCTION public.suspend_subscription(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.suspend_subscription(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.suspend_subscription(p_company_id uuid) TO service_role;

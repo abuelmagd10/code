@@ -143,7 +143,10 @@ export async function POST(
   } catch (error: any) {
     console.error("[SUPPLIER_PAYMENTS_DECISION]", error)
     const message = String(error?.message || "Unexpected error while processing supplier payment decision")
-    const status = message.includes("Idempotency key already used") ? 409 : 500
+    // v3.74.988 — **رفضُ القاعدة قرارٌ لا عطب**: يُجاب بـ409 ورسالتُه كما هى
+    // بالعربيّة، فيقرأ المستخدمُ سببَ المنع بدل «خطأ غير متوقّع».
+    const dbCode = String((error as any)?.code || "")
+    const status = (message.includes("Idempotency key already used") || dbCode === "P0001") ? 409 : 500
     return NextResponse.json({ success: false, error: message }, { status })
   }
 }

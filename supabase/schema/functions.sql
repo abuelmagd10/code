@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-08T14:59:28.905Z
--- Routines: 1329
+-- Generated: 2026-08-08T15:52:01.518Z
+-- Routines: 1333
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4280,6 +4280,124 @@ BEGIN
   -- ولا على مستندٍ لا يُعرف منشئُه
   IF public.erp_self_approval_error(v_company, NULL, v_owner, ARRAY['owner']) IS NOT NULL THEN
     RAISE EXCEPTION 'BASELINE FAIL: صرخ على مستندٍ بلا منشئٍ معروف (v3.74.986)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_988_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_988_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_pay uuid;
+  v_blocked boolean;
+  v_spared boolean;
+  v_enabled char;
+  v_msg text;
+  -- صوتُ حارسِنا وحدَه — لا يُخلط بصوت غيره
+  v_voice text := 'لا تُمحى بالرفض';
+BEGIN
+  -- ═══ السُّلَّم: أربعةُ اتّجاهاتٍ تُقاس واحداً واحداً ═══
+  IF public.supplier_payment_stage_next_status('pending_approval','owner') IS DISTINCT FROM 'approved' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المالكُ لا يُنهى الاعتمادَ عند pending_approval (v3.74.988)';
+  END IF;
+  IF public.supplier_payment_stage_next_status('pending_approval','manager') IS DISTINCT FROM 'pending_director' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المديرُ لا يُحوّل إلى pending_director (v3.74.988)';
+  END IF;
+  IF public.supplier_payment_stage_next_status('pending_director','manager') IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المديرُ أنهى مرحلةً ليست له (v3.74.988)';
+  END IF;
+  IF public.supplier_payment_stage_next_status('approved','owner') IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: سُلَّمٌ يعتمد دفعةً معتمَدةً سلفاً (v3.74.988)';
+  END IF;
+
+  -- ═══ الرفض: يرفض المذنب ═══
+  IF public.supplier_payment_decision_error('approved','REJECT','owner') IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: أجاز رفضَ دفعةٍ معتمَدةٍ مُرحَّلة (v3.74.988)';
+  END IF;
+  IF public.supplier_payment_decision_error('pending_approval','REJECT','accountant') IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: أجاز الرفضَ لدورٍ لا يملكه (v3.74.988)';
+  END IF;
+  IF public.supplier_payment_decision_error('pending_approval','REJECT','') IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: أجاز القرارَ لمن ليس عضواً فى الشركة (v3.74.988)';
+  END IF;
+
+  -- ═══ ولا يصرخ على البرىء ═══
+  IF public.supplier_payment_decision_error('pending_approval','REJECT','owner') IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: منع المالكَ من رفض دفعةٍ بانتظار الاعتماد (v3.74.988)';
+  END IF;
+  IF public.supplier_payment_decision_error('pending_director','APPROVE','general_manager') IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: منع المديرَ العامَّ من إنهاء مرحلة المدير (v3.74.988)';
+  END IF;
+
+  -- ═══ والحارسُ السفلىّ موجودٌ ومُفعَّل ═══
+  SELECT t.tgenabled INTO v_enabled
+  FROM pg_trigger t
+  JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relname = 'payments'
+    AND t.tgname = 'trg_rejection_is_not_a_reversal';
+
+  IF v_enabled IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حارسُ الجدول غائب — والإصلاحُ فى الدالّة وحدَها مسكّن (v3.74.988)';
+  END IF;
+  IF v_enabled = 'D' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حارسُ الجدول موجودٌ لكنّه مُعطَّل (v3.74.988)';
+  END IF;
+
+  -- ═══ ويُجرَّب بالتشغيل على صفٍّ حقيقىٍّ إن وُجد — والزرعُ يُلغى دائماً ═══
+  SELECT id INTO v_pay
+  FROM public.payments
+  WHERE status = 'approved'
+    AND coalesce(is_deleted, false) = false
+    AND voided_at IS NULL
+  LIMIT 1;
+
+  IF v_pay IS NULL THEN
+    -- **وبحثٌ لا يجد ليس دليلَ غياب**: لا صفَّ يُجرَّب عليه، فيُكتفى بوجود
+    -- الحارس أعلاه ولا يُدَّعى أنّه جُرِّب.
+    RAISE NOTICE 'v3.74.988 · لا دفعةَ معتمَدةٌ حيّةٌ لتُجرَّب — أُثبت وجودُ الحارس ولم يُدَّعَ تشغيلُه.';
+    RETURN;
+  END IF;
+
+  -- ولا يُنسب إلى حارسِنا خطأُ غيره: يُميَّز صوتُه بعبارته وحدَها.
+  -- المذنب: قلبُ دفعةٍ معتمَدةٍ إلى «مرفوضة» بلا إبطال
+  BEGIN
+    UPDATE public.payments SET status = 'rejected' WHERE id = v_pay;
+    v_msg := 'ROLLBACK_PROBE_988';
+    RAISE EXCEPTION 'ROLLBACK_PROBE_988';
+  EXCEPTION WHEN OTHERS THEN
+    v_msg := SQLERRM;
+  END;
+
+  v_blocked := position(v_voice in v_msg) > 0;
+  IF NOT v_blocked THEN
+    IF position('ROLLBACK_PROBE_988' in v_msg) > 0 THEN
+      RAISE EXCEPTION 'BASELINE FAIL: مرَّ قلبُ دفعةٍ معتمَدةٍ إلى «مرفوضة» (v3.74.988)';
+    END IF;
+    RAISE NOTICE 'v3.74.988 · لم يُقَس المذنبُ: أوقفه حارسٌ آخرُ (%) — ولا أنسب إلى حارسى فعلَ غيره.', v_msg;
+  END IF;
+
+  -- البرىء: الإبطالُ المعلَن يمرُّ ولا يُوقَف
+  BEGIN
+    UPDATE public.payments
+       SET status = 'rejected', is_deleted = true, deleted_at = NOW()
+     WHERE id = v_pay;
+    v_msg := 'ROLLBACK_PROBE_988';
+    RAISE EXCEPTION 'ROLLBACK_PROBE_988';
+  EXCEPTION WHEN OTHERS THEN
+    v_msg := SQLERRM;
+  END;
+
+  v_spared := position(v_voice in v_msg) = 0;
+  IF NOT v_spared THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صرخ على إبطالٍ معلَنٍ يُبقى الأثرَ ظاهراً (v3.74.988)';
   END IF;
 END;
 $function$
@@ -19774,6 +19892,25 @@ BEGIN
   END IF;
 
   RETURN COALESCE(NEW, OLD);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- enforce_rejection_is_not_a_reversal()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_rejection_is_not_a_reversal()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF coalesce(NEW.is_deleted, false) = true OR NEW.voided_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'دفعةٌ حالتُها «%» صار لها أثرٌ فى الدفاتر — ولا تُمحى بالرفض. والتراجعُ عنها يكون بعكسٍ محاسبىٍّ أو إبطالٍ يُبقى الأثرَ ظاهراً.', OLD.status
+    USING ERRCODE = 'P0001';
 END;
 $function$
 ;
@@ -46115,26 +46252,33 @@ CREATE OR REPLACE FUNCTION public.process_payment_approval_stage(p_payment_id uu
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_payment RECORD;
   v_user_role VARCHAR;
   v_user_id UUID := auth.uid();
   v_next_status VARCHAR;
+  v_error TEXT;
 BEGIN
-  -- Get payment
-  SELECT * INTO v_payment FROM payments WHERE id = p_payment_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Payment not found'; END IF;
+  SELECT * INTO v_payment FROM public.payments WHERE id = p_payment_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'الدفعةُ غير موجودة' USING ERRCODE = 'P0001';
+  END IF;
 
-  -- Get user role in the company
-  SELECT role INTO v_user_role FROM company_members 
+  SELECT role INTO v_user_role
+  FROM public.company_members
   WHERE user_id = v_user_id AND company_id = v_payment.company_id;
 
-  IF v_user_role IS NULL THEN RAISE EXCEPTION 'Unauthorized'; END IF;
+  -- والقرارُ يُقاس فى بيته، لا هنا
+  v_error := public.supplier_payment_decision_error(v_payment.status, p_action, v_user_role);
+  IF v_error IS NOT NULL THEN
+    RAISE EXCEPTION '%', v_error USING ERRCODE = 'P0001';
+  END IF;
 
-  IF p_action = 'REJECT' THEN
-    UPDATE payments SET 
-      status = 'rejected', 
+  IF upper(btrim(p_action)) = 'REJECT' THEN
+    UPDATE public.payments SET
+      status = 'rejected',
       rejection_reason = p_rejection_reason,
       rejected_by = v_user_id,
       rejected_at = NOW()
@@ -46142,42 +46286,16 @@ BEGIN
     RETURN;
   END IF;
 
-  IF p_action = 'APPROVE' THEN
-    -- Configurable Hierarchy: Accountant -> Manager -> Owner/Admin/GM
-    IF v_payment.status = 'pending_approval' THEN
-        IF v_user_role IN ('owner', 'admin', 'general_manager') THEN
-            v_next_status := 'approved';
-        ELSIF v_user_role IN ('manager') THEN
-            v_next_status := 'pending_director';
-        ELSE
-            RAISE EXCEPTION 'Role % cannot approve this stage', v_user_role;
-        END IF;
-    ELSIF v_payment.status = 'pending_manager' THEN
-        IF v_user_role IN ('manager', 'owner', 'admin', 'general_manager') THEN
-             v_next_status := 'pending_director';
-        ELSE
-             RAISE EXCEPTION 'Role % cannot approve manager stage', v_user_role;
-        END IF;
-    ELSIF v_payment.status = 'pending_director' THEN
-        IF v_user_role IN ('owner', 'admin', 'general_manager') THEN
-             v_next_status := 'approved';
-        ELSE
-             RAISE EXCEPTION 'Role % cannot approve director stage', v_user_role;
-        END IF;
-    ELSE
-        RAISE EXCEPTION 'Payment is in status %, cannot approve', v_payment.status;
-    END IF;
+  v_next_status := public.supplier_payment_stage_next_status(v_payment.status, v_user_role);
 
-    -- Execute stage update
-    UPDATE payments SET 
-      status = v_next_status,
-      approved_by = CASE WHEN v_next_status = 'approved' THEN v_user_id ELSE approved_by END,
-      approved_at = CASE WHEN v_next_status = 'approved' THEN NOW() ELSE approved_at END,
-      current_approval_role = CASE WHEN v_next_status = 'approved' THEN NULL ELSE 'director' END
-    WHERE id = p_payment_id;
-    
-    RETURN;
-  END IF;
+  UPDATE public.payments SET
+    status = v_next_status,
+    approved_by = CASE WHEN v_next_status = 'approved' THEN v_user_id ELSE approved_by END,
+    approved_at = CASE WHEN v_next_status = 'approved' THEN NOW() ELSE approved_at END,
+    current_approval_role = CASE WHEN v_next_status = 'approved' THEN NULL ELSE 'director' END
+  WHERE id = p_payment_id;
+
+  RETURN;
 END;
 $function$
 ;
@@ -54981,6 +55099,81 @@ BEGIN
     CASE WHEN v_debit > v_credit THEN v_diff ELSE 0 END as suggested_credit,
     v_account;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- supplier_payment_decision_error(p_status text, p_action text, p_role text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.supplier_payment_decision_error(p_status text, p_action text, p_role text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_status text := lower(btrim(coalesce(p_status,'')));
+  v_action text := upper(btrim(coalesce(p_action,'')));
+  v_role   text := lower(btrim(coalesce(p_role,'')));
+BEGIN
+  IF v_role = '' THEN
+    RETURN 'لستَ عضواً فى هذه الشركة';
+  END IF;
+
+  IF v_action = 'REJECT' THEN
+    -- ما رُحِّل فى الدفاتر لا يُمحى بتغيير حالة
+    IF v_status IN ('approved','posted','paid','partially_paid') THEN
+      RETURN 'دفعةٌ اعتُمدت وصار لها أثرٌ فى الدفاتر لا تُرفض — الرفضُ قبل الاعتماد. وما بعده يُعالَج بعكسٍ محاسبىٍّ يُبقى الأثرَ ظاهراً، لا بتغيير الحالة';
+    END IF;
+    IF v_status NOT IN ('draft','pending_approval','pending_manager','pending_director') THEN
+      RETURN 'لا قرارَ يُتّخذ على دفعةٍ حالتُها «' || v_status || '»';
+    END IF;
+    -- والقاعدةُ هى المكتوبةُ سلفاً فى reject_supplier_payment، لا قاعدةٌ جديدة
+    IF v_role NOT IN ('owner','admin','general_manager') THEN
+      RETURN 'رفضُ دفعة المورّد للمالك أو المدير العامّ — ودورُك «' || v_role || '»';
+    END IF;
+    RETURN NULL;
+  END IF;
+
+  IF v_action = 'APPROVE' THEN
+    IF public.supplier_payment_stage_next_status(v_status, v_role) IS NOT NULL THEN
+      RETURN NULL;
+    END IF;
+    IF v_status NOT IN ('pending_approval','pending_manager','pending_director') THEN
+      RETURN 'الدفعةُ حالتُها «' || v_status || '» فلا اعتمادَ عليها';
+    END IF;
+    RETURN 'دورُك «' || v_role || '» لا يعتمد فى مرحلة «' || v_status || '»';
+  END IF;
+
+  RETURN 'إجراءٌ غيرُ معروف: «' || v_action || '»';
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- supplier_payment_stage_next_status(p_status text, p_role text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.supplier_payment_stage_next_status(p_status text, p_role text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT CASE
+    WHEN lower(btrim(coalesce(p_status,''))) = 'pending_approval'
+         AND lower(btrim(coalesce(p_role,''))) IN ('owner','admin','general_manager')
+      THEN 'approved'
+    WHEN lower(btrim(coalesce(p_status,''))) = 'pending_approval'
+         AND lower(btrim(coalesce(p_role,''))) = 'manager'
+      THEN 'pending_director'
+    WHEN lower(btrim(coalesce(p_status,''))) = 'pending_manager'
+         AND lower(btrim(coalesce(p_role,''))) IN ('manager','owner','admin','general_manager')
+      THEN 'pending_director'
+    WHEN lower(btrim(coalesce(p_status,''))) = 'pending_director'
+         AND lower(btrim(coalesce(p_role,''))) IN ('owner','admin','general_manager')
+      THEN 'approved'
+    ELSE NULL
+  END;
 $function$
 ;
 

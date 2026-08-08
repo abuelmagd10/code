@@ -242,21 +242,25 @@ function buildBillPostingMetadata(payment: PaymentRow, allocation: AllocationRow
   }
 }
 
-function willApprovalFinalize(status: string, actorRole: string) {
-  const normalizedStatus = String(status || "").trim().toLowerCase()
-  const normalizedRole = normalizeRole(actorRole)
-
-  if (normalizedStatus === "approved") return true
-  if (normalizedStatus === "pending_approval") {
-    return normalizedRole === "manager" || isPrivilegedRole(normalizedRole)
-  }
-  if (normalizedStatus === "pending_manager") {
-    return normalizedRole === "manager" || isPrivilegedRole(normalizedRole)
-  }
-  if (normalizedStatus === "pending_director") {
-    return isPrivilegedRole(normalizedRole)
-  }
-  return false
+// v3.74.988 — كانت هذه **نسخةً ثانيةً من سُلَّم الاعتماد** مكتوبةً هنا
+// بالـTypeScript، **وكانت تخالف الأصلَ فعلاً**: تقول إنّ «المدير» يُنهى
+// الاعتمادَ عند pending_approval، والقاعدةُ تُحوّله إلى pending_director.
+// بيتان لقاعدةٍ واحدةٍ يفترقان — كما افترق بيتُ رفض دفعة المورّد عن البابِ
+// الذى تطرقه الشاشة. فصار السُّلَّمُ يُقرأ من بيته الواحد فى القاعدة.
+async function willApprovalFinalize(
+  supabase: SupabaseLike,
+  status: string,
+  actorRole: string
+): Promise<boolean> {
+  if (String(status || "").trim().toLowerCase() === "approved") return true
+  const { data, error } = await supabase.rpc("supplier_payment_stage_next_status", {
+    p_status: status,
+    p_role: actorRole,
+  })
+  // ولا يُتخطّى الفحصُ صامتاً: إن سقط النداءُ عوملت الدفعةُ كأنّها ستُعتمد
+  // فيُفحص قفلُ الفترة المحاسبيّة — **والتشدّدُ عند العطب أسلمُ من التساهل**.
+  if (error) return true
+  return String(data || "") === "approved"
 }
 
 export class SupplierPaymentCommandService {
@@ -408,14 +412,19 @@ export class SupplierPaymentCommandService {
         })
 
         if (error) {
-          throw new Error(error.message || "Failed to reject supplier payment")
+          // v3.74.988 — الرسالةُ من القاعدة بالعربيّة، **والرمزُ يُنقل معها**
+          // كى تُجيب الواجهةُ «مرفوض» لا «عطبٌ فى الخادم».
+          const rejectError: any = new Error(error.message || "Failed to reject supplier payment")
+          rejectError.code = error.code
+          throw rejectError
         }
       }
 
       return await this.buildResultFromPayment(paymentId, null, paymentBefore.status === "rejected")
     }
 
-    if (paymentBefore.status !== "approved" && willApprovalFinalize(paymentBefore.status, actor.actorRole)) {
+    if (paymentBefore.status !== "approved"
+      && (await willApprovalFinalize(this.authSupabase, paymentBefore.status, actor.actorRole))) {
       await requireOpenFinancialPeriod(actor.companyId, paymentBefore.payment_date)
     }
 
@@ -427,7 +436,10 @@ export class SupplierPaymentCommandService {
       })
 
       if (error) {
-        throw new Error(error.message || "Failed to approve supplier payment")
+        // v3.74.988 — كسابقتها: القرارُ يُنقل بوصفه قراراً.
+        const approveError: any = new Error(error.message || "Failed to approve supplier payment")
+        approveError.code = error.code
+        throw approveError
       }
     }
 
