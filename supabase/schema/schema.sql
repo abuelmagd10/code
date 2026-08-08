@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T15:52:03.759Z
+-- Generated: 2026-08-08T16:13:25.530Z
 -- Tables: 256 | Policies: 785 | Triggers: 580 | Constraints: 1838
 -- =====================================================================
 
@@ -11031,6 +11031,9 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_986_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_988_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_988_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_988_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_989_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_989_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_989_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -11062,6 +11065,9 @@ GRANT EXECUTE ON FUNCTION public.assert_no_posted_depreciation(p_asset_id uuid) 
 GRANT EXECUTE ON FUNCTION public.assert_no_posted_depreciation(p_asset_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.assert_purchase_return_amount(p_field text, p_sent numeric, p_computed numeric, p_tolerance numeric, p_context text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_purchase_return_amount(p_field text, p_sent numeric, p_computed numeric, p_tolerance numeric, p_context text) TO service_role;
+REVOKE ALL ON FUNCTION public.assert_sales_delivery_decision(p_invoice_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_sales_delivery_decision(p_invoice_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_sales_delivery_decision(p_invoice_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.assign_default_member_branch() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assign_default_member_branch() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assign_default_member_branch() TO service_role;
@@ -11408,6 +11414,9 @@ GRANT EXECUTE ON FUNCTION public.booking_mandatory_custody_gate(p_booking_id uui
 REVOKE ALL ON FUNCTION public.branch_outlet_lifecycle() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.branch_outlet_lifecycle() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.branch_outlet_lifecycle() TO service_role;
+REVOKE ALL ON FUNCTION public.branch_warehouse_custodian(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.branch_warehouse_custodian(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.branch_warehouse_custodian(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.calc_declining_balance_depreciation(p_book_value numeric, p_salvage_value numeric, p_rate numeric, p_useful_life_months integer, p_period_number integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.calc_declining_balance_depreciation(p_book_value numeric, p_salvage_value numeric, p_rate numeric, p_useful_life_months integer, p_period_number integer) TO anon;
 GRANT EXECUTE ON FUNCTION public.calc_declining_balance_depreciation(p_book_value numeric, p_salvage_value numeric, p_rate numeric, p_useful_life_months integer, p_period_number integer) TO authenticated;
@@ -14592,6 +14601,12 @@ GRANT EXECUTE ON FUNCTION public.run_negative_security_tests() TO service_role;
 REVOKE ALL ON FUNCTION public.safe_delete_payment_journals() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.safe_delete_payment_journals() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.safe_delete_payment_journals() TO service_role;
+REVOKE ALL ON FUNCTION public.sales_delivery_actor_error(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.sales_delivery_actor_error(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sales_delivery_actor_error(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.sales_delivery_decision_error(p_invoice_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.sales_delivery_decision_error(p_invoice_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sales_delivery_decision_error(p_invoice_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.sales_return_approval_insert_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.sales_return_approval_insert_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.sales_return_approval_insert_trg() TO service_role;

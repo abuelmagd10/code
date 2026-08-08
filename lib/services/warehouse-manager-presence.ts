@@ -25,7 +25,6 @@
 
 type SupabaseLike = any
 
-const WAREHOUSE_MANAGER_ROLES = ["store_manager", "warehouse_manager"] as const
 
 /**
  * Returns true when the given branch has at least one assigned warehouse
@@ -44,13 +43,17 @@ export async function branchHasWarehouseManager(
 ): Promise<boolean> {
   if (!companyId || !branchId) return false
 
-  const { data, error } = await supabase
-    .from("company_members")
-    .select("user_id")
-    .eq("company_id", companyId)
-    .eq("branch_id", branchId)
-    .in("role", WAREHOUSE_MANAGER_ROLES as unknown as string[])
-    .limit(1)
+  // v3.74.989 — كان هذا بيتاً ثانياً للسؤال نفسِه **ويفترق عن بيت القاعدة**:
+  // يبحث عن دورين أحدُهما "warehouse_manager" — **وهو ليس من الأدوار الاثنى
+  // عشر المسموح بها أصلاً**، فنصفُ القائمة كان يبحث عمّن لا يستطيع أحدٌ أن
+  // يكونه. فصار السؤالُ يُطرَح على بيتٍ واحدٍ فى القاعدة، هو نفسُه الذى يحكم
+  // على من يعتمد الإخراج — فلا يفترق الجوابان غداً.
+  const { data, error } = await supabase.rpc("branch_warehouse_custodian", {
+    p_company_id: companyId,
+    p_branch_id: branchId,
+    p_warehouse_id: null,
+    p_user_id: null,
+  })
 
   if (error) {
     console.warn(
@@ -60,7 +63,7 @@ export async function branchHasWarehouseManager(
     return false
   }
 
-  return Array.isArray(data) && data.length > 0
+  return data === true
 }
 
 export const WAREHOUSE_AUTO_APPROVE_NOTE =

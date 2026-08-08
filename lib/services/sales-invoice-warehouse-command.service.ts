@@ -54,6 +54,12 @@ export class SalesInvoiceWarehouseCommandService {
     const invoice = await this.loadInvoice(actor.companyId, command.invoiceId, "invoice_number, branch_id, cost_center_id, status, warehouse_status, approval_status, created_by_user_id, posted_by_user_id")
     const invoiceSenderId = invoice.posted_by_user_id || invoice.created_by_user_id || null
 
+    // v3.74.989 — إخراجُ البضاعة عهدةُ مسؤول مخزن الفرع. وكانت هذه الخدمةُ
+    // **لا تستقبل الدورَ أصلاً**، فأىُّ موظّفٍ مسجَّلٍ يعتمد خروجَ البضاعة.
+    // والقاعدةُ فى بيتٍ واحدٍ فى القاعدة: المالكُ والمدير العامُّ دائماً،
+    // وصاحبُ العهدة على عهدته، **وفرعٌ لا صاحبَ عهدةٍ له لا يتوقّف عملُه**.
+    await this.assertMayDecideDelivery(actor, command.invoiceId)
+
     // v3.74.501 — نفس بوابة استلام المشتريات (v3.74.499): لا يُعتمد إخراج
     // بضاعة لفاتورة بانتظار الاعتماد الإداري أو عليها تعديل/خصم معلق.
     if (invoice.status === "pending_approval") {
@@ -152,6 +158,12 @@ export class SalesInvoiceWarehouseCommandService {
     const invoice = await this.loadInvoice(actor.companyId, command.invoiceId, "invoice_number, branch_id, cost_center_id, customer_id, paid_amount, created_by_user_id, posted_by_user_id, status, warehouse_status, approval_status, sales_order_id")
     const invoiceSenderId = invoice.posted_by_user_id || invoice.created_by_user_id
 
+    // v3.74.989 — إخراجُ البضاعة عهدةُ مسؤول مخزن الفرع. وكانت هذه الخدمةُ
+    // **لا تستقبل الدورَ أصلاً**، فأىُّ موظّفٍ مسجَّلٍ يعتمد خروجَ البضاعة.
+    // والقاعدةُ فى بيتٍ واحدٍ فى القاعدة: المالكُ والمدير العامُّ دائماً،
+    // وصاحبُ العهدة على عهدته، **وفرعٌ لا صاحبَ عهدةٍ له لا يتوقّف عملُه**.
+    await this.assertMayDecideDelivery(actor, command.invoiceId)
+
     const { data: rpcData, error: rpcError } = await this.supabase.rpc("reject_sales_delivery", {
       p_invoice_id: command.invoiceId,
       p_confirmed_by: actor.userId,
@@ -198,6 +210,22 @@ export class SalesInvoiceWarehouseCommandService {
       reverted_to_draft: false,
       credit_created: creditCreated,
       credit_amount: creditAmount,
+    }
+  }
+
+  // v3.74.989 — بيتُ القاعدة يقول من يملك القرار، والخدمةُ تسأله ولا تُعيد
+  // كتابتَه. ويُنادى **قبل الكتابة** لا بعدها — درسُ ٩٨٦.
+  private async assertMayDecideDelivery(actor: SalesInvoiceWarehouseActor, invoiceId: string) {
+    const { data: gateError, error: gateCallError } = await this.supabase.rpc("sales_delivery_decision_error", {
+      p_invoice_id: invoiceId,
+      p_user_id: actor.userId,
+    })
+    // ولا يُتخطّى الفحصُ صامتاً إن سقط النداءُ نفسُه.
+    if (gateCallError) {
+      throw new SalesInvoiceWarehouseCommandError("تعذّر التحقّق من صلاحية إخراج البضاعة", 500)
+    }
+    if (gateError) {
+      throw new SalesInvoiceWarehouseCommandError(String(gateError), 403)
     }
   }
 
