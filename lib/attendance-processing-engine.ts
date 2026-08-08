@@ -118,11 +118,18 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
 
                         // v3.74.890 — يُفحص: لو فشل الإدراج ثم وُسم السجل
                         // «معالجاً» ضاعت بصمة الحضور نهائياً بصمت.
+                        // v3.74.985 — البصمةُ الخامُّ تعرف الفرعَ والطريقَ التى
+                        // جاءت منها، وكان يومُ الحضور يُبنى منها فيُلقيهما. فالسجلُّ
+                        // الذى يُبنى عليه الراتبُ لا يعرف أين حضر الموظّف.
+                        // ولا يُخمَّن المصدر: يُنقل كما هو، فإن غاب رفضته القاعدةُ
+                        // ووُسمت البصمةُ شاذّةً باسمها — **ولا تُبتلع صامتة**.
                         const { error: recInsErr } = await supabase.from('attendance_records').insert({
                             company_id: log.company_id,
                             employee_id: log.employee_id,
                             day_date: dayDate,
                             shift_id: shiftId,
+                            branch_id: log.branch_id ?? null,
+                            source: log.source,
                             check_in: logTime.toISOString().split('T')[1], // Time only
                             status: 'present',
                             late_minutes: lateMins
@@ -149,12 +156,21 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
 
                         // v3.74.890 — يُفحص: انصرافٌ لم يُحفظ + سجلٌ وُسم
                         // «معالجاً» = يوم عمل بلا ساعات إلى الأبد.
+                        // v3.74.985 — قد يدخل الموظّفُ ببصمةٍ من الجهاز ويخرج
+                        // ببصمةٍ من الجوّال. فيومُ الحضور **يقول «مختلط» ولا
+                        // يدّعى طريقاً واحدة** — والادّعاءُ أسوأُ من الإبهام.
+                        const mergedSource =
+                            currentRecord.source && log.source && currentRecord.source !== log.source
+                                ? 'mixed'
+                                : (currentRecord.source || log.source)
+
                         const { error: recUpdErr } = await supabase.from('attendance_records')
                             .update({
                                 check_out: logTime.toISOString().split('T')[1],
                                 working_hours: workingHours,
                                 overtime_minutes: overtimeMins,
-                                early_leave_minutes: earlyLeaveMins
+                                early_leave_minutes: earlyLeaveMins,
+                                source: mergedSource
                             })
                             .eq('id', currentRecord.id);
                         if (recUpdErr) throw new Error(`attendance_records update failed: ${recUpdErr.message}`);

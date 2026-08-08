@@ -82,11 +82,23 @@ export async function POST(req: NextRequest) {
     }
     const client = admin
     const useHr = String(process.env.SUPABASE_USE_HR_SCHEMA || '').toLowerCase() === 'true'
+    // v3.74.985 — الصفُّ يُبنى مرّةً واحدةً ويُستعمل فى المسارين، فلا يفترق
+    // مسارٌ عن أخيه. والمصدرُ «يدوى» صراحةً: هذا قرارُ إنسانٍ لا بصمةُ جهاز.
+    // والفرعُ لا يُذكر هنا لأنّ للقاعدة بيتاً واحداً يملؤه من فرع الموظّف.
+    const attendanceRow = {
+      company_id: companyId,
+      employee_id: employeeId,
+      day_date: dayDate,
+      status,
+      source: "manual",
+      is_manual_override: true,
+      updated_by: user.id,
+    }
     // ✅ إضافة .select('id') للحصول على ID السجل بعد upsert
-    let up = await client.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" }).select('id')
+    let up = await client.from("attendance_records").upsert(attendanceRow, { onConflict: "company_id,employee_id,day_date" }).select('id')
     if (useHr && up.error && ((up.error as any).code === "PGRST205" || String(up.error.message || "").toUpperCase().includes("PGRST205"))) {
       const clientHr = (client as any).schema ? (client as any).schema("hr") : client
-      up = await clientHr.from("attendance_records").upsert({ company_id: companyId, employee_id: employeeId, day_date: dayDate, status }, { onConflict: "company_id,employee_id,day_date" }).select('id')
+      up = await clientHr.from("attendance_records").upsert(attendanceRow, { onConflict: "company_id,employee_id,day_date" }).select('id')
     }
     const { error: upsertError } = up
     if (upsertError) {

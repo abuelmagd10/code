@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-08T14:21:01.690Z
--- Routines: 1325
+-- Generated: 2026-08-08T14:40:30.203Z
+-- Routines: 1327
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4160,6 +4160,76 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_baseline_v3_74_985_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_985_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_raw text[];
+  v_rec text[];
+  v_missing text[];
+BEGIN
+  -- العمودان موجودان
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'attendance_records' AND column_name = 'branch_id'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: سجلُّ الحضور بلا فرع (v3.74.985)';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'attendance_records' AND column_name = 'source'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: سجلُّ الحضور بلا مصدر (v3.74.985)';
+  END IF;
+
+  -- القيدُ مركَّبٌ ومُفعَّل
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE NOT t.tgisinternal AND c.relname = 'attendance_records'
+      AND t.tgname = 'trg_attendance_record_origin' AND t.tgenabled = 'O'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: قيدُ «الحضورُ يقول من أين جاء» غيرُ مركَّبٍ أو مُعطَّل (v3.74.985)';
+  END IF;
+
+  -- والمفرداتُ لا تفترق: كلُّ طريقٍ تقبلها البصمةُ الخامُّ يقبلها يومُ الحضور
+  SELECT array_agg(DISTINCT m[1] ORDER BY m[1]) INTO v_raw
+  FROM pg_constraint con
+  JOIN pg_class c ON c.oid = con.conrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public',
+  LATERAL regexp_matches(pg_get_constraintdef(con.oid), '''([a-z_]+)''::text', 'g') AS m
+  WHERE c.relname = 'attendance_raw_logs' AND con.conname = 'attendance_raw_logs_source_check';
+
+  SELECT array_agg(DISTINCT m[1] ORDER BY m[1]) INTO v_rec
+  FROM pg_constraint con
+  JOIN pg_class c ON c.oid = con.conrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public',
+  LATERAL regexp_matches(pg_get_constraintdef(con.oid), '''([a-z_]+)''::text', 'g') AS m
+  WHERE c.relname = 'attendance_records' AND con.conname = 'attendance_records_source_check';
+
+  IF v_raw IS NULL OR array_length(v_raw, 1) IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لم أجد مفرداتِ مصدر البصمة — ولا أحكم بلا مقياس (v3.74.985)';
+  END IF;
+  IF v_rec IS NULL OR array_length(v_rec, 1) IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لم أجد مفرداتِ مصدر سجلّ الحضور (v3.74.985)';
+  END IF;
+
+  SELECT array_agg(x ORDER BY x) INTO v_missing
+  FROM unnest(v_raw) AS x
+  WHERE NOT (x = ANY (v_rec));
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: طريقٌ تقبلها البصمةُ ولا يقبلها سجلُّ الحضور: % (v3.74.985)', array_to_string(v_missing, ' · ');
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid)
@@ -4556,6 +4626,34 @@ BEGIN
   SELECT COALESCE(MAX(seat_number), 0) + 1 INTO v_seat_number
     FROM company_members WHERE company_id = p_company_id;
   RETURN v_seat_number;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- attendance_record_says_its_origin()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.attendance_record_says_its_origin()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  -- الفرعُ: يُملأ من فرع الموظّف إن لم يذكره الكاتب — وهذه معرفةٌ لا تخمين.
+  IF NEW.branch_id IS NULL THEN
+    SELECT e.branch_id INTO NEW.branch_id
+    FROM public.employees e
+    WHERE e.id = NEW.employee_id;
+  END IF;
+
+  -- والمصدرُ: لا يُملأ عنه أحد.
+  IF NEW.source IS NULL THEN
+    RAISE EXCEPTION 'سجلُّ الحضور لا يُكتب بلا مصدر — قل من أىِّ طريقٍ جاء (جهاز · يدوى · تطبيق · جوّال · موقع)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
 END;
 $function$
 ;

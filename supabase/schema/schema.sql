@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T14:21:04.340Z
--- Tables: 256 | Policies: 785 | Triggers: 578 | Constraints: 1836
+-- Generated: 2026-08-08T14:40:32.345Z
+-- Tables: 256 | Policies: 785 | Triggers: 579 | Constraints: 1838
 -- =====================================================================
 
 
@@ -317,7 +317,9 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
   anomaly_flag boolean DEFAULT false,
   anomaly_reason text,
   created_by uuid,
-  updated_by uuid
+  updated_by uuid,
+  branch_id uuid,
+  source text
 );
 
 CREATE TABLE IF NOT EXISTS public.attendance_shifts (
@@ -5008,11 +5010,13 @@ ALTER TABLE public.attendance_raw_logs_archive ADD CONSTRAINT attendance_raw_log
 ALTER TABLE public.attendance_raw_logs_archive ADD CONSTRAINT attendance_raw_logs_archive_pkey PRIMARY KEY (id);
 ALTER TABLE public.attendance_raw_logs_archive ADD CONSTRAINT attendance_raw_logs_log_type_check CHECK ((log_type = ANY (ARRAY['IN'::text, 'OUT'::text, 'UNKNOWN'::text])));
 ALTER TABLE public.attendance_raw_logs_archive ADD CONSTRAINT attendance_raw_logs_source_check CHECK ((source = ANY (ARRAY['biometric'::text, 'manual'::text, 'api'::text, 'mobile'::text, 'gps'::text])));
+ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id);
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE;
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_pkey PRIMARY KEY (id);
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES attendance_shifts(id) ON DELETE SET NULL;
+ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_source_check CHECK (((source IS NULL) OR (source = ANY (ARRAY['biometric'::text, 'manual'::text, 'api'::text, 'mobile'::text, 'gps'::text, 'mixed'::text]))));
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (((status)::text = ANY ((ARRAY['present'::character varying, 'absent'::character varying, 'leave'::character varying, 'sick'::character varying, 'late'::character varying, 'early_leave'::character varying])::text[])));
 ALTER TABLE public.attendance_records ADD CONSTRAINT attendance_records_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id);
 ALTER TABLE public.attendance_records ADD CONSTRAINT unique_attendance_per_day UNIQUE (company_id, employee_id, day_date);
@@ -6809,6 +6813,7 @@ CREATE INDEX idx_asset_transactions_company ON public.asset_transactions USING b
 CREATE INDEX idx_asset_transactions_date ON public.asset_transactions USING btree (transaction_date);
 CREATE INDEX idx_attendance_company_date ON public.attendance_records USING btree (company_id, day_date);
 CREATE INDEX idx_attendance_employee ON public.attendance_records USING btree (employee_id);
+CREATE INDEX idx_attendance_records_branch_day ON public.attendance_records USING btree (company_id, branch_id, day_date);
 CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action);
 CREATE INDEX idx_audit_logs_batch_id ON public.audit_logs USING btree (batch_id);
 CREATE INDEX idx_audit_logs_branch_created ON public.audit_logs USING btree (company_id, branch_id, created_at DESC);
@@ -7599,6 +7604,7 @@ CREATE TRIGGER ai_knowledge_chunks_touch_updated_at BEFORE UPDATE ON public.ai_k
 CREATE TRIGGER trg_rate_limits_updated_at BEFORE UPDATE ON public.api_rate_limits FOR EACH ROW EXECUTE FUNCTION update_rate_limits_updated_at();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.approval_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER audit_asset_transactions AFTER INSERT OR DELETE OR UPDATE ON public.asset_transactions FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+CREATE TRIGGER trg_attendance_record_origin BEFORE INSERT OR UPDATE OF branch_id, source, employee_id ON public.attendance_records FOR EACH ROW EXECUTE FUNCTION attendance_record_says_its_origin();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|reviewed_by|مُعتَمِدُ السَّنَد لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.', 'reviewed_by|posted_by|مُنَفِّذُ السَّنَد لا يَجوزُ أن يكون هو نفسَه مُعتَمِدَه.');
 CREATE TRIGGER trg_block_bank_voucher_delete BEFORE DELETE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION block_bank_voucher_delete_after_post();
 CREATE TRIGGER trg_block_bank_voucher_immutable_edits BEFORE UPDATE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION block_bank_voucher_immutable_edits();
@@ -11015,6 +11021,9 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_983_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_984_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_984_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_984_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_985_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_985_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_985_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -11052,6 +11061,10 @@ GRANT EXECUTE ON FUNCTION public.assign_default_member_branch() TO service_role;
 REVOKE ALL ON FUNCTION public.assign_next_seat_number(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assign_next_seat_number(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assign_next_seat_number(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.attendance_record_says_its_origin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.attendance_record_says_its_origin() TO anon;
+GRANT EXECUTE ON FUNCTION public.attendance_record_says_its_origin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.attendance_record_says_its_origin() TO service_role;
 REVOKE ALL ON FUNCTION public.audit_customer_changes() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.audit_customer_changes() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.audit_customer_changes() TO service_role;
