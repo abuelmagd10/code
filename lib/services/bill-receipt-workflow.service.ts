@@ -210,6 +210,30 @@ export class BillReceiptWorkflowService {
     const bill = await this.loadBill(billId, actor.companyId)
     const alreadyApproved = bill.approval_status === "approved" && bill.status === "draft"
 
+    // v3.74.987 — كانت المقارنةُ بمنشئ المستند موجودةً، **لكن فى خدمة
+    // الإشعارات**، تُنادى بعد الاعتماد بستّين سطراً، وأثرُها الوحيدُ ألّا
+    // يُرسَل إشعارٌ للمنشئ إن كان هو المعتمِد. فمن يقرأ خدمةَ الاعتماد لا
+    // يراها، ومن يقرأ خدمةَ الإشعارات يظنُّها حارساً.
+    // فصار الفحصُ هنا: قبل الكتابة، وينادى البيتَ الواحدَ فى القاعدة —
+    // مَن أنشأ لا يعتمد · إلّا المالك · وإلّا إن لم يوجد معتمِدٌ آخر.
+    // ولا يُحاكَم إعادةُ الإرسال: المعتمَدُ سلفاً لا يُشغَّل عليه الفحص،
+    // فمنعُ التكرار شىءٌ ورفضُ الاعتماد شىءٌ آخر.
+    if (!alreadyApproved) {
+      const { data: sodError, error: sodCallError } = await this.adminSupabase.rpc("erp_self_approval_error", {
+        p_company_id: actor.companyId,
+        p_created_by: bill.created_by || bill.created_by_user_id || null,
+        p_approver: actor.actorId,
+        p_approver_roles: [...ADMIN_APPROVAL_ROLES],
+      })
+      // ولا يُتخطّى الفحصُ صامتاً إن سقط النداءُ نفسُه.
+      if (sodCallError) {
+        throw new Error("تعذّر التحقّق من فصل المهامّ")
+      }
+      if (sodError) {
+        throw new Error(String(sodError))
+      }
+    }
+
     if (!alreadyApproved) {
       // v3.74.500 — Baseline refresh: the admin is approving the bill's
       // CURRENT numbers, so they become the new reference snapshot. Without
