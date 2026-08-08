@@ -76,9 +76,9 @@ export async function POST(request: Request) {
             .eq('user_id', user.id)
             .single();
 
-        if (!companyMember || !['owner', 'admin', 'finance'].includes(companyMember.role)) {
+        if (!companyMember || !['owner', 'admin', 'accountant'].includes(companyMember.role)) {
             return NextResponse.json(
-                { error: 'Forbidden: Only Admin/Finance can trigger calculations' },
+                { error: 'ممنوع: تشغيل حساب العمولات للمالك والمدير العام والمحاسب فقط' },
                 { status: 403 }
             );
         }

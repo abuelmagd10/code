@@ -156,7 +156,10 @@ export async function POST(request: NextRequest) {
     const governance = await enforceGovernance(request)
     
     // التحقق من الصلاحيات
-    if (!['admin', 'gm'].includes(governance.role)) {
+    // v3.74.981 — كان الشرط ['admin','gm']: و«gm» اسمٌ لا تقبله القاعدة،
+    // **والمالكُ نفسُه لم يكن فيه** فيُمنع من إنشاء مخزنٍ فى شركته.
+    // والملفُّ يناقض نفسَه: قائمةُ القراءة أعلاه تضمّ owner صريحاً.
+    if (!['owner', 'admin', 'general_manager'].includes(governance.role)) {
       return NextResponse.json({ 
         error: "Insufficient permissions",
         error_ar: "صلاحيات غير كافية" 

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
             requireAuth: true,
             requireCompany: true,
             requirePermission: { resource: "commissions", action: "read" },
-            allowRoles: ["owner", "admin", "finance", "accountant", "manager"]
+            allowRoles: ["owner", "admin", "accountant", "manager"]
         })
 
         if (error) return error

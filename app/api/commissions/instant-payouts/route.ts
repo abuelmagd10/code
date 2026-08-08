@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
             .eq('user_id', user.id)
             .single();
 
-        if (!companyMember || !['owner', 'admin', 'finance'].includes(companyMember.role)) {
+        if (!companyMember || !['owner', 'admin', 'accountant'].includes(companyMember.role)) {
             return NextResponse.json(
-                { error: 'Forbidden: Only Owner/Admin/Finance can view instant payouts' },
+                { error: 'ممنوع: عرض الصرف الفورى للمالك والمدير العام والمحاسب فقط' },
                 { status: 403 }
             );
         }

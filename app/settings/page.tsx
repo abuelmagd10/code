@@ -84,7 +84,10 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'editor' | 'viewer'>('viewer') // Track user role
+  // v3.74.981 — الوظائفُ فى النظام اثنتا عشرةَ لا أربعاً، و«editor» ليست
+  // منها أصلاً. ولا يُبنى على هذا النوع شىءٌ إلّا مقارنةٌ واحدةٌ بالمالك،
+  // لكنّ ادّعاءً خاطئاً فى الشيفرة يصير اعتقاداً خاطئاً فى اليد التالية.
+  const [userRole, setUserRole] = useState<string>('viewer')
   const [isCompanyOwner, setIsCompanyOwner] = useState<boolean>(false) // Is user the company owner?
   // FX Account Configuration states
   const [fxGainAccountId, setFxGainAccountId] = useState<string | null>(null)
@@ -739,7 +742,7 @@ export default function SettingsPage() {
 
                   if (memberData) {
                     // User is a member - check role
-                    const role = memberData.role as 'owner' | 'admin' | 'editor' | 'viewer'
+                    const role = String(memberData.role || '')
                     setUserRole(role)
                     // Owner = role is 'owner' OR user created the company (no invited_by)
                     setIsCompanyOwner(role === 'owner' || !memberData.invited_by)

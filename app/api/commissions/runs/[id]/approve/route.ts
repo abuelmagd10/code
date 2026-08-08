@@ -38,9 +38,9 @@ export async function POST(
             .eq('user_id', user.id)
             .single();
 
-        if (!companyMember || !['owner', 'admin', 'finance'].includes(companyMember.role)) {
+        if (!companyMember || !['owner', 'admin', 'accountant'].includes(companyMember.role)) {
             return NextResponse.json(
-                { error: 'Forbidden: Only Admin/Finance can approve runs' },
+                { error: 'ممنوع: اعتماد دورة العمولات للمالك والمدير العام والمحاسب فقط' },
                 { status: 403 }
             );
         }

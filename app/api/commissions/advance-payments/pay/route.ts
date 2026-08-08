@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
             requireAuth: true,
             requireCompany: true,
             requirePermission: { resource: "commissions", action: "write" },
-            allowRoles: ["owner", "admin", "finance", "accountant"]
+            allowRoles: ["owner", "admin", "accountant"]
         })
 
         if (error) return error

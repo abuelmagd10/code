@@ -38,9 +38,9 @@ export async function POST(
             .eq('user_id', user.id)
             .single();
 
-        if (!companyMember || !['owner', 'finance'].includes(companyMember.role)) {
+        if (!companyMember || !['owner', 'accountant'].includes(companyMember.role)) {
             return NextResponse.json(
-                { error: 'Forbidden: Only Finance can post commission runs' },
+                { error: 'ممنوع: ترحيل دورة العمولات للمالك والمحاسب فقط' },
                 { status: 403 }
             );
         }
