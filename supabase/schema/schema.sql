@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T13:51:19.075Z
--- Tables: 256 | Policies: 785 | Triggers: 577 | Constraints: 1836
+-- Generated: 2026-08-08T14:21:04.340Z
+-- Tables: 256 | Policies: 785 | Triggers: 578 | Constraints: 1836
 -- =====================================================================
 
 
@@ -8013,6 +8013,7 @@ CREATE TRIGGER sync_legacy_payment_unallocated_trigger BEFORE INSERT OR UPDATE O
 CREATE TRIGGER trg_auto_create_credit_from_overpayment AFTER INSERT OR UPDATE OF unallocated_amount ON public.payments FOR EACH ROW EXECUTE FUNCTION auto_create_credit_from_overpayment();
 CREATE TRIGGER trg_auto_create_payment_journal_ins AFTER INSERT ON public.payments FOR EACH ROW WHEN (((new.journal_entry_id IS NULL) AND (COALESCE(new.status, 'approved'::text) <> ALL (ARRAY['draft'::text, 'pending_approval'::text, 'rejected'::text])))) EXECUTE FUNCTION auto_create_payment_journal();
 CREATE TRIGGER trg_auto_create_payment_journal_upd AFTER UPDATE OF status ON public.payments FOR EACH ROW WHEN (((new.journal_entry_id IS NULL) AND (new.status = ANY (ARRAY['approved'::text, 'posted'::text, 'paid'::text, 'partially_paid'::text])) AND ((old.status IS NULL) OR (old.status <> ALL (ARRAY['approved'::text, 'posted'::text, 'paid'::text, 'partially_paid'::text]))))) EXECUTE FUNCTION auto_create_payment_journal();
+CREATE TRIGGER trg_payment_approver_is_real BEFORE INSERT OR UPDATE OF approved_by ON public.payments FOR EACH ROW WHEN ((new.approved_by IS NOT NULL)) EXECUTE FUNCTION enforce_payment_approver_is_real();
 CREATE TRIGGER trg_payment_requires_revenue_je BEFORE INSERT OR UPDATE OF invoice_id ON public.payments FOR EACH ROW EXECUTE FUNCTION payment_requires_revenue_je_trg();
 CREATE TRIGGER trg_payments_auto_set_creator BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_payments_autolink BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION auto_link_payment_to_journal();
@@ -11011,6 +11012,9 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_982_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_983_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_983_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_983_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_984_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_984_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_984_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12072,6 +12076,10 @@ REVOKE ALL ON FUNCTION public.enforce_material_issue_two_stage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_material_issue_two_stage() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_material_issue_two_stage() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_material_issue_two_stage() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_payment_approver_is_real() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO anon;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_period_lock_header() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO authenticated;
@@ -12137,6 +12145,9 @@ REVOKE ALL ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) FROM P
 GRANT EXECUTE ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_notice_follows_its_document() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_notice_follows_its_document() TO service_role;
+REVOKE ALL ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO authenticated;
@@ -13937,6 +13948,9 @@ REVOKE ALL ON FUNCTION public.payment_requires_revenue_je_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.payment_self_approval_error(p_company_id uuid, p_created_by uuid, p_approved_by uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.payment_self_approval_error(p_company_id uuid, p_created_by uuid, p_approved_by uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.payment_self_approval_error(p_company_id uuid, p_created_by uuid, p_approved_by uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.payment_supplier_approval_insert_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_supplier_approval_insert_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.payment_supplier_approval_insert_trg() TO service_role;

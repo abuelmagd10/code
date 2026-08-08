@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-08T13:51:16.933Z
--- Routines: 1321
+-- Generated: 2026-08-08T14:21:01.690Z
+-- Routines: 1325
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4083,6 +4083,77 @@ BEGIN
   END IF;
   IF public.material_issue_stage_error('approved', 'approved', NULL, NULL, TRUE) IS NOT NULL THEN
     RAISE EXCEPTION 'BASELINE FAIL: منع تحديثاً لا يمسّ الحالة (v3.74.983)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_984_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_984_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_company uuid;
+  v_privileged uuid;
+BEGIN
+  -- القيدُ مركَّبٌ ومُفعَّل
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE NOT t.tgisinternal AND c.relname = 'payments'
+      AND t.tgname = 'trg_payment_approver_is_real' AND t.tgenabled = 'O'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: قيدُ صدقِ توقيع الدفعة غيرُ مركَّبٍ أو مُعطَّل (v3.74.984)';
+  END IF;
+
+  -- والبابان ينادِيان البيتَ الواحد
+  -- **وما لا يكتب توقيعاً لا يُحاكَم**: تُقاس الصفةُ لا الاسم — كلُّ دالّةٍ
+  -- تُدخل دفعةً **وتكتب توقيعاً** يجب أن تسأل البيتَ الواحد.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prokind = 'f'
+      AND p.prosrc ~ 'INSERT[\s]+INTO[\s]+(public\.)?payments'
+      AND p.prosrc ~ 'approved_by'
+      AND p.prosrc !~ 'erp_payment_privileged'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بابُ دفعٍ يكتب توقيعاً ولا ينادى بيتَ القاعدة — والقواعدُ المكرّرة تفترق (v3.74.984)';
+  END IF;
+
+  -- الاتّجاهُ الأوّل: يرفض من ختم نفسَه وهو لا يملك الاعتماد
+  IF public.payment_self_approval_error(
+       '00000000-0000-0000-0000-000000000000'::uuid,
+       '11111111-1111-1111-1111-111111111111'::uuid,
+       '11111111-1111-1111-1111-111111111111'::uuid) IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: قبِل توقيعاً ختمه صاحبُه ولا يملكه (v3.74.984)';
+  END IF;
+
+  -- والاتّجاهُ الثانى: لا يصرخ على البرىء
+  IF public.payment_self_approval_error(
+       '00000000-0000-0000-0000-000000000000'::uuid,
+       '11111111-1111-1111-1111-111111111111'::uuid,
+       '22222222-2222-2222-2222-222222222222'::uuid) IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صرخ على توقيعٍ وقّعه شخصٌ آخر (v3.74.984)';
+  END IF;
+  IF public.payment_self_approval_error(
+       '00000000-0000-0000-0000-000000000000'::uuid,
+       '11111111-1111-1111-1111-111111111111'::uuid, NULL) IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صرخ على دفعةٍ بلا توقيعٍ أصلاً (v3.74.984)';
+  END IF;
+
+  -- ومن يملك الاعتمادَ يوقّع لنفسه — يُقاس بعضوٍ حقيقىٍّ لا بافتراض
+  SELECT cm.company_id, cm.user_id INTO v_company, v_privileged
+  FROM public.company_members cm
+  WHERE cm.role IN ('owner', 'admin', 'general_manager')
+  LIMIT 1;
+  IF v_company IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا مالكَ ولا مديرَ عامٍّ فى القاعدة كلِّها — ولا أحكم بلا مقياس (v3.74.984)';
+  END IF;
+  IF public.payment_self_approval_error(v_company, v_privileged, v_privileged) IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: منع صاحبَ الاعتماد من توقيع دفعته (v3.74.984)';
   END IF;
 END;
 $function$
@@ -19376,6 +19447,27 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- enforce_payment_approver_is_real()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_payment_approver_is_real()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_err text;
+BEGIN
+  v_err := public.payment_self_approval_error(NEW.company_id, NEW.created_by, NEW.approved_by);
+  IF v_err IS NOT NULL THEN
+    RAISE EXCEPTION '%', v_err USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- enforce_period_lock_header()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.enforce_period_lock_header()
@@ -20053,6 +20145,24 @@ BEGIN
      AND (status <> 'archived' OR read_at IS NULL);
   RETURN OLD;
 END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_payment_privileged(p_company_id uuid, p_user_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.company_members cm
+    WHERE cm.company_id = p_company_id
+      AND cm.user_id = p_user_id
+      AND cm.role IN ('owner', 'admin', 'general_manager')
+  );
 $function$
 ;
 
@@ -40256,6 +40366,33 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- payment_self_approval_error(p_company_id uuid, p_created_by uuid, p_approved_by uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.payment_self_approval_error(p_company_id uuid, p_created_by uuid, p_approved_by uuid)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  -- لا توقيعَ أصلاً: لا دعوى
+  IF p_approved_by IS NULL OR p_created_by IS NULL THEN
+    RETURN NULL;
+  END IF;
+  -- وقّعها غيرُ من أدخلها: هذه هى الرقابة
+  IF p_approved_by <> p_created_by THEN
+    RETURN NULL;
+  END IF;
+  -- وقّعها من أدخلها: تجوز لمن يملك الاعتمادَ أصلاً (المالك · المدير العام)
+  IF public.erp_payment_privileged(p_company_id, p_approved_by) THEN
+    RETURN NULL;
+  END IF;
+  RETURN 'لا يُكتب «معتمِد» لمن أدخل الدفعةَ وهو لا يملك اعتمادَها — وحقلٌ يقول «معتمَد» ولم يعتمده أحدٌ أسوأُ من حقلٍ فارغ';
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- payment_supplier_approval_insert_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.payment_supplier_approval_insert_trg()
@@ -44932,7 +45069,7 @@ BEGIN
   END IF;
 
   -- Privileged roles auto-approve
-  IF v_user_role IN ('owner', 'admin', 'general_manager') THEN
+  IF public.erp_payment_privileged(p_company_id, v_user_id) THEN
     v_status := 'approved';
   END IF;
 
@@ -45638,7 +45775,10 @@ BEGIN
     p_account_id, v_branch_id, p_cost_center_id, p_warehouse_id,
     v_pay_ccy, v_pay_rate, v_pay_rate, p_amount,
     v_pay_orig_amount, v_pay_ccy, p_exchange_rate_id, COALESCE(p_rate_source, 'manual'),
-    p_user_id, p_user_id, p_user_id, NOW(), 'approved'
+    p_user_id, p_user_id,
+    CASE WHEN public.erp_payment_privileged(p_company_id, p_user_id) THEN p_user_id ELSE NULL END,
+    CASE WHEN public.erp_payment_privileged(p_company_id, p_user_id) THEN NOW() ELSE NULL END,
+    'approved'
   ) RETURNING id INTO v_payment_id;
 
   SELECT journal_entry_id INTO v_payment_journal_id FROM public.payments WHERE id = v_payment_id;
@@ -46482,7 +46622,7 @@ BEGIN
   IF v_user_role IS NULL THEN RAISE EXCEPTION 'Unauthorized'; END IF;
 
   -- Privileged users bypass approval
-  IF v_user_role IN ('owner', 'admin', 'general_manager') THEN
+  IF public.erp_payment_privileged(p_company_id, v_user_id) THEN
     v_status := 'approved';
   END IF;
 
