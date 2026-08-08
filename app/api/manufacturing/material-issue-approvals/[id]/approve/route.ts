@@ -11,7 +11,10 @@ import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 
-const ALLOWED_APPROVER_ROLES = ["store_manager", "manager", "owner", "admin", "general_manager", "warehouse_manager"]
+// v3.74.983 — إخراجُ المواد لمسؤول مخزن الفرع. والإدارةُ لا تدخل هنا إلّا
+// حين لا يكون للمخزن مسؤولٌ معيَّن — وذاك يُفحص بعد قراءة الطلب لأنّه
+// يتوقّف على مخزنه هو، لا على اسم الدور وحدَه.
+const ALLOWED_APPROVER_ROLES = ["store_manager", "owner", "admin", "general_manager"]
 
 async function loadOpenReservationQtyByRequirement(
   admin: any,
@@ -178,7 +181,7 @@ export async function POST(
     }
 
     const role = String(memberRow.role || "").trim().toLowerCase()
-    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    const companyWideRoles = new Set(["owner", "admin", "general_manager"])
     if (!companyWideRoles.has(role)) {
       const scopedWarehouseId = memberRow.warehouse_id || null
       const scopedBranchId = memberRow.branch_id || null
@@ -208,11 +211,50 @@ export async function POST(
       }
     }
 
-    const APPROVABLE_STATUSES = ["pending", "management_approved", "partially_approved"]
+    // v3.74.983 — كانت «pending» مقبولةً هنا، فكان اعتمادُ الإدارة **خياراً
+    // يمكن تخطّيه** لا شرطاً. صار شرطاً — والمنعُ الجذرىُّ فى قاعدة البيانات
+    // (قيدٌ على الجدول يرفض من أىِّ باب)، وهذا هنا ليقرأ المستخدمُ سبباً
+    // مفهوماً لا خطأً تقنيّاً.
+    const APPROVABLE_STATUSES = ["management_approved", "partially_approved"]
     if (!APPROVABLE_STATUSES.includes(approval.status)) {
       return NextResponse.json(
-        { success: false, error: `لا يمكن الاعتماد — حالة الطلب الحالية: ${approval.status}` },
+        { success: false, error: `لا يمكن إخراج المواد — حالة الطلب الحالية: ${approval.status}. اعتماد الإدارة شرط لا خيار` },
         { status: 422 }
+      )
+    }
+
+    // v3.74.983 — من يُخرج المادّة؟ مسؤولُ مخزن الفرع. فإن لم يكن للمخزن
+    // مسؤولٌ معيَّن مضى الإخراجُ بيد الإدارة — **وخطوةٌ لا صاحبَ لها لا توقف
+    // العمل**: واحدٌ من سبعةِ مخازنَ اليوم له مسؤول.
+    const { data: hasStoreManager, error: smError } = await admin.rpc("warehouse_has_store_manager", {
+      p_company_id: companyId,
+      p_warehouse_id: approval.warehouse_id,
+    })
+    if (smError) {
+      return NextResponse.json(
+        { success: false, error: "تعذّر التحقق من مسؤول المخزن" },
+        { status: 500 }
+      )
+    }
+
+    if (hasStoreManager === true) {
+      if (role !== "store_manager") {
+        return NextResponse.json(
+          { success: false, error: "إخراج المواد لمسؤول المخزن — والإدارة تعتمد ولا تُخرج" },
+          { status: 403 }
+        )
+      }
+      // ولا يجمع شخصٌ واحدٌ خطوتَى رقابة — رقابةٌ يوقّعها واحدٌ تُطمئن ولا تحمى.
+      if (approval.management_approved_by && approval.management_approved_by === user.id) {
+        return NextResponse.json(
+          { success: false, error: "لا يجمع شخص واحد اعتماد الإدارة وإخراج المواد" },
+          { status: 403 }
+        )
+      }
+    } else if (!["owner", "admin", "general_manager"].includes(role)) {
+      return NextResponse.json(
+        { success: false, error: "لا مسؤول مخزن معيّن لهذا المخزن، فالإخراج للإدارة" },
+        { status: 403 }
       )
     }
 

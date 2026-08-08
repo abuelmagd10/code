@@ -19,7 +19,10 @@ import {
   buildApprovalSnapshot,
 } from "@/lib/manufacturing/approval-history"
 
-const MANAGEMENT_ROLES = ["admin", "owner", "general_manager", "manager"]
+// v3.74.983 — قرارُ المالك: اعتمادُ صرف المواد إداريّاً للمالك أو المدير
+// العام. ومديرُ الفرع يخرج لا سلباً بل ترتيباً: القرارُ للإدارة، وتسليمُ
+// المادّة لأمين المخزن — وكان يملك الخطوتين معاً، وذاك هو العطب.
+const MANAGEMENT_ROLES = ["owner", "admin", "general_manager"]
 
 export async function POST(
   request: NextRequest,
@@ -51,7 +54,7 @@ export async function POST(
 
     if (!memberRow || !MANAGEMENT_ROLES.includes(String(memberRow.role || "").toLowerCase())) {
       return NextResponse.json(
-        { success: false, error: "غير مصرح — مخصص للإدارة العليا فقط (admin, owner, general_manager, manager)" },
+        { success: false, error: "غير مصرح — اعتماد صرف المواد للمالك أو المدير العام فقط" },
         { status: 403 }
       )
     }

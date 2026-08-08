@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T13:28:44.472Z
--- Tables: 256 | Policies: 785 | Triggers: 575 | Constraints: 1836
+-- Generated: 2026-08-08T13:51:19.075Z
+-- Tables: 256 | Policies: 785 | Triggers: 577 | Constraints: 1836
 -- =====================================================================
 
 
@@ -7928,6 +7928,8 @@ CREATE TRIGGER trg_manufacturing_boms_identity_immutable BEFORE UPDATE ON public
 CREATE TRIGGER trg_manufacturing_boms_set_updated_at BEFORE UPDATE ON public.manufacturing_boms FOR EACH ROW EXECUTE FUNCTION mb_set_updated_at();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ طلبِ صرفِ المواد لا يَجوزُ أن يكون هو نفسَه مُقدِّمَ الطلب.');
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
+CREATE TRIGGER trg_material_issue_owner_no_approval BEFORE INSERT ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION material_issue_owner_needs_no_approval();
+CREATE TRIGGER trg_material_issue_two_stage BEFORE UPDATE OF status ON public.manufacturing_material_issue_approvals FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION enforce_material_issue_two_stage();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ استلامِ المنتَج لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER product_receive_branch_manager_notify AFTER INSERT OR UPDATE OF status ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION product_receive_branch_manager_notify_trg();
@@ -11006,6 +11008,9 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_454_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_982_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_982_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_982_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_983_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_983_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_983_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12063,6 +12068,10 @@ REVOKE ALL ON FUNCTION public.enforce_journal_entry_balance() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_journal_entry_balance() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_journal_entry_balance() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_journal_entry_balance() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_material_issue_two_stage() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_material_issue_two_stage() TO anon;
+GRANT EXECUTE ON FUNCTION public.enforce_material_issue_two_stage() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.enforce_material_issue_two_stage() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_period_lock_header() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO authenticated;
@@ -12110,6 +12119,9 @@ GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO servic
 REVOKE ALL ON FUNCTION public.erp_company_senior_count(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_install_notice_follows_document() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_install_notice_follows_document() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
@@ -13182,6 +13194,13 @@ GRANT EXECUTE ON FUNCTION public.mark_notification_as_read(p_notification_id uui
 REVOKE ALL ON FUNCTION public.mark_subscription_past_due(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mark_subscription_past_due(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_subscription_past_due(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.material_issue_owner_needs_no_approval() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.material_issue_owner_needs_no_approval() TO anon;
+GRANT EXECUTE ON FUNCTION public.material_issue_owner_needs_no_approval() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.material_issue_owner_needs_no_approval() TO service_role;
+REVOKE ALL ON FUNCTION public.material_issue_stage_error(p_old_status text, p_new_status text, p_management_approved_by uuid, p_approved_by uuid, p_has_store_manager boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.material_issue_stage_error(p_old_status text, p_new_status text, p_management_approved_by uuid, p_approved_by uuid, p_has_store_manager boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.material_issue_stage_error(p_old_status text, p_new_status text, p_management_approved_by uuid, p_approved_by uuid, p_has_store_manager boolean) TO service_role;
 REVOKE ALL ON FUNCTION public.mb_assert_bom_version_structure_editable(p_bom_version_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mb_assert_bom_version_structure_editable(p_bom_version_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.mb_assert_bom_version_structure_editable(p_bom_version_id uuid) TO authenticated;
@@ -15326,6 +15345,9 @@ GRANT EXECUTE ON FUNCTION public.void_bill_atomic(p_bill_id uuid, p_user_id uuid
 REVOKE ALL ON FUNCTION public.void_invoice_atomic(p_invoice_id uuid, p_user_id uuid, p_company_id uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.void_invoice_atomic(p_invoice_id uuid, p_user_id uuid, p_company_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.void_invoice_atomic(p_invoice_id uuid, p_user_id uuid, p_company_id uuid, p_reason text) TO service_role;
+REVOKE ALL ON FUNCTION public.warehouse_has_store_manager(p_company_id uuid, p_warehouse_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.warehouse_has_store_manager(p_company_id uuid, p_warehouse_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.warehouse_has_store_manager(p_company_id uuid, p_warehouse_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.word_similarity(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.word_similarity(text, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.word_similarity(text, text) TO authenticated;

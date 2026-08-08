@@ -48,7 +48,10 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
 
-    if (!member || !['admin', 'owner'].includes(member.role)) {
+    // v3.74.983 — كان ['admin','owner'] والمديرُ العامُّ باسمه الصريح غائب.
+    // أثرُه صفرٌ اليوم لأنّ admin صار يعنيه بعد ٩٧٧، لكنّ بابين متشابهين
+    // بشرطين مختلفين يفترقان يومَ يُعدَّل أحدُهما.
+    if (!member || !['owner', 'admin', 'general_manager'].includes(member.role)) {
       return NextResponse.json(
         { 
           success: false, 
