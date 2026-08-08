@@ -54,6 +54,25 @@ export async function POST(
       if (body?.notes) notes = body.notes
     } catch { }
 
+    // v3.74.986 — كان فى هذا الملفّ مقارنةٌ بمنشئ الطلب، **لكنّها بعد
+    // الاعتماد وداخل كتلة الإشعارات**، فلا تمنع شيئاً. وبابٌ مكشوفٌ يُرى
+    // فيُغلق، **وحارسٌ فى غير موضعه يُطمئن فيُنسى**. فصار الفحصُ هنا:
+    // قبل الكتابة، وينادى بيتاً واحداً فى القاعدة يحمل القواعدَ الثلاث:
+    // مَن أنشأ لا يعتمد · إلّا المالك فلا أحدَ فوقه · وإلّا إن لم يوجد
+    // معتمِدٌ آخرُ أصلاً فلا تتوقّف الشركة.
+    const { data: sodError, error: sodCallError } = await supabase.rpc("erp_self_approval_error", {
+      p_company_id: companyId,
+      p_created_by: refundReq.requested_by || refundReq.created_by || null,
+      p_approver: user.id,
+      p_approver_roles: ["owner", "admin", "general_manager"],
+    })
+    // ولا يُتخطّى الفحصُ صامتاً إن سقط النداءُ نفسُه.
+    if (sodCallError) {
+      return NextResponse.json({ error: "تعذّر التحقّق من فصل المهامّ" }, { status: 500 })
+    }
+    if (sodError) {
+      return NextResponse.json({ error: String(sodError) }, { status: 403 })
+    }
     // Approve: pending → approved
     const { error: updateError } = await supabase
       .from("customer_refund_requests")

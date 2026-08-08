@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T14:40:32.345Z
+-- Generated: 2026-08-08T14:59:31.116Z
 -- Tables: 256 | Policies: 785 | Triggers: 579 | Constraints: 1838
 -- =====================================================================
 
@@ -11024,6 +11024,9 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_984_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_985_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_985_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_985_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_986_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_986_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_986_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12167,6 +12170,9 @@ GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_prod
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_reference_row_exists(p_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_reference_row_exists(p_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_sod_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_sod_guard() TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_sod_guard() TO authenticated;

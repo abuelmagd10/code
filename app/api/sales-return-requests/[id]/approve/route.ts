@@ -81,6 +81,25 @@ export async function PATCH(
       return NextResponse.json({ error: "لا يوجد مخزن محدد لهذا الطلب" }, { status: 400 })
     }
 
+    // v3.74.986 — كان فى هذا الملفّ مقارنةٌ بمنشئ الطلب، **لكنّها بعد
+    // الاعتماد وداخل كتلة الإشعارات**، فلا تمنع شيئاً. وبابٌ مكشوفٌ يُرى
+    // فيُغلق، **وحارسٌ فى غير موضعه يُطمئن فيُنسى**. فصار الفحصُ هنا:
+    // قبل الكتابة، وينادى بيتاً واحداً فى القاعدة يحمل القواعدَ الثلاث:
+    // مَن أنشأ لا يعتمد · إلّا المالك فلا أحدَ فوقه · وإلّا إن لم يوجد
+    // معتمِدٌ آخرُ أصلاً فلا تتوقّف الشركة.
+    const { data: sodError, error: sodCallError } = await supabase.rpc("erp_self_approval_error", {
+      p_company_id: companyId,
+      p_created_by: request.requested_by || null,
+      p_approver: user?.id ?? null,
+      p_approver_roles: [...SALES_RETURN_LEVEL1_APPROVER_ROLES],
+    })
+    // ولا يُتخطّى الفحصُ صامتاً إن سقط النداءُ نفسُه.
+    if (sodCallError) {
+      return NextResponse.json({ error: "تعذّر التحقّق من فصل المهامّ" }, { status: 500 })
+    }
+    if (sodError) {
+      return NextResponse.json({ error: String(sodError) }, { status: 403 })
+    }
     const reviewedAt = new Date().toISOString()
 
     const { error: updateErr } = await supabase
