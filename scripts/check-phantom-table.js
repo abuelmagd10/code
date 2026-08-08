@@ -46,8 +46,6 @@ const BASELINE = [
    "getAuditTrail مُصدَّرةٌ ولا يستوردها أحد - وسجلُّ التدقيق الحىُّ اسمُه audit_logs ويعمل"],
   ["lib/governance-layer.ts", "refund_requests",
    "دالّتان مُصدَّرتان لا يستوردهما أحد"],
-  ["lib/core/queue/jobs/process-attendance-job.ts", "daily_attendance",
-   "وظيفةٌ مسجَّلةٌ فى الطابور ويبلغها مسارُ البصمة - لكن البصمةَ غيرُ مستعملة: صفرُ جهازٍ وصفرُ سجلٍّ خام"],
   ["app/api/refund-requests/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
   ["app/api/refund-requests/approve/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
   ["app/api/refund-requests/reject/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],

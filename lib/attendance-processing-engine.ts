@@ -44,6 +44,25 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
             }
 
             const logTime = new Date(log.log_time);
+
+            // v3.74.980 — نوعُ البصمة يُقرأ فى موضعٍ واحد، وما ليس دخولاً ولا
+            // خروجاً **يُوسم شاذّاً باسمه ولا يُترك**.
+            //
+            // ولماذا هذا ليس تفصيلاً: الدالّةُ التى تسحب البصمات تستعيد أىَّ
+            // قفلٍ عمرُه ربعُ ساعة. فبصمةٌ لا تُعالَج ولا تُوسم تبقى «غيرَ
+            // معالَجة» إلى الأبد، وتُلتقط فى كلِّ دورةٍ من جديد، وتزاحم
+            // البصماتِ الحقيقيّةَ فى دفعةٍ سعتُها مئة — حتى تخنقها. وخدمةُ
+            // البصمة تكتب `UNKNOWN` كلَّما لم يُرسل الجهازُ النوعَ، فهذا ليس
+            // فرضاً نادراً بل الحالةُ الافتراضيّةُ لجهازٍ صامت.
+            //
+            // ولا يُخمَّن النوع: `UNKNOWN` لا تُعامَل دخولاً كما كان يفعل
+            // المحرّكُ المعطوب، لأنّ حَدْسَ «دخول» على بصمةِ انصرافٍ يُنشئ يومَ
+            // حضورٍ لم يقع. تُوسم شاذّةً باسمها ليراها إنسان.
+            const punch = normalisePunchType(log.log_type);
+            if (punch === null) {
+                await markAnomaly(log.id, `Unrecognised punch type: ${String(log.log_type)}`);
+                continue;
+            }
             // To associate it with a specific workday, we usually pick the date of the IN punch.
             // For night shifts (e.g., 22:00 to 06:00), an IN at 22:00 belongs to today.
             // An OUT at 06:00 needs to be matched against yesterday's IN.
@@ -61,7 +80,7 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
             // Try to find an existing record for this employee
             let currentRecord = null;
 
-            if (log.log_type === 'IN') {
+            if (punch === 'IN') {
                 // For IN punch, we look for a record specifically for today
                 const { data } = await supabase
                     .from('attendance_records')
@@ -87,7 +106,7 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
             }
 
             try {
-                if (log.log_type === 'IN') {
+                if (punch === 'IN') {
                     if (currentRecord && currentRecord.check_in && !currentRecord.check_out) {
                         // Anomaly: Two INs sequentially without an OUT
                         await markAnomaly(log.id, 'Sequential IN without OUT');
@@ -112,7 +131,7 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
                         await markLogProcessed(log.id);
                     }
                 }
-                else if (log.log_type === 'OUT') {
+                else if (punch === 'OUT') {
                     if (!currentRecord || !currentRecord.check_in) {
                         // Anomaly: OUT without IN
                         await markAnomaly(log.id, 'OUT punch without a previous IN punch');
@@ -155,6 +174,18 @@ export async function processAttendanceBatch(companyId: string, batchSize = 100)
         console.error('Processing engine fatal error:', error);
         return { processed: 0, status: 'error', error };
     }
+}
+
+/**
+ * نوعُ البصمة كما تكتبه الأجهزةُ المختلفة، مردوداً إلى دخولٍ أو خروجٍ أو لا شىء.
+ * وتُقبل التهجئتان اللتان كان المحرّكُ الآخرُ يعرفهما (CHECK_IN / CHECK_OUT)
+ * فلا يخسر جهازٌ كان يعمل. وما عداهما يعود `null` فيُوسم شاذّاً باسمه.
+ */
+export function normalisePunchType(raw: unknown): 'IN' | 'OUT' | null {
+    const v = String(raw ?? '').trim().toUpperCase();
+    if (v === 'IN' || v === 'CHECK_IN' || v === 'CHECKIN') return 'IN';
+    if (v === 'OUT' || v === 'CHECK_OUT' || v === 'CHECKOUT') return 'OUT';
+    return null;
 }
 
 // Helper to mark a log as successfully processed

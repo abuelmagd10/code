@@ -1,114 +1,71 @@
 import { QueueJob } from '../in-process-queue';
-import { createClient } from '@supabase/supabase-js';
+import { processAttendanceBatch } from '@/lib/attendance-processing-engine';
 
 /**
- * Process Attendance Job
+ * Process Attendance Job — بيتٌ واحدٌ لمعالجة الحضور.
+ * ---------------------------------------------------------------------------
+ * تُنادى هذه المهمّةُ من الطابور بعد كلِّ دفعةِ بصماتٍ يدفعها الجهاز.
  *
- * مهمة الطابور المسؤولة عن بناء سجل الحضور اليومي (Daily Attendance Record)
- * من الـ Raw Logs التي دفعها جهاز البصمة.
+ * ═══ ما كان هنا قبل v3.74.980 ═══
  *
- * يتم استدعاء هذه المهمة تلقائياً من الـ Queue بعد كل Batch Insert ناجح.
+ * كان لهذا الملفِّ **محرِّكُ حضورٍ خاصٌّ به**: يأخذ أوّلَ دخولٍ وآخرَ خروجٍ فى
+ * اليوم ويكتب سجلاً. وكان معطوباً بأربعةِ عيوبٍ لا يُظهرها إلّا يومُ تشغيلِ
+ * جهازٍ حقيقىّ — وكلُّها قِيست على قاعدة الإنتاج لا خُمِّنت:
+ *
+ *   ١) يكتب فى جدولٍ اسمه `daily_attendance` **لا وجودَ له**. والجدولُ
+ *      الحقيقىُّ `attendance_records`، والدليلُ أنّ قيدَ منعِ التكرار الذى
+ *      يطلبه (الشركة · الموظّف · التاريخ) هو **بالحرف** القيدُ المفروضُ عليه.
+ *   ٢) يكتب الحالةَ `incomplete` — و**الجدولُ يرفضها**: المسموحُ ستٌّ ليست
+ *      هى منها.
+ *   ٣) يكتب وقتاً كاملاً بتاريخه فى عمودٍ لا يقبل إلّا ساعةَ اليوم.
+ *   ٤) يُعلِّم بصماتِ اليوم كلَّها «مُعالَجة» بعد الكتابة — ولو لم يُكتب شىء.
+ *      **والبصمةُ المعلَّمةُ لا تُقرأ مرّتين**، فيومُ عملٍ يضيع بلا أثر.
+ *
+ * ═══ ولماذا لم يُرمَّم بل فُوِّض ═══
+ *
+ * فى المشروع محرِّكٌ آخرُ يعمل: `lib/attendance-processing-engine.ts`. وهو
+ * أقوى بما لا يُقاس — يعرف الورديّات، ويحسب التأخيرَ والوقتَ الإضافىَّ
+ * والانصرافَ المبكّر، ويعالج ورديّةَ ما بعد منتصف الليل (انصرافُ اليومِ
+ * يقابل حضورَ أمس)، ويرصد الشذوذَ ويُبقى البصمةَ بدل أن يبتلعها. وقاعدةُ
+ * البيانات تدعمه: الدالّةُ التى يحتاجها موجودةٌ وتستعيد الأقفالَ الميّتة.
+ *
+ * وكان **لا ينادِيه أحد**. فالقسمةُ كانت معكوسة: الجيّدُ معزول، والمعطوبُ
+ * موصول. فبقيت المهمّةُ فى مكانها من الطابور — لا تُفقد قدرة — وصار جسمُها
+ * **تفويضاً** إلى البيت الواحد.
+ * ---------------------------------------------------------------------------
  */
 export async function processAttendanceJob(job: QueueJob): Promise<void> {
-    const { company_id, branch_id, date } = job.payload;
-
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
-    if (!url || !serviceKey) {
-        throw new Error('Database credentials not configured for queue worker');
+    const { company_id } = job.payload;
+    if (!company_id) {
+        throw new Error('process-attendance: company_id مفقود فى حمولة المهمّة');
     }
 
-    // استخدام Service Role لأن الـ Queue يعمل بدون User Context
-    const supabase = createClient(url, serviceKey);
+    // المحرِّكُ يسحب دفعةً محدودة، فيُكرَّر حتى لا يبقى ما يُعالَج.
+    // وحدٌّ أعلى للدورات: لو تعذّر وسمُ بصمةٍ ما، تتوقّف المهمّةُ بصوتٍ بدل
+    // أن تدور بلا نهاية. وهو حدٌّ يسع خمسةَ آلاف بصمةٍ فى النداء الواحد.
+    const MAX_ROUNDS = 50;
+    let total = 0;
+    let rounds = 0;
 
-    console.log(`[ATTENDANCE_JOB] Building daily attendance for company=${company_id}, branch=${branch_id}, date=${date}`);
+    for (; rounds < MAX_ROUNDS; rounds++) {
+        const result: any = await processAttendanceBatch(company_id);
 
-    // جلب Raw Logs غير المُعالجة لهذا اليوم والفرع
-    const { data: rawLogs, error: logsError } = await supabase
-        .from('attendance_raw_logs')
-        .select('employee_id, log_time, log_type, anomaly_flag')
-        .eq('company_id', company_id)
-        .eq('branch_id', branch_id)
-        .eq('is_processed', false)
-        .gte('log_time', `${date}T00:00:00Z`)
-        .lte('log_time', `${date}T23:59:59Z`)
-        .order('employee_id')
-        .order('log_time');
-
-    if (logsError) throw new Error('Failed to fetch raw logs: ' + logsError.message);
-    if (!rawLogs || rawLogs.length === 0) {
-        console.log(`[ATTENDANCE_JOB] No unprocessed logs found for date: ${date}`);
-        return;
-    }
-
-    // تجميع الـ Logs لكل موظف
-    const employeeLogsMap = new Map<string, typeof rawLogs>();
-    for (const log of rawLogs) {
-        if (!employeeLogsMap.has(log.employee_id)) {
-            employeeLogsMap.set(log.employee_id, []);
-        }
-        employeeLogsMap.get(log.employee_id)!.push(log);
-    }
-
-    const attendanceRecords = [];
-
-    for (const [employeeId, logs] of employeeLogsMap.entries()) {
-        // أول سجل دخول + آخر سجل خروج
-        const checkIns = logs.filter(l => ['IN', 'CHECK_IN', 'UNKNOWN'].includes(l.log_type));
-        const checkOuts = logs.filter(l => ['OUT', 'CHECK_OUT'].includes(l.log_type));
-
-        const checkIn = checkIns.length > 0 ? checkIns[0].log_time : null;
-        const checkOut = checkOuts.length > 0 ? checkOuts[checkOuts.length - 1].log_time : null;
-
-        // احتساب دقائق العمل
-        let workMinutes = 0;
-        if (checkIn && checkOut) {
-            workMinutes = Math.round(
-                (new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 60000
-            );
+        if (result?.status === 'error') {
+            // يُرمى لا يُبتلع: الفشلُ الصامت هنا يعنى بصماتٍ عالقةً بلا أثر.
+            throw new Error('محرّك الحضور فشل: ' + String(result?.error ?? 'سبب غير معروف'));
         }
 
-        const hasAnomaly = logs.some(l => l.anomaly_flag);
-
-        attendanceRecords.push({
-            company_id,
-            branch_id,
-            employee_id: employeeId,
-            attendance_date: date,
-            check_in: checkIn,
-            check_out: checkOut,
-            work_minutes: workMinutes,
-            status: checkIn ? (checkOut ? 'present' : 'incomplete') : 'absent',
-            has_anomaly: hasAnomaly,
-            source: 'biometric'
-        });
+        const processed = Number(result?.processed || 0);
+        total += processed;
+        if (processed === 0) break;
     }
 
-    // Batch Upsert للسجلات — استخدام upsert لمنع تكرار سجلات نفس اليوم
-    if (attendanceRecords.length > 0) {
-        const { error: upsertError } = await supabase
-            .from('daily_attendance')
-            .upsert(attendanceRecords, {
-                onConflict: 'company_id, employee_id, attendance_date'
-            });
-
-        if (upsertError) throw new Error('Failed to upsert daily attendance: ' + upsertError.message);
+    if (rounds >= MAX_ROUNDS) {
+        throw new Error(
+            `process-attendance: بلغتُ الحدَّ الأعلى للدورات (${MAX_ROUNDS}) وما زالت هناك بصماتٌ غيرُ معالَجة — ` +
+            'هذا يعنى بصمةً تُسحب ولا تُوسم. لا أدّعى النجاح.'
+        );
     }
 
-    // تعليم الـ Raw Logs بأنها معالجة
-    // v3.74.890 — يُفحص ويُرمى: فشلٌ صامت = إعادة معالجة نفس البصمات فى
-    // التشغيلة التالية ⇒ سجلات مكررة. الرمى يجعل المهمة تفشل بصوت ويُعاد
-    // تشغيلها كاملة (المعالجة نفسها upsert فالإعادة آمنة).
-    const processedIds = rawLogs.map(l => l.employee_id);
-    const { error: markErr } = await supabase
-        .from('attendance_raw_logs')
-        .update({ is_processed: true })
-        .eq('company_id', company_id)
-        .eq('branch_id', branch_id)
-        .gte('log_time', `${date}T00:00:00Z`)
-        .lte('log_time', `${date}T23:59:59Z`);
-    if (markErr) throw new Error('Failed to mark raw logs processed: ' + markErr.message);
-
-    console.log(`[ATTENDANCE_JOB] ✅ Built ${attendanceRecords.length} attendance records for ${date}`);
+    console.log(`[ATTENDANCE_JOB] ✅ ${total} بصمة عولجت للشركة ${company_id}`);
 }
