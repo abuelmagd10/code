@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-06T22:33:15.609Z
--- Routines: 1304
+-- Generated: 2026-08-08T13:28:42.195Z
+-- Routines: 1315
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -1730,7 +1730,7 @@ DECLARE
 BEGIN
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_approved_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد أوامر الإنتاج محصورة بالمالك والمدير العام');
   END IF;
@@ -1778,7 +1778,7 @@ BEGIN
     SELECT role, branch_id INTO v_user_role, v_user_branch
     FROM public.company_members WHERE company_id = p_company_id AND user_id = p_user_id;
     IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'User is not a member of this company'); END IF;
-    IF v_user_role NOT IN ('owner', 'general_manager') THEN
+    IF v_user_role NOT IN ('owner', 'admin', 'general_manager') THEN
          RETURN jsonb_build_object('success', false, 'error', 'صَلاحية اعتماد أَوامِر الشراء مَحصورَة بالمالِك والمُدير العام فَقَط');
     END IF;
     SELECT * INTO v_po FROM public.purchase_orders WHERE id = p_po_id AND company_id = p_company_id FOR UPDATE;
@@ -2032,7 +2032,7 @@ DECLARE
 BEGIN
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_approved_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد مسارات التصنيع محصورة بالمالك والمدير العام');
   END IF;
@@ -2218,7 +2218,7 @@ DECLARE
 BEGIN
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_user_id;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد مرتجع المبيعات محصورة بالمالك والمدير العام فقط.');
   END IF;
@@ -2324,7 +2324,8 @@ BEGIN
 
   v_cost_center_id := v_drawing.cost_center_id;
 
-  INSERT INTO public.journal_entries (
+  PERFORM set_config('app.allow_direct_post', 'true', true);
+INSERT INTO public.journal_entries (
     company_id, branch_id, entry_date, description, reference_type, reference_id,
     status, cost_center_id
   ) VALUES (
@@ -2345,6 +2346,7 @@ BEGIN
   ) VALUES (
     v_journal_id, v_drawing.payment_account_id, 'Cash Outflow', 0, v_amount_gl, v_branch_id, v_cost_center_id
   );
+PERFORM set_config('app.allow_direct_post', 'false', true);
 
   UPDATE public.shareholder_drawings
   SET
@@ -2453,7 +2455,7 @@ BEGIN
   SELECT role INTO v_role
     FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_user_id;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد دفع المورد محصورة بالمالك والمدير العام فقط.');
   END IF;
@@ -2530,7 +2532,7 @@ BEGIN
 
   SELECT lower(btrim(role)) INTO v_approver_role
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_actor LIMIT 1;
-  IF v_approver_role NOT IN ('owner', 'general_manager') THEN
+  IF v_approver_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK');
   END IF;
 
@@ -2543,7 +2545,7 @@ BEGIN
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_vc.created_by_user_id LIMIT 1;
   -- قيد المدير العام لا يعتمده إلا المالك؛ قيد المحاسب يعتمده المالك أو
   -- المدير العام؛ والمجهول منشئُه لا يُعتمد إلا بقرار المالك (865 حرفياً).
-  IF COALESCE(v_creator_role, '') = 'general_manager' AND v_approver_role <> 'owner' THEN
+  IF COALESCE(v_creator_role, '') IN ('admin', 'general_manager') AND v_approver_role <> 'owner' THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
   END IF;
   IF v_creator_role IS NULL AND v_approver_role <> 'owner' THEN
@@ -3257,7 +3259,7 @@ BEGIN
 
   SELECT pg_get_functiondef(p.oid) INTO v_approve_def FROM pg_proc p WHERE p.proname='approve_purchase_order_atomic' LIMIT 1;
   IF v_approve_def NOT LIKE '%v_last_disc_status = ''rejected''%'
-     OR v_approve_def NOT LIKE '%''owner'', ''general_manager''%' THEN
+     OR v_approve_def NOT LIKE '%''owner''%' OR (v_approve_def NOT LIKE '%''admin''%' AND v_approve_def NOT LIKE '%''general_manager''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: approve_purchase_order_atomic invariants';
   END IF;
 
@@ -3267,7 +3269,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_inv_trg_def FROM pg_proc p WHERE p.proname='inv_request_discount_approval_trg' LIMIT 1;
-  IF v_inv_trg_def NOT LIKE '%NEW.sales_order_id%' THEN
+  IF (v_inv_trg_def NOT LIKE '%sales_order_id%' AND NOT EXISTS (SELECT 1 FROM pg_proc d JOIN pg_namespace dn ON dn.oid = d.pronamespace WHERE dn.nspname = 'public' AND d.prokind = 'f' AND v_inv_trg_def LIKE '%' || d.proname || '(%' AND pg_get_functiondef(d.oid) LIKE '%sales_order_id%')) THEN
     RAISE EXCEPTION 'BASELINE FAIL: inv_request_discount_approval_trg invariants (v3.74.419)';
   END IF;
 
@@ -3295,11 +3297,11 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_bill_req_def FROM pg_proc p WHERE p.proname='bill_request_discount_approval_trg' LIMIT 1;
-  IF v_bill_req_def NOT LIKE '%NEW.purchase_order_id%' THEN
+  IF (v_bill_req_def NOT LIKE '%purchase_order_id%' AND NOT EXISTS (SELECT 1 FROM pg_proc d JOIN pg_namespace dn ON dn.oid = d.pronamespace WHERE dn.nspname = 'public' AND d.prokind = 'f' AND v_bill_req_def LIKE '%' || d.proname || '(%' AND pg_get_functiondef(d.oid) LIKE '%purchase_order_id%')) THEN
     RAISE EXCEPTION 'BASELINE FAIL: bill_request_discount_approval_trg invariants (v3.74.424)';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_bill_post_def FROM pg_proc p WHERE p.proname='bill_block_post_unapproved_discount_trg' LIMIT 1;
-  IF v_bill_post_def NOT LIKE '%NEW.purchase_order_id%' THEN
+  IF (v_bill_post_def NOT LIKE '%purchase_order_id%' AND NOT EXISTS (SELECT 1 FROM pg_proc d JOIN pg_namespace dn ON dn.oid = d.pronamespace WHERE dn.nspname = 'public' AND d.prokind = 'f' AND v_bill_post_def LIKE '%' || d.proname || '(%' AND pg_get_functiondef(d.oid) LIKE '%purchase_order_id%')) THEN
     RAISE EXCEPTION 'BASELINE FAIL: bill_block_post_unapproved_discount_trg invariants (v3.74.424)';
   END IF;
 
@@ -3321,7 +3323,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_pay_ins_def FROM pg_proc p WHERE p.proname='payment_supplier_approval_insert_trg' LIMIT 1;
-  IF v_pay_ins_def NOT LIKE '%''owner'', ''general_manager''%' OR v_pay_ins_def NOT LIKE '%supplier_id%' OR v_pay_ins_def NOT LIKE '%bill_id%' THEN
+  IF v_pay_ins_def NOT LIKE '%''owner''%' OR (v_pay_ins_def NOT LIKE '%''admin''%' AND v_pay_ins_def NOT LIKE '%''general_manager''%') OR v_pay_ins_def NOT LIKE '%supplier_id%' OR v_pay_ins_def NOT LIKE '%bill_id%' THEN
     RAISE EXCEPTION 'BASELINE FAIL: payment_supplier_approval_insert_trg invariants (v3.74.426)';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_pay_upd_def FROM pg_proc p WHERE p.proname='payment_supplier_approval_update_trg' LIMIT 1;
@@ -3335,7 +3337,7 @@ BEGIN
 
   -- Section AA (v3.74.427) — purchase return approval gates.
   SELECT pg_get_functiondef(p.oid) INTO v_pr_ins_def FROM pg_proc p WHERE p.proname='purchase_return_approval_insert_trg' LIMIT 1;
-  IF v_pr_ins_def NOT LIKE '%''owner'', ''general_manager''%' THEN
+  IF v_pr_ins_def NOT LIKE '%''owner''%' OR (v_pr_ins_def NOT LIKE '%''admin''%' AND v_pr_ins_def NOT LIKE '%''general_manager''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: purchase_return_approval_insert_trg invariants (v3.74.427)';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_pr_upd_def FROM pg_proc p WHERE p.proname='purchase_return_approval_update_trg' LIMIT 1;
@@ -3516,7 +3518,7 @@ BEGIN
 
   -- Contract invariants
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='sales_return_approval_insert_trg';
-  IF v_def NOT LIKE '%''owner'', ''general_manager''%' THEN
+  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%' AND v_def NOT LIKE '%''general_manager''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: sales_return_approval_insert_trg missing role gate (v3.74.430)';
   END IF;
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='invoice_notify_accountant_trg';
@@ -3599,7 +3601,7 @@ BEGIN
 
   -- Approve RPC must be owner/GM gated
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='approve_routing_version_atomic';
-  IF v_def NOT LIKE '%''owner'', ''general_manager''%' THEN
+  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%' AND v_def NOT LIKE '%''general_manager''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: approve_routing_version_atomic role gate (v3.74.437)';
   END IF;
 END;
@@ -3650,7 +3652,7 @@ BEGIN
   END LOOP;
 
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='approve_production_order_atomic';
-  IF v_def NOT LIKE '%''owner'', ''general_manager''%' THEN
+  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%' AND v_def NOT LIKE '%''general_manager''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: approve_production_order_atomic role gate (v3.74.438)';
   END IF;
 END;
@@ -3935,6 +3937,86 @@ BEGIN
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='notification_supersede_older_approval_trg';
   IF v_def NOT LIKE '%accountant_action%' OR v_def NOT LIKE '%branch_activity%' THEN
     RAISE EXCEPTION 'BASELINE FAIL: notification_supersede_older_approval_trg must cover accountant_action + branch_activity (v3.74.454)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_982_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_982_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_missing_fn text;
+  v_missing_tbl text;
+  v_painkiller text;
+  -- الاسمُ المحرَّمُ يُبنى ولا يُكتب، فلا يجد الفحصُ نفسَه فيرفض نفسَه.
+  -- (وقع ذلك فعلاً فى التجربة: رفض الفحصُ نفسَه أوّلَ مرّة.)
+  v_needle text := 'to_' || 'regprocedure';
+BEGIN
+  -- (أ) دالّةٌ تُنادى ولا وجودَ لها
+  SELECT string_agg(DISTINCT x.callee || ' ← ' || x.caller, ' · ')
+  INTO v_missing_fn
+  FROM (
+    SELECT f.proname AS caller, lower(m[1]) AS callee
+    FROM (
+      SELECT p.proname, regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g') AS src
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.prokind = 'f'
+        AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
+    ) f,
+    regexp_matches(f.src, '\mPERFORM\s+(?:public\.)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', 'g') AS m
+  ) x
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_proc p2 JOIN pg_namespace n2 ON n2.oid = p2.pronamespace
+    WHERE lower(p2.proname) = x.callee
+      AND n2.nspname IN ('public', 'pg_catalog', 'extensions', 'auth', 'storage')
+  );
+
+  -- (ب) جدولٌ يُكتب فيه ولا وجودَ له
+  SELECT string_agg(DISTINCT x.rel || ' ← ' || x.caller, ' · ')
+  INTO v_missing_tbl
+  FROM (
+    SELECT f.proname AS caller, lower(m[1]) AS rel
+    FROM (
+      SELECT p.proname, regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g') AS src
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.prokind = 'f'
+        AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
+    ) f,
+    regexp_matches(f.src, '\mINSERT\s+INTO\s+(?:public\.)?([a-zA-Z_][a-zA-Z0-9_]*)', 'g') AS m
+  ) x
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n3 ON n3.oid = c.relnamespace
+    WHERE lower(c.relname) = x.rel
+      AND c.relkind IN ('r', 'v', 'm', 'p', 'f')
+      AND n3.nspname IN ('public', 'auth', 'storage', 'extensions')
+  )
+  -- الجداولُ المؤقّتةُ تُنشأ وتموت داخل الدالّة نفسِها، فليست غائبة.
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_proc p4 JOIN pg_namespace n4 ON n4.oid = p4.pronamespace
+    WHERE n4.nspname = 'public' AND p4.proname = x.caller
+      AND p4.prosrc ~* ('CREATE\s+TEMP(ORARY)?\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?' || x.rel)
+  );
+
+  -- (ج) فحصٌ جُعل اختياريّاً
+  SELECT string_agg(DISTINCT p.proname, ' · ') INTO v_painkiller
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.prokind = 'f' AND strpos(p.prosrc, v_needle) > 0;
+
+  IF v_missing_fn IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.74.982 · دالّةٌ تُنادى ولا وجودَ لها: %', v_missing_fn;
+  END IF;
+  IF v_missing_tbl IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.74.982 · جدولٌ يُكتب فيه ولا وجودَ له: %', v_missing_tbl;
+  END IF;
+  IF v_painkiller IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.74.982 · فحصٌ اختيارىٌّ يسأل عن وجود نفسه قبل أن يفحص، فى: %', v_painkiller;
   END IF;
 END;
 $function$
@@ -5617,7 +5699,7 @@ BEGIN
     -- المالك: يُرحَّل مباشرة (المصفوفة).
     NEW.journal_entry_id := public.vendor_credit_post_journal(NEW);
     RETURN NEW;
-  ELSIF v_role IN ('general_manager', 'accountant') THEN
+  ELSIF v_role IN ('general_manager', 'admin', 'accountant') THEN
     IF v_role = 'accountant' THEN
       -- محاسب الفرع مقيَّد بفرعه — ومحاسبٌ بلا فرعٍ مسجَّل يُرفض (865).
       IF v_member_branch IS NULL OR NEW.branch_id IS DISTINCT FROM v_member_branch THEN
@@ -5635,7 +5717,7 @@ BEGIN
       v_actor, 'owner',
       'إشعار دائن بانتظار الاعتماد',
       'أُنشئ إشعار دائن ' || COALESCE(NEW.credit_number, '') || ' بقيمة ' || NEW.total_amount ||
-        ' بواسطة ' || CASE WHEN v_role = 'general_manager' THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
+        ' بواسطة ' || CASE WHEN v_role IN ('admin', 'general_manager') THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
         ' — يحتاج اعتماداً قبل الترحيل (مصفوفة 865).',
       'high', 'unread',
       'vendor_credit_pending:' || NEW.id::text
@@ -7951,7 +8033,7 @@ BEGIN
       SELECT user_id AS u FROM public.companies WHERE id = NEW.company_id
       UNION
       SELECT user_id FROM public.company_members
-       WHERE company_id = NEW.company_id AND role IN ('owner','general_manager')
+       WHERE company_id = NEW.company_id AND role IN ('owner','admin','general_manager')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -8823,6 +8905,55 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- can_approve(p_company_id uuid, p_resource text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_approve(p_company_id uuid, p_resource text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_uid  uuid := auth.uid();
+        v_role text;
+        v_ok   boolean;
+BEGIN
+  IF v_uid IS NULL OR p_company_id IS NULL OR p_resource IS NULL THEN
+    RETURN false;   -- العجزُ عن التحقّق يُغلق ولا يفتح (درس ٨٦٥)
+  END IF;
+
+  -- الطابقُ الأوّل: مالكُ الشركة المسجَّل معتمِدٌ دائماً، ولو لم يُذكر عضواً.
+  IF EXISTS (SELECT 1 FROM public.companies c
+              WHERE c.id = p_company_id AND c.user_id = v_uid) THEN
+    RETURN true;
+  END IF;
+
+  SELECT lower(btrim(cm.role)) INTO v_role
+    FROM public.company_members cm
+   WHERE cm.company_id = p_company_id AND cm.user_id = v_uid
+   LIMIT 1;
+
+  IF v_role IS NULL THEN RETURN false; END IF;
+  -- v3.74.978: «مدير عام» له اسمان حتى الخطوة الثانية، والبابُ يعرفهما معاً.
+  IF v_role IN ('owner', 'admin', 'general_manager') THEN RETURN true; END IF;
+
+  -- وما عداهما: تُسأل شاشةُ الصلاحيات، بلغتيها معاً.
+  SELECT (p.all_access
+          OR 'approve' = ANY(p.allowed_actions)
+          OR '*'       = ANY(p.allowed_actions)
+          OR (p_resource || ':approve') = ANY(p.allowed_actions))
+    INTO v_ok
+    FROM public.company_role_permissions p
+   WHERE p.company_id = p_company_id
+     AND lower(btrim(p.role)) = v_role
+     AND p.resource = p_resource
+   LIMIT 1;
+
+  RETURN COALESCE(v_ok, false);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- can_approve_discount(p_company_id uuid, p_user_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.can_approve_discount(p_company_id uuid, p_user_id uuid)
@@ -9143,7 +9274,7 @@ BEGIN
    WHERE cm.company_id = p_company_id AND cm.user_id = v_actor
    LIMIT 1;
 
-  RETURN v_role IN ('owner', 'general_manager', 'gm', 'generalmanager');
+  RETURN v_role IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager');
 END;
 $function$
 ;
@@ -9213,7 +9344,7 @@ BEGIN
 
   -- الاستثناء بنص المالك: المالك والمدير العام (وتهجئاتهما) فى كل وضع،
   -- وبلا قيد فرعٍ ولو حمل صفُّ عضويتهما فرعاً.
-  IF v_role IN ('owner', 'general_manager', 'gm', 'generalmanager') THEN
+  IF v_role IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager') THEN
     RETURN true;
   END IF;
 
@@ -12098,6 +12229,27 @@ BEGIN
     'employeesUpdated', v_updated, 'totalCommissionAdded', v_total,
     'message', 'تم ربط دفعة العمولات بالمرتبات');
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- commission_run_transition_allowed(p_old text, p_new text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.commission_run_transition_allowed(p_old text, p_new text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT CASE
+    -- إدخالٌ جديد، أو تحديثٌ لا يمسّ الحالة
+    WHEN p_old IS NULL OR p_new IS NULL OR p_old = p_new THEN TRUE
+    -- «مصروفة» نهاية: لا يخرج منها شىء
+    WHEN p_old = 'paid' THEN FALSE
+    -- «مرحَّلة» لا تخرج إلّا إلى «مصروفة»
+    WHEN p_old = 'posted' THEN p_new = 'paid'
+    -- وقبلَ الترحيل: حرّيّةٌ تامّة، إلّا أنّ الصرفَ لا يسبق الترحيل
+    ELSE p_new <> 'paid'
+  END;
 $function$
 ;
 
@@ -18753,6 +18905,25 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- enforce_commission_run_transition()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_commission_run_transition()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF NOT public.commission_run_transition_allowed(OLD.status, NEW.status) THEN
+    RAISE EXCEPTION 'لا يجوز نقلُ دورة العمولات من «%» إلى «%» — الدورةُ مسّت الحسابات فلا ترجع إلى الخلف. | Illegal commission run transition: % -> %',
+      OLD.status, NEW.status, OLD.status, NEW.status
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- enforce_governance_on_insert()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.enforce_governance_on_insert()
@@ -19115,12 +19286,13 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_period_lock_header()
  RETURNS trigger
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_entry_date DATE;
   v_is_closing BOOLEAN;
   v_company_id UUID;
-  v_fiscal_locked BOOLEAN;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     v_entry_date := OLD.entry_date;
@@ -19132,25 +19304,13 @@ BEGIN
     v_company_id := NEW.company_id;
   END IF;
 
+  -- قيدُ الإغلاق نفسُه يُكتب فى فترةٍ مُقفلة — وهذا هو عملُه.
   IF v_is_closing THEN
     RETURN COALESCE(NEW, OLD);
   END IF;
 
-  -- التحقق من fiscal_periods (سنة/شهر)
-  SELECT public.check_fiscal_period_locked(v_company_id, v_entry_date) INTO v_fiscal_locked;
-  IF v_fiscal_locked THEN
-    RAISE EXCEPTION 'Action blocked: Fiscal period %-% is CLOSED or LOCKED.', EXTRACT(YEAR FROM v_entry_date), EXTRACT(MONTH FROM v_entry_date);
-  END IF;
-
-  -- التحقق من accounting_periods (إن وُجدت)
-  IF EXISTS (
-    SELECT 1 FROM accounting_periods
-    WHERE company_id = v_company_id
-      AND v_entry_date BETWEEN period_start AND period_end
-      AND (is_locked = TRUE OR status = 'closed')
-  ) THEN
-    RAISE EXCEPTION 'Action blocked: This accounting period is CLOSED or LOCKED. Date: %', v_entry_date;
-  END IF;
+  -- v3.74.982 — بيتٌ واحدٌ للقاعدة، لا نسخةٌ ثانيةٌ منها هنا.
+  PERFORM public.validate_transaction_period(v_company_id, v_entry_date);
 
   RETURN COALESCE(NEW, OLD);
 END;
@@ -19638,6 +19798,46 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_install_notice_follows_document()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_install_notice_follows_document()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_src text;
+        v_tbl text;
+        v_n int := 0;
+BEGIN
+  SELECT pg_get_functiondef(p.oid) INTO v_src
+    FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+   WHERE ns.nspname = 'public' AND p.proname = 'workflow_row_is_open'
+   LIMIT 1;
+  IF v_src IS NULL THEN
+    RAISE EXCEPTION 'workflow_row_is_open غيرُ موجودة — لا قائمةَ أقرأ منها.';
+  END IF;
+
+  FOR v_tbl IN
+    SELECT DISTINCT m[1]
+      FROM regexp_matches(v_src, '\mFROM\s+([a-z_][a-z0-9_]*)\M', 'g') AS m
+     WHERE m[1] NOT IN ('pg_proc','pg_namespace','information_schema')
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables t
+                WHERE t.table_schema='public' AND t.table_name=v_tbl AND t.table_type='BASE TABLE') THEN
+      EXECUTE format('DROP TRIGGER IF EXISTS zz_erp_notice_follows_document ON public.%I', v_tbl);
+      EXECUTE format(
+        'CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.%I '
+        'FOR EACH ROW EXECUTE FUNCTION public.erp_notice_follows_its_document()', v_tbl);
+      v_n := v_n + 1;
+    END IF;
+  END LOOP;
+  RETURN v_n;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_is_company_owner(p_company_id uuid, p_user_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid)
@@ -19688,6 +19888,62 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_notice_close_orphans(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_notice_close_orphans(p_company_id uuid DEFAULT NULL::uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_reason text := ' — أُغلق آليّاً: المستندُ المرجعىُّ حُذف، فلم يعد لهذا الإشعار فعلٌ يُطلب.';
+        v_n int := 0;
+        r record;
+BEGIN
+  FOR r IN
+    SELECT n.id FROM notifications n
+     WHERE (p_company_id IS NULL OR n.company_id = p_company_id)
+       AND (n.status <> 'archived' OR n.read_at IS NULL)
+       AND public.workflow_row_is_open(n.reference_id) IS NULL
+       AND NOT public.erp_reference_row_exists(n.reference_id)
+  LOOP
+    UPDATE notifications
+       SET status  = 'archived',
+           read_at = COALESCE(read_at, now()),
+           message = CASE WHEN position(v_reason in message) > 0 THEN message
+                          ELSE message || v_reason END
+     WHERE id = r.id;
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN v_n;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_notice_follows_its_document()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_notice_follows_its_document()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_reason text := ' — أُغلق آليّاً: المستندُ المرجعىُّ حُذف، فلم يعد لهذا الإشعار فعلٌ يُطلب.';
+BEGIN
+  UPDATE notifications
+     SET status  = 'archived',
+         read_at = COALESCE(read_at, now()),
+         message = CASE WHEN position(v_reason in message) > 0 THEN message
+                        ELSE message || v_reason END
+   WHERE reference_id = OLD.id
+     AND (status <> 'archived' OR read_at IS NULL);
+  RETURN OLD;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_product_sku_prefix(p_item_type text, p_product_type text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text)
@@ -19701,6 +19957,35 @@ AS $function$
     WHEN lower(coalesce(p_product_type,'')) = 'manufactured' THEN 'MFG'
     ELSE 'PRD'
   END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_reference_row_exists(p_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_reference_row_exists(p_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE r record; n int;
+BEGIN
+  IF p_id IS NULL THEN RETURN false; END IF;
+  FOR r IN
+    SELECT c.table_name FROM information_schema.columns c
+     JOIN information_schema.tables t
+       ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+      AND t.table_type = 'BASE TABLE'
+     WHERE c.table_schema = 'public' AND c.column_name = 'id' AND c.data_type = 'uuid'
+     ORDER BY c.table_name
+  LOOP
+    EXECUTE format('SELECT 1 FROM public.%I WHERE id = $1 LIMIT 1', r.table_name)
+      INTO n USING p_id;
+    IF n IS NOT NULL THEN RETURN true; END IF;
+  END LOOP;
+  RETURN false;
+END
 $function$
 ;
 
@@ -20992,7 +21277,7 @@ AS $function$
   SELECT p_user_id IS NOT NULL AND (
        EXISTS (SELECT 1 FROM company_members
                 WHERE company_id = p_company_id AND user_id = p_user_id
-                  AND lower(role) IN ('owner','general_manager','gm','generalmanager'))
+                  AND lower(role) IN ('owner','admin','general_manager','gm','generalmanager'))
     OR EXISTS (SELECT 1 FROM companies WHERE id = p_company_id AND user_id = p_user_id));
 $function$
 ;
@@ -23125,7 +23410,7 @@ BEGIN
     RAISE EXCEPTION 'RETURN_FORBIDDEN: لست عضواً فى هذه الشركة';
   END IF;
 
-  IF v_role NOT IN ('owner','general_manager') THEN
+  IF v_role NOT IN ('owner','admin','general_manager') THEN
     RAISE EXCEPTION 'RETURN_FORBIDDEN: المرتجع المباشر من صفحة الفاتورة متاح للمالك والمدير العام فقط — استخدم دورة "طلب مرتجع مبيعات" (اعتماد إدارى ثم استلام مخزنى)';
   END IF;
 
@@ -28426,6 +28711,57 @@ END $function$
 ;
 
 -- ---------------------------------------------------------------
+-- ic_attendance_log_stuck(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.ic_attendance_log_stuck(p_company_id uuid)
+ RETURNS TABLE(severity text, detail jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  r record;
+  v_total int := 0;
+BEGIN
+  SELECT count(*) INTO v_total
+  FROM attendance_raw_logs
+  WHERE company_id = p_company_id
+    AND is_processed = false
+    AND log_time < NOW() - INTERVAL '1 day';
+
+  IF v_total = 0 THEN
+    RETURN;
+  END IF;
+
+  FOR r IN
+    SELECT id, employee_id, log_time, log_type, source, anomaly_reason
+    FROM attendance_raw_logs
+    WHERE company_id = p_company_id
+      AND is_processed = false
+      AND log_time < NOW() - INTERVAL '1 day'
+    ORDER BY log_time ASC
+    LIMIT 10
+  LOOP
+    severity := 'medium';
+    detail := jsonb_build_object(
+      'type', 'attendance_raw_log',
+      'id', r.id,
+      'employee_id', r.employee_id,
+      'log_time', r.log_time,
+      'log_type', r.log_type,
+      'source', r.source,
+      'anomaly_reason', r.anomaly_reason,
+      'total_stuck', v_total,
+      'hint', 'بصمة مدفوعة لم تصر سجل حضور بعد أكثر من يوم. الموظف يظهر غائبا يوم كان حاضرا.'
+    );
+    RETURN NEXT;
+  END LOOP;
+EXCEPTION WHEN undefined_table OR undefined_column THEN
+  RETURN;
+END $function$
+;
+
+-- ---------------------------------------------------------------
 -- ic_backup_stale(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.ic_backup_stale(p_company_id uuid)
@@ -33668,6 +34004,8 @@ DECLARE
     v_normal_balance TEXT;
     v_account_name TEXT;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+
     -- تحديد الحساب الذي سيتم الاحتفاظ به
     IF p_keep_account_id IS NOT NULL THEN
         v_keep_account_id := p_keep_account_id;
@@ -39463,9 +39801,9 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid)
+-- pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid, p_payment_date date)
 -- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid)
+CREATE OR REPLACE FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid, p_payment_date date)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -39474,45 +39812,48 @@ AS $function$
 DECLARE
     v_run RECORD;
     v_journal_id UUID;
+    v_date DATE := COALESCE(p_payment_date, CURRENT_DATE);
 BEGIN
   -- v3.74.747 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access_by_row('commission_runs', p_commission_run_id);
 
     SELECT * INTO v_run FROM commission_runs WHERE id = p_commission_run_id;
-    
+
     IF v_run IS NULL THEN
         RAISE EXCEPTION 'Commission run not found';
     END IF;
-    
+
     -- Idempotency check
     IF v_run.status = 'paid' THEN
         RETURN jsonb_build_object('success', TRUE, 'message', 'Already paid', 'payment_journal_id', v_run.payment_journal_id);
     END IF;
-    
+
     PERFORM validate_commission_run_transition(p_commission_run_id, 'paid');
-    PERFORM validate_transaction_period(v_run.company_id, CURRENT_DATE);
-    
+    PERFORM validate_transaction_period(v_run.company_id, v_date);
+
+    PERFORM set_config('app.allow_direct_post', 'true', true);
     INSERT INTO journal_entries (
         company_id, entry_date, description, reference_type, reference_id,
         status, posted_by, posted_at
     ) VALUES (
-        v_run.company_id, CURRENT_DATE,
+        v_run.company_id, v_date,
         'Commission Payment - ' || v_run.period_start || ' to ' || v_run.period_end,
         'commission_payment', p_commission_run_id, 'posted', p_user_id, NOW()
     ) RETURNING id INTO v_journal_id;
-    
+
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, description, debit_amount, credit_amount)
     VALUES (v_journal_id, p_payable_account_id, 'Commission Payable', v_run.net_commission, 0);
-    
+
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, description, debit_amount, credit_amount)
     VALUES (v_journal_id, p_bank_account_id, 'Bank Payment', 0, v_run.net_commission);
-    
+    PERFORM set_config('app.allow_direct_post', 'false', true);
+
     UPDATE commission_runs
     SET status = 'paid', payment_journal_id = v_journal_id, paid_by = p_user_id, paid_at = NOW()
     WHERE id = p_commission_run_id;
-    
+
     UPDATE commission_ledger SET status = 'paid' WHERE commission_run_id = p_commission_run_id;
-    
+
     RETURN jsonb_build_object('success', TRUE, 'payment_journal_id', v_journal_id);
 END;
 $function$
@@ -39561,7 +39902,8 @@ BEGIN
   -- DR Dividends Payable (Liability Decrease)
   -- CR Bank/Cash (Asset Decrease)
   
-  INSERT INTO public.journal_entries (
+  PERFORM set_config('app.allow_direct_post', 'true', true);
+INSERT INTO public.journal_entries (
     company_id, entry_date, description, reference_type, reference_id, 
     status, branch_id, cost_center_id, posted_by, posted_at
   ) VALUES (
@@ -39586,6 +39928,7 @@ BEGIN
   ) VALUES (
     v_journal_id, p_payment_account_id, 'Cash Outflow', 0, p_amount, p_branch_id, p_cost_center_id
   );
+PERFORM set_config('app.allow_direct_post', 'false', true);
 
   -- 4. Update Line Status
   v_new_paid := v_line.paid_amount + p_amount;
@@ -39784,7 +40127,7 @@ BEGIN
      LIMIT 1;
   END IF;
 
-  IF v_creator_role IN ('owner', 'general_manager') THEN
+  IF v_creator_role IN ('owner', 'admin', 'general_manager') THEN
     IF NEW.status = 'approved' THEN
       IF NEW.approved_by IS NULL THEN NEW.approved_by := NEW.created_by_user_id; END IF;
       IF NEW.approved_at IS NULL THEN NEW.approved_at := NOW(); END IF;
@@ -39877,7 +40220,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'general_manager')
+         AND role IN ('owner', 'admin', 'general_manager')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -41497,7 +41840,8 @@ BEGIN
 
     v_reference_type := CASE WHEN v_req.voucher_type = 'deposit' THEN 'bank_deposit' ELSE 'cash_withdrawal' END;
 
-    INSERT INTO public.journal_entries (
+    PERFORM set_config('app.allow_direct_post', 'true', true);
+INSERT INTO public.journal_entries (
         company_id, branch_id, entry_date, description, reference_type, reference_id, status, cost_center_id, posted_by
     ) VALUES (
         v_req.company_id, v_req.branch_id, v_req.entry_date,
@@ -41524,6 +41868,7 @@ BEGIN
         ) VALUES
         (v_journal_id, v_req.counter_id, v_req.base_amount, 0, 'مقابل السحب', v_req.amount, 0, v_req.currency, v_req.exchange_rate, v_req.exchange_rate_id, v_req.branch_id, v_req.cost_center_id),
         (v_journal_id, v_req.account_id, 0, v_req.base_amount, 'سحب', 0, v_req.amount, v_req.currency, v_req.exchange_rate, v_req.exchange_rate_id, v_req.branch_id, v_req.cost_center_id);
+PERFORM set_config('app.allow_direct_post', 'false', true);
     END IF;
 
     UPDATE public.bank_voucher_requests SET
@@ -41712,9 +42057,7 @@ BEGIN
   END IF;
   v_date := COALESCE(v_date, v_b.calculated_at::date, CURRENT_DATE);
 
-  IF to_regprocedure('public.validate_transaction_period(uuid,date)') IS NOT NULL THEN
-    PERFORM public.validate_transaction_period(v_b.company_id, v_date);
-  END IF;
+  PERFORM public.validate_transaction_period(v_b.company_id, v_date);
 
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
@@ -41781,7 +42124,8 @@ BEGIN
   PERFORM validate_transaction_period(v_comm.company_id, v_comm.period_end);
 
   -- 3. Create Journal Entry
-  INSERT INTO public.journal_entries (
+  PERFORM set_config('app.allow_direct_post', 'true', true);
+INSERT INTO public.journal_entries (
     company_id, entry_date, description, reference_type, reference_id, 
     status, posted_by, posted_at
   ) VALUES (
@@ -41809,6 +42153,7 @@ BEGIN
   ) VALUES (
     v_journal_id, p_payable_account_id, 'Commission Payable', 0, v_comm.commission_amount
   );
+PERFORM set_config('app.allow_direct_post', 'false', true);
   
   -- 5. Ledger (Already populated during calculation? Or here? Let's assume Ledger tracks detail, so header post just locks it).
   -- Ideally Ledger is populated at Calculation time.
@@ -41864,7 +42209,8 @@ BEGIN
     FROM commission_ledger
     WHERE commission_run_id = p_commission_run_id;
     
-    INSERT INTO journal_entries (
+    PERFORM set_config('app.allow_direct_post', 'true', true);
+INSERT INTO journal_entries (
         company_id, entry_date, description, reference_type, reference_id,
         status, posted_by, posted_at
     ) VALUES (
@@ -41878,6 +42224,7 @@ BEGIN
     
     INSERT INTO journal_entry_lines (journal_entry_id, account_id, description, debit_amount, credit_amount)
     VALUES (v_journal_id, p_payable_account_id, 'Commission Payable', 0, v_net_commission);
+PERFORM set_config('app.allow_direct_post', 'false', true);
     
     UPDATE commission_runs
     SET status = 'posted', journal_entry_id = v_journal_id, posted_by = p_user_id, posted_at = NOW(),
@@ -42188,9 +42535,7 @@ BEGIN
       USING ERRCODE='check_violation';
   END IF;
 
-  IF to_regprocedure('public.validate_transaction_period(uuid,date)') IS NOT NULL THEN
-    PERFORM public.validate_transaction_period(v_asset.company_id, v_asset.purchase_date);
-  END IF;
+  PERFORM public.validate_transaction_period(v_asset.company_id, v_asset.purchase_date);
 
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
@@ -46114,7 +46459,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'general_manager')
+         AND role IN ('owner', 'admin', 'general_manager')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -46211,7 +46556,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'general_manager')
+         AND role IN ('owner', 'admin', 'general_manager')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -46585,7 +46930,7 @@ BEGIN
     SELECT role INTO v_role FROM public.company_members
      WHERE company_id = NEW.company_id AND user_id = NEW.created_by LIMIT 1;
   END IF;
-  IF v_role IN ('owner', 'general_manager') THEN
+  IF v_role IN ('owner', 'admin', 'general_manager') THEN
     IF NEW.status IN ('approved', 'sent_to_vendor') THEN
       IF NEW.approved_by IS NULL THEN NEW.approved_by := NEW.created_by; END IF;
       IF NEW.approved_at IS NULL THEN NEW.approved_at := NOW(); END IF;
@@ -46788,7 +47133,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'general_manager')
+         AND role IN ('owner', 'admin', 'general_manager')
     ) approvers
     WHERE u IS NOT NULL AND u <> v_requester
   LOOP
@@ -47664,6 +48009,8 @@ DECLARE
     v_source_name TEXT;
     v_target_name TEXT;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+
     -- التحقق من وجود الحسابات
     SELECT account_type, normal_balance, account_name
     INTO v_source_account_type, v_source_normal_balance, v_source_name
@@ -48649,9 +48996,7 @@ BEGIN
       USING ERRCODE='check_violation';
   END IF;
 
-  IF to_regprocedure('public.validate_transaction_period(uuid,date)') IS NOT NULL THEN
-    PERFORM public.validate_transaction_period(v_asset.company_id, p_date);
-  END IF;
+  PERFORM public.validate_transaction_period(v_asset.company_id, p_date);
 
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
@@ -48844,7 +49189,7 @@ BEGIN
   END IF;
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_rejected_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية رفض أوامر الإنتاج محصورة بالمالك والمدير العام');
   END IF;
@@ -48889,7 +49234,7 @@ BEGIN
 
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_rejected_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية رفض مسارات التصنيع محصورة بالمالك والمدير العام');
   END IF;
@@ -49181,7 +49526,7 @@ BEGIN
 
   SELECT lower(btrim(role)) INTO v_approver_role
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_actor LIMIT 1;
-  IF v_approver_role NOT IN ('owner', 'general_manager') THEN
+  IF v_approver_role NOT IN ('owner', 'admin', 'general_manager') THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK');
   END IF;
   IF v_vc.created_by_user_id IS NOT NULL AND v_vc.created_by_user_id = v_actor THEN
@@ -49189,7 +49534,7 @@ BEGIN
   END IF;
   SELECT lower(btrim(role)) INTO v_creator_role
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_vc.created_by_user_id LIMIT 1;
-  IF (COALESCE(v_creator_role, '') = 'general_manager' OR v_creator_role IS NULL)
+  IF (COALESCE(v_creator_role, '') IN ('admin', 'general_manager') OR v_creator_role IS NULL)
      AND v_approver_role <> 'owner' THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
   END IF;
@@ -50821,7 +51166,7 @@ BEGIN
       'warning', 'sales', 'action');
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
-  FOR v_role IN SELECT unnest(ARRAY['owner','general_manager','manager']) LOOP
+  FOR v_role IN SELECT unnest(ARRAY['owner','admin','general_manager','manager']) LOOP
     BEGIN
       PERFORM public.create_notification(
         p_company_id, 'booking', p_booking_id,
@@ -51027,7 +51372,7 @@ BEGIN
   -- SoD check
   SELECT role INTO v_role FROM company_members
    WHERE company_id = v_orig.company_id AND user_id = p_user_id LIMIT 1;
-  IF NOT (COALESCE(v_role,'') IN ('owner','general_manager')) THEN
+  IF NOT (COALESCE(v_role,'') IN ('owner','admin','general_manager')) THEN
     IF v_orig.created_by IS NOT NULL AND v_orig.created_by = p_user_id THEN
       RAISE EXCEPTION 'SOD_VIOLATION: مُنشِئ القَيد لا يَستَطيع عَكسَه — يَحتاج مالِك أَو مُدير عام';
     END IF;
@@ -51590,7 +51935,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'general_manager')
+         AND role IN ('owner', 'admin', 'general_manager')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -52248,7 +52593,7 @@ BEGIN
     SELECT role INTO v_role FROM public.company_members
      WHERE company_id = NEW.company_id AND user_id = NEW.created_by_user_id LIMIT 1;
   END IF;
-  IF v_role IN ('owner', 'general_manager') THEN
+  IF v_role IN ('owner', 'admin', 'general_manager') THEN
     IF NEW.status = 'approved' THEN
       IF NEW.approved_by IS NULL THEN NEW.approved_by := NEW.created_by_user_id; END IF;
       IF NEW.approved_at IS NULL THEN NEW.approved_at := NOW(); END IF;
@@ -52357,7 +52702,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'general_manager')
+         AND role IN ('owner', 'admin', 'general_manager')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -57902,7 +58247,7 @@ BEGIN
   IF v_role IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'NOT_MEMBER');
   END IF;
-  IF v_role NOT IN ('owner', 'general_manager', 'accountant') THEN
+  IF v_role NOT IN ('owner', 'admin', 'general_manager', 'accountant') THEN
     RAISE EXCEPTION 'VENDOR_CREDIT_ROLE_FORBIDDEN: role % may not resubmit vendor credits | هذا الدور لا يعيد إرسال إشعارات دائنة (مصفوفة 865)', v_role;
   END IF;
 
@@ -58005,7 +58350,7 @@ BEGIN
     v_actor, 'owner',
     'إشعار دائن معدَّل بانتظار الاعتماد',
     'أُعيد إرسال الإشعار الدائن ' || COALESCE(v_vc.credit_number, '') || ' بعد تعديله بواسطة ' ||
-      CASE WHEN v_role = 'general_manager' THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
+      CASE WHEN v_role IN ('admin', 'general_manager') THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
       ' — يحتاج اعتماداً قبل الترحيل (مصفوفة 865).',
     'high', 'unread',
     'vendor_credit_pending:' || p_credit_id::text || ':r' || v_resubmit_no::text
@@ -58168,6 +58513,34 @@ BEGIN
   END IF;
   
   RETURN NEW;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- validate_commission_run_transition(p_commission_run_id uuid, p_new_status text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.validate_commission_run_transition(p_commission_run_id uuid, p_new_status text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_old text;
+BEGIN
+  SELECT status INTO v_old FROM public.commission_runs WHERE id = p_commission_run_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'دورةُ العمولات غير موجودة. | Commission run not found.'
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  IF NOT public.commission_run_transition_allowed(v_old, p_new_status) THEN
+    RAISE EXCEPTION 'لا يجوز نقلُ دورة العمولات من «%» إلى «%» — الدورةُ مسّت الحسابات فلا ترجع إلى الخلف. | Illegal commission run transition: % -> %',
+      v_old, p_new_status, v_old, p_new_status
+      USING ERRCODE = 'check_violation';
+  END IF;
 END;
 $function$
 ;
@@ -58607,6 +58980,43 @@ BEGIN
 
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- validate_transaction_period(p_company_id uuid, p_date date)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.validate_transaction_period(p_company_id uuid, p_date date)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF p_company_id IS NULL OR p_date IS NULL THEN
+    RETURN;
+  END IF;
+
+  -- (أ) السنةُ/الشهرُ فى fiscal_periods
+  IF public.check_fiscal_period_locked(p_company_id, p_date) THEN
+    RAISE EXCEPTION 'الفترةُ الماليّة %-% مُقفلةٌ أو مُغلقة، فلا تُقبل عمليّةٌ بتاريخها. | Action blocked: Fiscal period %-% is CLOSED or LOCKED.',
+      EXTRACT(YEAR FROM p_date), EXTRACT(MONTH FROM p_date),
+      EXTRACT(YEAR FROM p_date), EXTRACT(MONTH FROM p_date)
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- (ب) الفترةُ المحاسبيّةُ فى accounting_periods
+  IF EXISTS (
+    SELECT 1 FROM public.accounting_periods
+    WHERE company_id = p_company_id
+      AND p_date BETWEEN period_start AND period_end
+      AND (is_locked = TRUE OR status IN ('closed', 'locked'))
+  ) THEN
+    RAISE EXCEPTION 'الفترةُ المحاسبيّةُ التى يقع فيها % مُقفلةٌ أو مُغلقة. | Action blocked: This accounting period is CLOSED or LOCKED. Date: %',
+      p_date, p_date
+      USING ERRCODE = 'check_violation';
+  END IF;
 END;
 $function$
 ;

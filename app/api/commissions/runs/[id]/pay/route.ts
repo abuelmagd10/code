@@ -75,30 +75,74 @@ export async function POST(
             );
         }
 
-        // Update run status
-        const { error: updateError } = await supabase
-            .from('commission_runs')
-            .update({
-                status: 'paid',
-                paid_by: user.id,
-                paid_at: new Date().toISOString(),
-                notes: notes || run.notes
-            })
-            .eq('id', id);
-
-        if (updateError) {
-            console.error('Error updating run:', updateError);
-            return NextResponse.json({ error: 'Failed to update run status' }, { status: 500 });
+        // v3.74.982 — كان هنا: تُكتب «مصروفة» **ولا يُنشأ قيدٌ محاسبىٌّ**،
+        // ومكتوبٌ بالحرف «لاحقاً: أنشئ قيدَ الصرف». وأثرُه أنّ المالَ يخرج من
+        // البنك ويبقى التزامُ العمولات على الشركة كما هو، فتظهر الشركةُ مدينةً
+        // بمالٍ دفعته. والدالّةُ التى تُنشئ القيدَ الصحيح كانت موجودةً فى
+        // القاعدة **ولا ينادِيها أحد**.
+        if (!run.journal_entry_id) {
+            return NextResponse.json(
+                { error: 'لا قيدَ ترحيلٍ لهذه الدورة، فلا يُصرف عليها' },
+                { status: 409 }
+            );
         }
 
-        // TODO: Create payment journal entry
-        // This should debit Commission Payable and credit Bank/Cash
-        // For now, we just update the status
+        // حسابُ الالتزام يُقرأ من قيد الترحيل نفسِه — فهو الحسابُ الذى دُوّن
+        // فيه الالتزامُ ساعةَ الترحيل، فلا يُسأل عنه المستخدمُ مرّةً ثانية.
+        const { data: payableLine, error: lineError } = await supabase
+            .from('journal_entry_lines')
+            .select('account_id, credit_amount')
+            .eq('journal_entry_id', run.journal_entry_id)
+            .gt('credit_amount', 0)
+            .order('credit_amount', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        return NextResponse.json({
-            success: true,
-            message: 'Payment recorded successfully'
+        if (lineError || !payableLine || !payableLine.account_id) {
+            return NextResponse.json(
+                { error: 'لم أجد حسابَ التزام العمولات فى قيد الترحيل' },
+                { status: 409 }
+            );
+        }
+
+        const { data: payResult, error: payError } = await supabase.rpc('pay_commission_run_atomic', {
+            p_commission_run_id: id,
+            p_payable_account_id: payableLine.account_id,
+            p_bank_account_id: payment_account_id,
+            p_user_id: user.id,
+            p_payment_date: payment_date,
         });
+
+        if (payError) {
+            console.error('Error paying run:', payError);
+            return NextResponse.json(
+                { error: payError.message || 'تعذّر تسجيلُ صرف العمولات' },
+                { status: 500 }
+            );
+        }
+
+        // ولا يُطلب من المستخدم ما لا يُستعمل: طريقةُ الصرف ومرجعُه كانا
+        // يُطلبان ثمّ يُهملان، فصارا يُحفظان مع الدورة.
+        const noteParts = [
+            notes || run.notes,
+            payment_method ? ('طريقة الصرف: ' + String(payment_method)) : null,
+            reference_number ? ('المرجع: ' + String(reference_number)) : null,
+        ].filter(Boolean);
+        if (noteParts.length > 0) {
+            // v3.74.982 — قاعدةُ العميل لا ترمى خطأً بل تُرجعه فى الردّ،
+            // فكتابةٌ لا يُفحص ردُّها تسقط بصمتٍ ويمضى الكودُ كأنّها نجحت.
+            // والقيدُ أُنشئ والصرفُ تمّ، فلا يُلغيهما فشلُ حفظِ ملاحظة —
+            // لكنّه لا يُبتلع صامتاً.
+            const { error: notesError } = await supabase
+                .from('commission_runs')
+                .update({ notes: noteParts.join(' · ') })
+                .eq('id', id);
+            if (notesError) {
+                console.error('Error saving commission payment notes:', notesError);
+            }
+        }
+
+        return NextResponse.json({ success: true, result: payResult });
     } catch (error) {
         console.error('Unexpected error:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -38,10 +38,36 @@ export async function POST(
             .eq('user_id', user.id)
             .single();
 
-        if (!companyMember || !['owner', 'admin', 'accountant'].includes(companyMember.role)) {
+        // v3.74.982 — قرارُ المالك: المحاسبُ قد يكون هو من أنشأ الدورة، فلا
+        // يعتمد عملَ نفسه. الاعتمادُ للمالك أو المدير العام وحدَهما، والإنشاءُ
+        // والترحيلُ والصرفُ تبقى للمحاسب.
+        if (!companyMember || !['owner', 'admin'].includes(companyMember.role)) {
             return NextResponse.json(
-                { error: 'ممنوع: اعتماد دورة العمولات للمالك والمدير العام والمحاسب فقط' },
+                { error: 'ممنوع: اعتماد دورة العمولات للمالك أو المدير العام فقط' },
                 { status: 403 }
+            );
+        }
+
+        // v3.74.982 — كان الاعتمادُ يكتب «معتمدة» **بلا أن يسأل عن الحالة
+        // الحاليّة إطلاقاً**، فدورةٌ مرحَّلةٌ للحسابات أو مصروفةٌ فعلاً تُرجَع
+        // إلى «معتمدة» بضغطة، فيُرحَّل نفسُ المبلغ مرّةً ثانية.
+        // والمنعُ الجذرىُّ فى قاعدة البيانات (قيدٌ على الجدول يرفض الرجوعَ من
+        // أىِّ باب)، وهذا هنا ليقرأ المستخدمُ سبباً مفهوماً لا خطأً تقنيّاً.
+        const { data: current, error: readError } = await supabase
+            .from('commission_runs')
+            .select('status')
+            .eq('id', id)
+            .eq('company_id', employee.company_id)
+            .single();
+
+        if (readError || !current) {
+            return NextResponse.json({ error: 'دورةُ العمولات غير موجودة' }, { status: 404 });
+        }
+
+        if (!['draft', 'reviewed'].includes(String(current.status || ''))) {
+            return NextResponse.json(
+                { error: 'لا يمكن اعتمادُ دورةٍ حالتها «' + String(current.status) + '» — الاعتمادُ للمسودّة أو المراجَعة فقط' },
+                { status: 409 }
             );
         }
 

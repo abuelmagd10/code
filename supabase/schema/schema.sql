@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-06T22:33:17.456Z
--- Tables: 255 | Policies: 781 | Triggers: 553 | Constraints: 1830
+-- Generated: 2026-08-08T13:28:44.472Z
+-- Tables: 256 | Policies: 785 | Triggers: 575 | Constraints: 1836
 -- =====================================================================
 
 
@@ -887,6 +887,19 @@ CREATE TABLE IF NOT EXISTS public.chart_of_accounts_template (
   level integer DEFAULT 1 NOT NULL,
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.coa_restructure_log (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  company_id uuid NOT NULL,
+  operation_type text NOT NULL,
+  source_account_id uuid,
+  target_account_id uuid,
+  journal_entry_id uuid,
+  amount numeric(15,2) DEFAULT 0 NOT NULL,
+  description text,
+  performed_by uuid DEFAULT auth.uid(),
+  created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.cogs_transactions (
@@ -5184,6 +5197,12 @@ ALTER TABLE public.chart_of_accounts ADD CONSTRAINT chk_normal_balance CHECK ((n
 ALTER TABLE public.chart_of_accounts_template ADD CONSTRAINT chart_of_accounts_template_account_type_check CHECK ((account_type = ANY (ARRAY['asset'::text, 'liability'::text, 'equity'::text, 'income'::text, 'expense'::text])));
 ALTER TABLE public.chart_of_accounts_template ADD CONSTRAINT chart_of_accounts_template_normal_balance_check CHECK ((normal_balance = ANY (ARRAY['debit'::text, 'credit'::text])));
 ALTER TABLE public.chart_of_accounts_template ADD CONSTRAINT chart_of_accounts_template_pkey PRIMARY KEY (account_code);
+ALTER TABLE public.coa_restructure_log ADD CONSTRAINT coa_restructure_log_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE public.coa_restructure_log ADD CONSTRAINT coa_restructure_log_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id);
+ALTER TABLE public.coa_restructure_log ADD CONSTRAINT coa_restructure_log_operation_type_check CHECK ((operation_type = ANY (ARRAY['merge'::text, 'reclassify'::text])));
+ALTER TABLE public.coa_restructure_log ADD CONSTRAINT coa_restructure_log_pkey PRIMARY KEY (id);
+ALTER TABLE public.coa_restructure_log ADD CONSTRAINT coa_restructure_log_source_account_id_fkey FOREIGN KEY (source_account_id) REFERENCES chart_of_accounts(id);
+ALTER TABLE public.coa_restructure_log ADD CONSTRAINT coa_restructure_log_target_account_id_fkey FOREIGN KEY (target_account_id) REFERENCES chart_of_accounts(id);
 ALTER TABLE public.cogs_transactions ADD CONSTRAINT cogs_transactions_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE RESTRICT;
 ALTER TABLE public.cogs_transactions ADD CONSTRAINT cogs_transactions_company_date_idx UNIQUE NULLS NOT DISTINCT (company_id, transaction_date, id);
 ALTER TABLE public.cogs_transactions ADD CONSTRAINT cogs_transactions_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
@@ -6884,6 +6903,7 @@ CREATE INDEX idx_chart_of_accounts_type_subtype ON public.chart_of_accounts USIN
 CREATE INDEX idx_coa_branch_id ON public.chart_of_accounts USING btree (branch_id);
 CREATE INDEX idx_coa_company_branch ON public.chart_of_accounts USING btree (company_id, branch_id);
 CREATE INDEX idx_coa_cost_center_id ON public.chart_of_accounts USING btree (cost_center_id);
+CREATE INDEX idx_coa_restructure_log_company ON public.coa_restructure_log USING btree (company_id, created_at DESC);
 CREATE INDEX idx_cogs_transactions_branch ON public.cogs_transactions USING btree (branch_id);
 CREATE INDEX idx_cogs_transactions_company ON public.cogs_transactions USING btree (company_id);
 CREATE INDEX idx_cogs_transactions_company_date_branch ON public.cogs_transactions USING btree (company_id, transaction_date, branch_id);
@@ -7577,6 +7597,7 @@ CREATE TRIGGER trg_check_no_overlapping_periods BEFORE INSERT OR UPDATE ON publi
 CREATE TRIGGER trg_touch_ai_conversations_updated_at BEFORE UPDATE ON public.ai_conversations FOR EACH ROW EXECUTE FUNCTION touch_ai_conversations_updated_at();
 CREATE TRIGGER ai_knowledge_chunks_touch_updated_at BEFORE UPDATE ON public.ai_knowledge_chunks FOR EACH ROW EXECUTE FUNCTION ai_knowledge_chunks_touch_updated_at();
 CREATE TRIGGER trg_rate_limits_updated_at BEFORE UPDATE ON public.api_rate_limits FOR EACH ROW EXECUTE FUNCTION update_rate_limits_updated_at();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.approval_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER audit_asset_transactions AFTER INSERT OR DELETE OR UPDATE ON public.asset_transactions FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|reviewed_by|مُعتَمِدُ السَّنَد لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.', 'reviewed_by|posted_by|مُنَفِّذُ السَّنَد لا يَجوزُ أن يكون هو نفسَه مُعتَمِدَه.');
 CREATE TRIGGER trg_block_bank_voucher_delete BEFORE DELETE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION block_bank_voucher_delete_after_post();
@@ -7621,8 +7642,10 @@ CREATE TRIGGER trg_sync_bill_to_purchase_order AFTER UPDATE ON public.bills FOR 
 CREATE TRIGGER trg_z_sync_display_totals_bills BEFORE UPDATE OF total_amount, subtotal ON public.bills FOR EACH ROW EXECUTE FUNCTION sync_display_totals_from_total();
 CREATE TRIGGER trigger_auto_generate_bill_number BEFORE INSERT ON public.bills FOR EACH ROW EXECUTE FUNCTION auto_generate_bill_number();
 CREATE TRIGGER trigger_prevent_bill_deletion_with_vendor_credit BEFORE DELETE ON public.bills FOR EACH ROW EXECUTE FUNCTION prevent_bill_deletion_with_vendor_credit();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_booking_payments_sync AFTER INSERT OR DELETE OR UPDATE ON public.booking_payments FOR EACH ROW EXECUTE FUNCTION bkg_trg_sync_payment_status();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.booking_stock_withdrawals FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|decided_by|مَن يَبُتُّ فى سحبِ مخزونِ الحجز لا يَجوزُ أن يكون هو نفسَه طالبَه.');
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.booking_stock_withdrawals FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER bkg_request_discount_approval AFTER INSERT OR UPDATE OF discount_amount ON public.bookings FOR EACH ROW EXECUTE FUNCTION bkg_request_discount_approval_trg();
 CREATE TRIGGER bonuses_reverse_on_booking_delete BEFORE DELETE ON public.bookings FOR EACH ROW EXECUTE FUNCTION reverse_bonuses_on_booking_delete();
 CREATE TRIGGER booking_staff_from_service_trg BEFORE INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION validate_booking_staff_from_service();
@@ -7632,6 +7655,7 @@ CREATE TRIGGER trg_bookings_status_history AFTER INSERT OR UPDATE ON public.book
 CREATE TRIGGER trg_bookings_validate BEFORE INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION bkg_trg_validate_booking();
 CREATE TRIGGER trg_normalize_booking_payment_status BEFORE INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION normalize_booking_payment_status();
 CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_id, branch_id ON public.bookings FOR EACH ROW EXECUTE FUNCTION validate_customer_branch_isolation();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.bookings FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_branch_shipping_provider_same_company BEFORE INSERT OR UPDATE OF branch_id, shipping_provider_id ON public.branch_shipping_providers FOR EACH ROW EXECUTE FUNCTION check_branch_shipping_provider_same_company();
 CREATE TRIGGER branches_outlet_lifecycle AFTER INSERT OR UPDATE ON public.branches FOR EACH ROW EXECUTE FUNCTION branch_outlet_lifecycle();
 CREATE TRIGGER trg_create_default_cost_center AFTER INSERT ON public.branches FOR EACH ROW EXECUTE FUNCTION create_default_cost_center_for_branch();
@@ -7646,6 +7670,7 @@ CREATE TRIGGER trg_update_commission_advance_timestamp BEFORE UPDATE ON public.c
 CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.commission_plans FOR EACH ROW EXECUTE FUNCTION fn_touch_updated_at();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.commission_runs FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ دفعةِ العمولات لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.', 'approved_by|paid_by|مُنَفِّذُ صرفِ العمولات لا يَجوزُ أن يكون هو نفسَه مُعتَمِدَها.');
 CREATE TRIGGER trg_cmr_payroll_link_write_once BEFORE UPDATE OF payroll_run_id ON public.commission_runs FOR EACH ROW EXECUTE FUNCTION cmr_payroll_link_is_write_once();
+CREATE TRIGGER trg_commission_run_status_transition BEFORE UPDATE OF status ON public.commission_runs FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION enforce_commission_run_transition();
 CREATE TRIGGER companies_subscription_status_transitions BEFORE UPDATE OF subscription_status ON public.companies FOR EACH ROW EXECUTE FUNCTION companies_subscription_status_transitions_trg();
 CREATE TRIGGER trg_auto_seed_role_permissions_on_company_insert AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION trg_auto_seed_role_permissions();
 CREATE TRIGGER trg_companies_manufacturing_accounts_guard BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION mfg_guard_company_manufacturing_accounts();
@@ -7706,6 +7731,7 @@ CREATE TRIGGER trg_update_customer_debit_note_status BEFORE UPDATE OF applied_am
 CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_id, branch_id ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION validate_customer_branch_isolation();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.customer_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ استردادِ العميل لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER notif_done_customer_refunds AFTER UPDATE ON public.customer_refund_requests FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['executed'::text, 'rejected'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.customer_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER audit_customers AFTER INSERT OR DELETE OR UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_customers_detailed AFTER UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION audit_customer_changes();
 CREATE TRIGGER check_duplicate_customer_phone BEFORE INSERT OR UPDATE OF phone ON public.customers FOR EACH ROW EXECUTE FUNCTION prevent_duplicate_customer_phone();
@@ -7739,6 +7765,7 @@ CREATE TRIGGER trg_expense_account_type_guard BEFORE INSERT OR UPDATE ON public.
 CREATE TRIGGER trg_expense_paid_requires_journal BEFORE INSERT OR UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION expense_paid_requires_journal_guard();
 CREATE TRIGGER trg_expenses_auto_paid_on_journal BEFORE INSERT OR UPDATE OF journal_entry_id, status ON public.expenses FOR EACH ROW EXECUTE FUNCTION expenses_mark_paid_when_journal_added();
 CREATE TRIGGER trigger_auto_generate_expense_number BEFORE INSERT ON public.expenses FOR EACH ROW EXECUTE FUNCTION auto_generate_expense_number();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.expenses FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER fifo_lot_auto_expiry_trg BEFORE INSERT ON public.fifo_cost_lots FOR EACH ROW EXECUTE FUNCTION auto_stamp_lot_expiry();
 CREATE TRIGGER trg_touch_updated_at BEFORE UPDATE ON public.fifo_lot_consumptions FOR EACH ROW EXECUTE FUNCTION fn_touch_updated_at();
 CREATE TRIGGER trg_notification_outbox_financial_trace AFTER INSERT ON public.financial_operation_traces FOR EACH ROW EXECUTE FUNCTION notification_outbox_from_financial_trace();
@@ -7791,6 +7818,7 @@ CREATE TRIGGER trg_set_purchase_movement_landed_cost BEFORE INSERT ON public.inv
 CREATE TRIGGER trg_sync_product_qty AFTER INSERT OR DELETE OR UPDATE ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION sync_product_quantity_on_hand();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.inventory_transfers FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ التحويلِ المخزنى لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
 CREATE TRIGGER trigger_auto_generate_transfer_number BEFORE INSERT ON public.inventory_transfers FOR EACH ROW EXECUTE FUNCTION auto_generate_transfer_number();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.inventory_transfers FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_validate_write_off_items BEFORE INSERT OR UPDATE ON public.inventory_write_off_items FOR EACH ROW EXECUTE FUNCTION validate_write_off_items();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ الإهلاك لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
 CREATE TRIGGER audit_inventory_write_offs AFTER INSERT OR DELETE OR UPDATE ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
@@ -7840,6 +7868,7 @@ CREATE TRIGGER trg_sync_invoice_to_sales_order AFTER UPDATE ON public.invoices F
 CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_id, branch_id ON public.invoices FOR EACH ROW EXECUTE FUNCTION validate_customer_branch_isolation();
 CREATE TRIGGER trg_z_sync_display_totals_invoices BEFORE UPDATE OF total_amount, subtotal ON public.invoices FOR EACH ROW EXECUTE FUNCTION sync_display_totals_from_total();
 CREATE TRIGGER trigger_auto_generate_invoice_number BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_generate_invoice_number();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_jobs_queue_updated_at BEFORE UPDATE ON public.jobs_queue FOR EACH ROW EXECUTE FUNCTION update_jobs_queue_updated_at();
 CREATE TRIGGER audit_journal_entries AFTER INSERT OR DELETE OR UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_check_invoice_entry_before_payment BEFORE INSERT ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION check_invoice_entry_before_payment();
@@ -7893,15 +7922,18 @@ CREATE TRIGGER trg_manufacturing_bom_versions_delete_guard BEFORE DELETE ON publ
 CREATE TRIGGER trg_manufacturing_bom_versions_effective_window_validate BEFORE INSERT OR UPDATE ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION mb_trg_validate_bom_version_effective_window();
 CREATE TRIGGER trg_manufacturing_bom_versions_set_updated_at BEFORE UPDATE ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION mb_set_updated_at();
 CREATE TRIGGER trg_manufacturing_bom_versions_update_guard BEFORE UPDATE ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION mb_guard_bom_version_update();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.manufacturing_bom_versions FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_manufacturing_boms_delete_guard BEFORE DELETE ON public.manufacturing_boms FOR EACH ROW EXECUTE FUNCTION mb_guard_bom_deleteability();
 CREATE TRIGGER trg_manufacturing_boms_identity_immutable BEFORE UPDATE ON public.manufacturing_boms FOR EACH ROW EXECUTE FUNCTION mb_guard_bom_identity_immutability();
 CREATE TRIGGER trg_manufacturing_boms_set_updated_at BEFORE UPDATE ON public.manufacturing_boms FOR EACH ROW EXECUTE FUNCTION mb_set_updated_at();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ طلبِ صرفِ المواد لا يَجوزُ أن يكون هو نفسَه مُقدِّمَ الطلب.');
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.manufacturing_material_issue_approvals FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ استلامِ المنتَج لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER product_receive_branch_manager_notify AFTER INSERT OR UPDATE OF status ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION product_receive_branch_manager_notify_trg();
 CREATE TRIGGER product_receive_notify_approval AFTER INSERT OR UPDATE OF status ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION product_receive_notify_approval_trg();
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.manufacturing_product_receive_approvals FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_manufacturing_production_order_operations_identity_immutabl BEFORE UPDATE ON public.manufacturing_production_order_operations FOR EACH ROW EXECUTE FUNCTION mpo_guard_production_order_operation_identity_immutability();
 CREATE TRIGGER trg_manufacturing_production_order_operations_set_updated_at BEFORE UPDATE ON public.manufacturing_production_order_operations FOR EACH ROW EXECUTE FUNCTION mpo_set_updated_at();
 CREATE TRIGGER trg_manufacturing_production_order_operations_status_transition BEFORE UPDATE ON public.manufacturing_production_order_operations FOR EACH ROW EXECUTE FUNCTION mpo_guard_production_order_operation_status_transition();
@@ -7919,6 +7951,7 @@ CREATE TRIGGER trg_manufacturing_production_orders_identity_immutable BEFORE UPD
 CREATE TRIGGER trg_manufacturing_production_orders_set_updated_at BEFORE UPDATE ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION mpo_set_updated_at();
 CREATE TRIGGER trg_manufacturing_production_orders_status_transition_guard BEFORE UPDATE ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION mpo_guard_production_order_status_transition();
 CREATE TRIGGER trg_manufacturing_production_orders_validate_context BEFORE INSERT OR UPDATE ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION mpo_trg_validate_production_order_context();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.manufacturing_production_orders FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_manufacturing_routing_operations_identity_immutable BEFORE UPDATE ON public.manufacturing_routing_operations FOR EACH ROW EXECUTE FUNCTION mr_guard_routing_operation_identity_immutability();
 CREATE TRIGGER trg_manufacturing_routing_operations_parent_editability BEFORE INSERT OR DELETE OR UPDATE ON public.manufacturing_routing_operations FOR EACH ROW EXECUTE FUNCTION mr_guard_routing_operation_parent_editability();
 CREATE TRIGGER trg_manufacturing_routing_operations_set_updated_at BEFORE UPDATE ON public.manufacturing_routing_operations FOR EACH ROW EXECUTE FUNCTION mr_set_updated_at();
@@ -7932,6 +7965,7 @@ CREATE TRIGGER trg_manufacturing_routing_versions_approval_guard BEFORE UPDATE O
 CREATE TRIGGER trg_manufacturing_routing_versions_set_updated_at BEFORE UPDATE ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION mr_set_updated_at();
 CREATE TRIGGER trg_manufacturing_routing_versions_update_guard BEFORE UPDATE ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION mr_guard_routing_version_update();
 CREATE TRIGGER trg_manufacturing_routing_versions_validate_context BEFORE INSERT OR UPDATE ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION mr_trg_validate_routing_version_context();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.manufacturing_routing_versions FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_manufacturing_routings_identity_immutable BEFORE UPDATE ON public.manufacturing_routings FOR EACH ROW EXECUTE FUNCTION mr_guard_routing_identity_immutability();
 CREATE TRIGGER trg_manufacturing_routings_set_updated_at BEFORE UPDATE ON public.manufacturing_routings FOR EACH ROW EXECUTE FUNCTION mr_set_updated_at();
 CREATE TRIGGER trg_manufacturing_work_centers_identity_immutable BEFORE UPDATE ON public.manufacturing_work_centers FOR EACH ROW EXECUTE FUNCTION mwc_guard_work_center_identity_immutability();
@@ -7989,6 +8023,7 @@ CREATE TRIGGER trg_safe_delete_payment_journals BEFORE DELETE ON public.payments
 CREATE TRIGGER trg_sync_invoice_paid AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION sync_document_paid_amount();
 CREATE TRIGGER trg_update_invoice_on_payment_delete BEFORE DELETE ON public.payments FOR EACH ROW EXECUTE FUNCTION update_invoice_on_payment_delete();
 CREATE TRIGGER trg_update_invoice_on_payment_insert AFTER INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION update_invoice_on_payment_insert();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.payments FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER audit_payroll_runs AFTER INSERT OR DELETE OR UPDATE ON public.payroll_runs FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_reopen_advances_on_payroll_delete BEFORE DELETE ON public.payroll_runs FOR EACH ROW EXECUTE FUNCTION reopen_commission_advances_on_payroll_delete();
 CREATE TRIGGER bdl_trg_company_match BEFORE INSERT OR UPDATE ON public.product_bundle_items FOR EACH ROW EXECUTE FUNCTION bdl_validate_company_match();
@@ -8038,6 +8073,7 @@ CREATE TRIGGER trg_block_manual_adjustment BEFORE INSERT OR UPDATE ON public.pur
 CREATE TRIGGER trg_purchase_orders_auto_set_creator BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_sync_purchase_order_to_bill AFTER UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION sync_purchase_order_to_bill_safe();
 CREATE TRIGGER trigger_auto_generate_po_number BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION auto_generate_po_number();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.purchase_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ طلبِ الشراء لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER trg_auto_generate_purchase_request_number BEFORE INSERT ON public.purchase_requests FOR EACH ROW WHEN (((new.request_number IS NULL) OR (new.request_number = ''::text))) EXECUTE FUNCTION auto_generate_purchase_request_number();
 CREATE TRIGGER ensure_pr_isolation BEFORE INSERT OR UPDATE ON public.purchase_return_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
@@ -8055,6 +8091,7 @@ CREATE TRIGGER purchase_return_branch_manager_notify AFTER INSERT OR UPDATE OF s
 CREATE TRIGGER purchase_return_notify_approval AFTER INSERT OR UPDATE OF status ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION purchase_return_notify_approval_trg();
 CREATE TRIGGER subscription_write_gate BEFORE INSERT ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION subscription_write_gate_trg();
 CREATE TRIGGER trg_prevent_return_creating_overpay BEFORE UPDATE ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION prevent_return_creating_overpay();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE CONSTRAINT TRIGGER trg_recurring_template_balance AFTER INSERT OR DELETE OR UPDATE ON public.recurring_journal_template_lines DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION recurring_template_balance_check_trg();
 CREATE TRIGGER ensure_so_isolation BEFORE INSERT OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER ensure_so_item_branch_isolation BEFORE INSERT OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
@@ -8075,10 +8112,12 @@ CREATE TRIGGER trg_sales_orders_auto_set_creator BEFORE INSERT ON public.sales_o
 CREATE TRIGGER trg_sync_sales_order_to_invoice AFTER UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION sync_sales_order_to_invoice_safe();
 CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_id, branch_id ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION validate_customer_branch_isolation();
 CREATE TRIGGER trigger_auto_generate_so_number BEFORE INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION auto_generate_so_number();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.sales_return_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|reviewed_by|مُراجِعُ طلبِ مرتجعِ البيع لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER notif_done_sales_return_requests AFTER UPDATE ON public.sales_return_requests FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['approved'::text, 'rejected'::text, 'executed'::text, 'completed'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
 CREATE TRIGGER trg_check_sales_return_request_quantity BEFORE INSERT OR UPDATE OF items, status ON public.sales_return_requests FOR EACH ROW EXECUTE FUNCTION check_sales_return_request_quantity();
 CREATE TRIGGER trg_srr_updated_at BEFORE UPDATE ON public.sales_return_requests FOR EACH ROW EXECUTE FUNCTION update_sales_return_requests_updated_at();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.sales_return_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.sales_returns FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by_user_id|approved_by|مُعتَمِدُ مرتجعِ البيع لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
 CREATE TRIGGER audit_sales_returns AFTER INSERT OR DELETE OR UPDATE ON public.sales_returns FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER sales_return_approval_insert BEFORE INSERT ON public.sales_returns FOR EACH ROW EXECUTE FUNCTION sales_return_approval_insert_trg();
@@ -8102,6 +8141,7 @@ CREATE TRIGGER trg_cleanup_shareholder_accounts AFTER DELETE ON public.sharehold
 CREATE TRIGGER trg_provision_shareholder_accounts AFTER INSERT ON public.shareholders FOR EACH ROW EXECUTE FUNCTION provision_shareholder_accounts();
 CREATE TRIGGER shipping_providers_protect_outlets BEFORE DELETE ON public.shipping_providers FOR EACH ROW EXECUTE FUNCTION protect_branch_outlets();
 CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION update_subscriptions_updated_at();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER supplier_debit_credits_updated_at BEFORE UPDATE ON public.supplier_debit_credits FOR EACH ROW EXECUTE FUNCTION update_supplier_debit_credits_updated_at();
 CREATE TRIGGER audit_suppliers AFTER INSERT OR DELETE OR UPDATE ON public.suppliers FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_suppliers_auto_set_creator BEFORE INSERT ON public.suppliers FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
@@ -8121,8 +8161,10 @@ CREATE TRIGGER trg_fill_vendor_credit_fx BEFORE INSERT ON public.vendor_credits 
 CREATE TRIGGER trg_update_vendor_credit_status BEFORE INSERT OR UPDATE OF applied_amount ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION update_vendor_credit_status();
 CREATE TRIGGER trigger_prevent_vendor_credit_deletion BEFORE DELETE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION prevent_vendor_credit_deletion();
 CREATE TRIGGER trigger_validate_vendor_credit BEFORE INSERT OR UPDATE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION validate_vendor_credit();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.vendor_credits FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.vendor_payment_correction_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ تصحيحِ دفعةِ المورّد لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER notif_done_vendor_corrections AFTER UPDATE ON public.vendor_payment_correction_requests FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['executed'::text, 'rejected'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
+CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.vendor_payment_correction_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.vendor_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ طلبِ استردادِ المورّد لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
 CREATE TRIGGER trg_warehouses_branch_scope BEFORE INSERT OR UPDATE ON public.warehouses FOR EACH ROW EXECUTE FUNCTION ensure_warehouse_cost_center_from_branch_default();
 
@@ -8176,6 +8218,7 @@ ALTER TABLE public.capital_contributions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.casual_workers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chart_of_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chart_of_accounts_template ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.coa_restructure_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cogs_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.commission_advance_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.commission_ledger ENABLE ROW LEVEL SECURITY;
@@ -8736,6 +8779,12 @@ CREATE POLICY chart_of_accounts_select ON public.chart_of_accounts AS PERMISSIVE
 CREATE POLICY chart_of_accounts_update ON public.chart_of_accounts AS PERMISSIVE FOR UPDATE TO public USING (can_modify_data(company_id));
 CREATE POLICY chart_of_accounts_template_read_all ON public.chart_of_accounts_template AS PERMISSIVE FOR SELECT TO public USING ((auth.uid() IS NOT NULL));
 CREATE POLICY read_chart_templates ON public.chart_of_accounts_template AS PERMISSIVE FOR SELECT TO public USING ((auth.uid() IS NOT NULL));
+CREATE POLICY coa_restructure_log_insert ON public.coa_restructure_log AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (fn_user_company_access(company_id));
+CREATE POLICY coa_restructure_log_no_delete ON public.coa_restructure_log AS PERMISSIVE FOR DELETE TO public USING (false);
+CREATE POLICY coa_restructure_log_no_update ON public.coa_restructure_log AS PERMISSIVE FOR UPDATE TO public USING (false);
+CREATE POLICY coa_restructure_log_select ON public.coa_restructure_log AS PERMISSIVE FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM company_members cm
+  WHERE ((cm.company_id = coa_restructure_log.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY "Authorized users can insert COGS" ON public.cogs_transactions AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))));
@@ -9051,9 +9100,9 @@ CREATE POLICY "Company members can view refund requests" ON public.customer_refu
   WHERE ((company_members.company_id = customer_refund_requests.company_id) AND (company_members.user_id = auth.uid())))));
 CREATE POLICY "Owner and GM can update refund requests" ON public.customer_refund_requests AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
 CREATE POLICY customers_booking_officer_insert ON public.customers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = customers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = 'booking_officer'::text)))));
@@ -9520,7 +9569,7 @@ CREATE POLICY invoice_items_update ON public.invoice_items AS PERMISSIVE FOR UPD
 CREATE POLICY invoices_delete_branch_isolation ON public.invoices AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY invoices_delete_governance ON public.invoices AS PERMISSIVE FOR DELETE TO public USING (((status = 'draft'::text) AND (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = invoices.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text])) OR ((cm.role = 'manager'::text) AND (cm.branch_id = invoices.branch_id))))))));
+  WHERE ((cm.company_id = invoices.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR ((cm.role = 'manager'::text) AND (cm.branch_id = invoices.branch_id))))))));
 CREATE POLICY invoices_insert ON public.invoices AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
 CREATE POLICY invoices_insert_company_isolation ON public.invoices AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY invoices_owner_dml ON public.invoices AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT companies.id
@@ -9912,12 +9961,12 @@ CREATE POLICY "Company members can view transfers" ON public.permission_transfer
   WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid())))));
 CREATE POLICY "Owner/GM can create transfers" ON public.permission_transfers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
 CREATE POLICY "Owner/GM can update transfers" ON public.permission_transfers AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
 CREATE POLICY permissions_modify_admin ON public.permissions AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -10665,9 +10714,9 @@ CREATE POLICY "Company members can view vendor payment correction requests" ON p
   WHERE ((company_members.company_id = vendor_payment_correction_requests.company_id) AND (company_members.user_id = auth.uid())))));
 CREATE POLICY "Owner and GM can update vendor payment correction requests" ON public.vendor_payment_correction_requests AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
 CREATE POLICY vrr_insert_by_member ON public.vendor_refund_requests AS PERMISSIVE FOR INSERT TO public WITH CHECK (((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))) AND (created_by = auth.uid())));
@@ -10954,6 +11003,9 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_454_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_454_check() TO anon;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_454_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_454_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_982_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_982_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_982_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -11422,6 +11474,9 @@ REVOKE ALL ON FUNCTION public.can_access_vc_items(p_vendor_credit_id uuid) FROM 
 GRANT EXECUTE ON FUNCTION public.can_access_vc_items(p_vendor_credit_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_access_vc_items(p_vendor_credit_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_vc_items(p_vendor_credit_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.can_approve(p_company_id uuid, p_resource text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.can_approve(p_company_id uuid, p_resource text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_approve(p_company_id uuid, p_resource text) TO service_role;
 REVOKE ALL ON FUNCTION public.can_approve_discount(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_approve_discount(p_company_id uuid, p_user_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_approve_discount(p_company_id uuid, p_user_id uuid) TO authenticated;
@@ -11709,6 +11764,9 @@ GRANT EXECUTE ON FUNCTION public.cmr_payroll_link_is_write_once() TO service_rol
 REVOKE ALL ON FUNCTION public.commission_attach_to_payroll_atomic(p_company_id uuid, p_commission_run_id uuid, p_payroll_run_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.commission_attach_to_payroll_atomic(p_company_id uuid, p_commission_run_id uuid, p_payroll_run_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.commission_attach_to_payroll_atomic(p_company_id uuid, p_commission_run_id uuid, p_payroll_run_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.commission_run_transition_allowed(p_old text, p_new text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.commission_run_transition_allowed(p_old text, p_new text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.commission_run_transition_allowed(p_old text, p_new text) TO service_role;
 REVOKE ALL ON FUNCTION public.companies_subscription_status_transitions_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.companies_subscription_status_transitions_trg() TO anon;
 GRANT EXECUTE ON FUNCTION public.companies_subscription_status_transitions_trg() TO authenticated;
@@ -11985,6 +12043,10 @@ REVOKE ALL ON FUNCTION public.enforce_branch_isolation() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_branch_isolation() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_branch_isolation() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_branch_isolation() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_commission_run_transition() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_commission_run_transition() TO anon;
+GRANT EXECUTE ON FUNCTION public.enforce_commission_run_transition() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.enforce_commission_run_transition() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_governance_on_insert() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_governance_on_insert() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_governance_on_insert() TO authenticated;
@@ -12048,6 +12110,8 @@ GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO servic
 REVOKE ALL ON FUNCTION public.erp_company_senior_count(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_install_notice_follows_document() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_install_notice_follows_document() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid) TO service_role;
@@ -12057,10 +12121,16 @@ GRANT EXECUTE ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user
 REVOKE ALL ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_notice_follows_its_document() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_notice_follows_its_document() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_reference_row_exists(p_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_reference_row_exists(p_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_sod_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_sod_guard() TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_sod_guard() TO authenticated;
@@ -12684,6 +12754,9 @@ GRANT EXECUTE ON FUNCTION public.ic_ap_balance(p_company_id uuid) TO service_rol
 REVOKE ALL ON FUNCTION public.ic_ar_balance(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ic_ar_balance(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ic_ar_balance(p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.ic_attendance_log_stuck(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.ic_attendance_log_stuck(p_company_id uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ic_attendance_log_stuck(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.ic_backup_stale(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ic_backup_stale(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ic_backup_stale(p_company_id uuid) TO service_role;
@@ -13189,7 +13262,6 @@ REVOKE ALL ON FUNCTION public.member_branch_to_employee_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.member_branch_to_employee_trg() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.member_branch_to_employee_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.mfg_guard_company_manufacturing_accounts() FROM PUBLIC;
@@ -13830,9 +13902,9 @@ GRANT EXECUTE ON FUNCTION public.notify_discount_request_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.pay_commission_advance(p_company_id uuid, p_employee_id uuid, p_amount numeric, p_payment_account_id uuid, p_payment_date date, p_period_start date, p_period_end date, p_user_id uuid, p_notes text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pay_commission_advance(p_company_id uuid, p_employee_id uuid, p_amount numeric, p_payment_account_id uuid, p_payment_date date, p_period_start date, p_period_end date, p_user_id uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pay_commission_advance(p_company_id uuid, p_employee_id uuid, p_amount numeric, p_payment_account_id uuid, p_payment_date date, p_period_start date, p_period_end date, p_user_id uuid, p_notes text) TO service_role;
-REVOKE ALL ON FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid, p_payment_date date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid, p_payment_date date) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.pay_commission_run_atomic(p_commission_run_id uuid, p_payable_account_id uuid, p_bank_account_id uuid, p_user_id uuid, p_payment_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.pay_dividend_atomic(p_company_id uuid, p_distribution_line_id uuid, p_amount numeric, p_payment_date date, p_payment_account_id uuid, p_dividends_payable_account_id uuid, p_payment_method text, p_reference_number text, p_branch_id uuid, p_cost_center_id uuid, p_user_id uuid, p_notes text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pay_dividend_atomic(p_company_id uuid, p_distribution_line_id uuid, p_amount numeric, p_payment_date date, p_payment_account_id uuid, p_dividends_payable_account_id uuid, p_payment_method text, p_reference_number text, p_branch_id uuid, p_cost_center_id uuid, p_user_id uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pay_dividend_atomic(p_company_id uuid, p_distribution_line_id uuid, p_amount numeric, p_payment_date date, p_payment_account_id uuid, p_dividends_payable_account_id uuid, p_payment_method text, p_reference_number text, p_branch_id uuid, p_cost_center_id uuid, p_user_id uuid, p_notes text) TO service_role;
@@ -14238,7 +14310,6 @@ REVOKE ALL ON FUNCTION public.receipt_manufacturing_production_order_output_atom
 GRANT EXECUTE ON FUNCTION public.receipt_manufacturing_production_order_output_atomic(p_company_id uuid, p_production_order_id uuid, p_posted_by uuid, p_received_qty numeric, p_posted_at timestamp with time zone, p_notes text, p_command_key text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.receipt_manufacturing_production_order_output_atomic(p_company_id uuid, p_production_order_id uuid, p_posted_by uuid, p_received_qty numeric, p_posted_at timestamp with time zone, p_notes text, p_command_key text) TO service_role;
 REVOKE ALL ON FUNCTION public.reclassify_account_safe(p_company_id uuid, p_source_account_id uuid, p_target_account_id uuid, p_reason text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.reclassify_account_safe(p_company_id uuid, p_source_account_id uuid, p_target_account_id uuid, p_reason text) TO anon;
 GRANT EXECUTE ON FUNCTION public.reclassify_account_safe(p_company_id uuid, p_source_account_id uuid, p_target_account_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reclassify_account_safe(p_company_id uuid, p_source_account_id uuid, p_target_account_id uuid, p_reason text) TO service_role;
 REVOKE ALL ON FUNCTION public.recompute_account_balances_for_date(target_company uuid, target_date date) FROM PUBLIC;
@@ -15063,6 +15134,9 @@ REVOKE ALL ON FUNCTION public.validate_cogs_amount() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.validate_cogs_amount() TO anon;
 GRANT EXECUTE ON FUNCTION public.validate_cogs_amount() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.validate_cogs_amount() TO service_role;
+REVOKE ALL ON FUNCTION public.validate_commission_run_transition(p_commission_run_id uuid, p_new_status text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.validate_commission_run_transition(p_commission_run_id uuid, p_new_status text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.validate_commission_run_transition(p_commission_run_id uuid, p_new_status text) TO service_role;
 REVOKE ALL ON FUNCTION public.validate_customer_branch_isolation() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.validate_customer_branch_isolation() TO anon;
 GRANT EXECUTE ON FUNCTION public.validate_customer_branch_isolation() TO authenticated;
@@ -15089,6 +15163,9 @@ GRANT EXECUTE ON FUNCTION public.validate_reports_integrity(p_company_id uuid, p
 REVOKE ALL ON FUNCTION public.validate_three_way_matching(p_bill_id uuid, p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.validate_three_way_matching(p_bill_id uuid, p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.validate_three_way_matching(p_bill_id uuid, p_company_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.validate_transaction_period(p_company_id uuid, p_date date) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.validate_transaction_period(p_company_id uuid, p_date date) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.validate_transaction_period(p_company_id uuid, p_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.validate_vendor_credit() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.validate_vendor_credit() TO anon;
 GRANT EXECUTE ON FUNCTION public.validate_vendor_credit() TO authenticated;
@@ -15422,6 +15499,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ch
 GRANT SELECT ON public.chart_of_accounts_template TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.chart_of_accounts_template TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.chart_of_accounts_template TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.coa_restructure_log TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.coa_restructure_log TO service_role;
 GRANT SELECT ON public.cogs_transactions TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.cogs_transactions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.cogs_transactions TO service_role;
