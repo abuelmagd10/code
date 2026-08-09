@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       .single()
 
     // v3.74.35: 'accountant' removed — accountants are now branch-scoped here.
-    const isPrivileged = ["owner", "admin", "general_manager"].includes(member?.role || "")
+    const isPrivileged = ["owner", "admin"].includes(member?.role || "")
 
     // Fetch cash/bank accounts
     let query = supabase

@@ -23,7 +23,7 @@ export async function POST(
       .from("company_members").select("role")
       .eq("user_id", user.id).eq("company_id", companyId).maybeSingle()
     const role = String((member as any)?.role || "")
-    if (!["owner", "admin", "general_manager"].includes(role)) {
+    if (!["owner", "admin"].includes(role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

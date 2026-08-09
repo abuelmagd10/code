@@ -60,7 +60,6 @@ const CAN_OVERRIDE_BILL_CONTEXT_ROLES = new Set([
   "owner",
   "admin",
   "super_admin",
-  "general_manager",
   "generalmanager",
   "gm",
   "superadmin",

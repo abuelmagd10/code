@@ -17,7 +17,7 @@ import { ShieldAlert, Clock, CheckCircle2 } from "lucide-react"
 import { notifyVendorRefundRequestCreated } from "@/lib/notification-helpers"
 
 // الأدوار المميزة التي تنفذ فوراً بدون انتظار اعتماد
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 interface SupplierReceiptDialogProps {
   open: boolean

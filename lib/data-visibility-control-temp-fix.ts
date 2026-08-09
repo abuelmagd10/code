@@ -36,7 +36,7 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
   const roleLower = (role || "").toLowerCase()
 
   // 🛡 Owner/Admin/Manager - يروا كل شيء في الشركة (مؤقتاً)
-  if (["owner", "admin", "general_manager", "manager", "accountant"].includes(roleLower)) {
+  if (["owner", "admin", "manager", "accountant"].includes(roleLower)) {
     return {
       companyId: company_id,
       filterByBranch: false, // إصلاح مؤقت: إلغاء فلترة الفرع

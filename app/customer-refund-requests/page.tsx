@@ -397,7 +397,7 @@ export default function CustomerRefundRequestsPage() {
   // v3.74.115 - execute is now permitted for the requester too, since the
   // approver should not also execute (segregation of duties). canApprove is
   // the board-only gate; canExecuteRow is per-row and includes the requester.
-  const canAct = ["owner", "admin", "general_manager"].includes(userRole)
+  const canAct = ["owner", "admin"].includes(userRole)
   const canApprove = canAct
   const canExecuteRow = (r: RefundRequest) => {
     if (r.status !== 'approved') return false

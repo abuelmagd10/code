@@ -311,7 +311,7 @@ async function loadPermissionSnapshot(
   resource: string | null
 ): Promise<AIPermissionSnapshot> {
   const normalizedRole = String(role || "").trim().toLowerCase()
-  const isFullAccess = ["owner", "admin", "general_manager"].includes(normalizedRole)
+  const isFullAccess = ["owner", "admin"].includes(normalizedRole)
 
   if (!resource) {
     return {
@@ -1286,7 +1286,7 @@ function applyScopedFilters(
 }
 
 function hasFullScope(role?: string | null) {
-  return ["owner", "admin", "general_manager"].includes(
+  return ["owner", "admin"].includes(
     String(role || "").trim().toLowerCase()
   )
 }

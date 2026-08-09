@@ -201,7 +201,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         .eq('user_id', user.id)
         .maybeSingle()
       const role = String((mem as any)?.role || '')
-      const isManagement = ['owner', 'admin', 'general_manager'].includes(role)
+      const isManagement = ['owner', 'admin'].includes(role)
       if (!isManagement) {
         const { data: bk } = await supabase
           .from('bookings')

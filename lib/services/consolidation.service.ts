@@ -6,7 +6,7 @@ import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import { linkTraceEntity } from "@/lib/services/financial-trace"
 
 type AdminClient = SupabaseClient<any, "public", any>
-const MANAGEMENT_ROLES = new Set(["owner", "admin", "general_manager", "manager"])
+const MANAGEMENT_ROLES = new Set(["owner", "admin", "manager"])
 const DEFAULT_BATCH_SIZE = 500
 const MAX_DRY_RUN_ENTITIES = Math.max(1, Number(process.env.ERP_PHASE2B_DRY_RUN_MAX_ENTITIES || 25))
 const MAX_DRY_RUN_LINES = Math.max(10, Number(process.env.ERP_PHASE2B_DRY_RUN_MAX_LINES || 5000))

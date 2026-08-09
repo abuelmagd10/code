@@ -14,7 +14,7 @@ import { getActiveCompanyId } from "@/lib/company"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 
 // 🔐 الأدوار المميزة التي يمكنها اختيار الفرع ومركز التكلفة يدوياً
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 interface Branch {
   id: string

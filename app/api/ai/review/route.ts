@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { createClient } from "@/lib/supabase/server"
 
-const REVIEW_ROLES = ["owner", "admin", "general_manager", "manager"]
+const REVIEW_ROLES = ["owner", "admin", "manager"]
 
 export async function GET(request: NextRequest) {
   try {

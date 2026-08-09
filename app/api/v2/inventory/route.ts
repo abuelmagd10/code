@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo') || ''
 
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
-    const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
+    const isPrivileged = ['owner', 'admin', 'gm', 'superadmin', 'super_admin'].includes(role)
 
     // ─── 4. بناء الاستعلام ──────────────────────────────────────────────
     let query = supabase

@@ -14,7 +14,7 @@ import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archi
 // v3.74.983 — إخراجُ المواد لمسؤول مخزن الفرع. والإدارةُ لا تدخل هنا إلّا
 // حين لا يكون للمخزن مسؤولٌ معيَّن — وذاك يُفحص بعد قراءة الطلب لأنّه
 // يتوقّف على مخزنه هو، لا على اسم الدور وحدَه.
-const ALLOWED_APPROVER_ROLES = ["store_manager", "owner", "admin", "general_manager"]
+const ALLOWED_APPROVER_ROLES = ["store_manager", "owner", "admin"]
 
 async function loadOpenReservationQtyByRequirement(
   admin: any,
@@ -181,7 +181,7 @@ export async function POST(
     }
 
     const role = String(memberRow.role || "").trim().toLowerCase()
-    const companyWideRoles = new Set(["owner", "admin", "general_manager"])
+    const companyWideRoles = new Set(["owner", "admin"])
     if (!companyWideRoles.has(role)) {
       const scopedWarehouseId = memberRow.warehouse_id || null
       const scopedBranchId = memberRow.branch_id || null
@@ -251,7 +251,7 @@ export async function POST(
           { status: 403 }
         )
       }
-    } else if (!["owner", "admin", "general_manager"].includes(role)) {
+    } else if (!["owner", "admin"].includes(role)) {
       return NextResponse.json(
         { success: false, error: "لا مسؤول مخزن معيّن لهذا المخزن، فالإخراج للإدارة" },
         { status: 403 }
@@ -527,7 +527,7 @@ export async function POST(
       }
       const accountantBranchId = warehouseBranchId || productionOrder?.branch_id || null
 
-      for (const role of ["general_manager"]) {
+      for (const role of ["owner"]) {
         await sendNotification(admin, {
           companyId, branchId: accountantBranchId, role,
           title: "⚠️ نقص مخزون — طلب صرف مواد تصنيع",

@@ -567,13 +567,13 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
                         </td>
                         <td className="p-3">
                           <div className="flex gap-2">
-                            {r.status === 'pending' && ["super_admin", "admin", "owner", "manager", "general_manager"].includes(role || "") && (
+                            {r.status === 'pending' && ["super_admin", "admin", "owner", "manager"].includes(role || "") && (
                               <>
                                 <Button size="sm" variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => approveRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1" /> اعتماد</Button>
                                 <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectingReq(r)} disabled={saving}><Ban className="w-4 h-4 mr-1" /> رفض</Button>
                               </>
                             )}
-                            {r.status === 'approved' && ["super_admin", "admin", "owner", "manager", "general_manager"].includes(role || "") && (
+                            {r.status === 'approved' && ["super_admin", "admin", "owner", "manager"].includes(role || "") && (
                               <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => postRequest(r)} disabled={saving}><Check className="w-4 h-4 mr-1" /> ترحيل لدفتر اليومية</Button>
                             )}
                           </div>

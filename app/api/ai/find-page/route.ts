@@ -86,7 +86,7 @@ async function buildGovernanceContext(
   cachedRole: string | null
 ): Promise<GovernanceContext> {
   const role = String(cachedRole || "").trim().toLowerCase()
-  const isFullAccess = ["owner", "admin", "general_manager"].includes(role)
+  const isFullAccess = ["owner", "admin"].includes(role)
 
   if (isFullAccess) {
     return {

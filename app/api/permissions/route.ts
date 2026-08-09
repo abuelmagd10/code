@@ -48,7 +48,7 @@ export async function GET(request: Request) {
       .single()
 
     // 🔐 السماح للأدوار الإدارية بالوصول
-    const allowedRoles = ["owner", "admin", "general_manager", "manager", "accountant"]
+    const allowedRoles = ["owner", "admin", "manager", "accountant"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بالوصول" }, { status: 403 })
     }
@@ -164,7 +164,7 @@ export async function POST(request: Request) {
 
     // 🔐 v3.74.67 — Tightened: only Owner + General Manager can grant/share
     // permissions. Admin removed at the user's explicit request.
-    const allowedRoles = ["owner", "admin", "general_manager"]
+    const allowedRoles = ["owner", "admin"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }

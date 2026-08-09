@@ -146,7 +146,7 @@ export default function ShippingReportPage() {
       // v3.74.583 — مالك الشركة إداري حتى بدون سجل عضوية
       const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", cid).maybeSingle()
       const isOwner = !!user && !!companyData?.user_id && companyData.user_id === user.id
-      const privileged = isOwner || (member?.role && ['owner','admin','general_manager','gm','super_admin'].includes(String(member.role).toLowerCase()))
+      const privileged = isOwner || (member?.role && ['owner','admin','gm','super_admin'].includes(String(member.role).toLowerCase()))
       setCanFilterBranch(!!privileged)
       setUserBranchId(member?.branch_id || null)
       setNoBranch(!privileged && !member?.branch_id)

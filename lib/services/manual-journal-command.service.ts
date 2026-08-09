@@ -70,7 +70,7 @@ export type ManualJournalResult = {
  * (العمود الوهمى `created_by`)، فلم يبلغ التنفيذُ هذه الشروط قط.
  * ═══════════════════════════════════════════════════════════════════════════
  */
-const MANUAL_JOURNAL_ROLES = new Set(["owner", "admin", "general_manager", "accountant"])
+const MANUAL_JOURNAL_ROLES = new Set(["owner", "admin", "accountant"])
 
 /** مَن يُرحَّل قيده فور إنشائه بلا اعتماد ثانٍ — المالك وحده. */
 const SELF_POST_ROLES = new Set(["owner"])
@@ -79,7 +79,7 @@ const SELF_POST_ROLES = new Set(["owner"])
 const BRANCH_SCOPED_ROLES = new Set(["accountant"])
 
 /** مَن يملك اعتماد مسودَّةٍ أنشأها غيره. */
-export const MANUAL_JOURNAL_APPROVER_ROLES = new Set(["owner", "admin", "general_manager"])
+export const MANUAL_JOURNAL_APPROVER_ROLES = new Set(["owner", "admin"])
 
 const normalizeRole = (role: string | null | undefined) => String(role || "").trim().toLowerCase()
 const duplicateTrace = (message?: string | null) =>

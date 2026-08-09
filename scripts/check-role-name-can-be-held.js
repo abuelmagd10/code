@@ -34,7 +34,7 @@
  *
  * ═══ والتهجئاتُ الأخرى تُعلَن ولا تُسكت ═══
  *
- * فى المشروع مئةٌ وواحدٌ وثلاثون موضعاً تسمّى الوظيفةَ بتهجئةٍ أخرى —
+ * فى المشروع مواضعُ تسمّى الوظيفةَ بتهجئةٍ أخرى —
  * `gm` و`superadmin` و`warehouse_manager` وأخواتها. وهى **غيرُ ضارّةٍ لأنّ
  * الاسمَ الصحيحَ مكتوبٌ فى الباب نفسِه**، فلا يُرفض أحد. لكنّها لا تُترك بلا
  * قاعدة: كلُّ تهجئةٍ معلَنةٌ هنا ومعها اسمُها الحقيقىّ، **ويُشترط أن يكون
@@ -50,8 +50,12 @@ const path = require("path")
  * تهجئاتٌ أخرى لوظائفَ حقيقيّة. الشرط: الاسمُ الحقيقىُّ حاضرٌ فى نفس الباب.
  */
 const ALIASES = {
-  gm: "general_manager",
-  generalmanager: "general_manager",
+  // v3.74.993 — كانت هاتان تُنسبان إلى `general_manager`. ورُفع الاسمُ من
+  // مفردات العضويّة (صفرُ عضوٍ، ولا صفَّ له فى كتالوج الأدوار، وكلُّ بابٍ
+  // يسمّيه يسمّى `admin` معه). فصارتا تُنسبان إلى الاسم الحىّ.
+  // **وتهجئةٌ تُنسب إلى اسمٍ محذوفٍ تُطمئن ولا تحرس.**
+  gm: "admin",
+  generalmanager: "admin",
   superadmin: "admin",
   super_admin: "admin",
   finance: "accountant",
@@ -151,7 +155,7 @@ function judgeGate(gate, allowed) {
 // ───────────────────────────── الفخُّ الذاتىّ ─────────────────────────────
 
 if (process.argv.includes("--selftest")) {
-  const A = new Set(["owner", "admin", "manager", "accountant", "staff", "store_manager", "general_manager"])
+  const A = new Set(["owner", "admin", "manager", "accountant", "staff", "store_manager"])
   const one = (src) => {
     const gates = roleGates(src)
     let bad = 0

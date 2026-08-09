@@ -91,7 +91,7 @@ export default function NewDrawingPage() {
 
             // Load payment accounts (cash/bank)
             // v3.74.42: filter by sub_type IN (cash,bank) + branch-scope for non-privileged users + is_active
-            const PRIVILEGED = ['owner', 'admin', 'general_manager']
+            const PRIVILEGED = ['owner', 'admin']
             let userRoleForAccts = ''
             let userBranchForAccts: string | null = null
             try {

@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { enforceGovernance } from "@/lib/governance-middleware"
 
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager', 'gm', 'super_admin', 'superadmin', 'generalmanager']
+const PRIVILEGED_ROLES = ['owner', 'admin', 'gm', 'super_admin', 'superadmin', 'generalmanager']
 
 function isPrivileged(role: string): boolean {
   const r = String(role || '').trim().toLowerCase().replace(/\s+/g, '_')

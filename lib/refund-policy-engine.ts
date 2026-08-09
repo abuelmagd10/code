@@ -210,7 +210,7 @@ export class RefundPolicyEngine {
     
     if (currentStatus === 'finance_approved' || 
         (currentStatus === 'branch_approved' && !requiredApprovers.includes('finance_manager'))) {
-      if ((role === 'general_manager' || role === 'admin') && requiredApprovers.includes('gm')) {
+      if ((role === 'admin') && requiredApprovers.includes('gm')) {
         return { canApprove: true, nextStatus: 'approved' }
       }
     }
@@ -269,7 +269,7 @@ export class RefundPolicyEngine {
       .eq('company_id', companyId)
       .single()
     
-    if (!member || !['admin', 'general_manager'].includes(member.role)) {
+    if (!member || !['admin'].includes(member.role)) {
       return { canReopen: false, error: 'فقط المدير العام يمكنه إعادة فتح الطلب' }
     }
     

@@ -77,7 +77,7 @@ export default function EarlyCommissionPayoutPage() {
             if (cid) {
                 setCompanyId(cid)
                 // v3.74.42: branch-scope filter for non-privileged users + is_active filter
-                const PRIVILEGED = ['owner', 'admin', 'general_manager']
+                const PRIVILEGED = ['owner', 'admin']
                 let _userRoleForAccts = ''
                 let _userBranchForAccts: string | null = null
                 try {

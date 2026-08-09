@@ -838,7 +838,7 @@ export default function PurchaseOrderDetailPage() {
 
               {/* Create Bill button - show if not fully billed AND user is privileged AND PO is approved */}
               {permWriteBills && !isFullyBilled && remainingItems.length > 0 && 
-                (userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') && 
+                (userContext?.role === 'admin' || userContext?.role === 'owner' ) && 
                 (po.status === 'approved' || po.status === 'partially_received' || po.status === 'received' || po.status === 'partially_billed') && (
                 <Link href={`/bills/new?from_po=${poId}`}>
                   <Button className="bg-green-600 hover:bg-green-700 text-white" data-ai-help="purchase_orders.create_bill_button">
@@ -853,7 +853,7 @@ export default function PurchaseOrderDetailPage() {
               {permUpdate &&
                 ['draft', 'pending_approval', 'rejected'].includes(po.status) &&
                 (!linkedBillStatus || linkedBillStatus === 'draft') && (
-                ((userContext?.role === 'admin' || userContext?.role === 'owner' || userContext?.role === 'general_manager') ||
+                ((userContext?.role === 'admin' || userContext?.role === 'owner' ) ||
                 (po.status === 'rejected')) && (
                 <Link href={`/purchase-orders/${poId}/edit`}>
                   <Button variant="outline" data-ai-help="purchase_orders.edit_button">
@@ -884,7 +884,7 @@ export default function PurchaseOrderDetailPage() {
                   same gate, so a stale UI cannot escape it either. */}
               {/* v3.74.407 — was: role==='manager' which let BRANCH managers approve.
                   Policy: only المالك + المدير العام. The DB RPC enforces this too. */}
-              {po.status === "pending_approval" && (userContext?.role === 'owner' || (userContext?.role === 'general_manager' || userContext?.role === 'admin')) && (() => {
+              {po.status === "pending_approval" && (userContext?.role === 'owner' || (userContext?.role === 'admin')) && (() => {
                 // v3.74.420 — gate approval button when discount approval is pending/rejected.
                 // POs without discount (discount_value = 0 or null) work as before.
                 const hasDiscount = Number(po.discount_value || 0) > 0

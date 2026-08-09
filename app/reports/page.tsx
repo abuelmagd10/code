@@ -43,11 +43,10 @@ const FINANCIAL_REPORT_HREFS = new Set<string>([
 // financial ones still additionally guarded by the canAction('financial_reports')
 // check above. "*" = all OPERATIONAL (non-financial) report cards.
 const ALL_OPERATIONAL = "*"
-const TOP_MANAGEMENT_ROLES = new Set<string>(["owner", "admin", "general_manager"])
+const TOP_MANAGEMENT_ROLES = new Set<string>(["owner", "admin"])
 const ROLE_REPORT_MAP: Record<string, string[]> = {
   owner: [ALL_OPERATIONAL],
   admin: [ALL_OPERATIONAL],
-  general_manager: [ALL_OPERATIONAL],
   // manager (branch manager, supervisory view-only) + viewer → all operational cards
   manager: [ALL_OPERATIONAL],
   viewer: [ALL_OPERATIONAL],

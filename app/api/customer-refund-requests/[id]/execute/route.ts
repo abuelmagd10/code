@@ -62,7 +62,7 @@ export async function POST(
     }
 
     // v3.74.115 - permission gate (needs the request row to compare ids).
-    const isBoard = ["owner", "admin", "general_manager"].includes(role)
+    const isBoard = ["owner", "admin"].includes(role)
     const isRequester = (refundReq as any).requested_by === user.id
     if (!isBoard && !isRequester) {
       return NextResponse.json({
@@ -326,7 +326,7 @@ export async function POST(
 
     // Notify Management
     try {
-      const recipients = resolver.resolveRoleRecipients(["general_manager"], null, null, null)
+      const recipients = resolver.resolveRoleRecipients(["owner"], null, null, null)
       for (const recipient of recipients) {
         await supabase.rpc("create_notification", {
           p_company_id:       companyId,

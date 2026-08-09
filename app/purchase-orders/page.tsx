@@ -438,7 +438,7 @@ export default function PurchaseOrdersPage() {
         // branch-restricted users. Privileged roles and central purchasing
         // (no branch) see all; everyone else only their own branch.
         const _r = String(userContext?.role || '').toLowerCase().replace(/\s+/g, '_')
-        const _privileged = ['owner','admin','general_manager','gm','superadmin','super_admin','generalmanager'].includes(_r)
+        const _privileged = ['owner','admin','gm','superadmin','super_admin','generalmanager'].includes(_r)
         const _centralPurchasing = _r === 'purchasing_officer' && !userContext?.branch_id
         if (!_privileged && !_centralPurchasing) {
           if (!userContext?.branch_id || (fullOrder as any).branch_id !== userContext.branch_id) return

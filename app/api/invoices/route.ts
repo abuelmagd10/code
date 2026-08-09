@@ -6,7 +6,7 @@ import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
 import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 export async function GET(request: NextRequest) {
   try {
@@ -374,7 +374,7 @@ export async function POST(req: NextRequest) {
     // automatically with the same totals + items so the existing
     // sync trigger keeps the SO in step with the invoice (status,
     // returned_amount, etc.) afterwards. Other roles still need a SO.
-    const AUTO_SO_ROLES = new Set(['owner', 'admin', 'general_manager'])
+    const AUTO_SO_ROLES = new Set(['owner', 'admin'])
     if (!invoiceData.sales_order_id && AUTO_SO_ROLES.has(String(member.role || '').toLowerCase())) {
       const soDate = invoiceData.invoice_date || new Date().toISOString().slice(0, 10)
       const soStatus = invoiceData.status || 'draft'

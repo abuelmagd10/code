@@ -56,7 +56,7 @@ type WarehouseAllocation = {
   items: WhAllocationItem[]
 }
 
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 type PurchaseReturnApiResult = {
   success?: boolean

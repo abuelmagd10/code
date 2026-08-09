@@ -345,7 +345,7 @@ export default function WarehousesPage() {
             </Button>
           }
           extra={
-            userContext && userContext.role && !['owner', 'admin', 'general_manager'].includes(userContext.role) ? (
+            userContext && userContext.role && !['owner', 'admin'].includes(userContext.role) ? (
               <p className="text-xs text-blue-600 dark:text-blue-400">
                 {appLang === 'en' ? '🏢 Showing warehouses from your branch only' : '🏢 تعرض المخازن الخاصة بفرعك فقط'}
               </p>

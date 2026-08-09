@@ -267,7 +267,7 @@ export default function ShippingSettingsPage() {
         .eq("company_id", cid)
         .eq("user_id", user?.id)
         .maybeSingle()
-      const privileged = member?.role && ['owner','admin','general_manager','gm','super_admin','superadmin','generalmanager'].includes(String(member.role).toLowerCase())
+      const privileged = member?.role && ['owner','admin','gm','super_admin','superadmin','generalmanager'].includes(String(member.role).toLowerCase())
       const userBranchId = member?.branch_id || null
 
       const { data, error } = await supabase

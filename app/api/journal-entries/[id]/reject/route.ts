@@ -30,10 +30,8 @@ const norm = (v: unknown) => String(v || "").trim().toLowerCase()
 /** يطابق `approversFor` فى مسار الاعتماد حرفاً بحرف. */
 function approversFor(creatorRole: string): Set<string> {
   switch (norm(creatorRole)) {
-    case "general_manager":
-      return new Set(["owner"])
     case "accountant":
-      return new Set(["owner", "admin", "general_manager"])
+      return new Set(["owner", "admin"])
     default:
       return new Set(["owner"])
   }
@@ -44,7 +42,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (errorResponse || !context) return errorResponse
 
   const approverRole = norm(context.member?.role)
-  if (approverRole !== "owner" && approverRole !== "admin" && approverRole !== "general_manager") {
+  if (approverRole !== "owner" && approverRole !== "admin" ) {
     return NextResponse.json(
       { error: "forbidden", message: "رفض القيود اليدوية للمالك والمدير العام فقط" },
       { status: 403 }
@@ -118,7 +116,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       {
         error: "approver_rank",
         message:
-          (creatorRole === "general_manager" || creatorRole === "admin")
+          (creatorRole === "admin")
             ? "قيد المدير العام يردّه المالك"
             : "ليس لك ردّ هذا القيد",
       },

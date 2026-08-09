@@ -131,7 +131,7 @@ export async function POST(
       .maybeSingle()
     const role = String((member as any)?.role || "").toLowerCase()
     const isCreator = (pay as any).created_by === user.id
-    const isPrivileged = ["owner", "manager", "admin", "general_manager"].includes(role)
+    const isPrivileged = ["owner", "manager", "admin"].includes(role)
     if (!isCreator && !isPrivileged) {
       return NextResponse.json({
         success: false,

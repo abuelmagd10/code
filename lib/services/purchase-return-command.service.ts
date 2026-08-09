@@ -10,7 +10,7 @@ const PURCHASE_RETURN_ALLOCATION_EVENT = "purchase_return_allocation_posting"
 const VENDOR_CREDIT_EVENT = "vendor_credit_posting"
 const PURCHASE_RETURN_REFUND_EVENT = "purchase_return_refund_received"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin"])
 
 type SupabaseLike = any
 

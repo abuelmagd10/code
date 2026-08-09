@@ -136,7 +136,7 @@ export default function NewExpensePage() {
 
       // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
       const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
-      const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+      const adminCheck = ['super_admin', 'admin', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
       setIsAdmin(adminCheck)
 
       console.log('[NewExpense] Governance:', { userRole, normalizedRole, isAdmin: adminCheck, userBranchId })

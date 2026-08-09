@@ -186,7 +186,7 @@ export class PaymentApprovalNotificationService {
   }) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
     const recipients = resolver.resolveRoleRecipients(
-      ["admin", "general_manager"],
+      ["admin"],
       params.branchId || null,
       null,
       params.costCenterId || null

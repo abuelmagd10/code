@@ -37,7 +37,7 @@ async function resolveActor(supabase: SupabaseLike, companyId: string) {
     .from("company_members")
     .select("user_id, role")
     .eq("company_id", companyId)
-    .in("role", ["owner", "admin", "general_manager"])
+    .in("role", ["owner", "admin"])
     .order("created_at", { ascending: true })
 
   if (error) throw new Error(error.message || "Failed to resolve actor")

@@ -1408,7 +1408,7 @@ export default function UsersSettingsPage() {
           .eq("user_id", currentUserId)
           .maybeSingle()
         // 🔐 السماح للأدوار الإدارية بإرسال دعوات
-        const canManageTarget = ["owner", "admin", "general_manager", "manager"].includes(String(myMemberTarget?.role || ""))
+        const canManageTarget = ["owner", "admin", "manager"].includes(String(myMemberTarget?.role || ""))
         if (!canManageTarget) { setActionError(t("You do not have permission to send an invitation for this company", "ليست لديك صلاحية لإرسال دعوة لهذه الشركة")); return }
       } catch { }
 
@@ -3517,10 +3517,10 @@ export default function UsersSettingsPage() {
                         // v3.74.67 — single-owner exemption: if I'm the only senior
                         // in the company, allow self-approve/reject (backend enforces too).
                         const seniorCount = members.filter(m =>
-                          ['owner','admin','general_manager'].includes(String(m.role || ''))
+                          ['owner','admin'].includes(String(m.role || ''))
                         ).length
                         const isSoloSenior = isInitiator && seniorCount === 1 &&
-                          ['owner','admin','general_manager'].includes(String(currentRole || ''))
+                          ['owner','admin'].includes(String(currentRole || ''))
                         const canActOnRequest = isPending && canManage && (!isInitiator || isSoloSenior)
                         const resourceLabel =
                           pt.resource_type === 'all' ? t('All', 'الكل') :

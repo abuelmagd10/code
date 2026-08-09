@@ -9,7 +9,6 @@ import { checkPermission } from '@/lib/authz';
 export type Role =
   | 'owner'
   | 'admin'
-  | 'general_manager'
   | 'manager'
   | 'accountant'
   | 'store_manager'

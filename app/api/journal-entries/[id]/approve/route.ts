@@ -35,10 +35,8 @@ const norm = (v: unknown) => String(v || "").trim().toLowerCase()
 /** مَن يجوز أن يعتمد قيداً أنشأه صاحبُ هذا الدور. */
 function approversFor(creatorRole: string): Set<string> {
   switch (norm(creatorRole)) {
-    case "general_manager":
-      return new Set(["owner"])
     case "accountant":
-      return new Set(["owner", "admin", "general_manager"])
+      return new Set(["owner", "admin"])
     default:
       // المالك لا يحتاج اعتماداً؛ وأى دورٍ آخر لا حقّ له فى القيد أصلاً،
       // فمسودَّته — إن وُجدت من إصدارٍ سابق — لا تُعتمد إلا بقرار المالك.
@@ -51,7 +49,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (errorResponse || !context) return errorResponse
 
   const approverRole = norm(context.member?.role)
-  if (approverRole !== "owner" && approverRole !== "admin" && approverRole !== "general_manager") {
+  if (approverRole !== "owner" && approverRole !== "admin" ) {
     return NextResponse.json(
       { error: "forbidden", message: "اعتماد القيود اليدوية للمالك والمدير العام فقط" },
       { status: 403 }
@@ -120,7 +118,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       {
         error: "approver_rank",
         message:
-          (creatorRole === "general_manager" || creatorRole === "admin")
+          (creatorRole === "admin")
             ? "قيد المدير العام يعتمده المالك"
             : "ليس لك اعتماد هذا القيد",
       },

@@ -22,7 +22,7 @@ import {
 // v3.74.983 — قرارُ المالك: اعتمادُ صرف المواد إداريّاً للمالك أو المدير
 // العام. ومديرُ الفرع يخرج لا سلباً بل ترتيباً: القرارُ للإدارة، وتسليمُ
 // المادّة لأمين المخزن — وكان يملك الخطوتين معاً، وذاك هو العطب.
-const MANAGEMENT_ROLES = ["owner", "admin", "general_manager"]
+const MANAGEMENT_ROLES = ["owner", "admin"]
 
 export async function POST(
   request: NextRequest,

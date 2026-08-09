@@ -36,7 +36,7 @@ export type ShareholderCapitalContributionResult = {
   eventType: typeof CAPITAL_CONTRIBUTION_EVENT
 }
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "manager", "general_manager", "accountant"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin", "manager", "accountant"])
 const normalizeRole = (role: string | null | undefined) => String(role || "").trim().toLowerCase()
 const duplicateTrace = (message?: string | null) =>
   !!message && (message.includes("duplicate key value violates unique constraint") || message.includes("idx_financial_operation_traces_idempotency"))

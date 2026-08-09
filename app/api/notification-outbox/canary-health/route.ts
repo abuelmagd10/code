@@ -7,7 +7,7 @@ import {
 import { NotificationOutboxCanaryHealthService } from "@/lib/outbox/notification-outbox-canary-health.service"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const CANARY_CONTROL_ROLES = new Set(["owner", "admin", "general_manager"])
+const CANARY_CONTROL_ROLES = new Set(["owner", "admin"])
 
 const getParam = (params: URLSearchParams, ...names: string[]) => {
   for (const name of names) {

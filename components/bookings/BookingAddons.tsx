@@ -151,7 +151,7 @@ export function BookingAddons({
   const mayEdit = useMemo(() => {
     if (!me) return false
     // Management keeps oversight.
-    if (["owner", "admin", "general_manager"].includes(me.role)) return true
+    if (["owner", "admin"].includes(me.role)) return true
     // v3.74.630 — selecting attached items and adding sale products is the
     // ASSIGNED EXECUTOR's job only. The booking officer (call center) just
     // creates/confirms; they no longer edit add-ons here (mirrors the DB
@@ -372,7 +372,7 @@ export function BookingAddons({
     }
   }
 
-  const canDecideWithdrawals = !!me && (["owner", "admin", "general_manager", "store_manager"].includes(me.role))
+  const canDecideWithdrawals = !!me && (["owner", "admin", "store_manager"].includes(me.role))
 
   const toggleOptional = async (item: BundleItem, checked: boolean) => {
     if (readOnly) return

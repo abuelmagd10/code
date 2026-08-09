@@ -219,7 +219,7 @@ export default function CustomerDebitNotesPage() {
     const visibilityRules = buildDataVisibilityFilter(userContextValue)
 
     // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-    const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+    const PRIVILEGED_ROLES = ['owner', 'admin']
     const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
     const selectedBranchId = branchFilter.getFilteredBranchId()
 

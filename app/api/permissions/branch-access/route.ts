@@ -130,7 +130,7 @@ async function _legacyPOST(request: Request) {
       .eq("user_id", user.id)
       .single()
 
-    const allowedRoles = ["owner", "admin", "general_manager", "manager"]
+    const allowedRoles = ["owner", "admin", "manager"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }

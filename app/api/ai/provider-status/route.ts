@@ -6,7 +6,7 @@ import {
   resolveAIProvider,
 } from "@/lib/ai/provider-layer"
 
-const ADMIN_ROLES = ["owner", "admin", "general_manager", "manager"]
+const ADMIN_ROLES = ["owner", "admin", "manager"]
 
 export async function GET(request: NextRequest) {
   try {

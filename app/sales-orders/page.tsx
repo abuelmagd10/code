@@ -1194,7 +1194,7 @@ function SalesOrdersContent() {
       // Privileged roles and central purchasing (no branch) see all; everyone
       // else only their own branch.
       const _r = String(userContext?.role || '').toLowerCase().replace(/\s+/g, '_');
-      const _privileged = ['owner','admin','general_manager','gm','superadmin','super_admin','generalmanager'].includes(_r);
+      const _privileged = ['owner','admin','gm','superadmin','super_admin','generalmanager'].includes(_r);
       const _centralPurchasing = _r === 'purchasing_officer' && !userContext?.branch_id;
       if (_privileged || _centralPurchasing) return true;
       if (!userContext?.branch_id) return false;
@@ -1726,7 +1726,7 @@ function SalesOrdersContent() {
             }
             extra={
               // 🔐 Governance Notice
-              currentUserRole && !['owner', 'admin', 'general_manager'].includes(currentUserRole) ? (
+              currentUserRole && !['owner', 'admin'].includes(currentUserRole) ? (
                 <p className="text-xs text-blue-600 dark:text-blue-400">
                   {['manager', 'accountant'].includes(currentUserRole)
                     ? `🏢 ${appLang === 'en' ? 'Showing sales orders from your branch only' : 'تعرض أوامر البيع الخاصة بفرعك فقط'}`

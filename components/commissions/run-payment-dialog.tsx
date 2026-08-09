@@ -85,7 +85,7 @@ export function RunPaymentDialog({
             if (!activeCompanyId) return
 
             // v3.74.42: filter by sub_type IN (cash,bank) + branch-scope for non-privileged users + is_active
-            const PRIVILEGED = ['owner', 'admin', 'general_manager']
+            const PRIVILEGED = ['owner', 'admin']
             let _userRoleForAccts = ''
             let _userBranchForAccts: string | null = null
             try {

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const costCenterId = searchParams.get('costCenterId') || ''
 
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
-    const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
+    const isPrivileged = ['owner', 'admin', 'gm', 'superadmin', 'super_admin'].includes(role)
 
     let query = supabase
       .from('mv_inventory_snapshot')

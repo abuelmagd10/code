@@ -189,7 +189,7 @@ export class FinancialDocumentNotificationService {
   }) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
     const recipients = resolver.resolveRoleRecipients(
-      ["owner", "admin", "general_manager"],
+      ["owner", "admin"],
       params.branchId || null,
       null,
       null

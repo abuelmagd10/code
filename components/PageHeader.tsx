@@ -339,7 +339,7 @@ export function PageHeaderList({
   const getGovernanceNotice = () => {
     if (!userRole || governanceType === 'none') return null
 
-    const isPrivileged = ['owner', 'admin', 'general_manager'].includes(userRole)
+    const isPrivileged = ['owner', 'admin'].includes(userRole)
     const isManager = ['manager', 'accountant'].includes(userRole)
     const isStaff = ['staff', 'sales', 'employee'].includes(userRole)
 

@@ -41,7 +41,7 @@ export interface AuthorizationResult {
  * "مدير الفرع" (manager) دور عادي مقيَّد بفرعه (كان مُدرجاً هنا خطأً)،
  * و"المدير العام" (general_manager) بصلاحيات المالك (كان مُستبعَداً خطأً).
  */
-export const UPPER_ROLES = ["owner", "admin", "general_manager"] as const
+export const UPPER_ROLES = ["owner", "admin"] as const
 
 /**
  * الأدوار العادية (مقيدة بالفرع ومركز التكلفة والمستودع)

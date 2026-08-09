@@ -6,7 +6,7 @@ import { UserGovernanceNotificationService } from "@/lib/services/user-governanc
 
 type SettingsUserNotificationAction = "role_changed" | "branch_changed"
 
-const ALLOWED_ROLES = ["owner", "admin", "general_manager", "manager"]
+const ALLOWED_ROLES = ["owner", "admin", "manager"]
 
 export async function POST(
   request: NextRequest,

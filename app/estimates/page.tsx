@@ -281,7 +281,7 @@ export default function EstimatesPage() {
   ];
 
   // Privileged role flag — used to gate BranchFilter + Employee filter
-  const canViewAllEstimates = ['owner', 'admin', 'general_manager'].includes(
+  const canViewAllEstimates = ['owner', 'admin'].includes(
     (userContext?.role || '').toLowerCase()
   );
 
@@ -326,7 +326,7 @@ export default function EstimatesPage() {
 
             // 🔐 Load company members for the "Employee" filter — only for privileged roles
             //    (other roles already only see their own estimates, so a filter is useless)
-            if (['owner', 'admin', 'general_manager'].includes(member.role)) {
+            if (['owner', 'admin'].includes(member.role)) {
               const { data: mems } = await supabase
                 .from("company_members")
                 .select("user_id, role, email")
@@ -377,7 +377,7 @@ export default function EstimatesPage() {
           .order("name");
 
         const role = (ctx?.role || '').toLowerCase();
-        const privileged = ['owner', 'admin', 'general_manager'].includes(role);
+        const privileged = ['owner', 'admin'].includes(role);
         const isBranchLevel = ['manager', 'accountant', 'branch_manager'].includes(role);
         const isCreatorLevel = ['staff', 'sales', 'employee'].includes(role);
 
@@ -669,7 +669,7 @@ export default function EstimatesPage() {
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
     const reloadRole = (userContext?.role || "").toLowerCase();
-    const reloadPrivileged   = ["owner", "admin", "general_manager"].includes(reloadRole);
+    const reloadPrivileged   = ["owner", "admin"].includes(reloadRole);
     const reloadBranchLevel  = ["manager", "accountant", "branch_manager"].includes(reloadRole);
     const reloadCreatorLevel = ["staff", "sales", "employee"].includes(reloadRole);
     if (reloadPrivileged) {
@@ -736,7 +736,7 @@ export default function EstimatesPage() {
   const canDeleteEstimate = (e: Estimate): boolean => {
     if (e.converted_so_id) return false;
     const role = (userContext?.role || "").toLowerCase();
-    if (["owner", "admin", "general_manager"].includes(role)) return true;
+    if (["owner", "admin"].includes(role)) return true;
     return !!userContext?.user_id && e.created_by_user_id === userContext.user_id;
   };
 

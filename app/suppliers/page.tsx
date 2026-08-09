@@ -135,7 +135,7 @@ export default function SuppliersPage() {
   const [receiptExRate, setReceiptExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'default' })
 
   // ===== حالات طلبات استرداد الموردين (Approval Workflow) =====
-  const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+  const PRIVILEGED_ROLES = ['owner', 'admin']
   const isPrivilegedRole = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
   const [refundRequests, setRefundRequests] = useState<any[]>([])
   const [refundRequestsLoading, setRefundRequestsLoading] = useState(false)
@@ -259,7 +259,7 @@ export default function SuppliersPage() {
       }
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const PRIVILEGED_ROLES = ['owner', 'admin']
       const canFilterByBranch = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
@@ -1010,7 +1010,7 @@ export default function SuppliersPage() {
                       </div>
 
                       {/* Branch Selection for privileged roles */}
-                      {['owner', 'admin', 'general_manager'].includes(currentUserRole.toLowerCase()) && (
+                      {['owner', 'admin'].includes(currentUserRole.toLowerCase()) && (
                         <div className="space-y-2">
                           <Label htmlFor="branch">{appLang === 'en' ? 'Assign to Branch (Optional)' : 'تعيين لفرع (اختياري)'}</Label>
                           <Select

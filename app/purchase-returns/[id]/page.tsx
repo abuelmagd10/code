@@ -20,7 +20,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 // v3.74.942 — مبالغُ الشراء تُقرأ من المنفذ المقنَّع وتُعرض «—» حين تُحجب.
 import { HIDDEN_MONEY, HIDDEN_MONEY_HINT_AR, HIDDEN_MONEY_HINT_EN, isHiddenMoney } from "@/lib/purchase-money"
 
-const PRIVILEGED_ROLES  = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES  = ['owner', 'admin']
 const STORE_MANAGER_ROLES = ['store_manager']
 
 type ReturnDetail = {

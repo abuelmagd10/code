@@ -27,7 +27,7 @@ export async function POST(
       .eq("company_id", companyId)
       .maybeSingle()
     const role = String((member as any)?.role || "")
-    if (!["owner", "admin", "general_manager"].includes(role)) {
+    if (!["owner", "admin"].includes(role)) {
       return NextResponse.json({
         error: "Forbidden: only owner/general manager may approve vendor correction requests"
       }, { status: 403 })
@@ -61,7 +61,7 @@ export async function POST(
       p_company_id: companyId,
       p_created_by: (req as any).requested_by || (req as any).created_by || null,
       p_approver: user.id,
-      p_approver_roles: ["owner", "admin", "general_manager"],
+      p_approver_roles: ["owner", "admin"],
     })
     // ولا يُتخطّى الفحصُ صامتاً إن سقط النداءُ نفسُه.
     if (sodCallError) {

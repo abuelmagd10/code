@@ -123,10 +123,21 @@ function extractBody(text) {
 
 /** Every `CREATE [OR REPLACE] FUNCTION public.name(...) ... $tag$body$tag$` block. */
 function parseFunctions(sql) {
+  // v3.74.992 — **الدالّةُ المكتوبةُ داخل جسدِ دالّةٍ أخرى ليست ادّعاءً**.
+  //
+  // كان النمطُ يمسح النصَّ كلَّه فيلتقط `CREATE FUNCTION` مكتوباً داخل نصٍّ
+  // يُنفَّذ ثمّ يُلغى — فحصٌ يزرع مذنباً ليُثبت أنّه يراه — ثمّ يقول إنّ الملفَّ
+  // يدّعى دالّةً لا وجودَ لها. وهو صادقٌ فى قاعدته، أعمى عن التداخل.
+  //
+  // ولم تُغيَّر صياغةُ الهجرة لتفلت من النمط — **ذاك تهرّبٌ لا علاج**، وهو
+  // الدرسُ المكتوبُ فى parseTriggers أدناه بيد من سبقنا. فعُلِّم النمطُ
+  // **الخاصّيّة**: ما وقع داخل جسدِ دالّةٍ سبقته يُتخطّى.
   const out = [];
+  const spans = [];
   const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([A-Za-z0-9_]+)"?\s*\(/gi;
   let m;
   while ((m = re.exec(sql)) !== null) {
+    if (spans.some((s) => m.index > s.start && m.index < s.end)) continue;
     const name = m[1];
     const rest = sql.slice(m.index);
     const tagMatch = /\$([A-Za-z_]*)\$/.exec(rest);
@@ -135,6 +146,7 @@ function parseFunctions(sql) {
     const bodyStart = rest.indexOf(tag) + tag.length;
     const bodyEnd = rest.indexOf(tag, bodyStart);
     if (bodyEnd < 0) continue;
+    spans.push({ start: m.index + bodyStart, end: m.index + bodyEnd });
     out.push({ name, body: rest.slice(bodyStart, bodyEnd) });
   }
   return out;

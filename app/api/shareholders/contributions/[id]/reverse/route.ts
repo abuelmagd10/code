@@ -20,7 +20,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "manager", "general_manager", "accountant"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin", "manager", "accountant"])
 
 export async function POST(
   request: NextRequest,

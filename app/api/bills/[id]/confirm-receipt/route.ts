@@ -17,7 +17,7 @@ const BILL_RECEIPT_REPLAY_PAYLOAD_VERSION = "bill_receipt_v1"
 //   View-only: manager, accountant, purchasing_officer (branch-scoped)
 // Removed 'manager' from the approver set — they only view their branch's
 // pending receipts now.
-const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manager"])
+const RECEIPT_ROLES = new Set(["owner", "admin", "store_manager"])
 
 type BillReceiptRecord = {
   id: string

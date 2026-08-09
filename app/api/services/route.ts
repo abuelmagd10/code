@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     // products) are a management/pricing decision: owner / admin /
     // general_manager + the branch manager only. The purchasing officer and
     // store manager may create products but NOT services.
-    const SERVICE_WRITE_ROLES = ["owner", "admin", "general_manager", "manager"]
+    const SERVICE_WRITE_ROLES = ["owner", "admin", "manager"]
     if (!SERVICE_WRITE_ROLES.includes(String(member.role || ""))) {
       return NextResponse.json(
         { success: false, error: "ليس لديك صلاحية إنشاء خدمات — الصلاحية للإدارة أو مدير الفرع فقط." },

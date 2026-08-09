@@ -109,7 +109,7 @@ export async function POST(
 
         // Notify both top-management roles. The shared create_notification RPC
         // routes to anyone holding that role on this company.
-        for (const targetRole of ["owner", "general_manager"]) {
+        for (const targetRole of ["owner"]) {
           await supabase.rpc("create_notification", {
             p_company_id: companyId,
             p_reference_type: "customer_refund_request",

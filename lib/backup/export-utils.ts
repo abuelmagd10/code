@@ -206,7 +206,7 @@ export async function canExportBackup(
   const role = String(member.role || '').toLowerCase().trim()
 
   // Layer 1 — full-access roles bypass the resource check (mirrors AI assistant rules)
-  if (['owner', 'admin', 'general_manager'].includes(role)) {
+  if (['owner', 'admin'].includes(role)) {
     return { allowed: true }
   }
 

@@ -77,7 +77,7 @@ export default function WarehouseInventoryReportPage() {
 
       const role = String(userContext.role || "viewer")
       const normalizedRole = role.trim().toLowerCase().replace(/\s+/g, "_")
-      const isCanOverride = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
+      const isCanOverride = ["super_admin", "admin", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
       setCanOverride(isCanOverride)
 
       const ub = String(userContext.branch_id || "")

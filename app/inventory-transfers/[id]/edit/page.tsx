@@ -143,7 +143,7 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
       setUserRole(role)
       setUserBranchId(member?.branch_id || null)
       setUserWarehouseId(member?.warehouse_id || null)
-      setCanChooseDestination(["owner", "admin", "manager", "general_manager", "gm"].includes(role))
+      setCanChooseDestination(["owner", "admin", "manager", "gm"].includes(role))
 
       // فقط المحاسب المنشئ يمكنه التعديل
       if (role !== 'accountant') {

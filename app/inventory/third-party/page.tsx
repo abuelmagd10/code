@@ -166,11 +166,11 @@ export default function ThirdPartyInventoryPage() {
   ]
 
   // Can view all (admin/owner + store_manager in main warehouse)
-  const canViewAll = ["owner", "admin", "general_manager"].includes(currentUserRole) ||
+  const canViewAll = ["owner", "admin"].includes(currentUserRole) ||
     (currentUserRole === "store_manager" && isMainWarehouse)
 
   // يمكنه رؤية فلتر الفروع
-  const canSeeBranchFilter = ["owner", "admin", "general_manager"].includes(currentUserRole) ||
+  const canSeeBranchFilter = ["owner", "admin"].includes(currentUserRole) ||
     (currentUserRole === "store_manager" && isMainWarehouse)
 
   useEffect(() => {
@@ -252,7 +252,7 @@ export default function ThirdPartyInventoryPage() {
 
       // 🏢 جلب الفروع للفلترة (للمستخدمين المخولين فقط)
       const roleForBranchFilter = memberData?.role || "employee"
-      const canLoadBranches = ["owner", "admin", "general_manager"].includes(roleForBranchFilter) ||
+      const canLoadBranches = ["owner", "admin"].includes(roleForBranchFilter) ||
         (roleForBranchFilter === "store_manager" && userIsInMainWarehouse)
 
       if (canLoadBranches) {
@@ -371,7 +371,7 @@ export default function ThirdPartyInventoryPage() {
       const isStoreManagerInMainWarehouse = currentRole === 'store_manager' && userIsInMainWarehouse
 
       // 👑 Owner / Admin / GM / Store Manager (Main Warehouse): يرون كل شيء
-      if (['owner', 'admin', 'general_manager'].includes(currentRole) || isStoreManagerInMainWarehouse) {
+      if (['owner', 'admin'].includes(currentRole) || isStoreManagerInMainWarehouse) {
         // لا فلترة على مستوى الدور - فقط فلتر الفرع إذا تم اختياره
         // (سيتم تطبيقه لاحقاً في filteredItems)
       } else if (currentRole === 'store_manager') {
@@ -721,7 +721,7 @@ export default function ThirdPartyInventoryPage() {
 
       // 🔐 Apply governance filters (mirrors loadData logic)
       const isStoreManagerMainWH = role === 'store_manager' && isMainWarehouse
-      if (['owner', 'admin', 'general_manager'].includes(role) || isStoreManagerMainWH) {
+      if (['owner', 'admin'].includes(role) || isStoreManagerMainWH) {
         // 👑 Full access — no branch filter
       } else if (role === 'store_manager' || role === 'manager' || role === 'accountant') {
         // 🏢 Branch-scoped

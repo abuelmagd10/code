@@ -143,7 +143,7 @@ export default function SalesReturnsPage() {
       const visibilityRules = buildDataVisibilityFilter(userContext)
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const PRIVILEGED_ROLES = ['owner', 'admin']
       const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 

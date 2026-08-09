@@ -320,7 +320,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   // 🔒 صلاحيات النقل
   // بدء النقل: Owner/Admin/Manager فقط
-  const canManage = ["owner", "admin", "manager", "general_manager", "gm"].includes(userRole)
+  const canManage = ["owner", "admin", "manager", "gm"].includes(userRole)
 
   // v3.74.51 — مَسؤول مَخزَن المَصدَر يَستَطيع بَدء الإِرسال بَعد اعتماد الإِدارة (status='pending')
   const isSourceWarehouseManager =
@@ -336,7 +336,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   // 🔒 صلاحية الاعتماد/الرفض: Owner/Admin/General Manager فقط
   // ✅ فقط للطلبات في حالة pending_approval
-  const canApproveOrReject = ["owner", "admin", "general_manager", "gm"].includes(userRole) && transfer?.status === 'pending_approval'
+  const canApproveOrReject = ["owner", "admin", "gm"].includes(userRole) && transfer?.status === 'pending_approval'
 
   // 🔒 صلاحية المحاسب: تعديل/حذف/إعادة إرسال طلباته المرفوضة أو المسودة
   const isAccountant = userRole === 'accountant'

@@ -154,7 +154,7 @@ export default function SalesDiscountsReportPage() {
       const { data: companyData } = await supabase.from("companies").select("user_id").eq("id", companyId).maybeSingle()
       const isOwner = companyData?.user_id === user.id
       const normalizedRole = String(isOwner ? "owner" : (memberData?.role || "viewer")).trim().toLowerCase().replace(/\s+/g, "_")
-      const isManagement = ["super_admin", "admin", "general_manager", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
+      const isManagement = ["super_admin", "admin", "gm", "owner", "generalmanager", "superadmin"].includes(normalizedRole)
       const userBranchId = memberData?.branch_id || null
       if (!isManagement && !userBranchId) {
         // عضو غير إداري بدون فرع مرتبط — لا نعرض بيانات أي فرع

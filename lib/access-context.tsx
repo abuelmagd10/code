@@ -261,7 +261,7 @@ async function fetchAccessProfile(
     const role = String(member.role || "").trim().toLowerCase()
 
     // Owner/Admin/General Manager: كل الصلاحيات
-    const isFullAccess = ["owner", "admin", "general_manager"].includes(role)
+    const isFullAccess = ["owner", "admin"].includes(role)
 
     let allowed_pages: string[] = []
     let allowed_actions: string[] = []

@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // including every "أمر حجز" a floating booking_officer creates in
     // a branch the owner doesn't sit in.
     const memberRole = String((member as any)?.role ?? '')
-    const isCompanyWide = ['owner', 'admin', 'general_manager'].includes(memberRole)
+    const isCompanyWide = ['owner', 'admin'].includes(memberRole)
     // v3.74.648 — a user is locked to a single branch only when NOT company-wide
     // AND their membership carries a branch_id. An unassigned booking officer
     // (no branch_id) can browse/filter across every branch.
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     const bkgDiscount = Number((body as any).discount_amount) || 0
     if (bkgDiscount > 0) {
       const memberRole = String((member as any)?.role ?? '')
-      const isUpper = ['owner', 'admin', 'general_manager'].includes(memberRole)
+      const isUpper = ['owner', 'admin'].includes(memberRole)
       const isExecutor = !!(effectiveIds && effectiveIds.includes(user.id))
       if (!isUpper && !isExecutor) {
         throw new BookingApiError(403, 'الخصم من اختصاص الموظف المنوط بتنفيذ الحجز أو الإدارة، وليس مسؤول الحجز.')

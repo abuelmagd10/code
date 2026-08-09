@@ -336,10 +336,10 @@ export default function BillViewPage() {
               // من يمكنه الاعتماد الإداري؟
               // v3.74.505 — مواءمة مع ADMIN_APPROVAL_ROLES فى الخادم:
               // admin كان يرى الزر ثم يُرفض من الـ API (v3.74.132 استبعدته).
-              setCanApproveAdmin(["owner", "admin", "general_manager"].includes(role))
+              setCanApproveAdmin(["owner", "admin"].includes(role))
 
               // من يمكنه اعتماد الاستلام؟ (مسؤول المخزن + الإدارة العليا)
-              setCanApproveReceipt(["owner", "admin", "general_manager", "store_manager"].includes(role))
+              setCanApproveReceipt(["owner", "admin", "store_manager"].includes(role))
             }
           }
         } catch { }
@@ -597,7 +597,7 @@ export default function BillViewPage() {
           // branch's accounts. The user's branch is fetched inline
           // here because this page only carried the role in state
           // previously.
-          const refundPrivilegedRoles2 = ['owner', 'admin', 'general_manager']
+          const refundPrivilegedRoles2 = ['owner', 'admin']
           const isRefundPrivileged2 = refundPrivilegedRoles2.includes(
             String(currentUserRole || '').toLowerCase()
           )
@@ -1623,7 +1623,7 @@ export default function BillViewPage() {
                   const rc = String((bill as any).receipt_status || '').toLowerCase()
                   const alreadyRefunded = !!(bill as any).pre_receipt_refund_at
                   const hasPaid = Number((bill as any).paid_amount || 0) > 0
-                  const isPrivileged = ['owner', 'admin', 'general_manager', 'accountant'].includes(String(currentUserRole || '').toLowerCase())
+                  const isPrivileged = ['owner', 'admin', 'accountant'].includes(String(currentUserRole || '').toLowerCase())
                   const eligible = hasPaid && rc !== 'received' && !alreadyRefunded && bill.status !== 'cancelled'
                   if (!eligible || !isPrivileged) return null
                   return (
@@ -1642,7 +1642,7 @@ export default function BillViewPage() {
                   const rc = String((bill as any).receipt_status || '').toLowerCase()
                   const alreadyRefunded = !!(bill as any).pre_receipt_refund_at
                   const hasPaid = Number((bill as any).paid_amount || 0) > 0
-                  const isPrivileged = ['owner', 'admin', 'general_manager', 'accountant'].includes(String(currentUserRole || '').toLowerCase())
+                  const isPrivileged = ['owner', 'admin', 'accountant'].includes(String(currentUserRole || '').toLowerCase())
                   const eligible = hasPaid && rc !== 'received' && !alreadyRefunded && bill.status !== 'cancelled'
                   if (!eligible || !isPrivileged) return null
                   return (

@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server"
 import { enforceGovernance } from "@/lib/governance-middleware"
 import { arabicReason } from "@/lib/error-messages"
 
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager', 'gm', 'super_admin', 'superadmin', 'generalmanager']
+const PRIVILEGED_ROLES = ['owner', 'admin', 'gm', 'super_admin', 'superadmin', 'generalmanager']
 
 export async function GET(request: NextRequest) {
   try {

@@ -77,7 +77,7 @@ export default function BookingsPage() {
           .maybeSingle()
         const role = String((mem as any)?.role ?? "")
         const memberBranchId = (mem as any)?.branch_id ?? null
-        const isCompanyWide = ["owner", "admin", "general_manager"].includes(role)
+        const isCompanyWide = ["owner", "admin"].includes(role)
         const isBranchScoped = !isCompanyWide && !!memberBranchId
         if (isBranchScoped) return  // locked to own branch → no filter
         const { data: brs } = await supabase

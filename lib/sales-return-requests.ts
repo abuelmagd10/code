@@ -52,7 +52,6 @@ export type SalesReturnRequestItemPayload = {
 export const SALES_RETURN_LEVEL1_APPROVER_ROLES = [
   'owner',
   'admin',
-  'general_manager',
 ] as const
 
 // v3.74.26 — New viewer tier. These roles can navigate to

@@ -124,7 +124,7 @@ export default function NewVendorCreditPage() {
       const roleVC = isOwnerVC ? "owner" : (memberDataVC?.role || "viewer")
       const userBranchIdVC = isOwnerVC ? null : (memberDataVC?.branch_id || null)
       const normalizedRoleVC = String(roleVC).trim().toLowerCase().replace(/\s+/g, '_')
-      const isAdminVC = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRoleVC)
+      const isAdminVC = ['super_admin', 'admin', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRoleVC)
 
       // v3.74.901 — قفل الفرع/مركز التكلفة لغير المالك والمدير العام
       if (!isAdminVC && userBranchIdVC) {

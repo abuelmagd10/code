@@ -462,7 +462,7 @@ export default function InvoicesPage() {
       // branches' invoices. Privileged roles and central purchasing (no branch)
       // see all; everyone else only their own branch.
       const _r = String(userContext?.role || '').toLowerCase().replace(/\s+/g, '_');
-      const _privileged = ['owner','admin','general_manager','gm','superadmin','super_admin','generalmanager'].includes(_r);
+      const _privileged = ['owner','admin','gm','superadmin','super_admin','generalmanager'].includes(_r);
       const _centralPurchasing = _r === 'purchasing_officer' && !userContext?.branch_id;
       if (_privileged || _centralPurchasing) return true;
       if (!userContext?.branch_id) return false;
@@ -812,7 +812,7 @@ export default function InvoicesPage() {
           .from('chart_of_accounts')
           .select('id, account_code, account_name, account_type, sub_type, branch_id, original_currency')
           .eq('company_id', cid)
-        const isPrivileged = currentUserRole === 'owner' || currentUserRole === 'general_manager' || currentUserRole === 'admin'
+        const isPrivileged = currentUserRole === 'owner'  || currentUserRole === 'admin'
         const userBranchId = userContext?.branch_id || null
         const list = (accounts || []).filter((a: any) => {
           const st = String(a.sub_type || '').toLowerCase()
@@ -1486,7 +1486,7 @@ export default function InvoicesPage() {
             {permDelete && actualStatus === 'draft' && (() => {
               const canDeleteInvoice =
                 currentUserRole === 'owner' ||
-                currentUserRole === 'general_manager' || currentUserRole === 'admin' ||
+                currentUserRole === 'admin' ||
                 (currentUserRole === 'manager' && userContext?.branch_id === (row as any).branch_id)
 
               return canDeleteInvoice ? (
@@ -1647,7 +1647,7 @@ export default function InvoicesPage() {
     // التحقق من صلاحية الحذف بناءً على الدور
     const canDeleteInvoice =
       currentUserRole === 'owner' ||
-      currentUserRole === 'general_manager' || currentUserRole === 'admin' ||
+      currentUserRole === 'admin' ||
       (currentUserRole === 'manager' && userContext?.branch_id === (invoice as any).branch_id)
 
     if (!canDeleteInvoice) {
@@ -3118,7 +3118,7 @@ export default function InvoicesPage() {
                           </div>
                         )
                       }
-                      const isPrivileged = currentUserRole === 'owner' || currentUserRole === 'general_manager' || currentUserRole === 'admin'
+                      const isPrivileged = currentUserRole === 'owner'  || currentUserRole === 'admin'
                       const cashOnly = (returnCashBankAccounts || []).filter((a: any) => String(a?.sub_type || '').toLowerCase() === 'cash')
                       const bankOnly = (returnCashBankAccounts || []).filter((a: any) => String(a?.sub_type || '').toLowerCase() === 'bank')
                       const eligibleAccounts = returnMethod === 'cash' ? cashOnly

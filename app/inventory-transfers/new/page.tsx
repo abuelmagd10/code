@@ -134,13 +134,13 @@ export default function NewTransferPage() {
       setUserRole(role)
       setUserBranchId(branchId)
       setUserWarehouseId(warehouseId)
-      setCanChooseDestination(["owner", "admin", "manager", "general_manager", "gm"].includes(role))
+      setCanChooseDestination(["owner", "admin", "manager", "gm"].includes(role))
 
       // 🔒 صلاحية إنشاء طلبات النقل:
       // ✅ Owner/Admin/Manager: إنشاء مباشر (حالة pending)
       // ✅ Accountant: إنشاء مع دورة اعتماد (حالة pending_approval)
       // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل، فقط استلامها
-      const canCreateTransfer = ["owner", "admin", "manager", "general_manager", "gm", "accountant"].includes(role)
+      const canCreateTransfer = ["owner", "admin", "manager", "gm", "accountant"].includes(role)
 
       if (!canCreateTransfer) {
         toast({

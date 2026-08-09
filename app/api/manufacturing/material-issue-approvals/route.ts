@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 
-const ALLOWED_ROLES = ["store_manager", "owner", "admin", "general_manager", "manager", "warehouse_manager", "accountant"]
+const ALLOWED_ROLES = ["store_manager", "owner", "admin", "manager", "warehouse_manager", "accountant"]
 
 export async function GET(request: NextRequest) {
   try {
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
     const warehouseId = searchParams.get("warehouse_id")
     const branchId = searchParams.get("branch_id")
     const role = String(member.role || "").trim().toLowerCase()
-    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    const companyWideRoles = new Set(["owner", "admin", "manager"])
     const isCompanyWideRole = companyWideRoles.has(role)
 
     let query = admin

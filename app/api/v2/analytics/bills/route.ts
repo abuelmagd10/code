@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const branchId = searchParams.get('branchId') || ''
 
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
-    const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
+    const isPrivileged = ['owner', 'admin', 'gm', 'superadmin', 'super_admin'].includes(role)
 
     // ─── Query المجمّعة من mv_bills_summary ──────────────────────
     let query = supabase

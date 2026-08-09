@@ -209,7 +209,7 @@ export default function EditPurchaseOrderPage() {
       const userBranchId = isOwner ? null : (memberData?.branch_id || null)
 
       const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
-      const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+      const adminCheck = ['super_admin', 'admin', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
       
       isCurrentUserAdmin = adminCheck
       currentUserBranchId = userBranchId

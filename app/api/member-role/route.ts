@@ -56,7 +56,6 @@ export async function POST(req: NextRequest) {
     const ROLE_LABELS_AR: Record<string, string> = {
       owner: "مالك",
       admin: "مدير عام",
-      general_manager: "المدير العام",
       manager: "مدير الفرع",
       accountant: "محاسب",
       purchasing_officer: "مسؤول المشتريات",

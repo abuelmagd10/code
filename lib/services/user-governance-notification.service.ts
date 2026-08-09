@@ -33,7 +33,6 @@ type BranchChangedParams = BaseParams & {
 const ROLE_LABELS: Record<string, { ar: string; en: string }> = {
   owner: { ar: "مالك", en: "Owner" },
   admin: { ar: "مدير عام", en: "General Manager" },
-  general_manager: { ar: "مدير عام تنفيذي", en: "General Manager" },
   manager: { ar: "مدير", en: "Manager" },
   accountant: { ar: "محاسب", en: "Accountant" },
   store_manager: { ar: "مسؤول مخزن", en: "Store Manager" },

@@ -31,7 +31,7 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-const WRITE_ROLES = ["owner", "admin", "general_manager", "manager"]
+const WRITE_ROLES = ["owner", "admin", "manager"]
 
 async function loadServiceCatalog(supabase: any, serviceId: string, companyId: string) {
   const { data: svc } = await supabase

@@ -52,7 +52,7 @@ function duplicateTrace(message?: string | null) {
 }
 
 function isPrivilegedBankingRole(role: string | null | undefined) {
-  return new Set(["owner", "admin", "manager", "general_manager"]).has(String(role || "").toLowerCase())
+  return new Set(["owner", "admin", "manager"]).has(String(role || "").toLowerCase())
 }
 
 export class BankTransferCommandService {

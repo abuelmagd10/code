@@ -108,7 +108,7 @@ export default function EditInvoicePage() {
   // v3.74.603 — only these roles may edit a sales-order-linked invoice
   // directly (their direct-creation path); everyone else edits the
   // sales order itself.
-  const SO_EDIT_PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+  const SO_EDIT_PRIVILEGED_ROLES = ['owner', 'admin']
   const isPrivilegedForSoEdit = SO_EDIT_PRIVILEGED_ROLES.includes(userContext?.role || '')
 
   const [formData, setFormData] = useState({

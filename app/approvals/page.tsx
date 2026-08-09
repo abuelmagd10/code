@@ -1179,10 +1179,10 @@ function ApprovalsContent() {
     })()
   }, [supabase])
   // The four canonical "receipt approvers" per owner spec:
-  const canApproveReceipt = myRole !== null && ["owner","admin","general_manager","store_manager"].includes(myRole)
+  const canApproveReceipt = myRole !== null && ["owner","admin","store_manager"].includes(myRole)
   // v3.74.680 — who may decide a booking stock withdrawal (mirrors the RPC
   // decide_booking_stock_withdrawal: management + branch store/warehouse manager).
-  const canDecideWithdrawal = myRole !== null && ["owner","admin","general_manager","store_manager","warehouse_manager"].includes(myRole)
+  const canDecideWithdrawal = myRole !== null && ["owner","admin","store_manager","warehouse_manager"].includes(myRole)
 
   // v3.74.486 — Role-scoped tab visibility. Each role only sees the
   // tabs relevant to the workflows they participate in. Owner / admin /
@@ -1207,10 +1207,10 @@ function ApprovalsContent() {
     staff:              [],
     booking_officer:    [],
   }
-  const isAdminLike = !!myRole && ["owner","admin","general_manager"].includes(myRole)
+  const isAdminLike = !!myRole && ["owner","admin"].includes(myRole)
   // v3.74.509 — قرارات محصورة بالمالك/المدير العام فقط (دفعات الموردين،
   // استرداد العملاء، تصحيحات دفعات الموردين) مطابقة لبوابات الخادم
-  const isOwnerOrGm = !!myRole && ["owner","admin","general_manager"].includes(myRole)
+  const isOwnerOrGm = !!myRole && ["owner","admin"].includes(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
       ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","vc"] as const)
@@ -4880,7 +4880,7 @@ function ApprovalsContent() {
                     //   creator = accountant      -> owner or general_manager
                     // plus absolute separation of duties: never your own entry.
                     const creatorRole = String(e.creator_role || "")
-                    const rankOk = (creatorRole === "general_manager" || creatorRole === "admin") ? myRole === "owner" : isOwnerOrGm
+                    const rankOk = (creatorRole === "admin") ? myRole === "owner" : isOwnerOrGm
                     const notMine = !!myUserId && String(e.created_by || "") !== String(myUserId)
                     const canDecideJe = rankOk && notMine
                     return (

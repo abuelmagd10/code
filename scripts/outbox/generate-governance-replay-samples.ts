@@ -206,14 +206,13 @@ async function resolveActor(supabase: SupabaseLike, companyId: string): Promise<
     .from("company_members")
     .select("user_id, role")
     .eq("company_id", companyId)
-    .in("role", ["owner", "admin", "general_manager"])
+    .in("role", ["owner", "admin"])
 
   if (error) throw new Error(error.message || "Failed to resolve sample actor")
 
   const rolePriority: Record<string, number> = {
     owner: 1,
     admin: 2,
-    general_manager: 3,
   }
   const members = Array.isArray(data) ? data : []
   members.sort(
@@ -226,7 +225,7 @@ async function resolveActor(supabase: SupabaseLike, companyId: string): Promise<
   const actorRole = String(members[0]?.role || "").trim()
 
   if (!actorId || !actorRole) {
-    throw new Error("SAMPLE_ACTOR_NOT_FOUND: no owner/admin/general_manager membership found")
+    throw new Error("SAMPLE_ACTOR_NOT_FOUND: no owner/admin membership found")
   }
 
   return { actorId, actorRole }

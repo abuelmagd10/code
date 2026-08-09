@@ -153,7 +153,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     // this route at all (the guard above + RBAC).
     if ('branch_id' in (body as any)) {
       const role = String(member.role || '')
-      const isCompanyScope = ['owner', 'admin', 'general_manager'].includes(role)
+      const isCompanyScope = ['owner', 'admin'].includes(role)
       if (isCompanyScope) {
         const nextBranchId = ((body as any).branch_id as string | null | undefined) ?? null
         const { error: branchErr } = await supabase

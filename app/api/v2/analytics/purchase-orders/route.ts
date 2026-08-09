@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const statusFilter = searchParams.get('status') || ''
 
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
-    const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
+    const isPrivileged = ['owner', 'admin', 'gm', 'superadmin', 'super_admin'].includes(role)
 
     let query = supabase
       .from('mv_purchase_orders_summary')

@@ -107,7 +107,7 @@ export async function POST(
     } catch { /* غير حرج */ }
 
     // إشعار الأدوار العليا بالرفض (owner و admin يرون كل الإشعارات تلقائياً فلا نكررها)
-    for (const seniorRole of ["general_manager"]) {
+    for (const seniorRole of ["owner"]) {
       try {
         await admin.rpc("create_notification", {
           p_company_id: companyId,

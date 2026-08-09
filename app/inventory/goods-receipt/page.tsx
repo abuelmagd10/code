@@ -197,7 +197,7 @@ export default function GoodsReceiptPage() {
 
   const isOwnerAdmin = useMemo(() => {
     const role = String(userContext?.role || "").trim().toLowerCase()
-    return role === "owner" || role === "admin" || role === "general_manager"
+    return role === "owner" || role === "admin" 
   }, [userContext])
 
   useEffect(() => {
@@ -495,7 +495,7 @@ export default function GoodsReceiptPage() {
         }
         // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
         const role = String(userContext.role || "").trim().toLowerCase()
-        if ((role === "owner" || role === "admin" || role === "general_manager") && billData.branch_id && billData.warehouse_id) {
+        if ((role === "owner" || role === "admin" ) && billData.branch_id && billData.warehouse_id) {
           // ✅ استخدام refs للتحقق من القيم الحالية بدلاً من dependencies لتجنب re-runs
           const currentBranchId = selectedBranchIdRef.current
           const currentWarehouseId = selectedWarehouseIdRef.current
@@ -592,11 +592,11 @@ export default function GoodsReceiptPage() {
 
       // دور المستخدم الحالي
       const role = String(context.role || "").trim().toLowerCase()
-      const isSeniorRole = role === "owner" || role === "admin" || role === "general_manager"
+      const isSeniorRole = role === "owner" || role === "admin" 
       const isCompanyWideHistory = isReceivedTab && isSeniorRole
 
       // فقط أدوار store_manager / owner / admin / general_manager / manager ترى شاشة اعتماد الاستلام
-      if (!["store_manager", "owner", "admin", "general_manager", "manager"].includes(role)) {
+      if (!["store_manager", "owner", "admin", "manager"].includes(role)) {
         if (loadRequestRef.current !== requestId) return
         setBills([])
         setBranchName(null)
@@ -1151,7 +1151,7 @@ export default function GoodsReceiptPage() {
   const buildMfgReceiptParams = useCallback((status: string) => {
     const params = new URLSearchParams({ status })
     const role = String(userContext?.role || "").trim().toLowerCase()
-    const isCompanyWideRole = ["owner", "admin", "general_manager", "manager"].includes(role)
+    const isCompanyWideRole = ["owner", "admin", "manager"].includes(role)
 
     if (!isCompanyWideRole) {
       if (userContext?.branch_id) params.set("branch_id", userContext.branch_id)

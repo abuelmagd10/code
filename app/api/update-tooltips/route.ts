@@ -8,7 +8,7 @@ import { secureApiRequest } from '@/lib/api-security'
  * المستهلك الوحيد شاشة الإعدادات (TooltipManager) — فصار المسار خلف
  * مصادقة + دور إدارى، بنفس أسلوب بقية مسارات الإعدادات.
  */
-const ALLOWED_ROLES = ['owner', 'admin', 'general_manager']
+const ALLOWED_ROLES = ['owner', 'admin']
 
 async function requireAdmin(request: NextRequest) {
   const { user, member, error } = await secureApiRequest(request, {

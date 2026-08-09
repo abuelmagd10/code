@@ -268,7 +268,7 @@ export default function InventoryTransfersPage() {
   // 🔒 صلاحية إنشاء طلبات النقل: Owner/Admin/Manager/Accountant + التحقق من الصلاحيات
   // ✅ المحاسب يمكنه إنشاء طلبات نقل (تحتاج اعتماد)
   // ❌ مسؤول المخزن لا يمكنه إنشاء طلبات نقل
-  const canCreate = permWrite && ["owner", "admin", "manager", "general_manager", "gm", "accountant"].includes(userRole)
+  const canCreate = permWrite && ["owner", "admin", "manager", "gm", "accountant"].includes(userRole)
 
   const getStatusBadge = (status: string, hasRejectionReason?: boolean) => {
     switch (status) {

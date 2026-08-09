@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-09T11:20:47.423Z
+-- Generated: 2026-08-09T12:07:21.232Z
 -- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1838
 -- =====================================================================
 
@@ -5303,7 +5303,7 @@ ALTER TABLE public.company_members ADD CONSTRAINT company_members_cost_center_id
 ALTER TABLE public.company_members ADD CONSTRAINT company_members_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL;
 ALTER TABLE public.company_members ADD CONSTRAINT company_members_invited_by_fkey FOREIGN KEY (invited_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 ALTER TABLE public.company_members ADD CONSTRAINT company_members_pkey PRIMARY KEY (id);
-ALTER TABLE public.company_members ADD CONSTRAINT company_members_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'general_manager'::text, 'accountant'::text, 'store_manager'::text, 'staff'::text, 'viewer'::text, 'manufacturing_officer'::text, 'booking_officer'::text, 'purchasing_officer'::text, 'hr_officer'::text])));
+ALTER TABLE public.company_members ADD CONSTRAINT company_members_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text, 'store_manager'::text, 'staff'::text, 'viewer'::text, 'manufacturing_officer'::text, 'booking_officer'::text, 'purchasing_officer'::text, 'hr_officer'::text])));
 ALTER TABLE public.company_members ADD CONSTRAINT company_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE public.company_members ADD CONSTRAINT company_members_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL;
 ALTER TABLE public.company_role_permissions ADD CONSTRAINT company_role_permissions_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
@@ -11042,6 +11042,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_991_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_991_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_992_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_992_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_993_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_993_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -11704,10 +11706,8 @@ REVOKE ALL ON FUNCTION public.check_notification_exists(p_company_id uuid, p_eve
 GRANT EXECUTE ON FUNCTION public.check_notification_exists(p_company_id uuid, p_event_key text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_notification_exists(p_company_id uuid, p_event_key text) TO service_role;
 REVOKE ALL ON FUNCTION public.check_page_access(p_company_id uuid, p_role text, p_resource text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_page_access(p_company_id uuid, p_role text, p_resource text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_page_access(p_company_id uuid, p_role text, p_resource text) TO service_role;
 REVOKE ALL ON FUNCTION public.check_page_access(p_user_id uuid, p_company_id uuid, p_resource text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_page_access(p_user_id uuid, p_company_id uuid, p_resource text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_page_access(p_user_id uuid, p_company_id uuid, p_resource text) TO service_role;
 REVOKE ALL ON FUNCTION public.check_paid_invoices_without_entries(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_paid_invoices_without_entries(p_company_id uuid) TO authenticated;

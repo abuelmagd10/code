@@ -69,7 +69,7 @@ export async function recordServiceCommissionForInvoice(
       .eq('user_id', recipientUserId)
       .maybeSingle()
     const execRole = String(execMember?.role || '')
-    if (['owner', 'admin', 'general_manager'].includes(execRole)) {
+    if (['owner', 'admin'].includes(execRole)) {
       return { recorded: false, reason: 'executed_by_owner_or_admin' }
     }
   } catch {

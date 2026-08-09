@@ -77,7 +77,7 @@ type PurchaseReturnCommandApiResponse = {
   purchaseReturnId?: string
 }
 
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 export default function PurchaseReturnsPage() {
   const supabase = useSupabase()

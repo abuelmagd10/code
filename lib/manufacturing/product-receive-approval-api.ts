@@ -12,7 +12,6 @@ const ALLOWED_PRODUCT_RECEIVE_APPROVAL_ROLES = new Set([
   "manager",
   "owner",
   "admin",
-  "general_manager",
   "manufacturing_officer", // يرى طلباته فقط (own_only مطبّق في route)
 ])
 

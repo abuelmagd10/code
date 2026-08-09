@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     query = query.eq('company_id', governance.companyId)
 
     // الأدوار العليا: ترى جميع مستودعات الشركة بلا قيود
-    const HIGH_LEVEL_ROLES = ['admin', 'super_admin', 'gm', 'owner', 'general_manager', 'generalmanager', 'superadmin']
+    const HIGH_LEVEL_ROLES = ['admin', 'super_admin', 'gm', 'owner', 'generalmanager', 'superadmin']
     const isHighLevelRole = HIGH_LEVEL_ROLES.includes((governance.role || '').toLowerCase())
 
     if (isHighLevelRole) {
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
     // v3.74.981 — كان الشرط ['admin','gm']: و«gm» اسمٌ لا تقبله القاعدة،
     // **والمالكُ نفسُه لم يكن فيه** فيُمنع من إنشاء مخزنٍ فى شركته.
     // والملفُّ يناقض نفسَه: قائمةُ القراءة أعلاه تضمّ owner صريحاً.
-    if (!['owner', 'admin', 'general_manager'].includes(governance.role)) {
+    if (!['owner', 'admin'].includes(governance.role)) {
       return NextResponse.json({ 
         error: "Insufficient permissions",
         error_ar: "صلاحيات غير كافية" 

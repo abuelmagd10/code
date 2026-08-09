@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     const { user, companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      allowRoles: ["owner", "admin", "general_manager"],
+      allowRoles: ["owner", "admin"],
     })
 
     if (error) return error

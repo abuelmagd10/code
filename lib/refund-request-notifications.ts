@@ -85,7 +85,7 @@ export async function notifyRefundRequestSubmitted(
   await dispatch(supabase, {
     ...params,
     recipients: resolver.resolveRoleRecipients(
-      ['owner', 'general_manager'],
+      ['owner'],
       params.branchId || null,
       null,
       null

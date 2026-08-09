@@ -12,7 +12,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError, forbiddenError } from "@/lib/api-security-enhanced"
 import { getGLSummary } from "@/lib/dashboard-gl-summary"
 
-const PRIVILEGED_ROLES = ["owner", "admin", "general_manager"]
+const PRIVILEGED_ROLES = ["owner", "admin"]
 
 export async function GET(request: NextRequest) {
   try {

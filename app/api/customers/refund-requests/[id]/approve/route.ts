@@ -18,7 +18,7 @@ import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib
 import { createServiceClient } from "@/lib/supabase/server"
 import { CustomerRefundCommandService } from "@/lib/services/customer-refund-command.service"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin"])
 
 export async function POST(
   request: NextRequest,
@@ -32,7 +32,7 @@ export async function POST(
 
     if (!PRIVILEGED_ROLES.has(String(context.member.role || ""))) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: only owner / admin / general_manager can approve" },
+        { success: false, error: "Forbidden: only owner / admin can approve" },
         { status: 403 }
       )
     }

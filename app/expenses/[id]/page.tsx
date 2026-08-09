@@ -86,7 +86,7 @@ export default function ExpenseDetailPage() {
   const [hydrated, setHydrated] = useState(false)
 
   // ✅ Synchronized with RLS policy and notification system
-  const canApprove = ["owner", "admin", "general_manager", "gm", "generalmanager"].includes(userRole)
+  const canApprove = ["owner", "admin", "gm", "generalmanager"].includes(userRole)
   const canEdit = expense?.status === "draft" || expense?.status === "rejected"
   const canSubmitForApproval = expense?.status === "draft" || expense?.status === "rejected"
   const canMarkAsPaid = expense?.status === "approved" && !expense.paid_at
@@ -242,7 +242,7 @@ export default function ExpenseDetailPage() {
           .from("company_members")
           .select("user_id, role")
           .eq("company_id", companyId)
-          .in("role", ["owner", "admin", "general_manager", "gm", "generalmanager", "manager"])
+          .in("role", ["owner", "admin", "gm", "generalmanager", "manager"])
 
         // v3.74.25 — Branch accountants are notification recipients by
         // convention across the rest of the project even though they

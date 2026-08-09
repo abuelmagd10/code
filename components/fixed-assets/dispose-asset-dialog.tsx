@@ -46,7 +46,7 @@ export function DisposeAssetDialog({ open, onOpenChange, assetId, onSuccess, lan
                 if (!companyId) return
 
                 // v3.74.42: fix wrong column (account_type IN cash,bank) → sub_type IN (cash,bank) + branch-scope + is_active
-                const PRIVILEGED = ['owner', 'admin', 'general_manager']
+                const PRIVILEGED = ['owner', 'admin']
                 let _userRoleForAccts = ''
                 let _userBranchForAccts: string | null = null
                 try {

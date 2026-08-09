@@ -6,7 +6,7 @@ import { linkTraceEntity } from "@/lib/services/financial-trace"
 
 type AdminClient = SupabaseClient<any, "public", any>
 
-const MANAGEMENT_ROLES = new Set(["owner", "admin", "general_manager", "manager"])
+const MANAGEMENT_ROLES = new Set(["owner", "admin", "manager"])
 
 export interface IntercompanyActor {
   userId: string

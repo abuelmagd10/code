@@ -16,8 +16,8 @@ const BILL_DRAFT_DELETE_EVENT = "bill_draft_delete"
 
 // v3.74.505 — governance: branch manager ("manager") is a VIEW-ONLY role.
 // Removed from SUBMISSION_ROLES (was able to send bills to the warehouse).
-const SUBMISSION_ROLES = new Set(["owner", "admin", "general_manager", "accountant"])
-const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manager"])
+const SUBMISSION_ROLES = new Set(["owner", "admin", "accountant"])
+const RECEIPT_ROLES = new Set(["owner", "admin", "store_manager"])
 // v3.74.132 — bill edit re-approval is restricted to owner + general
 // manager only (المالك + المدير العام) so it mirrors the PO approval gate
 // from v3.74.131. admin used to be in this list; it is no longer trusted
@@ -26,7 +26,7 @@ const RECEIPT_ROLES = new Set(["owner", "admin", "general_manager", "store_manag
 // key used was "manager" (branch manager — a VIEW-ONLY role). Branch
 // managers could admin-approve bills while real general managers were
 // rejected. Corrected to "general_manager".
-const ADMIN_APPROVAL_ROLES = new Set(["owner", "admin", "general_manager"])
+const ADMIN_APPROVAL_ROLES = new Set(["owner", "admin"])
 
 type ActorContext = {
   companyId: string
@@ -734,7 +734,7 @@ export class BillReceiptWorkflowService {
 
   private assertBranchScope(actor: ActorContext, billBranchId: string | null) {
     const role = normalizeRole(actor.actorRole)
-    if (role === "owner" || role === "admin" || role === "general_manager") {
+    if (role === "owner" || role === "admin" ) {
       return
     }
 
@@ -745,7 +745,7 @@ export class BillReceiptWorkflowService {
 
   private assertReceiptPermission(actor: ActorContext, bill: BillRecord) {
     const role = normalizeRole(actor.actorRole)
-    if (role === "owner" || role === "admin" || role === "general_manager") {
+    if (role === "owner" || role === "admin" ) {
       return
     }
 

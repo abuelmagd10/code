@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     // and the purchasing officer (who registers what he procures). Everyone
     // else is blocked — notably the store/warehouse manager (his job is
     // receive/issue only), the accountant, the booking officer and staff.
-    const PRODUCT_CREATE_ROLES = ["owner", "admin", "general_manager", "manager", "purchasing_officer"]
+    const PRODUCT_CREATE_ROLES = ["owner", "admin", "manager", "purchasing_officer"]
     if (!PRODUCT_CREATE_ROLES.includes(String(member.role || ""))) {
       return ErrorHandler.handle(
         ErrorHandler.forbidden("ليس لديك صلاحية إضافة منتجات — الصلاحية للإدارة أو مدير الفرع أو مسؤول المشتريات فقط."),
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     // Company-wide (may pick any branch + trust submitted accounts): owner /
     // admin / general_manager. Branch-scoped (forced to their own branch +
     // server-resolved accounts): manager, purchasing_officer.
-    const isCompanyLevelAdmin = ["owner", "admin", "general_manager"].includes(member.role)
+    const isCompanyLevelAdmin = ["owner", "admin"].includes(member.role)
     const isNormalRole = !isCompanyLevelAdmin
 
     // 2️⃣ Enforce role constraints

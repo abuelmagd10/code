@@ -131,7 +131,7 @@ export function CustomerFormDialog({
   const [currentRole, setCurrentRole] = useState<string>("")
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
   const [branches, setBranches] = useState<BranchOption[]>([])
-  const COMPANY_SCOPE_ROLES = ['owner', 'admin', 'general_manager']
+  const COMPANY_SCOPE_ROLES = ['owner', 'admin']
   const isFloatingBookingOfficer = currentRole === 'booking_officer' && !currentBranchId
   const needsBranchPicker = COMPANY_SCOPE_ROLES.includes(currentRole) || isFloatingBookingOfficer
 

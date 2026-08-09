@@ -238,7 +238,7 @@ export default function NewPurchaseOrderPage() {
 
         // 🔐 Enterprise Governance: Check if user is Admin or GeneralManager
         const normalizedRole = String(userRole || '').trim().toLowerCase().replace(/\s+/g, '_')
-        const adminCheck = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
+        const adminCheck = ['super_admin', 'admin', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(normalizedRole)
         
         isCurrentUserAdmin = adminCheck
         currentUserBranchId = userBranchId
@@ -429,7 +429,7 @@ export default function NewPurchaseOrderPage() {
         .maybeSingle()
       const userBranchId = memberData?.branch_id || null
       const role = String(memberData?.role || '').trim().toLowerCase().replace(/\s+/g, '_')
-      const isAdminUser = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
+      const isAdminUser = ['super_admin', 'admin', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
 
       // Only add the supplier to the list if it belongs to the user's branch (for non-admin)
       if (isAdminUser || !userBranchId || data.branch_id === userBranchId) {

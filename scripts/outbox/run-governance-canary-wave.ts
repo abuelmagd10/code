@@ -74,7 +74,7 @@ async function resolveCanaryActorId(supabase: SupabaseLike, companyId: string) {
     .from("company_members")
     .select("user_id, role")
     .eq("company_id", companyId)
-    .in("role", ["owner", "admin", "general_manager"])
+    .in("role", ["owner", "admin"])
 
   if (error) {
     throw new Error(error.message || "Failed to resolve governance canary actor")
@@ -83,7 +83,6 @@ async function resolveCanaryActorId(supabase: SupabaseLike, companyId: string) {
   const rolePriority: Record<string, number> = {
     owner: 1,
     admin: 2,
-    general_manager: 3,
   }
 
   const members = Array.isArray(data) ? data : []
@@ -96,7 +95,7 @@ async function resolveCanaryActorId(supabase: SupabaseLike, companyId: string) {
   const actorId = String(members[0]?.user_id || "").trim()
   if (!actorId) {
     throw new Error(
-      "CANARY_ACTOR_NOT_FOUND: no owner/admin/general_manager membership was found for the requested company"
+      "CANARY_ACTOR_NOT_FOUND: no owner/admin membership was found for the requested company"
     )
   }
 

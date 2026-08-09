@@ -171,7 +171,7 @@ export default function ExpensesPage() {
       const visibilityRules = buildDataVisibilityFilter(context)
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+      const PRIVILEGED_ROLES = ['owner', 'admin']
       const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 

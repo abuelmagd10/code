@@ -12,7 +12,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
 
-const APPROVER_ROLES = new Set(["owner", "admin", "general_manager"])
+const APPROVER_ROLES = new Set(["owner", "admin"])
 
 export async function POST(
   request: NextRequest,

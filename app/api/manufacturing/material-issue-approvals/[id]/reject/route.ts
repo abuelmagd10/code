@@ -14,7 +14,7 @@ import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archi
 
 const ALLOWED_APPROVER_ROLES = [
   "store_manager", "manager", "owner", "admin",
-  "general_manager", "warehouse_manager",
+  "warehouse_manager",
 ]
 
 export async function POST(
@@ -75,7 +75,7 @@ export async function POST(
     }
 
     const role = String(memberRow.role || "").trim().toLowerCase()
-    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    const companyWideRoles = new Set(["owner", "admin", "manager"])
     if (!companyWideRoles.has(role)) {
       const scopedWarehouseId = memberRow.warehouse_id || null
       const scopedBranchId = memberRow.branch_id || null
@@ -225,7 +225,7 @@ export async function POST(
     // with the canonical Level-1 approver tier so every senior role
     // hears about the material-issue rejection directly.
     {
-      for (const seniorRole of ["owner", "admin", "general_manager", "manager"]) {
+      for (const seniorRole of ["owner", "admin", "manager"]) {
         try {
           await admin.rpc("create_notification", {
             p_company_id: companyId,

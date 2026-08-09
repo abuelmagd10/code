@@ -17,7 +17,7 @@ import { getActiveCompanyId } from "./company"
 export const FULL_ACCESS_ROLES = ["owner", "admin"]
 
 // الأدوار التي ترى جميع البيانات بدون قيود
-export const UNRESTRICTED_ROLES = ["owner", "admin", "general_manager"]
+export const UNRESTRICTED_ROLES = ["owner", "admin"]
 
 // الأدوار التي ترى جميع البيانات لكن مع قيود تنظيمية
 export const MANAGER_ROLES = ["manager", "accountant"]

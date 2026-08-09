@@ -41,7 +41,7 @@ export interface DashboardVisibilityRules {
 }
 
 /** الأدوار المسموح لها برؤية كل الشركة والتبديل */
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 /**
  * بناء قواعد رؤية لوحة التحكم

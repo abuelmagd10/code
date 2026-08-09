@@ -37,7 +37,7 @@ export async function POST(
     // Booking-linked invoices stay blocked for everyone inside
     // SalesInvoiceUpdateCommandService.assertNotBookingLinked (also
     // service-role, so RLS-proof).
-    const SO_EDIT_PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+    const SO_EDIT_PRIVILEGED_ROLES = new Set(["owner", "admin"])
     const memberRole = String(context.member?.role || "").toLowerCase()
     if (!SO_EDIT_PRIVILEGED_ROLES.has(memberRole)) {
       const { data: linkRow, error: linkError } = await adminSupabase

@@ -135,7 +135,7 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
   // v3.74.689 — purchasing_officer may be central (no branch = sees all) OR
   // branch-scoped (assigned a branch = that branch only). Allow a missing
   // branch here; the dedicated case below decides the scope.
-  const _branchOptionalRoles = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin', 'generalmanager', 'booking_officer', 'purchasing_officer']
+  const _branchOptionalRoles = ['owner', 'admin', 'gm', 'superadmin', 'super_admin', 'generalmanager', 'booking_officer', 'purchasing_officer']
   if (!member.branch_id && !_branchOptionalRoles.includes(_roleNorm)) {
     throw new Error('Governance Error: User has no branch assigned')
   }
@@ -208,7 +208,6 @@ async function buildGovernanceContext(supabase: any, member: any, userId: string
     case 'super_admin':
     case 'gm':
     case 'owner':
-    case 'general_manager':
     case 'generalmanager':
     case 'superadmin':
       const { data: allBranches } = await supabase
@@ -364,7 +363,7 @@ export function addGovernanceData(
   // 🔐 Governance: Role-based enforcement
   const role = String(context.role || 'staff').trim().toLowerCase().replace(/\s+/g, '_')
   // purchasing_officer: يرى كل الفروع (read) لكن الكتابة تُجبَر على فرعه الأساسي (مثل المحاسب)
-  const isAdmin = ['super_admin', 'admin', 'general_manager', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
+  const isAdmin = ['super_admin', 'admin', 'gm', 'owner', 'generalmanager', 'superadmin'].includes(role)
   // v3.74.331 — a floating booking_officer (no branch assigned at all)
   // gets the same "pick any branch you like" privilege as admin for
   // writes; once they're tied to a branch, the standard non-admin path

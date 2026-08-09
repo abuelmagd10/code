@@ -95,20 +95,6 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
   // ==========================================
   // 🧑‍💼 2. General Manager - يروا كل شيء في الشركة
   // ==========================================
-  if (roleLower === "general_manager") {
-    return {
-      companyId: company_id,
-      filterByBranch: false,
-      branchId: null,
-      filterByCostCenter: false,
-      costCenterId: null,
-      filterByWarehouse: false,
-      warehouseId: null,
-      filterByCreatedBy: false,
-      createdByUserId: null,
-      canSeeAllInScope: true
-    }
-  }
 
   // ==========================================
   // 🧮 3. Accountant - يروا كل شيء في نطاقه (Branch + Cost Center + Warehouse)
@@ -386,7 +372,7 @@ export function canCreateDocument(
   const role = (userContext.role || "").toLowerCase()
   
   // ✅ Owner/Admin/General Manager - يمكنهم إنشاء في أي مكان
-  if (["owner", "admin", "general_manager"].includes(role)) {
+  if (["owner", "admin"].includes(role)) {
     return { allowed: true }
   }
 

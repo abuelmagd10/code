@@ -3422,7 +3422,6 @@ function formatUserFacingRole(role: string | null | undefined, language: "ar" | 
   const labels: Record<string, { ar: string; en: string }> = {
     owner: { ar: "مالك", en: "Owner" },
     admin: { ar: "مدير عام", en: "General manager" },
-    general_manager: { ar: "مدير عام", en: "General manager" },
     manager: { ar: "مدير", en: "Manager" },
     accountant: { ar: "محاسب", en: "Accountant" },
     sales: { ar: "مبيعات", en: "Sales" },

@@ -7,7 +7,7 @@ import {
 import { NotificationOutboxDispatcherService } from "@/lib/outbox/notification-outbox-dispatcher.service"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const CANARY_CONTROL_ROLES = new Set(["owner", "admin", "general_manager"])
+const CANARY_CONTROL_ROLES = new Set(["owner", "admin"])
 
 const asNullableString = (value: unknown) => {
   const normalized = String(value || "").trim()

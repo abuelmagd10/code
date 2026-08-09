@@ -383,13 +383,13 @@ export function NotificationCenter({
 
     // 2. التحقق من المستخدم المخصص له
     if (notification.assigned_to_user && notification.assigned_to_user !== userId) {
-      if (!['owner', 'admin', 'general_manager'].includes(userRole)) return false
+      if (!['owner', 'admin'].includes(userRole)) return false
     }
 
     // 3. التحقق من الدور المخصص له
     if (notification.assigned_to_role && notification.assigned_to_role !== userRole) {
       // الأدوار العليا (owner/admin/general_manager) يمكنها رؤية إشعارات بعضها البعض
-      const upperRoles = ['owner', 'admin', 'general_manager']
+      const upperRoles = ['owner', 'admin']
       const isUpperRole = upperRoles.includes(userRole)
       const targetIsUpperRole = upperRoles.includes(notification.assigned_to_role)
 

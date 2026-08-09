@@ -86,7 +86,7 @@ export default function PayrollPage() {
       const cid = await getActiveCompanyId(supabase); if (cid) {
         setCompanyId(cid); const res = await fetch(`/api/hr/employees?companyId=${encodeURIComponent(cid)}`); const data = res.ok ? await res.json() : []; setEmployees(Array.isArray(data) ? data : []);
         // v3.74.42: branch-scope filter for non-privileged users + is_active filter
-        const PRIVILEGED = ['owner', 'admin', 'general_manager']
+        const PRIVILEGED = ['owner', 'admin']
         let _userRoleForAccts = ''
         let _userBranchForAccts: string | null = null
         try {

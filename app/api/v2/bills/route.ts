@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
 
     // ─── 3. بناء الاستعلام ──────────────────────────────────────────────
     const role = governance.role?.trim().toLowerCase().replace(/\s+/g, '_') || ''
-    const isPrivileged = ['owner', 'admin', 'general_manager', 'gm', 'superadmin', 'super_admin'].includes(role)
+    const isPrivileged = ['owner', 'admin', 'gm', 'superadmin', 'super_admin'].includes(role)
 
     // v3.74.938 — المنفذُ المقنَّع لا الجدول: من ليس من جمهور التكلفة يقرأ
     // `null` فى أعمدة المال ويعرضها المتصفحُ «—».

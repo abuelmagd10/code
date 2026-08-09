@@ -91,7 +91,7 @@ export async function notifyRefundRequestCreated(params: {
   // historically lived under that bucket; the approval-archive logic
   // only kicks in for `approvals` so leaving this alone matches
   // existing behavior.
-  const approverRoles = ['owner', 'admin', 'general_manager', 'manager']
+  const approverRoles = ['owner', 'admin', 'manager']
   for (const role of approverRoles) {
     await createNotification({
       companyId,
@@ -1571,7 +1571,7 @@ export async function notifyPaymentApprovalRequest(params: {
   // ⚠️ نستخدم 'admin' + 'general_manager' فقط (بدون owner)
   // الـ RPC (get_user_notifications) يُظهر إشعارات 'admin' لـ 'owner' تلقائياً
   // إضافة 'owner' تُسبب تكرار الإشعار مرتين لنفس المستخدم
-  const managementRoles = ['admin', 'general_manager']
+  const managementRoles = ['admin']
 
   for (const role of managementRoles) {
     try {
@@ -1943,7 +1943,7 @@ export async function notifyPRApprovalRequest(params: {
   // ⚠️ نستخدم 'admin' + 'general_manager' فقط (بدون owner)
   // الـ RPC (get_user_notifications) يُظهر إشعارات 'admin' لـ 'owner' تلقائياً
   // إضافة 'owner' تُسبب تكرار الإشعار مرتين لنفس المستخدم
-  for (const role of ['admin', 'general_manager']) {
+  for (const role of ['admin']) {
     await createNotification({
       companyId,
       referenceType: 'purchase_return',
@@ -2167,7 +2167,7 @@ export async function notifyManagementPRWarehouseConfirmed(params: {
 
   console.warn('⚠️ notifyManagementPRWarehouseConfirmed: RPC returned no managers — fallback to role-based')
   // ⚠️ بدون owner — يرى إشعارات admin تلقائياً عبر RPC
-  for (const role of ['admin', 'general_manager']) {
+  for (const role of ['admin']) {
     try {
       await createNotification({
         companyId,
@@ -2255,7 +2255,7 @@ export async function notifyManagementPRWarehouseRejected(params: {
   // fallback path matches v3.74.20+. Particularly important when a
   // company has no admin/GM member and the owner alone needs to know
   // the warehouse cancelled a return management had already approved.
-  for (const role of ['owner', 'admin', 'general_manager', 'manager']) {
+  for (const role of ['owner', 'admin', 'manager']) {
     try {
       await createNotification({
         companyId,

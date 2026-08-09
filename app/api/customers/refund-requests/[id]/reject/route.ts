@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin"])
 
 export async function POST(
   request: NextRequest,
@@ -30,7 +30,7 @@ export async function POST(
 
     if (!PRIVILEGED_ROLES.has(String(context.member.role || ""))) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: only owner / admin / general_manager can reject" },
+        { success: false, error: "Forbidden: only owner / admin can reject" },
         { status: 403 }
       )
     }

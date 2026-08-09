@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { getDailyIncomeByBranch } from "@/lib/dashboard-daily-income"
 
-const PRIVILEGED_ROLES = ["owner", "admin", "general_manager"]
+const PRIVILEGED_ROLES = ["owner", "admin"]
 
 /**
  * GET /api/dashboard-daily-income

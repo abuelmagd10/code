@@ -16,7 +16,7 @@ import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 import { arabicReason } from "@/lib/error-messages"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+const PRIVILEGED_ROLES = ['owner', 'admin']
 
 /**
  * GET /api/sales-orders

@@ -20,7 +20,6 @@ import { arabicReason } from "@/lib/error-messages"
 const PURCHASE_PRIVILEGED_ROLES = new Set([
   "super_admin",
   "admin",
-  "general_manager",
   "gm",
   "owner",
   "generalmanager",

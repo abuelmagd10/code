@@ -37,7 +37,7 @@ const closeBodySchema = z.object({
   pageKey: z.string().trim().min(1).max(120).optional(),
 })
 
-const reviewRoles = ["owner", "admin", "general_manager", "manager"]
+const reviewRoles = ["owner", "admin", "manager"]
 
 export async function GET(request: NextRequest) {
   try {

@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     // 🔐 v3.74.67 — Tightened: only Owner + General Manager can use the
     // permission transfer/share workflow. Admin removed at the user's
     // explicit request — keep this surface narrow.
-    const allowedRoles = ["owner", "admin", "general_manager"]
+    const allowedRoles = ["owner", "admin"]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
       // senior themselves) got back their own request. Now we look up
       // each individual approver from company_members, EXCLUDE the
       // submitter, and insert a per-user notification (assigned_to_user).
-      const approverRoles = ["owner", "admin", "general_manager"]
+      const approverRoles = ["owner", "admin"]
       try {
         const { data: approvers } = await supabase
           .from("company_members")

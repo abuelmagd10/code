@@ -4,7 +4,7 @@ import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 import { purgeTrace, linkTraceEntity } from "@/lib/services/financial-trace"
 
 const SUPPLIER_REFUND_RECEIPT_EVENT = "supplier_refund_receipt_posting"
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin"])
 
 type SupabaseLike = any
 type TraceRecord = { transaction_id: string; request_hash: string | null }

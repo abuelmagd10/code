@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-09T11:20:36.513Z
--- Routines: 1343
+-- Generated: 2026-08-09T12:07:09.416Z
+-- Routines: 1344
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4757,6 +4757,74 @@ BEGIN
         RAISE EXCEPTION '%', SQLERRM;
       END IF;
     END;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_993_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_993_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_company uuid;
+  v_role text;
+  v_resource text;
+BEGIN
+  -- ═══ الصمتُ منعٌ: دورٌ ومَوردٌ لا قاعدةَ بينهما ═══
+  SELECT company_id INTO v_company FROM public.company_role_permissions LIMIT 1;
+  IF v_company IS NULL THEN
+    RAISE NOTICE 'v3.74.993 · لا صلاحيّاتٍ تُقاس عليها — لم يُدَّعَ قياس.';
+  ELSE
+    IF public.check_page_access(v_company, 'zz_role_nobody_holds', 'zz_resource_that_has_no_rule') IS NOT FALSE THEN
+      RAISE EXCEPTION 'BASELINE FAIL: صمتُ القاعدة قُرئ إذناً — بابٌ يُفتح لأنّ أحداً لم يكتب له قاعدة (v3.74.993)';
+    END IF;
+
+    -- ═══ ولا يصرخ على البرىء: من له قاعدةٌ مكتوبةٌ يبقى جوابُه ═══
+    SELECT role, resource INTO v_role, v_resource
+    FROM public.company_role_permissions
+    WHERE company_id = v_company AND COALESCE(can_access, TRUE) = TRUE
+    LIMIT 1;
+
+    IF v_role IS NOT NULL
+       AND public.check_page_access(v_company, v_role, v_resource) IS NOT TRUE THEN
+      RAISE EXCEPTION 'BASELINE FAIL: مُنع من له قاعدةٌ مكتوبةٌ تسمح (v3.74.993)';
+    END IF;
+  END IF;
+
+  -- ═══ والدورُ المحذوفُ لا أثرَ له ═══
+  IF EXISTS (SELECT 1 FROM public.company_members WHERE role = 'general_manager') THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عضوٌ يشغل دوراً محذوفاً (v3.74.993)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.company_role_permissions WHERE role = 'general_manager') THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صلاحيّاتٌ لدورٍ لا يستطيع أحدٌ أن يشغله (v3.74.993)';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'company_members'
+      AND c.conname = 'company_members_role_check'
+      AND pg_get_constraintdef(c.oid) ILIKE '%general_manager%'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مفرداتُ العضويّة ما زالت تقبل general_manager (v3.74.993)';
+  END IF;
+
+  -- ═══ وكلُّ دورٍ يشغله أحدٌ اليومَ تقبله المفردات ═══
+  IF EXISTS (
+    SELECT 1 FROM public.company_members cm
+    WHERE NOT EXISTS (
+      SELECT 1 FROM (VALUES
+        ('owner'),('admin'),('manager'),('accountant'),('store_manager'),('staff'),
+        ('viewer'),('manufacturing_officer'),('booking_officer'),('purchasing_officer'),('hr_officer')
+      ) AS v(r) WHERE v.r = cm.role)
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عضوٌ يشغل دوراً خارج المفردات (v3.74.993)';
   END IF;
 END;
 $function$
@@ -11684,7 +11752,23 @@ CREATE OR REPLACE FUNCTION public.check_page_access(p_company_id uuid, p_role te
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
-AS $function$ DECLARE v_can_access BOOLEAN; BEGIN SELECT COALESCE(can_access, TRUE) INTO v_can_access FROM company_role_permissions WHERE company_id = p_company_id AND role = p_role AND resource = p_resource; IF NOT FOUND THEN RETURN TRUE; END IF; RETURN v_can_access; END; $function$
+AS $function$
+DECLARE
+  v_can_access BOOLEAN;
+BEGIN
+  SELECT COALESCE(can_access, TRUE) INTO v_can_access
+  FROM public.company_role_permissions
+  WHERE company_id = p_company_id AND role = p_role AND resource = p_resource;
+
+  -- v3.74.993 — **غيابُ القاعدة يُقرأ منعاً لا إذناً.** كان هنا RETURN TRUE،
+  -- وطبقةُ التطبيق تقول عكسَه بالحرف. فصار البيتان يقولان قولاً واحداً.
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN v_can_access;
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -11698,31 +11782,33 @@ CREATE OR REPLACE FUNCTION public.check_page_access(p_user_id uuid, p_company_id
 AS $function$
 DECLARE
   v_role TEXT;
-  v_can_access BOOLEAN := FALSE;
+  v_can_access BOOLEAN;
 BEGIN
-  -- الحصول على دور المستخدم
   SELECT role INTO v_role
-  FROM company_members
+  FROM public.company_members
   WHERE user_id = p_user_id AND company_id = p_company_id;
 
   IF v_role IS NULL THEN
     RETURN FALSE;
   END IF;
 
-  -- owner و admin لديهم وصول لكل الصفحات
+  -- المالكُ والمديرُ يريان كلَّ شىء — وهذا قرارٌ مكتوبٌ لا صمت
   IF v_role IN ('owner', 'admin') THEN
     RETURN TRUE;
   END IF;
 
-  -- التحقق من can_access
   SELECT COALESCE(crp.can_access, TRUE) INTO v_can_access
-  FROM company_role_permissions crp
+  FROM public.company_role_permissions crp
   WHERE crp.company_id = p_company_id
     AND crp.role = v_role
     AND crp.resource = p_resource;
 
-  -- إذا لم يوجد سجل، نفترض أن الوصول مسموح
-  RETURN COALESCE(v_can_access, TRUE);
+  -- v3.74.993 — **غيابُ القاعدة يُقرأ منعاً لا إذناً** (انظر مثيلتَها أعلاه).
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN v_can_access;
 END;
 $function$
 ;

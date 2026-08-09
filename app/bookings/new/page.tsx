@@ -74,7 +74,7 @@ export default function NewBookingPage() {
     const role    = isOwner ? "owner" : (memberData?.role || "viewer")
     // v3.74.662 — expose creator identity/role for the discount gate
     setCurrentUserId(user.id)
-    setIsUpperRole(["owner", "admin", "general_manager"].includes(role))
+    setIsUpperRole(["owner", "admin"].includes(role))
     const branchId      = isOwner ? null : (memberData?.branch_id      ?? null)
     const costCenterId  = isOwner ? null : (memberData?.cost_center_id  ?? null)
 

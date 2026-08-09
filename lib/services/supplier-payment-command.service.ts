@@ -10,7 +10,7 @@ const APPLY_BILL_COMMAND_EVENT = "supplier_payment_apply_bill"
 const APPLY_PO_COMMAND_EVENT = "supplier_payment_apply_po"
 const UPDATE_COMMAND_EVENT = "supplier_payment_update"
 const DELETE_COMMAND_EVENT = "supplier_payment_delete"
-const PRIVILEGED_ROLES = new Set(["owner", "admin", "general_manager"])
+const PRIVILEGED_ROLES = new Set(["owner", "admin"])
 
 type SupabaseLike = any
 

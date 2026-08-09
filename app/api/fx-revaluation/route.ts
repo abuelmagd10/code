@@ -44,10 +44,10 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const role = String(member?.role || '').toLowerCase()
-    const allowed = ['owner', 'admin', 'general_manager', 'gm', 'super_admin']
+    const allowed = ['owner', 'admin', 'gm', 'super_admin']
     if (!allowed.includes(role)) {
       return NextResponse.json(
-        { error: 'Forbidden: requires owner/admin/general_manager role' },
+        { error: 'Forbidden: requires owner/admin role' },
         { status: 403 }
       )
     }

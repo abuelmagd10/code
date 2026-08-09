@@ -12,7 +12,7 @@ const BLOCKING_INVOICE_STATUSES = ['sent', 'partially_paid', 'paid']
 const PROTECTED_GOVERNANCE_FIELDS = ['branch_id', 'cost_center_id', 'warehouse_id']
 
 // 🔐 الأدوار المسموح لها بتغيير حقول الحوكمة
-const GOVERNANCE_ADMIN_ROLES = ['owner', 'admin', 'general_manager', 'gm', 'generalmanager', 'super_admin', 'superadmin']
+const GOVERNANCE_ADMIN_ROLES = ['owner', 'admin', 'gm', 'generalmanager', 'super_admin', 'superadmin']
 
 export async function POST(request: NextRequest) {
   try {

@@ -45,7 +45,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
     const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
     const [rejectionReason, setRejectionReason] = useState("")
 
-    const canApprove = ["owner", "admin", "general_manager", "gm", "generalmanager"].includes(userRole)
+    const canApprove = ["owner", "admin", "gm", "generalmanager"].includes(userRole)
     const isCreator = drawing?.created_by === userId
     const canSubmitForApproval = isCreator && drawing && ['draft', 'rejected'].includes(drawing.status)
 
@@ -113,7 +113,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                 loadData()
                 const cId = await getActiveCompanyId(supabase)
                 if (cId) {
-                    const { data: approvers } = await supabase.from('company_members').select('user_id').eq('company_id', cId).in('role', ['owner', 'admin', 'general_manager'])
+                    const { data: approvers } = await supabase.from('company_members').select('user_id').eq('company_id', cId).in('role', ['owner', 'admin'])
                     for (const a of approvers || []) {
                         await createNotification({
                             companyId: cId,

@@ -278,7 +278,7 @@ export async function checkPermission(
 
   // owner و admin و general_manager لديهم كل الصلاحيات
   // قرار المالك: المدير العام له نفس صلاحيات المالك (وصول كامل)
-  if (["owner", "admin", "general_manager"].includes(role)) {
+  if (["owner", "admin"].includes(role)) {
     return { allowed: true, role }
   }
 

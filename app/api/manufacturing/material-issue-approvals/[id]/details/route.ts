@@ -9,7 +9,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 
 const ALLOWED_ROLES = [
-  "store_manager", "manager", "owner", "admin", "general_manager",
+  "store_manager", "manager", "owner", "admin", 
   "warehouse_manager", "accountant", "manufacturing_officer"
 ]
 
@@ -145,7 +145,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: "طلب الاعتماد غير موجود" }, { status: 404 })
     }
 
-    const companyWideRoles = new Set(["owner", "admin", "general_manager", "manager"])
+    const companyWideRoles = new Set(["owner", "admin", "manager"])
     if (!companyWideRoles.has(role)) {
       const scopedWarehouseId = memberRow.warehouse_id || null
       const scopedBranchId = memberRow.branch_id || null
@@ -365,11 +365,11 @@ export async function GET(
     }
 
     // تحديد صلاحيات المستخدم
-    const canApprove = ["store_manager", "warehouse_manager", "manager", "owner", "admin", "general_manager"]
+    const canApprove = ["store_manager", "warehouse_manager", "manager", "owner", "admin"]
       .includes(memberRow.role)
     const isAccountant = memberRow.role === "accountant"
     const hasShortages = materials.some((m: any) => m.shortage_qty > 0)
-    const upperRoles = ["owner", "admin", "general_manager", "manager"]
+    const upperRoles = ["owner", "admin", "manager"]
     const canCreatePO = (upperRoles.includes(memberRow.role) || isAccountant) && hasShortages
       && ["rejected", "partially_approved", "pending", "approved"].includes(approval.status)
 
@@ -388,7 +388,7 @@ export async function GET(
         materials,
         user_can_approve: canApprove && ["pending", "management_approved", "partially_approved"].includes(approval.status),
         user_can_reject: canApprove && ["pending", "management_approved", "partially_approved"].includes(approval.status),
-        user_can_management_approve: ["admin", "owner", "general_manager", "manager"].includes(memberRow.role) && approval.status === "pending",
+        user_can_management_approve: ["admin", "owner", "manager"].includes(memberRow.role) && approval.status === "pending",
         user_is_accountant: isAccountant,
         user_can_create_po: canCreatePO,
         user_role: memberRow.role,
