@@ -31,6 +31,17 @@
  */
 require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"] })
 
+// v3.74.990 — كان الفخُّ الذاتىُّ لهذا الحارس فى ملفٍّ اسمُه selftest-*،
+// **والدفعةُ لا تُشغّل إلّا ما اسمُه check-***. ففخٌّ لا يُشغَّل ليس فخّاً:
+// يُنادى من هنا فيمرّ على كلِّ دفعة.
+if (process.argv.includes("--selftest")) {
+  const { spawnSync } = require("child_process")
+  const r = spawnSync(process.execPath, [require("path").join(__dirname, "selftest-exposed-definer-functions.js")], {
+    stdio: "inherit",
+  })
+  process.exit(typeof r.status === "number" ? r.status : 1)
+}
+
 const requireDb = process.argv.includes("--require-db")
 const verbose = process.argv.includes("--list")
 
@@ -47,28 +58,14 @@ try { ({ Client } = require("pg")) } catch {
   console.error("X npm install pg --save-dev"); process.exit(1)
 }
 
-const SQL = `
-  SELECT p.proname,
-         pg_get_function_identity_arguments(p.oid) AS args,
-         has_function_privilege('authenticated', p.oid, 'EXECUTE') AS by_authenticated,
-         has_function_privilege('anon',          p.oid, 'EXECUTE') AS by_anon
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-   WHERE n.nspname = 'public'
-     AND p.prokind = 'f'
-     AND p.prosecdef
-     AND p.prorettype <> 'trigger'::regtype
-     AND p.proname NOT LIKE 'assert\\_%'
-     AND pg_get_function_identity_arguments(p.oid) ILIKE '%uuid%'
-     AND (p.prosrc ILIKE '%INSERT INTO%'
-       OR p.prosrc ~* '\\mUPDATE\\s+\\w'
-       OR p.prosrc ~* '\\mDELETE\\s+FROM')
-     AND p.prosrc NOT ILIKE '%company_members%'
-     AND p.prosrc NOT ILIKE '%auth.uid()%'
-     AND p.prosrc NOT ILIKE '%user_has_company_access%'
-     AND p.prosrc NOT ILIKE '%assert_company_access%'
-     AND p.prosrc NOT ILIKE '%assert_is_self%'
-   ORDER BY p.proname`
+// v3.74.990 — كان الاستعلامُ مكتوباً هنا **ويقيس شكلاً لا خاصّيّة**:
+//   • يشترط وسيطاً من نوع uuid — فمن يُخفى رقمَ الشركة داخل حمولة jsonb
+//     يمرُّ من تحته (وهو ما حدث فى create_sales_invoice_atomic).
+//   • ويشترط كتابةً صريحةً فى جسدها — فمن يُفوِّض الكتابةَ يبدو برىئاً.
+// فصارت الخاصّيّةُ فى **بيتٍ واحدٍ فى القاعدة** تُقرأ ولا تُنسخ، ومعها:
+// **ومن فوَّض إلى من يسأل فقد سأل** — فلا يُتَّهم برىء.
+const SQL = `SELECT proname, args, writes_directly, writes_via_callee
+               FROM public.erp_doors_that_do_not_ask()`
 
 ;(async () => {
   const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
@@ -76,28 +73,25 @@ const SQL = `
   let rows
   try { ({ rows } = await client.query(SQL)) } finally { await client.end() }
 
-  const exposed = rows.filter((r) => r.by_authenticated || r.by_anon)
-
-  if (exposed.length > 0) {
-    console.error(`X ${exposed.length} SECURITY DEFINER function(s) write with full rights and never ask who is calling:`)
-    for (const r of exposed) {
-      const who = [r.by_anon ? "anon" : null, r.by_authenticated ? "authenticated" : null]
-        .filter(Boolean).join(" + ")
-      console.error(`  - ${r.proname}(${r.args}) - callable by ${who}`)
+  if (rows.length > 0) {
+    console.error(
+      `X ${rows.length} SECURITY DEFINER function(s) write into a company and never ask whether the`
+    )
+    console.error(`  caller belongs to it - and every one of them is callable by an end user:`)
+    for (const r of rows) {
+      const how = r.writes_directly ? "writes directly" : "writes through a callee"
+      console.error(`  - ${r.proname}(${r.args}) - ${how}`)
     }
     console.error("  Fix EITHER by asking the question (assert_company_access / assert_company_access_by_row /")
     console.error("  assert_is_self - whichever fits), OR by restricting it to service_role if the application")
     console.error("  never calls it. Both together is better: a revoked grant can come back with one migration.")
-    console.error("  See supabase/migrations/20260731000009_v3_74_919_transfer_journal_caller_identity.sql")
+    console.error("  See supabase/migrations/20260808000009_v3_74_990_every_door_asks_the_question_itself.sql")
     process.exit(1)
   }
 
-  if (verbose && rows.length > 0) {
-    console.log(`  ${rows.length} definer writer(s) with no identity check, all restricted to service_role:`)
-    for (const r of rows) console.log(`    ${r.proname}`)
-  }
   console.log(
-    `+ no SECURITY DEFINER writer is exposed to end users (${rows.length} function(s) lack an identity ` +
-    `check and every one of them is service_role only).`
+    "+ every door that writes into a company asks whether its caller belongs to it - measured by " +
+      "property, not by shape: the id may travel as a uuid or inside a payload, the write may be direct " +
+      "or delegated, and delegating to a door that asks counts as asking."
   )
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })

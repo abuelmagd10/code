@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-08T16:13:18.864Z
--- Routines: 1338
+-- Generated: 2026-08-09T10:49:13.325Z
+-- Routines: 1342
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4503,6 +4503,177 @@ BEGIN
   IF public.warehouse_has_store_manager(v_company, v_wh)
      IS DISTINCT FROM public.branch_warehouse_custodian(v_company, NULL, v_wh, NULL) THEN
     RAISE EXCEPTION 'BASELINE FAIL: بيتُ ٩٨٣ افترق عن البيت الواحد (v3.74.989)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_990_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_990_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_open int;
+  v_names text;
+  v_seen int;
+  v_msg text;
+BEGIN
+  -- ═══ لا بابَ مكشوفاً اليوم ═══
+  SELECT count(*), string_agg(d.proname, ' · ') INTO v_open, v_names
+  FROM public.erp_doors_that_do_not_ask() d;
+
+  IF v_open > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % باباً يكتب فى شركةٍ ولا يسأل عن انتماء طالبه: % (v3.74.990)', v_open, v_names;
+  END IF;
+
+  -- ═══ وفحصٌ لا يجد شيئاً قد يكون أعمى — فيُجرَّب عليه مذنبٌ مزروع ═══
+  -- يُزرع بابٌ يُخفى رقمَ الشركة داخل حمولة (الشكلُ الذى كان يمرُّ من تحت
+  -- الحارس القديم)، ثمّ يُقاس، ثمّ **يُلغى الزرعُ دائماً**.
+  BEGIN
+    EXECUTE $probe$
+      CREATE OR REPLACE FUNCTION public.zz_probe_990_door(p_payload jsonb)
+      RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+      SET search_path TO 'public', 'pg_catalog'
+      AS $body$
+      BEGIN
+        UPDATE public.companies SET updated_at = updated_at
+        WHERE id = (p_payload->>'company_id')::uuid;
+      END;
+      $body$;
+    $probe$;
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.zz_probe_990_door(jsonb) FROM PUBLIC';
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.zz_probe_990_door(jsonb) FROM anon';
+    EXECUTE 'GRANT  EXECUTE ON FUNCTION public.zz_probe_990_door(jsonb) TO authenticated';
+
+    SELECT count(*) INTO v_seen
+    FROM public.erp_doors_that_do_not_ask() d
+    WHERE d.proname = 'zz_probe_990_door';
+
+    v_msg := 'ROLLBACK_PROBE_990:' || v_seen::text;
+    RAISE EXCEPTION '%', v_msg;
+  EXCEPTION WHEN OTHERS THEN
+    v_msg := SQLERRM;
+  END;
+
+  IF position('ROLLBACK_PROBE_990:1' in v_msg) = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: الفحصُ لم يرَ باباً مزروعاً يُخفى الشركةَ فى حمولة — فحصٌ لا يرى ليس فحصاً (%) (v3.74.990)', v_msg;
+  END IF;
+
+  -- وما زُرع أُلغى: لا أثرَ له فى القاعدة
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'zz_probe_990_door'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بقى الزرعُ فى القاعدة — ولا أترك ما زرعتُ (v3.74.990)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_991_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_991_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_orphans int;
+  v_enabled char;
+  v_msg text;
+  v_voice text := 'دفعةٌ بلا اسمِ من صنعها';
+  v_company uuid;
+  v_customer uuid;
+BEGIN
+  -- ═══ لا صفَّ بقى فارغاً وفى السجلّ من يعرفه ═══
+  SELECT count(*) INTO v_orphans
+  FROM public.payments p
+  WHERE p.customer_id IS NOT NULL
+    AND coalesce(p.is_deleted, false) = false
+    AND p.created_by IS NULL AND p.created_by_user_id IS NULL
+    AND EXISTS (SELECT 1 FROM public.audit_logs a
+                 WHERE a.target_table = 'payments' AND a.record_id = p.id
+                   AND a.action = 'INSERT' AND a.user_id IS NOT NULL);
+
+  IF v_orphans > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % دفعةً فارغةَ المنشئ والسجلُّ يعرف فاعلَها (v3.74.991)', v_orphans;
+  END IF;
+
+  -- ═══ والبيوتُ الثلاثةُ تسمّى الفاعل ═══
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('process_invoice_payment_atomic', 'process_invoice_payment_atomic_v2')
+      AND p.prosrc NOT ILIKE '%created_by%'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتٌ يُدرج دفعةً ولا يسمّى فاعلَها (v3.74.991)';
+  END IF;
+
+  -- ═══ والحارسُ عند الجدول موجودٌ ومُفعَّل ═══
+  SELECT t.tgenabled INTO v_enabled
+  FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relname = 'payments'
+    AND t.tgname = 'aa_payment_names_its_author';
+
+  IF v_enabled IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حارسُ الجدول غائب — وإصلاحُ البيوت وحدَه مسكّن (v3.74.991)';
+  END IF;
+  IF v_enabled = 'D' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حارسُ الجدول مُعطَّل (v3.74.991)';
+  END IF;
+
+  SELECT p.company_id, p.customer_id INTO v_company, v_customer
+  FROM public.payments p
+  WHERE p.customer_id IS NOT NULL AND coalesce(p.is_deleted,false) = false
+  LIMIT 1;
+
+  IF v_company IS NULL THEN
+    RAISE NOTICE 'v3.74.991 · لا دفعةَ عميلٍ تُقاس عليها — أُثبت وجودُ الحارس ولم يُدَّعَ تشغيلُه.';
+    RETURN;
+  END IF;
+
+  -- ═══ المذنب: دفعةٌ بلا اسم ═══
+  -- وتُمحى الجلسةُ داخل التجربة: **وإلّا ملأ الحارسُ الاسمَ من صاحبها فبدا
+  -- المذنبُ برىئاً، ولَقِيس غيرُ ما أردتُ قياسه.**
+  PERFORM set_config('request.jwt.claims', '', true);
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  BEGIN
+    INSERT INTO public.payments (company_id, customer_id, payment_date, amount, payment_method)
+    VALUES (v_company, v_customer, CURRENT_DATE, 1, 'cash');
+    v_msg := 'ROLLBACK_PROBE_991';
+    RAISE EXCEPTION 'ROLLBACK_PROBE_991';
+  EXCEPTION WHEN OTHERS THEN
+    v_msg := SQLERRM;
+  END;
+
+  IF position(v_voice in v_msg) = 0 THEN
+    IF position('ROLLBACK_PROBE_991' in v_msg) > 0 THEN
+      RAISE EXCEPTION 'BASELINE FAIL: مرّت دفعةٌ بلا اسمِ من صنعها (v3.74.991)';
+    END IF;
+    RAISE NOTICE 'v3.74.991 · لم يُقَس المذنبُ: أوقفه حارسٌ آخرُ (%) — ولا أنسب إلى حارسى فعلَ غيره.', v_msg;
+  END IF;
+
+  -- ═══ والبرىء: صفُّ إبطالٍ يولد من صفٍّ آخر ═══
+  BEGIN
+    INSERT INTO public.payments (company_id, customer_id, payment_date, amount, payment_method, voids_payment_id)
+    VALUES (v_company, v_customer, CURRENT_DATE, -1, 'void',
+            (SELECT id FROM public.payments WHERE customer_id IS NOT NULL LIMIT 1));
+    v_msg := 'ROLLBACK_PROBE_991';
+    RAISE EXCEPTION 'ROLLBACK_PROBE_991';
+  EXCEPTION WHEN OTHERS THEN
+    v_msg := SQLERRM;
+  END;
+
+  IF position(v_voice in v_msg) > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صرخ على صفِّ إبطالٍ يولد من صفٍّ آخر (v3.74.991)';
   END IF;
 END;
 $function$
@@ -17203,6 +17374,8 @@ DECLARE
     v_invoice_id UUID;
     v_item JSONB;
 BEGIN
+  -- v3.74.990 — البابُ يسأل بنفسه عن انتماء طالبه.
+  PERFORM public.assert_company_access((p_invoice_data->>'company_id')::uuid);
     INSERT INTO invoices (
         company_id, customer_id, invoice_date, due_date, subtotal, tax_amount, total_amount,
         discount_type, discount_value, discount_position, tax_inclusive, shipping, shipping_tax_rate,
@@ -19892,6 +20065,43 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- enforce_payment_names_its_author()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_payment_names_its_author()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  -- **ولا يُطلب ما يُعرَف**: إن كانت جلسةٌ فصاحبُها هو الفاعل. ويُملأ العمودان
+  -- معاً — فهما بيتان لخبرٍ واحد، وافتراقُهما هو ما جعل الصفَّ يبدو مجهولاً
+  -- وأحدُهما يعرف.
+  IF NEW.created_by_user_id IS NULL THEN
+    NEW.created_by_user_id := auth.uid();
+  END IF;
+  IF NEW.created_by IS NULL THEN
+    NEW.created_by := NEW.created_by_user_id;
+  END IF;
+  IF NEW.created_by_user_id IS NULL THEN
+    NEW.created_by_user_id := NEW.created_by;
+  END IF;
+
+  -- صفُّ الإبطال يولد من صفٍّ آخر، وأبوه يحمل اسمَ صاحبه
+  IF NEW.voids_payment_id IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.created_by IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'دفعةٌ بلا اسمِ من صنعها لا تُكتب — سَمِّ الفاعل (created_by). ومن يكتب من الخادم يسمّيه بنفسه، فلا جلسةَ تسمّيه عنه.'
+    USING ERRCODE = 'P0001';
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- enforce_period_lock_header()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.enforce_period_lock_header()
@@ -20442,6 +20652,58 @@ AS $function$
       AND cm.user_id = p_user_id
       AND cm.role = 'owner'
   );
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_doors_that_do_not_ask()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_doors_that_do_not_ask()
+ RETURNS TABLE(proname text, args text, writes_directly boolean, writes_via_callee boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH fn AS (
+    SELECT p.oid, p.proname::text AS nm, pg_get_function_identity_arguments(p.oid) AS ar,
+           p.prosrc, p.prosecdef,
+           (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+            OR has_function_privilege('anon', p.oid, 'EXECUTE')) AS exposed,
+           (p.prosrc ILIKE '%INSERT INTO%'
+            OR p.prosrc ~* '\mUPDATE\s+\w'
+            OR p.prosrc ~* '\mDELETE\s+FROM') AS writes,
+           (p.prosrc ILIKE '%company_members%'
+            OR p.prosrc ILIKE '%auth.uid()%'
+            OR p.prosrc ILIKE '%user_has_company_access%'
+            OR p.prosrc ILIKE '%assert_company_access%'
+            OR p.prosrc ILIKE '%assert_is_self%') AS asks
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prokind = 'f'
+      AND p.prorettype <> 'trigger'::regtype
+  ),
+  -- المرشَّحون وحدَهم على يسار العلاقة، ومن يكتب أو يسأل وحدَه على يمينها:
+  -- فلا تُقارَن ألفُ دالّةٍ بألفٍ بلا داعٍ، والنتيجةُ هى هى.
+  cand AS (
+    SELECT * FROM fn c
+    WHERE c.prosecdef AND c.exposed AND c.nm NOT LIKE 'assert\_%'
+      AND (c.ar ILIKE '%uuid%' OR c.ar ILIKE '%jsonb%')
+      AND NOT c.asks
+  ),
+  edge AS (
+    SELECT c.oid AS caller, t.oid AS callee
+    FROM cand c JOIN fn t
+      ON t.nm <> c.nm AND (t.writes OR t.asks)
+     AND c.prosrc ~* ('\m' || t.nm || '\s*\(')
+  )
+  SELECT c.nm, c.ar, c.writes,
+         EXISTS (SELECT 1 FROM edge e JOIN fn t ON t.oid = e.callee WHERE e.caller = c.oid AND t.writes)
+  FROM cand c
+  WHERE
+    -- تكتب بنفسها أو تُفوِّض الكتابة
+    (c.writes OR EXISTS (SELECT 1 FROM edge e JOIN fn t ON t.oid = e.callee WHERE e.caller = c.oid AND t.writes))
+    -- **ومن فوَّض إلى من يسأل فقد سأل** — فلا يُتَّهم برىء
+    AND NOT EXISTS (SELECT 1 FROM edge e JOIN fn t ON t.oid = e.callee WHERE e.caller = c.oid AND t.asks)
+  ORDER BY 1;
 $function$
 ;
 
@@ -23533,8 +23795,12 @@ BEGIN
     ELSE 'partially_paid'
   END;
 
+  -- v3.74.992 — **لا تُبعث وثيقةٌ أُلغيت** (انظر مثيلتَها فى الفاتورة).
   UPDATE public.bills
-  SET paid_amount = v_paid, status = v_new_status, updated_at = NOW()
+  SET paid_amount = v_paid,
+      status = CASE WHEN COALESCE(status,'') IN ('received','partially_paid','paid')
+                    THEN v_new_status ELSE status END,
+      updated_at = NOW()
   WHERE id = p_bill_id;
 END;
 $function$
@@ -23614,8 +23880,14 @@ BEGIN
     ELSE 'partially_paid'
   END;
 
+  -- v3.74.992 — **لا تُبعث وثيقةٌ أُلغيت**: المالُ يقرّر بين حالات المال
+  -- وحدَها (مُرسَلة · مدفوعةٌ جزئيّاً · مدفوعة). وما كان مُلغًى أو مسوّدةً
+  -- فحالتُه قرارُ إنسانٍ لا حاصلُ جمع — يُحدَّث مبلغُه ولا تُمسّ حالتُه.
   UPDATE public.invoices
-  SET paid_amount = v_paid, status = v_new_status, updated_at = NOW()
+  SET paid_amount = v_paid,
+      status = CASE WHEN COALESCE(status,'') IN ('sent','partially_paid','paid')
+                    THEN v_new_status ELSE status END,
+      updated_at = NOW()
   WHERE id = p_invoice_id;
 END;
 $function$
@@ -45877,13 +46149,15 @@ BEGIN
   INSERT INTO payments (
     company_id, customer_id, invoice_id, payment_date, amount,
     payment_method, reference_number, notes,
-    account_id, branch_id, cost_center_id, warehouse_id
+    account_id, branch_id, cost_center_id, warehouse_id,
+    created_by, created_by_user_id
   ) VALUES (
     p_company_id, p_customer_id, p_invoice_id, p_payment_date, p_amount,
     p_payment_method,
     p_reference_number,
     COALESCE(p_notes, 'دفعة على الفاتورة ' || v_invoice.invoice_number),
-    p_account_id, v_branch_id, p_cost_center_id, p_warehouse_id
+    p_account_id, v_branch_id, p_cost_center_id, p_warehouse_id,
+    p_user_id, p_user_id
   ) RETURNING id INTO v_payment_id;
 
   -- ================================================================
@@ -46053,7 +46327,9 @@ BEGIN
     account_id,
     branch_id,
     cost_center_id,
-    warehouse_id
+    warehouse_id,
+    created_by,
+    created_by_user_id
   ) VALUES (
     p_company_id,
     p_customer_id,
@@ -46066,7 +46342,9 @@ BEGIN
     p_account_id,
     v_branch_id,
     p_cost_center_id,
-    p_warehouse_id
+    p_warehouse_id,
+    p_user_id,
+    p_user_id
   )
   RETURNING id INTO v_payment_id;
 
@@ -50880,6 +51158,8 @@ AS $function$
 DECLARE
   v_period RECORD;
 BEGIN
+  -- v3.74.990 — البابُ يسأل بنفسه عن انتماء طالبه.
+  PERFORM public.assert_company_access(p_company_id);
   SELECT
     id,
     period_name,
@@ -56646,6 +56926,8 @@ CREATE OR REPLACE FUNCTION public.sync_manufacturing_production_order_materials_
  SET search_path TO 'public'
 AS $function$
 BEGIN
+  -- v3.74.990 — البابُ يسأل بنفسه عن انتماء طالبه.
+  PERFORM public.assert_company_access(p_company_id);
   RETURN public.mpoe_sync_materials_internal(
     p_company_id,
     p_production_order_id,

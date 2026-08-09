@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-08T16:13:25.530Z
--- Tables: 256 | Policies: 785 | Triggers: 580 | Constraints: 1838
+-- Generated: 2026-08-09T10:49:21.185Z
+-- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1838
 -- =====================================================================
 
 
@@ -8000,6 +8000,7 @@ CREATE TRIGGER trg_onboarding_updated_at BEFORE UPDATE ON public.onboarding_prog
 CREATE TRIGGER recalc_bill_after_allocation AFTER INSERT OR DELETE OR UPDATE ON public.payment_allocations FOR EACH ROW EXECUTE FUNCTION recalc_bill_on_allocation_change();
 CREATE TRIGGER recalc_invoice_after_allocation AFTER INSERT OR DELETE OR UPDATE ON public.payment_allocations FOR EACH ROW EXECUTE FUNCTION recalc_invoice_on_allocation_change();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW WHEN ((new.supplier_id IS NOT NULL)) EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ مدفوعةِ المورّد لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
+CREATE TRIGGER aa_payment_names_its_author BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION enforce_payment_names_its_author();
 CREATE TRIGGER audit_payments AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_payments_trigger AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION audit_payment_changes();
 CREATE TRIGGER notif_done_payments AFTER UPDATE ON public.payments FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['approved'::text, 'rejected'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
@@ -11034,6 +11035,11 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_988_check() TO service_ro
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_989_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_989_check() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_989_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_990_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_990_check() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_990_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_991_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_991_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12109,6 +12115,10 @@ REVOKE ALL ON FUNCTION public.enforce_payment_approver_is_real() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_payment_names_its_author() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_names_its_author() TO anon;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_names_its_author() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_names_its_author() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_period_lock_header() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO anon;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO authenticated;
@@ -12163,6 +12173,9 @@ GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO 
 REVOKE ALL ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_doors_that_do_not_ask() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_install_notice_follows_document() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_install_notice_follows_document() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid) FROM PUBLIC;

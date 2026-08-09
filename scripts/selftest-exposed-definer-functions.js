@@ -67,6 +67,22 @@ BEGIN
 END;
 $probe$;`
 
+/**
+ * v3.74.990 — والشكلُ الذى كان يمرُّ من تحت الحارس القديم: رقمُ الشركة
+ * **داخل حمولة** لا وسيطاً من نوع uuid. فالحارسُ كان يقيس الشكلَ لا
+ * الخاصّيّة، وهذا الشكلُ نفسُه هو ما وُجد فى create_sales_invoice_atomic.
+ */
+const PAYLOAD_SHAPED = `
+CREATE OR REPLACE FUNCTION public.${PROBE}_payload(p_payload jsonb)
+ RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $probe$
+BEGIN
+  UPDATE public.companies SET updated_at = updated_at
+  WHERE id = (p_payload->>'company_id')::uuid;
+END;
+$probe$;`
+
 function runGuard() {
   const r = spawnSync(process.execPath, ["scripts/check-exposed-definer-functions.js", "--require-db"], {
     encoding: "utf8",
@@ -81,7 +97,10 @@ function runGuard() {
   const q = (s) => client.query(s)
   let ok = true
 
-  const drop = () => q(`DROP FUNCTION IF EXISTS public.${PROBE}(uuid)`)
+  const drop = async () => {
+    await q(`DROP FUNCTION IF EXISTS public.${PROBE}(uuid)`)
+    await q(`DROP FUNCTION IF EXISTS public.${PROBE}_payload(jsonb)`)
+  }
 
   const stage = async (name, plant, expectFail, expectText) => {
     if (!ok) return
@@ -127,6 +146,17 @@ function runGuard() {
         await q(`GRANT  EXECUTE ON FUNCTION public.${PROBE}(uuid) TO authenticated`)
       },
       false)
+
+    // v3.74.990 — والشكلُ الذى كان يمرُّ: رقمُ الشركة داخل حمولة.
+    await stage(
+      "الشكل الذى كان يمرّ — رقمُ الشركة داخل حمولة لا وسيطاً صريحاً",
+      async () => {
+        await q(PAYLOAD_SHAPED)
+        await q(`REVOKE EXECUTE ON FUNCTION public.${PROBE}_payload(jsonb) FROM PUBLIC`)
+        await q(`REVOKE EXECUTE ON FUNCTION public.${PROBE}_payload(jsonb) FROM anon`)
+        await q(`GRANT  EXECUTE ON FUNCTION public.${PROBE}_payload(jsonb) TO authenticated`)
+      },
+      true, new RegExp(`${PROBE}_payload`))
   } finally {
     try { await drop() } catch (e) { console.error(`! cleanup: ${e.message}`) }
     await client.end()
