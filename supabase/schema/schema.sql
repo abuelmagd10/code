@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-09T17:30:56.483Z
+-- Generated: 2026-08-09T17:48:53.947Z
 -- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1838
 -- =====================================================================
 
@@ -8583,10 +8583,10 @@ CREATE POLICY backup_history_delete_v3_62 ON public.backup_history AS PERMISSIVE
   WHERE ((cm.company_id = backup_history.company_id) AND (cm.user_id = auth.uid()) AND (lower(TRIM(BOTH FROM cm.role)) = 'owner'::text)))));
 CREATE POLICY backup_history_insert_v3_62 ON public.backup_history AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = backup_history.company_id) AND (cm.user_id = auth.uid()) AND (lower(TRIM(BOTH FROM cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = backup_history.company_id) AND (cm.user_id = auth.uid()) AND (lower(TRIM(BOTH FROM cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY backup_history_select_v3_62 ON public.backup_history AS PERMISSIVE FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = backup_history.company_id) AND (cm.user_id = auth.uid()) AND (lower(TRIM(BOTH FROM cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = backup_history.company_id) AND (cm.user_id = auth.uid()) AND (lower(TRIM(BOTH FROM cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY bank_reconciliation_lines_delete ON public.bank_reconciliation_lines AS PERMISSIVE FOR DELETE TO public USING (can_access_bank_rec_lines(bank_reconciliation_id));
 CREATE POLICY bank_reconciliation_lines_insert ON public.bank_reconciliation_lines AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_access_bank_rec_lines(bank_reconciliation_id));
 CREATE POLICY bank_reconciliation_lines_select ON public.bank_reconciliation_lines AS PERMISSIVE FOR SELECT TO public USING (can_access_bank_rec_lines(bank_reconciliation_id));
@@ -8677,7 +8677,7 @@ CREATE POLICY bei_company_update ON public.booking_extra_items AS PERMISSIVE FOR
 CREATE POLICY booking_extra_items_select_branch_isolation ON public.booking_extra_items AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_booking(booking_id)));
 CREATE POLICY booking_notes_delete ON public.booking_notes AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((user_id = auth.uid()) OR (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = booking_notes.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))) OR (EXISTS ( SELECT 1
+  WHERE ((cm.company_id = booking_notes.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))) OR (EXISTS ( SELECT 1
    FROM companies c
   WHERE ((c.id = booking_notes.company_id) AND (c.user_id = auth.uid())))))));
 CREATE POLICY booking_notes_insert ON public.booking_notes AS PERMISSIVE FOR INSERT TO public WITH CHECK (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND (user_id = auth.uid())));
@@ -8704,18 +8704,18 @@ CREATE POLICY bookings_update_v2 ON public.bookings AS PERMISSIVE FOR UPDATE TO 
 CREATE POLICY branch_shipping_providers_delete ON public.branch_shipping_providers AS PERMISSIVE FOR DELETE TO public USING ((branch_id IN ( SELECT b.id
    FROM (branches b
      JOIN company_members cm ON (((cm.company_id = b.company_id) AND (cm.user_id = auth.uid()))))
-  WHERE (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'super_admin'::text, 'superadmin'::text, 'generalmanager'::text])))));
+  WHERE (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])))));
 CREATE POLICY branch_shipping_providers_insert ON public.branch_shipping_providers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((branch_id IN ( SELECT b.id
    FROM (branches b
      JOIN company_members cm ON (((cm.company_id = b.company_id) AND (cm.user_id = auth.uid()))))
-  WHERE ((b.company_id = cm.company_id) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'super_admin'::text, 'superadmin'::text, 'generalmanager'::text]))))));
+  WHERE ((b.company_id = cm.company_id) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY branch_shipping_providers_select_company ON public.branch_shipping_providers AS PERMISSIVE FOR SELECT TO public USING ((branch_id IN ( SELECT b.id
    FROM branches b
   WHERE (b.company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)))));
 CREATE POLICY branch_shipping_providers_update ON public.branch_shipping_providers AS PERMISSIVE FOR UPDATE TO public USING ((branch_id IN ( SELECT b.id
    FROM (branches b
      JOIN company_members cm ON (((cm.company_id = b.company_id) AND (cm.user_id = auth.uid()))))
-  WHERE (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'super_admin'::text, 'superadmin'::text, 'generalmanager'::text])))));
+  WHERE (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])))));
 CREATE POLICY "Users can manage branches of their companies" ON public.branches AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -9111,9 +9111,9 @@ CREATE POLICY "Company members can view refund requests" ON public.customer_refu
   WHERE ((company_members.company_id = customer_refund_requests.company_id) AND (company_members.user_id = auth.uid())))));
 CREATE POLICY "Owner and GM can update refund requests" ON public.customer_refund_requests AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = customer_refund_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY customers_booking_officer_insert ON public.customers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = customers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = 'booking_officer'::text)))));
@@ -9249,7 +9249,7 @@ CREATE POLICY "Users can view company exchange rates" ON public.exchange_rates A
   WHERE (company_members.user_id = auth.uid()))) OR (company_id IS NULL)));
 CREATE POLICY ecam_manage ON public.expense_category_account_mappings AS PERMISSIVE FOR ALL TO authenticated USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'manager'::text, 'accountant'::text]))))));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))));
 CREATE POLICY ecam_select ON public.expense_category_account_mappings AS PERMISSIVE FOR SELECT TO authenticated USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
@@ -9500,7 +9500,7 @@ CREATE POLICY "Managers and accountants can create transfer items" ON public.inv
    FROM inventory_transfers
   WHERE (inventory_transfers.company_id IN ( SELECT company_members.company_id
            FROM company_members
-          WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'general_manager'::text, 'accountant'::text]))))))));
+          WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))))));
 CREATE POLICY "Managers can update transfer items" ON public.inventory_transfer_items AS PERMISSIVE FOR UPDATE TO public USING ((transfer_id IN ( SELECT inventory_transfers.id
    FROM inventory_transfers
   WHERE (inventory_transfers.company_id IN ( SELECT company_members.company_id
@@ -9522,10 +9522,10 @@ CREATE POLICY transfer_items_delete_governance ON public.inventory_transfer_item
 CREATE POLICY transfer_items_update_governance ON public.inventory_transfer_items AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM (inventory_transfers t
      JOIN company_members cm ON (((cm.company_id = t.company_id) AND (cm.user_id = auth.uid()))))
-  WHERE ((t.id = inventory_transfer_items.transfer_id) AND (((t.created_by = auth.uid()) AND ((t.status)::text = ANY ((ARRAY['draft'::character varying, 'rejected'::character varying])::text[]))) OR (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])) OR ((cm.role = ANY (ARRAY['warehouse_manager'::text, 'store_manager'::text])) AND ((t.status)::text = ANY ((ARRAY['in_transit'::character varying, 'pending'::character varying])::text[]))))))));
+  WHERE ((t.id = inventory_transfer_items.transfer_id) AND (((t.created_by = auth.uid()) AND ((t.status)::text = ANY (ARRAY[('draft'::character varying)::text, ('rejected'::character varying)::text]))) OR (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])) OR ((cm.role = ANY (ARRAY['store_manager'::text])) AND ((t.status)::text = ANY (ARRAY[('in_transit'::character varying)::text, ('pending'::character varying)::text]))))))));
 CREATE POLICY "Managers and accountants can create transfers" ON public.inventory_transfers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'general_manager'::text, 'accountant'::text]))))));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text]))))));
 CREATE POLICY "Managers can update transfers" ON public.inventory_transfers AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text, 'store_manager'::text])))))) WITH CHECK ((company_id IN ( SELECT company_members.company_id
@@ -9580,7 +9580,7 @@ CREATE POLICY invoice_items_update ON public.invoice_items AS PERMISSIVE FOR UPD
 CREATE POLICY invoices_delete_branch_isolation ON public.invoices AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
 CREATE POLICY invoices_delete_governance ON public.invoices AS PERMISSIVE FOR DELETE TO public USING (((status = 'draft'::text) AND (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = invoices.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR ((cm.role = 'manager'::text) AND (cm.branch_id = invoices.branch_id))))))));
+  WHERE ((cm.company_id = invoices.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text])) OR ((cm.role = 'manager'::text) AND (cm.branch_id = invoices.branch_id))))))));
 CREATE POLICY invoices_insert ON public.invoices AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
 CREATE POLICY invoices_insert_company_isolation ON public.invoices AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)));
 CREATE POLICY invoices_owner_dml ON public.invoices AS PERMISSIVE FOR ALL TO public USING ((company_id IN ( SELECT companies.id
@@ -9876,14 +9876,14 @@ CREATE POLICY "Users can create notifications" ON public.notifications AS PERMIS
   WHERE (cm.user_id = auth.uid()))) AND (created_by = auth.uid())));
 CREATE POLICY notifications_select_addressee_and_branch ON public.notifications AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((assigned_to_user = auth.uid()) OR (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = notifications.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text]))))) OR (EXISTS ( SELECT 1
+  WHERE ((cm.company_id = notifications.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text]))))) OR (EXISTS ( SELECT 1
    FROM companies c
   WHERE ((c.id = notifications.company_id) AND (c.user_id = auth.uid())))) OR ((assigned_to_user IS NULL) AND ((assigned_to_role IS NULL) OR (EXISTS ( SELECT 1
    FROM company_members cm2
   WHERE ((cm2.company_id = notifications.company_id) AND (cm2.user_id = auth.uid()) AND (cm2.role = (notifications.assigned_to_role)::text))))) AND can_access_record_branch(company_id, branch_id)))));
 CREATE POLICY notifications_update_addressee_and_branch ON public.notifications AS PERMISSIVE FOR UPDATE TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND ((assigned_to_user = auth.uid()) OR (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = notifications.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text]))))) OR (EXISTS ( SELECT 1
+  WHERE ((cm.company_id = notifications.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text]))))) OR (EXISTS ( SELECT 1
    FROM companies c
   WHERE ((c.id = notifications.company_id) AND (c.user_id = auth.uid())))) OR ((assigned_to_user IS NULL) AND ((assigned_to_role IS NULL) OR (EXISTS ( SELECT 1
    FROM company_members cm2
@@ -9972,12 +9972,12 @@ CREATE POLICY "Company members can view transfers" ON public.permission_transfer
   WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid())))));
 CREATE POLICY "Owner/GM can create transfers" ON public.permission_transfers AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY "Owner/GM can update transfers" ON public.permission_transfers AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = permission_transfers.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY permissions_modify_admin ON public.permissions AS PERMISSIVE FOR ALL TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
@@ -10119,7 +10119,7 @@ CREATE POLICY products_owner_select ON public.products AS PERMISSIVE FOR SELECT 
   WHERE (companies.user_id = auth.uid()))));
 CREATE POLICY products_select ON public.products AS PERMISSIVE FOR SELECT TO public USING ((is_company_member(company_id) AND ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = products.company_id) AND (cm.user_id = auth.uid()) AND ((cm.branch_id IS NULL) OR (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text])))))) OR (EXISTS ( SELECT 1
+  WHERE ((cm.company_id = products.company_id) AND (cm.user_id = auth.uid()) AND ((cm.branch_id IS NULL) OR (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text])))))) OR (EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = products.company_id) AND (cm.user_id = auth.uid()) AND (cm.branch_id IS NOT NULL) AND (cm.branch_id = products.branch_id)))) OR (EXISTS ( SELECT 1
    FROM (inventory_transactions t
@@ -10340,7 +10340,7 @@ CREATE POLICY purchase_returns_insert ON public.purchase_returns AS PERMISSIVE F
    FROM companies c
   WHERE ((c.id = purchase_returns.company_id) AND (c.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = purchase_returns.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'gm'::text, 'generalmanager'::text]))))) OR ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = purchase_returns.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['owner'::text, 'admin'::text]))))) OR ((EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = purchase_returns.company_id) AND (cm.user_id = auth.uid()) AND (lower(btrim(cm.role)) = ANY (ARRAY['accountant'::text, 'purchasing_officer'::text]))))) AND can_access_record_branch(company_id, branch_id)))));
 CREATE POLICY purchase_returns_select_branch_isolation ON public.purchase_returns AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_purchase_return_row(id, company_id, branch_id, created_by)));
@@ -10477,7 +10477,7 @@ CREATE POLICY srr_insert ON public.sales_return_requests AS PERMISSIVE FOR INSER
   WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY srr_update ON public.sales_return_requests AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'manager'::text]))))));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text]))))));
 CREATE POLICY sales_returns_delete ON public.sales_returns AS PERMISSIVE FOR DELETE TO public USING (can_delete_resource(company_id, 'sales_returns'::text));
 CREATE POLICY sales_returns_insert ON public.sales_returns AS PERMISSIVE FOR INSERT TO public WITH CHECK (can_modify_data(company_id));
 CREATE POLICY sales_returns_select_branch_isolation ON public.sales_returns AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND can_access_record_branch(company_id, branch_id)));
@@ -10593,10 +10593,10 @@ CREATE POLICY tax_codes_select ON public.tax_codes AS PERMISSIVE FOR SELECT TO p
 CREATE POLICY tax_codes_update ON public.tax_codes AS PERMISSIVE FOR UPDATE TO public USING (is_owner_or_admin(company_id));
 CREATE POLICY third_party_inventory_delete_governance ON public.third_party_inventory AS PERMISSIVE FOR DELETE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY third_party_inventory_insert_governance ON public.third_party_inventory AS PERMISSIVE FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text, 'manager'::text, 'accountant'::text, 'staff'::text, 'sales'::text, 'store_manager'::text]))))));
+  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'manager'::text, 'accountant'::text, 'staff'::text, 'sales'::text, 'store_manager'::text]))))));
 CREATE POLICY third_party_inventory_select_governance ON public.third_party_inventory AS PERMISSIVE FOR SELECT TO public USING (((company_id IN ( SELECT get_user_company_ids() AS get_user_company_ids)) AND (current_user_is_branch_unbounded(company_id) OR (EXISTS ( SELECT 1
    FROM company_members cm
   WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND (((cm.role = 'store_manager'::text) AND (EXISTS ( SELECT 1
@@ -10607,7 +10607,7 @@ CREATE POLICY third_party_inventory_select_governance ON public.third_party_inve
           WHERE ((inv.id = third_party_inventory.invoice_id) AND (so.created_by_user_id = auth.uid()))))))))))));
 CREATE POLICY third_party_inventory_update_governance ON public.third_party_inventory AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])) OR ((cm.role = ANY (ARRAY['manager'::text, 'accountant'::text, 'store_manager'::text])) AND (cm.branch_id = third_party_inventory.branch_id)))))));
+  WHERE ((cm.company_id = third_party_inventory.company_id) AND (cm.user_id = auth.uid()) AND ((cm.role = ANY (ARRAY['owner'::text, 'admin'::text])) OR ((cm.role = ANY (ARRAY['manager'::text, 'accountant'::text, 'store_manager'::text])) AND (cm.branch_id = third_party_inventory.branch_id)))))));
 CREATE POLICY usage_metrics_company_read ON public.usage_metrics AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT fn_user_company_ids() AS fn_user_company_ids)));
 CREATE POLICY user_bonuses_delete ON public.user_bonuses AS PERMISSIVE FOR DELETE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
@@ -10725,9 +10725,9 @@ CREATE POLICY "Company members can view vendor payment correction requests" ON p
   WHERE ((company_members.company_id = vendor_payment_correction_requests.company_id) AND (company_members.user_id = auth.uid())))));
 CREATE POLICY "Owner and GM can update vendor payment correction requests" ON public.vendor_payment_correction_requests AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM company_members cm
-  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((cm.company_id = vendor_payment_correction_requests.company_id) AND (cm.user_id = auth.uid()) AND (cm.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY vrr_insert_by_member ON public.vendor_refund_requests AS PERMISSIVE FOR INSERT TO public WITH CHECK (((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))) AND (created_by = auth.uid())));
@@ -10736,7 +10736,7 @@ CREATE POLICY vrr_select_company_members ON public.vendor_refund_requests AS PER
   WHERE (company_members.user_id = auth.uid()))));
 CREATE POLICY vrr_update_privileged_only ON public.vendor_refund_requests AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'general_manager'::text]))))));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY volume_tiers_public_read ON public.volume_discount_tiers AS PERMISSIVE FOR SELECT TO public USING (true);
 CREATE POLICY company_owner_initial_update_warehouses ON public.warehouses AS PERMISSIVE FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM companies c
@@ -10745,14 +10745,14 @@ CREATE POLICY company_owner_initial_update_warehouses ON public.warehouses AS PE
   WHERE ((c.id = warehouses.company_id) AND (c.user_id = auth.uid())))));
 CREATE POLICY warehouses_delete_policy ON public.warehouses AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'super_admin'::text, 'superadmin'::text]))))) AND (is_main = false)));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text]))))) AND (is_main = false)));
 CREATE POLICY warehouses_insert_policy ON public.warehouses AS PERMISSIVE FOR INSERT TO public WITH CHECK ((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'super_admin'::text, 'gm'::text, 'general_manager'::text, 'generalmanager'::text, 'superadmin'::text]))))));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 CREATE POLICY warehouses_select_company ON public.warehouses AS PERMISSIVE FOR SELECT TO public USING (is_company_member(company_id));
 CREATE POLICY warehouses_update_policy ON public.warehouses AS PERMISSIVE FOR UPDATE TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
-  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text, 'super_admin'::text, 'gm'::text, 'general_manager'::text, 'generalmanager'::text, 'superadmin'::text]))))));
+  WHERE ((company_members.user_id = auth.uid()) AND (company_members.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 
 -- ===================== FUNCTION GRANTS =====================
 
