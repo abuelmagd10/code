@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-09T11:04:58.921Z
+-- Generated: 2026-08-09T11:20:47.423Z
 -- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1838
 -- =====================================================================
 
@@ -11040,6 +11040,8 @@ GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_990_check() TO authentica
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_990_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_991_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_991_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_992_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_992_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;

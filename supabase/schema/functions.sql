@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-09T11:04:34.047Z
--- Routines: 1342
+-- Generated: 2026-08-09T11:20:36.513Z
+-- Routines: 1343
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4674,6 +4674,89 @@ BEGIN
 
   IF position(v_voice in v_msg) > 0 THEN
     RAISE EXCEPTION 'BASELINE FAIL: صرخ على صفِّ إبطالٍ يولد من صفٍّ آخر (v3.74.991)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_992_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_992_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_inv uuid;
+  v_pay uuid;
+  v_before text;
+  v_after text;
+  v_paid_before numeric;
+  v_paid_after numeric;
+BEGIN
+  -- ═══ القاعدةُ مكتوبةٌ فى البيتين ═══
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('fn_recalc_invoice_paid_status', 'fn_recalc_bill_paid_status')
+      AND position('لا تُبعث وثيقةٌ أُلغيت' in p.prosrc) = 0
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ إعادة حسابٍ يكتب الحالةَ بلا شرط — تُبعث الملغاةُ بلمسةِ دفعة (v3.74.992)';
+  END IF;
+
+  -- ═══ المذنب: وثيقةٌ ملغاةٌ لها دفعة ═══
+  SELECT i.id, p.id INTO v_inv, v_pay
+  FROM public.invoices i
+  JOIN public.payments p ON p.invoice_id = i.id
+  WHERE i.status = 'cancelled'
+  LIMIT 1;
+
+  IF v_inv IS NOT NULL THEN
+    SELECT status INTO v_before FROM public.invoices WHERE id = v_inv;
+    BEGIN
+      UPDATE public.payments SET notes = COALESCE(notes, '') WHERE id = v_pay;
+      SELECT status INTO v_after FROM public.invoices WHERE id = v_inv;
+      IF v_after IS DISTINCT FROM v_before THEN
+        RAISE EXCEPTION 'BASELINE FAIL: بُعثت وثيقةٌ ملغاة: % ← % (v3.74.992)', v_before, v_after;
+      END IF;
+      RAISE EXCEPTION 'ROLLBACK_PROBE_992';
+    EXCEPTION WHEN OTHERS THEN
+      IF position('BASELINE FAIL' in SQLERRM) > 0 THEN
+        RAISE EXCEPTION '%', SQLERRM;
+      END IF;
+    END;
+  ELSE
+    -- **وبحثٌ لا يجد ليس دليلَ غياب**: لا وثيقةَ ملغاةٌ لها دفعة، فيُكتفى
+    -- بإثبات القاعدة فى البيتين ولا يُدَّعى أنّها جُرّبت.
+    RAISE NOTICE 'v3.74.992 · لا وثيقةَ ملغاةٌ ذاتُ دفعةٍ تُقاس عليها — أُثبتت القاعدةُ ولم يُدَّعَ تشغيلُها.';
+  END IF;
+
+  -- ═══ والبرىء: وثيقةٌ حيّةٌ ما زال مالُها يحكم حالتَها ═══
+  SELECT i.id, p.id INTO v_inv, v_pay
+  FROM public.invoices i
+  JOIN public.payments p ON p.invoice_id = i.id
+  WHERE i.status IN ('sent', 'partially_paid', 'paid')
+  LIMIT 1;
+
+  IF v_inv IS NOT NULL THEN
+    SELECT paid_amount INTO v_paid_before FROM public.invoices WHERE id = v_inv;
+    BEGIN
+      UPDATE public.payments SET notes = COALESCE(notes, '') WHERE id = v_pay;
+      SELECT paid_amount, status INTO v_paid_after, v_after FROM public.invoices WHERE id = v_inv;
+      IF v_paid_after IS DISTINCT FROM v_paid_before THEN
+        RAISE EXCEPTION 'BASELINE FAIL: توقّف حسابُ المدفوع على وثيقةٍ حيّة: % ← % (v3.74.992)', v_paid_before, v_paid_after;
+      END IF;
+      IF v_after NOT IN ('sent', 'partially_paid', 'paid') THEN
+        RAISE EXCEPTION 'BASELINE FAIL: خرجت وثيقةٌ حيّةٌ من حالات المال إلى «%» (v3.74.992)', v_after;
+      END IF;
+      RAISE EXCEPTION 'ROLLBACK_PROBE_992';
+    EXCEPTION WHEN OTHERS THEN
+      IF position('BASELINE FAIL' in SQLERRM) > 0 THEN
+        RAISE EXCEPTION '%', SQLERRM;
+      END IF;
+    END;
   END IF;
 END;
 $function$
