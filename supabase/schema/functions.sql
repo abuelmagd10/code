@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-09T12:07:09.416Z
--- Routines: 1344
+-- Generated: 2026-08-09T14:35:11.783Z
+-- Routines: 1348
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -4336,7 +4336,7 @@ BEGIN
   IF public.supplier_payment_decision_error('pending_approval','REJECT','owner') IS NOT NULL THEN
     RAISE EXCEPTION 'BASELINE FAIL: منع المالكَ من رفض دفعةٍ بانتظار الاعتماد (v3.74.988)';
   END IF;
-  IF public.supplier_payment_decision_error('pending_director','APPROVE','general_manager') IS NOT NULL THEN
+  IF public.supplier_payment_decision_error('pending_director','APPROVE','admin') IS NOT NULL THEN
     RAISE EXCEPTION 'BASELINE FAIL: منع المديرَ العامَّ من إنهاء مرحلة المدير (v3.74.988)';
   END IF;
 
@@ -4825,6 +4825,100 @@ BEGIN
       ) AS v(r) WHERE v.r = cm.role)
   ) THEN
     RAISE EXCEPTION 'BASELINE FAIL: عضوٌ يشغل دوراً خارج المفردات (v3.74.993)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_994_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_994_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_vocab   text[] := public.erp_membership_roles();
+  v_missing text;
+  v_extra   text;
+  v_bad     text;
+  v_company uuid;
+  v_caught  boolean;
+BEGIN
+  IF array_length(v_vocab,1) IS NULL OR array_length(v_vocab,1) = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مفرداتُ الأدوار فارغة — بيتٌ لا يقول شيئاً (v3.74.994)';
+  END IF;
+
+  -- ═══ المرجعُ والقيدُ يقولان قولاً واحداً ═══
+  SELECT string_agg(r, ', ') INTO v_missing
+  FROM unnest(v_vocab) AS r WHERE r NOT IN (SELECT name FROM public.roles);
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: وظائفُ يقبلها القيدُ ولا يعرفها المرجع: % (v3.74.994)', v_missing;
+  END IF;
+  SELECT string_agg(name, ', ') INTO v_extra
+  FROM public.roles WHERE NOT (name = ANY (v_vocab));
+  IF v_extra IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: وظائفُ فى المرجعِ لا يقبلها القيد: % (v3.74.994)', v_extra;
+  END IF;
+
+  -- ═══ ونيّةُ المِزرعة كلُّها مقبولة ═══
+  SELECT string_agg(r, ', ') INTO v_bad
+  FROM (SELECT unnest(public.erp_reports_seed_roles()) AS r
+        UNION ALL SELECT unnest(public.erp_financial_reports_seed_roles())) s
+  WHERE NOT (r = ANY (v_vocab));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المِزرعةُ تنوى زرعَ وظيفةٍ لا يقبلها النظام: % (v3.74.994)', v_bad;
+  END IF;
+
+  -- ═══ ولا صفَّ صلاحيّاتٍ لوظيفةٍ لا يقبلها النظام ═══
+  SELECT string_agg(DISTINCT role, ', ') INTO v_bad
+  FROM public.company_role_permissions WHERE NOT (role = ANY (v_vocab));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صلاحيّاتٌ لوظيفةٍ لا يقبلها النظام: % (v3.74.994)', v_bad;
+  END IF;
+
+  -- ═══ والفخُّ يُشغَّل: يُزرع صفٌّ فاسدٌ فيجب أن يصرخ، ثمّ يُلغى الزرع ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً.**
+  SELECT company_id INTO v_company FROM public.company_role_permissions LIMIT 1;
+  IF v_company IS NOT NULL THEN
+    v_caught := false;
+    BEGIN
+      INSERT INTO public.company_role_permissions
+        (company_id, role, resource, can_access, can_read, can_write, can_update, can_delete, all_access, allowed_actions)
+      VALUES (v_company, 'zz_role_nobody_holds', 'zz_probe_994', true, true, false, false, false, false, '{}');
+      PERFORM 1 FROM public.company_role_permissions
+       WHERE role = 'zz_role_nobody_holds' AND NOT ('zz_role_nobody_holds' = ANY (v_vocab));
+      IF FOUND THEN v_caught := true; END IF;
+      RAISE EXCEPTION 'ROLLBACK_PROBE_994';
+    EXCEPTION
+      WHEN raise_exception THEN
+        IF SQLERRM <> 'ROLLBACK_PROBE_994' THEN RAISE; END IF;
+      WHEN OTHERS THEN
+        -- زرعٌ رفضته القاعدةُ نفسُها حراسةٌ أقوى، ويُعدّ نجاحاً معلَناً
+        v_caught := true;
+    END;
+    IF NOT v_caught THEN
+      RAISE EXCEPTION 'BASELINE FAIL: زُرع صفٌّ لوظيفةٍ لا يقبلها النظام ولم يره أحد (v3.74.994)';
+    END IF;
+  END IF;
+
+  -- ═══ ولا إشعارَ موجَّهٌ إلى وظيفةٍ لا يشغلها أحد ═══
+  SELECT string_agg(DISTINCT assigned_to_role, ', ') INTO v_bad
+  FROM public.notifications
+  WHERE assigned_to_role IS NOT NULL AND NOT (assigned_to_role = ANY (v_vocab));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: إشعارٌ موجَّهٌ إلى وظيفةٍ لا يقبلها النظام: % (v3.74.994)', v_bad;
+  END IF;
+
+  -- ═══ والخبرُ الواحد لا يُرسل مرّتين لجمهورٍ واحد ═══
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.proname='enforce_governance_on_insert'
+      AND position('pending_approval_gm_after_edit' in pg_get_functiondef(p.oid)) > 0
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عاد النداءُ المكرَّرُ إلى مُشغِّل الحوكمة (v3.74.994)';
   END IF;
 END;
 $function$
@@ -19952,15 +20046,6 @@ BEGIN
         format('bill:%s:pending_approval_owner_after_edit', NEW.id),
         'warning', 'approvals'
       );
-      PERFORM create_notification(
-        NEW.company_id, 'bill', NEW.id,
-        'فاتورة مشتريات بانتظار الاعتماد الإداري',
-        v_notice_gm,
-        v_creator, NEW.branch_id, NEW.cost_center_id, NEW.warehouse_id,
-        'general_manager', NULL, 'high',
-        format('bill:%s:pending_approval_gm_after_edit', NEW.id),
-        'warning', 'approvals'
-      );
     END IF;
 
     IF v_new_status = 'voided' AND v_old_status <> 'voided' THEN
@@ -20043,15 +20128,6 @@ BEGIN
           v_creator, NEW.branch_id, NEW.cost_center_id, NEW.warehouse_id,
           'owner', NULL, 'high',
           format('invoice:%s:pending_approval_owner_after_edit', NEW.id),
-          'warning', 'approvals'
-        );
-        PERFORM create_notification(
-          NEW.company_id, 'invoice', NEW.id,
-          'فاتورة مبيعات بانتظار الاعتماد الإداري',
-          v_notice_owner,
-          v_creator, NEW.branch_id, NEW.cost_center_id, NEW.warehouse_id,
-          'general_manager', NULL, 'high',
-          format('invoice:%s:pending_approval_gm_after_edit', NEW.id),
           'warning', 'approvals'
         );
       END IF;
@@ -20877,6 +20953,18 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_financial_reports_seed_roles()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_financial_reports_seed_roles()
+ RETURNS text[]
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT ARRAY['owner','admin']::text[];
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_install_notice_follows_document()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_install_notice_follows_document()
@@ -20963,6 +21051,26 @@ AS $function$
                    AND lower(role) IN ('owner','admin','general_manager'))
        OR EXISTS (SELECT 1 FROM companies WHERE id = p_company_id AND user_id = p_user_id)
      );
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_membership_roles()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_membership_roles()
+ RETURNS text[]
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT coalesce(array_agg(DISTINCT m[1] ORDER BY m[1]), ARRAY[]::text[])
+  FROM pg_constraint c
+  JOIN pg_class t ON t.oid = c.conrelid
+  JOIN pg_namespace n ON n.oid = t.relnamespace
+  CROSS JOIN LATERAL regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g') AS m
+  WHERE n.nspname = 'public'
+    AND t.relname = 'company_members'
+    AND c.conname = 'company_members_role_check';
 $function$
 ;
 
@@ -21083,6 +21191,19 @@ BEGIN
   END LOOP;
   RETURN false;
 END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_reports_seed_roles()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_reports_seed_roles()
+ RETURNS text[]
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT ARRAY['manager','accountant','store_manager',
+               'purchasing_officer','booking_officer','manufacturing_officer']::text[];
 $function$
 ;
 
@@ -54446,12 +54567,14 @@ CREATE OR REPLACE FUNCTION public.seed_reports_access_v581(p_company_id uuid)
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE v_role text;
+DECLARE
+  v_role  text;
+  v_vocab text[] := public.erp_membership_roles();
 BEGIN
-  FOREACH v_role IN ARRAY ARRAY[
-    'general_manager','manager','accountant','store_manager',
-    'purchasing_officer','booking_officer','manufacturing_officer'
-  ] LOOP
+  -- v3.74.994 — كانت هنا قائمتان مكتوبتان باليد، فيهما اسمٌ حذفه ٩٩٣.
+  -- فصارت النيّةُ تُصفَّى بالمفردات: ما لا يقبله النظام لا يُزرع.
+  FOREACH v_role IN ARRAY public.erp_reports_seed_roles() LOOP
+    IF NOT (v_role = ANY (v_vocab)) THEN CONTINUE; END IF;
     INSERT INTO public.company_role_permissions
       (company_id, role, resource, can_access, can_read, can_write, can_update, can_delete, all_access, allowed_actions)
     VALUES (p_company_id, v_role, 'reports', true, true, false, false, false, false, '{}')
@@ -54459,7 +54582,8 @@ BEGIN
       SET can_access = true, can_read = true;
   END LOOP;
 
-  FOREACH v_role IN ARRAY ARRAY['owner','admin','general_manager'] LOOP
+  FOREACH v_role IN ARRAY public.erp_financial_reports_seed_roles() LOOP
+    IF NOT (v_role = ANY (v_vocab)) THEN CONTINUE; END IF;
     INSERT INTO public.company_role_permissions
       (company_id, role, resource, can_access, can_read, can_write, can_update, can_delete, all_access, allowed_actions)
     VALUES (p_company_id, v_role, 'financial_reports', true, true, false, false, false, false, '{}')

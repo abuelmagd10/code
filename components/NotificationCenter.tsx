@@ -387,19 +387,14 @@ export function NotificationCenter({
     }
 
     // 3. التحقق من الدور المخصص له
+    // v3.74.994 — **بيتٌ واحدٌ لقاعدة الرؤية.** كان هنا قولٌ ثانٍ يخالف القاعدة:
+    // «الأدوارُ العليا يرى بعضُها إشعاراتِ بعض». والقاعدةُ — وهى التى تبنى
+    // القائمةَ التى يراها المستخدمُ بعينه — لا تقول ذلك: يُرى ما وُجّه إلى دوره،
+    // أو إلى لا أحد، أو (إن كان مالكاً) ما وُجّه إلى admin. لا غير.
+    // وهذا الفلترُ للدفع الحىِّ وحدَه، فكان يُظهر لحظةَ الوصولِ ما لا تُظهره القائمة.
     if (notification.assigned_to_role && notification.assigned_to_role !== userRole) {
-      // الأدوار العليا (owner/admin/general_manager) يمكنها رؤية إشعارات بعضها البعض
-      const upperRoles = ['owner', 'admin']
-      const isUpperRole = upperRoles.includes(userRole)
-      const targetIsUpperRole = upperRoles.includes(notification.assigned_to_role)
-
-      if (isUpperRole && targetIsUpperRole) {
-        // الأدوار العليا ترى إشعارات الأدوار العليا الأخرى ✅
-      } else if (notification.assigned_to_role === 'admin' && userRole === 'owner') {
-        // المالك يرى إشعارات admin ✅ (كان موجوداً من قبل)
-      } else {
-        return false
-      }
+      const ownerSeesAdmin = notification.assigned_to_role === 'admin' && userRole === 'owner'
+      if (!ownerSeesAdmin) return false
     }
 
     // 4. التحقق من الفرع (للمستخدمين غير Owner/Admin)

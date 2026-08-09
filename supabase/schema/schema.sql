@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-09T12:07:21.232Z
+-- Generated: 2026-08-09T14:35:19.209Z
 -- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1838
 -- =====================================================================
 
@@ -11044,6 +11044,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_992_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_992_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_993_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_993_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_994_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_994_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12178,6 +12180,10 @@ GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid
 REVOKE ALL ON FUNCTION public.erp_doors_that_do_not_ask() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO service_role;
+REVOKE ALL ON FUNCTION public.erp_financial_reports_seed_roles() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_financial_reports_seed_roles() TO anon;
+GRANT EXECUTE ON FUNCTION public.erp_financial_reports_seed_roles() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_financial_reports_seed_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_install_notice_follows_document() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_install_notice_follows_document() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
@@ -12189,6 +12195,10 @@ GRANT EXECUTE ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user
 REVOKE ALL ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_membership_roles() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_membership_roles() TO anon;
+GRANT EXECUTE ON FUNCTION public.erp_membership_roles() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_membership_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_notice_follows_its_document() FROM PUBLIC;
@@ -12202,6 +12212,10 @@ GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_prod
 GRANT EXECUTE ON FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_reference_row_exists(p_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_reference_row_exists(p_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_reports_seed_roles() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_reports_seed_roles() TO anon;
+GRANT EXECUTE ON FUNCTION public.erp_reports_seed_roles() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_reports_seed_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO service_role;
