@@ -45,7 +45,7 @@ const ALIASES = {
 }
 
 /** الدَّينُ القائمُ وقتَ كتابة الحارس. الهدفُ تصفيرُه، والبناءُ يسقط إن زاد. */
-const BASELINE = Number(process.env.DB_ROLE_NAME_BASELINE ?? 249)
+const BASELINE = Number(process.env.DB_ROLE_NAME_BASELINE ?? 79)
 
 /**
  * مواضعُ الاسم فى نصٍّ واحد: كلُّ سلسلةِ حروفٍ بين علامتَى اقتباس مفردتين

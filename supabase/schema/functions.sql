@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-09T14:35:11.783Z
+-- Generated: 2026-08-09T17:30:47.495Z
 -- Routines: 1348
 -- =====================================================================
 
@@ -714,7 +714,7 @@ AS $function$
     SELECT 1
     FROM public.company_members cm
     WHERE cm.user_id = auth.uid()
-      AND LOWER(TRIM(cm.role)) IN ('owner', 'admin', 'general_manager')
+      AND LOWER(TRIM(cm.role)) IN ('owner', 'admin')
   );
 $function$
 ;
@@ -1730,7 +1730,7 @@ DECLARE
 BEGIN
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_approved_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد أوامر الإنتاج محصورة بالمالك والمدير العام');
   END IF;
@@ -1778,7 +1778,7 @@ BEGIN
     SELECT role, branch_id INTO v_user_role, v_user_branch
     FROM public.company_members WHERE company_id = p_company_id AND user_id = p_user_id;
     IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'User is not a member of this company'); END IF;
-    IF v_user_role NOT IN ('owner', 'admin', 'general_manager') THEN
+    IF v_user_role NOT IN ('owner', 'admin') THEN
          RETURN jsonb_build_object('success', false, 'error', 'صَلاحية اعتماد أَوامِر الشراء مَحصورَة بالمالِك والمُدير العام فَقَط');
     END IF;
     SELECT * INTO v_po FROM public.purchase_orders WHERE id = p_po_id AND company_id = p_company_id FOR UPDATE;
@@ -1923,7 +1923,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'User is not a member of this company');
   END IF;
 
-  IF v_user_role NOT IN ('admin', 'owner', 'general_manager') THEN
+  IF v_user_role NOT IN ('admin', 'owner') THEN
     RETURN jsonb_build_object('success', false, 'error', 'Insufficient permissions to approve purchase returns');
   END IF;
 
@@ -2032,7 +2032,7 @@ DECLARE
 BEGIN
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_approved_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد مسارات التصنيع محصورة بالمالك والمدير العام');
   END IF;
@@ -2222,7 +2222,7 @@ DECLARE
 BEGIN
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_user_id;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد مرتجع المبيعات محصورة بالمالك والمدير العام فقط.');
   END IF;
@@ -2300,7 +2300,7 @@ BEGIN
       RAISE EXCEPTION 'User is not a member of this company. Cannot approve drawing.';
     END IF;
     -- Role check: only owner, admin, general_manager can approve
-    IF v_approver_role NOT IN ('owner', 'admin', 'general_manager') THEN
+    IF v_approver_role NOT IN ('owner', 'admin') THEN
       RAISE EXCEPTION 'Insufficient role to approve drawings. Required: owner, admin, or general_manager.';
     END IF;
   END IF;
@@ -2396,7 +2396,7 @@ BEGIN
   SELECT role INTO v_member
   FROM company_members
   WHERE user_id = p_approver_id AND company_id = v_payment.company_id;
-  IF NOT FOUND OR v_member.role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_member.role NOT IN ('owner', 'admin') THEN
     RAISE EXCEPTION 'UNAUTHORIZED: Only owner/admin/general_manager can approve payments';
   END IF;
 
@@ -2459,7 +2459,7 @@ BEGIN
   SELECT role INTO v_role
     FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_user_id;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية اعتماد دفع المورد محصورة بالمالك والمدير العام فقط.');
   END IF;
@@ -2536,7 +2536,7 @@ BEGIN
 
   SELECT lower(btrim(role)) INTO v_approver_role
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_actor LIMIT 1;
-  IF v_approver_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF v_approver_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK');
   END IF;
 
@@ -2549,7 +2549,7 @@ BEGIN
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_vc.created_by_user_id LIMIT 1;
   -- قيد المدير العام لا يعتمده إلا المالك؛ قيد المحاسب يعتمده المالك أو
   -- المدير العام؛ والمجهول منشئُه لا يُعتمد إلا بقرار المالك (865 حرفياً).
-  IF COALESCE(v_creator_role, '') IN ('admin', 'general_manager') AND v_approver_role <> 'owner' THEN
+  IF COALESCE(v_creator_role, '') IN ('admin') AND v_approver_role <> 'owner' THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
   END IF;
   IF v_creator_role IS NULL AND v_approver_role <> 'owner' THEN
@@ -2612,7 +2612,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'User is not a member of this company');
   END IF;
 
-  IF v_user_role NOT IN ('owner', 'admin', 'general_manager', 'manager') THEN
+  IF v_user_role NOT IN ('owner', 'admin', 'manager') THEN
     RETURN jsonb_build_object('success', false, 'error', 'Insufficient permissions. Only admin/owner/manager can approve.');
   END IF;
 
@@ -3232,7 +3232,9 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname='can_modify_data'
     AND pg_get_functiondef(p.oid) LIKE '%purchasing_officer%'
-    AND pg_get_functiondef(p.oid) LIKE '%general_manager%') THEN
+    AND pg_get_functiondef(p.oid) LIKE '%booking_officer%'
+    AND pg_get_functiondef(p.oid) LIKE '%manufacturing_officer%'
+    AND pg_get_functiondef(p.oid) LIKE '%hr_officer%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: can_modify_data is missing modern operational roles';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname='can_manage_supplier_row'
@@ -4151,7 +4153,7 @@ BEGIN
   -- ومن يملك الاعتمادَ يوقّع لنفسه — يُقاس بعضوٍ حقيقىٍّ لا بافتراض
   SELECT cm.company_id, cm.user_id INTO v_company, v_privileged
   FROM public.company_members cm
-  WHERE cm.role IN ('owner', 'admin', 'general_manager')
+  WHERE cm.role IN ('owner', 'admin')
   LIMIT 1;
   IF v_company IS NULL THEN
     RAISE EXCEPTION 'BASELINE FAIL: لا مالكَ ولا مديرَ عامٍّ فى القاعدة كلِّها — ولا أحكم بلا مقياس (v3.74.984)';
@@ -4477,7 +4479,7 @@ BEGIN
   SELECT cm.user_id, cm.role INTO v_other, v_other_role
   FROM public.company_members cm
   WHERE cm.company_id = v_company
-    AND cm.role NOT IN ('owner','admin','general_manager','store_manager')
+    AND cm.role NOT IN ('owner','admin','store_manager')
   LIMIT 1;
   IF v_other IS NOT NULL
      AND public.sales_delivery_actor_error(v_company, v_branch, v_wh, v_other) IS NULL THEN
@@ -4950,7 +4952,7 @@ BEGIN
   END IF;
 
   -- Management always allowed (oversight).
-  IF v_role IN ('owner','admin','general_manager') THEN RETURN; END IF;
+  IF v_role IN ('owner','admin') THEN RETURN; END IF;
 
   SELECT * INTO v_booking FROM public.bookings b
   WHERE b.id = p_booking_id AND b.company_id = p_company_id;
@@ -6649,7 +6651,7 @@ BEGIN
     -- المالك: يُرحَّل مباشرة (المصفوفة).
     NEW.journal_entry_id := public.vendor_credit_post_journal(NEW);
     RETURN NEW;
-  ELSIF v_role IN ('general_manager', 'admin', 'accountant') THEN
+  ELSIF v_role IN ('admin', 'accountant') THEN
     IF v_role = 'accountant' THEN
       -- محاسب الفرع مقيَّد بفرعه — ومحاسبٌ بلا فرعٍ مسجَّل يُرفض (865).
       IF v_member_branch IS NULL OR NEW.branch_id IS DISTINCT FROM v_member_branch THEN
@@ -6667,7 +6669,7 @@ BEGIN
       v_actor, 'owner',
       'إشعار دائن بانتظار الاعتماد',
       'أُنشئ إشعار دائن ' || COALESCE(NEW.credit_number, '') || ' بقيمة ' || NEW.total_amount ||
-        ' بواسطة ' || CASE WHEN v_role IN ('admin', 'general_manager') THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
+        ' بواسطة ' || CASE WHEN v_role IN ('admin') THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
         ' — يحتاج اعتماداً قبل الترحيل (مصفوفة 865).',
       'high', 'unread',
       'vendor_credit_pending:' || NEW.id::text
@@ -7983,7 +7985,7 @@ BEGIN
          OR
          -- (٣) وإلا فالمالك والمدير العام — لا محاسبُ فرعٍ آخر.
          (v_branch_count = 0 AND v_company_wide_count = 0
-          AND lower(btrim(role)) IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager'))
+          AND lower(btrim(role)) IN ('owner', 'admin'))
        )
        AND (v_actor IS NULL OR user_id <> v_actor)
   LOOP
@@ -8983,7 +8985,7 @@ BEGIN
       SELECT user_id AS u FROM public.companies WHERE id = NEW.company_id
       UNION
       SELECT user_id FROM public.company_members
-       WHERE company_id = NEW.company_id AND role IN ('owner','admin','general_manager')
+       WHERE company_id = NEW.company_id AND role IN ('owner','admin')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -9845,7 +9847,7 @@ BEGIN
   END IF;
 
   -- الأدوار العامة: كل الفروع.
-  IF lower(btrim(v_role)) IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager') THEN
+  IF lower(btrim(v_role)) IN ('owner', 'admin') THEN
     RETURN TRUE;
   END IF;
 
@@ -9911,7 +9913,7 @@ BEGIN
 
   IF v_role IS NULL THEN RETURN false; END IF;
   -- v3.74.978: «مدير عام» له اسمان حتى الخطوة الثانية، والبابُ يعرفهما معاً.
-  IF v_role IN ('owner', 'admin', 'general_manager') THEN RETURN true; END IF;
+  IF v_role IN ('owner', 'admin') THEN RETURN true; END IF;
 
   -- وما عداهما: تُسأل شاشةُ الصلاحيات، بلغتيها معاً.
   SELECT (p.all_access
@@ -9942,7 +9944,7 @@ AS $function$
   SELECT EXISTS (
     SELECT 1 FROM public.company_members cm
      WHERE cm.company_id = p_company_id AND cm.user_id = p_user_id
-       AND cm.role IN ('owner', 'admin', 'general_manager')
+       AND cm.role IN ('owner', 'admin')
   ) OR EXISTS (
     SELECT 1 FROM public.companies c WHERE c.id = p_company_id AND c.user_id = p_user_id
   );
@@ -10121,7 +10123,7 @@ AS $function$
                 WHERE cm.company_id = p_company_id
                   AND cm.user_id = auth.uid()
                   AND lower(btrim(cm.role)) IN (
-                        'owner', 'admin', 'general_manager', 'gm', 'generalmanager',
+                        'owner', 'admin', 
                         'manager', 'accountant', 'store_manager', 'purchasing_officer'));
 $function$
 ;
@@ -10144,7 +10146,7 @@ BEGIN
   SELECT role, branch_id INTO v_role, v_user_branch_id
     FROM company_members WHERE company_id = p_company_id AND user_id = auth.uid() LIMIT 1;
   IF v_role IS NULL THEN RETURN false; END IF;
-  IF v_role IN ('owner','admin','general_manager') THEN RETURN true; END IF;
+  IF v_role IN ('owner','admin') THEN RETURN true; END IF;
   IF v_role IN ('manager','accountant','purchasing_officer') THEN
     IF v_user_branch_id IS NULL THEN RETURN false; END IF;
     IF p_row_branch_id IS NULL THEN RETURN false; END IF;
@@ -10173,7 +10175,7 @@ BEGIN
      WHERE cm.company_id = p_company_id AND cm.user_id = auth.uid()
        AND cm.role IN (
          'owner','admin','manager','accountant','staff',
-         'general_manager','store_manager','purchasing_officer',
+         'store_manager','purchasing_officer',
          'booking_officer','manufacturing_officer','hr_officer'
        )
   );
@@ -10251,7 +10253,7 @@ BEGIN
    WHERE cm.company_id = p_company_id AND cm.user_id = v_actor
    LIMIT 1;
 
-  RETURN v_role IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager');
+  RETURN v_role IN ('owner', 'admin');
 END;
 $function$
 ;
@@ -10270,7 +10272,7 @@ AS $function$
     FROM public.company_members cm
     WHERE cm.company_id = p_company_id
       AND cm.user_id = auth.uid()
-      AND LOWER(COALESCE(cm.role, '')) IN ('owner', 'admin', 'general_manager', 'manager')
+      AND LOWER(COALESCE(cm.role, '')) IN ('owner', 'admin', 'manager')
   );
 $function$
 ;
@@ -10321,7 +10323,7 @@ BEGIN
 
   -- الاستثناء بنص المالك: المالك والمدير العام (وتهجئاتهما) فى كل وضع،
   -- وبلا قيد فرعٍ ولو حمل صفُّ عضويتهما فرعاً.
-  IF v_role IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager') THEN
+  IF v_role IN ('owner', 'admin') THEN
     RETURN true;
   END IF;
 
@@ -10376,7 +10378,7 @@ BEGIN
   SELECT lower(cm.role) INTO v_role FROM public.company_members cm
    WHERE cm.company_id=p_company_id AND cm.user_id=auth.uid() LIMIT 1;
   IF v_role IS NULL THEN RETURN false; END IF;
-  IF v_role IN ('owner','admin','general_manager') THEN RETURN true; END IF;
+  IF v_role IN ('owner','admin') THEN RETURN true; END IF;
   SELECT crp.can_access, crp.can_read, crp.all_access INTO v_access, v_read, v_all
     FROM public.company_role_permissions crp
    WHERE crp.company_id=p_company_id AND crp.role=v_role AND crp.resource=p_resource LIMIT 1;
@@ -12084,7 +12086,7 @@ BEGIN
     SELECT user_id INTO v_owner FROM public.company_members
     WHERE company_id = rec.company_id AND role = 'owner' LIMIT 1;
 
-    FOREACH v_role IN ARRAY ARRAY['store_manager','warehouse_manager','manager','owner'] LOOP
+    FOREACH v_role IN ARRAY ARRAY['store_manager','manager','owner'] LOOP
       BEGIN
         PERFORM public.create_notification(
           rec.company_id, 'inventory', rec.lot_id,
@@ -18632,7 +18634,7 @@ BEGIN
     );
   END IF;
 
-  IF lower(btrim(v_role)) IN ('owner', 'admin', 'general_manager', 'gm', 'generalmanager') THEN
+  IF lower(btrim(v_role)) IN ('owner', 'admin') THEN
     RETURN TRUE;
   END IF;
 
@@ -18716,7 +18718,7 @@ BEGIN
   END IF;
 
   -- v3.74.317: general_manager joins owner/admin at the company scope
-  IF v_role IN ('owner', 'admin', 'general_manager') THEN
+  IF v_role IN ('owner', 'admin') THEN
     RETURN 'company';
   END IF;
 
@@ -18954,8 +18956,8 @@ BEGIN
    WHERE cm.company_id = w.company_id AND cm.user_id = auth.uid() LIMIT 1;
   IF v_role IS NULL THEN RAISE EXCEPTION 'RETURN_FORBIDDEN: لست عضواً فى هذه الشركة'; END IF;
   IF NOT (
-    v_role IN ('owner','admin','general_manager')
-    OR (v_role IN ('store_manager','warehouse_manager') AND (v_mbranch IS NULL OR v_mbranch = w.branch_id))
+    v_role IN ('owner','admin')
+    OR (v_role IN ('store_manager') AND (v_mbranch IS NULL OR v_mbranch = w.branch_id))
   ) THEN
     RAISE EXCEPTION 'RETURN_FORBIDDEN: اعتماد استلام المرتجع من اختصاص مسؤول مخزن الفرع (أو الإدارة)';
   END IF;
@@ -18980,7 +18982,7 @@ BEGIN
     FOR v_mgr IN
       SELECT DISTINCT u FROM (
         SELECT user_id AS u FROM public.companies WHERE id = w.company_id
-        UNION SELECT user_id FROM public.company_members WHERE company_id = w.company_id AND role IN ('owner','admin','general_manager')
+        UNION SELECT user_id FROM public.company_members WHERE company_id = w.company_id AND role IN ('owner','admin')
         UNION SELECT user_id FROM public.company_members WHERE company_id = w.company_id AND role = 'manager' AND branch_id = w.branch_id
       ) x WHERE u IS NOT NULL AND u <> COALESCE(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid)
     LOOP
@@ -19031,7 +19033,7 @@ BEGIN
   IF v_role IS NULL THEN RAISE EXCEPTION 'WITHDRAWAL_FORBIDDEN: لست عضواً فى هذه الشركة'; END IF;
 
   IF NOT (
-    v_role IN ('owner','admin','general_manager')
+    v_role IN ('owner','admin')
     OR (v_role = 'store_manager' AND (v_mbranch IS NULL OR v_mbranch = v_w.branch_id))
   ) THEN
     RAISE EXCEPTION 'WITHDRAWAL_FORBIDDEN: اعتماد سحب المنتج من اختصاص مسؤول مخزن الفرع (أو الإدارة)';
@@ -19121,7 +19123,7 @@ BEGIN
         SELECT user_id AS u FROM public.companies WHERE id = v_w.company_id
         UNION
         SELECT user_id FROM public.company_members
-         WHERE company_id = v_w.company_id AND role IN ('owner','admin','general_manager')
+         WHERE company_id = v_w.company_id AND role IN ('owner','admin')
         UNION
         SELECT user_id FROM public.company_members
          WHERE company_id = v_w.company_id AND role = 'manager' AND branch_id = v_w.branch_id
@@ -19628,7 +19630,7 @@ BEGIN
   -- v3.74.565 — SoD
   SELECT role INTO v_role FROM company_members
    WHERE company_id = v_company_id AND user_id = p_user_id LIMIT 1;
-  IF NOT (COALESCE(v_role,'') IN ('owner','general_manager','admin')) THEN
+  IF NOT (COALESCE(v_role,'') IN ('owner','admin')) THEN
     IF v_asset.created_by = p_user_id THEN
       RAISE EXCEPTION 'SOD_VIOLATION: منشِئ الأصل لا يستطيع تسجيل التصرف — يحتاج مالك/مدير عام';
     END IF;
@@ -20874,7 +20876,7 @@ AS $function$
     SELECT user_id FROM company_members
       WHERE company_id = p_company_id
         AND user_id IS NOT NULL
-        AND lower(role) IN ('owner','admin','general_manager')
+        AND lower(role) IN ('owner','admin')
     UNION
     SELECT user_id FROM companies
       WHERE id = p_company_id AND user_id IS NOT NULL
@@ -21030,7 +21032,7 @@ AS $function$
   SELECT p_user_id IS NOT NULL AND (
     EXISTS (SELECT 1 FROM public.company_members
              WHERE company_id = p_company_id AND user_id = p_user_id
-               AND lower(role) IN ('owner','admin','general_manager','gm','generalmanager','superadmin','super_admin'))
+               AND lower(role) IN ('owner','admin'))
     OR EXISTS (SELECT 1 FROM public.companies WHERE id = p_company_id AND user_id = p_user_id));
 $function$
 ;
@@ -21048,7 +21050,7 @@ AS $function$
      AND (
        EXISTS (SELECT 1 FROM company_members
                  WHERE company_id = p_company_id AND user_id = p_user_id
-                   AND lower(role) IN ('owner','admin','general_manager'))
+                   AND lower(role) IN ('owner','admin'))
        OR EXISTS (SELECT 1 FROM companies WHERE id = p_company_id AND user_id = p_user_id)
      );
 $function$
@@ -21143,7 +21145,7 @@ AS $function$
     SELECT 1 FROM public.company_members cm
     WHERE cm.company_id = p_company_id
       AND cm.user_id = p_user_id
-      AND cm.role IN ('owner', 'admin', 'general_manager')
+      AND cm.role IN ('owner', 'admin')
   );
 $function$
 ;
@@ -21944,7 +21946,7 @@ BEGIN
 
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = v_tmpl.company_id AND user_id = p_user_id LIMIT 1;
-  IF NOT (COALESCE(v_role,'') IN ('owner','general_manager','admin')) THEN
+  IF NOT (COALESCE(v_role,'') IN ('owner','admin')) THEN
     RAISE EXCEPTION 'FORBIDDEN';
   END IF;
 
@@ -22542,7 +22544,7 @@ AS $function$
   SELECT p_user_id IS NOT NULL AND (
        EXISTS (SELECT 1 FROM company_members
                 WHERE company_id = p_company_id AND user_id = p_user_id
-                  AND lower(role) IN ('owner','admin','general_manager','gm','generalmanager'))
+                  AND lower(role) IN ('owner','admin'))
     OR EXISTS (SELECT 1 FROM companies WHERE id = p_company_id AND user_id = p_user_id));
 $function$
 ;
@@ -24206,7 +24208,7 @@ BEGIN
   SELECT EXISTS(
     SELECT 1 FROM public.company_members cm
      WHERE cm.company_id = w.company_id AND cm.branch_id = w.branch_id
-       AND cm.user_id IS NOT NULL AND lower(cm.role) IN ('store_manager','warehouse_manager')
+       AND cm.user_id IS NOT NULL AND lower(cm.role) IN ('store_manager')
   ) INTO v_has_mgr;
 
   IF v_has_mgr THEN
@@ -24685,7 +24687,7 @@ BEGIN
     RAISE EXCEPTION 'RETURN_FORBIDDEN: لست عضواً فى هذه الشركة';
   END IF;
 
-  IF v_role NOT IN ('owner','admin','general_manager') THEN
+  IF v_role NOT IN ('owner','admin') THEN
     RAISE EXCEPTION 'RETURN_FORBIDDEN: المرتجع المباشر من صفحة الفاتورة متاح للمالك والمدير العام فقط — استخدم دورة "طلب مرتجع مبيعات" (اعتماد إدارى ثم استلام مخزنى)';
   END IF;
 
@@ -27728,7 +27730,7 @@ BEGIN
   LIMIT 1;
 
   -- يُعيد 0 لغير الأدوار الإدارية العليا
-  IF v_role NOT IN ('admin', 'owner', 'general_manager', 'manager') THEN
+  IF v_role NOT IN ('admin', 'owner', 'manager') THEN
     RETURN 0;
   END IF;
 
@@ -27783,11 +27785,11 @@ BEGIN
     AND  user_id    = p_user_id
   LIMIT 1;
 
-  IF v_role NOT IN ('store_manager', 'warehouse_manager', 'admin', 'owner', 'general_manager', 'manager') THEN
+  IF v_role NOT IN ('store_manager', 'admin', 'owner', 'manager') THEN
     RETURN 0;
   END IF;
 
-  IF v_role IN ('store_manager', 'warehouse_manager') AND v_warehouse_id IS NOT NULL THEN
+  IF v_role IN ('store_manager') AND v_warehouse_id IS NOT NULL THEN
     -- مسؤول المخزن يرى مخزنه فقط
     SELECT COUNT(*) INTO v_dispatch_count
     FROM public.manufacturing_material_issue_approvals
@@ -27886,12 +27888,7 @@ AS $function$
   WHERE cm.company_id = p_company_id
     AND lower(trim(cm.role::text)) IN (
       'owner',
-      'admin',
-      'general_manager',
-      'gm',
-      'super_admin',
-      'superadmin',
-      'generalmanager'
+      'admin'
     );
 $function$
 ;
@@ -28446,7 +28443,7 @@ BEGIN
         AND (
           n.assigned_to_role = v_user_role
           OR n.assigned_to_role IS NULL
-          OR v_user_role IN ('owner', 'admin', 'general_manager')
+          OR v_user_role IN ('owner', 'admin')
         )
       )
     )
@@ -28481,151 +28478,151 @@ BEGIN
   IF v_role IS NULL THEN RETURN '{}'::jsonb; END IF;
   v_is_admin := v_role IN ('owner','admin');
 
-  IF v_is_admin OR v_role IN ('general_manager','manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('manager','accountant') THEN
     SELECT count(*) INTO v_n FROM sales_return_requests
     WHERE company_id = p_company_id
       AND status IN ('pending','pending_approval_level_1')
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role IN ('manager','accountant') AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('sales_return_request_l1', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('store_manager','warehouse_manager','general_manager') THEN
+  IF v_is_admin OR v_role IN ('store_manager') THEN
     SELECT count(*) INTO v_n FROM sales_return_requests
     WHERE company_id = p_company_id AND status = 'pending_warehouse_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_warehouse_id IS NOT NULL AND warehouse_id = v_warehouse_id)
            OR (v_warehouse_id IS NULL AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('sales_return_request_warehouse', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('manager','accountant') THEN
     SELECT count(*) INTO v_n FROM customer_debit_notes
     WHERE company_id = p_company_id AND approval_status = 'pending_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role IN ('manager','accountant') AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('customer_debit_note', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('accountant') THEN
     SELECT count(*) INTO v_n FROM customer_refund_requests
     WHERE company_id = p_company_id AND status = 'pending';
     v_result := v_result || jsonb_build_object('customer_refund_request', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','manager','purchasing_officer') THEN
+  IF v_is_admin OR v_role IN ('manager','purchasing_officer') THEN
     SELECT count(*) INTO v_n FROM purchase_requests
     WHERE company_id = p_company_id AND status = 'pending_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role IN ('manager','purchasing_officer') AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('purchase_request', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('manager','accountant') THEN
     SELECT count(*) INTO v_n FROM purchase_returns
     WHERE company_id = p_company_id AND workflow_status = 'pending_admin_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role IN ('manager','accountant') AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('purchase_return_admin', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('store_manager','warehouse_manager','general_manager') THEN
+  IF v_is_admin OR v_role IN ('store_manager') THEN
     SELECT count(*) INTO v_n FROM purchase_returns
     WHERE company_id = p_company_id AND workflow_status = 'pending_warehouse'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_warehouse_id IS NOT NULL AND warehouse_id = v_warehouse_id)
            OR (v_warehouse_id IS NULL AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('purchase_return_warehouse', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('accountant') THEN
     SELECT count(*) INTO v_n FROM vendor_refund_requests
     WHERE company_id = p_company_id AND status = 'pending_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('vendor_refund_request', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('store_manager','warehouse_manager','general_manager') THEN
+  IF v_is_admin OR v_role IN ('store_manager') THEN
     SELECT count(*) INTO v_n FROM bills
     WHERE company_id = p_company_id AND receipt_status = 'pending'
       AND COALESCE(status,'') NOT IN ('cancelled','draft')
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_warehouse_id IS NOT NULL AND warehouse_id = v_warehouse_id)
            OR (v_warehouse_id IS NULL AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('bill_receipt', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('store_manager','warehouse_manager','general_manager') THEN
+  IF v_is_admin OR v_role IN ('store_manager') THEN
     SELECT count(*) INTO v_n FROM invoices
     WHERE company_id = p_company_id
       AND warehouse_status = 'pending'
       AND status IN ('sent','paid','partially_paid')
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_warehouse_id IS NOT NULL AND warehouse_id = v_warehouse_id)
            OR (v_warehouse_id IS NULL AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('dispatch_approval', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('store_manager','warehouse_manager','general_manager','manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('store_manager','manager','accountant') THEN
     SELECT count(*) INTO v_n FROM inventory_transfers
     WHERE company_id = p_company_id AND status IN ('pending_approval','pending','in_transit')
       AND (
-        v_is_admin OR v_role = 'general_manager'
+        v_is_admin
         OR (v_role IN ('manager','accountant') AND status = 'pending_approval' AND v_branch_id IS NOT NULL
             AND (source_branch_id = v_branch_id OR destination_branch_id = v_branch_id))
-        OR (v_role IN ('store_manager','warehouse_manager') AND status = 'pending'
+        OR (v_role IN ('store_manager') AND status = 'pending'
             AND v_warehouse_id IS NOT NULL AND source_warehouse_id = v_warehouse_id)
-        OR (v_role IN ('store_manager','warehouse_manager') AND status = 'in_transit'
+        OR (v_role IN ('store_manager') AND status = 'in_transit'
             AND v_warehouse_id IS NOT NULL AND destination_warehouse_id = v_warehouse_id)
       );
     v_result := v_result || jsonb_build_object('inventory_transfer', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('manager','general_manager','store_manager','warehouse_manager') THEN
+  IF v_is_admin OR v_role IN ('manager','store_manager') THEN
     SELECT count(*) INTO v_n FROM inventory_write_offs
     WHERE company_id = p_company_id AND status = 'pending'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role = 'manager' AND v_branch_id IS NOT NULL AND branch_id = v_branch_id)
-           OR (v_role IN ('store_manager','warehouse_manager') AND v_warehouse_id IS NOT NULL AND warehouse_id = v_warehouse_id));
+           OR (v_role IN ('store_manager') AND v_warehouse_id IS NOT NULL AND warehouse_id = v_warehouse_id));
     v_result := v_result || jsonb_build_object('inventory_write_off', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('manager','accountant') THEN
     SELECT count(*) INTO v_n FROM expenses
     WHERE company_id = p_company_id AND status = 'pending_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role IN ('manager','accountant') AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('expense', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('manager','accountant') THEN
     SELECT count(*) INTO v_n FROM payments
     WHERE company_id = p_company_id AND status = 'pending_approval'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_role IN ('manager','accountant') AND v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('payment_approval', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','accountant') THEN
+  IF v_is_admin OR v_role IN ('accountant') THEN
     SELECT count(*) INTO v_n FROM bank_voucher_requests
     WHERE company_id = p_company_id AND status = 'pending'
-      AND (v_is_admin OR v_role = 'general_manager'
+      AND (v_is_admin
            OR (v_branch_id IS NOT NULL AND branch_id = v_branch_id));
     v_result := v_result || jsonb_build_object('bank_voucher_request', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('manufacturing_officer','manager','general_manager') THEN
+  IF v_is_admin OR v_role IN ('manufacturing_officer','manager') THEN
     SELECT count(*) INTO v_n FROM manufacturing_material_issue_approvals
     WHERE company_id = p_company_id AND status = 'pending'
-      AND (v_is_admin OR v_role IN ('general_manager','manager','manufacturing_officer'));
+      AND (v_is_admin OR v_role IN ('manager','manufacturing_officer'));
     v_result := v_result || jsonb_build_object('mfg_material_issue', v_n);
     SELECT count(*) INTO v_n FROM manufacturing_product_receive_approvals
     WHERE company_id = p_company_id AND status = 'pending';
     v_result := v_result || jsonb_build_object('mfg_product_receive', v_n);
   END IF;
 
-  IF v_is_admin OR v_role IN ('general_manager','manager') THEN
+  IF v_is_admin OR v_role IN ('manager') THEN
     SELECT count(*) INTO v_n FROM permission_transfers
     WHERE company_id = p_company_id AND status = 'pending'
       AND transferred_by IS DISTINCT FROM p_user_id;
@@ -28634,7 +28631,7 @@ BEGIN
 
   -- v3.74.373 - discount approvals badge. Only owner/admin/general_manager
   -- are approvers per the owner's governance decision.
-  IF v_is_admin OR v_role = 'general_manager' THEN
+  IF v_is_admin THEN
     SELECT count(*) INTO v_n FROM discount_approvals
     WHERE company_id = p_company_id AND status = 'pending';
     v_result := v_result || jsonb_build_object('discount_approval', v_n);
@@ -28643,7 +28640,7 @@ BEGIN
   -- v3.74.903 — إشعارات دائنة بانتظار اعتماد مصفوفة 900. المعتمدون
   -- مالك/مدير عام فقط (المصفوفة حرفياً)، ويُستبعد ما أنشأه المستخدم
   -- نفسه — فصل المهام: لا يُعدُّ له ما لا يملك قراره.
-  IF v_role IN ('owner','general_manager') THEN
+  IF v_role IN ('owner') THEN
     SELECT count(*) INTO v_n FROM vendor_credits
     WHERE company_id = p_company_id AND status = 'pending_approval'
       AND created_by_user_id IS DISTINCT FROM p_user_id;
@@ -28878,12 +28875,7 @@ BEGIN
   v_role_norm := lower(trim(coalesce(v_user_role::text, '')));
   v_exec_bypass := v_role_norm IN (
     'owner',
-    'admin',
-    'general_manager',
-    'gm',
-    'super_admin',
-    'superadmin',
-    'generalmanager'
+    'admin'
   );
 
   RETURN QUERY
@@ -30602,7 +30594,7 @@ BEGIN
     WHERE c.company_id = p_company_id
       AND m.branch_id IS NOT NULL
       AND m.branch_id <> c.branch_id
-      AND m.role NOT IN ('owner','admin','general_manager','manager')
+      AND m.role NOT IN ('owner','admin','manager')
     LIMIT 20
   LOOP
     severity := 'medium';
@@ -32066,7 +32058,7 @@ AS $function$
     FROM public.company_members cm
     WHERE cm.company_id = p_company_id
       AND cm.user_id = auth.uid()
-      AND lower(cm.role) IN ('owner', 'admin', 'general_manager', 'manager')
+      AND lower(cm.role) IN ('owner', 'admin', 'manager')
   )
   OR EXISTS (
     SELECT 1
@@ -33678,7 +33670,7 @@ BEGIN
     WHERE user_id = p_user_id 
     AND company_id = (SELECT company_id FROM public.branches WHERE id = p_branch_id);
 
-    IF v_role IN ('super_admin', 'admin', 'owner', 'manager', 'general_manager') THEN
+    IF v_role IN ('admin', 'owner', 'manager') THEN
         RETURN TRUE;
     END IF;
 
@@ -40756,7 +40748,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = p_company_id
-         AND role IN ('owner', 'general_manager', 'admin')
+         AND role IN ('owner', 'admin')
     ) owners
     WHERE u IS NOT NULL
   LOOP
@@ -40948,7 +40940,7 @@ BEGIN
     SELECT DISTINCT s.u AS user_id FROM (
       SELECT user_id AS u FROM public.company_members
         WHERE company_id = NEW.company_id AND user_id IS NOT NULL
-          AND lower(role) IN ('owner','admin','general_manager')
+          AND lower(role) IN ('owner','admin')
       UNION
       SELECT user_id AS u FROM public.companies WHERE id = NEW.company_id AND user_id IS NOT NULL
     ) s
@@ -41484,7 +41476,7 @@ BEGIN
      LIMIT 1;
   END IF;
 
-  IF v_creator_role IN ('owner', 'admin', 'general_manager') THEN
+  IF v_creator_role IN ('owner', 'admin') THEN
     IF NEW.status = 'approved' THEN
       IF NEW.approved_by IS NULL THEN NEW.approved_by := NEW.created_by_user_id; END IF;
       IF NEW.approved_at IS NULL THEN NEW.approved_at := NOW(); END IF;
@@ -41577,7 +41569,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'admin', 'general_manager')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -42433,7 +42425,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = v_po.company_id
-         AND role IN ('owner', 'general_manager', 'admin')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND u <> v_requester
   LOOP
@@ -43975,12 +43967,12 @@ BEGIN
 
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = v_je.company_id AND user_id = p_user_id LIMIT 1;
-  IF NOT (COALESCE(v_role,'') IN ('owner','general_manager','admin')) THEN
+  IF NOT (COALESCE(v_role,'') IN ('owner','admin')) THEN
     RAISE EXCEPTION 'FORBIDDEN: يحتاج مالك/مدير عام/مشرف';
   END IF;
 
   IF v_je.created_by IS NOT NULL AND v_je.created_by = p_user_id
-     AND COALESCE(v_role,'') NOT IN ('owner','general_manager') THEN
+     AND COALESCE(v_role,'') NOT IN ('owner') THEN
     RAISE EXCEPTION 'SOD_VIOLATION: منشِئ القَيد لا يَستَطيع نَشرَه';
   END IF;
 
@@ -47806,7 +47798,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'admin', 'general_manager')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -47903,7 +47895,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'admin', 'general_manager')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -47955,8 +47947,8 @@ CREATE OR REPLACE FUNCTION public.protect_customer_branch_id()
 AS $function$
 DECLARE
   user_role     TEXT;
-  allowed_roles TEXT[] := ARRAY['owner', 'admin', 'general_manager', 'gm',
-                                'super_admin', 'superadmin', 'generalmanager'];
+  allowed_roles TEXT[] := ARRAY['owner', 'admin' 
+                                ];
 BEGIN
   IF TG_OP = 'INSERT' THEN
     RETURN NEW;
@@ -48277,7 +48269,7 @@ BEGIN
     SELECT role INTO v_role FROM public.company_members
      WHERE company_id = NEW.company_id AND user_id = NEW.created_by LIMIT 1;
   END IF;
-  IF v_role IN ('owner', 'admin', 'general_manager') THEN
+  IF v_role IN ('owner', 'admin') THEN
     IF NEW.status IN ('approved', 'sent_to_vendor') THEN
       IF NEW.approved_by IS NULL THEN NEW.approved_by := NEW.created_by; END IF;
       IF NEW.approved_at IS NULL THEN NEW.approved_at := NOW(); END IF;
@@ -48480,7 +48472,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'admin', 'general_manager')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND u <> v_requester
   LOOP
@@ -50536,7 +50528,7 @@ BEGIN
   END IF;
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_rejected_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية رفض أوامر الإنتاج محصورة بالمالك والمدير العام');
   END IF;
@@ -50581,7 +50573,7 @@ BEGIN
 
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_rejected_by;
-  IF NOT FOUND OR v_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false,
       'error', 'صلاحية رفض مسارات التصنيع محصورة بالمالك والمدير العام');
   END IF;
@@ -50803,7 +50795,7 @@ BEGIN
   SELECT role INTO v_member
   FROM company_members
   WHERE user_id = p_rejector_id AND company_id = v_payment.company_id;
-  IF NOT FOUND OR v_member.role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF NOT FOUND OR v_member.role NOT IN ('owner', 'admin') THEN
     RAISE EXCEPTION 'UNAUTHORIZED: Only owner/admin/general_manager can reject payments';
   END IF;
 
@@ -50875,7 +50867,7 @@ BEGIN
 
   SELECT lower(btrim(role)) INTO v_approver_role
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_actor LIMIT 1;
-  IF v_approver_role NOT IN ('owner', 'admin', 'general_manager') THEN
+  IF v_approver_role NOT IN ('owner', 'admin') THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK');
   END IF;
   IF v_vc.created_by_user_id IS NOT NULL AND v_vc.created_by_user_id = v_actor THEN
@@ -50883,7 +50875,7 @@ BEGIN
   END IF;
   SELECT lower(btrim(role)) INTO v_creator_role
     FROM company_members WHERE company_id = v_vc.company_id AND user_id = v_vc.created_by_user_id LIMIT 1;
-  IF (COALESCE(v_creator_role, '') IN ('admin', 'general_manager') OR v_creator_role IS NULL)
+  IF (COALESCE(v_creator_role, '') IN ('admin') OR v_creator_role IS NULL)
      AND v_approver_role <> 'owner' THEN
     RETURN jsonb_build_object('success', false, 'error', 'APPROVER_RANK_FOR_CREATOR');
   END IF;
@@ -51356,7 +51348,7 @@ BEGIN
      WHERE cm.company_id = p_company_id
        AND cm.branch_id  = v_booking.branch_id
        AND cm.user_id IS NOT NULL
-       AND lower(cm.role) IN ('store_manager','warehouse_manager')
+       AND lower(cm.role) IN ('store_manager')
   ) INTO v_has_mgr;
 
   INSERT INTO public.booking_stock_withdrawals
@@ -52517,7 +52509,7 @@ BEGIN
       'warning', 'sales', 'action');
   EXCEPTION WHEN OTHERS THEN NULL; END;
 
-  FOR v_role IN SELECT unnest(ARRAY['owner','admin','general_manager','manager']) LOOP
+  FOR v_role IN SELECT unnest(ARRAY['owner','admin','manager']) LOOP
     BEGIN
       PERFORM public.create_notification(
         p_company_id, 'booking', p_booking_id,
@@ -52723,7 +52715,7 @@ BEGIN
   -- SoD check
   SELECT role INTO v_role FROM company_members
    WHERE company_id = v_orig.company_id AND user_id = p_user_id LIMIT 1;
-  IF NOT (COALESCE(v_role,'') IN ('owner','admin','general_manager')) THEN
+  IF NOT (COALESCE(v_role,'') IN ('owner','admin')) THEN
     IF v_orig.created_by IS NOT NULL AND v_orig.created_by = p_user_id THEN
       RAISE EXCEPTION 'SOD_VIOLATION: مُنشِئ القَيد لا يَستَطيع عَكسَه — يَحتاج مالِك أَو مُدير عام';
     END IF;
@@ -53110,7 +53102,7 @@ DECLARE
     v_message VARCHAR;
     v_user_locale VARCHAR := 'ar';
     v_notification_count INT := 0;
-    v_admin_roles VARCHAR[] := ARRAY['admin', 'owner', 'general_manager'];
+    v_admin_roles VARCHAR[] := ARRAY['admin', 'owner'];
 BEGIN
     IF NEW.reference_type = 'purchase_return' THEN
 
@@ -53286,7 +53278,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'admin', 'general_manager')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -53575,7 +53567,7 @@ BEGIN
   -- SoD
   SELECT role INTO v_role FROM public.company_members
    WHERE company_id = p_company_id AND user_id = p_user_id LIMIT 1;
-  IF NOT (COALESCE(v_role,'') IN ('owner','general_manager','admin')) THEN
+  IF NOT (COALESCE(v_role,'') IN ('owner','admin')) THEN
     RAISE EXCEPTION 'SOD: FX revaluation limited to owner/general_manager/admin';
   END IF;
 
@@ -53953,7 +53945,7 @@ BEGIN
   END IF;
 
   -- الإدارةُ توقّع دائماً — لا أحدَ فوقها لتنتظره
-  IF v_role IN ('owner', 'admin', 'general_manager') THEN
+  IF v_role IN ('owner', 'admin') THEN
     RETURN NULL;
   END IF;
 
@@ -54020,7 +54012,7 @@ BEGIN
     SELECT role INTO v_role FROM public.company_members
      WHERE company_id = NEW.company_id AND user_id = NEW.created_by_user_id LIMIT 1;
   END IF;
-  IF v_role IN ('owner', 'admin', 'general_manager') THEN
+  IF v_role IN ('owner', 'admin') THEN
     IF NEW.status = 'approved' THEN
       IF NEW.approved_by IS NULL THEN NEW.approved_by := NEW.created_by_user_id; END IF;
       IF NEW.approved_at IS NULL THEN NEW.approved_at := NOW(); END IF;
@@ -54129,7 +54121,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = NEW.company_id
-         AND role IN ('owner', 'admin', 'general_manager')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND (v_requester IS NULL OR u <> v_requester)
   LOOP
@@ -55096,7 +55088,7 @@ BEGIN
       UNION
       SELECT user_id FROM public.company_members
        WHERE company_id = v_so.company_id
-         AND role IN ('owner', 'general_manager', 'admin')
+         AND role IN ('owner', 'admin')
     ) approvers
     WHERE u IS NOT NULL AND u <> v_requester
   LOOP
@@ -55454,7 +55446,7 @@ BEGIN
     IF v_role IS NULL THEN
       RAISE EXCEPTION 'LOT_SPLIT_FORBIDDEN: لست عضواً فى هذه الشركة';
     END IF;
-    IF v_role NOT IN ('owner','admin','general_manager','store_manager','warehouse_manager') THEN
+    IF v_role NOT IN ('owner','admin','store_manager') THEN
       RAISE EXCEPTION 'LOT_SPLIT_FORBIDDEN: تقسيم الدفعات متاح للإدارة ومسئولى المخازن فقط';
     END IF;
   END IF;
@@ -55463,7 +55455,7 @@ BEGIN
   WHERE id = p_lot_id AND company_id = p_company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'LOT_NOT_FOUND'; END IF;
 
-  IF v_uid IS NOT NULL AND v_role IN ('store_manager','warehouse_manager')
+  IF v_uid IS NOT NULL AND v_role IN ('store_manager')
      AND v_member_branch IS NOT NULL
      AND v_lot.branch_id IS DISTINCT FROM v_member_branch THEN
     RAISE EXCEPTION 'LOT_SPLIT_FORBIDDEN: الدفعة خارج نطاق فرعك';
@@ -55932,7 +55924,7 @@ BEGIN
       RETURN 'لا قرارَ يُتّخذ على دفعةٍ حالتُها «' || v_status || '»';
     END IF;
     -- والقاعدةُ هى المكتوبةُ سلفاً فى reject_supplier_payment، لا قاعدةٌ جديدة
-    IF v_role NOT IN ('owner','admin','general_manager') THEN
+    IF v_role NOT IN ('owner','admin') THEN
       RETURN 'رفضُ دفعة المورّد للمالك أو المدير العامّ — ودورُك «' || v_role || '»';
     END IF;
     RETURN NULL;
@@ -55964,16 +55956,16 @@ CREATE OR REPLACE FUNCTION public.supplier_payment_stage_next_status(p_status te
 AS $function$
   SELECT CASE
     WHEN lower(btrim(coalesce(p_status,''))) = 'pending_approval'
-         AND lower(btrim(coalesce(p_role,''))) IN ('owner','admin','general_manager')
+         AND lower(btrim(coalesce(p_role,''))) IN ('owner','admin')
       THEN 'approved'
     WHEN lower(btrim(coalesce(p_status,''))) = 'pending_approval'
          AND lower(btrim(coalesce(p_role,''))) = 'manager'
       THEN 'pending_director'
     WHEN lower(btrim(coalesce(p_status,''))) = 'pending_manager'
-         AND lower(btrim(coalesce(p_role,''))) IN ('manager','owner','admin','general_manager')
+         AND lower(btrim(coalesce(p_role,''))) IN ('manager','owner','admin')
       THEN 'pending_director'
     WHEN lower(btrim(coalesce(p_status,''))) = 'pending_director'
-         AND lower(btrim(coalesce(p_role,''))) IN ('owner','admin','general_manager')
+         AND lower(btrim(coalesce(p_role,''))) IN ('owner','admin')
       THEN 'approved'
     ELSE NULL
   END;
@@ -58947,10 +58939,10 @@ BEGIN
     IF v_role IS NULL THEN
       RAISE EXCEPTION 'EXPIRY_FORBIDDEN: لست عضواً فى هذه الشركة';
     END IF;
-    IF v_role NOT IN ('owner','admin','general_manager','store_manager','warehouse_manager') THEN
+    IF v_role NOT IN ('owner','admin','store_manager') THEN
       RAISE EXCEPTION 'EXPIRY_FORBIDDEN: تعديل صلاحية الدفعات متاح للإدارة ومسئولى المخازن فقط';
     END IF;
-    IF v_role IN ('store_manager','warehouse_manager') AND v_member_branch IS NOT NULL THEN
+    IF v_role IN ('store_manager') AND v_member_branch IS NOT NULL THEN
       SELECT branch_id INTO v_lot_branch FROM public.fifo_cost_lots
       WHERE id = p_lot_id AND company_id = p_company_id;
       IF v_lot_branch IS DISTINCT FROM v_member_branch THEN
@@ -59754,7 +59746,7 @@ BEGIN
   IF v_role IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'NOT_MEMBER');
   END IF;
-  IF v_role NOT IN ('owner', 'admin', 'general_manager', 'accountant') THEN
+  IF v_role NOT IN ('owner', 'admin', 'accountant') THEN
     RAISE EXCEPTION 'VENDOR_CREDIT_ROLE_FORBIDDEN: role % may not resubmit vendor credits | هذا الدور لا يعيد إرسال إشعارات دائنة (مصفوفة 865)', v_role;
   END IF;
 
@@ -59857,7 +59849,7 @@ BEGIN
     v_actor, 'owner',
     'إشعار دائن معدَّل بانتظار الاعتماد',
     'أُعيد إرسال الإشعار الدائن ' || COALESCE(v_vc.credit_number, '') || ' بعد تعديله بواسطة ' ||
-      CASE WHEN v_role IN ('admin', 'general_manager') THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
+      CASE WHEN v_role IN ('admin') THEN 'المدير العام' ELSE 'محاسب الفرع' END ||
       ' — يحتاج اعتماداً قبل الترحيل (مصفوفة 865).',
     'high', 'unread',
     'vendor_credit_pending:' || p_credit_id::text || ':r' || v_resubmit_no::text
@@ -61502,7 +61494,7 @@ BEGIN
     END IF;
 
     -- Same permission gate as bill delete: owner, admin, general_manager, accountant.
-    IF v_user_role NOT IN ('owner', 'admin', 'general_manager', 'accountant') THEN
+    IF v_user_role NOT IN ('owner', 'admin', 'accountant') THEN
         RETURN jsonb_build_object('success', false,
           'error', 'صلاحية إلغاء الفواتير محصورة بالمالك والمدير العام والمحاسب');
     END IF;
@@ -61597,7 +61589,7 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'User is not a member of this company');
     END IF;
 
-    IF v_user_role NOT IN ('owner', 'admin', 'general_manager', 'accountant') THEN
+    IF v_user_role NOT IN ('owner', 'admin', 'accountant') THEN
         RETURN jsonb_build_object('success', false,
           'error', 'صلاحية إلغاء الفواتير محصورة بالمالك والمدير العام والمحاسب');
     END IF;

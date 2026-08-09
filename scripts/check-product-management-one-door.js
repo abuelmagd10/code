@@ -43,7 +43,14 @@ const requireDb = process.argv.includes("--require-db")
 const verbose = process.argv.includes("--list")
 
 const RULE = "can_manage_products"
-const ALLOWED = ["owner", "admin", "general_manager", "gm", "generalmanager",
+// v3.74.995b — كانت هنا ثلاثةُ أسماءٍ لا يستطيع أحدٌ أن يشغلها
+// (general_manager · gm · generalmanager). ورفعها ٩٩٥ من القاعدة، **فصار هذا
+// العقدُ يطلب اسماً لا وجودَ له** — ويسقط البناءُ على لا شىء.
+//
+// **وعقدٌ يطلب اسماً لا يُشغَل يحرس شكلَ النصّ لا خاصّيّتَه** (درس ٩٧٧).
+// فرُفعت الثلاثة، وأُضيف شرطٌ يمنع عودتَها: كلُّ اسمٍ هنا يجب أن تقبله
+// **مفرداتُ العضويّة** المقروءةُ من البيت الواحد، وإلّا سقط الفحصُ وقال لماذا.
+const ALLOWED = ["owner", "admin",
                  "manager", "accountant", "store_manager", "purchasing_officer"]
 
 const url = process.env.PRODUCT_DOOR_DB_URL || process.env.PRODUCTION_SUPABASE_DB_URL
@@ -90,6 +97,18 @@ async function withDatabase(work) {
 
 ;(async () => {
   await withDatabase(async (client) => {
+  // v3.74.995b — **ولا يُطلب فى العقد اسمٌ لا يستطيع أحدٌ أن يشغله.**
+  {
+    const { rows: vr } = await client.query("SELECT public.erp_membership_roles() AS v")
+    const vocab = (vr[0] && vr[0].v) || []
+    if (vocab.length === 0) { console.error("X المفرداتُ فارغة - لا أحكم بلا مقياس."); process.exit(1) }
+    const dead = ALLOWED.filter((r) => !vocab.includes(r))
+    if (dead.length > 0) {
+      console.error("X العقدُ يطلب اسماً لا يستطيع أحدٌ أن يشغله: " + dead.join(", "))
+      console.error("   العلاج: ارفعه من ALLOWED، أو أضِفه إلى مفردات العضويّة إن كان دوراً حقيقيّاً.")
+      process.exit(1)
+    }
+  }
     // ── (١) الحكمُ موجود، ومقصور ────────────────────────────────────────
     const { rows: fn } = await client.query(
       `SELECT p.prosecdef, COALESCE(array_to_string(p.proacl, ' | '), '') acl,
