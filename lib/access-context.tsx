@@ -29,9 +29,9 @@
  *    - components/realtime-route-guard.tsx
  *    - docs/SECURITY_REALTIME_SYSTEM.md
  */
-import { isSeniorRole } from "@/lib/roles"
 
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
