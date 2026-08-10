@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -133,7 +134,7 @@ export function canAccessPageSync(resource: string): boolean {
   if (!isValid) return false
 
   // owner و admin و general_manager لديهم كل الصلاحيات
-  if (["owner", "admin"].includes(role)) return true
+  if (isSeniorRole(role)) return true
 
   // التحقق من الموارد المحجوبة
   return !deniedResources.includes(resource)
@@ -302,7 +303,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       setRole(userRole)
 
       // owner و admin و general_manager لديهم كل الصلاحيات
-      if (["owner", "admin"].includes(userRole)) {
+      if (isSeniorRole(userRole)) {
         setDeniedResources([])
         setPermissions([])
         // حفظ في الكاش
@@ -358,7 +359,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     if (!isReady) return false
 
     // owner و admin و general_manager لديهم كل الصلاحيات
-    if (["owner", "admin"].includes(role)) return true
+    if (isSeniorRole(role)) return true
 
     // الملف الشخصي متاح للجميع
     if (resource === "profile") return true
@@ -370,7 +371,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   // التحقق من صلاحية عملية معينة
   const canAction = useCallback((resource: string, action: string): boolean => {
     if (!isReady) return false
-    if (["owner", "admin"].includes(role)) return true
+    if (isSeniorRole(role)) return true
 
     const perm = permissions.find(p => p.resource === resource)
     if (!perm) return ["read", "write", "update"].includes(action) // افتراضي

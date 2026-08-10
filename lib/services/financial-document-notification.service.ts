@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
 import {
   NotificationRecipientResolverService,
@@ -189,7 +190,7 @@ export class FinancialDocumentNotificationService {
   }) {
     const resolver = new NotificationRecipientResolverService(this.supabase)
     const recipients = resolver.resolveRoleRecipients(
-      ["owner", "admin"],
+      [...SENIOR_ROLES],
       params.branchId || null,
       null,
       null

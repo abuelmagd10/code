@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { getAccrualAccountMapping } from "@/lib/accrual-accounting-engine"
 import { createCompleteJournalEntry } from "@/lib/journal-entry-governance"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
@@ -10,7 +11,7 @@ const APPLY_BILL_COMMAND_EVENT = "supplier_payment_apply_bill"
 const APPLY_PO_COMMAND_EVENT = "supplier_payment_apply_po"
 const UPDATE_COMMAND_EVENT = "supplier_payment_update"
 const DELETE_COMMAND_EVENT = "supplier_payment_delete"
-const PRIVILEGED_ROLES = new Set(["owner", "admin"])
+const PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
 
 type SupabaseLike = any
 

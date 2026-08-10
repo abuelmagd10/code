@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { linkTraceEntity } from "@/lib/services/financial-trace"
 import { writeAuditLog } from "@/lib/audit-log-write"
@@ -10,7 +11,7 @@ const PURCHASE_RETURN_ALLOCATION_EVENT = "purchase_return_allocation_posting"
 const VENDOR_CREDIT_EVENT = "vendor_credit_posting"
 const PURCHASE_RETURN_REFUND_EVENT = "purchase_return_refund_received"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin"])
+const PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
 
 type SupabaseLike = any
 

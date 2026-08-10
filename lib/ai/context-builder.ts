@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { AIContextScope, AIDomain } from "@/lib/ai/contracts"
 import type { AISettings, PageGuide } from "@/lib/page-guides"
@@ -311,7 +312,7 @@ async function loadPermissionSnapshot(
   resource: string | null
 ): Promise<AIPermissionSnapshot> {
   const normalizedRole = String(role || "").trim().toLowerCase()
-  const isFullAccess = ["owner", "admin"].includes(normalizedRole)
+  const isFullAccess = isSeniorRole(normalizedRole)
 
   if (!resource) {
     return {

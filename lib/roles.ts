@@ -222,11 +222,23 @@ export function isErpRole(role: string | null | undefined): role is ErpRoleKey {
  *
  * يُنادى عليها بدل كتابة `['owner','admin'].includes(role)` بيدك — فلو تغيّرت
  * الرتبُ يوماً تغيّرَ الجوابُ فى مكانٍ واحد.
+ *
+ * **ولا تُطبّع النصَّ ولا تتسامح.** كانت تُنزل الحروفَ وتقصُّ الفراغَ، فيمرُّ
+ * `" Owner "` حيث كانت القائمةُ المكتوبةُ بيدها ترفضه. وهذا **توسيعٌ** لا
+ * تسامح: من حوّل ٢٠٤ مواضعَ إلى نداءٍ واحدٍ يجب أن يكون النداءُ مطابقاً
+ * للقائمةِ حرفاً بحرف، وإلّا فقد غيّر حكماً وهو يظنُّ أنّه ينقل بيتاً.
+ * **وتوسيعٌ بحجّةِ التسامحِ توسيعٌ.**
  */
 export function isSeniorRole(role: string | null | undefined): boolean {
-  const key = String(role || "").trim().toLowerCase()
-  return BY_KEY[key]?.tier === "senior"
+  return BY_KEY[String(role ?? "")]?.tier === "senior"
 }
+
+/**
+ * الأدوارُ العليا كنصوص — للمواضعِ التى تحتاج القائمةَ نفسَها لا السؤالَ عنها
+ * (مُنشئُ `Set`، وسيطُ دالّة، ثابتٌ مُصدَّر). ونوعُها نصٌّ لا مفتاحٌ مضبوط
+ * لأنّ تلك المواضعَ تقارنُ نصوصاً تأتيها من القاعدةِ أو من الشبكة.
+ */
+export const SENIOR_ROLES: readonly string[] = SENIOR_ROLE_KEYS
 
 /** تعريفُ الوظيفةِ كاملاً، أو `undefined` إن كان الاسمُ غيرَ معروف. */
 export function erpRole(role: string | null | undefined): ErpRoleDef | undefined {

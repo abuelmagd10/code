@@ -20,6 +20,7 @@
  * record is not reversed/cancelled stops double-credit if this is
  * called twice for the same booking.
  */
+import { isSeniorRole } from "@/lib/roles"
 
 type SupabaseLike = any
 
@@ -69,7 +70,7 @@ export async function recordServiceCommissionForInvoice(
       .eq('user_id', recipientUserId)
       .maybeSingle()
     const execRole = String(execMember?.role || '')
-    if (['owner', 'admin'].includes(execRole)) {
+    if (isSeniorRole(execRole)) {
       return { recorded: false, reason: 'executed_by_owner_or_admin' }
     }
   } catch {

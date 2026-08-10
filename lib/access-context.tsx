@@ -29,6 +29,7 @@
  *    - components/realtime-route-guard.tsx
  *    - docs/SECURITY_REALTIME_SYSTEM.md
  */
+import { isSeniorRole } from "@/lib/roles"
 
 "use client"
 
@@ -261,7 +262,7 @@ async function fetchAccessProfile(
     const role = String(member.role || "").trim().toLowerCase()
 
     // Owner/Admin/General Manager: كل الصلاحيات
-    const isFullAccess = ["owner", "admin"].includes(role)
+    const isFullAccess = isSeniorRole(role)
 
     let allowed_pages: string[] = []
     let allowed_actions: string[] = []

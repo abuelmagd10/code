@@ -10,6 +10,7 @@
  * - Manager: يرى كل بيانات الفرع
  * - Owner/Admin: يرى كل بيانات الشركة
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { UserContext } from "./validation"
 
@@ -33,7 +34,7 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
   const role = (userContext.role || 'staff').toLowerCase();
   
   // 1️⃣ Owner/Admin - يرى كل بيانات الشركة
-  if (role === 'owner' || role === 'admin') {
+  if (isSeniorRole(role)) {
     return {
       companyId: userContext.company_id,
       filterByBranch: false,
@@ -239,7 +240,7 @@ export function canCreateDocument(
   const role = (userContext.role || 'staff').toLowerCase();
   
   // Owner/Admin - يمكنهم إنشاء في أي مكان
-  if (role === 'owner' || role === 'admin') {
+  if (isSeniorRole(role)) {
     return { allowed: true };
   }
   
@@ -391,7 +392,7 @@ export function getGovernanceInfo(userContext: UserContext): {
   
   let accessLevel: 'own' | 'cost_center' | 'branch' | 'company' = 'own';
   
-  if (role === 'owner' || role === 'admin') {
+  if (isSeniorRole(role)) {
     accessLevel = 'company';
   } else if (role === 'manager' || role === 'accountant') {
     accessLevel = 'branch';

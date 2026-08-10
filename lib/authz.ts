@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { getActiveCompanyId } from "@/lib/company"
 
 // أنواع الصلاحيات الأساسية
@@ -125,7 +126,7 @@ export async function canAccessPage(
     .maybeSingle()
 
   const role = String(myMember?.role || "")
-  if (["owner", "admin"].includes(role)) return true
+  if (isSeniorRole(role)) return true
 
   const { data: perm } = await supabase
     .from("company_role_permissions")
@@ -186,7 +187,7 @@ export async function getResourcePermissions(
   const role = String(myMember?.role || "")
 
   // owner و admin لديهم كل الصلاحيات
-  if (["owner", "admin"].includes(role)) {
+  if (isSeniorRole(role)) {
     const fullAccess: ResourcePermissions = {
       can_access: true,
       can_read: true,
@@ -278,7 +279,7 @@ export async function checkPermission(
 
   // owner و admin و general_manager لديهم كل الصلاحيات
   // قرار المالك: المدير العام له نفس صلاحيات المالك (وصول كامل)
-  if (["owner", "admin"].includes(role)) {
+  if (isSeniorRole(role)) {
     return { allowed: true, role }
   }
 
@@ -339,7 +340,7 @@ export async function getHiddenResources(supabase: any): Promise<string[]> {
     .maybeSingle()
 
   const role = String(myMember?.role || "")
-  if (["owner", "admin"].includes(role)) return []
+  if (isSeniorRole(role)) return []
 
   const { data: perms } = await supabase
     .from("company_role_permissions")

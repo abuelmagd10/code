@@ -8,6 +8,7 @@
  * - Admin: يرى كل الشركة مع إمكانية التبديل للفرع
  * - باقي الأدوار: يرون فرعهم فقط
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { SupabaseClient } from "@supabase/supabase-js"
 import { getRoleAccessLevel } from "@/lib/validation"
@@ -41,7 +42,7 @@ export interface DashboardVisibilityRules {
 }
 
 /** الأدوار المسموح لها برؤية كل الشركة والتبديل */
-const PRIVILEGED_ROLES = ['owner', 'admin']
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 /**
  * بناء قواعد رؤية لوحة التحكم

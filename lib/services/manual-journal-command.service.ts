@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
@@ -79,7 +80,7 @@ const SELF_POST_ROLES = new Set(["owner"])
 const BRANCH_SCOPED_ROLES = new Set(["accountant"])
 
 /** مَن يملك اعتماد مسودَّةٍ أنشأها غيره. */
-export const MANUAL_JOURNAL_APPROVER_ROLES = new Set(["owner", "admin"])
+export const MANUAL_JOURNAL_APPROVER_ROLES = new Set([...SENIOR_ROLES])
 
 const normalizeRole = (role: string | null | undefined) => String(role || "").trim().toLowerCase()
 const duplicateTrace = (message?: string | null) =>

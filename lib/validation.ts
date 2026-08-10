@@ -2,6 +2,7 @@
  * وظائف التحقق من صحة البيانات
  * Validation utilities for form inputs and data validation
  */
+import { isSeniorRole } from "@/lib/roles"
 
 /**
  * التحقق من صحة البريد الإلكتروني
@@ -2104,7 +2105,7 @@ export function getInventoryAccessFilter(userContext: UserContext): {
   const permissions = INVENTORY_ROLE_PERMISSIONS[role] || INVENTORY_ROLE_PERMISSIONS.staff;
 
   // المدراء والمالكين يرون كل المخزون
-  if (permissions.canViewAllWarehouses && ['admin', 'owner'].includes(role)) {
+  if (permissions.canViewAllWarehouses && isSeniorRole(role)) {
     return {
       filterByWarehouse: false,
       warehouseId: null,

@@ -2,6 +2,7 @@
  * دوال التصدير للنسخ الاحتياطية
  * Backup Export Utilities
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { createClient } from '@/lib/supabase/server'
 import { BackupData, BackupMetadata, EXPORT_ORDER, EXCLUDED_TABLES, CHILD_TABLE_PARENTS } from './types'
@@ -206,7 +207,7 @@ export async function canExportBackup(
   const role = String(member.role || '').toLowerCase().trim()
 
   // Layer 1 — full-access roles bypass the resource check (mirrors AI assistant rules)
-  if (['owner', 'admin'].includes(role)) {
+  if (isSeniorRole(role)) {
     return { allowed: true }
   }
 

@@ -17,6 +17,7 @@
  * - إشعارات مدين/دائن (Debit/Credit Notes)
  * - أي مستند محاسبي أو مخزني
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { UserContext } from "./validation"
 
@@ -77,7 +78,7 @@ export function buildDataVisibilityFilter(userContext: UserContext): DataVisibil
   // ==========================================
   // 🛡 1. Owner / Admin - يروا كل شيء في الشركة
   // ==========================================
-  if (roleLower === "owner" || roleLower === "admin") {
+  if (isSeniorRole(roleLower)) {
     return {
       companyId: company_id,
       filterByBranch: false,
@@ -372,7 +373,7 @@ export function canCreateDocument(
   const role = (userContext.role || "").toLowerCase()
   
   // ✅ Owner/Admin/General Manager - يمكنهم إنشاء في أي مكان
-  if (["owner", "admin"].includes(role)) {
+  if (isSeniorRole(role)) {
     return { allowed: true }
   }
 

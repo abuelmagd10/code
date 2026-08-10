@@ -1,3 +1,4 @@
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 import { BillReceiptNotificationService } from "@/lib/services/bill-receipt-notification.service"
 import { archiveApprovalNotificationsForRecord } from "@/lib/notifications/archive-on-action"
 import { AccountingTransactionService } from "@/lib/accounting-transaction-service"
@@ -26,7 +27,7 @@ const RECEIPT_ROLES = new Set(["owner", "admin", "store_manager"])
 // key used was "manager" (branch manager — a VIEW-ONLY role). Branch
 // managers could admin-approve bills while real general managers were
 // rejected. Corrected to "general_manager".
-const ADMIN_APPROVAL_ROLES = new Set(["owner", "admin"])
+const ADMIN_APPROVAL_ROLES = new Set([...SENIOR_ROLES])
 
 type ActorContext = {
   companyId: string
@@ -734,7 +735,7 @@ export class BillReceiptWorkflowService {
 
   private assertBranchScope(actor: ActorContext, billBranchId: string | null) {
     const role = normalizeRole(actor.actorRole)
-    if (role === "owner" || role === "admin" ) {
+    if (isSeniorRole(role) ) {
       return
     }
 
@@ -745,7 +746,7 @@ export class BillReceiptWorkflowService {
 
   private assertReceiptPermission(actor: ActorContext, bill: BillRecord) {
     const role = normalizeRole(actor.actorRole)
-    if (role === "owner" || role === "admin" ) {
+    if (isSeniorRole(role) ) {
       return
     }
 

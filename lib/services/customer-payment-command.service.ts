@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { createCompleteJournalEntry } from "@/lib/journal-entry-governance"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { linkTraceEntity } from "@/lib/services/financial-trace"
@@ -8,7 +9,7 @@ const APPLY_EVENT = "customer_payment_apply_invoice"
 const INVOICE_PAYMENT_EVENT = "invoice_payment_posting"
 const UPDATE_EVENT = "customer_payment_update"
 const DELETE_EVENT = "customer_payment_delete"
-const PRIVILEGED_ROLES = new Set(["owner", "admin"])
+const PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
 
 type SupabaseLike = any
 type ActorContext = { companyId: string; actorId: string; actorRole: string; actorBranchId?: string | null }

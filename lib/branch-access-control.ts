@@ -1,3 +1,4 @@
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 import { createClient } from '@/lib/supabase/server'
 
 export interface BranchAccessConfig {
@@ -45,7 +46,7 @@ export async function checkBranchAccess(
   if (config.requiredBranchId && member.branch_id !== config.requiredBranchId) {
     // السماح للمالك والمدير العام بالوصول لجميع الفروع
     // v3.74.581 — GM is company-wide (comment always said so; key was missing)
-    if (!['owner', 'admin'].includes(member.role)) {
+    if (!isSeniorRole(member.role)) {
       return {
         hasAccess: false,
         error: 'لا يمكن الوصول لهذا الفرع'
@@ -145,7 +146,7 @@ export async function getUserBranchData(userId: string, companyId: string) {
 export function buildBranchFilter(userBranchId: string, userRole: string) {
   // المالك والمدير العام يرون جميع الفروع
   // v3.74.581 — GM is company-wide (comment always said so; key was missing)
-  if (['owner', 'admin'].includes(userRole)) {
+  if (isSeniorRole(userRole)) {
     return {}
   }
 
@@ -155,7 +156,7 @@ export function buildBranchFilter(userBranchId: string, userRole: string) {
 
 export function buildCostCenterFilter(userCostCenterId: string, userRole: string) {
   // v3.74.581 — GM is company-wide (comment always said so; key was missing)
-  if (['owner', 'admin'].includes(userRole)) {
+  if (isSeniorRole(userRole)) {
     return {}
   }
 
@@ -175,7 +176,7 @@ export function buildWarehouseFilter(userWarehouseId: string, userRole: string) 
 // 📌 الأدوار والثوابت
 // =====================================================
 // v3.74.581 — GM is company-wide (comment always said so; key was missing)
-export const FULL_ACCESS_ROLES = ['owner', 'admin']
+export const FULL_ACCESS_ROLES = [...SENIOR_ROLES]
 export const BRANCH_LEVEL_ROLES = ['manager', 'accountant', 'supervisor']
 
 // =====================================================

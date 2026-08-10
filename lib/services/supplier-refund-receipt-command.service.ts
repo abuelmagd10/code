@@ -1,10 +1,11 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 import { purgeTrace, linkTraceEntity } from "@/lib/services/financial-trace"
 
 const SUPPLIER_REFUND_RECEIPT_EVENT = "supplier_refund_receipt_posting"
-const PRIVILEGED_ROLES = new Set(["owner", "admin"])
+const PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
 
 type SupabaseLike = any
 type TraceRecord = { transaction_id: string; request_hash: string | null }

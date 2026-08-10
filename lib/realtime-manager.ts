@@ -30,6 +30,7 @@
  *    - components/realtime-route-guard.tsx
  *    - docs/SECURITY_REALTIME_SYSTEM.md
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { createClient, getClient } from '@/lib/supabase/client'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
@@ -451,7 +452,7 @@ class RealtimeManager {
     let filter = `company_id=eq.${companyId}`
 
     // ✅ Owner/Admin: يرى كل شيء في الشركة (لا قيود إضافية)
-    if (role === 'owner' || role === 'admin') {
+    if (isSeniorRole(role)) {
       return filter
     }
 
@@ -642,7 +643,7 @@ class RealtimeManager {
 
     // ✅ طبقة 1.5: Owner/Admin يروا كل شيء في الشركة (بغض النظر عن الفرع أو المنشئ)
     // ⚠️ مهم: هذا يجب أن يكون قبل أي فحوصات أخرى
-    if (role === 'owner' || role === 'admin' || accessInfo.isUnrestricted) {
+    if (isSeniorRole(role) || accessInfo.isUnrestricted) {
       console.log(`✅ [RealtimeManager] Owner/Admin can see all events in company:`, {
         recordId: record.id,
         userRole: role,
@@ -1363,7 +1364,7 @@ class RealtimeManager {
       // 🔐 Owner/Admin: يرى جميع الأحداث في الشركة (لكن affectsCurrentUser يبقى صحيح فقط إذا كان يخصهم)
       // ✅ BLIND REFRESH: عند UPDATE على company_members، نرسل الحدث دائماً إذا كان يؤثر على المستخدم
       // ✅ حتى لو كان المستخدم ليس owner/admin (لأنه يحتاج لتحديث صلاحياته)
-      const canSeeEvent = role === 'owner' || role === 'admin' || affectsCurrentUser
+      const canSeeEvent = isSeniorRole(role) || affectsCurrentUser
 
       if (!canSeeEvent) {
         // المستخدمون الآخرون لا يرون إلا الأحداث التي تخصهم

@@ -2,6 +2,7 @@
  * 🔒 نظام الحوكمة الصحيح - تطبيق المستويات الأساسية
  * Company → Branch → Cost Center → Warehouse → Created By User
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { UserContext, getRoleAccessLevel } from "./validation"
 
@@ -183,7 +184,7 @@ export function canCreateDocument(
   const role = (userContext.role || 'staff').toLowerCase();
   
   // Owner/Admin - يمكنهم إنشاء في أي مكان
-  if (role === 'owner' || role === 'admin') {
+  if (isSeniorRole(role)) {
     return { allowed: true };
   }
   
