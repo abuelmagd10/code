@@ -1,4 +1,5 @@
 "use client"
+import { roleLabel } from "@/lib/roles"
 // v3.42.1 — force Turbopack rebuild after stale build cache
 // Re-touched: 2026-05-25 to invalidate Vercel build cache
 
@@ -1360,17 +1361,7 @@ export function Sidebar() {
                               only — permissions still key off the role. */}
                           {(userProfile?.job_title && String(userProfile.job_title).trim())
                             ? String(userProfile.job_title).trim()
-                            : myRole === 'owner' ? 'مالك' :
-                            myRole === 'admin' ? 'مدير عام' :
-                              myRole === 'manager' ? 'مدير' :
-                                myRole === 'accountant' ? 'محاسب' :
-                                  myRole === 'store_manager' ? 'مسؤول مخزن' :
-                                    myRole === 'manufacturing_officer' ? 'مسؤول التصنيع' :
-                                      myRole === 'booking_officer' ? 'مسؤول الحجوزات' :
-                                        myRole === 'purchasing_officer' ? 'مسؤول المشتريات' :
-                                          myRole === 'hr_officer' ? 'مسؤول الموارد البشرية' :
-                                            myRole === 'staff' ? 'موظف' :
-                                              myRole === 'viewer' ? 'عرض فقط' : myRole}
+                            : roleLabel(myRole, 'ar')}
                         </span>
                       )}
                       {userBranch && (

@@ -1,3 +1,4 @@
+import { roleLabel, isErpRole } from "@/lib/roles"
 import { buildNotificationEventKey, normalizeNotificationSeverity } from "@/lib/notification-workflow"
 import {
   NotificationRecipientResolverService,
@@ -30,15 +31,7 @@ type BranchChangedParams = BaseParams & {
   costCenterId?: string | null
 }
 
-const ROLE_LABELS: Record<string, { ar: string; en: string }> = {
-  owner: { ar: "مالك", en: "Owner" },
-  admin: { ar: "مدير عام", en: "General Manager" },
-  manager: { ar: "مدير", en: "Manager" },
-  accountant: { ar: "محاسب", en: "Accountant" },
-  store_manager: { ar: "مسؤول مخزن", en: "Store Manager" },
-  staff: { ar: "موظف", en: "Staff" },
-  viewer: { ar: "عرض فقط", en: "Viewer" },
-}
+
 
 function normalizeLanguage(appLang?: "ar" | "en") {
   return appLang === "en" ? "en" : "ar"
@@ -46,10 +39,7 @@ function normalizeLanguage(appLang?: "ar" | "en") {
 
 function getRoleLabel(role: string, lang: "ar" | "en") {
   const normalizedRole = String(role || "").trim().toLowerCase()
-  const label = ROLE_LABELS[normalizedRole]
-  if (label) {
-    return lang === "en" ? label.en : label.ar
-  }
+  if (isErpRole(normalizedRole)) return roleLabel(normalizedRole, lang)
 
   return normalizedRole || (lang === "en" ? "Unknown role" : "دور غير معروف")
 }

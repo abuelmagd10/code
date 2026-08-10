@@ -1,3 +1,4 @@
+import { roleLabel, isErpRole } from "@/lib/roles"
 import { createHash } from "node:crypto"
 import type {
   AICopilotInteractivePayload,
@@ -3419,15 +3420,7 @@ function formatUserFacingResourceName(resource: string | null, language: "ar" | 
 
 function formatUserFacingRole(role: string | null | undefined, language: "ar" | "en") {
   const key = String(role || "").toLowerCase()
-  const labels: Record<string, { ar: string; en: string }> = {
-    owner: { ar: "مالك", en: "Owner" },
-    admin: { ar: "مدير عام", en: "General manager" },
-    manager: { ar: "مدير", en: "Manager" },
-    accountant: { ar: "محاسب", en: "Accountant" },
-    sales: { ar: "مبيعات", en: "Sales" },
-    warehouse_manager: { ar: "مسؤول مخزن", en: "Warehouse manager" },
-    staff: { ar: "موظف", en: "Staff" },
-  }
-
-  return labels[key]?.[language] || (language === "ar" ? "غير محدد" : "unknown")
+  // v3.74.999 — الأسماءُ من بيتها الواحد. وكانت النسخةُ هنا تعرفُ سبعةَ
+  // أسماءٍ منها اثنانِ ميّتان، فيقولُ المساعدُ «غير محدد» لخمسِ وظائفَ حيّة.
+  return isErpRole(key) ? roleLabel(key, language) : (language === "ar" ? "غير محدد" : "unknown")
 }

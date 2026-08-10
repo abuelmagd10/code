@@ -5,6 +5,8 @@
  * يضمن أن صلاحيات المستخدم تعتمد فقط على دوره في الشركة المحددة،
  * ولا يتم توسيع الصلاحيات عبر أدوار المستخدم في شركات أخرى.
  */
+import type { ErpRoleKey } from "@/lib/roles"
+import { SENIOR_ROLE_KEYS, isSeniorRole } from "@/lib/roles"
 
 import { SupabaseClient } from "@supabase/supabase-js"
 
@@ -37,16 +39,16 @@ export interface AuthorizationResult {
 
 /**
  * الأدوار العليا (غير مقيّدة بالفرع/الربط المحاسبي).
- * v3.74.638 — صُحّح ليطابق نموذج الصلاحيات: المالك، الأدمن، المدير العام فقط.
- * "مدير الفرع" (manager) دور عادي مقيَّد بفرعه (كان مُدرجاً هنا خطأً)،
- * و"المدير العام" (general_manager) بصلاحيات المالك (كان مُستبعَداً خطأً).
+ * v3.74.999 — الأدوارُ العليا: المالك (owner) والمدير العام (admin).
+ * و"مدير الفرع" (manager) دورٌ عادىٌّ مقيَّدٌ بفرعه.
+ * والقائمةُ تُقرأ من بيتها الواحد `lib/roles.ts` ولا تُكتَب هنا بيدها.
  */
-export const UPPER_ROLES = ["owner", "admin"] as const
+export const UPPER_ROLES: readonly ErpRoleKey[] = SENIOR_ROLE_KEYS
 
 /**
  * الأدوار العادية (مقيدة بالفرع ومركز التكلفة والمستودع)
  */
-export type UpperRole = typeof UPPER_ROLES[number]
+export type UpperRole = ErpRoleKey
 
 /**
  * 🔐 التحقق من عضوية المستخدم ودوره في شركة محددة
@@ -113,7 +115,7 @@ export async function getCompanyMembership(
     }
 
     const role = (member.role || "").toLowerCase()
-    const isUpperRole = UPPER_ROLES.includes(role as UpperRole)
+    const isUpperRole = isSeniorRole(role)
     const isNormalRole = !isUpperRole && role !== ""
 
     const membership: CompanyMembership = {

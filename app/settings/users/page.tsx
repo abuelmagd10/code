@@ -1,4 +1,5 @@
 "use client"
+import { ERP_ROLES, roleOptions } from "@/lib/roles"
 // v3.42.1 — force Turbopack rebuild
 import { useEffect, useState } from "react"
 export const dynamic = "force-dynamic"
@@ -1541,20 +1542,13 @@ export default function UsersSettingsPage() {
     }
   }
 
-  const roleLabels: Record<string, { ar: string; en: string; color: string; description: string; descriptionEn: string }> = {
-    owner: { ar: 'مالك', en: 'Owner', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', description: 'صلاحيات كاملة على كل شيء', descriptionEn: 'Full permissions over everything' },
-    admin: { ar: 'مدير عام', en: 'Admin', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', description: 'إدارة كاملة للنظام', descriptionEn: 'Full system administration' },
-    manager: { ar: 'مدير', en: 'Manager', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة العمليات اليومية', descriptionEn: 'Manages daily operations' },
-    accountant: { ar: 'محاسب', en: 'Accountant', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', description: 'إدارة الحسابات والفواتير', descriptionEn: 'Manages accounts and invoices' },
-    store_manager: { ar: 'مسؤول مخزن', en: 'Store Manager', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', description: 'إدارة المخزون والمنتجات', descriptionEn: 'Manages inventory and products' },
-    // ── الأدوار الجديدة ──────────────────────────────────────────
-    manufacturing_officer: { ar: 'مسؤول التصنيع', en: 'Manufacturing Officer', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300', description: 'إدارة قوائم المواد والإنتاج', descriptionEn: 'Manages BOMs and production' },
-    booking_officer: { ar: 'مسؤول الحجوزات', en: 'Booking Officer', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', description: 'إدارة الحجوزات والخدمات', descriptionEn: 'Manages bookings and services' },
-    purchasing_officer: { ar: 'مسؤول المشتريات', en: 'Purchasing Officer', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', description: 'إدارة المشتريات والموردين', descriptionEn: 'Manages purchasing and suppliers' },
-    hr_officer: { ar: 'مسؤول الموارد البشرية', en: 'HR Officer', color: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400', description: 'إدارة الموظفين والمرتبات والحضور', descriptionEn: 'Manages employees, payroll, and attendance' },
-    staff: { ar: 'موظف', en: 'Staff', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'صلاحيات محدودة', descriptionEn: 'Limited permissions' },
-    viewer: { ar: 'عرض فقط', en: 'Viewer', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400', description: 'عرض البيانات فقط', descriptionEn: 'View data only' },
-  }
+  // v3.74.999 — **بيتٌ واحدٌ لاسمِ الوظيفة.** الأسماءُ والألوانُ والأوصافُ
+  // تُبنى من `ERP_ROLES`، فلا يختلفُ اسمٌ هنا عن اسمٍ فى شاشةٍ أخرى.
+  const roleLabels: Record<string, { ar: string; en: string; color: string; description: string; descriptionEn: string }> =
+    ERP_ROLES.reduce((acc, r) => {
+      acc[r.key] = { ar: r.ar, en: r.en, color: r.color, description: r.descAr, descriptionEn: r.descEn }
+      return acc
+    }, {} as Record<string, { ar: string; en: string; color: string; description: string; descriptionEn: string }>)
 
   // 🌐 Bilingual role name helper (display only)
   const roleName = (r: string) => (appLang === 'en' ? roleLabels[r]?.en : roleLabels[r]?.ar) || r
@@ -1952,17 +1946,9 @@ export default function UsersSettingsPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="owner">{t("Owner", "مالك")}</SelectItem>
-                              <SelectItem value="admin">{t("Admin", "مدير عام")}</SelectItem>
-                              <SelectItem value="manager">{t("Manager", "مدير")}</SelectItem>
-                              <SelectItem value="accountant">{t("Accountant", "محاسب")}</SelectItem>
-                              <SelectItem value="store_manager">{t("Store Manager", "مسؤول مخزن")}</SelectItem>
-                              <SelectItem value="manufacturing_officer">{t("Manufacturing Officer", "مسؤول التصنيع")}</SelectItem>
-                              <SelectItem value="booking_officer">{t("Booking Officer", "مسؤول الحجوزات")}</SelectItem>
-                              <SelectItem value="purchasing_officer">{t("Purchasing Officer", "مسؤول المشتريات")}</SelectItem>
-                              <SelectItem value="hr_officer">{t("HR Officer", "مسؤول الموارد البشرية")}</SelectItem>
-                              <SelectItem value="staff">{t("Staff", "موظف")}</SelectItem>
-                              <SelectItem value="viewer">{t("Viewer", "عرض فقط")}</SelectItem>
+                              {roleOptions(appLang === 'en' ? 'en' : 'ar').map((o) => (
+                                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                           <Button variant="outline" size="sm" onClick={() => { setChangePassUserId(m.user_id); setNewMemberPass("") }} className="gap-1 h-8 text-xs">
@@ -2467,16 +2453,9 @@ export default function UsersSettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">{t("Admin", "مدير عام")}</SelectItem>
-                      <SelectItem value="manager">{t("Manager", "مدير")}</SelectItem>
-                      <SelectItem value="accountant">{t("Accountant", "محاسب")}</SelectItem>
-                      <SelectItem value="store_manager">{t("Store Manager", "مسؤول مخزن")}</SelectItem>
-                      <SelectItem value="manufacturing_officer">{t("Manufacturing Officer", "مسؤول التصنيع")}</SelectItem>
-                      <SelectItem value="booking_officer">{t("Booking Officer", "مسؤول الحجوزات")}</SelectItem>
-                      <SelectItem value="purchasing_officer">{t("Purchasing Officer", "مسؤول المشتريات")}</SelectItem>
-                      <SelectItem value="hr_officer">{t("HR Officer", "مسؤول الموارد البشرية")}</SelectItem>
-                      <SelectItem value="staff">{t("Staff", "موظف")}</SelectItem>
-                      <SelectItem value="viewer">{t("Viewer", "عرض فقط")}</SelectItem>
+                      {roleOptions(appLang === 'en' ? 'en' : 'ar', { excludeOwner: true }).map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2716,66 +2695,14 @@ export default function UsersSettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                          {t("Admin", "مدير عام")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="manager">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                          {t("Manager", "مدير")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="accountant">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          {t("Accountant", "محاسب")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="store_manager">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                          {t("Store Manager", "مسؤول مخزن")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="manufacturing_officer">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                          {t("Manufacturing Officer", "مسؤول التصنيع")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="booking_officer">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                          {t("Booking Officer", "مسؤول الحجوزات")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="purchasing_officer">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                          {t("Purchasing Officer", "مسؤول المشتريات")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="hr_officer">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-pink-500"></span>
-                          {t("HR Officer", "مسؤول الموارد البشرية")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="staff">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          {t("Staff", "موظف")}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="viewer">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-gray-500"></span>
-                          {t("Viewer", "عرض فقط")}
-                        </div>
-                      </SelectItem>
+                      {roleOptions(appLang === 'en' ? 'en' : 'ar', { excludeOwner: true }).map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${o.dot}`}></span>
+                            {o.label}
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   {roleLabels[permRole] && (

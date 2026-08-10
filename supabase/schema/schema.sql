@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-10T11:00:16.740Z
--- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1838
+-- Generated: 2026-08-10T12:44:24.238Z
+-- Tables: 256 | Policies: 785 | Triggers: 581 | Constraints: 1839
 -- =====================================================================
 
 
@@ -4099,7 +4099,8 @@ CREATE TABLE IF NOT EXISTS public.roles (
   description_en text,
   priority integer DEFAULT 100 NOT NULL,
   is_system boolean DEFAULT true,
-  created_at timestamp with time zone DEFAULT now() NOT NULL
+  created_at timestamp with time zone DEFAULT now() NOT NULL,
+  tier text DEFAULT 'normal'::text NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.sales_order_items (
@@ -6480,6 +6481,7 @@ ALTER TABLE public.role_default_permissions ADD CONSTRAINT role_default_permissi
 ALTER TABLE public.role_default_permissions ADD CONSTRAINT role_default_permissions_role_name_permission_action_key UNIQUE (role_name, permission_action);
 ALTER TABLE public.roles ADD CONSTRAINT roles_name_key UNIQUE (name);
 ALTER TABLE public.roles ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
+ALTER TABLE public.roles ADD CONSTRAINT roles_tier_check CHECK ((tier = ANY (ARRAY['senior'::text, 'normal'::text])));
 ALTER TABLE public.sales_order_items ADD CONSTRAINT sales_order_items_pkey PRIMARY KEY (id);
 ALTER TABLE public.sales_order_items ADD CONSTRAINT sales_order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 ALTER TABLE public.sales_order_items ADD CONSTRAINT sales_order_items_sales_order_id_fkey FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE;
@@ -11048,6 +11050,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_994_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_994_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_998_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_998_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_74_999_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_74_999_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid) TO service_role;
@@ -12194,6 +12198,10 @@ GRANT EXECUTE ON FUNCTION public.erp_is_company_owner(p_company_id uuid, p_user_
 REVOKE ALL ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_is_senior_role(p_role text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_is_senior_role(p_role text) TO anon;
+GRANT EXECUTE ON FUNCTION public.erp_is_senior_role(p_role text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_is_senior_role(p_role text) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO service_role;
@@ -12221,6 +12229,10 @@ GRANT EXECUTE ON FUNCTION public.erp_reports_seed_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_senior_roles() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_senior_roles() TO anon;
+GRANT EXECUTE ON FUNCTION public.erp_senior_roles() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.erp_senior_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_sod_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_sod_guard() TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_sod_guard() TO authenticated;

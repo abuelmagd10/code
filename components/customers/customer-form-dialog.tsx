@@ -1,4 +1,5 @@
 "use client"
+import { roleLabel } from "@/lib/roles"
 
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -574,15 +575,7 @@ export function CustomerFormDialog({
 
           if (memberInfo || profileInfo) {
             const userName = profileInfo?.full_name || profileInfo?.username || (memberInfo?.user as any)?.email || ""
-            const roleMap: Record<string, string> = {
-              owner: appLang === 'en' ? 'Owner' : 'مالك',
-              admin: appLang === 'en' ? 'Admin' : 'مدير',
-              accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
-              sales: appLang === 'en' ? 'Sales' : 'مبيعات',
-              inventory: appLang === 'en' ? 'Inventory' : 'مخازن',
-              viewer: appLang === 'en' ? 'Viewer' : 'مشاهد',
-            }
-            const roleName = roleMap[memberInfo?.role || ""] || memberInfo?.role || ""
+            const roleName = roleLabel(memberInfo?.role, appLang === 'en' ? 'en' : 'ar')
             employeeInfo = userName ? ` (${userName}${roleName ? ` - ${roleName}` : ""})` : ""
           }
         }

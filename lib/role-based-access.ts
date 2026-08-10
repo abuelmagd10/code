@@ -3,27 +3,33 @@
  * نظام الصلاحيات الموحد للـ Backend
  * 
  * الأدوار:
- * - owner/admin: صلاحيات كاملة
- * - general_manager: رؤية جميع البيانات مع فلاتر اختيارية
- * - manager: رؤية جميع البيانات مع قيود تنظيمية
- * - accountant: رؤية جميع البيانات مع قيود تنظيمية
- * - staff/employee: فقط البيانات التي أنشأها + قيود تنظيمية
+ * - owner/admin (المالك والمدير العام): صلاحيات كاملة
+ * - manager (مدير الفرع): رؤية جميع البيانات مع قيود تنظيمية
+ * - accountant (محاسب): رؤية جميع البيانات مع قيود تنظيمية
+ * - staff (موظف): فقط البيانات التي أنشأها + قيود تنظيمية
  */
+import { SENIOR_ROLE_KEYS } from "@/lib/roles"
 
 import { SupabaseClient } from "@supabase/supabase-js"
 import { getActiveCompanyId } from "./company"
 
-// الأدوار التي لها صلاحيات كاملة
-export const FULL_ACCESS_ROLES = ["owner", "admin"]
+// v3.74.999 — **الأدوارُ العليا تُقرأ من بيتها الواحد** `lib/roles.ts`.
+// كانت مكتوبةً هنا بيدها مرّتين، وفى `lib/company-authorization.ts` مرّةً
+// ثالثة، وفى ١٧٣ موضعاً آخرَ بلا اسم. **ومن غيّر الرتبةَ فى بيتٍ ونسىَ
+// بيتاً فتحَ باباً لا يراه أحد.**
+export const FULL_ACCESS_ROLES: string[] = [...SENIOR_ROLE_KEYS]
 
-// الأدوار التي ترى جميع البيانات بدون قيود
-export const UNRESTRICTED_ROLES = ["owner", "admin"]
+// الأدوار التي ترى جميع البيانات بدون قيود — هى نفسُها الأدوارُ العليا
+export const UNRESTRICTED_ROLES: string[] = [...SENIOR_ROLE_KEYS]
 
 // الأدوار التي ترى جميع البيانات لكن مع قيود تنظيمية
 export const MANAGER_ROLES = ["manager", "accountant"]
 
 // الأدوار المقيدة (فقط ما أنشأه المستخدم)
-export const RESTRICTED_ROLES = ["staff", "employee", "viewer"]
+// v3.74.999 — حُذف `employee`: القيدُ `company_members_role_check` فى قاعدة
+// البيانات لا يقبلُه، فلا إنسانَ يحملُه ولا يُمكن أن يحملَه.
+// **واسمٌ لا يُشغَل فى قائمةٍ يحرسُ شكلَ النصِّ لا خاصّيّتَه.**
+export const RESTRICTED_ROLES = ["staff", "viewer"]
 
 export interface UserAccessInfo {
   userId: string

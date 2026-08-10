@@ -1,4 +1,5 @@
 "use client";
+import { roleLabel } from "@/lib/roles"
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useSupabase } from "@/lib/supabase/hooks";
@@ -342,21 +343,13 @@ export default function EstimatesPage() {
                     .in("user_id", userIds)
                 : { data: [] as any[] };
               const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
-              const roleLabels: Record<string, string> = appLang === 'en' ? {
-                owner: 'Owner', admin: 'Admin', manager: 'Branch Manager',
-                supervisor: 'Supervisor', staff: 'Staff', accountant: 'Accountant',
-                sales: 'Sales', viewer: 'Viewer',
-              } : {
-                owner: 'مالك', admin: 'مدير', manager: 'مدير فرع',
-                supervisor: 'مشرف', staff: 'موظف', accountant: 'محاسب',
-                sales: 'مبيعات', viewer: 'مشاهد',
-              };
+
               const employeesList: Employee[] = (mems || []).map((m: any) => {
                 const profile: any = profileMap.get(m.user_id);
                 return {
                   user_id: m.user_id,
                   display_name: profile?.display_name || profile?.username || m.email || m.user_id.slice(0, 8),
-                  role: roleLabels[m.role] || m.role,
+                  role: roleLabel(m.role, appLang === 'en' ? 'en' : 'ar'),
                   email: profile?.username || m.email,
                 };
               });

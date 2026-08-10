@@ -1,4 +1,5 @@
 "use client"
+import { roleLabel } from "@/lib/roles"
 
 import { Suspense, useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
@@ -282,10 +283,7 @@ function AcceptInvitationsContent() {
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-gray-600 dark:text-gray-400">الصلاحية:</span>
                       <span className="px-2 py-1 bg-violet-100 dark:bg-violet-800 text-violet-700 dark:text-violet-200 rounded font-medium">
-                        {invitationDetails.role === 'owner' ? 'مالك' :
-                          invitationDetails.role === 'admin' ? 'مدير' :
-                            invitationDetails.role === 'accountant' ? 'محاسب' :
-                              invitationDetails.role === 'viewer' ? 'مشاهد' : invitationDetails.role}
+                        {roleLabel(invitationDetails.role, 'ar')}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm mt-2">

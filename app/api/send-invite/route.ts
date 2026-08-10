@@ -1,3 +1,4 @@
+import { roleLabel } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
@@ -198,18 +199,7 @@ export async function POST(req: NextRequest) {
     }
 
     const acceptLink = `${base}/invitations/accept?token=${acceptToken || ""}`
-    const roleName =
-      role === "owner" ? "مالك" :
-      role === "admin" ? "مدير عام" :
-      role === "manager" ? "مدير" :
-      role === "accountant" ? "محاسب" :
-      role === "store_manager" ? "مسؤول مخزن" :
-      role === "manufacturing_officer" ? "مسؤول التصنيع" :
-      role === "booking_officer" ? "مسؤول الحجوزات" :
-      role === "purchasing_officer" ? "مسؤول المشتريات" :
-      role === "hr_officer" ? "مسؤول الموارد البشرية" :
-      role === "viewer" ? "عرض فقط" :
-      "موظف"
+    const roleName = roleLabel(role, "ar")
 
     // Send email via Resend.
     // v3.74.294 — log the full Resend response when the call doesn't

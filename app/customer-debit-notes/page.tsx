@@ -1,4 +1,5 @@
 "use client"
+import { roleLabel } from "@/lib/roles"
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import Link from "next/link"
@@ -193,21 +194,13 @@ export default function CustomerDebitNotesPage() {
 
         const profileMap = new Map((profiles || []).map((p: { user_id: string; display_name?: string; username?: string }) => [p.user_id, p]))
 
-        const roleLabels: Record<string, string> = {
-          owner: appLang === 'en' ? 'Owner' : 'مالك',
-          admin: appLang === 'en' ? 'Admin' : 'مدير',
-          manager: appLang === 'en' ? 'Manager' : 'مدير فرع',
-          staff: appLang === 'en' ? 'Staff' : 'موظف',
-          accountant: appLang === 'en' ? 'Accountant' : 'محاسب',
-          supervisor: appLang === 'en' ? 'Supervisor' : 'مشرف'
-        }
 
         const employeesList: Employee[] = members.map((m: { user_id: string; role: string }) => {
           const profile = profileMap.get(m.user_id) as { user_id: string; display_name?: string; username?: string } | undefined
           return {
             user_id: m.user_id,
             display_name: profile?.display_name || profile?.username || m.user_id.slice(0, 8),
-            role: roleLabels[m.role] || m.role,
+            role: roleLabel(m.role, appLang === 'en' ? 'en' : 'ar'),
             email: profile?.username
           }
         })

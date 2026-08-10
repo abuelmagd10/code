@@ -1,3 +1,4 @@
+import { roleLabel } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     const acceptLink = `${base}/invitations/accept?token=${invitation.accept_token}`
     const targetEmail = invitation.email
-    const roleName = invitation.role === "admin" ? "مدير" : invitation.role === "owner" ? "مالك" : invitation.role === "accountant" ? "محاسب" : invitation.role === "manager" ? "مدير" : "موظف"
+    const roleName = roleLabel(invitation.role, "ar")
 
     // Send via Resend API
     const resendApiKey = process.env.RESEND_API_KEY

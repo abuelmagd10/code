@@ -1,3 +1,4 @@
+import { ROLE_LABELS_AR } from "@/lib/roles"
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { requireOwnerOrAdmin } from "@/lib/api-security"
@@ -53,18 +54,9 @@ export async function POST(req: NextRequest) {
     // company_members.role فقط — فبقيت البطاقة تعرض المسمى القديم وخُدع
     // المستخدم بأن التغيير لم يحدث. نزامن المسمى مع عنوان الدور الجديد
     // (إن وُجد سجل موظف). فشل المزامنة لا يفشل تغيير الدور.
-    const ROLE_LABELS_AR: Record<string, string> = {
-      owner: "مالك",
-      admin: "مدير عام",
-      manager: "مدير الفرع",
-      accountant: "محاسب",
-      purchasing_officer: "مسؤول المشتريات",
-      store_manager: "مسئول المخزن",
-      booking_officer: "مسؤول الحجوزات",
-      manufacturing_officer: "مسؤول التصنيع",
-      staff: "موظف",
-      viewer: "مشاهد",
-    }
+    // v3.74.999 — الأسماءُ تُقرأ من بيتها الواحد `lib/roles.ts`. وكانت
+    // النسخةُ هنا تنقصُها `hr_officer`، فمن عُيّن مسؤولَ مواردَ بشريّةٍ لم
+    // يتغيّر مسمّاه الوظيفىُّ أصلاً — **وقائمةٌ تنقصُ اسماً تُخطئ بصمت.**
     const newJobTitle = ROLE_LABELS_AR[role]
     if (newJobTitle) {
       const { error: jtErr } = await admin
