@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-09T17:48:45.811Z
--- Routines: 1348
+-- Generated: 2026-08-10T11:00:10.038Z
+-- Routines: 1349
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -1270,6 +1270,7 @@ CREATE OR REPLACE FUNCTION public.append_financial_audit_flag(p_transaction_id u
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_exists BOOLEAN := FALSE;
@@ -1580,6 +1581,7 @@ CREATE OR REPLACE FUNCTION public.approve_bank_voucher(p_request_id uuid, p_appr
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_req RECORD;
@@ -1762,6 +1764,7 @@ CREATE OR REPLACE FUNCTION public.approve_purchase_order_atomic(p_po_id uuid, p_
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_po RECORD;
@@ -1906,6 +1909,7 @@ CREATE OR REPLACE FUNCTION public.approve_purchase_return_atomic(p_pr_id uuid, p
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_pr          RECORD;
@@ -2064,6 +2068,7 @@ CREATE OR REPLACE FUNCTION public.approve_sales_delivery(p_invoice_id uuid, p_co
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_invoice RECORD;
@@ -2153,6 +2158,7 @@ CREATE OR REPLACE FUNCTION public.approve_sales_delivery_v2(p_company_id uuid, p
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_result JSONB;
@@ -4927,6 +4933,51 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_baseline_v3_74_998_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_998_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad text;
+  v_caught boolean;
+BEGIN
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.prosecdef
+    AND (p.proconfig IS NULL OR NOT EXISTS (
+          SELECT 1 FROM unnest(p.proconfig) AS c WHERE c LIKE 'search\_path=%'));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: دالّةٌ بصلاحيّاتٍ كاملةٍ بلا مسارٍ مثبَّت: % (v3.74.998)', v_bad;
+  END IF;
+
+  -- ═══ فخٌّ لا يُشغَّل ليس فخّاً: تُزرع دالّةٌ بلا مسار، فيجب أن تُرى، ثمّ يُلغى الزرع ═══
+  v_caught := false;
+  BEGIN
+    EXECUTE 'CREATE FUNCTION public.zz_probe_998_no_path() RETURNS int LANGUAGE sql SECURITY DEFINER AS $q$ SELECT 1 $q$';
+    PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname='public' AND p.proname='zz_probe_998_no_path' AND p.prosecdef
+       AND (p.proconfig IS NULL OR NOT EXISTS (
+             SELECT 1 FROM unnest(p.proconfig) AS c WHERE c LIKE 'search\_path=%'));
+    IF FOUND THEN v_caught := true; END IF;
+    RAISE EXCEPTION 'ROLLBACK_PROBE_998';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'ROLLBACK_PROBE_998' THEN RAISE; END IF;
+    WHEN OTHERS THEN
+      v_caught := true;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'BASELINE FAIL: زُرعت دالّةٌ بلا مسارٍ مثبَّتٍ ولم يرها الفحص (v3.74.998)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assert_booking_addons_permission(p_company_id uuid, p_booking_id uuid)
@@ -5184,6 +5235,7 @@ CREATE OR REPLACE FUNCTION public.assert_journal_entries_balanced_v2(p_journal_e
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_je            JSONB;
@@ -5471,6 +5523,7 @@ CREATE OR REPLACE FUNCTION public.audit_payment_changes()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_action VARCHAR(50);
@@ -5968,6 +6021,7 @@ CREATE OR REPLACE FUNCTION public.auto_create_company_defaults()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   INSERT INTO company_dashboard_alert_limits (company_id, branch_id, min_daily_cash, max_daily_expense)
@@ -6226,6 +6280,7 @@ CREATE OR REPLACE FUNCTION public.auto_create_payment_journal()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_journal_entry_id UUID;
@@ -7268,6 +7323,7 @@ CREATE OR REPLACE FUNCTION public.batch_mark_notifications_as_read(p_notificatio
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.750 — the caller must be who they claim to be.
@@ -7299,6 +7355,7 @@ CREATE OR REPLACE FUNCTION public.batch_update_notification_status(p_notificatio
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.750 — the caller must be who they claim to be.
@@ -10984,6 +11041,7 @@ CREATE OR REPLACE FUNCTION public.check_and_increment_rate_limit(p_identifier te
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_window_start timestamptz;
@@ -11066,6 +11124,7 @@ CREATE OR REPLACE FUNCTION public.check_bill_quantities(p_bill_id uuid, p_grn_id
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_bill_item RECORD;
@@ -14174,6 +14233,7 @@ CREATE OR REPLACE FUNCTION public.confirm_purchase_return_delivery_v3(p_purchase
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_pr                RECORD;
@@ -14623,6 +14683,7 @@ CREATE OR REPLACE FUNCTION public.convert_purchase_request_to_po(p_request_id uu
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_request RECORD;
@@ -15860,6 +15921,7 @@ CREATE OR REPLACE FUNCTION public.create_financial_operation_trace(p_company_id 
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_transaction_id UUID;
@@ -17550,6 +17612,7 @@ CREATE OR REPLACE FUNCTION public.create_reversal_entry(p_original_entry_id uuid
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_orig RECORD;
@@ -18501,6 +18564,7 @@ CREATE OR REPLACE FUNCTION public.create_vendor_refund_request(p_company_id uuid
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_user_id     UUID := auth.uid();
@@ -19837,6 +19901,7 @@ CREATE OR REPLACE FUNCTION public.emit_system_event_manual(p_company_id uuid, p_
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_event_id UUID;
@@ -19891,6 +19956,7 @@ CREATE OR REPLACE FUNCTION public.enforce_branch_isolation()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
     IF auth.uid() IS NOT NULL THEN
@@ -21305,6 +21371,7 @@ CREATE OR REPLACE FUNCTION public.execute_customer_refund(p_refund_request_id uu
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_req          RECORD;
@@ -27714,6 +27781,7 @@ CREATE OR REPLACE FUNCTION public.get_pending_approvals_count(p_company_id uuid,
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_role        text;
@@ -27772,6 +27840,7 @@ CREATE OR REPLACE FUNCTION public.get_pending_dispatch_count(p_company_id uuid, 
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_role            text;
@@ -28389,6 +28458,7 @@ CREATE OR REPLACE FUNCTION public.get_unprocessed_attendance_logs(p_company_id u
  RETURNS SETOF attendance_raw_logs
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
@@ -28419,6 +28489,7 @@ CREATE OR REPLACE FUNCTION public.get_unread_notification_count(p_user_id uuid, 
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_user_role VARCHAR(50);
@@ -28463,6 +28534,7 @@ CREATE OR REPLACE FUNCTION public.get_user_approval_badges(p_user_id uuid, p_com
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_role         text;
@@ -28659,6 +28731,7 @@ CREATE OR REPLACE FUNCTION public.get_user_company_ids()
  RETURNS SETOF uuid
  LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
   SELECT company_id FROM public.company_members WHERE user_id = auth.uid()
   UNION
@@ -29425,6 +29498,7 @@ CREATE OR REPLACE FUNCTION public.handle_invoice_cancellation_reversal()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_original_je  RECORD;
@@ -29497,6 +29571,7 @@ CREATE OR REPLACE FUNCTION public.handle_invoice_sent_accrual()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_item RECORD;
@@ -31988,6 +32063,7 @@ CREATE OR REPLACE FUNCTION public.ic_user_can_access_company(p_company_id uuid)
  RETURNS boolean
  LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
   SELECT EXISTS (
     SELECT 1
@@ -32011,6 +32087,7 @@ CREATE OR REPLACE FUNCTION public.ic_user_can_access_consolidation_group(p_conso
  RETURNS boolean
  LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
   SELECT EXISTS (
     SELECT 1
@@ -32033,6 +32110,7 @@ CREATE OR REPLACE FUNCTION public.ic_user_can_access_legal_entity(p_legal_entity
  RETURNS boolean
  LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
   SELECT EXISTS (
     SELECT 1
@@ -32052,6 +32130,7 @@ CREATE OR REPLACE FUNCTION public.ic_user_can_manage_company(p_company_id uuid)
  RETURNS boolean
  LANGUAGE sql
  STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
   SELECT EXISTS (
     SELECT 1
@@ -32485,6 +32564,7 @@ CREATE OR REPLACE FUNCTION public.insert_user_security_event(p_user_id uuid, p_c
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_id uuid;
@@ -33655,6 +33735,7 @@ CREATE OR REPLACE FUNCTION public.is_branch_accessible(p_branch_id uuid, p_user_
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_role TEXT;
@@ -34503,6 +34584,7 @@ CREATE OR REPLACE FUNCTION public.link_financial_operation_trace(p_transaction_i
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.751 — reject a caller acting on another company's data.
@@ -34602,6 +34684,7 @@ CREATE OR REPLACE FUNCTION public.mark_notification_as_read(p_notification_id uu
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.750 — the caller must be who they claim to be.
@@ -42856,6 +42939,7 @@ CREATE OR REPLACE FUNCTION public.post_accounting_event_v2(p_event_type text, p_
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_idempotency_result JSONB;
@@ -43166,6 +43250,7 @@ CREATE OR REPLACE FUNCTION public.post_bank_voucher(p_request_id uuid, p_posted_
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_req RECORD;
@@ -43925,6 +44010,7 @@ CREATE OR REPLACE FUNCTION public.post_invoice_atomic_v2(p_company_id uuid, p_in
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   RETURN public.post_accounting_event_v2(
@@ -46270,6 +46356,7 @@ CREATE OR REPLACE FUNCTION public.process_goods_receipt_atomic(p_grn_id uuid, p_
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_grn RECORD;
@@ -46368,6 +46455,7 @@ CREATE OR REPLACE FUNCTION public.process_invoice_payment_atomic(p_invoice_id uu
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_invoice              RECORD;
@@ -46520,6 +46608,7 @@ CREATE OR REPLACE FUNCTION public.process_invoice_payment_atomic_v2(p_invoice_id
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_invoice             RECORD;
@@ -46738,6 +46827,7 @@ CREATE OR REPLACE FUNCTION public.process_invoice_payment_atomic_v2(p_invoice_id
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_invoice             RECORD;
@@ -47569,6 +47659,7 @@ CREATE OR REPLACE FUNCTION public.process_sales_return_atomic_v2(p_company_id uu
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_result JSONB;
@@ -47639,6 +47730,7 @@ CREATE OR REPLACE FUNCTION public.process_supplier_payment_allocation(p_company_
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_payment_id UUID;
@@ -48873,6 +48965,7 @@ CREATE OR REPLACE FUNCTION public.recalc_bill_on_payment_change()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_payment_id UUID;
@@ -49809,6 +49902,7 @@ CREATE OR REPLACE FUNCTION public.record_payment(p_invoice_id uuid, p_amount num
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- ⚠️ DEPRECATED: This function is no longer the canonical payment JE creator.  
@@ -49939,6 +50033,7 @@ CREATE OR REPLACE FUNCTION public.refresh_dashboard_gl_monthly_summary()
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   REFRESH MATERIALIZED VIEW CONCURRENTLY dashboard_gl_monthly_summary;
@@ -50381,6 +50476,7 @@ CREATE OR REPLACE FUNCTION public.reject_bank_voucher(p_request_id uuid, p_rejec
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_req RECORD;
@@ -50606,6 +50702,7 @@ CREATE OR REPLACE FUNCTION public.reject_sales_delivery(p_invoice_id uuid, p_con
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_invoice       RECORD;
@@ -50920,6 +51017,7 @@ CREATE OR REPLACE FUNCTION public.reject_warehouse_return(p_purchase_return_id u
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_pr RECORD;
@@ -51436,6 +51534,7 @@ CREATE OR REPLACE FUNCTION public.require_open_financial_period_db(p_company_id 
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_period RECORD;
@@ -53891,6 +53990,7 @@ CREATE OR REPLACE FUNCTION public.safe_delete_payment_journals()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_je RECORD;
@@ -57159,6 +57259,7 @@ CREATE OR REPLACE FUNCTION public.sync_legacy_payment_allocation()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.545 — VOID rows and zero/negative payments must not create
@@ -57941,6 +58042,7 @@ CREATE OR REPLACE FUNCTION public.trigger_refresh_gl_mv()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- نُحدِّث فقط عند تغيير الحالة إلى posted (أو تحديث قيد posted)
@@ -59323,6 +59425,7 @@ CREATE OR REPLACE FUNCTION public.update_notification_status(p_notification_id u
  RETURNS boolean
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.750 — the caller must be who they claim to be.
@@ -59507,6 +59610,7 @@ CREATE OR REPLACE FUNCTION public.update_third_party_on_payment(p_invoice_id uui
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 BEGIN
   -- v3.74.750 — the caller must be who they claim to be.
@@ -60345,6 +60449,7 @@ CREATE OR REPLACE FUNCTION public.validate_three_way_matching(p_bill_id uuid, p_
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
   v_bill            RECORD;
@@ -61479,6 +61584,7 @@ CREATE OR REPLACE FUNCTION public.void_bill_atomic(p_bill_id uuid, p_user_id uui
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_bill RECORD;
@@ -61573,6 +61679,7 @@ CREATE OR REPLACE FUNCTION public.void_invoice_atomic(p_invoice_id uuid, p_user_
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'extensions', 'pg_catalog'
 AS $function$
 DECLARE
     v_invoice RECORD;
