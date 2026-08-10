@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -65,7 +66,7 @@ export function useBranchFilter(): UseBranchFilterReturn {
   const [error, setError] = useState<string | null>(null)
 
   // الأدوار التي يمكنها رؤية فلتر الفروع
-  const PRIVILEGED_ROLES = ['owner', 'admin']
+  const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
   const loadData = useCallback(async () => {
     try {

@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -321,7 +322,7 @@ export default function PeriodClosingPage() {
     },
   ]
 
-  const isOwnerOrAdmin = ["owner", "admin"].includes(userRole)
+  const isOwnerOrAdmin = isSeniorRole(userRole)
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">

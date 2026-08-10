@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
@@ -252,7 +253,7 @@ export function EnhancedSidebar() {
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
       setMyRole(role)
-      if (["owner", "admin"].includes(role)) { setDeniedResources([]); return }
+      if (isSeniorRole(role)) { setDeniedResources([]); return }
       const { data: perms } = await supabaseHook
         .from('company_role_permissions')
         .select('resource, can_read, can_write, can_update, can_delete, all_access, can_access')

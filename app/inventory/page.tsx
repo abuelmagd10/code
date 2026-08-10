@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, useCallback, useTransition, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -662,7 +663,7 @@ export default function InventoryPage() {
       }
 
       const role = String(context.role || "").trim().toLowerCase().replace(/\s+/g, "_")
-      const isOwnerOrAdmin = ['owner', 'admin'].includes(role)
+      const isOwnerOrAdmin = isSeniorRole(role)
       const isManager = ['manager', 'accountant'].includes(role)
       const isStoreManager = role === 'store_manager'
 

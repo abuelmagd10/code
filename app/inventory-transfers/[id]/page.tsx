@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, use, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -359,7 +360,7 @@ export default function TransferDetailPage({ params }: { params: Promise<{ id: s
 
   // 🔒 صلاحية تعديل الكمية المستلمة: Owner/Admin فقط
   // ❌ مسؤول المخزن لا يمكنه تعديل الكمية، يستلم الكمية المرسلة كما هي
-  const canEditReceivedQuantity = ["owner", "admin"].includes(userRole)
+  const canEditReceivedQuantity = isSeniorRole(userRole)
 
   // 🔒 صلاحية الحذف: Owner/Admin/Manager فقط، وفقط في حالة pending أو pending_approval أو draft
   // ✅ المحاسب يمكنه حذف طلباته المرفوضة أو المسودة

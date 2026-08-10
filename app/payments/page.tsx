@@ -19,6 +19,7 @@
 // =====================================================
 
 "use client"
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState, useTransition, useCallback, useRef, useMemo } from "react"
 import { FilterContainer } from "@/components/ui/filter-container"
@@ -413,7 +414,7 @@ export default function PaymentsPage() {
     if (!userContext) return false
 
     // Owner, Admin, General Manager يمكنهم الدفع على أي فاتورة
-    const privilegedRoles = ['owner', 'admin']
+    const privilegedRoles = [...SENIOR_ROLES]
     if (userContext.role && privilegedRoles.includes(userContext.role)) {
       return true
     }
@@ -771,7 +772,7 @@ export default function PaymentsPage() {
         const visibilityRules = buildDataVisibilityFilter(context)
 
         // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-        const PRIVILEGED_ROLES = ['owner', 'admin']
+        const PRIVILEGED_ROLES = [...SENIOR_ROLES]
         const isPrivileged = PRIVILEGED_ROLES.includes(currentRole.toLowerCase())
         const selectedBranchId = branchFilter.getFilteredBranchId()
         const userBranchId = visibilityRules.branchId || null
@@ -884,7 +885,7 @@ export default function PaymentsPage() {
       const { buildDataVisibilityFilter } = await import("@/lib/data-visibility-control")
       const visibilityRules = buildDataVisibilityFilter(userContext)
 
-      const PRIVILEGED_ROLES = ['owner', 'admin']
+      const PRIVILEGED_ROLES = [...SENIOR_ROLES]
       const isPrivileged = PRIVILEGED_ROLES.includes((userContext.role || '').toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
       const userBranchId = visibilityRules.branchId || null
@@ -2621,7 +2622,7 @@ export default function PaymentsPage() {
     let canApprove = false;
     if (p.status === 'pending_approval' && ['owner', 'admin', 'manager'].includes(userRole)) canApprove = true;
     if (p.status === 'pending_manager' && ['owner', 'admin', 'manager'].includes(userRole)) canApprove = true;
-    if (p.status === 'pending_director' && ['owner', 'admin'].includes(userRole)) canApprove = true;
+    if (p.status === 'pending_director' && isSeniorRole(userRole)) canApprove = true;
 
     const isPending = p.status?.startsWith('pending_')
     const isRejected = p.status === 'rejected'

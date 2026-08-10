@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState, use, useRef } from "react"
 import Link from "next/link"
@@ -113,7 +114,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                 loadData()
                 const cId = await getActiveCompanyId(supabase)
                 if (cId) {
-                    const { data: approvers } = await supabase.from('company_members').select('user_id').eq('company_id', cId).in('role', ['owner', 'admin'])
+                    const { data: approvers } = await supabase.from('company_members').select('user_id').eq('company_id', cId).in('role', [...SENIOR_ROLES])
                     for (const a of approvers || []) {
                         await createNotification({
                             companyId: cId,

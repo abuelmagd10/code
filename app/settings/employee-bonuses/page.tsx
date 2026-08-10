@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 /**
  * Per-Employee Bonus Configuration Page (Phase 4-B)
  *
@@ -116,7 +117,7 @@ export default function EmployeeBonusesPage() {
           .eq("user_id", user.id)
           .maybeSingle()
         setIsCompanyOwner(
-          company?.user_id === user.id || member?.role === "owner" || member?.role === "admin"
+          company?.user_id === user.id || isSeniorRole(member?.role)
         )
       }
 

@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -77,7 +78,7 @@ export default function EarlyCommissionPayoutPage() {
             if (cid) {
                 setCompanyId(cid)
                 // v3.74.42: branch-scope filter for non-privileged users + is_active filter
-                const PRIVILEGED = ['owner', 'admin']
+                const PRIVILEGED = [...SENIOR_ROLES]
                 let _userRoleForAccts = ''
                 let _userBranchForAccts: string | null = null
                 try {

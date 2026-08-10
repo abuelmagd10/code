@@ -7,6 +7,7 @@
 // Sales Order → Draft Invoice → Post → Warehouse Approval → Payment → Return
 
 "use client"
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 
 import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect, useRef, useMemo, useTransition, useCallback } from "react"
@@ -378,13 +379,13 @@ export default function InvoiceDetailPage() {
   const currentUserRole = accessProfile?.role || ''
   const userBranchId = accessProfile?.branch_id || null
   const userCostCenterId = accessProfile?.cost_center_id || null
-  const PRIVILEGED_ROLES = ['owner', 'admin']
+  const PRIVILEGED_ROLES = [...SENIOR_ROLES]
   const isPrivilegedUser = PRIVILEGED_ROLES.includes(currentUserRole)
   // v3.74.608 — المرتجع المباشر (كامل/جزئى) مسار سريع للمالك والمدير
   // العام فقط (نفس مجموعة اعتماد دفعات الموردين v3.74.132). باقى
   // الأدوار طريقها دورة "طلب مرتجع مبيعات". القاعدة ترفض أيضاً
   // (ترجر sales_returns_direct_gate) — الواجهة تخفى والخادم يحكم.
-  const canDirectReturn = ['owner', 'admin'].includes(currentUserRole)
+  const canDirectReturn = isSeniorRole(currentUserRole)
   // 🔐 الأدوار التي يمكنها رؤية وتنفيذ زر صرف رصيد العميل
   const CREDIT_REFUND_ROLES = ['owner', 'admin', 'accountant', 'manager']
   const canSeeCreditRefundButton = CREDIT_REFUND_ROLES.includes(currentUserRole) || permPayWrite

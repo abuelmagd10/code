@@ -3,6 +3,7 @@
  * Shell سريع: Auth + Permissions + UserContext فقط (fast queries)
  * كل Widget تجلب بياناتها بشكل مستقل داخل <Suspense>
  */
+import { isSeniorRole } from "@/lib/roles"
 import { Suspense } from "react"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
@@ -133,7 +134,7 @@ export default async function DashboardPage({
 
     // ── 6. Permission Check (now we have role - skip queries for owner/admin) ──
     const role = String(member?.role || "")
-    const isOwnerOrAdmin = role === "owner" || role === "admin"
+    const isOwnerOrAdmin = isSeniorRole(role)
     if (!isOwnerOrAdmin) {
       const canAccessDashboard = await canAccessPage(supabase, "dashboard")
       if (!canAccessDashboard) {

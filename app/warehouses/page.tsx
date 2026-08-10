@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
@@ -345,7 +346,7 @@ export default function WarehousesPage() {
             </Button>
           }
           extra={
-            userContext && userContext.role && !['owner', 'admin'].includes(userContext.role) ? (
+            userContext && userContext.role && !isSeniorRole(userContext.role) ? (
               <p className="text-xs text-blue-600 dark:text-blue-400">
                 {appLang === 'en' ? '🏢 Showing warehouses from your branch only' : '🏢 تعرض المخازن الخاصة بفرعك فقط'}
               </p>

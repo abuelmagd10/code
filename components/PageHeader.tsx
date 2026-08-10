@@ -12,6 +12,7 @@
  */
 
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { Button } from "@/components/ui/button"
 import { ReactNode } from "react"
@@ -339,7 +340,7 @@ export function PageHeaderList({
   const getGovernanceNotice = () => {
     if (!userRole || governanceType === 'none') return null
 
-    const isPrivileged = ['owner', 'admin'].includes(userRole)
+    const isPrivileged = isSeniorRole(userRole)
     const isManager = ['manager', 'accountant'].includes(userRole)
     const isStaff = ['staff', 'sales', 'employee'].includes(userRole)
 

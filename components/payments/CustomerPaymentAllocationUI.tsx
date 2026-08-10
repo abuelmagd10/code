@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -175,7 +176,7 @@ export function CustomerPaymentAllocationUI({
       }
 
       // 🔔 Non-privileged users: send notification for approval
-      if (member?.role && !['admin', 'owner'].includes(member.role)) {
+      if (member?.role && !isSeniorRole(member.role)) {
         const customerName = customers.find(c => c.id === customerId)?.name || 'عميل'
         await notifyPaymentApprovalRequest({
           companyId,

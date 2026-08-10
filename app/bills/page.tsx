@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useMemo, useState, useTransition, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1134,7 +1135,7 @@ export default function BillsPage() {
       // v3.74.42: branch-scope the cash/bank picker. Privileged roles
       // (owner / admin / general_manager) see all company cash + bank
       // accounts; everyone else sees ONLY their branch's accounts.
-      const refundPrivilegedRoles = ['owner', 'admin']
+      const refundPrivilegedRoles = [...SENIOR_ROLES]
       const isRefundPrivileged = refundPrivilegedRoles.includes(
         (userContext?.role || '').toLowerCase()
       )

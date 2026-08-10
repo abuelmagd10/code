@@ -9,6 +9,7 @@
  * already captured at request time on /payments).
  */
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
@@ -205,7 +206,7 @@ export default function VendorPaymentCorrectionRequestsPage() {
     return () => { if (ch) supabase.removeChannel(ch) }
   }, [hydrated, loadRequests, supabase])
 
-  const canApprove = userRole === "owner" || userRole === "admin" 
+  const canApprove = isSeniorRole(userRole) 
 
   // Visible rows: board members see all; everyone else sees only their own
   const visibleRequests = useMemo(() => {

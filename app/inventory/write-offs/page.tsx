@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
@@ -210,7 +211,7 @@ export default function WriteOffsPage() {
       }
       setUserContext(context)
       // مطابق لـ loadData والـ realtime: Owner/Admin فقط يمكنهم تجاوز قيود الفرع/المخزن
-      setCanOverrideContext(["owner", "admin"].includes(role))
+      setCanOverrideContext(isSeniorRole(role))
 
       // تعيين القيم الافتراضية من سياق المستخدم (فقط عند التغيير)
       if (context.branch_id && context.branch_id !== branchId) setBranchId(context.branch_id)
@@ -229,7 +230,7 @@ export default function WriteOffsPage() {
       // 🔐 التحقق الإضافي: الاعتماد فقط لـ Owner و Admin
       // هذا يضمن أن Store Manager أو أي دور آخر لا يمكنه الاعتماد حتى لو كانت لديه صلاحية في company_role_permissions
       const userRole = context.role || "viewer"
-      const canApproveWriteOff = approve && (userRole === "owner" || userRole === "admin")
+      const canApproveWriteOff = approve && (isSeniorRole(userRole))
 
       setCanCreate(create)
       setCanEdit(edit)
@@ -238,7 +239,7 @@ export default function WriteOffsPage() {
       setCanExport(exportPerm)
 
       // 🔐 فلترة حسب الفرع: Owner/Admin فقط يرون جميع الفروع؛ الأدوار العادية مقيدة بفرعهم
-      const isCanOverride = ["owner", "admin"].includes(userRole)
+      const isCanOverride = isSeniorRole(userRole)
       const isAccountantOrManager = ["accountant", "manager"].includes(userRole)
       const userBranchId = context.branch_id || null
       const userWarehouseId = context.warehouse_id || null
@@ -498,12 +499,12 @@ export default function WriteOffsPage() {
 
       // ✅ Owner/Admin: يرى كل شيء في الشركة
       const userRole = userContext?.role || 'viewer'
-      if (userRole === 'owner' || userRole === 'admin') {
+      if (isSeniorRole(userRole)) {
         return true
       }
 
       // ✅ مطابق لـ loadData: Owner/Admin فقط يرون جميع الفروع
-      const isCanOverride = ['owner', 'admin'].includes(userRole)
+      const isCanOverride = isSeniorRole(userRole)
       const isAccountantOrManager = ['accountant', 'manager'].includes(userRole)
       const userBranchId = userContext?.branch_id || null
       const userWarehouseId = userContext?.warehouse_id || null
@@ -1411,7 +1412,7 @@ export default function WriteOffsPage() {
     // 🔐 ERP-Grade Governance Rule: منع التعديل بعد الاعتماد إلا لـ Admin و Owner
     if (selectedWriteOff.status === 'approved') {
       const userRole = userContext?.role || 'viewer'
-      const canEditApproved = userRole === 'owner' || userRole === 'admin'
+      const canEditApproved = isSeniorRole(userRole)
       
       if (!canEditApproved) {
         toast({
@@ -1636,7 +1637,7 @@ export default function WriteOffsPage() {
     // 🔐 ERP-Grade Governance Rule: منع التعديل بعد الاعتماد إلا لـ Admin و Owner
     if (selectedWriteOff.status === 'approved') {
       const userRole = userContext?.role || 'viewer'
-      const canEditApproved = userRole === 'owner' || userRole === 'admin'
+      const canEditApproved = isSeniorRole(userRole)
       
       if (!canEditApproved) {
         toast({
@@ -3057,7 +3058,7 @@ export default function WriteOffsPage() {
                 {/* زر التعديل - يظهر فقط في حالة pending أو approved (لـ Admin/Owner فقط) */}
                 {(() => {
                   const userRole = userContext?.role || 'viewer'
-                  const canEditApproved = userRole === 'owner' || userRole === 'admin'
+                  const canEditApproved = isSeniorRole(userRole)
                   const canEditPending = canEdit && selectedWriteOff?.status === 'pending'
                   const canEditApprovedWriteOff = canEditApproved && selectedWriteOff?.status === 'approved'
                   const showEditButton = (canEditPending || canEditApprovedWriteOff) && !isEditMode

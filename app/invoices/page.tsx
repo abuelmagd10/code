@@ -1,5 +1,5 @@
 "use client"
-import { roleLabel } from "@/lib/roles"
+import { roleLabel, isSeniorRole } from "@/lib/roles"
 
 import { attachProductCosts } from "@/lib/product-costs"
 import { useState, useEffect, useMemo, useTransition, useRef } from "react"
@@ -805,7 +805,7 @@ export default function InvoicesPage() {
           .from('chart_of_accounts')
           .select('id, account_code, account_name, account_type, sub_type, branch_id, original_currency')
           .eq('company_id', cid)
-        const isPrivileged = currentUserRole === 'owner'  || currentUserRole === 'admin'
+        const isPrivileged = isSeniorRole(currentUserRole)
         const userBranchId = userContext?.branch_id || null
         const list = (accounts || []).filter((a: any) => {
           const st = String(a.sub_type || '').toLowerCase()
@@ -3111,7 +3111,7 @@ export default function InvoicesPage() {
                           </div>
                         )
                       }
-                      const isPrivileged = currentUserRole === 'owner'  || currentUserRole === 'admin'
+                      const isPrivileged = isSeniorRole(currentUserRole)
                       const cashOnly = (returnCashBankAccounts || []).filter((a: any) => String(a?.sub_type || '').toLowerCase() === 'cash')
                       const bankOnly = (returnCashBankAccounts || []).filter((a: any) => String(a?.sub_type || '').toLowerCase() === 'bank')
                       const eligibleAccounts = returnMethod === 'cash' ? cashOnly

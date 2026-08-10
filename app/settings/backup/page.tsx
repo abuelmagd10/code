@@ -1,4 +1,5 @@
 'use client'
+import { isSeniorRole } from "@/lib/roles"
 
 /**
  * صفحة النسخ الاحتياطي والاستعادة
@@ -49,7 +50,7 @@ export default function BackupPage() {
   const t = (en: string, ar: string) => (language === 'en' ? en : ar)
 
   // التحقق من الصلاحيات
-  const canExport = ['owner', 'admin'].includes(role || '')
+  const canExport = isSeniorRole(role || '')
   const canRestore = role === 'owner'
 
   // تصدير نسخة احتياطية

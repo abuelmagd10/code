@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import type React from "react"
 
@@ -704,7 +705,7 @@ export default function NewInvoicePage() {
     // v3.74.259 — Owner / general_manager may skip the sales order
     // selection. The API will auto-create the linked SO on their behalf.
     const _role = String(userContext?.role || '').toLowerCase()
-    const _canSkipSO = _role === 'owner' || _role === 'admin' 
+    const _canSkipSO = isSeniorRole(_role) 
     if (!salesOrderId && !_canSkipSO) {
       toast({
         title: appLang === 'en' ? "Sales Order Required" : "أمر البيع مطلوب",
@@ -1193,7 +1194,7 @@ export default function NewInvoicePage() {
                     {(hydrated && appLang === 'en') ? 'Sales Order' : 'أمر البيع'} <span className="text-red-500">*</span>
                   </Label>
                   <Select value={salesOrderId} onValueChange={handleSalesOrderChange}>
-                    <SelectTrigger className={`${(!salesOrderId && !(['owner','admin'].includes(String(userContext?.role || '').toLowerCase()))) ? 'border-red-500' : ''}`}>
+                    <SelectTrigger className={`${(!salesOrderId && !(isSeniorRole(String(userContext?.role || '').toLowerCase()))) ? 'border-red-500' : ''}`}>
                       <SelectValue placeholder={appLang === 'en' ? 'Select sales order...' : 'اختر أمر بيع...'} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1215,13 +1216,13 @@ export default function NewInvoicePage() {
                       )}
                     </SelectContent>
                   </Select>
-                  {!salesOrderId && !(['owner','admin'].includes(String(userContext?.role || '').toLowerCase())) && (
+                  {!salesOrderId && !(isSeniorRole(String(userContext?.role || '').toLowerCase())) && (
                     <p className="text-xs text-red-500" suppressHydrationWarning>
                       {appLang === 'en' ? 'Please select a sales order to continue' : 'يرجى اختيار أمر بيع للمتابعة'}
                     </p>
                   )}
                   {/* v3.74.259 — Hint for owner / general_manager: SO will be auto-created if left blank. */}
-                  {!salesOrderId && (['owner','admin'].includes(String(userContext?.role || '').toLowerCase())) && (
+                  {!salesOrderId && (isSeniorRole(String(userContext?.role || '').toLowerCase())) && (
                     <p className="text-xs text-emerald-600 dark:text-emerald-400" suppressHydrationWarning>
                       {appLang === 'en'
                         ? 'You can leave this empty — a matching sales order will be created automatically.'

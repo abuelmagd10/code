@@ -15,6 +15,7 @@
 // Any new code here that breaks this pattern is a BUG, not a spec change.
 
 "use client"
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -336,7 +337,7 @@ export default function BillViewPage() {
               // من يمكنه الاعتماد الإداري؟
               // v3.74.505 — مواءمة مع ADMIN_APPROVAL_ROLES فى الخادم:
               // admin كان يرى الزر ثم يُرفض من الـ API (v3.74.132 استبعدته).
-              setCanApproveAdmin(["owner", "admin"].includes(role))
+              setCanApproveAdmin(isSeniorRole(role))
 
               // من يمكنه اعتماد الاستلام؟ (مسؤول المخزن + الإدارة العليا)
               setCanApproveReceipt(["owner", "admin", "store_manager"].includes(role))
@@ -597,7 +598,7 @@ export default function BillViewPage() {
           // branch's accounts. The user's branch is fetched inline
           // here because this page only carried the role in state
           // previously.
-          const refundPrivilegedRoles2 = ['owner', 'admin']
+          const refundPrivilegedRoles2 = [...SENIOR_ROLES]
           const isRefundPrivileged2 = refundPrivilegedRoles2.includes(
             String(currentUserRole || '').toLowerCase()
           )

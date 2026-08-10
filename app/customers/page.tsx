@@ -1,5 +1,5 @@
 "use client"
-import { roleLabel } from "@/lib/roles"
+import { roleLabel, isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 
 import type React from "react"
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react"
@@ -269,7 +269,7 @@ export default function CustomersPage() {
           }
 
           // 🔐 تحميل الفروع ومراكز التكلفة (للأدوار المميزة فقط)
-          const PRIV_ROLES = ['owner', 'admin']
+          const PRIV_ROLES = [...SENIOR_ROLES]
           if (PRIV_ROLES.includes(role.toLowerCase())) {
             // تحميل الفروع (branch_name هو اسم العمود الصحيح + default_cost_center_id للربط التلقائي)
             const { data: branchesData } = await supabase
@@ -351,7 +351,7 @@ export default function CustomersPage() {
       )
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin']
+      const PRIVILEGED_ROLES = [...SENIOR_ROLES]
       const canFilterByBranch = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
@@ -519,7 +519,7 @@ export default function CustomersPage() {
       //      visible only to privileged roles. A branch accountant
       //      may not disburse from the central treasury — they have
       //      to use their branch's accounts.
-      const accountsPrivilegedRoles = ['owner', 'admin']
+      const accountsPrivilegedRoles = [...SENIOR_ROLES]
       const isAccountsPrivileged = accountsPrivilegedRoles.includes(
         (currentUserRole || '').toLowerCase()
       )
@@ -624,7 +624,7 @@ export default function CustomersPage() {
       const activeCompanyId = await getActiveCompanyId(supabase)
       if (!activeCompanyId) return
       const role = (currentUserRole || '').toLowerCase()
-      const seesAllBranches = ['owner', 'admin'].includes(role)
+      const seesAllBranches = isSeniorRole(role)
       let q = supabase
         .from('customer_refund_requests')
         .select('id, customer_id, status, source_type, amount, currency, branch_id, refund_account_id, rejection_reason, requested_by, approved_by, rejected_by, approved_at, rejected_at, executed_at, created_at, metadata')

@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
@@ -77,7 +78,7 @@ type PurchaseReturnCommandApiResponse = {
   purchaseReturnId?: string
 }
 
-const PRIVILEGED_ROLES = ['owner', 'admin']
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 export default function PurchaseReturnsPage() {
   const supabase = useSupabase()

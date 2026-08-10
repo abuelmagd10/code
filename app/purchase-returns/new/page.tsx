@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { attachProductCosts } from "@/lib/product-costs"
 import { useEffect, useState, useMemo } from "react"
@@ -56,7 +57,7 @@ type WarehouseAllocation = {
   items: WhAllocationItem[]
 }
 
-const PRIVILEGED_ROLES = ['owner', 'admin']
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 type PurchaseReturnApiResult = {
   success?: boolean

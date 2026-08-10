@@ -1,5 +1,5 @@
 "use client"
-import { ERP_ROLES, roleOptions } from "@/lib/roles"
+import { ERP_ROLES, roleOptions, isSeniorRole } from "@/lib/roles"
 // v3.42.1 — force Turbopack rebuild
 import { useEffect, useState } from "react"
 export const dynamic = "force-dynamic"
@@ -1478,8 +1478,8 @@ export default function UsersSettingsPage() {
       const owners = members.filter((x) => x.role === "owner")
       if (m.role === "owner" && owners.length === 1 && role !== "owner") { setActionError(t("Cannot change the role of the last owner", "لا يمكن تغيير دور آخر مالك")); return }
       // منع خفض دور المستخدم الحالي إلى عرض فقط بدون وجود مدير/مالك آخر
-      if (m.user_id === currentUserId && !["owner", "admin"].includes(role)) {
-        const hasOtherAdmin = members.some((x) => x.user_id !== currentUserId && ["owner", "admin"].includes(x.role))
+      if (m.user_id === currentUserId && !isSeniorRole(role)) {
+        const hasOtherAdmin = members.some((x) => x.user_id !== currentUserId && isSeniorRole(x.role))
         if (!hasOtherAdmin) { setActionError(t("You cannot downgrade your own role without another admin/owner", "لا يمكن خفض دورك دون وجود مدير/مالك آخر")); return }
       }
       const oldRole = m.role
@@ -3444,10 +3444,10 @@ export default function UsersSettingsPage() {
                         // v3.74.67 — single-owner exemption: if I'm the only senior
                         // in the company, allow self-approve/reject (backend enforces too).
                         const seniorCount = members.filter(m =>
-                          ['owner','admin'].includes(String(m.role || ''))
+                          isSeniorRole(String(m.role || ''))
                         ).length
                         const isSoloSenior = isInitiator && seniorCount === 1 &&
-                          ['owner','admin'].includes(String(currentRole || ''))
+                          isSeniorRole(String(currentRole || ''))
                         const canActOnRequest = isPending && canManage && (!isInitiator || isSoloSenior)
                         const resourceLabel =
                           pt.resource_type === 'all' ? t('All', 'الكل') :

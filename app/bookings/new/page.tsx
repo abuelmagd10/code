@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
@@ -74,7 +75,7 @@ export default function NewBookingPage() {
     const role    = isOwner ? "owner" : (memberData?.role || "viewer")
     // v3.74.662 — expose creator identity/role for the discount gate
     setCurrentUserId(user.id)
-    setIsUpperRole(["owner", "admin"].includes(role))
+    setIsUpperRole(isSeniorRole(role))
     const branchId      = isOwner ? null : (memberData?.branch_id      ?? null)
     const costCenterId  = isOwner ? null : (memberData?.cost_center_id  ?? null)
 

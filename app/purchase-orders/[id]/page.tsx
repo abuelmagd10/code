@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
@@ -838,7 +839,7 @@ export default function PurchaseOrderDetailPage() {
 
               {/* Create Bill button - show if not fully billed AND user is privileged AND PO is approved */}
               {permWriteBills && !isFullyBilled && remainingItems.length > 0 && 
-                (userContext?.role === 'admin' || userContext?.role === 'owner' ) && 
+                (isSeniorRole(userContext?.role) ) && 
                 (po.status === 'approved' || po.status === 'partially_received' || po.status === 'received' || po.status === 'partially_billed') && (
                 <Link href={`/bills/new?from_po=${poId}`}>
                   <Button className="bg-green-600 hover:bg-green-700 text-white" data-ai-help="purchase_orders.create_bill_button">
@@ -853,7 +854,7 @@ export default function PurchaseOrderDetailPage() {
               {permUpdate &&
                 ['draft', 'pending_approval', 'rejected'].includes(po.status) &&
                 (!linkedBillStatus || linkedBillStatus === 'draft') && (
-                ((userContext?.role === 'admin' || userContext?.role === 'owner' ) ||
+                ((isSeniorRole(userContext?.role) ) ||
                 (po.status === 'rejected')) && (
                 <Link href={`/purchase-orders/${poId}/edit`}>
                   <Button variant="outline" data-ai-help="purchase_orders.edit_button">

@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
@@ -368,7 +369,7 @@ export default function FixedAssetDetailsPage() {
 
   // ✅ إلغاء إهلاك معتمد (Approved)
   const handleCancelApproved = (scheduleIds: string[]) => {
-    const canCancel = userRole === 'owner' || userRole === 'admin'
+    const canCancel = isSeniorRole(userRole)
     if (!canCancel) {
       toast({
         title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
@@ -386,7 +387,7 @@ export default function FixedAssetDetailsPage() {
 
   // ✅ إلغاء إهلاك مرحل (Posted) - مع قيد عكسي
   const handleCancelPosted = (scheduleIds: string[]) => {
-    const canCancel = userRole === 'owner' || userRole === 'admin'
+    const canCancel = isSeniorRole(userRole)
     if (!canCancel) {
       toast({
         title: appLang === 'en' ? 'Access Denied' : 'رفض الوصول',
@@ -569,7 +570,7 @@ export default function FixedAssetDetailsPage() {
                   )}
 
                   {/* Operations Menu */}
-                  {(userRole === 'owner' || userRole === 'admin') && asset.status === 'active' && (
+                  {(isSeniorRole(userRole)) && asset.status === 'active' && (
                     <>
                       <Button variant="secondary" onClick={() => setAddCapitalOpen(true)} data-ai-help="fixed_assets.add_capital_button">
                         <DollarSign className="w-4 h-4 mr-2" />

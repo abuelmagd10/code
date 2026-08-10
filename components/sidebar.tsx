@@ -1,5 +1,5 @@
 "use client"
-import { roleLabel } from "@/lib/roles"
+import { roleLabel, isSeniorRole } from "@/lib/roles"
 // v3.42.1 — force Turbopack rebuild after stale build cache
 // Re-touched: 2026-05-25 to invalidate Vercel build cache
 
@@ -728,7 +728,7 @@ export function Sidebar() {
       const { data: myMember } = await supabaseHook.from('company_members').select('role').eq('company_id', cid).eq('user_id', user.id).maybeSingle()
       const role = String(myMember?.role || '')
       // 🔐 myRole يأتي من AccessContext الآن (profile?.role)
-      if (["owner", "admin"].includes(role)) {
+      if (isSeniorRole(role)) {
         setDeniedResources([])
         setPermissionsReady(true)
         return

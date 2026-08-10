@@ -1,4 +1,5 @@
 "use client";
+import { isSeniorRole } from "@/lib/roles"
 
 import { useEffect, useState, useMemo, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -303,7 +304,7 @@ export default function BankingPage() {
             // Filter out accounts clearly not in this user's branch for normal roles
             const isNormalRole =
               currentUserContext?.role &&
-              !["admin", "owner"].includes(currentUserContext.role);
+              !isSeniorRole(currentUserContext.role);
             if (isNormalRole && currentUserContext?.branch_id) {
               leaf = leaf.filter(
                 (a: any) => a.branch_id === currentUserContext.branch_id,
@@ -356,7 +357,7 @@ export default function BankingPage() {
         // Filter if userContext is a normal role
         const isNormalRole =
           currentUserContext?.role &&
-          !["admin", "owner"].includes(currentUserContext.role);
+          !isSeniorRole(currentUserContext.role);
         if (isNormalRole && currentUserContext?.branch_id) {
           leafCashBankAccounts = leafCashBankAccounts.filter(
             (a: any) => a.branch_id === currentUserContext.branch_id,
@@ -493,7 +494,7 @@ export default function BankingPage() {
     let filtered = accounts;
     const isNormalRole =
       userContext?.role &&
-      !["admin", "owner"].includes(userContext.role);
+      !isSeniorRole(userContext.role);
     const effectiveBranch =
       isNormalRole && userContext?.branch_id
         ? userContext.branch_id
@@ -525,7 +526,7 @@ export default function BankingPage() {
   const filteredCostCenters = useMemo(() => {
     const isNormalRole =
       userContext?.role &&
-      !["admin", "owner"].includes(userContext.role);
+      !isSeniorRole(userContext.role);
     const effectiveBranch =
       isNormalRole && userContext?.branch_id
         ? userContext.branch_id
@@ -779,7 +780,7 @@ export default function BankingPage() {
             ) : undefined
           }
           extra={
-            (userContext?.role === "admin" || userContext?.role === "owner") ? (
+            (isSeniorRole(userContext?.role)) ? (
               <p className="text-xs text-green-600 dark:text-green-400">
                 {appLang === "en"
                   ? "👑 Company-wide accounts - All bank accounts visible"
@@ -1087,7 +1088,7 @@ export default function BankingPage() {
           )}
 
         {/* v3.13.0 — Recent Transfers history (FX-aware) */}
-        {(userContext?.role === "admin" || userContext?.role === "owner") && (
+        {(isSeniorRole(userContext?.role)) && (
           <Card>
             <CardContent className="pt-6 space-y-4">
               <div className="flex items-center justify-between">

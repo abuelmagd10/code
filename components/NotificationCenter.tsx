@@ -6,6 +6,7 @@
  */
 
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
@@ -383,7 +384,7 @@ export function NotificationCenter({
 
     // 2. التحقق من المستخدم المخصص له
     if (notification.assigned_to_user && notification.assigned_to_user !== userId) {
-      if (!['owner', 'admin'].includes(userRole)) return false
+      if (!isSeniorRole(userRole)) return false
     }
 
     // 3. التحقق من الدور المخصص له
@@ -1004,7 +1005,7 @@ export function NotificationCenter({
               </SelectContent>
             </Select>
 
-            {(userRole === 'owner' || userRole === 'admin') && branches.length > 0 && (
+            {(isSeniorRole(userRole)) && branches.length > 0 && (
               <Select value={filterBranch} onValueChange={setFilterBranch}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={appLang === 'en' ? 'Branch' : 'الفرع'} />
@@ -1020,7 +1021,7 @@ export function NotificationCenter({
               </Select>
             )}
 
-            {(userRole === 'owner' || userRole === 'admin') && warehouses.length > 0 && (
+            {(isSeniorRole(userRole)) && warehouses.length > 0 && (
               <Select value={filterWarehouse} onValueChange={setFilterWarehouse}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={appLang === 'en' ? 'Warehouse' : 'المخزن'} />
@@ -1075,7 +1076,7 @@ export function NotificationCenter({
                 const priorityStyles = getPriorityStyles(notification.priority)
                 const statusStyles = getStatusStyles(notification.status)
                 const createdBy = createdByUsers.get(notification.created_by)
-                const isApproval = notification.category === 'approvals' && (userRole === 'owner' || userRole === 'admin')
+                const isApproval = notification.category === 'approvals' && (isSeniorRole(userRole))
 
                 // 🔍 Debug: Log created_by lookup
                 if (!createdBy && notification.created_by) {

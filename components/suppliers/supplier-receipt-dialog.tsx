@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -17,7 +18,7 @@ import { ShieldAlert, Clock, CheckCircle2 } from "lucide-react"
 import { notifyVendorRefundRequestCreated } from "@/lib/notification-helpers"
 
 // الأدوار المميزة التي تنفذ فوراً بدون انتظار اعتماد
-const PRIVILEGED_ROLES = ['owner', 'admin']
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 interface SupplierReceiptDialogProps {
   open: boolean

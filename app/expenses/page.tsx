@@ -1,4 +1,5 @@
 ﻿"use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -171,7 +172,7 @@ export default function ExpensesPage() {
       const visibilityRules = buildDataVisibilityFilter(context)
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin']
+      const PRIVILEGED_ROLES = [...SENIOR_ROLES]
       const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 

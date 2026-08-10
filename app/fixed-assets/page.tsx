@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, useCallback, useTransition } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -188,7 +189,7 @@ export default function FixedAssetsPage() {
       }
       setUserContext(context)
 
-      const isCanOverride = ["owner", "admin"].includes(role)
+      const isCanOverride = isSeniorRole(role)
       const isAccountantOrManager = ["accountant", "manager"].includes(role)
       const userBranchId = context.branch_id || null
       const userCostCenterId = context.cost_center_id || null

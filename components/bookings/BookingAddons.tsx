@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 /**
  * v3.74.574 — Booking Addons panel.
@@ -151,7 +152,7 @@ export function BookingAddons({
   const mayEdit = useMemo(() => {
     if (!me) return false
     // Management keeps oversight.
-    if (["owner", "admin"].includes(me.role)) return true
+    if (isSeniorRole(me.role)) return true
     // v3.74.630 — selecting attached items and adding sale products is the
     // ASSIGNED EXECUTOR's job only. The booking officer (call center) just
     // creates/confirms; they no longer edit add-ons here (mirrors the DB

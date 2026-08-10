@@ -35,7 +35,7 @@ const fs = require("fs")
 const path = require("path")
 
 const HOME = "lib/roles.ts"
-const BASELINE = Number(process.env.SENIOR_PAIR_BASELINE ?? 104)
+const BASELINE = Number(process.env.SENIOR_PAIR_BASELINE ?? 5)
 
 const ARR = /\[\s*(['"])([a-z_]+)\1\s*,\s*(['"])([a-z_]+)\3\s*\]/g
 const CMP = /([\w$.?[\]]+)\s*===\s*(['"])([a-z_]+)\2\s*\|\|\s*\1\s*===\s*(['"])([a-z_]+)\4/g

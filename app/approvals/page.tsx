@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
@@ -1207,10 +1208,10 @@ function ApprovalsContent() {
     staff:              [],
     booking_officer:    [],
   }
-  const isAdminLike = !!myRole && ["owner","admin"].includes(myRole)
+  const isAdminLike = !!myRole && isSeniorRole(myRole)
   // v3.74.509 — قرارات محصورة بالمالك/المدير العام فقط (دفعات الموردين،
   // استرداد العملاء، تصحيحات دفعات الموردين) مطابقة لبوابات الخادم
-  const isOwnerOrGm = !!myRole && ["owner","admin"].includes(myRole)
+  const isOwnerOrGm = !!myRole && isSeniorRole(myRole)
   const visibleTabs: ReadonlyArray<TabKey> =
     isAdminLike || !myRole
       ? (["bom","routing","po","mi","pr","disc","pay","pret","sret","cref","vcor","disp","recv","bwd","bcr","wo","tr","misc","je","vc"] as const)

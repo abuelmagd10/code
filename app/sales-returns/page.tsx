@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
@@ -143,7 +144,7 @@ export default function SalesReturnsPage() {
       const visibilityRules = buildDataVisibilityFilter(userContext)
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin']
+      const PRIVILEGED_ROLES = [...SENIOR_ROLES]
       const canFilterByBranch = PRIVILEGED_ROLES.includes(role.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 

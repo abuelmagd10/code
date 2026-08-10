@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -91,7 +92,7 @@ export default function NewDrawingPage() {
 
             // Load payment accounts (cash/bank)
             // v3.74.42: filter by sub_type IN (cash,bank) + branch-scope for non-privileged users + is_active
-            const PRIVILEGED = ['owner', 'admin']
+            const PRIVILEGED = [...SENIOR_ROLES]
             let userRoleForAccts = ''
             let userBranchForAccts: string | null = null
             try {

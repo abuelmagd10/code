@@ -1,5 +1,5 @@
 "use client";
-import { roleLabel } from "@/lib/roles"
+import { roleLabel, isSeniorRole } from "@/lib/roles"
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/hooks";
@@ -1718,7 +1718,7 @@ function SalesOrdersContent() {
             }
             extra={
               // 🔐 Governance Notice
-              currentUserRole && !['owner', 'admin'].includes(currentUserRole) ? (
+              currentUserRole && !isSeniorRole(currentUserRole) ? (
                 <p className="text-xs text-blue-600 dark:text-blue-400">
                   {['manager', 'accountant'].includes(currentUserRole)
                     ? `🏢 ${appLang === 'en' ? 'Showing sales orders from your branch only' : 'تعرض أوامر البيع الخاصة بفرعك فقط'}`

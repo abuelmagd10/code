@@ -1,5 +1,5 @@
 "use client"
-import { roleLabel } from "@/lib/roles"
+import { roleLabel, SENIOR_ROLES } from "@/lib/roles"
 
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -132,7 +132,7 @@ export function CustomerFormDialog({
   const [currentRole, setCurrentRole] = useState<string>("")
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
   const [branches, setBranches] = useState<BranchOption[]>([])
-  const COMPANY_SCOPE_ROLES = ['owner', 'admin']
+  const COMPANY_SCOPE_ROLES = [...SENIOR_ROLES]
   const isFloatingBookingOfficer = currentRole === 'booking_officer' && !currentBranchId
   const needsBranchPicker = COMPANY_SCOPE_ROLES.includes(currentRole) || isFloatingBookingOfficer
 

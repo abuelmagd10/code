@@ -1,4 +1,5 @@
 "use client"
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 
 import type React from "react"
 
@@ -135,7 +136,7 @@ export default function SuppliersPage() {
   const [receiptExRate, setReceiptExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'default' })
 
   // ===== حالات طلبات استرداد الموردين (Approval Workflow) =====
-  const PRIVILEGED_ROLES = ['owner', 'admin']
+  const PRIVILEGED_ROLES = [...SENIOR_ROLES]
   const isPrivilegedRole = PRIVILEGED_ROLES.includes(currentUserRole.toLowerCase())
   const [refundRequests, setRefundRequests] = useState<any[]>([])
   const [refundRequestsLoading, setRefundRequestsLoading] = useState(false)
@@ -259,7 +260,7 @@ export default function SuppliersPage() {
       }
 
       // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-      const PRIVILEGED_ROLES = ['owner', 'admin']
+      const PRIVILEGED_ROLES = [...SENIOR_ROLES]
       const canFilterByBranch = PRIVILEGED_ROLES.includes(userRole.toLowerCase())
       const selectedBranchId = branchFilter.getFilteredBranchId()
 
@@ -1010,7 +1011,7 @@ export default function SuppliersPage() {
                       </div>
 
                       {/* Branch Selection for privileged roles */}
-                      {['owner', 'admin'].includes(currentUserRole.toLowerCase()) && (
+                      {isSeniorRole(currentUserRole.toLowerCase()) && (
                         <div className="space-y-2">
                           <Label htmlFor="branch">{appLang === 'en' ? 'Assign to Branch (Optional)' : 'تعيين لفرع (اختياري)'}</Label>
                           <Select

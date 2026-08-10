@@ -1,4 +1,5 @@
 "use client"
+import { SENIOR_ROLES } from "@/lib/roles"
 
 /**
  * Commission Run Payment Dialog
@@ -85,7 +86,7 @@ export function RunPaymentDialog({
             if (!activeCompanyId) return
 
             // v3.74.42: filter by sub_type IN (cash,bank) + branch-scope for non-privileged users + is_active
-            const PRIVILEGED = ['owner', 'admin']
+            const PRIVILEGED = [...SENIOR_ROLES]
             let _userRoleForAccts = ''
             let _userBranchForAccts: string | null = null
             try {
