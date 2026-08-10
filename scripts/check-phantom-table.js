@@ -40,20 +40,9 @@ const path = require("path")
  * عليه، كلُّها **مُتتبَّعةٌ بانتظار قرارِ حذفٍ أو إحياء**.
  */
 const BASELINE = [
-  ["components/AdvancedPermissionsManager.tsx", "advanced_permissions",
-   "مكوِّنٌ لا يستورده أىُّ ملفّ - شاشةٌ لا يبلغها أحد"],
-  ["lib/governance-layer.ts", "audit_trail",
-   "getAuditTrail مُصدَّرةٌ ولا يستوردها أحد - وسجلُّ التدقيق الحىُّ اسمُه audit_logs ويعمل"],
-  ["lib/governance-layer.ts", "refund_requests",
-   "دالّتان مُصدَّرتان لا يستوردهما أحد"],
-  ["app/api/refund-requests/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
-  ["app/api/refund-requests/approve/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
-  ["app/api/refund-requests/reject/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
-  ["app/api/refund-requests/reopen/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
-  ["app/api/refund-requests/disburse/route.ts", "refund_requests", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
-  ["app/api/refund-requests/disburse/route.ts", "disbursement_vouchers", "محرّكُ استردادٍ ثانٍ لا تنادِيه شاشة"],
-  ["lib/refund-policy-engine.ts", "refund_requests", "محرّكُ الاسترداد الثانى نفسُه"],
-  ["lib/refund-policy-engine.ts", "refund_audit_logs", "محرّكُ الاسترداد الثانى نفسُه"],
+  // v3.74.997 — كانت هنا أحدَ عشرَ موضعاً تنتظر قرارَ حذفٍ أو إحياء.
+  // قرّر المالكُ الحذف، فحُذف المحرّكُ الثانى للاسترداد وشاشةُ الصلاحيّات المتقدّمة،
+  // ونُزعت التصديراتُ الميّتةُ من `governance-layer`. **والقائمةُ لا تكبر ولا تكذب.**
 ]
 const PINNED = new Set(BASELINE.map(([f, t]) => f + "::" + t))
 

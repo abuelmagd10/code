@@ -65,7 +65,7 @@ export function useBranchFilter(): UseBranchFilterReturn {
   const [error, setError] = useState<string | null>(null)
 
   // الأدوار التي يمكنها رؤية فلتر الفروع
-  const PRIVILEGED_ROLES = ['owner', 'admin', 'general_manager']
+  const PRIVILEGED_ROLES = ['owner', 'admin']
 
   const loadData = useCallback(async () => {
     try {
