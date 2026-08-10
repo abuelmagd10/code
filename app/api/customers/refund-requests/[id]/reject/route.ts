@@ -5,12 +5,13 @@
  * Marks the row 'rejected' and notifies the requester so they can fix
  * and resubmit. Mirrors the vendor refund reject path (v3.74.177).
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin"])
+const PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
 
 export async function POST(
   request: NextRequest,

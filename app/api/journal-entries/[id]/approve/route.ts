@@ -25,6 +25,7 @@
  * وفصل المهام مطلقٌ: **لا أحد يعتمد قيداً أنشأه بنفسه**، ولو كان مالكاً.
  * ═══════════════════════════════════════════════════════════════════════════
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
@@ -36,7 +37,7 @@ const norm = (v: unknown) => String(v || "").trim().toLowerCase()
 function approversFor(creatorRole: string): Set<string> {
   switch (norm(creatorRole)) {
     case "accountant":
-      return new Set(["owner", "admin"])
+      return new Set([...SENIOR_ROLES])
     default:
       // المالك لا يحتاج اعتماداً؛ وأى دورٍ آخر لا حقّ له فى القيد أصلاً،
       // فمسودَّته — إن وُجدت من إصدارٍ سابق — لا تُعتمد إلا بقرار المالك.

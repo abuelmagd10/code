@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
@@ -62,7 +63,7 @@ export async function POST(
     }
 
     // v3.74.115 - permission gate (needs the request row to compare ids).
-    const isBoard = ["owner", "admin"].includes(role)
+    const isBoard = isSeniorRole(role)
     const isRequester = (refundReq as any).requested_by === user.id
     if (!isBoard && !isRequester) {
       return NextResponse.json({

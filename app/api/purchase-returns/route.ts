@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     // بدون هذا كانت أدوار الاطلاع (مدير الفرع) تستطيع الإنشاء عبر الـ API.
     {
       const role = String(context.member.role || "")
-      if (!["owner", "admin"].includes(role)) {
+      if (!isSeniorRole(role)) {
         const adminDb = createServiceClient()
         const { data: perm } = await adminDb
           .from("company_role_permissions")

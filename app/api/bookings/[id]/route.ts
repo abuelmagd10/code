@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
@@ -201,7 +202,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         .eq('user_id', user.id)
         .maybeSingle()
       const role = String((mem as any)?.role || '')
-      const isManagement = ['owner', 'admin'].includes(role)
+      const isManagement = isSeniorRole(role)
       if (!isManagement) {
         const { data: bk } = await supabase
           .from('bookings')

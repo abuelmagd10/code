@@ -1,9 +1,10 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError } from "@/lib/api-security-enhanced"
 import { getDailyIncomeByBranch } from "@/lib/dashboard-daily-income"
 
-const PRIVILEGED_ROLES = ["owner", "admin"]
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 /**
  * GET /api/dashboard-daily-income

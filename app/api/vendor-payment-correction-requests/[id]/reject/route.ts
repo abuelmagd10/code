@@ -1,6 +1,7 @@
 /**
  * v3.74.127 — reject a vendor payment correction request. Owner/GM only.
  */
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
@@ -23,7 +24,7 @@ export async function POST(
       .from("company_members").select("role")
       .eq("user_id", user.id).eq("company_id", companyId).maybeSingle()
     const role = String((member as any)?.role || "")
-    if (!["owner", "admin"].includes(role)) {
+    if (!isSeniorRole(role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

@@ -4,6 +4,7 @@
  * GET /api/warehouses - جلب المستودعات مع تطبيق الحوكمة
  * POST /api/warehouses - إنشاء مستودع جديد مع الحوكمة
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
@@ -159,7 +160,7 @@ export async function POST(request: NextRequest) {
     // v3.74.981 — كان الشرط ['admin','gm']: و«gm» اسمٌ لا تقبله القاعدة،
     // **والمالكُ نفسُه لم يكن فيه** فيُمنع من إنشاء مخزنٍ فى شركته.
     // والملفُّ يناقض نفسَه: قائمةُ القراءة أعلاه تضمّ owner صريحاً.
-    if (!['owner', 'admin'].includes(governance.role)) {
+    if (!isSeniorRole(governance.role)) {
       return NextResponse.json({ 
         error: "Insufficient permissions",
         error_ar: "صلاحيات غير كافية" 

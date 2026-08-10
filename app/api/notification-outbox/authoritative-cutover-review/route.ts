@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 
 import { apiGuard } from "@/lib/core/security/api-guard"
@@ -8,7 +9,7 @@ import {
 import { NotificationOutboxAuthoritativeCutoverReviewService } from "@/lib/outbox/notification-outbox-authoritative-cutover-review.service"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const CUTOVER_REVIEW_ROLES = new Set(["owner", "admin"])
+const CUTOVER_REVIEW_ROLES = new Set([...SENIOR_ROLES])
 
 const getParam = (params: URLSearchParams, ...names: string[]) => {
   for (const name of names) {

@@ -7,12 +7,13 @@
  *
  * Only owner / general_manager may execute (mirrors the sales-side rule).
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
 
-const APPROVER_ROLES = new Set(["owner", "admin"])
+const APPROVER_ROLES = new Set([...SENIOR_ROLES])
 
 export async function POST(
   request: NextRequest,

@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 
 import { apiGuard } from "@/lib/core/security/api-guard"
@@ -7,7 +8,7 @@ import {
 import { NotificationOutboxDispatcherService } from "@/lib/outbox/notification-outbox-dispatcher.service"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const CANARY_CONTROL_ROLES = new Set(["owner", "admin"])
+const CANARY_CONTROL_ROLES = new Set([...SENIOR_ROLES])
 
 const asNullableString = (value: unknown) => {
   const normalized = String(value || "").trim()

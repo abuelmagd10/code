@@ -5,6 +5,7 @@
  * - إذا كانت المواد متوفرة → اعتماد وبدء أمر الإنتاج
  * - إذا كانت المواد غير كافية → إشعار للأدوار العليا + محاسب الفرع + رفض
  */
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
@@ -181,7 +182,7 @@ export async function POST(
     }
 
     const role = String(memberRow.role || "").trim().toLowerCase()
-    const companyWideRoles = new Set(["owner", "admin"])
+    const companyWideRoles = new Set([...SENIOR_ROLES])
     if (!companyWideRoles.has(role)) {
       const scopedWarehouseId = memberRow.warehouse_id || null
       const scopedBranchId = memberRow.branch_id || null
@@ -251,7 +252,7 @@ export async function POST(
           { status: 403 }
         )
       }
-    } else if (!["owner", "admin"].includes(role)) {
+    } else if (!isSeniorRole(role)) {
       return NextResponse.json(
         { success: false, error: "لا مسؤول مخزن معيّن لهذا المخزن، فالإخراج للإدارة" },
         { status: 403 }

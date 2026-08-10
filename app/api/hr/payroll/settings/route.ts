@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest } from "next/server"
 import { createClient as createSSR } from "@/lib/supabase/server"
 import { secureApiRequest } from "@/lib/api-security"
@@ -46,7 +47,7 @@ export async function PUT(req: NextRequest) {
             requireAuth: true,
             requireCompany: true,
             requirePermission: { resource: "hr", action: "write" },
-            allowRoles: ["owner", "admin"]
+            allowRoles: [...SENIOR_ROLES]
         })
 
         if (error) return error

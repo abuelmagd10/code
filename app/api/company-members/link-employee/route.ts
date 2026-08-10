@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { secureApiRequest } from "@/lib/api-security"
@@ -8,7 +9,7 @@ export async function POST(req: NextRequest) {
     const { user, companyId, error } = await secureApiRequest(req, {
       requireAuth: true,
       requireCompany: true,
-      allowRoles: ["owner", "admin"],
+      allowRoles: [...SENIOR_ROLES],
     })
 
     if (error) return error

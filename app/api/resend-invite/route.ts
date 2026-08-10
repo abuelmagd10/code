@@ -1,4 +1,4 @@
-import { roleLabel } from "@/lib/roles"
+import { roleLabel, isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         .eq("company_id", invitation.company_id)
         .eq("user_id", user.id)
         .maybeSingle()
-      const isAdmin = ["owner","admin"].includes(String(member?.role || ""))
+      const isAdmin = isSeniorRole(String(member?.role || ""))
       if (!isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     } catch {}
 

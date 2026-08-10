@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { apiGuard } from '@/lib/core'
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
     // member WITH a branch_id is locked to their branch. Fixes the calendar being
     // empty for an owner whose membership carries a branch_id.
     const memberRole = String((member as any)?.role ?? '')
-    const isCompanyWide = ['owner', 'admin'].includes(memberRole)
+    const isCompanyWide = isSeniorRole(memberRole)
     const isBranchScoped = !isCompanyWide && !!member?.branch_id
     if (isBranchScoped) {
       query = query.eq('branch_id', member.branch_id)

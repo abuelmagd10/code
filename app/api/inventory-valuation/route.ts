@@ -19,6 +19,7 @@
  * 
  * راجع: docs/OPERATIONAL_REPORTS_GUIDE.md
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { attachProductCosts } from "@/lib/product-costs"
 import { NextRequest, NextResponse } from "next/server"
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
       requireCompany: true,
       requireBranch: true,
       requirePermission: { resource: "financial_reports", action: "read" },
-      allowedRoles: ['owner', 'admin'],
+      allowedRoles: [...SENIOR_ROLES],
       supabase: authSupabase // ✅ تمرير supabase client
     })
 

@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { apiGuard } from '@/lib/core/security/api-guard';
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   // 2. Role Check (Owner or Admin only for financial period locking)
   const memberRole = context!.member?.role;
-  if (!['owner', 'admin'].includes(memberRole)) {
+  if (!isSeniorRole(memberRole)) {
     return ErrorHandler.handle(
       ErrorHandler.forbidden('إغلاق الفترات المالية متاح للمالك والمدير فقط'),
       context!.correlationId

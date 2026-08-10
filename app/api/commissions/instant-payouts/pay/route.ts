@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { NextRequest } from 'next/server';
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
             .eq('user_id', user.id)
             .single();
 
-        if (!companyMember || !['owner', 'admin'].includes(companyMember.role)) {
+        if (!companyMember || !isSeniorRole(companyMember.role)) {
             return NextResponse.json(
                 { error: 'Forbidden: Only Owner/Admin can pay commissions' },
                 { status: 403 }

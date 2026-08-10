@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from 'next/server'
 import { secureApiRequest } from '@/lib/api-security'
 
@@ -8,7 +9,7 @@ import { secureApiRequest } from '@/lib/api-security'
  * المستهلك الوحيد شاشة الإعدادات (TooltipManager) — فصار المسار خلف
  * مصادقة + دور إدارى، بنفس أسلوب بقية مسارات الإعدادات.
  */
-const ALLOWED_ROLES = ['owner', 'admin']
+const ALLOWED_ROLES = [...SENIOR_ROLES]
 
 async function requireAdmin(request: NextRequest) {
   const { user, member, error } = await secureApiRequest(request, {

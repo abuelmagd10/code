@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
@@ -41,7 +42,7 @@ export async function POST(
         // v3.74.982 — قرارُ المالك: المحاسبُ قد يكون هو من أنشأ الدورة، فلا
         // يعتمد عملَ نفسه. الاعتمادُ للمالك أو المدير العام وحدَهما، والإنشاءُ
         // والترحيلُ والصرفُ تبقى للمحاسب.
-        if (!companyMember || !['owner', 'admin'].includes(companyMember.role)) {
+        if (!companyMember || !isSeniorRole(companyMember.role)) {
             return NextResponse.json(
                 { error: 'ممنوع: اعتماد دورة العمولات للمالك أو المدير العام فقط' },
                 { status: 403 }

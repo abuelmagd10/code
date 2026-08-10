@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
@@ -235,7 +236,7 @@ export async function POST(request: NextRequest) {
       }
 
       // التحقق من الصلاحية للتعديل الكامل
-      const isOwnerOrAdmin = ["owner", "admin"].includes(member.role || "")
+      const isOwnerOrAdmin = isSeniorRole(member.role || "")
       const isCreator = customer.created_by_user_id === user.id
 
       let hasRolePermission = false

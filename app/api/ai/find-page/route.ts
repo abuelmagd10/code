@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { secureApiRequest } from "@/lib/api-security-enhanced"
 import { createClient } from "@/lib/supabase/server"
@@ -86,7 +87,7 @@ async function buildGovernanceContext(
   cachedRole: string | null
 ): Promise<GovernanceContext> {
   const role = String(cachedRole || "").trim().toLowerCase()
-  const isFullAccess = ["owner", "admin"].includes(role)
+  const isFullAccess = isSeniorRole(role)
 
   if (isFullAccess) {
     return {

@@ -10,13 +10,14 @@
  * page approver acts on; once approved, the suppliers page execute step
  * detects source_type='pre_receipt' and calls executePreReceiptRefund.
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreReceiptRefund } from "@/lib/pre-receipt-refund"
 
 const REQUEST_ROLES = new Set(["owner","admin","manager","accountant"])
-const SELF_EXECUTE_ROLES = new Set(["owner","admin"])
+const SELF_EXECUTE_ROLES = new Set([...SENIOR_ROLES])
 
 export async function POST(
   request: NextRequest,

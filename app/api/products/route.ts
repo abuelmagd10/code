@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { attachProductCosts } from "@/lib/product-costs"
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     // Company-wide (may pick any branch + trust submitted accounts): owner /
     // admin / general_manager. Branch-scoped (forced to their own branch +
     // server-resolved accounts): manager, purchasing_officer.
-    const isCompanyLevelAdmin = ["owner", "admin"].includes(member.role)
+    const isCompanyLevelAdmin = isSeniorRole(member.role)
     const isNormalRole = !isCompanyLevelAdmin
 
     // 2️⃣ Enforce role constraints

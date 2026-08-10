@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
         .eq("user_id", userId)
         .maybeSingle()
 
-      if (!requesterMember || !["owner", "admin"].includes(requesterMember.role)) {
+      if (!requesterMember || !isSeniorRole(requesterMember.role)) {
         return forbiddenError("ليست لديك صلاحية لتغيير كلمة مرور هذا المستخدم")
       }
 

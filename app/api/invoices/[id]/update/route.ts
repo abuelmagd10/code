@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
@@ -37,7 +38,7 @@ export async function POST(
     // Booking-linked invoices stay blocked for everyone inside
     // SalesInvoiceUpdateCommandService.assertNotBookingLinked (also
     // service-role, so RLS-proof).
-    const SO_EDIT_PRIVILEGED_ROLES = new Set(["owner", "admin"])
+    const SO_EDIT_PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
     const memberRole = String(context.member?.role || "").toLowerCase()
     if (!SO_EDIT_PRIVILEGED_ROLES.has(memberRole)) {
       const { data: linkRow, error: linkError } = await adminSupabase

@@ -4,6 +4,7 @@
  *
  * POST: نقل ملكية العملاء/الأوامر من موظف لآخر
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     // 🔐 v3.74.67 — Tightened: only Owner + General Manager can use the
     // permission transfer/share workflow. Admin removed at the user's
     // explicit request — keep this surface narrow.
-    const allowedRoles = ["owner", "admin"]
+    const allowedRoles = [...SENIOR_ROLES]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }
@@ -161,7 +162,7 @@ export async function POST(request: Request) {
       // senior themselves) got back their own request. Now we look up
       // each individual approver from company_members, EXCLUDE the
       // submitter, and insert a per-user notification (assigned_to_user).
-      const approverRoles = ["owner", "admin"]
+      const approverRoles = [...SENIOR_ROLES]
       try {
         const { data: approvers } = await supabase
           .from("company_members")

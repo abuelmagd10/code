@@ -11,6 +11,7 @@
  * Allowed roles: owner / admin / general_manager. The accountant who
  * filed the request cannot approve their own.
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
@@ -18,7 +19,7 @@ import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib
 import { createServiceClient } from "@/lib/supabase/server"
 import { CustomerRefundCommandService } from "@/lib/services/customer-refund-command.service"
 
-const PRIVILEGED_ROLES = new Set(["owner", "admin"])
+const PRIVILEGED_ROLES = new Set([...SENIOR_ROLES])
 
 export async function POST(
   request: NextRequest,

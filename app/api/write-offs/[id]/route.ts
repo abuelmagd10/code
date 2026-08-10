@@ -5,6 +5,7 @@
  * PATCH /api/write-offs/[id] - تحديث إهلاك مع التحقق من الصلاحيات
  * DELETE /api/write-offs/[id] - حذف إهلاك مع التحقق من الصلاحيات
  */
+import { isSeniorRole } from "@/lib/roles"
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
@@ -91,7 +92,7 @@ export async function PATCH(
 
       const isOwner = companyData?.user_id === user.id
       const userRole = isOwner ? "owner" : (memberData?.role || "viewer")
-      const canEditApproved = userRole === 'owner' || userRole === 'admin'
+      const canEditApproved = isSeniorRole(userRole)
 
       if (!canEditApproved) {
         return NextResponse.json(
@@ -197,7 +198,7 @@ export async function DELETE(
 
       const isOwner = companyData?.user_id === user.id
       const userRole = isOwner ? "owner" : (memberData?.role || "viewer")
-      const canDeleteApproved = userRole === 'owner' || userRole === 'admin'
+      const canDeleteApproved = isSeniorRole(userRole)
 
       if (!canDeleteApproved) {
         return NextResponse.json(

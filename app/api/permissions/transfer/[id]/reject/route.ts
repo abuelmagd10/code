@@ -10,6 +10,7 @@
  * require a second pair of eyes; if you want to cancel your own, we
  * can add a separate /cancel endpoint later).
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
@@ -20,7 +21,7 @@ export const dynamic = "force-dynamic"
 
 // v3.74.67 — tightened: only Owner + General Manager can approve/reject
 // permission transfers. Admin removed at the user's explicit request.
-const ALLOWED_ROLES = ["owner", "admin"] as const
+const ALLOWED_ROLES = [...SENIOR_ROLES] as const
 
 export async function POST(
   request: Request,

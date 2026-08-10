@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     // 1. owner و admin يمكنهم حذف أي عميل
     // 2. الموظف يمكنه حذف العملاء الذين أنشأهم فقط
     // 3. أو إذا كانت صلاحية الحذف ممنوحة له في جدول الصلاحيات
-    const isOwnerOrAdmin = ["owner", "admin"].includes(member.role || "")
+    const isOwnerOrAdmin = isSeniorRole(member.role || "")
     const isCreator = customer.created_by_user_id === user.id
 
     // التحقق من جدول الصلاحيات

@@ -1,3 +1,4 @@
+import { isSeniorRole, SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
@@ -29,7 +30,7 @@ export async function POST(
       .eq("company_id", companyId)
       .maybeSingle()
     const role = String((member as any)?.role || "")
-    if (!["owner", "admin"].includes(role)) {
+    if (!isSeniorRole(role)) {
       return NextResponse.json({
         error: "Forbidden: only owner/general manager may approve refund requests"
       }, { status: 403 })
@@ -64,7 +65,7 @@ export async function POST(
       p_company_id: companyId,
       p_created_by: refundReq.requested_by || refundReq.created_by || null,
       p_approver: user.id,
-      p_approver_roles: ["owner", "admin"],
+      p_approver_roles: [...SENIOR_ROLES],
     })
     // ولا يُتخطّى الفحصُ صامتاً إن سقط النداءُ نفسُه.
     if (sodCallError) {

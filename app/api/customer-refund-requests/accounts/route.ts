@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
       .single()
 
     // v3.74.35: 'accountant' removed — accountants are now branch-scoped here.
-    const isPrivileged = ["owner", "admin"].includes(member?.role || "")
+    const isPrivileged = isSeniorRole(member?.role || "")
 
     // Fetch cash/bank accounts
     let query = supabase

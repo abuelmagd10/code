@@ -1,3 +1,4 @@
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createClient as createSSR } from "@/lib/supabase/server"
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
       .eq("user_id", user.id)
       .single()
 
-    if (!member || !['owner', 'admin'].includes(member.role)) {
+    if (!member || !isSeniorRole(member.role)) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 })
     }
 

@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
@@ -6,7 +7,7 @@ import { apiGuard, asyncAuditLog, ErrorHandler, ERPError } from "@/lib/core"
 import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-const PRIVILEGED_ROLES = ['owner', 'admin']
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 export async function GET(request: NextRequest) {
   try {
@@ -374,7 +375,7 @@ export async function POST(req: NextRequest) {
     // automatically with the same totals + items so the existing
     // sync trigger keeps the SO in step with the invoice (status,
     // returned_amount, etc.) afterwards. Other roles still need a SO.
-    const AUTO_SO_ROLES = new Set(['owner', 'admin'])
+    const AUTO_SO_ROLES = new Set([...SENIOR_ROLES])
     if (!invoiceData.sales_order_id && AUTO_SO_ROLES.has(String(member.role || '').toLowerCase())) {
       const soDate = invoiceData.invoice_date || new Date().toISOString().slice(0, 10)
       const soStatus = invoiceData.status || 'draft'

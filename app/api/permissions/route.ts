@@ -5,6 +5,7 @@
  * GET: جلب الصلاحيات المشتركة والمنقولة
  * POST: إنشاء مشاركة صلاحيات جديدة
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
@@ -164,7 +165,7 @@ export async function POST(request: Request) {
 
     // 🔐 v3.74.67 — Tightened: only Owner + General Manager can grant/share
     // permissions. Admin removed at the user's explicit request.
-    const allowedRoles = ["owner", "admin"]
+    const allowedRoles = [...SENIOR_ROLES]
     if (!member || !allowedRoles.includes(member.role)) {
       return NextResponse.json({ error: "غير مصرح بهذه العملية" }, { status: 403 })
     }

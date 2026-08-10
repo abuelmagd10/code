@@ -6,13 +6,14 @@
  * - الأدوار المميزة (owner/admin/general_manager): يمكنهم طلب أي فرع أو الشركة كاملة
  * - باقي الأدوار: فرعهم فقط (branch_id من العضوية)
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createServerClient } from "@/lib/supabase/server"
 import { secureApiRequest, serverError, badRequestError, forbiddenError } from "@/lib/api-security-enhanced"
 import { getGLSummary } from "@/lib/dashboard-gl-summary"
 
-const PRIVILEGED_ROLES = ["owner", "admin"]
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 export async function GET(request: NextRequest) {
   try {

@@ -1,3 +1,4 @@
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 
 import { apiGuard } from "@/lib/core/security/api-guard"
@@ -8,7 +9,7 @@ import {
 import { NotificationOutboxAuthoritativeReadinessService } from "@/lib/outbox/notification-outbox-authoritative-readiness.service"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const READINESS_CONTROL_ROLES = new Set(["owner", "admin"])
+const READINESS_CONTROL_ROLES = new Set([...SENIOR_ROLES])
 
 const getParam = (params: URLSearchParams, ...names: string[]) => {
   for (const name of names) {

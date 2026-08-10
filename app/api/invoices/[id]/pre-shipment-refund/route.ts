@@ -8,13 +8,14 @@
  *
  * mode (cancel_invoice / keep_open) is stored in the metadata jsonb.
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
 import { executePreShipmentRefund } from "@/lib/pre-shipment-refund"
 
 const REQUEST_ROLES = new Set(["owner","admin","manager","accountant"])
-const SELF_EXECUTE_ROLES = new Set(["owner","admin"])
+const SELF_EXECUTE_ROLES = new Set([...SENIOR_ROLES])
 
 export async function POST(
   request: NextRequest,

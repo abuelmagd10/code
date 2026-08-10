@@ -9,6 +9,7 @@
  *
  * الأدوار المسموح لها: admin, owner, general_manager, manager
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { asyncAuditLog } from "@/lib/core"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
@@ -22,7 +23,7 @@ import {
 // v3.74.983 — قرارُ المالك: اعتمادُ صرف المواد إداريّاً للمالك أو المدير
 // العام. ومديرُ الفرع يخرج لا سلباً بل ترتيباً: القرارُ للإدارة، وتسليمُ
 // المادّة لأمين المخزن — وكان يملك الخطوتين معاً، وذاك هو العطب.
-const MANAGEMENT_ROLES = ["owner", "admin"]
+const MANAGEMENT_ROLES = [...SENIOR_ROLES]
 
 export async function POST(
   request: NextRequest,

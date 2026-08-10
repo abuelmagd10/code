@@ -3,6 +3,7 @@
  *
  * SoD: requester OR owner/GM may execute, but the approver may NOT also execute.
  */
+import { isSeniorRole } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
@@ -42,7 +43,7 @@ export async function POST(
       .from("company_members").select("role")
       .eq("user_id", user.id).eq("company_id", companyId).maybeSingle()
     const role = String((member as any)?.role || "")
-    const isOwnerOrGm = ["owner", "admin"].includes(role)
+    const isOwnerOrGm = isSeniorRole(role)
     const isRequester = user.id === requesterId
 
     if (!isRequester && !isOwnerOrGm) {

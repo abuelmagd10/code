@@ -21,6 +21,7 @@
  * «لا» — ولو اختلفت الصلاحيتان لأمكن لمن لا يعتمد أن يُعطّل.
  * ═══════════════════════════════════════════════════════════════════════════
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { apiGuard } from "@/lib/core/security/api-guard"
 import { createServiceClient } from "@/lib/supabase/server"
@@ -31,7 +32,7 @@ const norm = (v: unknown) => String(v || "").trim().toLowerCase()
 function approversFor(creatorRole: string): Set<string> {
   switch (norm(creatorRole)) {
     case "accountant":
-      return new Set(["owner", "admin"])
+      return new Set([...SENIOR_ROLES])
     default:
       return new Set(["owner"])
   }

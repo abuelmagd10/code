@@ -4,6 +4,7 @@
  * GET /api/sales-orders - جلب أوامر البيع مع تطبيق الحوكمة
  * POST /api/sales-orders - إنشاء أمر بيع جديد مع الحوكمة
  */
+import { SENIOR_ROLES } from "@/lib/roles"
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
@@ -16,7 +17,7 @@ import { findForeignCompanyIds } from "@/lib/company-scope-guard"
 import { arabicReason } from "@/lib/error-messages"
 
 // 🔐 الأدوار المميزة التي يمكنها فلترة الفروع
-const PRIVILEGED_ROLES = ['owner', 'admin']
+const PRIVILEGED_ROLES = [...SENIOR_ROLES]
 
 /**
  * GET /api/sales-orders
