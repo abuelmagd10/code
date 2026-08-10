@@ -1,5 +1,6 @@
 // app/inventory/goods-receipt/page.tsx
 "use client"
+import { isSeniorRole } from "@/lib/roles"
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
@@ -197,7 +198,7 @@ export default function GoodsReceiptPage() {
 
   const isOwnerAdmin = useMemo(() => {
     const role = String(userContext?.role || "").trim().toLowerCase()
-    return role === "owner" || role === "admin" 
+    return isSeniorRole(role)
   }, [userContext])
 
   useEffect(() => {
@@ -495,7 +496,7 @@ export default function GoodsReceiptPage() {
         }
         // ✅ للأدوار الإدارية: تحديث selectedBranchId و selectedWarehouseId إذا كانت الفاتورة في فرع/مخزن مختلف
         const role = String(userContext.role || "").trim().toLowerCase()
-        if ((role === "owner" || role === "admin" ) && billData.branch_id && billData.warehouse_id) {
+        if (isSeniorRole(role) && billData.branch_id && billData.warehouse_id) {
           // ✅ استخدام refs للتحقق من القيم الحالية بدلاً من dependencies لتجنب re-runs
           const currentBranchId = selectedBranchIdRef.current
           const currentWarehouseId = selectedWarehouseIdRef.current
@@ -592,8 +593,8 @@ export default function GoodsReceiptPage() {
 
       // دور المستخدم الحالي
       const role = String(context.role || "").trim().toLowerCase()
-      const isSeniorRole = role === "owner" || role === "admin" 
-      const isCompanyWideHistory = isReceivedTab && isSeniorRole
+      const isSenior = isSeniorRole(role)
+      const isCompanyWideHistory = isReceivedTab && isSenior
 
       // فقط أدوار store_manager / owner / admin / general_manager / manager ترى شاشة اعتماد الاستلام
       if (!["store_manager", "owner", "admin", "manager"].includes(role)) {
@@ -606,11 +607,11 @@ export default function GoodsReceiptPage() {
 
       // فرع ومخزن العمل الفعلي (للأدوار الإدارية يمكن التبديل)
       const effectiveBranchId =
-        !isCompanyWideHistory && isSeniorRole && selectedBranchId
+        !isCompanyWideHistory && isSenior && selectedBranchId
           ? selectedBranchId
           : context.branch_id
       const effectiveWarehouseId =
-        !isCompanyWideHistory && isSeniorRole && selectedWarehouseId
+        !isCompanyWideHistory && isSenior && selectedWarehouseId
           ? selectedWarehouseId
           : context.warehouse_id
 

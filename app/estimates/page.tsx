@@ -282,9 +282,7 @@ export default function EstimatesPage() {
   ];
 
   // Privileged role flag — used to gate BranchFilter + Employee filter
-  const canViewAllEstimates = ['owner', 'admin'].includes(
-    (userContext?.role || '').toLowerCase()
-  );
+  const canViewAllEstimates = isSeniorRole((userContext?.role || '').toLowerCase());
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);

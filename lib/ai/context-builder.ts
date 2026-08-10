@@ -1287,7 +1287,5 @@ function applyScopedFilters(
 }
 
 function hasFullScope(role?: string | null) {
-  return ["owner", "admin"].includes(
-    String(role || "").trim().toLowerCase()
-  )
+  return isSeniorRole(String(role || "").trim().toLowerCase())
 }
