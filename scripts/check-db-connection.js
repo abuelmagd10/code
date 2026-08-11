@@ -38,7 +38,7 @@ if (!url) {
 
 let Client;
 try {
-  ({ Client } = require("pg"));
+  ({ Client } = require("./lib/live-db"));
 } catch {
   console.error("X npm install pg --save-dev");
   process.exit(1);

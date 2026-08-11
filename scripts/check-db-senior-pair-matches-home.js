@@ -111,7 +111,7 @@ if (!url) {
   process.exit(0)
 }
 let Client
-try { ({ Client } = require("pg")) } catch { console.error("X npm install pg --save-dev"); process.exit(1) }
+try { ({ Client } = require("./lib/live-db")) } catch { console.error("X npm install pg --save-dev"); process.exit(1) }
 
 ;(async () => {
   const c = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })

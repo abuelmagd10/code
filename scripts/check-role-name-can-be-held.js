@@ -206,7 +206,7 @@ if (!url) {
 }
 
 let Client
-try { ({ Client } = require("pg")) } catch { console.error("X npm install pg --save-dev"); process.exit(1) }
+try { ({ Client } = require("./lib/live-db")) } catch { console.error("X npm install pg --save-dev"); process.exit(1) }
 
 const ROOT = process.cwd()
 function walk(d, o) {

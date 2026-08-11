@@ -168,7 +168,7 @@ if (require.main !== module) return
   }
 
   let Client
-  try { ({ Client } = require("pg")) } catch {
+  try { ({ Client } = require("./lib/live-db")) } catch {
     console.error("X npm install pg --save-dev"); process.exit(1)
   }
 

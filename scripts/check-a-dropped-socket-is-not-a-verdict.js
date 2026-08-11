@@ -50,6 +50,28 @@ const fs = require("fs")
 const path = require("path")
 const net = require("net")
 
+// ═══ وضعُ الفريسة: يُشغَّلُ هذا الملفُّ نفسُه حارساً وهميّاً ═══
+// **فخٌّ لا يُشغَّل ليس فخّاً** — وإعادةُ التشغيلِ لا تُقاسُ إلّا بتشغيلٍ حقيقىّ،
+// فيصيرُ الحارسُ فريستَه: يُستدعى بمتغيّرِ بيئةٍ فيتصرّفُ كحارسٍ يسقط.
+if (process.env.ERB_SOCKET_PROBE) {
+  const mode = process.env.ERB_SOCKET_PROBE
+  const cf = process.env.ERB_SOCKET_PROBE_COUNTER
+  const n = (Number(fs.readFileSync(cf, "utf8")) || 0) + 1
+  fs.writeFileSync(cf, String(n))
+  const { Client } = require("./lib/live-db")
+  ;(async () => {
+    if (mode === "clean") return
+    if (mode === "defect") {
+      throw Object.assign(new Error('relation "x" does not exist'), { code: "42P01", severity: "ERROR" })
+    }
+    if (mode !== "always" && n >= 2) return // الشبكةُ عادت
+    // منفذٌ مغلقٌ عمداً: ECONNREFUSED — انقطاعُ اتّصالٍ بلا خادم.
+    const c = new Client({ connectionString: "postgres://u:p@127.0.0.1:1/d", ssl: false })
+    await c.connect()
+  })().catch((e) => { console.error("X " + ((e && e.message) || e)); process.exit(1) })
+  return
+}
+
 const ROOT = path.resolve(__dirname, "..")
 const HOME_REL = "scripts/lib/live-db.js"
 const HOME_ABS = path.join(ROOT, HOME_REL)
@@ -76,6 +98,12 @@ function judgeOwnVocabulary(files, read) {
   return out
 }
 
+/** (د) ولا حارسَ يأخذُ عميلَه من `pg` رأساً — العميلُ من البيتِ وحدَه. */
+function judgeRawClient(file, src) {
+  if (!/require\(\s*["']pg["']\s*\)/.test(String(src || ""))) return null
+  return file + " ينادى pg رأساً — فعميلُه لا يشهدُ على موتِ المقبس"
+}
+
 /** (ب) البيتُ يحكمُ بالخاصّيّةِ لا بالعبارة. */
 function judgeHomeIsProperty(src) {
   const missing = []
@@ -83,6 +111,9 @@ function judgeHomeIsProperty(src) {
   if (!/_queryable/.test(src)) missing.push("لا يسأل: هل ماتَ المقبس؟ (_queryable)")
   if (!/08\[0-9A-Z\]\{3\}|SQLSTATE_CONNECTION/.test(src)) missing.push("لا يعرف صنفَ SQLSTATE للاتّصال (08 / 57P0x)")
   if (!/NET_ERRNO/.test(src)) missing.push("لا يعرف أرقامَ أخطاءِ المقبس")
+  if (!/class Client extends PgClient/.test(src)) missing.push("لا يُصدِّرُ عميلاً يشهدُ على موتِ المقبس")
+  if (!/process\.on\("exit"/.test(src)) missing.push("لا يُعيدُ تشغيلَ الحارسِ الساقطِ على انقطاع")
+  if (!/ERB_GUARD_SOCKET_RETRY/.test(src)) missing.push("بلا علامةٍ تمنعُ الإعادةَ الثانية")
   return missing
 }
 
@@ -185,6 +216,32 @@ async function selftest() {
   const refused = await liveFire("server-says-no", async (c) => c.query("select 1"))
   t("وحين يُجيبُ الخادمُ برأيِه لا يُعادُ القياسُ", refused.attempts, 1)
 
+  // ── وإعادةُ تشغيلِ العمليّةِ كلِّها — بتشغيلٍ حقيقىّ لا بادّعاء ────────
+  const { spawnSync } = require("child_process")
+  const os = require("os")
+  const runProbe = (mode) => {
+    const cf = path.join(os.tmpdir(), "erb_socket_probe_" + mode + ".txt")
+    fs.writeFileSync(cf, "0")
+    const r = spawnSync(process.execPath, [__filename], {
+      env: Object.assign({}, process.env, {
+        ERB_SOCKET_PROBE: mode, ERB_SOCKET_PROBE_COUNTER: cf, ERB_GUARD_SOCKET_RETRY: "",
+      }),
+      encoding: "utf8", timeout: 30000,
+    })
+    return { runs: Number(fs.readFileSync(cf, "utf8")), code: r.status }
+  }
+  const heal = runProbe("drop")
+  t("وحين يسقطُ الاتّصالُ ثمّ تعودُ الشبكةُ يُعادُ التشغيلُ مرّةً", heal.runs, 2)
+  t("ويُعتمَدُ خروجُ التشغيلِ الثانى", heal.code, 0)
+  const stay = runProbe("always")
+  t("وإن لم يعُدْ لا يُعادُ إلّا مرّةً واحدة", stay.runs, 2)
+  t("ثمّ يرفضُ ولا يبتلع", stay.code, 1)
+  const defect = runProbe("defect")
+  t("ولا يُعادُ تشغيلٌ سقطَ بعطبٍ حقيقىّ", defect.runs, 1)
+  t("ويرفضُ كما يجب", defect.code, 1)
+  const clean = runProbe("clean")
+  t("ولا يُعادُ تشغيلٌ نجح", clean.runs, 1)
+
   // ── (ب) البيتُ يحكمُ بالخاصّيّة ─────────────────────────────────────
   t("والبيتُ يحكمُ بالخاصّيّةِ لا بالعبارة",
     judgeHomeIsProperty(fs.readFileSync(HOME_ABS, "utf8")).length, 0)
@@ -201,6 +258,9 @@ async function selftest() {
   t("ويرفضُ حارساً يحكمُ بنفسِه", judgeOwnVocabulary(["check-bad.js"], rd).length, 1)
   t("ويُسمّيه بالاسم", judgeOwnVocabulary(["check-bad.js"], rd)[0], "check-bad.js")
   t("ولا يشتكى من حارسٍ لا شأنَ له بالاتّصال", judgeOwnVocabulary(["check-quiet.js"], rd).length, 0)
+  t("ويرفضُ حارساً ينادى pg رأساً", judgeRawClient("check-x.js", 'const { Client } = require("pg")') !== null, true)
+  t("ويقبلُ حارساً يأخذُ عميلَه من البيت", judgeRawClient("check-x.js", 'const { Client } = require("./lib/live-db")'), null)
+  t("ولا يخدعه ذكرُ pg فى نصّ", judgeRawClient("check-x.js", 'console.log("npm install pg")'), null)
 
   let fail = 0
   for (const [name, got, exp] of cases) {
@@ -242,18 +302,37 @@ async function main() {
     console.error("   — **ولا يُنادى اسمٌ يسكنُه غيرُه**: الحكمُ فى " + HOME_REL + ".")
   }
 
-  // **وحارسٌ لا يعدُّ ما مرَّ لا يعرفُ أنّه فحص** — ويُقال ما لم يُحرَس بعد.
+  // ═══ (د) ولا حارسَ يأخذُ عميلَه من pg رأساً ═══
+  const raw = []
+  for (const f of files) {
+    if (f === SELF) continue
+    const why = judgeRawClient(f, read(f))
+    if (why) raw.push(why)
+  }
+  if (raw.length) {
+    bad++
+    console.error("\nX حارسٌ يفتحُ اتّصالَه بيدِه من pg (" + raw.length + "):")
+    raw.forEach((x) => console.error("   " + x))
+    console.error("   — **ولا يُنادى اسمٌ يسكنُه غيرُه**: العميلُ من " + HOME_REL + ".")
+  }
+
+  // **وحارسٌ لا يعدُّ ما مرَّ لا يعرفُ أنّه فحص**
   const opens = files.filter((f) => {
-    if (f === SELF) return false // الفحصُ ليس الشىءَ الذى يفحصُه
-    const s = read(f) || ""
-    return /new Client\(/.test(s) || CALLS_HOME.test(s)
+    if (f === SELF) return false
+    const s2 = read(f) || ""
+    return /new Client\(/.test(s2) || CALLS_HOME.test(s2)
   })
-  const guarded = opens.filter((f) => CALLS_HOME.test(read(f) || ""))
-  console.log("  حراسٌ يفتحون اتّصالاً حيّاً: " + opens.length +
-    "   ·   يُعيدون القياسَ من البيت: " + guarded.length)
-  if (guarded.length < opens.length) {
-    console.log("  ! و" + (opens.length - guarded.length) + " حارساً ما زال يسقطُ على انقطاعٍ عابرٍ بلا إعادة —")
-    console.log("    مقيسٌ ومسمّى، لا مُدَّعى عليه السلامة. **والطمأنينةُ الكاذبةُ أسوأُ من الغياب.**")
+  const inProcess = opens.filter((f) => /withLiveDatabase/.test(read(f) || ""))
+  const wholeRun = opens.filter((f) => !/withLiveDatabase/.test(read(f) || "") && CALLS_HOME.test(read(f) || ""))
+  const naked = opens.filter((f) => !CALLS_HOME.test(read(f) || ""))
+  console.log("  حراسٌ يفتحون اتّصالاً حيّاً: " + opens.length)
+  console.log("     يُعيدُ القياسَ داخلَ عمليّتِه: " + inProcess.length +
+    "   ·   يُعادُ تشغيلُه كلُّه: " + wholeRun.length +
+    "   ·   بلا حماية: " + naked.length)
+  if (naked.length) {
+    bad++
+    console.error("\nX حارسٌ يفتحُ اتّصالاً حيّاً ولا حمايةَ له من انقطاعٍ عابر (" + naked.length + "):")
+    naked.forEach((f) => console.error("   " + f))
   }
 
   if (bad) process.exit(1)
