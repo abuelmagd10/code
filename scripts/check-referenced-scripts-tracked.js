@@ -55,6 +55,11 @@ if (fs.existsSync(wfDir)) {
 // تذكرها السكربتات نصاً (knowledge/ · docs/ · supabase/schema/).
 // الشرطة البادئة اختيارية: المراجع تُكتب غالباً `root + "/knowledge/…"`.
 const DATA_REF_RE = /["'`]\.?\/?((?:knowledge|docs|supabase\/schema)\/[\w./-]+\.\w{2,4})["'`]/g
+// v3.75.10 — **وبيتٌ يُنادى ولا يُرفَع يسقطُ سقوطَ السكربتِ الغائب.**
+// وُلد `scripts/lib/live-db.js` ينادِيه أربعةُ حراسٍ بـ`require`؛ ولو لم
+// يُضفْ إلى git لقال البناءُ MODULE_NOT_FOUND ولا يعرفُ أحدٌ لماذا. وهذا
+// الطريقُ لم يكن مرئيّاً لهذا الحارس، فصار.
+const LOCAL_REQUIRE_RE = /require\(\s*["'](\.\.?\/[\w./-]+)["']\s*\)/g
 const scriptsDir = path.join(root, "scripts")
 if (fs.existsSync(scriptsDir)) {
   const walkScripts = (dir) => {
@@ -70,6 +75,16 @@ if (fs.existsSync(scriptsDir)) {
         .replace(/(^|[^:])\/\/.*$/gm, "$1")
       for (const m of src.matchAll(DATA_REF_RE)) {
         note(m[1], `${path.relative(root, p)} reads it`)
+      }
+      for (const m of src.matchAll(LOCAL_REQUIRE_RE)) {
+        const target = path.resolve(path.dirname(p), m[1])
+        const cands = [target, target + ".js", target + ".cjs", path.join(target, "index.js")]
+        for (const cand of cands) {
+          if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+            note(path.relative(root, cand).split(path.sep).join("/"), `${path.relative(root, p)} requires it`)
+            break
+          }
+        }
       }
     }
   }

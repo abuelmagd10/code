@@ -133,10 +133,8 @@ if (!url) {
   process.exit(0)
 }
 
-let Client
-try { ({ Client } = require("pg")) } catch {
-  console.error("X npm install pg --save-dev"); process.exit(1)
-}
+// **ولا يُنادى اسمٌ يسكنُه غيرُه** — حكمُ الاتّصالِ وإعادتُه فى بيتٍ واحد.
+const { withLiveDatabase } = require("./lib/live-db")
 
 const problems = []
 const notes = []
@@ -154,33 +152,14 @@ const notes = []
  * فيصير المرورُ عادةً لا برهاناً. فالانقطاعُ العابر يُعاد فيه المحاولةُ
  * مرةً واحدة، **وما عداه يُرفع كما هو**: لا تُبتلع نتيجةُ قياسٍ حقيقية.
  */
-const TRANSIENT = /ECONNRESET|Connection terminated|ETIMEDOUT|EPIPE|socket hang up/i
-
-async function withDatabase(work) {
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    // ⚠️ المحاولةُ الثانية تبدأ من صفحةٍ بيضاء: لو بقيت ملاحظاتُ المحاولة
-    // المقطوعة لأُبلغ عن نصفِ قياسٍ مرتين، **فصار الحارسُ يخترع أعطاباً**.
-    problems.length = 0
-    notes.length = 0
-    const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
-    // بلا هذا المستمع يقتل انقطاعُ المقبس العمليةَ بدل أن يُبلِّغ.
-    client.on("error", (e) => { if (!TRANSIENT.test(String(e && e.message))) console.error(`! pg: ${e.message}`) })
-    try {
-      await client.connect()
-      return await work(client)
-    } catch (e) {
-      const msg = String((e && e.message) || e)
-      if (attempt === 1 && TRANSIENT.test(msg)) {
-        console.log(`! the database connection dropped (${msg}) - measuring again, once.`)
-        try { await client.end() } catch { /* already gone */ }
-        continue
-      }
-      throw e
-    } finally {
-      try { await client.end() } catch { /* already gone */ }
-    }
-  }
-}
+// ⚠️ v3.75.10 — سقطت دفعةٌ على «Client has encountered a connection error and
+// is not queryable»، وهذه العبارةُ لم تكن فى القائمةِ التى كانت هنا. **وشكلُ
+// النصِّ ليس خاصّيّة**: صار الحكمُ فى `scripts/lib/live-db.js` على الخاصّيّةِ
+// نفسِها — هل أجابَ الخادمُ؟ وهل ماتَ المقبس؟
+const withDatabase = (work) => withLiveDatabase(url, work, {
+  // ولا يخترعُ الحارسُ أعطاباً: تُفرَّغُ المُجمِّعاتُ قبلَ كلِّ محاولة.
+  onAttempt: () => { problems.length = 0; notes.length = 0 },
+})
 
 ;(async () => {
   await withDatabase(async (client) => {

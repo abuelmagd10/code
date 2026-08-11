@@ -1,0 +1,263 @@
+#!/usr/bin/env node
+/**
+ * check-a-dropped-socket-is-not-a-verdict.js
+ * **والاتّصالُ المقطوعُ ليس نتيجةَ قياس.**
+ * ---------------------------------------------------------------------------
+ *   node scripts/check-a-dropped-socket-is-not-a-verdict.js
+ *   node scripts/check-a-dropped-socket-is-not-a-verdict.js --selftest
+ *
+ * ═══ الحادثةُ التى وُلد منها ═══
+ *
+ * أُوقفت دفعةُ v3.75.9 — وقاعدةُ البيانات كانت قد قبلت الهجرةَ وتحقّقت —
+ * على سطرٍ واحد:
+ *
+ *     X Client has encountered a connection error and is not queryable
+ *     X حارس رفض: check-purchase-cost-masked-path.js
+ *
+ * ولم يكن فى المشروعِ عطبٌ واحد. الحارسُ نفسُه مرَّ قبلها بدقائقَ على نفسِ
+ * القاعدةِ ونفسِ الكود. وكانت فيه **إعادةُ محاولةٍ مكتوبةٌ سلفاً لهذا الغرضِ
+ * بعينِه** — ولم تعمل، لأنّ حكمَها كان على قائمةِ عباراتٍ رُئيت يوماً:
+ * `ECONNRESET|Connection terminated|ETIMEDOUT|EPIPE|socket hang up`.
+ * ورسالةُ اليوم ليست فيها.
+ *
+ * **وشكلُ النصِّ ليس خاصّيّة.** فُحص طريقُ `pg` فتبيّن أنّ هذه الرسالةَ لا
+ * تُولَدُ إلّا بعدَ موتِ المقبس، وأنّها تأتى بلا `code` وبلا `severity` —
+ * أى **لم يُجب خادمُ القاعدةِ أصلاً**. فصار الحكمُ على الخاصّيّة، وسكن بيتاً
+ * واحداً: `scripts/lib/live-db.js`.
+ *
+ * ═══ ولماذا هذا خطرٌ لا إزعاج ═══
+ *
+ * **وحارسٌ يسقطُ عشوائيّاً يُلتفُّ عليه بعد أسبوع**: يُعادُ تشغيلُه حتّى يمرّ،
+ * فيصيرُ المرورُ عادةً لا برهاناً، ثمّ يُستثنى، ثمّ يموت. فحمايةُ الحارسِ من
+ * الشبكةِ حمايةٌ للفحصِ نفسِه.
+ *
+ * ═══ الخصائصُ المحكومة ═══
+ *
+ * **(أ)** لا حارسَ يُعيدُ محاولةً بحكمٍ من عندِه: كلُّ `check-*.js` فيه حلقةُ
+ *        محاولاتٍ أو يهجّى مفرداتِ أخطاءِ الشبكة، يجب أن ينادىَ البيت.
+ * **(ب)** والبيتُ يحكمُ بالخاصّيّةِ لا بالعبارة: نصُّه يجب أن يسأل عن
+ *        `severity` وعن `_queryable` وعن صنفِ SQLSTATE — وإلّا عاد شكلَ نصّ.
+ * **(ج)** والفخُّ يُشغَّلُ على مقبسٍ حقيقىّ: خادمٌ وهمىٌّ محلّىٌّ يموت، وآخرُ
+ *        يردُّ خطأً من الخادم — فيُقاسُ أنّ الأوّلَ يُعادُ والثانى لا يُعاد.
+ *        **فخٌّ لا يُشغَّل ليس فخّاً.**
+ *
+ * ولا يحتاجُ هذا الحارسُ قاعدةً حيّة: حكمُه على الكودِ وعلى مقبسٍ محلّىّ.
+ * ---------------------------------------------------------------------------
+ */
+"use strict"
+
+const fs = require("fs")
+const path = require("path")
+const net = require("net")
+
+const ROOT = path.resolve(__dirname, "..")
+const HOME_REL = "scripts/lib/live-db.js"
+const HOME_ABS = path.join(ROOT, HOME_REL)
+const SELF = path.basename(__filename)
+
+/** حارسٌ يمسُّ شأنَ الاتّصال: حلقةُ محاولاتٍ أو تهجئةُ رمزِ مقبس. */
+const TOUCHES_RETRY = /attempt\s*(?:<=|<|===|==)\s*\d|ECONNRESET|socket hang up|not queryable/
+const CALLS_HOME = /require\((["'])\.\/lib\/live-db\1\)|require\((["'])\.\.\/lib\/live-db\2\)/
+
+function guardFiles() {
+  return fs.readdirSync(path.join(ROOT, "scripts"))
+    .filter((f) => f.startsWith("check-") && f.endsWith(".js"))
+    .sort()
+}
+
+/** (أ) من يمسُّ شأنَ الاتّصالِ ولا ينادى البيت. */
+function judgeOwnVocabulary(files, read) {
+  const out = []
+  for (const f of files) {
+    const src = read(f)
+    if (src === null) continue
+    if (TOUCHES_RETRY.test(src) && !CALLS_HOME.test(src)) out.push(f)
+  }
+  return out
+}
+
+/** (ب) البيتُ يحكمُ بالخاصّيّةِ لا بالعبارة. */
+function judgeHomeIsProperty(src) {
+  const missing = []
+  if (!/\bseverity\b/.test(src)) missing.push("لا يسأل: هل أجابَ الخادمُ أصلاً؟ (severity)")
+  if (!/_queryable/.test(src)) missing.push("لا يسأل: هل ماتَ المقبس؟ (_queryable)")
+  if (!/08\[0-9A-Z\]\{3\}|SQLSTATE_CONNECTION/.test(src)) missing.push("لا يعرف صنفَ SQLSTATE للاتّصال (08 / 57P0x)")
+  if (!/NET_ERRNO/.test(src)) missing.push("لا يعرف أرقامَ أخطاءِ المقبس")
+  return missing
+}
+
+// ═══════════════════════ الفخُّ الذاتىّ ═══════════════════════
+
+/** خادمٌ وهمىّ: إمّا يموتُ المقبس، أو يردُّ خطأً من الخادمِ برمزِ SQLSTATE. */
+function fakeServer(mode) {
+  return new Promise((resolve) => {
+    const s = net.createServer((sock) => {
+      let started = false
+      sock.on("data", () => {
+        if (mode === "drop-now") { sock.destroy(); return }
+        if (mode === "server-says-no") {
+          const fld = (t, v) => Buffer.concat([Buffer.from(t), Buffer.from(v, "utf8"), Buffer.from([0])])
+          const body = Buffer.concat([
+            fld("S", "FATAL"), fld("V", "FATAL"), fld("C", "28P01"),
+            fld("M", "password authentication failed"), Buffer.from([0]),
+          ])
+          const len = Buffer.alloc(4); len.writeInt32BE(body.length + 4)
+          sock.write(Buffer.concat([Buffer.from("E"), len, body]))
+          setTimeout(() => { try { sock.end() } catch { /* gone */ } }, 20)
+          return
+        }
+        // die-after-startup: يقومُ الاتّصالُ ثمّ يموتُ المقبس — حالةُ اليوم بعينِها
+        if (!started) {
+          started = true
+          const auth = Buffer.alloc(9); auth.write("R", 0); auth.writeInt32BE(8, 1); auth.writeInt32BE(0, 5)
+          const rfq = Buffer.alloc(6); rfq.write("Z", 0); rfq.writeInt32BE(5, 1); rfq.write("I", 5)
+          sock.write(Buffer.concat([auth, rfq]))
+          return
+        }
+        sock.destroy()
+      })
+      sock.on("error", () => { /* الموتُ مقصود */ })
+    })
+    s.on("error", () => { /* لا يُسقط الفخّ */ })
+    s.listen(0, "127.0.0.1", () => resolve(s))
+  })
+}
+
+async function liveFire(mode, work) {
+  const { withLiveDatabase } = require("./lib/live-db")
+  const s = await fakeServer(mode)
+  const url = `postgres://u:p@127.0.0.1:${s.address().port}/d`
+  let attempts = 0
+  let message = ""
+  try {
+    await withLiveDatabase(url, work, { ssl: false, onAttempt: () => { attempts++ } })
+  } catch (e) { message = String((e && e.message) || e) }
+  await new Promise((r) => s.close(r))
+  return { attempts, message }
+}
+
+async function selftest() {
+  const { isConnectionFailure } = require("./lib/live-db")
+  const TODAY = "Client has encountered a connection error and is not queryable"
+  const OLD_VOCABULARY = /ECONNRESET|Connection terminated|ETIMEDOUT|EPIPE|socket hang up/i
+  const cases = []
+  const t = (name, got, exp) => cases.push([name, got, exp])
+
+  // ── الخاصّيّة، فى الاتّجاهين ───────────────────────────────────────────
+  t("يرى رسالةَ اليوم انقطاعاً", isConnectionFailure(new Error(TODAY)), true)
+  t("والمفرداتُ القديمةُ كانت عمياءَ عنها", OLD_VOCABULARY.test(TODAY), false)
+  t("ويرى موتَ المقبسِ من حالِ العميل",
+    isConnectionFailure(new Error("anything at all"), { _queryable: false }), true)
+  t("ويرى رمزَ المقبسِ باسمِه",
+    isConnectionFailure(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })), true)
+  t("ويرى تعذُّرَ الوصول",
+    isConnectionFailure(Object.assign(new Error("x"), { code: "ENOTFOUND" })), true)
+  t("ويرى انقطاعاً قالَه الخادمُ بنفسِه (صنف 08)",
+    isConnectionFailure(Object.assign(new Error("x"), { code: "08006", severity: "FATAL" })), true)
+  t("ويرى إنهاءً بأمرِ المشغِّل (57P01)",
+    isConnectionFailure(Object.assign(new Error("x"), { code: "57P01", severity: "FATAL" })), true)
+
+  // ── ولا يبتلعُ نتيجةَ قياسٍ حقيقيّة ──────────────────────────────────
+  t("ولا يعدُّ خطأَ خادمٍ انقطاعاً",
+    isConnectionFailure(Object.assign(new Error('relation "x" does not exist'), { code: "42P01", severity: "ERROR" })), false)
+  t("ولا خرقَ سياسةِ صفّ",
+    isConnectionFailure(Object.assign(new Error("row-level security"), { code: "42501", severity: "ERROR" })), false)
+  t("ولا استثناءً رفعَه فحصٌ مرجعىّ",
+    isConnectionFailure(Object.assign(new Error("BASELINE FAIL: ..."), { code: "P0001", severity: "ERROR" })), false)
+  t("ولا عطباً فى الحارسِ نفسِه", isConnectionFailure(new TypeError("x is not a function")), false)
+  t("ولا لا-شىء", isConnectionFailure(null), false)
+  t("ولا نصّاً يذكرُ الاتّصالَ فى معنًى آخَر",
+    isConnectionFailure(new Error("connection pool size must be positive")), false)
+
+  // ── (ج) الفخُّ يُشغَّل على مقبسٍ حقيقىّ ──────────────────────────────
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const dead = await liveFire("die-after-startup", async (c) => {
+    c.query("select 1").catch(() => { /* أوّلُ ضحايا الموت */ })
+    await sleep(60)
+    return c.query("select 2")
+  })
+  t("وحين يموتُ المقبسُ بعد قيامِ الاتّصالِ يُعادُ القياسُ مرّةً", dead.attempts, 2)
+  t("وتكونُ رسالتُه هى رسالةَ اليوم بعينِها", dead.message, TODAY)
+
+  const dropped = await liveFire("drop-now", async (c) => c.query("select 1"))
+  t("وحين يسقطُ الاتّصالُ قبلَ قيامِه يُعادُ القياسُ مرّةً", dropped.attempts, 2)
+
+  const refused = await liveFire("server-says-no", async (c) => c.query("select 1"))
+  t("وحين يُجيبُ الخادمُ برأيِه لا يُعادُ القياسُ", refused.attempts, 1)
+
+  // ── (ب) البيتُ يحكمُ بالخاصّيّة ─────────────────────────────────────
+  t("والبيتُ يحكمُ بالخاصّيّةِ لا بالعبارة",
+    judgeHomeIsProperty(fs.readFileSync(HOME_ABS, "utf8")).length, 0)
+  t("ولو صارَ عباراتٍ لقالَها الفحص",
+    judgeHomeIsProperty("const T = /ECONNRESET/i; module.exports = {}").length > 0, true)
+
+  // ── (أ) فى الاتّجاهين ────────────────────────────────────────────────
+  const rd = (f) => ({
+    "check-good.js": 'const {withLiveDatabase} = require("./lib/live-db")\nfor (let attempt = 1; attempt <= 2; attempt++) {}',
+    "check-bad.js": 'const T = /ECONNRESET/i\nfor (let attempt = 1; attempt <= 2; attempt++) {}',
+    "check-quiet.js": 'const x = 1',
+  })[f] ?? null
+  t("ويقبلُ حارساً ينادى البيت", judgeOwnVocabulary(["check-good.js"], rd).length, 0)
+  t("ويرفضُ حارساً يحكمُ بنفسِه", judgeOwnVocabulary(["check-bad.js"], rd).length, 1)
+  t("ويُسمّيه بالاسم", judgeOwnVocabulary(["check-bad.js"], rd)[0], "check-bad.js")
+  t("ولا يشتكى من حارسٍ لا شأنَ له بالاتّصال", judgeOwnVocabulary(["check-quiet.js"], rd).length, 0)
+
+  let fail = 0
+  for (const [name, got, exp] of cases) {
+    const ok = got === exp
+    if (!ok) fail++
+    console.log((ok ? "  ok  " : "  X   ") + name + "  (توقّعتُ " + exp + " فجاء " + got + ")")
+  }
+  if (fail) { console.error("X سقط الفخُّ الذاتىّ فى " + fail + " اتّجاه."); process.exit(1) }
+  console.log("  الفخُّ الذاتىّ: " + cases.length + " اتّجاهاً، كلُّها صحيحة.")
+  process.exit(0)
+}
+
+// ═══════════════════════ الحكمُ على المشروعِ الحىّ ═══════════════════════
+
+async function main() {
+  if (process.argv.includes("--selftest")) return selftest()
+
+  let bad = 0
+  if (!fs.existsSync(HOME_ABS)) {
+    console.error("X بيتُ حكمِ الاتّصالِ غائب: " + HOME_REL)
+    process.exit(1)
+  }
+  const homeSrc = fs.readFileSync(HOME_ABS, "utf8")
+
+  const missing = judgeHomeIsProperty(homeSrc)
+  if (missing.length) {
+    bad++
+    console.error("\nX البيتُ عادَ يحكمُ على شكلِ النصِّ لا على الخاصّيّة:")
+    missing.forEach((m) => console.error("   " + m))
+  }
+
+  const files = guardFiles()
+  const read = (f) => { try { return fs.readFileSync(path.join(ROOT, "scripts", f), "utf8") } catch { return null } }
+  const rogue = judgeOwnVocabulary(files.filter((f) => f !== SELF), read)
+  if (rogue.length) {
+    bad++
+    console.error("\nX حارسٌ يحكمُ على الاتّصالِ بنفسِه بدل البيت (" + rogue.length + "):")
+    rogue.forEach((f) => console.error("   " + f))
+    console.error("   — **ولا يُنادى اسمٌ يسكنُه غيرُه**: الحكمُ فى " + HOME_REL + ".")
+  }
+
+  // **وحارسٌ لا يعدُّ ما مرَّ لا يعرفُ أنّه فحص** — ويُقال ما لم يُحرَس بعد.
+  const opens = files.filter((f) => {
+    if (f === SELF) return false // الفحصُ ليس الشىءَ الذى يفحصُه
+    const s = read(f) || ""
+    return /new Client\(/.test(s) || CALLS_HOME.test(s)
+  })
+  const guarded = opens.filter((f) => CALLS_HOME.test(read(f) || ""))
+  console.log("  حراسٌ يفتحون اتّصالاً حيّاً: " + opens.length +
+    "   ·   يُعيدون القياسَ من البيت: " + guarded.length)
+  if (guarded.length < opens.length) {
+    console.log("  ! و" + (opens.length - guarded.length) + " حارساً ما زال يسقطُ على انقطاعٍ عابرٍ بلا إعادة —")
+    console.log("    مقيسٌ ومسمّى، لا مُدَّعى عليه السلامة. **والطمأنينةُ الكاذبةُ أسوأُ من الغياب.**")
+  }
+
+  if (bad) process.exit(1)
+  console.log("  ok  الاتّصالُ المقطوعُ ليس نتيجةَ قياس — والحكمُ خاصّيّةٌ فى بيتٍ واحد.")
+}
+
+main().catch((e) => { console.error("X " + ((e && e.message) || e)); process.exit(1) })
