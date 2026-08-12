@@ -21,10 +21,13 @@
  * والمفرداتُ تُقرأ من `erp_membership_roles()` — البيتِ الواحد الذى يقرأ القيدَ
  * المُنفَّذ نفسَه — لا من قائمةٍ مكتوبةٍ هنا.
  *
- * ═══ وخطُّ الأساس ═══
+ * ═══ وخطُّ الأساسِ صفر (v3.75.17) ═══
  *
- * الدَّينُ القديمُ **معدودٌ لا مخفىّ**: يمرّ ما دام لا يزيد، ويسقط البناءُ إن
- * زاد موضعٌ واحد. **وصمتٌ عن دَينٍ أسوأُ من دَين.**
+ * وُلد الحارسُ بدَينٍ قدرُه عشرون موضعاً، فنزل إلى أحدَ عشرَ فى v3.75.16، ثمّ
+ * إلى **صفرٍ** فى v3.75.17. فأىُّ موضعٍ جديدٍ **يُسقط البناءَ فوراً** — لا
+ * «لم يزد الدَّين» بعد اليوم.
+ *
+ * **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.**
  * ---------------------------------------------------------------------------
  */
 "use strict"
@@ -44,23 +47,28 @@ const ALIASES = {
   supervisor: "manager",
 }
 
-/** الدَّينُ القائمُ وقتَ كتابة الحارس. الهدفُ تصفيرُه، والبناءُ يسقط إن زاد. */
-// v3.75.16 — نزلَ من **٢٠ إلى ١١**: نُزعت ستُّ إشاراتٍ من **ثلاثِ سياساتِ
-// رؤيةٍ حيّة** (`expenses_update` و`third_party_inventory` إدخالاً وقراءةً).
-// وكلُّ اسمٍ مُزال كان عنصراً فى `cm.role = ANY(ARRAY[...])`، وعمودُ العضويّةِ
-// مقيَّدٌ بالأحدَ عشرَ اسماً — فلا يساويه أبداً. **برهانٌ منطقىٌّ لا عيّنة.**
-//
-// والأحدَ عشرَ الباقيةُ **ليست من جنسٍ واحد، ولا تُكنَسُ بنفسِ الطريقة**:
-//   • ستٌّ فى فحوصٍ مرجعيّةٍ تبحثُ عن النصِّ `'general_manager'` داخلَ تعريفِ
-//     سياسة (`NOT LIKE '%general_manager%'`) — **تسامحٌ فى فحصٍ لا بابُ صلاحيّة**.
-//   • واثنتانِ فرعا `CASE` ميّتانِ فى مساعِدِ الذكاءِ الاصطناعىّ — إزالتُهما
-//     **جراحةٌ بنيويّةٌ** لا نزعُ عنصرٍ من قائمة، فتُؤخَّرُ لدفعةٍ تخصّها.
-//   • وواحدةٌ فى `resync_booking_invoice` **ليست وظيفةً أصلاً**: `'sales'` هناك
-//     **تصنيفُ إشعارٍ** بين `'warning'` و`'action'`. يراها الحارسُ لأنّ اسماً
-//     حيّاً يقعُ فى جوارِها — **والجوارُ ليس انتماءً**، وهذا نقصٌ فى المقياسِ
-//     يُصلَحُ فى الحارسِ لا فى الكود.
-//   • واثنتانِ فى قائمتَى `IN` بدالّتَى الرؤية — تُكنَسانِ آليّاً كالسياسات.
-const BASELINE = Number(process.env.DB_ROLE_NAME_BASELINE ?? 11)
+/**
+ * ═══ والبابُ ما يُقارِن، لا ما يُمرَّر ═══
+ *
+ * الحارسُ يسألُ عن **بابٍ** يشترطُ اسماً لا يشغلُه أحد. وقيمةٌ تُمرَّرُ وسيطةً
+ * إلى دالّةٍ ليست باباً — لا تُقارَنُ بوظيفةٍ ولا تمنعُ أحداً من شىء.
+ *
+ * وهذا **إعلانٌ ضيّقٌ يحملُ برهانَه**، لا استثناءٌ بالشكل:
+ *   • مربوطٌ باسمِ الدالّةِ والرمزِ معاً، لا بنمطِ نصّ؛
+ *   • ولا يُعفى الموضعُ إلّا إذا **بقىَ البرهانُ قائماً** وقتَ الفحص — فلو
+ *     نُقل الرمزُ إلى موضعِ مقارنةٍ عُدَّ باباً وسقطَ البناء؛
+ *   • ولو **اختفى الموضعُ** سقطَ البناءُ أيضاً، لأنّ الإعلانَ صار غطاءً بلا
+ *     سبب. **وإعلانٌ يبقى بعد موتِ سببِه يصيرُ غطاءً.**
+ */
+const NOT_A_DOOR = {
+  "resync_booking_invoice::sales": {
+    why: "'sales' هنا تصنيفُ إشعارٍ يُمرَّرُ إلى create_notification بين 'warning' و'action' — قيمةٌ لا تُقارَنُ بوظيفة.",
+    proof: { kind: "argument-of", callee: "create_notification" },
+  },
+}
+
+/** الدَّينُ القائم. صفرٌ منذ v3.75.17 — ولا يُرفَعُ إلّا بقرارِ صاحبِ المشروع. */
+const BASELINE = Number(process.env.DB_ROLE_NAME_BASELINE ?? 0)
 
 /**
  * مواضعُ الاسم فى نصٍّ واحد: كلُّ سلسلةِ حروفٍ بين علامتَى اقتباس مفردتين
@@ -68,29 +76,78 @@ const BASELINE = Number(process.env.DB_ROLE_NAME_BASELINE ?? 11)
  * **والجوارُ هنا شرطٌ لا حكم**: من غير اسمٍ حىٍّ بجانبه لا يُعدّ الموضعُ باباً.
  */
 function roleLiterals(text, vocabulary) {
-  const lines = String(text || "").split("\n")
+  const body = String(text || "")
+  const lines = body.split("\n")
   const out = []
+  let offset = 0
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
+    const lineStart = offset
+    offset += line.length + 1
     if (line.trim().startsWith("--")) continue
-    const toks = [...line.matchAll(/'([a-z][a-z0-9_]*)'/g)].map((m) => m[1])
-    if (toks.length === 0) continue
+    const matches = [...line.matchAll(/'([a-z][a-z0-9_]*)'/g)]
+    if (matches.length === 0) continue
     const near = lines.slice(Math.max(0, i - 5), i + 6).join("\n")
     const nearHasReal = vocabulary.some((r) => near.includes("'" + r + "'"))
     if (!nearHasReal) continue
-    for (const t of toks) {
+    for (const m of matches) {
+      const t = m[1]
       if (vocabulary.includes(t)) continue
       if (!Object.prototype.hasOwnProperty.call(ALIASES, t)) continue
-      out.push({ line: i + 1, token: t, text: line.trim().slice(0, 100) })
+      out.push({ line: i + 1, token: t, at: lineStart + m.index, text: line.trim().slice(0, 100) })
     }
   }
   return out
+}
+
+/**
+ * هل الرمزُ وسيطةٌ مُمرَّرةٌ إلى الدالّةِ المُعلَنة؟
+ * يُقاسُ بالنصِّ قبلَه: آخِرُ `callee(` بعدَ آخِرِ فاصلةٍ منقوطة — أى أنّنا ما
+ * زلنا داخلَ نداءِ تلك الدالّة، لم تنتهِ جملةٌ بيننا وبينه.
+ */
+function isArgumentOf(body, at, callee) {
+  const before = String(body).slice(0, at)
+  return before.lastIndexOf(callee + "(") > before.lastIndexOf(";")
+}
+
+/**
+ * يفصلُ المواضعَ ثلاثاً: مُعفاةٌ ببرهانٍ قائم، ومحسوبةٌ أبواباً، وإعفاءٌ
+ * انكسرَ برهانُه — والأخيرُ يُصرَخُ عليه باسمِه لا يُبتلَع.
+ */
+function judgeDoors(hits, bodyOf) {
+  const doors = []
+  const exempt = []
+  const broken = []
+  const usedKeys = new Set()
+  for (const h of hits) {
+    const key = h.where + "::" + h.token
+    const rule = NOT_A_DOOR[key]
+    if (!rule) { doors.push(h); continue }
+    usedKeys.add(key)
+    const ok = rule.proof.kind === "argument-of"
+      ? isArgumentOf(bodyOf(h.where), h.at, rule.proof.callee)
+      : false
+    if (ok) exempt.push({ ...h, key })
+    else broken.push({ ...h, key, expected: rule.proof })
+  }
+  return { doors, exempt, broken, usedKeys }
+}
+
+/** إعلانٌ لم يجدْ موضعَه: سببُه مات، فالغطاءُ يُرفَع. */
+function judgeDeadDeclarations(usedKeys) {
+  return Object.keys(NOT_A_DOOR).filter((k) => !usedKeys.has(k))
 }
 
 // ───────────────────────────── الفخُّ الذاتىّ ─────────────────────────────
 
 if (process.argv.includes("--selftest")) {
   const V = ["owner", "admin", "manager", "accountant", "staff"]
+  let fail = 0
+  const say = (ok, name, extra) => {
+    if (!ok) fail++
+    console.log((ok ? "  ok  " : "  X   ") + name + (extra ? "  (" + extra + ")" : ""))
+  }
+
   const cases = [
     ["يرى اسماً محذوفاً بجانب اسمٍ حىّ",
      "IF v_role IN ('owner','admin','general_manager') THEN", 1],
@@ -107,15 +164,72 @@ if (process.argv.includes("--selftest")) {
     ["ولا يخدعه اسمٌ حىٌّ فى سطرٍ بعيد",
      "x := 'general_manager';\n\n\n\n\n\n\n\ny := 'owner';", 0],
   ]
-  let fail = 0
   for (const [name, src, expected] of cases) {
     const got = roleLiterals(src, V).length
-    const ok = got === expected
-    if (!ok) fail++
-    console.log((ok ? "  ok  " : "  X   ") + name + "  (توقّعتُ " + expected + " فجاء " + got + ")")
+    say(got === expected, name, "توقّعتُ " + expected + " فجاء " + got)
   }
+
+  // ── ويعرفُ الموقعَ لا السطرَ وحدَه ──
+  {
+    const src = "a := 'owner';\nb := 'general_manager';"
+    const h = roleLiterals(src, V)[0]
+    say(h && src.slice(h.at, h.at + 17) === "'general_manager'",
+        "ويشيرُ إلى موضعِ الحرفِ لا إلى السطرِ فقط")
+  }
+
+  // ── والبابُ ما يُقارِن، لا ما يُمرَّر ──
+  {
+    const body = "PERFORM create_notification(\n  'x', 'admin',\n  'warning', 'sales', 'action');"
+    say(isArgumentOf(body, body.indexOf("'sales'"), "create_notification"),
+        "ويعرفُ الوسيطةَ المُمرَّرةَ إلى دالّةٍ مُعلَنة")
+
+    const after = "PERFORM create_notification('x', 'admin');\nIF v_role = 'sales' THEN"
+    say(!isArgumentOf(after, after.indexOf("'sales' THEN"), "create_notification"),
+        "ولا يمتدُّ الإعفاءُ عبرَ فاصلةٍ منقوطة")
+
+    const other = "PERFORM check_permission(\n  'admin', 'sales');"
+    say(!isArgumentOf(other, other.indexOf("'sales'"), "create_notification"),
+        "ولا يُعفى نداءُ دالّةٍ أخرى")
+  }
+
+  // ── والإعفاءُ مربوطٌ بالاسمِ والرمزِ معاً ──
+  {
+    const body = "PERFORM create_notification(\n  'x', 'admin',\n  'warning', 'sales', 'action');"
+    const hits = roleLiterals(body, V).map((h) => ({ ...h, where: "resync_booking_invoice" }))
+    const j = judgeDoors(hits, () => body)
+    say(j.doors.length === 0 && j.exempt.length === 1,
+        "فيُعفى الموضعُ المُعلَنُ ببرهانٍ قائم",
+        "أبواب " + j.doors.length + " · معفاة " + j.exempt.length)
+
+    const elsewhere = hits.map((h) => ({ ...h, where: "some_other_function" }))
+    const j2 = judgeDoors(elsewhere, () => body)
+    say(j2.doors.length === 1, "ولا يُعفى الرمزُ نفسُه فى دالّةٍ أخرى")
+  }
+
+  // ── وبرهانٌ انكسرَ يُصرَخُ عليه لا يُبتلَع ──
+  {
+    const moved = "PERFORM create_notification('x', 'admin');\nIF v_role = 'sales' THEN"
+    const hits = roleLiterals(moved, V).map((h) => ({ ...h, where: "resync_booking_invoice" }))
+    const j = judgeDoors(hits, () => moved)
+    say(hits.length === 1 && j.broken.length === 1 && j.exempt.length === 0,
+        "ولو نُقل الرمزُ إلى موضعِ مقارنةٍ انكسرَ البرهانُ وسقط",
+        "مواضع " + hits.length + " · مكسورة " + j.broken.length)
+  }
+
+  // ── وإعلانٌ بلا موضعٍ غطاءٌ يُرفَع ──
+  {
+    say(judgeDeadDeclarations(new Set()).length === Object.keys(NOT_A_DOOR).length,
+        "ويكشفُ إعلاناً لم يعُدْ له موضع")
+    say(judgeDeadDeclarations(new Set(Object.keys(NOT_A_DOOR))).length === 0,
+        "ولا يصرخُ على إعلانٍ موضعُه قائم")
+  }
+
+  // ── وخطُّ الأساسِ صفر ──
+  say(BASELINE === 0 || process.env.DB_ROLE_NAME_BASELINE !== undefined,
+      "وخطُّ الأساسِ صفرٌ ما لم يُرفَعْ صراحةً")
+
   if (fail > 0) { console.error("X سقط الفخُّ الذاتىّ فى " + fail + " اتّجاه."); process.exit(1) }
-  console.log("  الفخُّ الذاتىّ: " + cases.length + " اتّجاهاتٍ، كلُّها صحيحة.")
+  console.log("  الفخُّ الذاتىّ: " + (cases.length + 10) + " اتّجاهاتٍ، كلُّها صحيحة.")
   process.exit(0)
 }
 
@@ -158,37 +272,64 @@ try { ({ Client } = require("./lib/live-db")) } catch { console.error("X npm ins
     await client.end()
   }
 
+  const bodies = new Map()
   const found = []
-  const byToken = {}
   for (const row of [...fns, ...pols]) {
-    for (const hit of roleLiterals(row.body, vocabulary)) {
-      found.push({ where: row.name, ...hit })
-      byToken[hit.token] = (byToken[hit.token] || 0) + 1
-    }
+    bodies.set(row.name, row.body)
+    for (const hit of roleLiterals(row.body, vocabulary)) found.push({ where: row.name, ...hit })
   }
 
+  const { doors, exempt, broken, usedKeys } = judgeDoors(found, (n) => bodies.get(n) || "")
+  const orphanDecls = judgeDeadDeclarations(usedKeys)
+
+  const byToken = {}
+  for (const d of doors) byToken[d.token] = (byToken[d.token] || 0) + 1
+
   console.log("  المفرداتُ الرسميّةُ فى القاعدة: " + vocabulary.length +
-              "   ·   مواضعُ أسماءٍ لا تقبلها: " + found.length + "   (خطُّ الأساس " + BASELINE + ")")
+              "   ·   أبوابٌ تسألُ عن اسمٍ لا يُشغَل: " + doors.length +
+              "   (خطُّ الأساس " + BASELINE + ")")
   const parts = Object.entries(byToken).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + " " + n)
   if (parts.length > 0) console.log("     " + parts.join(" · "))
+  if (exempt.length > 0) {
+    console.log("     ومُعفىً ببرهانٍ قائم: " + exempt.length +
+                " (" + [...new Set(exempt.map((e) => e.key))].join(" · ") + ")")
+  }
 
-  if (found.length > BASELINE) {
+  let bad = false
+
+  if (broken.length > 0) {
+    bad = true
     console.error("")
-    console.error("X زاد الدَّين: بابٌ جديدٌ فى القاعدة يسأل عن وظيفةٍ لا يستطيع أحدٌ أن يشغلها.")
-    for (const f of found.slice(0, 20)) {
+    console.error("X انكسرَ برهانُ إعفاء: رمزٌ كان قيمةً تُمرَّرُ صار فى موضعِ مقارنة.")
+    for (const b of broken) {
+      console.error("   " + b.where + ":" + b.line + "   «" + b.token + "»   " + b.text)
+      console.error("      البرهانُ المُعلَن: " + JSON.stringify(b.expected))
+    }
+    console.error("   العلاج: أزِل الاسمَ الميّت، أو أزِل الإعلانَ من NOT_A_DOOR.")
+  }
+
+  if (orphanDecls.length > 0) {
+    bad = true
+    console.error("")
+    console.error("X إعلانٌ بقىَ بعد موتِ سببِه — لم يعُدْ له موضعٌ فى القاعدة:")
+    for (const k of orphanDecls) console.error("   " + k + "   « " + NOT_A_DOOR[k].why + " »")
+    console.error("   العلاج: احذفِ الإعلانَ من NOT_A_DOOR — وإعلانٌ يبقى بعد موتِ سببِه يصيرُ غطاءً.")
+  }
+
+  if (doors.length > BASELINE) {
+    bad = true
+    console.error("")
+    console.error("X بابٌ فى القاعدة يسأل عن وظيفةٍ لا يستطيع أحدٌ أن يشغلها.")
+    for (const f of doors.slice(0, 20)) {
       console.error("   " + f.where + ":" + f.line + "   «" + f.token + "»   " + f.text)
     }
     console.error("")
     console.error("   العلاج: اكتب الاسمَ الذى تقبله المفردات، أو أزِل الاسمَ الميّت.")
-    process.exit(1)
   }
 
-  if (found.length === 0) {
-    console.log("  ok  لا اسمَ فى القاعدة يسأل عن وظيفةٍ لا يشغلها أحد.")
-  } else {
-    console.log("  ok  لم يزد الدَّين. " + found.length + " موضعاً قديماً باقياً - **معدودٌ لا مُوافَقٌ عليه**،")
-    console.log("      وكلٌّ منها يسمّى وظيفةً حيّةً بجانبه فلا يُغلق باباً على أحد. يُكنس فى دفعةٍ تخصّه.")
-  }
+  if (bad) process.exit(1)
+
+  console.log("  ok  لا بابَ فى القاعدة يسأل عن وظيفةٍ لا يشغلها أحد.")
 })().catch((e) => {
   console.error("X فشل: " + ((e && e.message) || e))
   process.exit(1)
