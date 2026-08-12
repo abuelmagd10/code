@@ -121,6 +121,12 @@ export default function SuppliersPage() {
 
   // ===== حالات الأرصدة وسند الاستقبال =====
   const [balances, setBalances] = useState<Record<string, SupplierBalance>>({})
+  // v3.75.21 — **ورقمٌ بعنوانٍ لا يقولُ لمن هو ليس صدقاً.**
+  // عمودُ المطلوباتِ محسوبٌ على ما يراه صاحبُ الشاشة: عزلُ الفروعِ يُخفى عن
+  // محاسبِ الفرعِ فواتيرَ الفروعِ الأخرى، فيقرأُ رقماً ناقصاً بعنوانٍ مطلق.
+  // فيُعلَنُ النطاقُ فى العنوان، ويُشارُ إلى وجودِ رصيدٍ خارجَه **بلا كشفِ مبلغ**.
+  const [scopedBranchId, setScopedBranchId] = useState<string | null>(null)
+  const [outsideScopeIds, setOutsideScopeIds] = useState<Set<string>>(new Set())
   const [accounts, setAccounts] = useState<{ id: string; account_code: string; account_name: string; account_type: string; sub_type?: string }[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
 
@@ -366,6 +372,24 @@ export default function SuppliersPage() {
       } catch { /* ignore — UI degrades gracefully */ }
 
       setBalances(newBalances)
+
+      // v3.75.21 — إشعارُ وجودٍ بلا كشفِ مبلغ: أىُّ مورّدٍ له رصيدٌ مفتوحٌ خارجَ
+      // الفرعِ المعروض؟ تُجيبُ القاعدةُ بنعم/لا فقط — بلا مبلغٍ ولا فرعٍ ولا
+      // رقمِ فاتورة — وتسألُ أوّلاً إن كان الطارقُ عضواً فى الشركة.
+      setScopedBranchId(p_branch_filter)
+      if (p_branch_filter) {
+        try {
+          const { data: outside } = await supabase.rpc('suppliers_with_balance_outside_scope', {
+            p_company_id: companyId,
+            p_visible_branch: p_branch_filter
+          })
+          const ids = new Set<string>((outside || []).map((x: any) => String(typeof x === 'string' ? x : x?.suppliers_with_balance_outside_scope)))
+          ids.delete('undefined')
+          setOutsideScopeIds(ids)
+        } catch { setOutsideScopeIds(new Set()) }
+      } else {
+        setOutsideScopeIds(new Set())
+      }
 
       // ===== تحميل الحسابات للاستخدام في سند استرداد السلفة =====
       // 🔒 ERP Rule: يُعرض فقط الخزن والبنوك (cash / bank)
@@ -736,7 +760,9 @@ export default function SuppliersPage() {
     },
     {
       key: 'branch_id',
-      header: appLang === 'en' ? 'Branch' : 'الفرع',
+      // v3.75.21 — هذا فرعُ **سجلِّ المورّد**، لا فرعُ فواتيرِه. وتسميتُه
+      // «الفرع» كانت تُفهم أنّ كلَّ تعاملِه فى هذا الفرع.
+      header: appLang === 'en' ? 'Supplier branch' : 'فرع المورّد',
       type: 'text',
       align: 'left',
       hidden: 'lg',
@@ -747,7 +773,9 @@ export default function SuppliersPage() {
     },
     {
       key: 'id',
-      header: appLang === 'en' ? 'Payables' : 'مطلوبات (ذمم دائنة)',
+      header: scopedBranchId
+        ? (appLang === 'en' ? 'Payables (your branch)' : 'مطلوبات فرعك (ذمم دائنة)')
+        : (appLang === 'en' ? 'Payables' : 'مطلوبات (ذمم دائنة)'),
       type: 'currency',
       align: 'right',
       format: (_, row) => {
@@ -756,9 +784,23 @@ export default function SuppliersPage() {
         // (v3.23.6: reverted v3.23.5 which incorrectly showed negative here.)
         const balance = balances[row.id] || { advances: 0, payables: 0, debitCredits: 0 }
         const payables = balance.payables || 0
+        // v3.75.21 — وجودٌ يُعلَنُ ومبلغٌ لا يُكشَف: عزلُ الفروعِ يبقى كما هو.
+        const hasOutside = outsideScopeIds.has(String(row.id))
         return (
-          <span className={payables > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
-            {payables > 0 ? `${payables.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currencySymbol}` : '—'}
+          <span className="inline-flex items-center gap-1 justify-end">
+            <span className={payables > 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-gray-400 dark:text-gray-500"}>
+              {payables > 0 ? `${payables.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${currencySymbol}` : '—'}
+            </span>
+            {hasOutside && (
+              <span
+                className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap cursor-help"
+                title={appLang === 'en'
+                  ? 'This supplier has open balances in other branches that are not visible to you.'
+                  : 'لهذا المورّد أرصدة فى فروع أخرى لا تظهر لك.'}
+              >
+                {appLang === 'en' ? 'other branches' : 'فروع أخرى'}
+              </span>
+            )}
           </span>
         )
       }
