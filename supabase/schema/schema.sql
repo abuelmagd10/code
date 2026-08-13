@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-13T13:48:58.219Z
+-- Generated: 2026-08-13T15:12:11.260Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -10782,7 +10782,6 @@ REVOKE ALL ON FUNCTION public.add_booking_extra_item(p_company_id uuid, p_bookin
 GRANT EXECUTE ON FUNCTION public.add_booking_extra_item(p_company_id uuid, p_booking_id uuid, p_product_id uuid, p_quantity numeric, p_unit_price numeric, p_added_by uuid, p_discount_percent numeric, p_tax_rate numeric, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.add_booking_extra_item(p_company_id uuid, p_booking_id uuid, p_product_id uuid, p_quantity numeric, p_unit_price numeric, p_added_by uuid, p_discount_percent numeric, p_tax_rate numeric, p_notes text) TO service_role;
 REVOKE ALL ON FUNCTION public.add_booking_payment_atomic(p_company_id uuid, p_booking_id uuid, p_created_by uuid, p_amount numeric, p_payment_method text, p_payment_date date, p_reference_no text, p_notes text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.add_booking_payment_atomic(p_company_id uuid, p_booking_id uuid, p_created_by uuid, p_amount numeric, p_payment_method text, p_payment_date date, p_reference_no text, p_notes text) TO anon;
 GRANT EXECUTE ON FUNCTION public.add_booking_payment_atomic(p_company_id uuid, p_booking_id uuid, p_created_by uuid, p_amount numeric, p_payment_method text, p_payment_date date, p_reference_no text, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.add_booking_payment_atomic(p_company_id uuid, p_booking_id uuid, p_created_by uuid, p_amount numeric, p_payment_method text, p_payment_date date, p_reference_no text, p_notes text) TO service_role;
 REVOKE ALL ON FUNCTION public.ai_current_user_allowed_resources() FROM PUBLIC;
@@ -10814,6 +10813,8 @@ REVOKE ALL ON FUNCTION public.ai_search_pages(p_query text, p_lang text, p_exclu
 GRANT EXECUTE ON FUNCTION public.ai_search_pages(p_query text, p_lang text, p_exclude_page_key text, p_limit integer) TO anon;
 GRANT EXECUTE ON FUNCTION public.ai_search_pages(p_query text, p_lang text, p_exclude_page_key text, p_limit integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ai_search_pages(p_query text, p_lang text, p_exclude_page_key text, p_limit integer) TO service_role;
+REVOKE ALL ON FUNCTION public.anon_prelogin_exceptions() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.anon_prelogin_exceptions() TO service_role;
 REVOKE ALL ON FUNCTION public.append_financial_audit_flag(p_transaction_id uuid, p_audit_flag text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.append_financial_audit_flag(p_transaction_id uuid, p_audit_flag text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.append_financial_audit_flag(p_transaction_id uuid, p_audit_flag text) TO service_role;
@@ -11025,6 +11026,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_24_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_24_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_25_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_25_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_27_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_27_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11056,7 +11059,6 @@ REVOKE ALL ON FUNCTION public.assert_is_self(p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_is_self(p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_is_self(p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.assert_journal_entries_balanced_v2(p_journal_entries jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.assert_journal_entries_balanced_v2(p_journal_entries jsonb) TO anon;
 GRANT EXECUTE ON FUNCTION public.assert_journal_entries_balanced_v2(p_journal_entries jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.assert_journal_entries_balanced_v2(p_journal_entries jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.assert_no_posted_depreciation(p_asset_id uuid) FROM PUBLIC;
@@ -11303,7 +11305,6 @@ GRANT EXECUTE ON FUNCTION public.bom_version_branch_manager_notify_trg() TO serv
 REVOKE ALL ON FUNCTION public.bom_version_notify_approval_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.bom_version_notify_approval_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.booking_blocking_withdrawals_exist(p_company_id uuid, p_booking_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.booking_mandatory_custody_gate(p_booking_id uuid) FROM PUBLIC;
@@ -11388,7 +11389,6 @@ REVOKE ALL ON FUNCTION public.can_access_purchase_return(p_return_id uuid) FROM 
 GRANT EXECUTE ON FUNCTION public.can_access_purchase_return(p_return_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_purchase_return(p_return_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_purchase_return_item(p_item_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.can_access_purchase_return_item_row(p_return_id uuid, p_warehouse_id uuid, p_allocation_id uuid) FROM PUBLIC;
@@ -11456,7 +11456,6 @@ REVOKE ALL ON FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_create
 GRANT EXECUTE ON FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_created_by uuid, p_product_branch_id uuid, p_scope_by_branch boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_view_purchase_cost(p_company_id uuid, p_created_by uuid, p_product_branch_id uuid, p_scope_by_branch boolean) TO service_role;
 REVOKE ALL ON FUNCTION public.can_view_resource(p_company_id uuid, p_resource text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.can_view_resource(p_company_id uuid, p_resource text) TO anon;
 GRANT EXECUTE ON FUNCTION public.can_view_resource(p_company_id uuid, p_resource text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_view_resource(p_company_id uuid, p_resource text) TO service_role;
 REVOKE ALL ON FUNCTION public.can_write_to_company(p_company_id uuid) FROM PUBLIC;
@@ -11498,13 +11497,11 @@ REVOKE ALL ON FUNCTION public.check_and_claim_idempotency_key(p_idempotency_key 
 GRANT EXECUTE ON FUNCTION public.check_and_claim_idempotency_key(p_idempotency_key text, p_company_id uuid, p_operation_type text, p_request_hash text, p_created_by uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_and_claim_idempotency_key(p_idempotency_key text, p_company_id uuid, p_operation_type text, p_request_hash text, p_created_by uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.check_and_increment_rate_limit(p_identifier text, p_route text, p_max_requests integer, p_window_seconds integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_and_increment_rate_limit(p_identifier text, p_route text, p_max_requests integer, p_window_seconds integer) TO anon;
 GRANT EXECUTE ON FUNCTION public.check_and_increment_rate_limit(p_identifier text, p_route text, p_max_requests integer, p_window_seconds integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_and_increment_rate_limit(p_identifier text, p_route text, p_max_requests integer, p_window_seconds integer) TO service_role;
 REVOKE ALL ON FUNCTION public.check_bill_item_returned_quantity() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_bill_item_returned_quantity() TO service_role;
 REVOKE ALL ON FUNCTION public.check_bill_quantities(p_bill_id uuid, p_grn_id uuid, p_company_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_bill_quantities(p_bill_id uuid, p_grn_id uuid, p_company_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.check_bill_quantities(p_bill_id uuid, p_grn_id uuid, p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_bill_quantities(p_bill_id uuid, p_grn_id uuid, p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.check_bill_returned_amount() FROM PUBLIC;
@@ -11973,14 +11970,12 @@ REVOKE ALL ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id
 GRANT EXECUTE ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_company_senior(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_senior_role(p_role text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.erp_is_senior_role(p_role text) TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_is_senior_role(p_role text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_senior_role(p_role text) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_membership_roles() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.erp_membership_roles() TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_membership_roles() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_membership_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) FROM PUBLIC;
@@ -12008,7 +12003,6 @@ REVOKE ALL ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_creat
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_senior_roles() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.erp_senior_roles() TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_senior_roles() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_senior_roles() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_sod_guard() FROM PUBLIC;
@@ -12083,7 +12077,6 @@ REVOKE ALL ON FUNCTION public.fix_wrong_return_account_entries(p_company_id uuid
 GRANT EXECUTE ON FUNCTION public.fix_wrong_return_account_entries(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fix_wrong_return_account_entries(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_bill_item_landed_unit_cost(p_bill_id uuid, p_product_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_bill_item_landed_unit_cost(p_bill_id uuid, p_product_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.fn_bill_item_landed_unit_cost(p_bill_id uuid, p_product_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_bill_item_landed_unit_cost(p_bill_id uuid, p_product_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_check_journal_balance() FROM PUBLIC;
@@ -12167,7 +12160,6 @@ GRANT EXECUTE ON FUNCTION public.get_account_balance(p_company_id uuid, p_accoun
 GRANT EXECUTE ON FUNCTION public.get_account_balance(p_company_id uuid, p_account_id uuid, p_as_of_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_account_balance(p_company_id uuid, p_account_id uuid, p_as_of_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.get_account_branch_cost_center(p_account_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_account_branch_cost_center(p_account_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_account_branch_cost_center(p_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_account_branch_cost_center(p_account_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_activity_summary(p_company_id uuid, p_days integer) FROM PUBLIC;
@@ -12180,7 +12172,6 @@ REVOKE ALL ON FUNCTION public.get_ar_reconciliation_report(p_company_id uuid) FR
 GRANT EXECUTE ON FUNCTION public.get_ar_reconciliation_report(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_ar_reconciliation_report(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_asset_current_state(p_asset_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_asset_current_state(p_asset_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_asset_current_state(p_asset_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_asset_current_state(p_asset_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_audit_trail_report(p_company_id uuid, p_start_date timestamp with time zone, p_end_date timestamp with time zone, p_table_name text, p_action text) FROM PUBLIC;
@@ -12208,7 +12199,6 @@ REVOKE ALL ON FUNCTION public.get_booking_line_additions(p_booking_id uuid) FROM
 GRANT EXECUTE ON FUNCTION public.get_booking_line_additions(p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_booking_line_additions(p_booking_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_branch_outlet(p_branch_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_branch_outlet(p_branch_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_branch_outlet(p_branch_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_branch_outlet(p_branch_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_closing_preview(p_company_id uuid, p_fiscal_year integer) FROM PUBLIC;
@@ -12300,7 +12290,6 @@ GRANT EXECUTE ON FUNCTION public.get_inventory_reservation_snapshot(p_company_id
 GRANT EXECUTE ON FUNCTION public.get_inventory_reservation_snapshot(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_inventory_reservation_snapshot(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_invoice_effective_outstanding(p_invoice_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_invoice_effective_outstanding(p_invoice_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_invoice_effective_outstanding(p_invoice_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_invoice_effective_outstanding(p_invoice_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_invoice_source(p_invoice_id uuid) FROM PUBLIC;
@@ -12347,7 +12336,6 @@ REVOKE ALL ON FUNCTION public.get_seat_status(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_seat_status(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_seat_status(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_service_consumables(p_service_id uuid, p_booking_qty numeric) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_service_consumables(p_service_id uuid, p_booking_qty numeric) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_service_consumables(p_service_id uuid, p_booking_qty numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_service_consumables(p_service_id uuid, p_booking_qty numeric) TO service_role;
 REVOKE ALL ON FUNCTION public.get_suppliers_overview(p_company_id uuid, p_branch_filter uuid, p_search text, p_page integer, p_page_size integer) FROM PUBLIC;
@@ -12844,7 +12832,6 @@ GRANT EXECUTE ON FUNCTION public.ir_format_reservation_number(p_sequence_value b
 GRANT EXECUTE ON FUNCTION public.ir_format_reservation_number(p_sequence_value bigint, p_reference_ts timestamp with time zone) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ir_format_reservation_number(p_sequence_value bigint, p_reference_ts timestamp with time zone) TO service_role;
 REVOKE ALL ON FUNCTION public.ir_generate_reservation_number(p_reference_ts timestamp with time zone) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ir_generate_reservation_number(p_reference_ts timestamp with time zone) TO anon;
 GRANT EXECUTE ON FUNCTION public.ir_generate_reservation_number(p_reference_ts timestamp with time zone) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.ir_generate_reservation_number(p_reference_ts timestamp with time zone) TO service_role;
 REVOKE ALL ON FUNCTION public.ir_guard_allocation_parent_terminal() FROM PUBLIC;
@@ -12884,7 +12871,6 @@ GRANT EXECUTE ON FUNCTION public.ir_refresh_line_totals_from_allocations() TO se
 REVOKE ALL ON FUNCTION public.ir_set_updated_at() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ir_set_updated_at() TO service_role;
 REVOKE ALL ON FUNCTION public.is_booking_assignee(p_booking_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_booking_assignee(p_booking_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.is_booking_assignee(p_booking_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_booking_assignee(p_booking_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.is_branch_accessible(p_branch_id uuid, p_user_id uuid) FROM PUBLIC;
@@ -13073,7 +13059,6 @@ GRANT EXECUTE ON FUNCTION public.mpo_format_order_no(p_sequence_value bigint, p_
 GRANT EXECUTE ON FUNCTION public.mpo_format_order_no(p_sequence_value bigint, p_reference_ts timestamp with time zone) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpo_format_order_no(p_sequence_value bigint, p_reference_ts timestamp with time zone) TO service_role;
 REVOKE ALL ON FUNCTION public.mpo_generate_order_no(p_reference_ts timestamp with time zone) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.mpo_generate_order_no(p_reference_ts timestamp with time zone) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpo_generate_order_no(p_reference_ts timestamp with time zone) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpo_generate_order_no(p_reference_ts timestamp with time zone) TO service_role;
 REVOKE ALL ON FUNCTION public.mpo_guard_production_order_approval_transition() FROM PUBLIC;
@@ -13218,7 +13203,6 @@ GRANT EXECUTE ON FUNCTION public.mpoe_compute_open_reservation_status(p_requeste
 GRANT EXECUTE ON FUNCTION public.mpoe_compute_open_reservation_status(p_requested_qty numeric, p_reserved_qty numeric, p_consumed_qty numeric, p_released_qty numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpoe_compute_open_reservation_status(p_requested_qty numeric, p_reserved_qty numeric, p_consumed_qty numeric, p_released_qty numeric) TO service_role;
 REVOKE ALL ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mpoe_conversion_cost(p_production_order_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.mpoe_guard_issue_event_immutability() FROM PUBLIC;
@@ -13638,6 +13622,8 @@ REVOKE ALL ON FUNCTION public.po_protect_approved_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.po_protect_approved_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.po_request_discount_approval_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.po_request_discount_approval_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.policy_knocked_function_names(p_anon_readable_only boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.policy_knocked_function_names(p_anon_readable_only boolean) TO service_role;
 REVOKE ALL ON FUNCTION public.post_accounting_event(p_event_type text, p_company_id uuid, p_items jsonb, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_payments jsonb, p_sales_returns jsonb, p_sales_return_items jsonb, p_customer_credits jsonb, p_update_source jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.post_accounting_event(p_event_type text, p_company_id uuid, p_items jsonb, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_payments jsonb, p_sales_returns jsonb, p_sales_return_items jsonb, p_customer_credits jsonb, p_update_source jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.post_accounting_event(p_event_type text, p_company_id uuid, p_items jsonb, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_payments jsonb, p_sales_returns jsonb, p_sales_return_items jsonb, p_customer_credits jsonb, p_update_source jsonb) TO service_role;
@@ -13898,7 +13884,6 @@ REVOKE ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric
 GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) TO anon;
 GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) TO service_role;
 REVOKE ALL ON FUNCTION public.record_shareholder_drawing_atomic(p_company_id uuid, p_shareholder_id uuid, p_amount numeric, p_drawing_date date, p_payment_account_id uuid, p_drawings_account_id uuid, p_description text, p_branch_id uuid, p_cost_center_id uuid, p_user_id uuid) FROM PUBLIC;
@@ -13909,15 +13894,12 @@ GRANT EXECUTE ON FUNCTION public.recurring_template_balance_check_trg() TO servi
 REVOKE ALL ON FUNCTION public.reduce_fifo_lots_on_purchase_return(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_bill_id uuid, p_reference_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reduce_fifo_lots_on_purchase_return(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_bill_id uuid, p_reference_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.refresh_dashboard_gl_monthly_summary() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.refresh_dashboard_gl_monthly_summary() TO anon;
 GRANT EXECUTE ON FUNCTION public.refresh_dashboard_gl_monthly_summary() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.refresh_dashboard_gl_monthly_summary() TO service_role;
 REVOKE ALL ON FUNCTION public.refresh_gl_daily_branch_cash_flow() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.refresh_gl_daily_branch_cash_flow() TO anon;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_daily_branch_cash_flow() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_daily_branch_cash_flow() TO service_role;
 REVOKE ALL ON FUNCTION public.refresh_gl_monthly_summary() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.refresh_gl_monthly_summary() TO anon;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_monthly_summary() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.refresh_gl_monthly_summary() TO service_role;
 REVOKE ALL ON FUNCTION public.refresh_material_requirement_issue_tracking() FROM PUBLIC;
@@ -14043,7 +14025,6 @@ REVOKE ALL ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id u
 GRANT EXECUTE ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.revert_batch_operations(p_log_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO anon;
 GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO service_role;
 REVOKE ALL ON FUNCTION public.route_system_events_to_notifications() FROM PUBLIC;
@@ -14439,7 +14420,6 @@ GRANT EXECUTE ON FUNCTION public.test_prevent_sale_without_inventory() TO anon;
 GRANT EXECUTE ON FUNCTION public.test_prevent_sale_without_inventory() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.test_prevent_sale_without_inventory() TO service_role;
 REVOKE ALL ON FUNCTION public.test_visibility(p_asset_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.test_visibility(p_asset_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.test_visibility(p_asset_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.test_visibility(p_asset_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.touch_ai_conversations_updated_at() FROM PUBLIC;
@@ -14726,7 +14706,6 @@ GRANT EXECUTE ON FUNCTION public.verify_cogs_entries_for_sales(p_company_id uuid
 GRANT EXECUTE ON FUNCTION public.verify_cogs_entries_for_sales(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.verify_cogs_entries_for_sales(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.verify_depreciation_deleted(p_asset_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.verify_depreciation_deleted(p_asset_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.verify_depreciation_deleted(p_asset_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.verify_depreciation_deleted(p_asset_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.verify_inventory_journal_links() FROM PUBLIC;

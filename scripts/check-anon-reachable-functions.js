@@ -75,16 +75,21 @@ try {
 
 // Deliberate exceptions: pre-login screens that must work for a visitor.
 // Each is limited some other way and none reads company-scoped data.
-const ALLOWED = new Set([
-  "find_user_by_login",
-  "check_username_available",
-  "generate_username_from_email",
-  "get_user_company_status",
-  // v3.74.839 — the verification screen asks this BEFORE the user signs in.
-  // Rate-limited inside the function itself (8/min per IP) and returns one bit:
-  // confirmed or not, with a missing address indistinguishable from unconfirmed.
-  "auth_email_state",
-]);
+//
+// v3.75.27 — THE LIST NO LONGER LIVES HERE. It lives in the database, in
+// public.anon_prelogin_exceptions(), and this script ASKS for it.
+//
+// Why: v3.75.27 made "a visitor may reach a SECURITY DEFINER function only if
+// a policy knocks on it, or it is a declared pre-login door" a law enforced by
+// a migration AND by assert_baseline_v3_75_27_check(). If the list were also
+// written here by hand, two mouths in one house would answer the same question
+// - and the day they disagreed, the build would pass while the database
+// disagreed with it, or the reverse. One home, asked live.
+//
+// A copy kept here as a fallback would be the same bug wearing a hat: if the
+// database cannot be asked, this script REFUSES rather than judging from
+// memory. A security policy is not written from memory.
+const PRELOGIN_SQL = "SELECT public.anon_prelogin_exceptions() AS names";
 
 // Mirrors the database's own ic_anon_reachable_readers(), including the
 // RLS-policy exclusion. Keep the two in step: if that function is tightened,
@@ -118,12 +123,28 @@ const SQL = `
   const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
   await client.connect();
   let rows = [];
+  let allowedNames = null;
   try {
+    // The law first, then the measurement. If the house cannot be asked, this
+    // script has no business deciding what a visitor may reach.
+    const pre = await client.query(PRELOGIN_SQL);
+    allowedNames = pre.rows[0] && pre.rows[0].names;
     ({ rows } = await client.query(SQL));
   } finally {
     await client.end();
   }
 
+  if (!Array.isArray(allowedNames)) {
+    console.error(
+      "X the database did not answer public.anon_prelogin_exceptions().\n" +
+        "  That function is the ONE home for the pre-login exceptions (v3.75.27).\n" +
+        "  I will not judge this from a list written here by hand.\n" +
+        "  Fix: apply migration 20260813000005 (v3.75.27)."
+    );
+    process.exit(1);
+  }
+
+  const ALLOWED = new Set(allowedNames);
   const offenders = rows.filter((r) => !ALLOWED.has(r.proname));
 
   if (offenders.length > 0) {
@@ -150,7 +171,8 @@ const SQL = `
 
   console.log(
     `+ no anon-reachable company readers ` +
-      `(${ALLOWED.size} documented pre-login exception(s); ` +
+      `(${ALLOWED.size} documented pre-login exception(s), read from the database's ` +
+      `own anon_prelogin_exceptions() - not from a list written here; ` +
       `functions used inside RLS policies are excluded by design).`
   );
 })().catch((err) => {
