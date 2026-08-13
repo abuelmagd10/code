@@ -54,8 +54,11 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 
 const requireDb = process.argv.includes("--require-db");
 const url = process.env.PRODUCTION_SUPABASE_DB_URL;
+const selftest = process.argv.includes("--selftest");
 
-if (!url) {
+// **وفخٌّ لا يُشغَّل ليس فخّاً**: الفخُّ الذاتىُّ لا يحتاجُ قاعدةً، فلا يجوزُ
+// أن يُتخطّى لأنّ القاعدةَ غيرُ موصولة. ويُقرأُ حكمُه قبلَ أىِّ خروجٍ مبكّر.
+if (!selftest && !url) {
   const msg = "PRODUCTION_SUPABASE_DB_URL is not set - cannot check anon-reachable functions.";
   if (requireDb) {
     console.error(`X ${msg}`);
@@ -89,7 +92,126 @@ try {
 // A copy kept here as a fallback would be the same bug wearing a hat: if the
 // database cannot be asked, this script REFUSES rather than judging from
 // memory. A security policy is not written from memory.
+//
+// v3.75.28 — AND NO LICENCE WITHOUT A KNOCKER. The list above kept three names
+// after their reason had died: two that no line of the application had called
+// for months (and no live request had touched in 24h), and one that was
+// declared "pre-login" while being CLOSED to anon and called AFTER login
+// 7098 times a day. None of them was harmful. All three were REASSURING - a
+// reader of the list would believe a door needed to be open that did not.
+//
+// The defect was never the names. It was that A DECLARATION OUTLIVES ITS
+// REASON IN SILENCE. So the rule is now enforced from both ends:
+//   - the database asserts no declared name is already closed (baseline _28_),
+//   - and this script asserts EVERY declared name is actually CALLED BY THE
+//     APPLICATION CODE. A door nobody knocks on does not get a licence.
+const fs = require("fs");
+const path = require("path");
+
 const PRELOGIN_SQL = "SELECT public.anon_prelogin_exceptions() AS names";
+
+const repoRoot = path.join(__dirname, "..");
+const CODE_ROOTS = ["app", "lib", "components", "hooks"];
+const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx"]);
+
+/**
+ * A comment is not an instruction. A name mentioned only in prose does not
+ * knock on anything, so comments are blanked before the search - otherwise the
+ * very line explaining "we removed this call" would keep the licence alive.
+ */
+function maskComments(src) {
+  const a = src.split("");
+  let i = 0;
+  while (i < a.length) {
+    const two = src.slice(i, i + 2);
+    if (two === "//" && src[i - 1] !== ":") {
+      let k = i;
+      while (k < a.length && a[k] !== "\n") { a[k] = " "; k++; }
+      i = k;
+      continue;
+    }
+    if (two === "/*") {
+      const k = src.indexOf("*/", i + 2);
+      const end = k === -1 ? a.length : k + 2;
+      for (let j = i; j < end; j++) if (a[j] !== "\n") a[j] = " ";
+      i = end;
+      continue;
+    }
+    i++;
+  }
+  return a.join("");
+}
+
+/** Does this source actually call the named function through the API? */
+function callsFunction(src, name) {
+  const m = maskComments(src);
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // rpc("name") / rpc('name') / a REST path ending in /rpc/name
+  return new RegExp(`rpc\\(\\s*["'\`]${esc}["'\`]|/rpc/${esc}\\b`).test(m);
+}
+
+function walkCode(roots, readDir, readFile) {
+  const out = [];
+  const stack = [...roots];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries = [];
+    try { entries = readDir(dir); } catch { continue; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === "node_modules" || e.name === ".next" || e.name === "_to_delete") continue;
+        stack.push(full);
+      } else if (CODE_EXT.has(path.extname(e.name))) {
+        out.push({ file: full, src: readFile(full) });
+      }
+    }
+  }
+  return out;
+}
+
+/** Which declared names does no file call? */
+function unknockedNames(names, files) {
+  return names.filter((n) => !files.some((f) => callsFunction(f.src, n))).sort();
+}
+
+if (process.argv.includes("--selftest")) {
+  let bad = 0;
+  const ok = (label, actual, expected) => {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a === e) console.log(`  ok  ${label}  (توقّعتُ ${e} فجاء ${a})`);
+    else { console.error(`  X  ${label}  (توقّعتُ ${e} فجاء ${a})`); bad++; }
+  };
+
+  ok("يرى النداءَ بعلامتَى اقتباس مزدوجتين",
+     callsFunction('supabase.rpc("find_user_by_login", { p_login: x })', "find_user_by_login"), true);
+  ok("ويراه بعلامةٍ مفردة",
+     callsFunction("await supabase.rpc('auth_email_state', { p_email })", "auth_email_state"), true);
+  ok("ويراه بعلامةٍ خلفيّة",
+     callsFunction("supabase.rpc(`auth_email_state`)", "auth_email_state"), true);
+  ok("ويرى مسارَ REST المباشر",
+     callsFunction('fetch("/rest/v1/rpc/find_user_by_login")', "find_user_by_login"), true);
+  ok("ولا يخدعه ذكرٌ داخل تعليقٍ سطرىّ — التعليقُ ليس تعليمة",
+     callsFunction('// supabase.rpc("find_user_by_login")', "find_user_by_login"), false);
+  ok("ولا ذكرٌ داخل تعليقٍ كتلىّ",
+     callsFunction('/* was: supabase.rpc("find_user_by_login") */', "find_user_by_login"), false);
+  ok("ولا اسمٌ مذكورٌ بلا نداء — والجوارُ ليس انتماءً",
+     callsFunction('const doc = "find_user_by_login is a function"', "find_user_by_login"), false);
+  ok("ولا يخلطُ اسماً بادئتُه نفسُها",
+     callsFunction('supabase.rpc("find_user_by_login_v2")', "find_user_by_login"), false);
+  ok("ويرى الاسمَ الصحيحَ حتى لو جاورَه غيرُه",
+     callsFunction('supabase.rpc("x"); supabase.rpc("auth_email_state")', "auth_email_state"), true);
+
+  const files = [{ file: "a.ts", src: 'supabase.rpc("alive")' }];
+  ok("فيمرُّ اسمٌ يناديه سطر", unknockedNames(["alive"], files), []);
+  ok("ويسقطُ اسمٌ لا يناديه أحد", unknockedNames(["alive", "orphan"], files), ["orphan"]);
+  ok("ويسقطُ الجميعُ حين لا ملفَّ أصلاً — وبحثٌ لا يجد ليس دليلَ حياة",
+     unknockedNames(["alive"], []), ["alive"]);
+
+  console.log(`  الفخُّ الذاتىّ: 12 اتّجاهاً، ${bad === 0 ? "كلُّها صحيحة." : bad + " منها سقط."}`);
+  process.exit(bad === 0 ? 0 : 1);
+}
 
 // Mirrors the database's own ic_anon_reachable_readers(), including the
 // RLS-policy exclusion. Keep the two in step: if that function is tightened,
@@ -145,6 +267,37 @@ const SQL = `
   }
 
   const ALLOWED = new Set(allowedNames);
+
+  // **ولا رخصةَ بلا طارق** (v3.75.28): a declared pre-login exception must be
+  // a door the application actually knocks on. Otherwise the declaration keeps
+  // a door open for nobody and reassures whoever reads it.
+  const codeFiles = walkCode(
+    CODE_ROOTS.filter((d) => fs.existsSync(path.join(repoRoot, d))).map((d) => path.join(repoRoot, d)),
+    (dir) => fs.readdirSync(dir, { withFileTypes: true }),
+    (f) => fs.readFileSync(f, "utf8")
+  );
+  if (codeFiles.length === 0) {
+    // **وبحثٌ لا يجد ليس دليلَ غياب**: a search that scanned nothing proves
+    // nothing, and must not be read as "every declaration is dead".
+    console.error("X لم أقرأ ملفَّ شفرةٍ واحداً — لا يُحكَمُ على إعلانٍ ببحثٍ لم يقرأ شيئاً.");
+    process.exit(1);
+  }
+  const unknocked = unknockedNames([...ALLOWED], codeFiles);
+  if (unknocked.length > 0) {
+    console.error(
+      `X ${unknocked.length} pre-login exception(s) are declared in the database but NO line of the\n` +
+        `  application calls them (${codeFiles.length} file(s) scanned):\n`
+    );
+    for (const n of unknocked) console.error(`  - ${n}`);
+    console.error(
+      "\n  A declaration outlives its reason in silence. Either the screen that\n" +
+        "  needed it was removed - then drop the name from the database's\n" +
+        "  public.anon_prelogin_exceptions() in a migration, and the v3.75.27 law\n" +
+        "  will shut the door by itself - or the caller moved and should be found."
+    );
+    process.exit(1);
+  }
+
   const offenders = rows.filter((r) => !ALLOWED.has(r.proname));
 
   if (offenders.length > 0) {
