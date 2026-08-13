@@ -152,6 +152,17 @@ export default function SuppliersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [currentUserBranchId, setCurrentUserBranchId] = useState<string | null>(null)
 
+  // v3.75.22 — **وحارسٌ يصرخ على البرىء يُطفأ، وزرٌّ يَعِدُ بما يرفضُه الباب ليس زرّاً.**
+  // صار المورّدُ يظهرُ لمن له عندَه دَينٌ فى فرعِه ولو كان سجلُّه فى فرعٍ آخر —
+  // **اطّلاعاً فقط**. والقاعدةُ ترفضُ تعديلَه أو حذفَه (`can_manage_supplier_row`)،
+  // فلا يُعرَضُ زرٌّ يعِدُ بما لن يتمّ. ولا يُحكَمُ بالغربةِ إلّا عند اليقين.
+  const isForeignBranchSupplier = (row: any): boolean => {
+    // **ولا اسمَ بلا بيت** — الرتبةُ العليا تُسأَلُ من بيتِها ولا تُكتَبُ بيدٍ هنا.
+    if (isSeniorRole((currentUserRole || '').trim().toLowerCase())) return false
+    if (!currentUserBranchId) return false
+    return !!row?.branch_id && row.branch_id !== currentUserBranchId
+  }
+
   const dispatchVendorRefundDecisionNotification = async (
     requestId: string,
     action: "approved" | "rejected",
@@ -913,37 +924,54 @@ export default function SuppliersPage() {
               }
               return null
             })()}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleEdit(row)
-              }}
-              disabled={!permUpdate}
-              title={appLang === 'en' ? 'Edit supplier' : 'تعديل المورد'}
-            >
-              <Edit2 className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-red-500 hover:text-red-600"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleDelete(row.id)
-              }}
-              disabled={!permDelete}
-              title={appLang === 'en' ? 'Delete supplier' : 'حذف المورد'}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {(() => {
+              // v3.75.22 — المورّدُ الظاهرُ بحكمِ الحركةِ لا بحكمِ السجلّ: اطّلاعٌ بلا تصرّف.
+              const foreign = isForeignBranchSupplier(row)
+              const foreignTitle = appLang === 'en'
+                ? 'This supplier is registered in another branch. You see it because it has activity in your branch; editing belongs to its own branch.'
+                : 'هذا المورّد مسجَّل فى فرعٍ آخر. يظهر لك لأنّ له حركة فى فرعك، والتعديل لفرع سجلّه.'
+              return (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleEdit(row)
+                    }}
+                    disabled={!permUpdate || foreign}
+                    title={foreign ? foreignTitle : (appLang === 'en' ? 'Edit supplier' : 'تعديل المورد')}
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-red-500 hover:text-red-600"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDelete(row.id)
+                    }}
+                    disabled={!permDelete || foreign}
+                    title={foreign ? foreignTitle : (appLang === 'en' ? 'Delete supplier' : 'حذف المورد')}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </>
+              )
+            })()}
           </div>
         )
       }
     }
-  ], [appLang, currencySymbol, balances, permWrite, permUpdate, permDelete])
+    // v3.75.22 — **وحاصلٌ محفوظٌ بذاكرةٍ ناقصةٍ يعرضُ الأمسَ اليوم.** كان
+    // `scopedBranchId` و`outsideScopeIds` يُقرآنِ هنا ولا يُذكرانِ فى قائمةِ
+    // التبعيّات، فتُحسَبُ الأعمدةُ قبلَ وصولِ جوابِ القاعدةِ ولا تُعادُ بعدَه —
+    // فلا تظهرُ علامةُ «فروع أخرى» أصلاً عند أوّلِ فتح. **وعلامةٌ لا تظهرُ
+    // ليست علامة.**
+  ], [appLang, currencySymbol, balances, permWrite, permUpdate, permDelete,
+      scopedBranchId, outsideScopeIds, currentUserRole, currentUserBranchId])
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-950 dark:to-slate-900">
