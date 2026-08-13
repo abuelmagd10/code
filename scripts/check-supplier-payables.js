@@ -1,7 +1,29 @@
 /**
- * 🔍 فحص ذمم الموردين في شركة "تست"
- * 
- * هذا السكربت يفحص قيم ذمم الموردين ويقارنها مع الفواتير والمرتجعات
+ * check-supplier-payables.js — ذممُ الموردينَ كما يقولُها الدفتر
+ * ---------------------------------------------------------------------------
+ * v3.75.23 — **وفمٌ يقولُ رقماً بعدَ أن قِيلَ غيرُه خطرٌ صامت.**
+ *
+ * كان هذا الملفُّ يطبعُ «إجمالي الذمم الدائنة» ويخالفُ الشاشةَ والدفترَ معاً،
+ * ويُقرأُ على أنّه الحقيقةُ لأنّه يُطبَعُ فى كلِّ دفعة. وخالفَهما فى موضعَين:
+ *
+ *   ١) **قائمةُ حالاتٍ كتبها بيدِه** — `(draft,cancelled,voided,fully_returned)`
+ *      — وهى تهجئةٌ خامسةٌ لا تذكرُ `rejected`، فكانت تعدُّ فاتورةً رُفضتْ
+ *      بضاعتُها عند الاستلامِ **ولا قيدَ لها فى الأستاذ**. فطبعَ ٩٩٦٫١٠ فى
+ *      الدفعةِ نفسِها التى صحّحت الشاشةَ إلى ٩٨٦٫١٠.
+ *
+ *   ٢) **حسابٌ يتجاهلُ المرتجع** — `total_amount - paid_amount` بلا طرحِ
+ *      `returned_amount`. وحكمَ الدفترُ بينهما: حسابُ الشاشةِ يُطابقُ حسابَ
+ *      الموردينَ ٢١١٠ **إلى صفرٍ بالضبط** (٩٨٦٫١٠ − ٦٫٢٢ إشعاراتٍ دائنةً غيرَ
+ *      مطبَّقة = ٩٧٩٫٨٨ = رصيدُ الحساب)، وحسابُ هذا الملفِّ يُخطئُ بـ**١٫٩١**.
+ *
+ * فصارَ يسألُ **القانونَ الواحد** فى القاعدةِ عن الحالات (`bill_payable_statuses`)
+ * ويحسبُ كما يحسبُ الدفتر. **ولا اسمَ بلا بيت.**
+ *
+ * **وإن تعذّرَ سؤالُ القانونِ لم يُخمِّنْ ولم يطبعْ إجمالاً**: قائمةٌ مكتوبةٌ
+ * بيدٍ احتياطاً هى بعينُها الداءُ الذى نُزع. **ورقمٌ كاذبٌ أسوأُ من لا رقم.**
+ *
+ * Usage: node scripts/check-supplier-payables.js
+ * ---------------------------------------------------------------------------
  */
 
 const { createClient } = require('@supabase/supabase-js')
@@ -34,124 +56,125 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 
+/**
+ * المتبقّى على فاتورةٍ واحدة — **بحسابِ الدفترِ لا بحسابٍ خاصٍّ بهذا الملفّ**.
+ * وهو الحسابُ نفسُه الذى تستعملُه `get_suppliers_overview` على الشاشة:
+ * المرتجعُ يُطرَحُ من الإجمالىِّ أوّلاً، ثمّ المدفوع، ولا ينزلُ عن الصفر.
+ */
+function billRemaining(bill) {
+  const total = Number(bill.total_amount || 0)
+  const paid = Number(bill.paid_amount || 0)
+  const returned = Number(bill.returned_amount || 0)
+  return Math.max(Math.max(total - returned, 0) - paid, 0)
+}
+
 async function checkSupplierPayables() {
-  try {
-    console.log('🔍 فحص ذمم الموردين في شركة "تست"...\n')
+  console.log('🔍 فحص ذمم الموردين في شركة "تست"...\n')
 
-    // جلب ID شركة "تست"
-    const { data: companies, error: companyError } = await supabase
-      .from('companies')
-      .select('id, name')
-      .eq('name', 'تست')
-      .limit(1)
+  // ── القانونُ الواحد: أىُّ حالةِ فاتورةٍ عبرتْ حدَّ الأستاذ فصارت مالاً؟ ──
+  // يُسألُ من القاعدةِ ولا يُكتَبُ هنا. **ولا نسخةَ ثانيةً تنحرفُ يوماً.**
+  const { data: payableStatuses, error: lawError } = await supabase.rpc('bill_payable_statuses')
 
-    if (companyError || !companies || companies.length === 0) {
-      console.error('❌ لم يتم العثور على شركة "تست"')
-      return
-    }
+  if (lawError || !Array.isArray(payableStatuses) || payableStatuses.length === 0) {
+    console.error('❌ تعذّر سؤال القانون الواحد `bill_payable_statuses` في القاعدة.')
+    console.error(`   السبب: ${lawError ? lawError.message : 'ردٌّ فارغ'}`)
+    console.error('   ولن أُخمّن قائمةً بيدي — رقمٌ كاذب أسوأ من لا رقم.')
+    return
+  }
 
-    const companyId = companies[0].id
-    console.log(`✅ تم العثور على شركة "تست": ${companyId}\n`)
+  console.log(`⚖️  القانون الواحد (من القاعدة): ${payableStatuses.join(', ')}\n`)
 
-    // جلب جميع الموردين
-    const { data: suppliers, error: suppliersError } = await supabase
-      .from('suppliers')
-      .select('id, name, phone')
-      .eq('company_id', companyId)
+  // جلب ID شركة "تست"
+  const { data: companies, error: companyError } = await supabase
+    .from('companies')
+    .select('id, name')
+    .eq('name', 'تست')
+    .limit(1)
 
-    if (suppliersError) {
-      console.error('❌ خطأ في جلب الموردين:', suppliersError)
-      return
-    }
+  if (companyError || !companies || companies.length === 0) {
+    console.error('❌ لم يتم العثور على شركة "تست"')
+    return
+  }
 
-    if (!suppliers || suppliers.length === 0) {
-      console.log('✅ لا توجد موردين')
-      return
-    }
+  const companyId = companies[0].id
+  console.log(`✅ تم العثور على شركة "تست": ${companyId}\n`)
 
-    console.log(`📋 تم العثور على ${suppliers.length} مورد:\n`)
+  // جلب جميع الموردين
+  const { data: suppliers, error: suppliersError } = await supabase
+    .from('suppliers')
+    .select('id, name, phone')
+    .eq('company_id', companyId)
 
-    for (const supplier of suppliers) {
-      console.log(`\n${'='.repeat(60)}`)
-      console.log(`🏢 المورد: ${supplier.name} (${supplier.id})`)
-      console.log('='.repeat(60))
+  if (suppliersError) {
+    console.error('❌ خطأ في جلب الموردين:', suppliersError)
+    return
+  }
 
-      // جلب جميع الفواتير للمورد
-      const { data: bills, error: billsError } = await supabase
-        .from('bills')
-        .select('id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, return_status')
-        .eq('company_id', companyId)
-        .eq('supplier_id', supplier.id)
-        .not('status', 'in', '(draft,cancelled,voided,fully_returned)')
+  if (!suppliers || suppliers.length === 0) {
+    console.log('✅ لا توجد موردين')
+    return
+  }
 
-      if (billsError) {
-        console.error(`   ❌ خطأ في جلب الفواتير: ${billsError.message}`)
-        continue
-      }
+  console.log(`📋 تم العثور على ${suppliers.length} مورد:\n`)
 
-      if (!bills || bills.length === 0) {
-        console.log('   ✅ لا توجد فواتير')
-        continue
-      }
-
-      console.log(`\n   📄 عدد الفواتير: ${bills.length}\n`)
-
-      let totalPayables = 0
-
-      for (const bill of bills) {
-        const totalAmount = Number(bill.total_amount || 0)
-        const paidAmount = Number(bill.paid_amount || 0)
-        const returnedAmount = Number(bill.returned_amount || 0)
-        
-        // حساب الإجمالي الأصلي (قبل المرتجعات)
-        const originalTotal = totalAmount + returnedAmount
-        
-        // حساب المتبقي
-        const remaining = totalAmount - paidAmount
-        
-        // حساب المتبقي الصحيح (إذا كان total_amount صحيح)
-        const correctRemaining = originalTotal - paidAmount - returnedAmount
-
-        console.log(`   📋 ${bill.bill_number}:`)
-        console.log(`      الإجمالي الحالي (total_amount): ${totalAmount.toFixed(2)}`)
-        console.log(`      المرتجع (returned_amount): ${returnedAmount.toFixed(2)}`)
-        console.log(`      المدفوع (paid_amount): ${paidAmount.toFixed(2)}`)
-        console.log(`      الإجمالي الأصلي (محسوب): ${originalTotal.toFixed(2)}`)
-        console.log(`      المتبقي (total_amount - paid_amount): ${remaining.toFixed(2)}`)
-        console.log(`      المتبقي الصحيح (originalTotal - paid - returned): ${correctRemaining.toFixed(2)}`)
-        console.log(`      الحالة: ${bill.status}`)
-        console.log(`      حالة المرتجع: ${bill.return_status || 'لا يوجد'}`)
-        
-        // التحقق من صحة الحساب
-        if (Math.abs(remaining - correctRemaining) > 0.01) {
-          console.log(`      ⚠️  تحذير: المتبقي غير صحيح! الفرق: ${Math.abs(remaining - correctRemaining).toFixed(2)}`)
-        }
-
-        if (remaining > 0) {
-          totalPayables += remaining
-        }
-      }
-
-      console.log(`\n   💰 إجمالي الذمم الدائنة: ${totalPayables.toFixed(2)}`)
-    }
-
-    console.log('\n' + '='.repeat(60))
-    console.log('✅ اكتمل الفحص')
+  for (const supplier of suppliers) {
+    console.log(`\n${'='.repeat(60)}`)
+    console.log(`🏢 المورد: ${supplier.name} (${supplier.id})`)
     console.log('='.repeat(60))
 
-  } catch (error) {
-    console.error('❌ خطأ عام:', error)
+    // **الحالاتُ تأتى من القانون، لا من قائمةٍ هنا.**
+    const { data: bills, error: billsError } = await supabase
+      .from('bills')
+      .select('id, bill_number, bill_date, total_amount, paid_amount, returned_amount, status, return_status')
+      .eq('company_id', companyId)
+      .eq('supplier_id', supplier.id)
+      .in('status', payableStatuses)
+
+    if (billsError) {
+      console.error(`   ❌ خطأ في جلب الفواتير: ${billsError.message}`)
+      continue
+    }
+
+    if (!bills || bills.length === 0) {
+      console.log('   ✅ لا توجد فواتير عبرت حدّ الأستاذ')
+      continue
+    }
+
+    console.log(`\n   📄 عدد الفواتير: ${bills.length}\n`)
+
+    let totalPayables = 0
+
+    for (const bill of bills) {
+      const totalAmount = Number(bill.total_amount || 0)
+      const paidAmount = Number(bill.paid_amount || 0)
+      const returnedAmount = Number(bill.returned_amount || 0)
+      const remaining = billRemaining(bill)
+
+      console.log(`   📋 ${bill.bill_number}:`)
+      console.log(`      الإجمالي (total_amount): ${totalAmount.toFixed(2)}`)
+      console.log(`      المرتجع (returned_amount): ${returnedAmount.toFixed(2)}`)
+      console.log(`      المدفوع (paid_amount): ${paidAmount.toFixed(2)}`)
+      console.log(`      المتبقي بحساب الدفتر: ${remaining.toFixed(2)}`)
+      console.log(`      الحالة: ${bill.status}`)
+      console.log(`      حالة المرتجع: ${bill.return_status || 'لا يوجد'}`)
+
+      totalPayables += remaining
+    }
+
+    console.log(`\n   💰 إجمالي الذمم الدائنة: ${totalPayables.toFixed(2)}`)
   }
+
+  console.log('\n' + '='.repeat(60))
+  console.log('✅ اكتمل الفحص — والرقم هو الرقم الذي تقوله الشاشة والدفتر.')
+  console.log('='.repeat(60))
 }
 
 // تشغيل السكربت
 checkSupplierPayables()
   .then(() => {
-    console.log('\n✅ اكتمل الفحص')
     process.exit(0)
   })
   .catch((error) => {
     console.error('\n❌ فشل الفحص:', error)
     process.exit(1)
   })
-
