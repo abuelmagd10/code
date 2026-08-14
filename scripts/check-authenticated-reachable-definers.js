@@ -2,55 +2,69 @@
  * check-authenticated-reachable-definers.js
  * ---------------------------------------------------------------------------
  * v3.75.33 — **وبابٌ بصلاحيّاتٍ كاملةٍ لا يطرقُه أحدٌ ليس باباً، بل ثغرة.**
+ * v3.75.34 — **والنداءُ بمتغيّرٍ نداء، وجردٌ فى بعضِ الدارِ ليس جَرداً.**
  *
  * لماذا وُلد هذا الحارس
  * ---------------------
  * حملةُ الزائرِ انتهت: ما يبلغُه الزائرُ من دالّاتِ الصلاحيّاتِ الكاملةِ نزلَ من
  * ١٣٤ إلى ٣٥، وصارَ محروساً بقانونٍ مغلَقٍ فى v3.75.27 و v3.75.28.
  *
- * **والمستخدِمُ المسجَّلُ لم يُقَسْ قطّ.** وقِيس أوّلَ مرّةٍ فى هذه الدفعة (بالاسم
- * لا بالتحميلِ الزائد، على الإنتاج):
+ * **والمستخدِمُ المسجَّلُ لم يُقَسْ قطّ.** وقِيس أوّلَ مرّةٍ فى v3.75.33 (بالاسم لا
+ * بالتحميلِ الزائد، على الإنتاج): ٤٧٠ باباً يبلغُها، ٢١٩ منها **بلا طارق**؛
+ * وأُغلق اثنانِ ببرهانٍ حىٍّ فبقىَ ٢١٧.
  *
- *     دالّاتُ صلاحيّاتٍ كاملةٍ يبلغُها المستخدِمُ المسجَّل ......... 470
- *     منها يطرقُها طارقٌ معروف ................................. 251
- *     **ولا يطرقُها أحد** ...................................... 219
+ * ولماذا صُحِّح فى v3.75.34
+ * -------------------------
+ * **الرقمُ ٢١٧ كان يكذب.** خمسةَ عشرَ باباً منه كان يُنادَى فعلاً من المشروع،
+ * وهذا الحارسُ لا يراه، لسببَين اثنَين — وكلاهما فى **الطارقِ الأوّل**:
  *
- * ومن هذه المئتَينِ وتسعَ عشرة، **٧٧ يُنادَينَ من داخلِ دالّةٍ أخرى** — وهنّ
- * أوضحُ الحالات، **دواخلُ أغلفة**: `assert_company_access` و`can_access_bill`
- * و`erp_is_company_owner` و`check_period_lock` و`create_audit_log`
- * و`post_accounting_event` و`record_payment` و`next_po_number` وأخواتُها. كلُّ
- * واحدةٍ منها تعملُ **بصلاحيّاتِ مالكِها**، وأىُّ مستخدِمٍ مسجَّلٍ يستطيعُ نداءَها
- * **خارجَ غلافِها الذى يسألُ عن حقِّه**.
+ *   (أ) **جردٌ ناقصُ الأرجاء.** كان يمسحُ أربعةَ مجلّداتٍ مكتوبةً باليد:
+ *       `app` و`lib` و`components` و`hooks`. **ومجلّدُ `actions/` ليس منها** —
+ *       وفيه `actions/financial-reports.ts` ينادى `get_trial_balance` و
+ *       `get_income_statement` و`get_balance_sheet` و`get_financial_summary`.
+ *       ثلاثةٌ من هذه الأربعِ كانت معدودةً «بلا طارق». **ونزعُ منحتِها يكسرُ
+ *       شاشاتِ القوائمِ الماليّة.**
  *
- * وأُغلق منها **اثنانِ فى دفعةِ الميلادِ بعدَ برهانٍ حىّ** (`check_username_available`
- * و`generate_username_from_email`)، فبقىَ **٢١٧**. وهذا الحارسُ **يُثبِّتُ الرقم**:
- * لا يزيد. **ودَينٌ يُكتَبُ ولا يُسدَّدُ يصيرُ عادة** — فإن نقصَ وجبَ خفضُ الرقمِ
- * فى الدفعةِ نفسِها، **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**.
+ *   (ب) **والنداءُ بمتغيّرٍ نداء.** كان يبحثُ عن `rpc("الاسم")` مكتوباً حرفاً
+ *       فقط. والمشروعُ ينادى فى خمسةِ مواضعَ باسمٍ محسوبٍ لا مكتوب:
  *
- * **ولا يُغلَقُ مئتانِ فى دفعةٍ واحدة**: كلُّ إغلاقٍ يحتاجُ برهانَه الحىَّ كما فى
- * الاثنَين، وحملةُ الزائرِ نفسُها مشت على أربعِ دفعاتٍ مقيسة (١٣٤ ← ٦٤ ← ٣٧ ← ٣٥).
- * فهذا الحارسُ **يُوقفُ النزيفَ اليومَ ويجعلُ الرقمَ مرئيّاً فى كلِّ دفعة**.
+ *           await this.supabase.rpc(primaryRpcName as any, params)   // خدمةُ الترحيل
+ *           await createClient().rpc(fn, args)                       // شاشةُ أجورِ الإنتاج
+ *           await this.adminSupabase.rpc(rpcName, params)            // أمرُ سدادِ الفاتورة
+ *
+ *       فكانت اثنتا عشرةَ دالّةً معدودةً «بلا طارق» **وهى قلبُ المشروع**:
+ *       `post_accounting_event` و`post_accounting_event_v2` و`post_invoice_atomic_v2`
+ *       و`process_invoice_payment_atomic` و`process_invoice_payment_atomic_v2`
+ *       و`process_sales_return_atomic_v2` وستُّ دالّاتِ `plw_*` لأجورِ الإنتاج.
+ *       **ونزعُ منحتِها يوقفُ ترحيلَ الفواتيرِ والمدفوعاتِ ومردوداتِ المبيعات.**
+ *
+ * وهذا العطبُ **ليس نظريّاً**: نصُّ هذا الحارسِ نفسِه يعرضُ العلاجَ صريحاً
+ * («تُنزَعُ منحتُه»)، وسمّى `post_accounting_event` بالاسمِ فى ترويستِه على أنّها
+ * «داخلُ غلاف». **فكان لغماً موقوتاً موقَّعاً بيدى.** وكُشف عندَ أوّلِ محاولةِ
+ * سدادٍ للدَّين، بقراءةِ كلِّ ذِكرٍ للاسمِ فى الشيفرةِ بالعينِ لا بالثقةِ فى نتيجةِ
+ * البحث — **وبحثٌ لا يجد ليس دليلَ غياب**.
+ *
+ * فصارَ الطارقُ الأوّلُ ثلاثةَ أشكال، والجردُ يشملُ الدارَ كلَّها بالافتراض.
  *
  * مَن هو «الطارق»؟ أربعةٌ، لا واحد
  * --------------------------------
- *   ١) **شاشةٌ أو مسارٌ فى المشروع**: `rpc("الاسم")` أو `/rpc/الاسم` فى ملفّاتِ
- *      `app` و`lib` و`components` و`hooks`. **والتعليقُ ليس تعليمة** فتُقنَّعُ
- *      التعليقاتُ قبلَ البحث.
+ *   ١) **شاشةٌ أو مسارٌ فى المشروع** — بثلاثةِ أشكال:
+ *        • `rpc("الاسم")` مكتوباً حرفاً،
+ *        • `/rpc/الاسم` فى مسارِ REST،
+ *        • **أو اسمٌ مكتوبٌ نصّاً فى ملفٍّ ينادى `rpc(متغيّر)`** — فالمتغيّرُ
+ *          يحملُ الاسمَ وقتَ التشغيلِ ولا يراه التعبيرُ النمطىّ. **والتعليقُ ليس
+ *          تعليمة** فتُقنَّعُ التعليقاتُ قبلَ البحث.
  *   ٢) **سياسةُ حمايةٍ تطرقُها** — تُقرأُ من البيتِ الواحد
  *      `policy_knocked_function_names()`، **ولا يُبنى بيتٌ ثانٍ**.
- *   ٣) **عرضٌ (view) ينادِيها**. وهذا الطارقُ **ليس نظريّاً ولا زينة**: قِيس فى
- *      يومِ الميلادِ أنّ ٥٠ عرضاً فى المخطَّط، ٤٢ منها `security_invoker`، وأنّ
- *      **٧ دالّاتٍ تُنادى من داخلِها فعلاً** — منها `bill_money` و`bill_item_money`
- *      و`purchase_order_money` وأخواتُها فى مسارِ حجبِ تكلفةِ الشراء. **وعرضُ
- *      `security_invoker` يجرى بحقِّ قارئِه**، فلو عُدَّت هذه بلا طارقٍ ونُزعت
- *      منحتُها **لانكسرت ستُّ شاشاتٍ محوَّلة**. وهذا العطبُ وقعَ فى القياسِ الأوّلِ
- *      لهذه الدفعةِ وكُشف قبلَ أن يُكتَبَ سطرٌ واحد.
+ *   ٣) **عرضٌ (view) ينادِيها**. وهذا الطارقُ **ليس نظريّاً ولا زينة**: ٥٠ عرضاً
+ *      فى المخطَّط، ٤٢ منها `security_invoker`، و**٧ دالّاتٍ تُنادى من داخلِها
+ *      فعلاً** — منها `bill_money` وأخواتُها فى مسارِ حجبِ تكلفةِ الشراء.
+ *      **وعرضُ `security_invoker` يجرى بحقِّ قارئِه.**
  *   ٤) **إعلانُ ما قبلَ الدخول** `anon_prelogin_exceptions()`.
  *
- * وما لا يُعَدُّ طارقاً: **نداءٌ من داخلِ دالّةٍ أخرى**. فداخلَ دالّةِ الصلاحيّاتِ
- * الكاملةِ يجرى النداءُ **بحقِّ المالكِ لا بحقِّ المُنادى**، فلا يحتاجُ منحةً.
- * وهذا بعينُه ما بُرهنَ حيّاً فى v3.75.33: نُزعت المنحةُ فسقطَ النداءُ المباشرُ
- * بـ`permission denied`، **وبقىَ الغلافُ يعملُ كما كان**.
+ * وما لا يُعَدُّ طارقاً: **نداءٌ من داخلِ دالّةٍ أخرى بصلاحيّاتٍ كاملة**. فالنداءُ
+ * الداخلىُّ يجرى **بحقِّ المالكِ لا بحقِّ المُنادى**، فلا يحتاجُ منحةً — وهذا
+ * بعينُه ما بُرهنَ حيّاً فى v3.75.33 ثمّ فى v3.75.34.
  *
  * **وحارسٌ يصرخ على البرىء يُطفأ** — ولذلك يرفضُ هذا الحارسُ أن يحكمَ إن لم يجدْ
  * ملفَّ كودٍ واحداً، أو إن أعادتِ القاعدةُ قائمةً فارغة. **وبحثٌ لا يجد ليس دليلَ
@@ -65,15 +79,44 @@ const fs = require("fs");
 const path = require("path");
 
 const repoRoot = path.join(__dirname, "..");
-const CODE_ROOTS = ["app", "lib", "components", "hooks"];
-const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx"]);
+const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
 /**
- * **الرقمُ المُثبَّت.** قِيس ٢١٩ يومَ الميلاد، وأُغلق اثنانِ ببرهانٍ حىٍّ فى الدفعةِ
- * نفسِها، فبقىَ ٢١٧ — **مقيسٌ على الإنتاجِ بمنطقِ هذا الحارسِ نفسِه لا بحساب**.
- * لا يزيد. وإن نقصَ فليُخفَضْ هنا فى دفعةِ من خفضَه.
+ * **الجردُ يشملُ الدارَ كلَّها بالافتراض، ويُستثنى ما يُسمَّى.**
+ *
+ * القائمةُ المكتوبةُ باليدِ كانت قائمةَ **المشمول** (`app`, `lib`, `components`,
+ * `hooks`) — فأىُّ مجلّدٍ جديدٍ يسقطُ من الجردِ صامتاً، وهو بعينُه ما وقعَ مع
+ * `actions/`. **فقُلبت**: تُمسَحُ كلُّ الشيفرةِ إلّا ما يُستثنى هنا بسببٍ مكتوب،
+ * **وأىُّ مجلّدٍ جديدٍ يُمسَحُ تلقائيّاً**.
+ *
+ * وخطأُ الشمولِ يتركُ باباً معدوداً مطروقاً (دَينٌ ظاهرٌ لم يُسدَّدْ بعد)، وخطأُ
+ * النقصِ يدعو إلى نزعِ منحةٍ حيّة — **والميلُ الصحيحُ إلى تركِ البابِ مفتوحاً لا
+ * إلى إغلاقِه على برىء**.
+ *
+ * ولا يُستثنى إلّا ما **لا يجرى بحقِّ المستخدِمِ المسجَّل**:
  */
-const BASELINE = 217;
+const NOT_SHIPPED = new Set([
+  "node_modules", // ليس من المشروع
+  "scripts",      // تجرى بمفتاح الخدمة (service_role) لا بحقِّ المستخدِم
+  "tests",        // لا تُشحَن
+  "scratch",      // لا يُشحَن
+  "archive",      // لا يُشحَن
+  "supabase",     // هجراتٌ ودوالُّ حافّةٍ تجرى بمفتاح الخدمة
+  "docs",
+  "knowledge",
+  "governance",
+  "ops",
+]);
+
+/**
+ * **الرقمُ المُثبَّت.** قِيس ٢١٩ فى v3.75.33 بجردٍ ناقصِ الأرجاءِ وبطارقٍ أعمى عن
+ * النداءِ بمتغيّر، فثُبِّت عندَ ٢١٧ بعدَ إغلاقِ بابَين. وفى v3.75.34 صُحِّح الجردُ
+ * فظهرَ أنّ **خمسةَ عشرَ منها لم تكن يتيمةً قطّ** (٢١٧ ← ٢٠٢)، ثمّ أُغلقت ثلاثةُ
+ * أسماءٍ (أربعةُ توقيعات) ببرهانٍ حىٍّ على الإنتاجِ فصارَ **١٩٩** — مقيسٌ بمنطقِ
+ * هذا الحارسِ نفسِه لا محسوباً بيد. لا يزيد. وإن نقصَ فليُخفَضْ هنا فى دفعةِ من
+ * خفضَه، **فمكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**.
+ */
+const BASELINE = 199;
 
 // ── الجزءُ الخالصُ من المنطق: يُختبَرُ بلا قاعدة ──────────────────────────
 
@@ -84,10 +127,42 @@ function maskComments(src) {
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + " ".repeat(m.length - p1.length));
 }
 
-/** نداءٌ صريحٌ للاسمِ من كودِ المشروع — **والجوارُ ليس انتماءً**. */
+function escapeName(name) {
+  return String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** نداءٌ صريحٌ مكتوبٌ حرفاً — **والجوارُ ليس انتماءً**. */
 function callsFunction(src, name) {
-  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const esc = escapeName(name);
   return new RegExp(`\\.rpc\\(\\s*["'\`]${esc}["'\`]|/rpc/${esc}(?![A-Za-z0-9_])`).test(maskComments(src));
+}
+
+/**
+ * **ملفٌّ ينادى باسمٍ محسوبٍ لا مكتوب.** أوّلُ وسيطٍ لـ`rpc(` ليس نصّاً بين
+ * علاماتِ اقتباس، بل معرِّفٌ يحملُ الاسمَ وقتَ التشغيل:
+ *
+ *     await this.supabase.rpc(primaryRpcName as any, params)
+ *     await createClient().rpc(fn, args)
+ *
+ * **والتعبيرُ النمطىُّ لا يقرأُ المتغيّرات**، فيُحكَمُ على الملفِّ كلِّه: إن كان
+ * فيه نداءٌ بمتغيّرٍ **وفيه الاسمُ مكتوباً نصّاً**، فالاسمُ مطروق. وقد يكونُ
+ * الاسمُ فى ذلك الملفِّ لسببٍ آخرَ فيُعَدَّ مطروقاً بلا حقّ — **وهذا مقبولٌ لأنّه
+ * يتركُ البابَ مفتوحاً، والعكسُ يكسرُ شاشة**.
+ */
+function dispatchesIndirectly(src) {
+  return /\.rpc\(\s*(?!["'`])[A-Za-z_$]/.test(maskComments(src));
+}
+
+/** الاسمُ مكتوبٌ نصّاً بين علاماتِ اقتباس (بعدَ تقنيعِ التعليقات). */
+function mentionsNameAsText(src, name) {
+  return new RegExp(`["'\`]${escapeName(name)}["'\`]`).test(maskComments(src));
+}
+
+/** الطارقُ الأوّلُ بأشكالِه الثلاثة. */
+function knockedByCode(files, name) {
+  const list = files || [];
+  if (list.some((f) => callsFunction(f.src, name))) return true;
+  return list.some((f) => dispatchesIndirectly(f.src) && mentionsNameAsText(f.src, name));
 }
 
 /**
@@ -96,52 +171,66 @@ function callsFunction(src, name) {
  * **والاسمُ المؤهَّلُ بمخطَّطِه هو الشكلُ الذى تكتبُه القاعدةُ نفسُها**: تعريفُ
  * العرضِ يخرجُ من `pg_get_viewdef` مؤهَّلاً `public.bill_money(...)`، فلو رُفض
  * السابقُ نقطةً لَما رأى الحارسُ طارقاً واحداً من العروضِ كلِّها — **ولصرخَ على
- * سبعةِ أبرياءَ منها مسارُ حجبِ تكلفةِ الشراء**. (سقطَ هذا الاتّجاهُ فى الفخِّ
- * الذاتىِّ قبلَ أن يُرسَلَ الحارس، فصُحِّح.)
- *
- * وإن جاءَ الاسمُ مؤهَّلاً بمخطَّطٍ آخرَ عُدَّ طارقاً أيضاً — **والخطأُ هنا يميلُ
- * إلى تركِ البابِ مفتوحاً لا إلى إغلاقِه على برىء**، وهو الميلُ الصحيح.
+ * سبعةِ أبرياءَ منها مسارُ حجبِ تكلفةِ الشراء**.
  */
 function calledByView(viewDefs, name) {
-  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`(^|[^A-Za-z0-9_])(public\\.)?${esc}\\s*\\(`);
-  return viewDefs.some((d) => re.test(String(d || "")));
+  const re = new RegExp(`(^|[^A-Za-z0-9_])(public\\.)?${escapeName(name)}\\s*\\(`);
+  return (viewDefs || []).some((d) => re.test(String(d || "")));
 }
 
 /** الأبوابُ التى لا يطرقُها أحدٌ من الأربعة. */
 function unknockedNames(open, files, policyNames, viewDefs, declared) {
   const pol = new Set(policyNames || []);
   const dec = new Set(declared || []);
-  return open
+  return (open || [])
     .filter((n) => !pol.has(n))
     .filter((n) => !dec.has(n))
     .filter((n) => !calledByView(viewDefs || [], n))
-    .filter((n) => !(files || []).some((f) => callsFunction(f.src, n)))
+    .filter((n) => !knockedByCode(files || [], n))
     .sort();
 }
 
+/**
+ * **الأسماءُ التى تُذكَرُ نصّاً ولا تُنادى.** ليست طارقاً — قد تكونُ قيمةَ صلاحيّةٍ
+ * فى شاشةٍ (`{ value: "record_payment" }`)، أو اسماً فى قائمةِ تحقُّق، أو سطرَ
+ * سجلّ. لكنّها **لا تُنزَعُ منحتُها إلّا بعدَ قراءةِ كلِّ موضعٍ بالعين**، لأنّ
+ * الذِّكرَ قد يكونُ نداءً لم يُرَ. تُعرَضُ ولا تُسكِتُ العدَّ.
+ */
+function mentionedButNotCalled(orphans, files) {
+  return (orphans || []).filter((n) => (files || []).some((f) => mentionsNameAsText(f.src, n)));
+}
+
+/**
+ * **والاستثناءُ يُقاسُ من الجذرِ وحدَه.** `NOT_SHIPPED` قائمةُ مجلّداتٍ عُليا،
+ * فلو طُبِّقت على كلِّ عمقٍ لَسقطَ `app/.../ops/` و`lib/.../docs/` من الجردِ
+ * بلا سبب — **وهو نقصُ جردٍ من الشكلِ الذى وُلدت هذه الدفعةُ لتُصحّحَه**.
+ */
 function readCodeFiles() {
   const out = [];
-  const walk = (d) => {
+  const walk = (dir, depth) => {
     let entries;
-    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
+      if (e.name.startsWith(".")) continue;
+      if (e.name === "node_modules") continue;
+      if (depth === 0 && NOT_SHIPPED.has(e.name)) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p, depth + 1);
       else if (CODE_EXT.has(path.extname(e.name))) {
         try { out.push({ rel: path.relative(repoRoot, p), src: fs.readFileSync(p, "utf8") }); } catch { /* ignore */ }
       }
     }
   };
-  for (const r of CODE_ROOTS) walk(path.join(repoRoot, r));
+  walk(repoRoot, 0);
   return out;
 }
 
 // ── الفخُّ الذاتىّ ────────────────────────────────────────────────────────
 if (process.argv.includes("--selftest")) {
   let bad = 0;
+  let total = 0;
   const ok = (name, got, want) => {
+    total++;
     const g = JSON.stringify(got), w = JSON.stringify(want);
     if (g === w) console.log(`  ok  ${name}  (توقّعتُ ${w} فجاء ${g})`);
     else { console.error(`  X   ${name}  (توقّعتُ ${w} فجاء ${g})`); bad++; }
@@ -151,6 +240,7 @@ if (process.argv.includes("--selftest")) {
   ok("يرى النداءَ بعلامتَى اقتباس مزدوجتين", callsFunction('supabase.rpc("foo", {})', "foo"), true);
   ok("ويراه بعلامةٍ مفردة", callsFunction("supabase.rpc('foo')", "foo"), true);
   ok("ويراه بعلامةٍ خلفيّة", callsFunction("supabase.rpc(`foo`)", "foo"), true);
+  ok("ويراه وقد نزلَ إلى سطرٍ تال", callsFunction('supabase.rpc(\n  "foo",\n  {}\n)', "foo"), true);
   ok("ويرى مسارَ REST المباشر", callsFunction('fetch("/rest/v1/rpc/foo")', "foo"), true);
   ok("ولا يخدعه ذكرٌ داخل تعليقٍ سطرىّ — التعليقُ ليس تعليمة",
      callsFunction('// supabase.rpc("foo")', "foo"), false);
@@ -161,7 +251,23 @@ if (process.argv.includes("--selftest")) {
   ok("ولا يخلطُ اسماً بادئتُه نفسُها", callsFunction('supabase.rpc("foo_bar")', "foo"), false);
   ok("ولا يخلطُ مساراً بادئتُه نفسُها", callsFunction('fetch("/rpc/foo_bar")', "foo"), false);
 
-  // **والعرضُ طارقٌ** — الاتّجاهُ الذى كشفَ عطبَ القياسِ الأوّلِ فى دفعةِ الميلاد.
+  // **والنداءُ بمتغيّرٍ نداء** — الاتّجاهُ الذى كشفَ لغمَ v3.75.33.
+  ok("ويرى ملفّاً ينادى بمتغيّر", dispatchesIndirectly("await s.rpc(rpcName, p)"), true);
+  ok("ويراه ولو كان المتغيّرُ حقلاً فى كائن",
+     dispatchesIndirectly("await s.rpc(fallback.rpcName as any, p)"), true);
+  ok("ولا يعدُّ النداءَ المكتوبَ حرفاً نداءً بمتغيّر", dispatchesIndirectly('await s.rpc("foo", p)'), false);
+  ok("ولا النداءَ المكتوبَ حرفاً وقد نزلَ سطراً", dispatchesIndirectly('await s.rpc(\n  "foo",\n  p)'), false);
+  ok("ولا نداءً بمتغيّرٍ داخلَ تعليق", dispatchesIndirectly("// await s.rpc(rpcName, p)"), false);
+  ok("فيمرُّ اسمٌ مكتوبٌ نصّاً فى ملفٍّ ينادى بمتغيّر — وهو post_accounting_event بعينِه",
+     unknockedNames(["post_accounting_event"],
+       F('const n = flag ? "v2" : "post_accounting_event"; await s.rpc(n, p)'), [], [], []), []);
+  ok("ولا يمرُّ اسمٌ مذكورٌ نصّاً فى ملفٍّ لا ينادى بمتغيّر — وذِكرٌ ليس نداءً",
+     unknockedNames(["record_payment"], F('{ value: "record_payment", label: "دفعة" }'), [], [], []),
+     ["record_payment"]);
+  ok("ولا يمرُّ اسمٌ لم يُذكَرْ فى ملفِّ النداءِ بمتغيّر",
+     unknockedNames(["orphan"], F('const n = "other"; await s.rpc(n, p)'), [], [], []), ["orphan"]);
+
+  // **والعرضُ طارقٌ** — الاتّجاهُ الذى كشفَ عطبَ القياسِ الأوّلِ فى v3.75.33.
   ok("ويعدُّ العرضَ طارقاً", calledByView(["SELECT bill_money(x) FROM t"], "bill_money"), true);
   ok("ويراه مؤهَّلاً بالمخطَّط", calledByView(["SELECT public.bill_money(x)"], "bill_money"), true);
   ok("ولا يخدعه اسمٌ يشبهُه فى عرض", calledByView(["SELECT bill_money_2(x)"], "bill_money"), false);
@@ -182,7 +288,19 @@ if (process.argv.includes("--selftest")) {
   ok("ويسقطُ الجميعُ حين لا ملفَّ أصلاً — وبحثٌ لا يجد ليس دليلَ غياب",
      unknockedNames(["alive"], [], [], [], []), ["alive"]);
 
-  console.log(`  الفخُّ الذاتىّ: 20 اتّجاهاً، ${bad === 0 ? "كلُّها صحيحة." : bad + " منها سقط."}`);
+  // **والذِّكرُ يُعرَضُ ولا يُسكِت.**
+  ok("ويُفرِزُ اليتيمَ المذكورَ نصّاً ليُقرَأَ بالعين",
+     mentionedButNotCalled(["record_payment", "silent"], F('{ value: "record_payment" }')), ["record_payment"]);
+  ok("ولا يعدُّ ذِكراً داخلَ تعليقٍ ذِكراً",
+     mentionedButNotCalled(["silent"], F('// "silent"')), []);
+
+  // **والجردُ يشملُ ما لم يُسمَّ.** مجلّدٌ جديدٌ يُمسَحُ تلقائيّاً، والمستثنى بسبب.
+  ok("ولا يستثنى مجلّدَ الإجراءاتِ actions - وهو الذى سقطَ من الجردِ القديم",
+     NOT_SHIPPED.has("actions"), false);
+  ok("ولا يستثنى مجلّدَ التطبيق", NOT_SHIPPED.has("app"), false);
+  ok("ويستثنى سكربتاتِ مفتاحِ الخدمة", NOT_SHIPPED.has("scripts"), true);
+
+  console.log(`  الفخُّ الذاتىّ: ${total} اتّجاهاً، ${bad === 0 ? "كلُّها صحيحة." : bad + " منها سقط."}`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
@@ -210,6 +328,7 @@ try { ({ Client } = require("./lib/live-db")); } catch {
     console.error("X لم أقرأْ ملفَّ كودٍ واحداً — لا يُحكَمُ على طارقٍ لم يُبحَثْ عنه.");
     process.exit(1);
   }
+  const indirectFiles = codeFiles.filter((f) => dispatchesIndirectly(f.src));
 
   const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
   await client.connect();
@@ -246,10 +365,12 @@ try { ({ Client } = require("./lib/live-db")); } catch {
 
   const orphans = unknockedNames(open, codeFiles, policyNames, viewDefs, declared);
   const n = orphans.length;
+  const mentioned = mentionedButNotCalled(orphans, codeFiles);
 
   console.log(
     `  دالّاتُ صلاحيّاتٍ كاملةٍ يبلغُها المستخدِمُ المسجَّل: ${open.length}` +
       `   ·   ملفّاتُ كودٍ مسحت: ${codeFiles.length}` +
+      ` (منها ${indirectFiles.length} تنادى باسمٍ محسوب)` +
       `   ·   عروضٌ قُرئت: ${viewDefs.length}`
   );
   console.log(
@@ -265,7 +386,11 @@ try { ({ Client } = require("./lib/live-db")); } catch {
     console.error(
       "\n  العلاج: إمّا يُنادى البابُ من شاشةٍ أو سياسةٍ أو عرضٍ فيصيرَ له طارق،\n" +
         "         وإمّا تُنزَعُ منحتُه: REVOKE ALL ON FUNCTION public.<name>(<args>) FROM PUBLIC, anon, authenticated;\n" +
-        "         (والنداءُ من داخلِ غلافٍ بصلاحيّاتٍ كاملةٍ يبقى يعملُ بلا منحة.)"
+        "         (والنداءُ من داخلِ غلافٍ بصلاحيّاتٍ كاملةٍ يبقى يعملُ بلا منحة.)\n" +
+        "  **ولا تُنزَعُ منحةٌ قبلَ برهانٍ حىٍّ على الإنتاج**: نزعٌ داخلَ معاملةٍ تُلغى،\n" +
+        "         ثمّ نداءٌ مباشرٌ بدورِ authenticated يجبُ أن يُرفَضَ بـ42501،\n" +
+        "         ونداءٌ عبرَ غلافٍ بصلاحيّاتٍ كاملةٍ يجبُ ألّا يُرفَضَ بـ42501.\n" +
+        "         **ولا يُصدَّقُ هذا بالوصف.**"
     );
     process.exit(1);
   }
@@ -278,10 +403,19 @@ try { ({ Client } = require("./lib/live-db")); } catch {
     process.exit(1);
   }
 
+  if (mentioned.length > 0) {
+    console.log(
+      `  ! ومن هؤلاء ${mentioned.length} اسماً **مذكورٌ نصّاً فى الشيفرةِ ولا نداءَ ظاهراً له**.\n` +
+        "    والذِّكرُ ليس نداءً، لكنّه قد يكونُ نداءً لم يُرَ — **فلا تُنزَعُ منحةُ أحدِهم قبلَ قراءةِ كلِّ موضعٍ بالعين**:"
+    );
+    for (const s of mentioned) console.log(`      - ${s}`);
+  }
+
   console.log(
     "+ no full-rights function is reachable by a logged-in user beyond the pinned debt " +
-      `(${n} unknocked, pinned at ${BASELINE}; a knocker is a screen, an RLS policy, a view, ` +
-      "or the documented pre-login declaration - an inner call from another definer needs no grant)."
+      `(${n} unknocked, pinned at ${BASELINE}; a knocker is a screen - a literal rpc name, a REST path, ` +
+      "or a name carried into rpc() by a variable - an RLS policy, a view, or the documented pre-login " +
+      "declaration; an inner call from another definer needs no grant)."
   );
   process.exit(0);
 })().catch((e) => { console.error(`X ${e && e.message ? e.message : e}`); process.exit(1); });

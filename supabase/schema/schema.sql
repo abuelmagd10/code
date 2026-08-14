@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-14T17:25:17.810Z
+-- Generated: 2026-08-14T18:46:10.577Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -11038,6 +11038,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_31_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_31_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_33_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_33_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_34_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_34_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11715,7 +11717,6 @@ GRANT EXECUTE ON FUNCTION public.count_unbalanced_entries(p_company_id uuid) TO 
 GRANT EXECUTE ON FUNCTION public.count_unbalanced_entries(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.count_unbalanced_entries(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.create_audit_log(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_audit_log(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_audit_log(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) TO service_role;
 REVOKE ALL ON FUNCTION public.create_audit_log_internal(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_audit_log_internal(p_company_id uuid, p_user_id uuid, p_action text, p_target_table text, p_record_id uuid, p_record_identifier text, p_old_data jsonb, p_new_data jsonb, p_branch_id uuid, p_cost_center_id uuid, p_reason text) TO service_role;
@@ -12028,7 +12029,6 @@ REVOKE ALL ON FUNCTION public.execute_recurring_journal_run(p_template_id uuid, 
 GRANT EXECUTE ON FUNCTION public.execute_recurring_journal_run(p_template_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.execute_recurring_journal_run(p_template_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.execute_sales_invoice_accounting(p_invoice_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.execute_sales_invoice_accounting(p_invoice_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.execute_sales_invoice_accounting(p_invoice_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.execute_vendor_payment_correction(p_request_id uuid, p_company_id uuid, p_executor_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.execute_vendor_payment_correction(p_request_id uuid, p_company_id uuid, p_executor_id uuid) TO authenticated;
@@ -13887,10 +13887,8 @@ REVOKE ALL ON FUNCTION public.record_financial_replay_execution_activation(p_com
 GRANT EXECUTE ON FUNCTION public.record_financial_replay_execution_activation(p_company_id uuid, p_intent_id uuid, p_token_hash text, p_actor_id uuid, p_preview_result_hash text, p_write_guard jsonb, p_execution_metadata jsonb, p_result_summary jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_financial_replay_execution_activation(p_company_id uuid, p_intent_id uuid, p_token_hash text, p_actor_id uuid, p_preview_result_hash text, p_write_guard jsonb, p_execution_metadata jsonb, p_result_summary jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_account_id uuid, p_notes text) TO service_role;
 REVOKE ALL ON FUNCTION public.record_shareholder_drawing_atomic(p_company_id uuid, p_shareholder_id uuid, p_amount numeric, p_drawing_date date, p_payment_account_id uuid, p_drawings_account_id uuid, p_description text, p_branch_id uuid, p_cost_center_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_shareholder_drawing_atomic(p_company_id uuid, p_shareholder_id uuid, p_amount numeric, p_drawing_date date, p_payment_account_id uuid, p_drawings_account_id uuid, p_description text, p_branch_id uuid, p_cost_center_id uuid, p_user_id uuid) TO authenticated;

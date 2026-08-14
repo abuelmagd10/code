@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-14T17:25:20.245Z
--- Routines: 1384
+-- Generated: 2026-08-14T18:46:11.912Z
+-- Routines: 1385
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -6555,6 +6555,96 @@ BEGIN
      AND p.prosrc LIKE '%assert_is_self%';
   IF v_n < 1 THEN
     RAISE EXCEPTION 'v3.75.33: الغلافُ لم يعُدْ يسألُ عن هويّةِ مُنادِيه — وهو البابُ الوحيد.';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_34_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_34_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad TEXT;
+  v_n   INT;
+BEGIN
+  -- (١) **الأبوابُ الأربعةُ مغلقة**: لا زائرَ ولا مستخدِمَ مسجَّلَ ولا PUBLIC.
+  SELECT string_agg(p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
+                    ', ' ORDER BY p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')')
+    INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('create_audit_log', 'execute_sales_invoice_accounting', 'record_payment')
+     AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+          OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.34: بابٌ يكتبُ فى الدفترِ عادَ يبلغُه من لا يطرقُه: %', v_bad;
+  END IF;
+
+  -- (٢) **ولم يُقطَعْ طريقُ الخادم.** النزعُ من الزائرِ والمستخدِمِ لا من الخدمة —
+  --     **ونصفُ جراحةٍ أسوأُ من لا جراحة**.
+  SELECT string_agg(p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', ', ')
+    INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('create_audit_log', 'execute_sales_invoice_accounting', 'record_payment')
+     AND NOT has_function_privilege('service_role', p.oid, 'EXECUTE');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.34: نُزعت منحةُ الخدمةِ أيضاً فانقطعَ طريقُ الخادم: %', v_bad;
+  END IF;
+
+  -- (٣) **والأربعةُ باقيةٌ بصلاحيّاتٍ كاملةٍ يملكُها postgres** — فلو صارت
+  --     `SECURITY INVOKER` لَانكسرَ النداءُ الداخلىُّ على المستخدِمِ بعدَ الإغلاق.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('create_audit_log', 'execute_sales_invoice_accounting', 'record_payment')
+     AND (NOT p.prosecdef OR pg_get_userbyid(p.proowner) <> 'postgres');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.34: دالّةٌ فقدت صلاحيّاتِها الكاملةَ أو مالكَها فينكسرُ النداءُ الداخلىُّ: %', v_bad;
+  END IF;
+
+  -- (٤) **وكلُّ مَن ينادِيها من داخلِ القاعدةِ ينادى بحقِّ المالك.** هذا هو
+  --     الشرطُ الذى جعلَ الإغلاقَ آمناً؛ فلو وُلدَ غداً منادٍ بصلاحيّاتِ مُنادِيه
+  --     (`SECURITY INVOKER`) لَانكسرَ عندَه النداءُ صامتاً. **ومكسبٌ لا يُثبَّتُ
+  --     يُلتَفُّ عليه.**
+  SELECT string_agg(DISTINCT c.proname, ', ') INTO v_bad
+    FROM pg_proc c JOIN pg_namespace cn ON cn.oid = c.pronamespace
+   WHERE cn.nspname = 'public'
+     AND c.proname NOT IN ('create_audit_log', 'execute_sales_invoice_accounting', 'record_payment')
+     AND (NOT c.prosecdef OR pg_get_userbyid(c.proowner) <> 'postgres')
+     AND EXISTS (
+           SELECT 1 FROM unnest(ARRAY['create_audit_log',
+                                      'execute_sales_invoice_accounting',
+                                      'record_payment']) AS t(nm)
+            WHERE c.prosrc ~ ('(^|[^A-Za-z0-9_])(public\.)?' || t.nm || '\s*\(')
+         );
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.34: دالّةٌ تنادى باباً مغلقاً وهى تجرى بحقِّ مُنادِيها فينكسرُ عندَها: %', v_bad;
+  END IF;
+
+  -- (٥) **ولا يُغلَقُ بابٌ ويُترَكُ غلافُه ميّتاً.** الأغلفةُ المعروفةُ باقيةٌ تنادى.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'restore_company_backup'
+     AND p.prosecdef AND p.prosrc LIKE '%create_audit_log%';
+  IF v_n < 1 THEN
+    RAISE EXCEPTION 'v3.75.34: غلافُ سجلِّ التدقيقِ restore_company_backup ماتَ أو لم يعُدْ ينادِيه.';
+  END IF;
+
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('complete_booking_atomic', 'handle_invoice_sent_accrual')
+     AND p.prosecdef AND p.prosrc LIKE '%execute_sales_invoice_accounting%';
+  IF v_n < 2 THEN
+    RAISE EXCEPTION 'v3.75.34: غلافُ محرِّكِ الاستحقاقِ ماتَ أو لم يعُدْ ينادِيه (وُجد % لا 2).', v_n;
   END IF;
 END;
 $function$
