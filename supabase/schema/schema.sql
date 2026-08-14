@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-13T16:54:59.232Z
+-- Generated: 2026-08-14T14:07:55.774Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -10815,6 +10815,8 @@ GRANT EXECUTE ON FUNCTION public.ai_search_pages(p_query text, p_lang text, p_ex
 GRANT EXECUTE ON FUNCTION public.ai_search_pages(p_query text, p_lang text, p_exclude_page_key text, p_limit integer) TO service_role;
 REVOKE ALL ON FUNCTION public.anon_prelogin_exceptions() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.anon_prelogin_exceptions() TO service_role;
+REVOKE ALL ON FUNCTION public.anon_reachable_ceiling() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.anon_reachable_ceiling() TO service_role;
 REVOKE ALL ON FUNCTION public.append_financial_audit_flag(p_transaction_id uuid, p_audit_flag text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.append_financial_audit_flag(p_transaction_id uuid, p_audit_flag text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.append_financial_audit_flag(p_transaction_id uuid, p_audit_flag text) TO service_role;
@@ -11032,6 +11034,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_28_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_28_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_29_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_29_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_31_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_31_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
