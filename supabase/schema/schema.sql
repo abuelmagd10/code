@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-14T14:07:55.774Z
+-- Generated: 2026-08-14T17:25:17.810Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -11036,6 +11036,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_29_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_29_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_31_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_31_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_33_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_33_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11610,7 +11612,6 @@ REVOKE ALL ON FUNCTION public.check_user_role(p_company_id uuid, p_user_id uuid,
 GRANT EXECUTE ON FUNCTION public.check_user_role(p_company_id uuid, p_user_id uuid, p_required_roles text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_user_role(p_company_id uuid, p_user_id uuid, p_required_roles text[]) TO service_role;
 REVOKE ALL ON FUNCTION public.check_username_available(p_username text, p_exclude_user_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_username_available(p_username text, p_exclude_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_username_available(p_username text, p_exclude_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.check_wrong_return_entries(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_wrong_return_entries(p_company_id uuid) TO authenticated;
@@ -12156,7 +12157,6 @@ GRANT EXECUTE ON FUNCTION public.generate_expense_number(p_company_id uuid) TO s
 REVOKE ALL ON FUNCTION public.generate_invoice_number() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.generate_invoice_number() TO service_role;
 REVOKE ALL ON FUNCTION public.generate_username_from_email(p_email text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.generate_username_from_email(p_email text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.generate_username_from_email(p_email text) TO service_role;
 REVOKE ALL ON FUNCTION public.generate_write_off_number(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.generate_write_off_number(p_company_id uuid) TO authenticated;
